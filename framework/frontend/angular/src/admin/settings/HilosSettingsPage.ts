@@ -28,7 +28,6 @@ import {
   HilosPages,
   createHilosSettingsActions,
   createHilosSettingsTable,
-  findLiveRow,
   hasCustomValue,
   isOrphanSetting,
   keepMineRowEdit,
@@ -43,7 +42,6 @@ import type {
   RowEditBaseline,
   RowEditState,
   RowEditStep,
-  TableViewportRow,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
@@ -168,7 +166,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="editOpen.set($event)"
+        (openChange)="$event ? editOpen.set(true) : closeEdit()"
         [confirmOnClose]="editDirty()"
       >
         <h5
@@ -292,7 +290,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
 
       <hilos-modal
         [open]="deleteOpen()"
-        (openChange)="deleteOpen.set($event)"
+        (openChange)="$event ? deleteOpen.set(true) : closeDelete()"
         [title]="deleteTitle()"
         [closeOnBackdrop]="!del.busy()"
         [closeOnEsc]="!del.busy()"
@@ -364,9 +362,10 @@ export class HilosSettingsPage {
   protected readonly editValue = signal('')
   protected readonly editUseCustom = signal(false)
   protected readonly edit = createHilosTrackedAction()
-  protected readonly viewportRows = signal<
-    readonly TableViewportRow<HilosSettingRow>[]
-  >([])
+  // The live row the open dialog is about: the row the table holds in focus, which
+  // the server follows wherever it goes; undefined once the row is gone. Mirrored
+  // the way the viewport table mirrors its rows.
+  protected readonly liveRow = signal<HilosSettingRow | undefined>(undefined)
 
   // Delete dialog: orphan keys only (not in the catalog).
   protected readonly deleteOpen = signal(false)
@@ -383,11 +382,6 @@ export class HilosSettingsPage {
   protected readonly editOverride = computed<string | null>(() =>
     this.editUseCustom() ? String(this.editValue()) : null,
   )
-  // The live row the dialog edits, projected onto its one field; gone once the
-  // table no longer has it.
-  private readonly liveRow = computed(() =>
-    findLiveRow(this.viewportRows(), this.editRow()?.key ?? ''),
-  )
   protected readonly live = computed(() => {
     const row = this.liveRow()
 
@@ -397,11 +391,7 @@ export class HilosSettingsPage {
       { overrideValue: this.editOverride() },
     )
   })
-  protected readonly deleteGone = computed(
-    () =>
-      findLiveRow(this.viewportRows(), this.deleteRow()?.key ?? '') ===
-      undefined,
-  )
+  protected readonly deleteGone = computed(() => this.liveRow() === undefined)
   protected readonly editDirty = computed(() => this.live().dirty)
   protected readonly editSaveLabel = computed(() =>
     this.live().gone ? 'Deleted' : 'Save',
@@ -424,14 +414,16 @@ export class HilosSettingsPage {
   constructor() {
     // Bind the server-windowed table to the connection and request the first
     // window once the context input is bound; unbind on destroy or context swap.
-    // Mirror the live rows the same way the viewport table does: the controller
-    // arrives through a computed, so hilosSignal cannot take it at field init.
+    // Mirror the row in focus the same way the viewport table mirrors its rows:
+    // the controller arrives through a computed, so hilosSignal cannot take it at
+    // field init.
     effect((onCleanup) => {
       const settings = this.settings()
       settings.start()
-      this.viewportRows.set(settings.controller.rows.get())
-      const unsubscribe = subscribeSignal(settings.controller.rows, (rows) =>
-        this.viewportRows.set(rows),
+      this.liveRow.set(settings.controller.focusedRow.get())
+      const unsubscribe = subscribeSignal(
+        settings.controller.focusedRow,
+        (row) => this.liveRow.set(row),
       )
       onCleanup(() => {
         unsubscribe()
@@ -453,9 +445,10 @@ export class HilosSettingsPage {
   }
 
   protected openEdit(row: HilosSettingRow): void {
-    // Flush pending so the dialog edits the latest committed row; a row removed
-    // by someone else (now a placeholder) declines to open.
-    const fresh = this.settings().controller.applyAndResolve(row.key)
+    // Flush pending and take the row into focus, so the dialog edits the latest
+    // committed row and follows it from here; a row removed by someone else (now
+    // a placeholder) declines to open.
+    const fresh = this.settings().controller.focusRow(row.key)
     if (!fresh) {
       return
     }
@@ -505,7 +498,7 @@ export class HilosSettingsPage {
       return
     }
     if (!this.live().dirty) {
-      this.editOpen.set(false)
+      this.closeEdit()
 
       return
     }
@@ -522,13 +515,14 @@ export class HilosSettingsPage {
         : this.actions().sendSettingAdd(row.key, next)
     }
     if (await this.edit.run(handle)) {
-      this.editOpen.set(false)
+      this.closeEdit()
     }
   }
 
   protected openDelete(row: HilosSettingRow): void {
-    // Flush pending; a row already removed by someone else does not open a delete.
-    const fresh = this.settings().controller.applyAndResolve(row.key)
+    // Flush pending and take the row into focus; a row already removed by someone
+    // else does not open a delete.
+    const fresh = this.settings().controller.focusRow(row.key)
     if (!fresh) {
       return
     }
@@ -537,13 +531,23 @@ export class HilosSettingsPage {
     this.deleteOpen.set(true)
   }
 
+  protected closeEdit(): void {
+    this.editOpen.set(false)
+    this.settings().controller.releaseFocus()
+  }
+
+  protected closeDelete(): void {
+    this.deleteOpen.set(false)
+    this.settings().controller.releaseFocus()
+  }
+
   protected async submitDelete(): Promise<void> {
     const row = this.deleteRow()
     if (!row || this.del.busy() || this.deleteGone()) {
       return
     }
     if (await this.del.run(this.actions().sendSettingDelete(row.key))) {
-      this.deleteOpen.set(false)
+      this.closeDelete()
     }
   }
 

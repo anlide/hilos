@@ -474,6 +474,12 @@ export function createHilosChannelFields(
         FIELDS_TABLE,
         rendered,
       ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.COMMUNICATIONS_CHANNEL,
+        FIELDS_TABLE,
+        rowKey,
+      ),
     initialFilter: { [FIELDS_FILTER_CHANNEL]: channel.get() },
     frame: FIELDS_FRAME,
   })

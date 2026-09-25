@@ -25,7 +25,6 @@ import {
   useTrackedAction,
 } from '@hilos/vue'
 import {
-  findLiveRow,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
@@ -101,11 +100,9 @@ const {
   clearError: clearEditError,
 } = editAction
 
-const viewRows = useSignal(adminUsersTable.rows)
-// The live row the dialog edits; gone once the window no longer has it.
-const liveRow = computed(() =>
-  findLiveRow(viewRows.value, editRow.value ? String(editRow.value.id) : ''),
-)
+// The live row the open dialog is about: the row the table holds in focus, which
+// the server follows wherever it goes; undefined once the row is gone.
+const liveRow = useSignal(adminUsersTable.focusedRow)
 const live = computed(() =>
   resolveRowEdit(
     liveRow.value ? { name: liveRow.value.name } : undefined,
@@ -125,9 +122,10 @@ const editNoticeText = computed(() => noticeText(live.value))
 const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 
 function openEdit(row: HilosUserRow): void {
-  // Flush pending so the form edits the latest committed row; a row removed by
-  // someone else (now a placeholder) declines to open.
-  const fresh = adminUsersTable.applyAndResolve(String(row.id))
+  // Flush pending and take the row into focus, so the form edits the latest
+  // committed row and follows it from here; a row removed by someone else (now a
+  // placeholder) declines to open.
+  const fresh = adminUsersTable.focusRow(String(row.id))
   if (!fresh) {
     return
   }
@@ -140,6 +138,7 @@ function openEdit(row: HilosUserRow): void {
 
 function closeEdit(): void {
   editOpen.value = false
+  adminUsersTable.releaseFocus()
 }
 
 // Put a step of the helper into the dialog: the snapshot moves, and a name the

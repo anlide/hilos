@@ -49,6 +49,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
@@ -804,6 +805,41 @@ class SignalRouter
     }
 
     /**
+     * Stores or replaces the row a connection holds in focus for one table, for an open dialog.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key the row belongs to
+     * @param string $rowKey Row the connection holds in focus
+     */
+    public function setTableFocus(string $acceptKey, string $tableKey, string $rowKey): void
+    {
+        $this->subscriptions->setTableFocus($acceptKey, $tableKey, $rowKey);
+    }
+
+    /**
+     * Returns the row a connection holds in focus for one table, or null when it holds none.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     * @return ?string Row the connection holds in focus, or null when it holds none for this table
+     */
+    public function getTableFocus(string $acceptKey, string $tableKey): ?string
+    {
+        return $this->subscriptions->getTableFocus($acceptKey, $tableKey);
+    }
+
+    /**
+     * Releases the row a connection held in focus for one table.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     */
+    public function clearTableFocus(string $acceptKey, string $tableKey): void
+    {
+        $this->subscriptions->clearTableFocus($acceptKey, $tableKey);
+    }
+
+    /**
      * Records that a connection's page could not be delivered, and answers whether to say so.
      *
      * @param string $acceptKey Client accept key
@@ -1299,6 +1335,7 @@ class SignalRouter
             SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : null,
             SignalTypeConstants::TABLE_FACETS => $data instanceof WebSocketTableFacetsSignalDTO ? $data->page : null,
             SignalTypeConstants::TABLE_RENDERED => $data instanceof WebSocketTableRenderedSignalDTO ? $data->page : null,
+            SignalTypeConstants::TABLE_ROW_FOCUS => $data instanceof WebSocketTableRowFocusSignalDTO ? $data->page : null,
             // Unsubscribe carries the page in the signal name, which SignalDTO
             // guarantees is non-empty.
             SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName(),

@@ -398,10 +398,16 @@ function toViewportDelta(
         return null
       }
 
+      // The body rides a removal only for the receiver holding the row in focus, and only
+      // while the row is alive; every other receiver, and a gone row, get the key alone.
       return {
         kind: 'row_removed',
         rowKey: String(data.rowKey),
         reason: data.reason ?? '',
+        row:
+          data.row === undefined
+            ? undefined
+            : normalizeTableRow(scope, data.row, options),
         own: data.own === true,
       }
     case 'row_stale':

@@ -69,6 +69,9 @@ final class SignalPayloadConstants
     /** @var string Payload field key for the fields inside a table row's slots that the tab draws */
     public const string FIELD_RENDERED = 'rendered';
 
+    /** @var string Payload field key for the row a tab holds in focus for an open dialog */
+    public const string FIELD_ROW_KEY = 'rowKey';
+
     /** @var string Payload field key for the place the first row of a table window sits at */
     public const string FIELD_FIRST_ANCHOR = 'firstAnchor';
 

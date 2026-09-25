@@ -14,6 +14,7 @@ import {
   FIELD_PAGE,
   FIELD_PAGE_INDEX,
   FIELD_RENDERED,
+  FIELD_ROW_KEY,
   FIELD_REQUEST_ID,
   FIELD_SORT,
   FIELD_TABLE_KEY,
@@ -27,6 +28,7 @@ import {
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
   SIGNAL_TYPE_TABLE_FACETS,
   SIGNAL_TYPE_TABLE_RENDERED,
+  SIGNAL_TYPE_TABLE_ROW_FOCUS,
   SIGNAL_TYPE_TABLE_VIEWPORT,
   SESSION_ROTATE_COOKIE_SUFFIX,
 } from '../protocol/constants.js'
@@ -869,6 +871,31 @@ export class HilosConnection {
         [FIELD_PAGE]: page,
         [FIELD_TABLE_KEY]: tableKey,
         [FIELD_RENDERED]: rendered,
+      }),
+    )
+  }
+
+  /**
+   * Send a table row focus frame — `{type:'table_row_focus', page, tableKey, rowKey}` —
+   * naming the row of one table this tab holds in focus for an open dialog, or letting it
+   * go with an empty key. The server keeps the row beside the tab's window and follows it
+   * past the window for this tab: the change that takes the row out travels with the row's
+   * body, and so does every change after it. It answers nothing while the window holds the
+   * row, and one `table_viewport_delta` of kind `row_removed` when it does not — with the
+   * body, or without one when the row is gone. Returns false, sending nothing, unless the
+   * connection is `connected`, like {@link send}.
+   *
+   * @param page The page the table belongs to.
+   * @param tableKey The table key the row belongs to.
+   * @param rowKey The row to hold in focus, or '' to let it go.
+   */
+  sendTableRowFocus(page: string, tableKey: string, rowKey: string): boolean {
+    return this.send(
+      JSON.stringify({
+        [FIELD_TYPE]: SIGNAL_TYPE_TABLE_ROW_FOCUS,
+        [FIELD_PAGE]: page,
+        [FIELD_TABLE_KEY]: tableKey,
+        [FIELD_ROW_KEY]: rowKey,
       }),
     )
   }

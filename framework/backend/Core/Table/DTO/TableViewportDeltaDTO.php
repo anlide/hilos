@@ -22,7 +22,9 @@ use Hilos\Core\Router\SignalDataInterface;
  * - `row_moved` — a shown row's edit moves it inside the window; carries the new row and,
  *   when the table could name it, the `position` it lands on.
  * - `row_removed` — a shown row was deleted, left the filtered set or moved past an edge of
- *   the window; carries the row key and a `reason` (`deleted` / `left_set` / `moved_out`).
+ *   the window; carries the row key and a `reason` (`deleted` / `left_set` / `moved_out`). For
+ *   the row a tab holds in focus for an open dialog it carries the row too, while the row is
+ *   alive (HIL-1050): the dialog reads the body, the screen gates the removal as before.
  * - `row_stale` — the sources a shown row is assembled from changed which of them
  *   are being kept up to date; carries the row key and the new list, and no row.
  *
@@ -58,7 +60,8 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      * @param string $tableKey Table key the delta is for
      * @param string $kind One of the KIND_* discriminators
      * @param int|string|null $rowKey Affected row key (row_updated / row_moved / row_removed)
-     * @param ?array<string, mixed> $row New row as a `{rowKey, slots}` fragment (row_updated / row_moved)
+     * @param ?array<string, mixed> $row New row as a `{rowKey, slots}` fragment (row_updated / row_moved;
+     *     row_removed for the row a tab holds in focus, when it is still alive)
      * @param ?string $reason Removal reason `deleted` / `left_set` / `moved_out` (row_removed)
      * @param ?int $position Zero-based place in the window the row lands on (row_moved), or null when
      *     the table could not name one
@@ -137,11 +140,17 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
     /**
      * Creates a row-removed delta.
      *
+     * The row travels only for the receiver that holds it in focus, and only while it is alive:
+     * every other window is told the key and the reason, as before, and a focused row that was
+     * deleted or that the table's own set let go of is told the same way, without a body.
+     *
      * @param string $page Page the table belongs to
      * @param string $tableKey Table key
      * @param int|string $rowKey Affected row key
      * @param string $reason Removal reason (REASON_DELETED / REASON_LEFT_SET / REASON_MOVED_OUT)
      * @param bool $own Whether this receiver authored the change (applies at once, resolving any queued pending)
+     * @param ?array<string, mixed> $row The row as a `{rowKey, slots}` fragment, for the receiver that holds it in
+     *     focus, or null when it has none to be handed
      * @return self Row-removed delta
      */
     public static function rowRemoved(
@@ -150,8 +159,9 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
         int|string $rowKey,
         string $reason,
         bool $own = false,
+        ?array $row = null,
     ): self {
-        return new self($page, $tableKey, self::KIND_ROW_REMOVED, rowKey: $rowKey, reason: $reason, own: $own);
+        return new self($page, $tableKey, self::KIND_ROW_REMOVED, rowKey: $rowKey, row: $row, reason: $reason, own: $own);
     }
 
     /**

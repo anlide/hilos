@@ -71,6 +71,27 @@ final class TableViewportDeltaDTOTest extends TestCase
         $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $restored->reason);
     }
 
+    /**
+     * The receiver holding the row in focus reads its body off the frame that took it out of the window.
+     */
+    public function testRowRemovedCarriesTheRowATabHoldsInFocus(): void
+    {
+        $row = ['rowKey' => 'a', 'slots' => ['settings' => ['key' => 'a']]];
+        $removed = TableViewportDeltaDTO::rowRemoved('p', 't', 'a', TableViewportDeltaDTO::REASON_LEFT_SET, false, $row)->toArray();
+
+        $this->assertSame($row, $removed[TableViewportDeltaDTO::row]);
+        $restored = TableViewportDeltaDTO::fromArray($removed);
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $restored->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_LEFT_SET, $restored->reason);
+        $this->assertSame($row, $restored->row);
+
+        // Every other receiver, and a focused row that is gone, gets the frame as before: no row key at all.
+        $this->assertArrayNotHasKey(
+            TableViewportDeltaDTO::row,
+            TableViewportDeltaDTO::rowRemoved('p', 't', 'a', TableViewportDeltaDTO::REASON_LEFT_SET)->toArray(),
+        );
+    }
+
     public function testToArrayOmitsKeysIrrelevantToTheKind(): void
     {
         $removed = TableViewportDeltaDTO::rowRemoved('p', 't', 5, TableViewportDeltaDTO::REASON_DELETED)->toArray();

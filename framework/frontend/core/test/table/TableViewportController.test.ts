@@ -2201,3 +2201,240 @@ describe('TableViewportController window place', () => {
     expect(controller.frame.footer.get().firstRow).toBe(1)
   })
 })
+
+describe('TableViewportController focus', () => {
+  // A table whose rows open a dialog: it wires sendFocus, and its window holds two rows.
+  function makeFocusedController() {
+    const focus: string[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      sendFocus: (rowKey) => focus.push(rowKey),
+    })
+    const rowA: TableRow = { rowKey: 'a', slots: { v: 1 } }
+    const rowB: TableRow = { rowKey: 'b', slots: { v: 2 } }
+    controller.ingestSubscriptionWindow(
+      [rowA, rowB],
+      2,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    return { controller, focus, rowA, rowB }
+  }
+
+  it('takes a fresh row into focus and tells the server', () => {
+    const { controller, focus, rowA } = makeFocusedController()
+
+    expect(controller.focusedRow.get()).toBeUndefined()
+    expect(controller.focusRow('a')).toEqual(rowA)
+    expect(focus).toEqual(['a'])
+    expect(controller.focusedRow.get()).toEqual(rowA)
+  })
+
+  it('resolves what waits on the row first, as applyAndResolve does', () => {
+    const { controller } = makeFocusedController()
+    const moved: TableRow = { rowKey: 'a', slots: { v: 9 } }
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: moved,
+      position: 1,
+    })
+    expect(controller.rows.get()[0]?.pending).toBe('move')
+
+    expect(controller.focusRow('a')).toEqual(moved)
+    expect(controller.rows.get().map((row) => row.pending)).toEqual([
+      null,
+      null,
+    ])
+    expect(controller.rows.get()[1]?.row).toEqual(moved)
+  })
+
+  it('declines a placeholder and a key off the window, holding nothing', () => {
+    const { controller, focus } = makeFocusedController()
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+
+    expect(controller.focusRow('a')).toBeNull()
+    expect(controller.focusRow('nowhere')).toBeNull()
+    expect(focus).toEqual([])
+    expect(controller.focusedRow.get()).toBeUndefined()
+  })
+
+  it('refuses a table that wired no sendFocus', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1)
+
+    // The old silent hole — a dialog reading a row nobody follows — is not a state to fall
+    // back into: a table whose rows open a dialog wires the sender, or the dialog throws.
+    expect(() => controller.focusRow('a')).toThrow(/sendFocus/)
+  })
+
+  it('takes the body off every frame about the row, before the gate', () => {
+    const { controller } = makeFocusedController()
+    controller.focusRow('a')
+
+    const updated: TableRow = { rowKey: 'a', slots: { v: 3 } }
+    controller.ingestDelta({ kind: 'row_updated', rowKey: 'a', row: updated })
+    expect(controller.focusedRow.get()).toEqual(updated)
+
+    // A move waits for Apply on the screen; the dialog reads the moved row at once.
+    const moved: TableRow = { rowKey: 'a', slots: { v: 4 } }
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: moved,
+      position: 1,
+    })
+    expect(controller.focusedRow.get()).toEqual(moved)
+    expect(controller.rows.get()[0]).toMatchObject({
+      rowKey: 'a',
+      row: updated,
+      pending: 'move',
+    })
+
+    // So does a removal that carries the body: the row left the window, not the world.
+    const left: TableRow = { rowKey: 'a', slots: { v: 5 } }
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'left_set',
+      row: left,
+    })
+    expect(controller.focusedRow.get()).toEqual(left)
+    expect(controller.rows.get()[0]).toMatchObject({
+      rowKey: 'a',
+      row: updated,
+      pending: 'remove',
+    })
+  })
+
+  it('reads undefined off a removal without a body: the row is gone', () => {
+    const { controller } = makeFocusedController()
+    controller.focusRow('a')
+
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+
+    expect(controller.focusedRow.get()).toBeUndefined()
+  })
+
+  it('gives a second departure of a row whose placeholder stands no wait', () => {
+    const { controller } = makeFocusedController()
+    controller.focusRow('a')
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'moved_out',
+      row: { rowKey: 'a', slots: { v: 6 } },
+    })
+    controller.apply()
+    expect(controller.rows.get()[0]).toMatchObject({
+      rowKey: 'a',
+      placeholder: true,
+    })
+
+    // The server follows the row past the window and says it left again; the placeholder is
+    // all the screen has under that key, and a badge whose Apply changes nothing is a defect.
+    const again: TableRow = { rowKey: 'a', slots: { v: 7 } }
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'left_set',
+      row: again,
+    })
+
+    expect(controller.focusedRow.get()).toEqual(again)
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]).toMatchObject({
+      rowKey: 'a',
+      placeholder: true,
+      pending: null,
+    })
+  })
+
+  it('says the focus again with every window, taking the body from it when the row came', () => {
+    const { controller, focus } = makeFocusedController()
+    controller.focusRow('b')
+
+    const fresh: TableRow = { rowKey: 'b', slots: { v: 22 } }
+    controller.ingestWindow([fresh], 1, true, null, null, 10)
+    expect(focus).toEqual(['b', 'b'])
+    expect(controller.focusedRow.get()).toEqual(fresh)
+
+    // A window without the row keeps the body as it was: the server answers the re-sent focus
+    // with the row's current body, or with nothing when the row is gone.
+    controller.ingestWindow(
+      [{ rowKey: 'c', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    expect(focus).toEqual(['b', 'b', 'b'])
+    expect(controller.focusedRow.get()).toEqual(fresh)
+  })
+
+  it('takes an appended row as the body when it is the one in focus', () => {
+    const { controller } = makeFocusedController()
+    controller.focusRow('b')
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'moved_out',
+      row: { rowKey: 'b', slots: { v: 2 } },
+    })
+    controller.apply()
+
+    const back: TableRow = { rowKey: 'b', slots: { v: 23 } }
+    controller.ingestAppend(back, 2, true)
+
+    expect(controller.focusedRow.get()).toEqual(back)
+  })
+
+  it('releases the focus with an empty key, once, and reads nothing after', () => {
+    const { controller, focus } = makeFocusedController()
+    controller.focusRow('a')
+
+    controller.releaseFocus()
+    expect(focus).toEqual(['a', ''])
+    expect(controller.focusedRow.get()).toBeUndefined()
+
+    // Nothing to let go of twice, and a frame about the row moves nothing any more.
+    controller.releaseFocus()
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { v: 8 } },
+    })
+    expect(focus).toEqual(['a', ''])
+    expect(controller.focusedRow.get()).toBeUndefined()
+  })
+
+  it('a second focus on the table replaces the first', () => {
+    const { controller, focus, rowB } = makeFocusedController()
+    controller.focusRow('a')
+
+    expect(controller.focusRow('b')).toEqual(rowB)
+    expect(focus).toEqual(['a', 'b'])
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { v: 8 } },
+    })
+    expect(controller.focusedRow.get()).toEqual(rowB)
+  })
+})

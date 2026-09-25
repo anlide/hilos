@@ -109,9 +109,12 @@ function seededContext(initial: FieldSlot[]): {
   context: HilosCommunicationsContext
   pushUpdate: (next: FieldSlot) => void
   pushRemove: () => void
+  pushLeave: (next: FieldSlot) => void
   sent: Array<{ action: string; payload: Record<string, unknown> }>
+  focus: string[]
 } {
   let rows = initial.slice()
+  const focus: string[] = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.COMMUNICATIONS_CHANNEL)
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
@@ -145,6 +148,11 @@ function seededContext(initial: FieldSlot[]): {
       return true
     },
     sendTableRendered(): boolean {
+      return true
+    },
+    sendTableRowFocus(page: string, tableKey: string, rowKey: string): boolean {
+      focus.push(rowKey)
+
       return true
     },
     on(
@@ -210,7 +218,25 @@ function seededContext(initial: FieldSlot[]): {
         })
       }
     },
+    // The row left this tab's window alive, and the frame that takes it off the screen
+    // carries the row for the dialog holding it in focus.
+    pushLeave(next: FieldSlot): void {
+      rows = []
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.COMMUNICATIONS_CHANNEL,
+            tableKey: TABLE,
+            kind: 'row_removed',
+            rowKey: ROW_KEY,
+            reason: 'left_set',
+            row: { rowKey: ROW_KEY, slots: { field: next } },
+          },
+        })
+      }
+    },
     sent,
+    focus,
   }
 }
 
@@ -373,6 +399,32 @@ describe('HilosCommunicationsChannelPage edit modal', () => {
     expect(saveButton().textContent?.trim()).toBe('Deleted')
     expect(valueInput().value).toBe('+mine')
     expect(modalEl('modal')).not.toBeNull()
+  })
+
+  it('follows a row that left the window under the modal: Updated just now, not Deleted', async () => {
+    const { context, pushLeave } = seededContext([fromField('+1000')])
+    await openModal(context)
+    // The other tab's save moved the row under the order or out of the filter: the screen
+    // gates the departure, the dialog holding the row in focus reads the body off the frame.
+    pushLeave(fromField('+2000'))
+    await nextTick()
+    await nextTick()
+
+    expect(valueInput().value).toBe('+2000')
+    expect(modalEl('hilos-channel-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+    expect(saveButton().textContent?.trim()).toBe('Save')
+  })
+
+  it('takes the row into focus on open and lets it go on close', async () => {
+    const { context, focus } = seededContext([fromField('+1000')])
+    await openModal(context)
+    expect(focus).toEqual([ROW_KEY])
+
+    modalEl('modal-close')?.click()
+    await nextTick()
+    expect(focus).toEqual([ROW_KEY, ''])
   })
 
   it('asks before discarding a changed draft, and closes a pristine one at once', async () => {

@@ -659,6 +659,30 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
+     * Reads one row of this table's own set by its key, walking the whole set.
+     *
+     * The set is read the way a window with nothing narrowing it is read - no search, no filter,
+     * no limit - and the row is picked out by its key. That is a pass over the whole source, and it
+     * is the default because the question is rare: it is put once per change to a row a tab holds
+     * in focus for an open dialog, and only after that row has left the tab's window. A table with
+     * an index to answer from overrides this.
+     *
+     * @param string|int $rowKey Key of the row to read
+     * @return ?AbstractTableRow The row as the table serves it, or null when the table's own set does not hold it
+     * @throws HilosException When the concrete table cannot read its row source
+     */
+    public function findRow(string|int $rowKey): ?AbstractTableRow
+    {
+        foreach ($this->getPage(new TableQueryDTO())->rows as $row) {
+            if ($row instanceof AbstractTableRow && (string) $row->getRowKey() === (string) $rowKey) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Counts how many rows each option of the table's filters would leave.
      *
      * The default is "cannot count", and it is the default because a filter key means nothing to

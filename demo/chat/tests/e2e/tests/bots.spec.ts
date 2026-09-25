@@ -573,6 +573,69 @@ test('an open edit follows the other tab field by field, and a delete dialog rea
   await tabB.close()
 })
 
+test('an open edit follows its row past the window edge, and conflicts after it', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const name = nameBeforeAll(stamp)
+  // A name past every seeded bot: the rename takes the row past the bottom of
+  // the first window. (This table cannot say whether a row left a search, so a
+  // search never takes a row off the screen; the order does.)
+  const renamed = `ZZ ${stamp}`
+
+  await signUpAdmin(page)
+  await openBots(page)
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+
+  const tabB = await page.context().newPage()
+  await openBots(tabB)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+
+  // A opens the edit; B renames the bot past the window: A's row will leave,
+  // and A's form takes the name silently — the dialog holds the row in focus,
+  // and the frame that takes the row off the screen carries it (HIL-1050).
+  await page.getByTestId(`admin-bots-edit-${key}`).click()
+  await expect(page.getByTestId('admin-bots-name')).toHaveValue(name)
+  await renameBot(tabB, key, renamed)
+  await expect(
+    page.getByTestId(`hilos-table-pending-remove-${key}`),
+  ).toBeVisible()
+  await expect(page.getByTestId('admin-bots-name')).toHaveValue(renamed)
+  await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+    'Updated just now: Name',
+  )
+  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+
+  // B follows the bot to its new place by name. A types a description; B
+  // changes it too, with the row outside A's window: the server follows the row
+  // for the dialog, and the dialog conflicts. Take theirs puts B's description
+  // in, and there is nothing left to save.
+  await typeInto(tabB.getByTestId('hilos-table-search'), renamed)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+  await typeInto(
+    page.getByTestId('admin-bots-description'),
+    `description of A ${stamp}`,
+  )
+  await editBotDescription(tabB, key, `elsewhere ${stamp}`)
+  await expect(page.getByTestId('conflict-badge')).toBeVisible()
+  await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+    `Description changed elsewhere to "elsewhere ${stamp}".`,
+  )
+  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+  await page.getByTestId('conflict-accept-theirs').click()
+  await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+    `elsewhere ${stamp}`,
+  )
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+  await page.getByTestId('modal-close').click()
+  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+
+  await deleteBot(tabB, key)
+  await tabB.close()
+})
+
 test('reaches the bots admin from the dashboard', async ({ page }) => {
   await signUpAdmin(page)
   await gotoPage(page, '/hilos')

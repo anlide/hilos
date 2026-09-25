@@ -41,6 +41,24 @@ final class TableDefinitionSnapshotTest extends TestCase
         $this->assertSame(['id' => 1, 'name' => 'Ada'], $snapshot->rows[0]->toArray());
     }
 
+    /**
+     * The default walks the table's own set - the read a window with nothing narrowing it makes - and picks by key.
+     */
+    public function testFindRowReadsARowOfTheOwnSetByItsKey(): void
+    {
+        $row = $this->makeTable()->findRow(1);
+
+        $this->assertInstanceOf(GenericTableRow::class, $row);
+        $this->assertSame(['id' => 1, 'name' => 'Ada'], $row->toArray());
+        // A key travels as a string on the wire and as whatever the source holds inside; both find the row.
+        $this->assertSame(['id' => 1, 'name' => 'Ada'], $this->makeTable()->findRow('1')?->toArray());
+    }
+
+    public function testFindRowAnswersNullForAKeyTheOwnSetDoesNotHold(): void
+    {
+        $this->assertNull($this->makeTable()->findRow(2));
+    }
+
     private function makeTable(): TableDefinition
     {
         return new class extends TableDefinition {

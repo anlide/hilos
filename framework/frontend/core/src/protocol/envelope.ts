@@ -186,7 +186,10 @@ export type TableWindowRefusedSignalData = z.infer<
  * What waits for the reader is decided by the kind, and by the server: a value that
  * left the row where it stood (`row_updated`) applies at once, while a move and a
  * removal wait. `position` is the slot a moved row lands in and travels only with
- * `row_moved`, absent when the table could not name one.
+ * `row_moved`, absent when the table could not name one. `row` rides `row_updated`
+ * and `row_moved` always, and `row_removed` for one receiver only — the tab holding
+ * the row in focus for an open dialog — while the row is alive; the schema already
+ * leaves it optional on every kind.
  *
  * `row_stale` carries `staleSources` in place of a row: which of the row's sources
  * stopped being kept up to date, with the list replacing whatever the row held and an

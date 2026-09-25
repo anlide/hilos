@@ -718,6 +718,218 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
     }
 
+    public function testAFocusedRowThatLeftANarrowedSetLeavesWithItsBody(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), new ViewportDeltaUnitRow('mike', 'Mike', true), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+            inSet: false,
+            filter: ['admin' => false],
+        );
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'mike');
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['admin' => true]));
+        $context->flushToSignalRouter();
+
+        // The screen gates the removal as before; the dialog open over the row reads its body off the same frame.
+        $this->assertSame(2, $this->nextCount()->totalCount);
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_LEFT_SET, $delta->reason);
+        $this->assertSame(
+            [
+                PagePayload::rowKey => 'mike',
+                PagePayload::slots => [
+                    ViewportDeltaUnitTable::SLOT => ['key' => 'mike', 'label' => 'Mike', 'admin' => true],
+                ],
+            ],
+            $delta->row,
+        );
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        // Still followed: the row is alive, and the dialog is still open over it.
+        $this->assertSame('mike', Hilos::$sr?->getTableFocus('ak-1', ViewportDeltaUnitTable::TABLE));
+    }
+
+    public function testAFocusedRowThatLeftAStandingNarrowingLeavesWithItsBody(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike!')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike')],
+            inSet: false,
+        );
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'mike');
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Mike!']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::REASON_LEFT_SET, $delta->reason);
+        $this->assertSame(['key' => 'mike', 'label' => 'Mike!'], $delta->row[PagePayload::slots][ViewportDeltaUnitTable::SLOT] ?? null);
+    }
+
+    public function testAFocusedRowThatMovedOutOfTheWindowLeavesWithItsBody(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('bob', 'Aaron'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            [self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            pageIndex: 1,
+        );
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'bob');
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Aaron']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+        $this->assertSame(['key' => 'bob', 'label' => 'Aaron'], $delta->row[PagePayload::slots][ViewportDeltaUnitTable::SLOT] ?? null);
+    }
+
+    public function testARowNobodyHoldsInFocusLeavesWithoutABody(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('bob', 'Aaron'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            [self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            pageIndex: 1,
+        );
+        // A dialog over another row of the same table does not make this one travel.
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'carol');
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Aaron']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+        $this->assertNull($delta->row);
+    }
+
+    public function testAFocusedRowOutsideTheWindowIsFollowedWithItsBody(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 2, true, null, null);
+        $context = $this->bootWithViewport([self::row('alpha', 'Alpha'), self::row('beta', 'Beta!')], $viewport);
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'beta');
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['label' => 'Beta!']));
+        $context->flushToSignalRouter();
+
+        // The window's own road ends at its rows; the dialog over this one hears the change all the same,
+        // as the frame that took the row out, and exactly one of them.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+        $this->assertSame('beta', $delta->rowKey);
+        $this->assertSame(['key' => 'beta', 'label' => 'Beta!'], $delta->row[PagePayload::slots][ViewportDeltaUnitTable::SLOT] ?? null);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertSame('beta', Hilos::$sr?->getTableFocus('ak-1', ViewportDeltaUnitTable::TABLE));
+    }
+
+    public function testAFocusedRowOutsideTheWindowIsDeletedWithoutABodyAndLetGoOf(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 2, true, null, null);
+        $context = $this->bootWithViewport([], $viewport);
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'beta');
+
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame('beta', $this->nextUnannounce()->rowKey);
+        $this->assertSame(1, $this->nextCount()->totalCount);
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_DELETED, $delta->reason);
+        $this->assertNull($delta->row);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertNull(Hilos::$sr?->getTableFocus('ak-1', ViewportDeltaUnitTable::TABLE));
+    }
+
+    public function testAFollowedRowTheWindowsSetStillHoldsTravelsAsTheTableBuiltIt(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 2, true, null, null);
+        // The set says the row is in it, so the mutation's row is the row: the own set, which
+        // this fixture would answer nothing from, is not asked.
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('beta', 'Beta!')],
+            $viewport,
+            inSet: true,
+            ownSetLetsRowsGo: true,
+        );
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'beta');
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['label' => 'Beta!']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+        $this->assertSame(['key' => 'beta', 'label' => 'Beta!'], $delta->row[PagePayload::slots][ViewportDeltaUnitTable::SLOT] ?? null);
+        $this->assertSame('beta', Hilos::$sr?->getTableFocus('ak-1', ViewportDeltaUnitTable::TABLE));
+    }
+
+    public function testAFocusedRowTheOwnSetLetGoOfLeavesWithoutABodyAndIsLetGoOf(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 2, true, null, null);
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('beta', 'Beta!')],
+            $viewport,
+            ownSetLetsRowsGo: true,
+        );
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'beta');
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['label' => 'Beta!']));
+        $context->flushToSignalRouter();
+
+        // The table's own set is the boundary of what the tab may read: past it the dialog is told "deleted".
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_LEFT_SET, $delta->reason);
+        $this->assertNull($delta->row);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertNull(Hilos::$sr?->getTableFocus('ak-1', ViewportDeltaUnitTable::TABLE));
+    }
+
+    public function testAFocusedRowTheArrivalPutBackIntoTheWindowIsNotFollowed(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, self::anchorAt('alpha'), self::anchorAt('alpha'));
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+        );
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'beta');
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // The body came with the window's own frame; a second one would say the same thing twice.
+        $this->assertSame('beta', $this->nextAppend()->row[PagePayload::rowKey] ?? null);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testDeletingAFocusedRowInTheWindowLetsTheFocusGo(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
+        $context = $this->bootWithViewport([], $viewport);
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'alpha');
+
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(0, $this->nextCount()->totalCount);
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::REASON_DELETED, $delta->reason);
+        $this->assertNull($delta->row);
+        $this->assertNull(Hilos::$sr?->getTableFocus('ak-1', ViewportDeltaUnitTable::TABLE));
+    }
+
     public function testOwnUnchangedRowEmitsNothing(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
@@ -1975,6 +2187,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
      * @param ?bool $inSet What the table answers about a row's membership, or null when it cannot say
      * @param bool $setQuestionFails Whether the membership question refuses instead of answering
      * @param bool $reportsProgress Whether the table reads work out of a source change at all
+     * @param bool $ownSetLetsRowsGo Whether the table's own set answers no row to a read by key
      * @return ViewportDeltaUnitContext Booted browser context
      */
     private function bootWithViewport(
@@ -1983,9 +2196,10 @@ final class BrowserContextViewportDeltaTest extends TestCase
         ?bool $inSet = null,
         bool $setQuestionFails = false,
         bool $reportsProgress = false,
+        bool $ownSetLetsRowsGo = false,
     ): ViewportDeltaUnitContext {
         Hilos::$sr = new SignalRouter();
-        Hilos::$table = new ViewportDeltaUnitTableContext($rows, $inSet, $setQuestionFails, $reportsProgress);
+        Hilos::$table = new ViewportDeltaUnitTableContext($rows, $inSet, $setQuestionFails, $reportsProgress, $ownSetLetsRowsGo);
         Hilos::$table->configure();
         Hilos::$sr->subscribeToPage(
             ViewportDeltaUnitContext::PAGE,
@@ -2171,12 +2385,14 @@ final class ViewportDeltaUnitTableContext extends TableContext
      * @param ?bool $inSet What the table answers about a row's membership, or null when it cannot say
      * @param bool $setQuestionFails Whether the membership question refuses instead of answering
      * @param bool $reportsProgress Whether the table reads work out of a source change at all
+     * @param bool $ownSetLetsRowsGo Whether the table's own set answers no row to a read by key
      */
     public function __construct(
         private readonly array $rows = [],
         private readonly ?bool $inSet = null,
         private readonly bool $setQuestionFails = false,
         private readonly bool $reportsProgress = false,
+        private readonly bool $ownSetLetsRowsGo = false,
     ) {
     }
 
@@ -2184,7 +2400,7 @@ final class ViewportDeltaUnitTableContext extends TableContext
     {
         $this->register(
             ViewportDeltaUnitTable::TABLE,
-            new ViewportDeltaUnitTable($this->rows, $this->inSet, $this->setQuestionFails, $this->reportsProgress),
+            new ViewportDeltaUnitTable($this->rows, $this->inSet, $this->setQuestionFails, $this->reportsProgress, $this->ownSetLetsRowsGo),
         );
     }
 }
@@ -2205,14 +2421,31 @@ final class ViewportDeltaUnitTable extends TableDefinition implements SelfSnapsh
      * @param ?bool $inSet What this table answers about a row's membership, or null when it cannot say
      * @param bool $setQuestionFails Whether the membership question refuses instead of answering
      * @param bool $reportsProgress Whether this table reads work out of a source change at all
+     * @param bool $ownSetLetsRowsGo Whether this table's own set answers no row to a read by key
      */
     public function __construct(
         private readonly array $rows = [],
         private readonly ?bool $inSet = null,
         private readonly bool $setQuestionFails = false,
         private readonly bool $reportsProgress = false,
+        private readonly bool $ownSetLetsRowsGo = false,
     ) {
         parent::__construct();
+    }
+
+    /**
+     * Reads a row of the own set by key, or stands for a set that has let the row go.
+     *
+     * A table with a standing narrowing of its own can build a mutation for a row it no longer
+     * serves; the fixture says so by answering null here while the rows still hold the key.
+     *
+     * @param string|int $rowKey Key of the row to read
+     * @return ?AbstractTableRow The row, or null when the fixture's own set lets rows go
+     * @throws HilosException When the concrete table cannot read its row source
+     */
+    public function findRow(string|int $rowKey): ?AbstractTableRow
+    {
+        return $this->ownSetLetsRowsGo ? null : parent::findRow($rowKey);
     }
 
     /**

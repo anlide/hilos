@@ -30,13 +30,16 @@ enum PendingFrameKind: string
     /** A table_rendered frame, whose second read of the window re-checks the page guards the way a window does. */
     case TableRendered = 'table_rendered';
 
+    /** A table_row_focus frame, whose answer reads a row under the page guards the way a window does. */
+    case TableRowFocus = 'table_row_focus';
+
     /** A page_update_subscription frame, judged like a subscribe but on the merged params. */
     case PageUpdateSubscription = 'page_update_subscription';
 
     /**
      * Whether a frame at this door also waits for the page subscription it is addressed to.
      *
-     * The three table doors do: what they deliver or read re-checks the page guards, and those guards read
+     * The four table doors do: what they deliver or read re-checks the page guards, and those guards read
      * the subscription's params - judged without it they judge an empty param set, which is a
      * different question from the one the client asked.
      *
@@ -44,6 +47,9 @@ enum PendingFrameKind: string
      */
     public function waitsForPageSubscription(): bool
     {
-        return $this === self::TableViewport || $this === self::TableFacets || $this === self::TableRendered;
+        return $this === self::TableViewport
+            || $this === self::TableFacets
+            || $this === self::TableRendered
+            || $this === self::TableRowFocus;
     }
 }

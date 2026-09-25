@@ -20,7 +20,6 @@ import {
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
-  findLiveRow,
   HilosPages,
   keepMineRowEdit,
   openRowEdit,
@@ -192,12 +191,9 @@ function editedValue(row: HilosChannelFieldRow): boolean | number | string {
   return editValue.value
 }
 
-const viewportRows = useSignal(fields.controller.rows)
-// The live row the dialog edits, projected onto its one field; gone once the
-// table no longer has it.
-const liveRow = computed(() =>
-  findLiveRow(viewportRows.value, editRow.value?.key ?? ''),
-)
+// The live row the open dialog is about: the row the table holds in focus, which
+// the server follows wherever it goes; undefined once the row is gone.
+const liveRow = useSignal(fields.controller.focusedRow)
 const live = computed(() =>
   resolveRowEdit(
     liveRow.value ? { value: liveRow.value.value } : undefined,
@@ -212,9 +208,10 @@ const editNoticeText = computed(() =>
 const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 
 function openEdit(row: HilosChannelFieldRow): void {
-  // Flush pending so the dialog edits the latest committed row; a row removed by
-  // someone else (now a placeholder) declines to open.
-  const fresh = fields.controller.applyAndResolve(row.key)
+  // Flush pending and take the row into focus, so the dialog edits the latest
+  // committed row and follows it from here; a row removed by someone else (now a
+  // placeholder) declines to open.
+  const fresh = fields.controller.focusRow(row.key)
   if (!fresh) {
     return
   }
@@ -227,6 +224,7 @@ function openEdit(row: HilosChannelFieldRow): void {
 
 function closeEdit(): void {
   editOpen.value = false
+  fields.controller.releaseFocus()
 }
 
 // Put a step of the helper into the dialog: the snapshot moves, and a value the

@@ -32,6 +32,8 @@ export const adminUsersTable = new TableViewportController<HilosUserRow>({
   resolve: (row) => resolveHilosUserRow(row, Users),
   sendViewport: (descriptor) =>
     connection.sendTableViewport(PAGE_ADMIN_USERS, USERS_TABLE, descriptor),
+  sendFocus: (rowKey) =>
+    connection.sendTableRowFocus(PAGE_ADMIN_USERS, USERS_TABLE, rowKey),
 })
 
 const teardown: Array<() => void> = []
@@ -53,6 +55,9 @@ export function startAdminUsersTable(): void {
 
 /** Unbind from the connection — call on unmount. */
 export function disposeAdminUsersTable(): void {
+  // The controller outlives the page: a dialog open at unmount would leave its
+  // row in focus, and the next mount's first window would say that focus again.
+  adminUsersTable.releaseFocus()
   for (const off of teardown.splice(0)) {
     off()
   }

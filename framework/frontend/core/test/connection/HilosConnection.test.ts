@@ -401,6 +401,36 @@ describe('table viewport send', () => {
     })
   })
 
+  it('names the row a tab holds in focus in a frame of its own, and lets it go with an empty key', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    const sent = connection.sendTableRowFocus(
+      'hilos_settings',
+      'settings',
+      'site.title',
+    )
+
+    expect(sent).toBe(true)
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'table_row_focus',
+      page: 'hilos_settings',
+      tableKey: 'settings',
+      rowKey: 'site.title',
+    })
+
+    connection.sendTableRowFocus('hilos_settings', 'settings', '')
+
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'table_row_focus',
+      page: 'hilos_settings',
+      tableKey: 'settings',
+      rowKey: '',
+    })
+  })
+
   it('an order of more than one column rides as the list of its components', () => {
     const { connection } = createConnection()
     connection.connect()

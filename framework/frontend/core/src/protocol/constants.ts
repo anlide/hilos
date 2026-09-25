@@ -76,6 +76,9 @@ export const SIGNAL_TYPE_TABLE_FACETS = 'table_facets'
 /** Client frame `type` naming the fields of a table's rows its columns draw (PHP `SignalTypeConstants::TABLE_RENDERED`). */
 export const SIGNAL_TYPE_TABLE_RENDERED = 'table_rendered'
 
+/** Client frame `type` naming the row of a table a tab holds in focus for an open dialog (PHP `SignalTypeConstants::TABLE_ROW_FOCUS`). */
+export const SIGNAL_TYPE_TABLE_ROW_FOCUS = 'table_row_focus'
+
 /** Server frame `type` replying a table window snapshot (PHP `SignalTypeConstants::TABLE_WINDOW`). */
 export const SIGNAL_TYPE_TABLE_WINDOW = 'table_window'
 
@@ -156,6 +159,9 @@ export const FIELD_PAGE_INDEX = 'pageIndex'
 
 /** Viewport frame key carrying the fields of a row the table draws (PHP `SignalPayloadConstants::FIELD_RENDERED`). */
 export const FIELD_RENDERED = 'rendered'
+
+/** Focus frame key carrying the row a tab holds in focus for an open dialog (PHP `SignalPayloadConstants::FIELD_ROW_KEY`). */
+export const FIELD_ROW_KEY = 'rowKey'
 
 /**
  * Subscribe frame key carrying the windows this tab is holding, by table key

@@ -16,7 +16,6 @@
 // richer than its fields projects them itself (a setting's switch and text fold
 // into one `overrideValue`).
 
-import { type TableViewportRow } from '../table/TableViewportController.js'
 import { threeWayMerge, type ThreeWayMergeResult } from './threeWayMerge.js'
 
 /** Which one message the edit modal shows, highest precedence first. */
@@ -251,31 +250,4 @@ export function takeTheirsRowEdit<T extends object>(
   }
 
   return { baseline: { values, refreshed }, take }
-}
-
-/**
- * The live row an edit over a table window is about.
- *
- * @param rows The live window of the table the modal opened from.
- * @param rowKey The key of the edited row; empty while no modal is open.
- * @returns The row's view-model, or undefined when the row is not there to
- *   edit: not in the window, a placeholder, or waiting on a removal.
- */
-export function findLiveRow<R>(
-  rows: readonly TableViewportRow<R>[],
-  rowKey: string,
-): R | undefined {
-  // An empty key names no row: the modal is closed.
-  const view =
-    rowKey === '' ? undefined : rows.find((row) => row.rowKey === rowKey)
-  if (
-    view === undefined ||
-    view.placeholder ||
-    view.pending === 'remove' ||
-    view.row === null
-  ) {
-    return undefined
-  }
-
-  return view.row
 }

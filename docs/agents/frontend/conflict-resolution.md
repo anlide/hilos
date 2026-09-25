@@ -59,9 +59,14 @@ Every edit modal is built on `framework/frontend/core/src/conflict/rowEdit.ts`,
 not on a copy of another modal's merge. The helper is pure data: the view keeps
 two things — its own form and one `RowEditBaseline`, taken with `openRowEdit`
 when the modal opens — and projects both the form and the live row into one
-shape of edited fields (for a modal over a table window, `findLiveRow` reads the
-live row out of the window; a row that is missing, a placeholder, or waiting on
-a removal counts as gone).
+shape of edited fields. For a modal over a table window, the live row is the
+table's **focused row**: `focusRow` on open (in place of `applyAndResolve`),
+`releaseFocus` on close, `focusedRow` to read; a table whose rows open an edit
+or delete dialog wires `sendFocus`. The server follows that row for the tab past
+the window — a search, a page turn, a move under the order — so the modal reads
+it wherever it went, and reads `undefined` only when the row is gone
+([table-subscription.md](table-subscription.md), "A row an open dialog holds in
+focus").
 
 `resolveRowEdit(live, baseline, draft)` returns the whole verdict: `gone`,
 `conflict`, `dirty`, every field's merge, the `notice` to show, and a `settle`
@@ -118,4 +123,7 @@ gate in [agents.md](../../../agents.md):
   per-field change-metadata on the wire (the three-way merge lives in the modal,
   not on the entity);
 - the edited entity stays **live-subscribed** while its modal is open, so
-  `incoming` is delivered.
+  `incoming` is delivered — for a row of a table window that is the focus the
+  modal takes on it, and the server's following of that row past the window
+  ([table-subscription.md](table-subscription.md), "A row an open dialog holds
+  in focus").

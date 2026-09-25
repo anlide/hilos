@@ -35,6 +35,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -448,6 +449,47 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         $this->assertSame([], $browser->declaredRendered);
     }
 
+    public function testAFocusFrameWaitsForTheSubscriptionAndIsRecordedAndAnsweredOnceItIsThere(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+
+        $router->dispatchTableRowFocus(
+            new WebSocketTableRowFocusSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, PendingFrameTestPage::TABLE_KEY, 'row-7'),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        // Held like a viewport frame: the row is read under the same page guards a window re-checks.
+        $this->assertNull(Hilos::$sr?->getTableFocus(self::ACCEPT_KEY, PendingFrameTestPage::TABLE_KEY));
+        $this->assertSame([], $browser->focusAnswers);
+
+        $this->registerSubscription([]);
+        $router->releasePendingFrames();
+
+        $this->assertSame('row-7', Hilos::$sr?->getTableFocus(self::ACCEPT_KEY, PendingFrameTestPage::TABLE_KEY));
+        $this->assertSame([[PendingFrameTestPage::TABLE_KEY, 'row-7']], $browser->focusAnswers);
+    }
+
+    public function testAReleaseFrameLetsTheRowGoAndIsAnsweredWithNothing(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+        $this->registerSubscription([]);
+        Hilos::$sr?->setTableFocus(self::ACCEPT_KEY, PendingFrameTestPage::TABLE_KEY, 'row-7');
+
+        $router->dispatchTableRowFocus(
+            new WebSocketTableRowFocusSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, PendingFrameTestPage::TABLE_KEY, ''),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        $this->assertNull(Hilos::$sr?->getTableFocus(self::ACCEPT_KEY, PendingFrameTestPage::TABLE_KEY));
+        $this->assertSame([], $browser->focusAnswers);
+    }
+
     public function testTheFirstWindowOfATableCarriesEveryCount(): void
     {
         [$browser, $router] = $this->mountFacetedTable();
@@ -748,6 +790,9 @@ final class PendingFrameTestBrowser extends BrowserContext
     /** @var list<array{0: string, 1: list<string>}> Tables whose windows were told what their tab draws, with the fields named */
     public array $declaredRendered = [];
 
+    /** @var list<array{0: string, 1: string}> Tables whose held row was answered, with the row named */
+    public array $focusAnswers = [];
+
     public function __construct()
     {
         parent::__construct();
@@ -822,6 +867,19 @@ final class PendingFrameTestBrowser extends BrowserContext
     public function declareTableRendered(string $page, string $acceptKey, TableViewportSubscription $viewport, array $rendered): void
     {
         $this->declaredRendered[] = [$viewport->tableKey, $rendered];
+    }
+
+    /**
+     * Records the held row being answered instead of reading a table nothing mounted.
+     *
+     * @param string $page Page the table belongs to (unused)
+     * @param string $acceptKey Connection holding the focus (unused)
+     * @param string $tableKey Table key the row belongs to
+     * @param string $rowKey Row the connection holds in focus
+     */
+    public function answerTableRowFocus(string $page, string $acceptKey, string $tableKey, string $rowKey): void
+    {
+        $this->focusAnswers[] = [$tableKey, $rowKey];
     }
 }
 

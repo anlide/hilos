@@ -23,7 +23,6 @@ import {
   SETTING_VALUE_FIELD,
   createHilosSettingsActions,
   createHilosSettingsTable,
-  findLiveRow,
   hasCustomValue,
   isOrphanSetting,
   keepMineRowEdit,
@@ -133,17 +132,15 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   // input yields a number, while the row override and the wire are strings, so an
   // un-normalized value would never match the echoed row. Null leaves the default.
   const editOverride: string | null = editUseCustom ? String(editValue) : null
-  const viewportRows = useSignal(settings.controller.rows)
-  // The live row the dialog edits, projected onto its one field; gone once the
-  // table no longer has it.
-  const liveRow = findLiveRow(viewportRows, editRow?.key ?? '')
+  // The live row the open dialog is about: the row the table holds in focus, which
+  // the server follows wherever it goes; undefined once the row is gone.
+  const liveRow = useSignal(settings.controller.focusedRow)
   const live = resolveRowEdit(
     liveRow ? { overrideValue: liveRow.overrideValue } : undefined,
     editBaseline,
     { overrideValue: editOverride },
   )
-  const deleteGone =
-    findLiveRow(viewportRows, deleteRow?.key ?? '') === undefined
+  const deleteGone = liveRow === undefined
   const editDirty = live.dirty
   const editTitle = editRow ? `Edit · ${editRow.key}` : 'Edit setting'
   const editSaveLabel = live.gone ? 'Deleted' : 'Save'
@@ -177,9 +174,10 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   }, [editOpen, editRow, settle])
 
   function openEdit(row: HilosSettingRow): void {
-    // Flush pending so the dialog edits the latest committed row; a row removed
-    // by someone else (now a placeholder) declines to open.
-    const fresh = settings.controller.applyAndResolve(row.key)
+    // Flush pending and take the row into focus, so the dialog edits the latest
+    // committed row and follows it from here; a row removed by someone else (now
+    // a placeholder) declines to open.
+    const fresh = settings.controller.focusRow(row.key)
     if (!fresh) {
       return
     }
@@ -196,6 +194,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
 
   function closeEdit(): void {
     setEditOpen(false)
+    settings.controller.releaseFocus()
   }
 
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
@@ -227,8 +226,9 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   }
 
   function openDelete(row: HilosSettingRow): void {
-    // Flush pending; a row already removed by someone else does not open a delete.
-    const fresh = settings.controller.applyAndResolve(row.key)
+    // Flush pending and take the row into focus; a row already removed by someone
+    // else does not open a delete.
+    const fresh = settings.controller.focusRow(row.key)
     if (!fresh) {
       return
     }
@@ -239,6 +239,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
 
   function closeDelete(): void {
     setDeleteOpen(false)
+    settings.controller.releaseFocus()
   }
 
   async function submitDelete(): Promise<void> {

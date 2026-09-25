@@ -600,9 +600,51 @@ Apply resolves exactly those two, on the rows already shown:
 a window change and not an Apply; a row that qualified for the tail was live from
 the start and never waited. Whatever Apply resolves was already on screen.
 
-Opening an edit or delete dialog resolves what waits on that row first
-(`applyAndResolve`), so a dialog never opens on a row whose removal has already
-arrived.
+Opening an edit or delete dialog resolves what waits on that row first —
+`focusRow`, which also takes the row into focus (next section), or
+`applyAndResolve` where nothing follows the row — so a dialog never opens on a
+row whose removal has already arrived.
+
+### A row an open dialog holds in focus
+
+A dialog that edits or deletes a row keeps showing that row after it opens, and
+the row keeps changing under it: another tab renames it, moves it under the
+order, takes it out of the search, deletes it. The gate above answers none of
+that for the dialog — a move or a removal waits for Apply, and a row that left
+the window is a row the server stopped sending. So the dialog takes the row
+**into focus**: `focusRow(key)` on open (it resolves what waits on the row
+first, exactly as `applyAndResolve` does, and returns the fresh row or `null`
+when there is none to open on), `releaseFocus()` on close, and `focusedRow` to
+read the row as it stands now. A table whose rows open such a dialog wires
+`sendFocus` beside `sendRendered`; opening a dialog over a table that did not is
+a programmer's error and throws.
+
+What the focus buys is on the server. The tab tells it which row it holds
+(`table_row_focus`), the server keeps that beside the tab's facets — not on its
+window, whose rows take part in the places of their neighbors — and follows the
+row for this tab wherever it goes:
+
+- while the row is in the window, nothing changes: the window's frames carry it;
+- the change that takes it out of the window (`row_removed`, `left_set` or
+  `moved_out`) carries the row's body for the tab in focus, and a change to a
+  row already outside the window travels the same way — the screen gates the
+  frame as before, the dialog reads the body at once;
+- a row deleted, or gone from the table's **own** set — the set with nothing of
+  this reader's search or filter narrowing it — travels without a body, and the
+  server lets the focus go: that set is the boundary of what a tab may read,
+  and past it the dialog is told "deleted".
+
+The screen under the dialog is not touched by any of this: the gate holds what
+it held, the badge and Apply mean what they meant, and nothing about the window
+the server remembers changes. Only the dialog reads the body.
+
+The core re-sends the focus with every window it receives, and the server
+answers a focus only when the row is outside the window it holds — with the same
+frame as above. That one rule closes both the race (the row left while the focus
+frame was in flight) and the reconnect (the row changed while the connection was
+down: the page's answer brings a window, the focus follows it, the body comes
+back). One row is in focus per table per tab; a second `focusRow` on the same
+table replaces the first.
 
 ## The count and its ceiling
 
@@ -1069,7 +1111,8 @@ Everything inside the root keeps the `hilos-table-*` prefix:
 Per-connection viewport tracking is a backend surface behind the Contract
 approval gate in [agents.md](../../../agents.md). The subscription registry holds
 each connection's descriptor plus the boundary keys and the rows it delivered,
-and everything below is addressed to the one connection it concerns:
+and beside the descriptor the row the tab holds in focus; everything below is
+addressed to the one connection it concerns:
 
 | Frame | Direction | Carries |
 |---|---|---|
@@ -1077,9 +1120,10 @@ and everything below is addressed to the one connection it concerns:
 | `page_response` | server → client, reply only | the page payload, whose fifth section `windows` is a map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `rowsBefore`, `progress` — the first window of each of the page's viewport tables, and the work running on it — and whose sixth section `refusedWindows` is a map of `tableKey` → `{ errorCode }` for each viewport table whose first window could not be built |
 | `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, an optional `rendered` (the fields inside the row slots the table draws; absent, rows are compared whole), and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_rendered` | client → server | `page`, `tableKey`, `rendered` (required, may be empty) — sent once, over the cold window the page's answer brought; nothing is sent back |
+| `table_row_focus` | client → server | `page`, `tableKey`, `rowKey` (required; empty releases the focus) — the row a tab holds in focus for an open dialog, sent on open, on close, and again with every window the tab receives; nothing is sent back while the window holds the row, and one `table_viewport_delta` of kind `row_removed` when it does not — with the row's body, or without one when the row is gone |
 | `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is) |
 | `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`) |
-| `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row`, `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
+| `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row` (on `row_removed` only for the row the tab holds in focus, and only while it is alive), `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount` |
 | `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `requestId` — the row takes the place the sort gives it, not the tail |

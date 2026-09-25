@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  findLiveRow,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
   type RowEditBaseline,
 } from '../../src/conflict/rowEdit.js'
-import { type TableViewportRow } from '../../src/table/TableViewportController.js'
 
 /** The one-field shape the three framework windows edit. */
 interface Override {
@@ -19,22 +17,6 @@ interface Override {
 interface Pair {
   name: string
   note: string
-}
-
-/** One live viewport row; tests fill only the fields they assert on. */
-function viewportRow(
-  over: Partial<TableViewportRow<Override>> & { rowKey: string },
-): TableViewportRow<Override> {
-  return {
-    row: { overrideValue: 'en' },
-    placeholder: false,
-    pending: null,
-    highlighted: false,
-    selected: false,
-    expanded: false,
-    staleSources: [],
-    ...over,
-  }
 }
 
 describe('openRowEdit', () => {
@@ -273,39 +255,5 @@ describe('takeTheirsRowEdit', () => {
       dirty: false,
       notice: { kind: 'updated', fields: ['overrideValue'] },
     })
-  })
-})
-
-describe('findLiveRow', () => {
-  it('returns the row the key names', () => {
-    expect(
-      findLiveRow(
-        [viewportRow({ rowKey: 'k', row: { overrideValue: 'de' } })],
-        'k',
-      ),
-    ).toEqual({ overrideValue: 'de' })
-  })
-
-  it('is undefined when the key is not in the window', () => {
-    expect(findLiveRow([viewportRow({ rowKey: 'other' })], 'k')).toBeUndefined()
-  })
-
-  it('is undefined while no modal is open', () => {
-    expect(findLiveRow([viewportRow({ rowKey: '' })], '')).toBeUndefined()
-  })
-
-  it('is undefined when the live row is a placeholder', () => {
-    expect(
-      findLiveRow(
-        [viewportRow({ rowKey: 'k', row: null, placeholder: true })],
-        'k',
-      ),
-    ).toBeUndefined()
-  })
-
-  it('is undefined when a removal is waiting on the row', () => {
-    expect(
-      findLiveRow([viewportRow({ rowKey: 'k', pending: 'remove' })], 'k'),
-    ).toBeUndefined()
   })
 })

@@ -737,7 +737,6 @@ export {
   resolveRowEdit,
   keepMineRowEdit,
   takeTheirsRowEdit,
-  findLiveRow,
   type RowEditBaseline,
   type RowEditField,
   type RowEditNotice,

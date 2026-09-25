@@ -71,6 +71,8 @@ export const moderatorPiecesTable =
         PIECES_TABLE,
         descriptor,
       ),
+    sendFocus: (rowKey) =>
+      connection.sendTableRowFocus(PAGE_ADMIN_MODERATOR, PIECES_TABLE, rowKey),
   })
 
 const teardown: Array<() => void> = []
@@ -92,6 +94,9 @@ export function startModeratorPiecesTable(): void {
 
 /** Unbind from the connection — call on unmount. */
 export function disposeModeratorPiecesTable(): void {
+  // The controller outlives the page: a dialog open at unmount would leave its
+  // row in focus, and the next mount's first window would say that focus again.
+  moderatorPiecesTable.releaseFocus()
   for (const off of teardown.splice(0)) {
     off()
   }

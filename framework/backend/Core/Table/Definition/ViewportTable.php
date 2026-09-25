@@ -116,6 +116,24 @@ interface ViewportTable
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool;
 
     /**
+     * Reads one row of this table's own set by its key, or answers that the set does not hold it.
+     *
+     * The set is the table's own - nothing of any reader's search or filter narrows it - because
+     * that set is the boundary of what a tab may be handed: a row it does not hold is a row this
+     * table serves to nobody, whoever asks. What asks is a tab holding a row in focus for an open
+     * dialog after the row has left the tab's window (HIL-1050): the dialog goes on showing the
+     * row, so its body has to come from somewhere, and the window no longer carries it.
+     *
+     * It is already concrete on TableDefinition, as a walk over the whole set, so a subclass gets
+     * it for nothing and overrides it only to answer from an index of its own.
+     *
+     * @param string|int $rowKey Key of the row to read
+     * @return ?AbstractTableRow The row as the table serves it, or null when the table's own set does not hold it
+     * @throws HilosException When the concrete table cannot read its row source
+     */
+    public function findRow(string|int $rowKey): ?AbstractTableRow;
+
+    /**
      * Counts how many rows each option of the table's filters would leave.
      *
      * This is the number beside an option in the filter's dropdown. Only the table can take it:

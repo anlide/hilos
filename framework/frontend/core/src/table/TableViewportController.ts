@@ -214,6 +214,11 @@ export type TableViewportDelta =
       readonly kind: 'row_removed'
       readonly rowKey: string
       readonly reason: string
+      /**
+       * The row as it stands now — present only for the receiver holding the row in focus
+       * ({@link TableViewportController.focusRow}), and only while the row is alive.
+       */
+      readonly row?: TableRow
       /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
       readonly own?: boolean
     }
@@ -390,6 +395,17 @@ export interface TableViewportControllerOptions<R> {
    * rows whole.
    */
   sendRendered?: (rendered: readonly string[]) => void
+  /**
+   * Send the row this tab holds in focus for an open dialog — typically
+   * `HilosConnection.sendTableRowFocus` bound to this table's page and key; wired by
+   * every table whose rows open an edit or delete dialog. Called with the key when
+   * a dialog opens ({@link TableViewportController.focusRow}), with an empty key when
+   * it closes ({@link TableViewportController.releaseFocus}), and with the key again
+   * on every window that arrives in between, so a reconnect finds the server holding
+   * the row. The server follows that row for this tab past the window, and answers a
+   * re-sent focus only when the window it holds lacks the row.
+   */
+  sendFocus?: (rowKey: string) => void
   /**
    * Initial filter map — a preset the page puts on its table, such as the channel
    * a route names; empty by default.
@@ -602,6 +618,22 @@ export class TableViewportController<R> implements TableWindowSink {
   private readonly pendingRemoved = new Map<string, string>()
 
   /**
+   * The key of the row an open dialog holds in focus, or null while none does.
+   *
+   * A plain field, not a signal: nothing renders off the key. What renders is the body
+   * under it, {@link focusBodySignal}, which the views read through {@link focusedRow}.
+   */
+  private focusKey: string | null = null
+
+  /**
+   * The row in focus as the server last sent it, or null while no row is in focus or the
+   * row is gone. Written from every frame that names the key, and BEFORE the gate: the gate
+   * holds the screen still under the reader's hands, and the dialog over the row is not the
+   * screen — it has to hear the change the moment it lands.
+   */
+  private readonly focusBodySignal = createSignal<TableRow | null>(null)
+
+  /**
    * Keys of the rows announced above this window, and of those announced inside it.
    *
    * Keys rather than a running number, because the same row can be announced twice — the
@@ -644,6 +676,16 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** The displayed rows resolved to view-models — what the view renders. */
   readonly rows: ReadonlySignal<readonly TableViewportRow<R>[]>
+
+  /**
+   * The row an open dialog holds in focus, resolved to its view-model, or undefined while
+   * no row is in focus or the row is gone — deleted, or out of the table's own set.
+   *
+   * This is the live row an edit or delete dialog over a table reads, in place of the row
+   * in the window: the window gates a move and a removal until Apply and stops carrying a
+   * row that left it, while this follows the row wherever it goes.
+   */
+  readonly focusedRow: ReadonlySignal<R | undefined>
 
   /** Total rows matching the filter, as the last applied window/change reported. */
   readonly totalCount: ReadonlySignal<number>
@@ -782,6 +824,11 @@ export class TableViewportController<R> implements TableWindowSink {
             : (raw.staleSources ?? NO_STALE_SOURCES),
         }
       })
+    })
+    this.focusedRow = computedSignal(() => {
+      const body = this.focusBodySignal.get()
+
+      return body === null ? undefined : options.resolve(body)
     })
     this.totalCount = this.totalCountSignal
     this.totalExact = this.totalExactSignal
@@ -1478,6 +1525,18 @@ export class TableViewportController<R> implements TableWindowSink {
     this.clearHighlights()
     this.clearPending()
     this.clearAnnounced()
+    if (this.focusKey !== null) {
+      // The dialog over the row in focus stays open across windows: a page turn, a search and
+      // a reconnect all bring one, with the row in it or not. The body is taken from the window
+      // when the row is there; either way the focus is said again, and the server answers with
+      // the body only when the window it now holds lacks the row — the one rule that closes
+      // both the race (the row left while the focus was in flight) and the reconnect.
+      const held = rows.find((row) => row.rowKey === this.focusKey)
+      if (held !== undefined) {
+        this.focusBodySignal.set(held)
+      }
+      this.sendFocus(this.focusKey)
+    }
     // A window also arrives where nobody changed one — a refresh a page asked for,
     // a re-subscribe after a broken socket — and there the marks stay: the raw keys
     // are narrowed to the rows that came, and the condition is untouched, being about
@@ -1782,6 +1841,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.windowSignal.set([...this.windowSignal.get(), row])
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+    this.takeFocusBody(row)
   }
 
   /**
@@ -1837,6 +1897,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.windowSignal.set(rows)
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+    this.takeFocusBody(row)
 
     const placeholders = new Set(this.placeholderKeysSignal.get())
     // The mark and the open panel go with everything else held under these keys, and
@@ -1890,6 +1951,13 @@ export class TableViewportController<R> implements TableWindowSink {
 
       return
     }
+    if (this.focusKey !== null && delta.rowKey === this.focusKey) {
+      // Before the gate, and whatever it decides: the dialog over the row is not the screen the
+      // gate holds still. A removal without a body is the server saying the row is gone.
+      this.focusBodySignal.set(
+        delta.kind === 'row_removed' ? (delta.row ?? null) : delta.row,
+      )
+    }
     if (delta.own === true) {
       this.applyOwnDelta(delta)
 
@@ -1915,7 +1983,10 @@ export class TableViewportController<R> implements TableWindowSink {
         // never arrive at all — leaving the bar hanging under a placeholder with nothing left
         // to take it down.
         this.dropRowProgress(delta.rowKey)
-        if (this.isInWindow(delta.rowKey)) {
+        // A LIVE row of the window, not any key in it: a row in focus leaves a second time
+        // after its placeholder is standing (the server follows it past the window), and a
+        // wait on a placeholder is a badge whose Apply changes nothing on the screen.
+        if (this.isLiveRow(delta.rowKey)) {
           this.pendingMoves.delete(delta.rowKey)
           this.pendingRemoved.set(delta.rowKey, delta.reason)
         }
@@ -2067,13 +2138,94 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param rowKey The row whose fresh view-model the dialog needs.
    */
   applyAndResolve(rowKey: string): R | null {
+    const raw = this.freshRow(rowKey)
+
+    return raw === null ? null : this.options.resolve(raw)
+  }
+
+  /**
+   * Take a row into focus for a dialog opening over it: apply what waits, resolve the row
+   * as {@link applyAndResolve} does, and — when there is a row to open on — hold it as the
+   * row in focus and tell the server so. From here the server follows the row for this tab
+   * past the window, and {@link focusedRow} carries it as it stands now, whatever the gate
+   * holds on the screen. Returns null, holding nothing, when the row is a placeholder or has
+   * left the window: the dialog declines to open, exactly as before.
+   *
+   * One row is in focus per table: a second call replaces the first, as a second dialog
+   * replaces the first.
+   *
+   * Throws on a table that wired no {@link TableViewportControllerOptions.sendFocus}: a
+   * dialog over such a table would read a row nobody follows, which is the old silent hole
+   * and not a state to fall back into.
+   *
+   * @param rowKey The row the dialog opens over.
+   */
+  focusRow(rowKey: string): R | null {
+    if (this.options.sendFocus === undefined) {
+      throw new Error(
+        `Row ${rowKey} cannot be taken into focus: this table wires no sendFocus`,
+      )
+    }
+    const raw = this.freshRow(rowKey)
+    if (raw === null) {
+      return null
+    }
+    this.focusKey = rowKey
+    this.focusBodySignal.set(raw)
+    this.sendFocus(rowKey)
+
+    return this.options.resolve(raw)
+  }
+
+  /**
+   * Let the row in focus go — the dialog closed. Tells the server with an empty key, and
+   * {@link focusedRow} reads undefined from here. Nothing to do while no row is in focus.
+   */
+  releaseFocus(): void {
+    if (this.focusKey === null) {
+      return
+    }
+    this.focusKey = null
+    this.focusBodySignal.set(null)
+    this.sendFocus('')
+  }
+
+  /**
+   * Apply what waits, then the row as the window now holds it — null for a placeholder and
+   * for a key the window does not hold.
+   *
+   * @param rowKey The row a dialog is about to open over.
+   */
+  private freshRow(rowKey: string): TableRow | null {
     this.apply()
     if (this.placeholderKeysSignal.get().has(rowKey)) {
       return null
     }
-    const raw = this.windowSignal.get().find((row) => row.rowKey === rowKey)
 
-    return raw ? this.options.resolve(raw) : null
+    return this.windowSignal.get().find((row) => row.rowKey === rowKey) ?? null
+  }
+
+  /**
+   * Take a row that just arrived as the body in focus, when it is the row in focus.
+   *
+   * @param row The row a frame just delivered.
+   */
+  private takeFocusBody(row: TableRow): void {
+    if (this.focusKey !== null && row.rowKey === this.focusKey) {
+      this.focusBodySignal.set(row)
+    }
+  }
+
+  /**
+   * Tell the server which row this tab holds in focus, an empty key for none.
+   *
+   * The sender is there by the time this runs: {@link focusRow} refuses a table without one
+   * before any focus is held, and nothing else here speaks of a focus that was never taken.
+   *
+   * @param rowKey The row in focus, or '' to let it go.
+   */
+  private sendFocus(rowKey: string): void {
+    this.options.sendFocus?.(rowKey)
   }
 
   /**

@@ -43,6 +43,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Bulk\TableBulkRun;
@@ -69,6 +70,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -692,6 +694,56 @@ class PageSignalRouter
         }
 
         Hilos::$browser?->declareTableRendered($name, $data->acceptKey, $viewport, $data->rendered);
+    }
+
+    /**
+     * Dispatches a client's table_row_focus frame: the row of one table the tab holds in focus for an open dialog.
+     *
+     * Parked until the connection is identified and subscribed to the page, exactly as the viewport
+     * frame is, because the answer reads a row under the page guards a window re-checks.
+     *
+     * @param WebSocketTableRowFocusSignalDTO $data Signal data
+     * @param string $source Signal source
+     * @param string $name Signal name (page name)
+     * @throws InvalidArgumentException When the viewport delta signal answering the focus cannot be named
+     */
+    public function dispatchTableRowFocus(WebSocketTableRowFocusSignalDTO $data, string $source, string $name): void
+    {
+        if ($data->acceptKey === '' || $data->tableKey === '') {
+            return;
+        }
+
+        if ($this->parkUntilIdentified(PendingFrameKind::TableRowFocus, $data, $source, $name)) {
+            return;
+        }
+
+        $this->runTableRowFocusFrame($data, $name);
+    }
+
+    /**
+     * Records the row a connection holds in focus for a table, or releases it, and answers when the window lacks it.
+     *
+     * The focus is kept beside the connection's facets, not on its window, so it outlives every
+     * window the tab asks for after it ({@see SubscriptionRegistry::setTableFocus()}). An empty row
+     * key is the release. A held row is answered only when the window does not carry it
+     * ({@see BrowserContext::answerTableRowFocus()}): the tab re-sends the focus with every window it
+     * receives, and the row it holds may have left while the frame was in flight or while the
+     * connection was down.
+     *
+     * @param WebSocketTableRowFocusSignalDTO $data Signal data
+     * @param string $name Signal name (page name)
+     * @throws InvalidArgumentException When the viewport delta signal answering the focus cannot be named
+     */
+    private function runTableRowFocusFrame(WebSocketTableRowFocusSignalDTO $data, string $name): void
+    {
+        if ($data->rowKey === '') {
+            Hilos::$sr?->clearTableFocus($data->acceptKey, $data->tableKey);
+
+            return;
+        }
+
+        Hilos::$sr?->setTableFocus($data->acceptKey, $data->tableKey, $data->rowKey);
+        Hilos::$browser?->answerTableRowFocus($name, $data->acceptKey, $data->tableKey, $data->rowKey);
     }
 
     /**
@@ -1640,7 +1692,8 @@ class PageSignalRouter
      *
      * @param PendingFrameKind $kind Which door the frame arrived at
      * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO
-     *     |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO|WebSocketTableRenderedSignalDTO $data Frame as it arrived
+     *     |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO|WebSocketTableRenderedSignalDTO
+     *     |WebSocketTableRowFocusSignalDTO $data Frame as it arrived
      * @param string $source Signal source the frame was dispatched with
      * @param string $name Signal name the frame was dispatched with
      * @return bool True when the frame has been parked and must not run now
@@ -1648,7 +1701,8 @@ class PageSignalRouter
     private function parkUntilIdentified(
         PendingFrameKind $kind,
         WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO
-            |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO|WebSocketTableRenderedSignalDTO $data,
+            |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO|WebSocketTableRenderedSignalDTO
+            |WebSocketTableRowFocusSignalDTO $data,
         string $source,
         string $name,
     ): bool {
@@ -1720,12 +1774,13 @@ class PageSignalRouter
      * identity that never crossed the RT sync and a subscription that never arrived are
      * different failures with different owners, and the frame itself cannot tell them
      * apart. Both can be outstanding at once, which is why they are reported together
-     * rather than as the first one found. Only the viewport door can be waiting on the
-     * subscription, so for the other three the line names the identity or nothing.
+     * rather than as the first one found. Only the table doors can be waiting on the
+     * subscription ({@see PendingFrameKind::waitsForPageSubscription()}), so for the others
+     * the line names the identity or nothing.
      *
      * @param PendingFrameKind $kind Door the frame arrived at
      * @param string $acceptKey Accept key of the connection that sent it
-     * @param string $name Signal name the frame was dispatched with (page name for the viewport door)
+     * @param string $name Signal name the frame was dispatched with (page name for the table doors)
      * @return string Unmet conditions, comma-separated
      */
     private function unmetWait(PendingFrameKind $kind, string $acceptKey, string $name): string
@@ -1838,6 +1893,8 @@ class PageSignalRouter
                     $this->runTableViewportFrame($data, $frame->source, $frame->name);
                 } elseif ($data instanceof WebSocketTableRenderedSignalDTO) {
                     $this->runTableRenderedFrame($data, $frame->name);
+                } elseif ($data instanceof WebSocketTableRowFocusSignalDTO) {
+                    $this->runTableRowFocusFrame($data, $frame->name);
                 } else {
                     $this->runTableFacetsFrame($data, $frame->source, $frame->name);
                 }

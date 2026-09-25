@@ -32,7 +32,6 @@ import {
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
-  findLiveRow,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
@@ -46,7 +45,6 @@ import type {
   RowEditBaseline,
   RowEditNoticeKind,
   RowEditStep,
-  TableViewportRow,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
@@ -210,7 +208,7 @@ function noticeText(
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="editOpen.set($event)"
+        (openChange)="$event ? editOpen.set(true) : closeEdit()"
         [confirmOnClose]="live().dirty"
       >
         <h5
@@ -346,9 +344,12 @@ export class HilosCommunicationsChannelPage {
     openRowEdit<ChannelEditFields>({ value: null }),
   )
   protected readonly editValue = signal('')
-  protected readonly viewportRows = signal<
-    readonly TableViewportRow<HilosChannelFieldRow>[]
-  >([])
+  // The live row the open dialog is about: the row the table holds in focus, which
+  // the server follows wherever it goes; undefined once the row is gone. Mirrored
+  // the way the viewport table mirrors its rows.
+  protected readonly liveRow = signal<HilosChannelFieldRow | undefined>(
+    undefined,
+  )
   protected readonly editInputType = computed(() =>
     inputType(this.editRow()?.type),
   )
@@ -360,11 +361,6 @@ export class HilosCommunicationsChannelPage {
 
     return row ? `Edit · ${row.label}` : 'Edit field'
   })
-  // The live row the dialog edits, projected onto its one field; gone once the
-  // table no longer has it.
-  private readonly liveRow = computed(() =>
-    findLiveRow(this.viewportRows(), this.editRow()?.key ?? ''),
-  )
   protected readonly live = computed(() => {
     const row = this.liveRow()
     const editRow = this.editRow()
@@ -387,15 +383,15 @@ export class HilosCommunicationsChannelPage {
 
   constructor() {
     // Bind the fields table to the connection and request its window once the
-    // context input is bound; unbind on destroy / swap. Mirror the live rows the
-    // same way the viewport table does: the controller arrives through a
-    // computed, so hilosSignal cannot take it at field init.
+    // context input is bound; unbind on destroy / swap. Mirror the row in focus
+    // the same way the viewport table mirrors its rows: the controller arrives
+    // through a computed, so hilosSignal cannot take it at field init.
     effect((onCleanup) => {
       const fields = this.fields()
       fields.start()
-      this.viewportRows.set(fields.controller.rows.get())
-      const unsubscribe = subscribeSignal(fields.controller.rows, (rows) =>
-        this.viewportRows.set(rows),
+      this.liveRow.set(fields.controller.focusedRow.get())
+      const unsubscribe = subscribeSignal(fields.controller.focusedRow, (row) =>
+        this.liveRow.set(row),
       )
       onCleanup(() => {
         unsubscribe()
@@ -425,9 +421,10 @@ export class HilosCommunicationsChannelPage {
   }
 
   protected openEdit(row: HilosChannelFieldRow): void {
-    // Flush pending so the dialog edits the latest committed row; a row removed
-    // by someone else (now a placeholder) declines to open.
-    const fresh = this.fields().controller.applyAndResolve(row.key)
+    // Flush pending and take the row into focus, so the dialog edits the latest
+    // committed row and follows it from here; a row removed by someone else (now
+    // a placeholder) declines to open.
+    const fresh = this.fields().controller.focusRow(row.key)
     if (!fresh) {
       return
     }
@@ -438,6 +435,11 @@ export class HilosCommunicationsChannelPage {
       openRowEdit<ChannelEditFields>({ value: fresh.value }),
     )
     this.editOpen.set(true)
+  }
+
+  protected closeEdit(): void {
+    this.editOpen.set(false)
+    this.fields().controller.releaseFocus()
   }
 
   // Put a step of the helper into the dialog: the snapshot moves, and a value
@@ -469,7 +471,7 @@ export class HilosCommunicationsChannelPage {
       return
     }
     if (!this.live().dirty) {
-      this.editOpen.set(false)
+      this.closeEdit()
 
       return
     }
@@ -482,7 +484,7 @@ export class HilosCommunicationsChannelPage {
         ),
       )
     ) {
-      this.editOpen.set(false)
+      this.closeEdit()
     }
   }
 

@@ -68,8 +68,11 @@ function seededContext(initial: SettingSlot[]): {
   context: HilosSettingsContext
   pushUpdate: (next: SettingSlot) => void
   pushRemove: (key: string) => void
+  pushLeave: (next: SettingSlot) => void
+  focus: string[]
 } {
   let rows = initial.slice()
+  const focus: string[] = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.SETTINGS)
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
@@ -105,6 +108,11 @@ function seededContext(initial: SettingSlot[]): {
     tableWindowDescriptors: () => ({}),
     sendTableViewport(page: string, tableKey: string): boolean {
       serveWindow(page, tableKey)
+
+      return true
+    },
+    sendTableRowFocus(page: string, tableKey: string, rowKey: string): boolean {
+      focus.push(rowKey)
 
       return true
     },
@@ -165,6 +173,24 @@ function seededContext(initial: SettingSlot[]): {
         })
       }
     },
+    // The row left this tab's window alive — out of its search, past its edge — and the frame
+    // that takes it off the screen carries the row for the dialog holding it in focus.
+    pushLeave(next: SettingSlot): void {
+      rows = rows.filter((row) => row.key !== next.key)
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.SETTINGS,
+            tableKey: 'settings',
+            kind: 'row_removed',
+            rowKey: next.key,
+            reason: 'left_set',
+            row: { rowKey: next.key, slots: { settings: next } },
+          },
+        })
+      }
+    },
+    focus,
   }
 }
 
@@ -524,5 +550,76 @@ describe('HilosSettingsPage', () => {
     ) as HTMLButtonElement
     expect(save.disabled).toBe(true)
     expect(save.textContent?.trim()).toBe('Deleted')
+  })
+
+  it('follows a row that left the window under the modal: Updated just now, not Deleted', () => {
+    const { context, pushLeave } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+    // The other tab's save took the row out of this tab's search: the screen gates the
+    // departure, the dialog holding the row in focus reads the body off the same frame.
+    act(() => {
+      pushLeave(
+        slot({
+          key: 'site_name',
+          valueSource: 'override',
+          value: 'Theirs',
+          overrideValue: 'Theirs',
+        }),
+      )
+    })
+
+    expect(
+      (
+        document.querySelector(
+          '[data-id="hilos-settings-edit-value"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe('Theirs')
+    expect(
+      document.querySelector('[data-id="hilos-settings-edit-notice"]')
+        ?.textContent,
+    ).toContain('Updated just now')
+    expect(
+      (
+        document.querySelector(
+          '[data-id="hilos-settings-edit-save"]',
+        ) as HTMLButtonElement
+      ).textContent?.trim(),
+    ).toBe('Save')
+  })
+
+  it('takes the row into focus on open and lets it go on close', () => {
+    const { context, focus } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+    expect(focus).toEqual(['site_name'])
+
+    fireEvent.click(
+      document.querySelector('[data-id="modal-close"]') as Element,
+    )
+    expect(focus).toEqual(['site_name', ''])
   })
 })

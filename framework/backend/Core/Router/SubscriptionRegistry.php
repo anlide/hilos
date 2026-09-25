@@ -39,6 +39,17 @@ final class SubscriptionRegistry
     private array $tableFacetRequests = [];
 
     /**
+     * @var array<string, array<string, string>> Row each connection holds in focus for an open dialog, keyed by
+     *     accept key, then table key
+     *
+     * Beside the viewport for the facets' reason, and for one of its own: the rows of a window take
+     * part in the places of their neighbors and in the edges of the page, and a row that has left the
+     * window would skew that count if it were kept among them. The focus outlives every window the
+     * dialog stays open through; the window does not outlive the next page turn.
+     */
+    private array $tableFocus = [];
+
+    /**
      * @var array<string, true> Accept keys already told their page could not be delivered
      *
      * One bit per subscription, not per failure. A broken declaration or a refused read is
@@ -161,6 +172,7 @@ final class SubscriptionRegistry
         unset($this->pages[$acceptKey]);
         unset($this->tableViewports[$acceptKey]);
         unset($this->tableFacetRequests[$acceptKey]);
+        unset($this->tableFocus[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
     }
 
@@ -264,6 +276,7 @@ final class SubscriptionRegistry
         unset($this->groups[$acceptKey]);
         unset($this->tableViewports[$acceptKey]);
         unset($this->tableFacetRequests[$acceptKey]);
+        unset($this->tableFocus[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
     }
 
@@ -361,6 +374,7 @@ final class SubscriptionRegistry
             unset($this->tableViewports[$acceptKey]);
         }
         $this->forgetTableFacets($acceptKey, $tableKey);
+        $this->clearTableFocus($acceptKey, $tableKey);
     }
 
     /**
@@ -402,6 +416,51 @@ final class SubscriptionRegistry
         unset($this->tableFacetRequests[$acceptKey][$tableKey]);
         if (($this->tableFacetRequests[$acceptKey] ?? null) === []) {
             unset($this->tableFacetRequests[$acceptKey]);
+        }
+    }
+
+    /**
+     * Stores or replaces the row a connection holds in focus for one table, for an open dialog.
+     *
+     * One row per table per connection: a dialog opens over one row, and a second focus on the same
+     * table is a second dialog, which replaces the first.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key the row belongs to
+     * @param string $rowKey Row the connection holds in focus
+     */
+    public function setTableFocus(string $acceptKey, string $tableKey, string $rowKey): void
+    {
+        if ($acceptKey === '') {
+            return;
+        }
+
+        $this->tableFocus[$acceptKey][$tableKey] = $rowKey;
+    }
+
+    /**
+     * Returns the row a connection holds in focus for one table, or null when it holds none.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     * @return ?string Row the connection holds in focus, or null when it holds none for this table
+     */
+    public function getTableFocus(string $acceptKey, string $tableKey): ?string
+    {
+        return $this->tableFocus[$acceptKey][$tableKey] ?? null;
+    }
+
+    /**
+     * Releases the row a connection held in focus for one table.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     */
+    public function clearTableFocus(string $acceptKey, string $tableKey): void
+    {
+        unset($this->tableFocus[$acceptKey][$tableKey]);
+        if (($this->tableFocus[$acceptKey] ?? null) === []) {
+            unset($this->tableFocus[$acceptKey]);
         }
     }
 

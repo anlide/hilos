@@ -19,7 +19,6 @@ toast and leaves the dialog open with the entered value (toasts.md). Bootstrap c
 import {
   createHilosSettingsActions,
   createHilosSettingsTable,
-  findLiveRow,
   hasCustomValue,
   HilosPages,
   isOrphanSetting,
@@ -132,12 +131,9 @@ const editValueBool = computed({
 const editOverride = computed<string | null>(() =>
   editUseCustom.value ? String(editValue.value) : null,
 )
-const viewportRows = useSignal(settingsTable.rows)
-// The live row the dialog edits, projected onto its one field; gone once the
-// table no longer has it.
-const liveRow = computed(() =>
-  findLiveRow(viewportRows.value, editRow.value?.key ?? ''),
-)
+// The live row the open dialog is about: the row the table holds in focus, which
+// the server follows wherever it goes; undefined once the row is gone.
+const liveRow = useSignal(settingsTable.focusedRow)
 const live = computed(() =>
   resolveRowEdit(
     liveRow.value ? { overrideValue: liveRow.value.overrideValue } : undefined,
@@ -163,15 +159,13 @@ const {
   run: runDeleteAction,
   clearError: clearDeleteError,
 } = deleteAction
-const deleteGone = computed(
-  () =>
-    findLiveRow(viewportRows.value, deleteRow.value?.key ?? '') === undefined,
-)
+const deleteGone = computed(() => liveRow.value === undefined)
 
 function openEdit(row: HilosSettingRow): void {
-  // Flush pending so the dialog edits the latest committed row; a row removed by
-  // someone else (now a placeholder) declines to open.
-  const fresh = settings.controller.applyAndResolve(row.key)
+  // Flush pending and take the row into focus, so the dialog edits the latest
+  // committed row and follows it from here; a row removed by someone else (now a
+  // placeholder) declines to open.
+  const fresh = settings.controller.focusRow(row.key)
   if (!fresh) {
     return
   }
@@ -188,6 +182,7 @@ function openEdit(row: HilosSettingRow): void {
 
 function closeEdit(): void {
   editOpen.value = false
+  settings.controller.releaseFocus()
 }
 
 // Put a step of the helper into the dialog: the snapshot moves, and a value the
@@ -257,8 +252,9 @@ async function submitEdit(): Promise<void> {
 }
 
 function openDelete(row: HilosSettingRow): void {
-  // Flush pending; a row already removed by someone else does not open a delete.
-  const fresh = settings.controller.applyAndResolve(row.key)
+  // Flush pending and take the row into focus; a row already removed by someone
+  // else does not open a delete.
+  const fresh = settings.controller.focusRow(row.key)
   if (!fresh) {
     return
   }
@@ -269,6 +265,7 @@ function openDelete(row: HilosSettingRow): void {
 
 function closeDelete(): void {
   deleteOpen.value = false
+  settings.controller.releaseFocus()
 }
 
 async function submitDelete(): Promise<void> {

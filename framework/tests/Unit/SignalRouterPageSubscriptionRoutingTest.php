@@ -25,6 +25,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -97,6 +98,21 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
                 new SignalType(SignalTypeConstants::TABLE_RENDERED),
                 new SignalName(SignalRouterTopologyTestPage::PAGE),
                 new WebSocketTableRenderedSignalDTO('accept-key', SignalRouterTopologyTestPage::PAGE, 'settings', ['key']),
+            )),
+        );
+    }
+
+    public function testTableRowFocusRoutesThroughProjectTopology(): void
+    {
+        $this->assertEquals(
+            [
+                new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
+            ],
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::TABLE_ROW_FOCUS),
+                new SignalName(SignalRouterTopologyTestPage::PAGE),
+                new WebSocketTableRowFocusSignalDTO('accept-key', SignalRouterTopologyTestPage::PAGE, 'settings', 'site.title'),
             )),
         );
     }

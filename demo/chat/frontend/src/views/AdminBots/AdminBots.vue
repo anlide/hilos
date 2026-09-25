@@ -27,7 +27,6 @@ import {
 } from '@hilos/vue'
 import { type HilosTableColumn } from '@hilos/vue'
 import {
-  findLiveRow,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
@@ -60,7 +59,10 @@ const columns: HilosTableColumn[] = [
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 
-const viewRows = useSignal(botsTable.rows)
+// The row the open dialog holds in focus, which the server follows wherever it
+// goes; undefined once the row is gone. The edit form and the delete dialog both
+// read it: one dialog is open at a time, and it is the one holding the focus.
+const focusedRow = useSignal(botsTable.focusedRow)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.
@@ -174,15 +176,10 @@ function currentInput(): BotInput {
 
 const editing = computed(() => formMode.value === 'edit')
 // The live row the edit dialog is about, projected onto the edited fields; gone
-// once the window no longer has it. resolveBotRow already normalizes an empty
-// optional to null, the way currentInput() does, so an untouched field never
-// reads as changed. An add has no row to follow.
-const liveRow = computed(() =>
-  findLiveRow(
-    viewRows.value,
-    editing.value && formId.value !== null ? String(formId.value) : '',
-  ),
-)
+// once the row is. resolveBotRow already normalizes an empty optional to null,
+// the way currentInput() does, so an untouched field never reads as changed. An
+// add has no row to follow.
+const liveRow = computed(() => (editing.value ? focusedRow.value : undefined))
 const live = computed(() =>
   resolveRowEdit(
     liveRow.value ? editFields(liveRow.value) : undefined,
@@ -244,9 +241,10 @@ function openCreate(): void {
 }
 
 function openEdit(row: BotRow): void {
-  // Flush pending so the form edits the latest committed row; a row removed by
-  // someone else (now a placeholder) declines to open.
-  const fresh = botsTable.applyAndResolve(String(row.id))
+  // Flush pending and take the row into focus, so the form edits the latest
+  // committed row and follows it from here; a row removed by someone else (now a
+  // placeholder) declines to open.
+  const fresh = botsTable.focusRow(String(row.id))
   if (!fresh) {
     return
   }
@@ -265,6 +263,7 @@ function openEdit(row: BotRow): void {
 
 function closeForm(): void {
   formOpen.value = false
+  botsTable.releaseFocus()
 }
 
 // Put a step of the helper into the form: the snapshot moves, and every value
@@ -343,10 +342,7 @@ async function submitForm(): Promise<void> {
 // The live row the delete dialog is about: its name is read live, and the row
 // the dialog opened with stays on screen once it is gone.
 const deleteLive = computed(() =>
-  findLiveRow(
-    viewRows.value,
-    deleteRow.value ? String(deleteRow.value.id) : '',
-  ),
+  deleteRow.value ? focusedRow.value : undefined,
 )
 const deleteShown = computed(() => deleteLive.value ?? deleteRow.value)
 // Gone elsewhere. Our own delete in flight is not that: its echo makes the row
@@ -361,8 +357,9 @@ const deleteGone = computed(
 const deleteLabel = computed(() => (deleteGone.value ? 'Deleted' : 'Delete'))
 
 function openDelete(row: BotRow): void {
-  // Flush pending; a row already removed by someone else does not open a delete.
-  const fresh = botsTable.applyAndResolve(String(row.id))
+  // Flush pending and take the row into focus; a row already removed by someone
+  // else does not open a delete.
+  const fresh = botsTable.focusRow(String(row.id))
   if (!fresh) {
     return
   }
@@ -373,6 +370,7 @@ function openDelete(row: BotRow): void {
 
 function closeDelete(): void {
   deleteOpen.value = false
+  botsTable.releaseFocus()
 }
 
 async function submitDelete(): Promise<void> {

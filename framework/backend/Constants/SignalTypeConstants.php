@@ -104,6 +104,9 @@ final class SignalTypeConstants
     /** @var string Table rendered signal type (client-to-server fields of a table's rows its columns draw) */
     public const string TABLE_RENDERED = 'table_rendered';
 
+    /** @var string Table row focus signal type (client-to-server row a tab holds in focus for an open dialog) */
+    public const string TABLE_ROW_FOCUS = 'table_row_focus';
+
     /** @var string Table window signal type (server-to-client window snapshot for one table) */
     public const string TABLE_WINDOW = 'table_window';
 

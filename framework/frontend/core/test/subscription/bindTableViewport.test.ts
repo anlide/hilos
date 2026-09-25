@@ -736,6 +736,33 @@ describe('bindTableViewport', () => {
     })
   })
 
+  it('carries the body a removal brings the tab holding the row in focus', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitDelta({
+      page: 'main',
+      tableKey: 'settings',
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'left_set',
+      row: { rowKey: 'a', slots: { value: 'x' } },
+    })
+
+    // The row rides a removal for one receiver only — the tab holding it in focus for an open
+    // dialog — and is normalized the way a row of any other kind is (HIL-1050).
+    expect(sink.deltas[0]).toEqual({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'left_set',
+      row: { rowKey: 'a', slots: { value: 'x' } },
+      own: false,
+    })
+  })
+
   it('reduces a freshness delta to its row key and list', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()

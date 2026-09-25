@@ -58,6 +58,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\ViewportTable;
@@ -691,6 +692,80 @@ abstract class BrowserContext
         }
 
         Hilos::$sr->setTableViewport($acceptKey, $viewport->withRendered($rendered, $wireRows));
+    }
+
+    /**
+     * Answers a tab's focus on a row of one table with the row's body, when the tab's window does not hold it.
+     *
+     * The focus itself is recorded before this is called ({@see SubscriptionRegistry::setTableFocus()});
+     * this is the one answer it gets, and only when it needs one. A row the window holds is carried
+     * by the window's own frames, and nothing is sent. A row outside the window - it left while the
+     * focus frame was in flight, or while the connection was down and the tab re-sent the focus with
+     * the window it just received - travels as the `row_removed` frame that took it out, with its
+     * body, or without one when the table's own set no longer holds it
+     * ({@see self::focusedRowDelta()}). The reason on that frame is read off the window's set, as it
+     * is for a change: `left_set` when the set has let the row go, `moved_out` otherwise or when the
+     * table cannot say.
+     *
+     * The page guards are re-checked first, as a window re-checks them: a subscription they refuse is
+     * handed no row.
+     *
+     * Nothing here fails the caller. A refused guard question and a refused membership question are
+     * logged; the first sends nothing, the second lets the reason default.
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Connection holding the focus
+     * @param string $tableKey Table key the row belongs to
+     * @param string $rowKey Row the connection holds in focus
+     * @throws InvalidArgumentException When the viewport delta signal cannot be named
+     */
+    public function answerTableRowFocus(string $page, string $acceptKey, string $tableKey, string $rowKey): void
+    {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        $viewport = Hilos::$sr->getTableViewport($acceptKey, $tableKey);
+        if ($viewport === null || $viewport->hasRow($rowKey)) {
+            return;
+        }
+
+        $table = Hilos::$table?->get($tableKey);
+        if (!$table instanceof ViewportTable) {
+            return;
+        }
+
+        try {
+            $pageConfig = $this->pageConfig($page);
+            $pageParams = Hilos::$sr->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+            if ($pageConfig !== null && !$this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams)) {
+                return;
+            }
+        } catch (Throwable $e) {
+            Logger::error(
+                "A row a tab holds in focus was not answered, the page guards could not be asked: table={$tableKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, rowKey={$rowKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}",
+            );
+
+            return;
+        }
+
+        try {
+            $inSet = $table->containsRow($rowKey, $table->scopeSearch($this->viewportQuery($viewport)));
+        } catch (Throwable $e) {
+            Logger::error(
+                "A row a tab holds in focus was answered without its set being asked: table={$tableKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, rowKey={$rowKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}",
+            );
+            $inSet = null;
+        }
+
+        $delta = $this->focusedRowDelta($table, $rowKey, $page, $acceptKey, $tableKey, false, $inSet);
+        if ($delta !== null) {
+            $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
+        }
     }
 
     /**
@@ -2511,6 +2586,11 @@ abstract class BrowserContext
         }
 
         $own = $change->origin !== null && $change->origin === $acceptKey;
+        $rowKey = (string) $mutation->rowKey;
+        $focused = Hilos::$sr->getTableFocus($acceptKey, $browserKey) === $rowKey;
+        // A focused row the window does not hold is followed from here: nothing below reaches a row
+        // outside the window, and the dialog open over it still has to hear every change to it.
+        $followed = $focused && !$viewport->hasRow($rowKey);
 
         if ($own && $mutation->type === TableMutationType::Create) {
             if ($this->tryEmitViewportOwnCreate(
@@ -2541,19 +2621,150 @@ abstract class BrowserContext
         };
 
         if ($this->tryEmitViewportArrival($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership)) {
+            if ($followed) {
+                $this->followFocusedRow($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $own, $membership);
+            }
+
             return;
         }
 
-        if ($mutation->type === TableMutationType::Delete && !$viewport->hasRow((string) $mutation->rowKey)) {
+        if ($mutation->type === TableMutationType::Delete && !$viewport->hasRow($rowKey)) {
             $this->emitViewportUnannounce($mutation, $acceptKey, $page, $browserKey);
         }
 
         $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership);
 
-        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own, $membership);
+        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own, $focused, $membership);
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
+
+        if ($followed) {
+            $this->followFocusedRow($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $own, $membership);
+        }
+        if ($focused && $mutation->type === TableMutationType::Delete) {
+            // Nothing is left to follow: the frame above said so, with or without the window.
+            Hilos::$sr->clearTableFocus($acceptKey, $browserKey);
+        }
+    }
+
+    /**
+     * Sends one tab the row it holds in focus, after a change reached that row outside the tab's window.
+     *
+     * The window's own road ends at its rows: a change to a row it does not hold moves a count and
+     * nothing else. A dialog open over that row has to hear the change all the same, so the row is
+     * followed here, for this tab alone, and travels as the frame that took it out of the window -
+     * `row_removed` - now carrying its body. A deleted row travels without one, as it does from
+     * inside the window. A row the arrival just put back into the window is not followed: its body
+     * came with the window's frame.
+     *
+     * Where the body comes from is decided by the window's set. A row that set still holds is a row
+     * the table's own set holds too, and the mutation already carries it as the table built it: it
+     * travels as `moved_out`. A row the set let go of, or a set that cannot say, is read again from
+     * the table's own set ({@see self::focusedRowDelta()}), which is the boundary of what the tab
+     * may be handed.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     * @param bool $own Whether this receiver authored the change
+     * @param Closure(): ?bool $membership Whether the row is in the window's set now, asked at most once per change
+     * @throws InvalidArgumentException When the viewport delta signal cannot be named
+     * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
+     */
+    private function followFocusedRow(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+        bool $own,
+        Closure $membership,
+    ): void {
+        if ($viewport->hasRow((string) $mutation->rowKey)) {
+            return;
+        }
+
+        if ($mutation->type === TableMutationType::Delete) {
+            $delta = TableViewportDeltaDTO::rowRemoved($page, $browserKey, $mutation->rowKey, TableViewportDeltaDTO::REASON_DELETED, $own);
+        } elseif ($membership() === true && $mutation->row !== null) {
+            $delta = TableViewportDeltaDTO::rowRemoved(
+                $page,
+                $browserKey,
+                $mutation->rowKey,
+                TableViewportDeltaDTO::REASON_MOVED_OUT,
+                $own,
+                $this->browserRowToWire($table->browserRow($mutation->row)),
+            );
+        } else {
+            $delta = $this->focusedRowDelta($table, $mutation->rowKey, $page, $acceptKey, $browserKey, $own, $membership());
+        }
+        if ($delta !== null) {
+            $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
+        }
+    }
+
+    /**
+     * Builds the frame that hands a tab the row it holds in focus from outside its window, or nothing.
+     *
+     * The row is read from the table's own set ({@see ViewportTable::findRow()}), not taken from the
+     * mutation: the mutation's row was built for the change, and a row the set has since let go of
+     * would still be in it. A row the set holds travels with its body - `left_set` when the window's
+     * set has let it go, `moved_out` otherwise. A row the set does not hold travels without one and
+     * releases the focus: past that set the tab may read nothing, and the dialog is told "deleted".
+     * A table that refuses the read sends nothing and KEEPS the focus: the refusal says nothing
+     * about the row, the next change puts the question again, and a focus let go of here would leave
+     * the dialog on a body nobody refreshes for good. The log line is what says it happened.
+     *
+     * @param ViewportTable $table Viewport table the row belongs to
+     * @param int|string $rowKey Key of the row in focus
+     * @param string $page Subscribed page key
+     * @param string $acceptKey Target accept key
+     * @param string $browserKey Browser table key
+     * @param bool $own Whether this receiver authored the change
+     * @param ?bool $inSet Whether the window's set holds the row now, or null when the table would not say
+     * @return ?TableViewportDeltaDTO Frame for the tab, or null when the table refused the read and the focus stays
+     */
+    private function focusedRowDelta(
+        ViewportTable $table,
+        int|string $rowKey,
+        string $page,
+        string $acceptKey,
+        string $browserKey,
+        bool $own,
+        ?bool $inSet,
+    ): ?TableViewportDeltaDTO {
+        try {
+            $row = $table->findRow($rowKey);
+            $wireRow = $row === null ? null : $this->browserRowToWire($table->browserRow($row));
+        } catch (Throwable $e) {
+            Logger::error(
+                "A row a tab holds in focus could not be read from its table: table={$browserKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, rowKey={$rowKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}",
+            );
+
+            return null;
+        }
+
+        if ($wireRow === null) {
+            Hilos::$sr?->clearTableFocus($acceptKey, $browserKey);
+
+            return TableViewportDeltaDTO::rowRemoved($page, $browserKey, $rowKey, TableViewportDeltaDTO::REASON_LEFT_SET, $own);
+        }
+
+        return TableViewportDeltaDTO::rowRemoved(
+            $page,
+            $browserKey,
+            $rowKey,
+            $inSet === false ? TableViewportDeltaDTO::REASON_LEFT_SET : TableViewportDeltaDTO::REASON_MOVED_OUT,
+            $own,
+            $wireRow,
+        );
     }
 
     /**
@@ -3579,6 +3790,7 @@ abstract class BrowserContext
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
      * @param bool $own Whether this receiver authored the change (applies at once, never gated)
+     * @param bool $focused Whether this receiver holds the row in focus for an open dialog, so a removal carries the row
      * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
      * @return ?TableViewportDeltaDTO Pending row delta, or null when no row in the window changed
      * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
@@ -3590,6 +3802,7 @@ abstract class BrowserContext
         string $page,
         string $browserKey,
         bool $own,
+        bool $focused,
         Closure $membership,
     ): ?TableViewportDeltaDTO {
         $rowKey = (string) $mutation->rowKey;
@@ -3627,6 +3840,7 @@ abstract class BrowserContext
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_LEFT_SET,
                 $own,
+                $focused ? $this->browserRowToWire($table->browserRow($mutation->row)) : null,
             );
         }
 
@@ -3653,6 +3867,7 @@ abstract class BrowserContext
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_LEFT_SET,
                 $own,
+                $focused ? $wireRow : null,
             );
         }
 
@@ -3682,6 +3897,7 @@ abstract class BrowserContext
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_MOVED_OUT,
                 $own,
+                $focused ? $wireRow : null,
             );
         }
 

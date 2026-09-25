@@ -447,6 +447,91 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
   await tabB.close()
 })
 
+test('an open edit follows its row past the window edge, and the conflict after it', async ({
+  page,
+}) => {
+  // The dialog holds its row in focus (HIL-1050): the other tab's save takes the
+  // row past the edge of this tab's window, and the dialog hears the change all
+  // the same — first as a silent take while the row is still on screen as "will
+  // leave", then, with the row outside the window, as a conflict the dialog
+  // resolves and saves. The screen under the dialog gates the departure as it
+  // always did. (This table cannot say whether a row left a search, so a search
+  // never takes a row off the screen; an order does.)
+  const key = 'chat_moderation_model'
+  await signUpAdmin(page)
+  const tabB = await page.context().newPage()
+  await openSettings(page)
+  await openSettings(tabB)
+  await isolate(page, key)
+  await isolate(tabB, key)
+
+  // A's own value sorts after every other; A then leaves the search and takes
+  // Value descending, which puts the row at the head of the first page.
+  await setCustomSetting(page, key, '~follow-one')
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    '~follow-one',
+  )
+  await page.getByTestId('hilos-table-search').fill('')
+  await expect(
+    page.locator('[data-id^="hilos-table-row-"]').nth(1),
+  ).toBeVisible()
+  const valueHeader = page.locator('th:has([data-id="hilos-table-sort-value"])')
+  await page.getByTestId('hilos-table-sort-value').click()
+  await expect(valueHeader).toHaveAttribute('aria-sort', 'ascending')
+  await page.getByTestId('hilos-table-sort-value').click()
+  await expect(valueHeader).toHaveAttribute('aria-sort', 'descending')
+  await expect(
+    page.locator('[data-id^="hilos-table-row-"]').first(),
+  ).toHaveAttribute('data-id', `hilos-table-row-${key}`)
+  await openSettingEdit(page, key)
+  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveValue(
+    '~follow-one',
+  )
+
+  // B saves a value that sorts before every other: A's row will leave past the
+  // bottom of the window, and the dialog takes the value silently — not "Deleted".
+  await setCustomSetting(tabB, key, '!follow-two')
+  await expect(
+    shownByTestId(page, `hilos-table-pending-remove-${key}`),
+  ).toBeVisible()
+  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveValue(
+    '!follow-two',
+  )
+  await expect(page.getByTestId('hilos-settings-edit-notice')).toContainText(
+    'Updated just now',
+  )
+  await expect(page.getByTestId('hilos-settings-edit-save')).toHaveText('Save')
+  await expect(page.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+
+  // A types its own; B saves a third value while the row is outside A's
+  // window: the server follows the row for the dialog, and the dialog conflicts.
+  await typeInto(page.getByTestId('hilos-settings-edit-value'), 'mine-follow')
+  await setCustomSetting(tabB, key, '!follow-three')
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    '!follow-three',
+  )
+  await expect(page.getByTestId('conflict-badge')).toBeVisible()
+  await expect(page.getByTestId('hilos-settings-edit-notice')).toContainText(
+    'Changed elsewhere to "!follow-three"',
+  )
+  await expect(page.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+
+  // Keep mine and save: B sees A's value.
+  await page.getByTestId('conflict-accept-mine').click()
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  const save = page.getByTestId('hilos-settings-edit-save')
+  await expect(save).toBeEnabled()
+  await clickSubmit(save)
+  await expect(save).toHaveCount(0)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    'mine-follow',
+  )
+
+  // B still holds the row in its window; A's page does not.
+  await clearCustomSetting(tabB, key)
+  await tabB.close()
+})
+
 test('deletes an orphan setting through the confirm modal', async ({
   page,
 }) => {

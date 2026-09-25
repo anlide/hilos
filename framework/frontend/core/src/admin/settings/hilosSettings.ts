@@ -271,6 +271,12 @@ export function createHilosSettingsTable(
         SETTINGS_TABLE,
         rendered,
       ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.SETTINGS,
+        SETTINGS_TABLE,
+        rowKey,
+      ),
     frame: SETTINGS_FRAME,
   })
   const teardown: Array<() => void> = []
