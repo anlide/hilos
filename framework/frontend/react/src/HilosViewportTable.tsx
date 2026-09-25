@@ -675,7 +675,7 @@ export function HilosViewportTable<R>({
       ) : null}
 
       {/* Everything live the table has to say — work running over the set, a source
-          gone quiet, rows created above the window, changes waiting for Apply — in
+          gone quiet, new rows the window cannot show, changes waiting for Apply — in
           one room that never changes height, outside both epochs of the frame: it
           speaks about what is happening to the rows, not about what the page
           declared. */}

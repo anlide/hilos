@@ -525,8 +525,30 @@ not by the end of the list. Four outcomes:
 |---|---|
 | **At the end of the window**, and the window has room | it **arrives on its own**, moving nothing: below it there is space (`table_viewport_append`) |
 | **Inside the window**, between shown rows | it is **announced** — inserting it would shift everything below |
-| **Above the window**, on an earlier page | it is **announced** — otherwise the window would silently drift from the set |
+| **Above the window's first row** | it is **announced** — otherwise the window would silently drift from the set |
 | **Below the window**, on a later page | **only the count changes** (`table_viewport_count`); the shown rows are not concerned |
+
+*Inside* and *above* are judged against the rows **shown**, and neither says
+what Show will do with the row: Show asks for the window again at the same
+address (*The viewport descriptor*), so the address decides, and each of its
+three forms decides differently (HIL-1026):
+
+- **Rows after a key** — the first page, taken from the start of the set, and
+  every page reached by Next, whose key is the last row of the page before. A
+  row that fell before the key stays outside, and the window's rows stay where
+  they are. A row that fell after it — inside the window, or above its first
+  shown row but still after the key — comes in: the rows below it move down by
+  one, and on a full window the last leaves for the next page.
+- **Rows before a key** — a page reached by Back, whose key is the first row of
+  the page the reader came from. A row above the first shown row stays outside,
+  and the window's rows stay where they are. A row inside the window comes in:
+  the rows above it move up by one, and the first leaves for the previous page.
+- **A page number** (`pageIndex`), where the server skips that many rows. Any
+  row above the first shown row moves every row of the window down by one: the
+  last row of the page before comes in at the top — or the new row itself, when
+  it fell right before the first shown row — and on a full window the last
+  leaves for the next page. A row inside the window comes in as in the first
+  form.
 
 The rule is not "new rows never appear at the top". It is **a new row appears by
 itself only where its appearance moves nothing**. For a newest-first list that is
@@ -548,8 +570,12 @@ reaches them as the count only.
 What the window cannot admit is announced rather than dropped, and the
 announcement is a count, not a list of rows.
 
-- **The core accumulates announced rows as a number**, keyed by placement; the
-  view shows a bar ("N new rows above the window") and never the rows themselves.
+- **The core accumulates announced rows as a number**, keyed by placement, and
+  sums the two; the framework's view draws one bar with the sum and no word of
+  place ("N new rows"), wherever the rows fell, and never the rows themselves. A
+  word of place would not tell the reader what Show does — Show always asks for
+  the window again at the same address, and a row announced *above* may come
+  into it (HIL-1026).
 - **Show is an ordinary window change.** It re-asks for the window with the
   current filter, sort, and anchor: what was waiting is discarded, and the window
   that arrives is identical to a cold load. This is the same authoritative path
@@ -558,12 +584,19 @@ announcement is a count, not a list of rows.
   back, everything that accumulated before the break is gone, and the arriving
   window is the truth.
 - **After Show the page number names where the window sits, not how many times
-  Next was pressed.** The rows do not move — that is what Show is for — but the
-  set beneath them has grown, and the window that held rows 11 to 20 of twenty
-  now holds rows 12 to 21 of twenty-one. The footer says so, Next goes out on a
-  window that ends the set, and Back reaches the row Show was pressed for. The
-  window's place (`rowsBefore`, see *The viewport descriptor*) is what makes all
-  three true; a press counter made all three wrong at once (HIL-1093).
+  Next was pressed.** Where Show leaves the rows in place (see *Where an
+  arriving row lands*), the set beneath them has still grown, and the window
+  that held rows 11 to 20 of twenty now holds rows 12 to 21 of twenty-one. The
+  footer says so, Next goes out on a window that ends the set, and Back reaches
+  the row Show was pressed for. The window's place (`rowsBefore`, see *The
+  viewport descriptor*) is what makes all three true; a press counter made all
+  three wrong at once (HIL-1093).
+- **Where Show changes the rows, they move by one** — down or up, as the form of
+  the address says (see *Where an arriving row lands*). That movement happens on
+  the reader's press, which is exactly where the waiting rule lets the list move
+  (mockup `components/table`, section 3: when the membership or the order of the
+  rows changes, the list waits for the person); under a reader who pressed
+  nothing it never happens (HIL-1026).
 
 **A live frame does not move the place.** A row announced above the window, a
 count that moved, a row appended at the tail — none of them rewrite `rowsBefore`,

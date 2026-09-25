@@ -582,7 +582,7 @@ describe('HilosViewportTable', () => {
     expect(placeholderSpan()).toBe(String(COLUMNS.length + 1))
   })
 
-  it('raises the announcement strip for rows above the window and counts them', () => {
+  it('raises one strip for rows announced above or inside the window, and counts them together', () => {
     const { controller } = makePlainController()
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -597,33 +597,19 @@ describe('HilosViewportTable', () => {
 
     expect(strip()).toBeNull()
 
-    controller.ingestAnnounce('x', 'above', 2, true)
+    // The strip names no place (HIL-1026): a row inside the window raises it as
+    // one above does, and the two are one number.
+    controller.ingestAnnounce('x', 'inside', 2, true)
     fixture.detectChanges()
 
-    expect(strip()?.textContent).toContain('1 new row above the window')
+    expect(strip()?.textContent).toContain('1 new row')
+    expect(strip()?.textContent).not.toContain('above')
 
     controller.ingestAnnounce('y', 'above', 3, true)
     fixture.detectChanges()
 
-    expect(strip()?.textContent).toContain('2 new rows above the window')
-  })
-
-  it('leaves the strip down for a row announced inside the window', () => {
-    const { controller } = makePlainController()
-    controller.ingestWindow(
-      [{ rowKey: 'a', slots: { name: 'Alice' } }],
-      1,
-      true,
-      null,
-      null,
-      10,
-    )
-    // The strip has one sentence and it names one place; the other outcome is a
-    // design debt (D-041), and drawing it would mean inventing the words.
-    controller.ingestAnnounce('x', 'inside', 2, true)
-    const fixture = mountTable(controller)
-
-    expect(query(fixture, '[data-id="hilos-table-announce"]')).toBeNull()
+    expect(strip()?.textContent).toContain('2 new rows')
+    expect(strip()?.textContent).not.toContain('above')
   })
 
   it('asks for the window again when Show is pressed, and the strip goes', () => {

@@ -766,9 +766,12 @@ export class TableViewportController<R> implements TableWindowSink {
   /**
    * Counts of the created rows this window has been told about and cannot show.
    *
-   * The two places are kept apart because they are two different things to say — a row
-   * above the window is one an earlier page now holds, a row inside it is one between rows
-   * on the screen — and what the strip says about each is the view's to decide.
+   * The two places are kept apart because they are two different facts — a row above the
+   * window fell before its first shown row, a row inside it between two shown rows — and a
+   * view may say them apart. The framework's own strip does not: it names no place and
+   * reads `total` (HIL-1026), because a word of place does not tell the reader what Show
+   * will do. Show asks for the window again at the same address, and a row that fell above
+   * the first shown row still comes into the window on the first page or after Next.
    */
   readonly announced: ReadonlySignal<TableViewportAnnounced>
 
@@ -776,10 +779,10 @@ export class TableViewportController<R> implements TableWindowSink {
    * The live messages over the table and which of them holds the room above the rows.
    *
    * Nothing new is counted here: the six facts are the bulk report, the bulk progress,
-   * the pending count, the rows announced above the window, a frozen source anywhere
-   * in the window, and the table bar — each already read by the view on its own. What
-   * is added is the precedence, so the one room of live messages never changes height
-   * and never shows two messages side by side.
+   * the pending count, the rows announced to the window, wherever they fell, a frozen
+   * source anywhere in the window, and the table bar — each already read by the view on
+   * its own. What is added is the precedence, so the one room of live messages never
+   * changes height and never shows two messages side by side.
    */
   readonly live: ReadonlySignal<HilosTableLive>
 
@@ -1066,7 +1069,7 @@ export class TableViewportController<R> implements TableWindowSink {
         report: this.bulkReportSignal.get() !== null,
         bulk: this.bulkProgressSignal.get() !== null,
         pending: this.pendingCount.get() > 0,
-        announce: this.announced.get().above > 0,
+        announce: this.announced.get().total > 0,
         stale: hilosTableStaleSources(this.rows.get()).size > 0,
         progress: this.progress.table.get() !== null,
       }),

@@ -624,7 +624,8 @@ test.fixme('raises the strip in another tab for a backup that lands above its wi
   // about the strip is not where that number should be pinned.
   const strip = tabB.getByTestId('hilos-table-announce')
   await expect(strip).toBeVisible()
-  await expect(strip).toContainText(/new rows? above the window/)
+  await expect(strip).toContainText(/new rows?/)
+  await expect(strip).not.toContainText('above')
   await expect(rowsInB.first()).toHaveAttribute('data-id', topOfB ?? '')
 
   // Show is the only road in, and it asks for the window again: what the server

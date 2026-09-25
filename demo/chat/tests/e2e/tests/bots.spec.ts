@@ -23,8 +23,8 @@ import {
 // - a bot another tab created at the tail of a window with room arrives on its own;
 // - one created above the window is announced by the strip and moves nothing, and
 //   Show asks for the window again at the place the reader stands;
-// - one created inside the window moves nothing but the count — the view draws a
-//   strip for "above" only (design debt D-041), so the count is all there is to see;
+// - one created inside the window is announced by the same strip, and Show brings
+//   it in between the rows it belongs to;
 // - a value another tab edited, leaving the row in its place, lands at once,
 //   highlighted and with no gate.
 //
@@ -313,7 +313,8 @@ test('a bot created above the window is announced, and Show brings the window le
   // B is told, and nothing moves: the strip names the row, the rows shown are the
   // rows that were shown, and nothing waits behind Apply.
   const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toContainText('1 new row above the window')
+  await expect(strip).toContainText('1 new row')
+  await expect(strip).not.toContainText('above')
   await expect(tabB.getByTestId('hilos-table-announce-show')).toBeVisible()
   await expectTableTotal(tabB, base + 1)
   expect(await tableRowKeys(tabB)).toEqual(keysBefore)
@@ -366,7 +367,8 @@ test('after Show the footer names the tail, Next is off, and Back reaches the fi
   await createBot(page, name)
   const key = await tableRowKeyByText(page, name)
   const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toContainText('1 new row above the window')
+  await expect(strip).toContainText('1 new row')
+  await expect(strip).not.toContainText('above')
   const windowsBeforeShow = tableWindowsOfB()
   await tabB.getByTestId('hilos-table-announce-show').click()
   await expect.poll(tableWindowsOfB).toBeGreaterThan(windowsBeforeShow)
@@ -398,7 +400,7 @@ test('after Show the footer names the tail, Next is off, and Back reaches the fi
   await tabB.close()
 })
 
-test('a bot created inside the window moves nothing but the count', async ({
+test('a bot created inside the window is announced by the same strip, and Show brings it between the rows', async ({
   page,
 }) => {
   const name = `Dave ${Date.now()}`
@@ -406,24 +408,44 @@ test('a bot created inside the window moves nothing but the count', async ({
   await signUpAdmin(page)
 
   const tabB = await page.context().newPage()
+  const tableWindowsOfB = countTableWindows(tabB)
   await openBots(page)
   await openBots(tabB)
   const base = await tableTotal(tabB)
   const keysBefore = await tableRowKeys(tabB)
+  const rowTop = await watchFirstRowTop(tabB)
 
   // A creates a bot that sorts between Dasha and David, between two rows both
   // tabs are showing on the first page.
   await createBot(page, name)
   const key = await tableRowKeyByText(page, name)
 
-  // The count is the only trace the announcement leaves at B, so wait for it
-  // first: "nothing changed" asserted before the frame came proves nothing.
+  // B is told by the strip a row above the window raises, in the same words: it
+  // names no place (HIL-1026). Nothing moves until the reader asks — the rows shown
+  // are the rows that were shown, and nothing waits behind Apply.
   await expectTableTotal(tabB, base + 1)
+  const strip = tabB.getByTestId('hilos-table-announce')
+  await expect(strip).toContainText('1 new row')
+  await expect(strip).not.toContainText('above')
   expect(await tableRowKeys(tabB)).toEqual(keysBefore)
   await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  // The view draws the strip for rows above the window only (D-041).
-  await expect(tabB.getByTestId('hilos-table-announce')).toHaveCount(0)
+  await rowTop.unchanged()
+
+  // Show asks for the window again at the same place, the start of the set: the
+  // new row stands between the rows it sorts between, the rows below it move down
+  // by one, and the last of them leaves for the next page.
+  const tableWindowsBeforeShow = tableWindowsOfB()
+  await tabB.getByTestId('hilos-table-announce-show').click()
+  await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
+  await expect(strip).toHaveCount(0)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+  const keysAfter = await tableRowKeys(tabB)
+  expect(keysAfter).toHaveLength(keysBefore.length)
+  expect(keysAfter.filter((rowKey) => rowKey !== key)).toEqual(
+    keysBefore.slice(0, -1),
+  )
+  await rowTop.unchanged()
 
   // Cleanup: A shows the bot it made.
   await tabB.close()

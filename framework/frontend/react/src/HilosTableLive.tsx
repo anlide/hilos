@@ -1,14 +1,14 @@
 // HilosTableLive — the one room above a table for everything live it has to say:
-// changes waiting for Apply, rows created above the window, a source that stopped
-// being kept up to date, and work running on the set, plus bulk action progress
-// and outcome report (Design D3). The room is exactly one line tall at every table
-// and never changes height (styling-rules.md, "The room a live message takes"): an
-// invisible twin of the very same row stands in the flow at all times and holds it,
-// and the message is laid over that twin — over its OWN reserve, the way LoadingButton
-// lays its spinner over its own text, and never over a row of the table. The twin
-// stays in the flow rather than taking turns with the message under conditional
-// rendering, because the rows are not one height: some rows have buttons, and a
-// room swapping to a buttonless row would sit down.
+// changes waiting for Apply, rows created that the window cannot show, a source that
+// stopped being kept up to date, and work running on the set, plus bulk action
+// progress and outcome report (Design D3). The room is exactly one line tall at every
+// table and never changes height (styling-rules.md, "The room a live message takes"):
+// an invisible twin of the very same row stands in the flow at all times and holds
+// it, and the message is laid over that twin — over its OWN reserve, the way
+// LoadingButton lays its spinner over its own text, and never over a row of the
+// table. The twin stays in the flow rather than taking turns with the message under
+// conditional rendering, because the rows are not one height: some rows have buttons,
+// and a room swapping to a buttonless row would sit down.
 // When several are live, the core decides which holds the line (tableLive.ts) and
 // the others stand beside its text as their icons alone. Details of an untouched bulk
 // report open in a dialog (HilosModal) mounted outside the live strip so that
@@ -104,7 +104,7 @@ const REST_WORDS: Record<HilosTableLiveKind, string> = {
   report: 'a bulk report',
   bulk: 'work on the marked rows',
   pending: 'pending changes',
-  announce: 'new rows above the window',
+  announce: 'new rows',
   stale: 'a source is behind',
   progress: 'work running',
 }
@@ -178,9 +178,7 @@ export function HilosTableLive<R>({
   // The numeral of each message is chosen here rather than in the markup: '1 rows'
   // would stand in the most visible place of the screen.
   const announceLabel =
-    announced.above === 1
-      ? '1 new row above the window'
-      : `${announced.above} new rows above the window`
+    announced.total === 1 ? '1 new row' : `${announced.total} new rows`
 
   // Only the tail of the waiting sentence is composed here, because the count itself
   // stays a node of its own under `hilos-table-pending` — the handle the outside reads

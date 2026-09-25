@@ -62,8 +62,8 @@ function makeController(): TableViewportController<Row> {
   return controller
 }
 
-// Three messages at once: a waiting change, a row created above the window, and a
-// source gone quiet on the shown row.
+// Three messages at once: a waiting change, a new row the window cannot show, and
+// a source gone quiet on the shown row.
 function liveThree(controller: TableViewportController<Row>): void {
   controller.ingestDelta({
     kind: 'row_moved',
@@ -190,7 +190,7 @@ describe('HilosTableLive', () => {
     const status = byId(container, 'hilos-table-live-status') as HTMLElement
     expect(status.getAttribute('role')).toBe('status')
     expect(status.textContent).toBe(
-      '1 row will move or leave. Also: new rows above the window, a source is behind.',
+      '1 row will move or leave. Also: new rows, a source is behind.',
     )
   })
 

@@ -329,7 +329,7 @@ describe('HilosViewportTable', () => {
     ).toBe(String(COLUMNS.length + 1))
   })
 
-  it('raises the announcement strip for rows above the window and counts them', async () => {
+  it('raises one strip for rows announced above or inside the window, and counts them together', async () => {
     const { controller } = makeController()
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -345,39 +345,24 @@ describe('HilosViewportTable', () => {
       false,
     )
 
-    controller.ingestAnnounce('x', 'above', 2, true)
+    // The strip names no place (HIL-1026): a row inside the window raises it as
+    // one above does, and the two are one number.
+    controller.ingestAnnounce('x', 'inside', 2, true)
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('[data-id="hilos-table-announce"]').text()).toContain(
-      '1 new row above the window',
-    )
+    const strip = wrapper.find('[data-id="hilos-table-announce"]')
+    expect(strip.text()).toContain('1 new row')
+    expect(strip.text()).not.toContain('above')
 
     controller.ingestAnnounce('y', 'above', 3, true)
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('[data-id="hilos-table-announce"]').text()).toContain(
-      '2 new rows above the window',
+      '2 new rows',
     )
-  })
-
-  it('leaves the strip down for a row announced inside the window', () => {
-    const { controller } = makeController()
-    controller.ingestWindow(
-      [{ rowKey: 'a', slots: { name: 'Alice' } }],
-      1,
-      true,
-      null,
-      null,
-      10,
-    )
-    // The strip has one sentence and it names one place; the other outcome is a
-    // design debt (D-041), and drawing it would mean inventing the words.
-    controller.ingestAnnounce('x', 'inside', 2, true)
-    const wrapper = mountTable(controller)
-
-    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(
-      false,
-    )
+    expect(
+      wrapper.find('[data-id="hilos-table-announce"]').text(),
+    ).not.toContain('above')
   })
 
   it('asks for the window again when Show is pressed, and the strip goes', async () => {

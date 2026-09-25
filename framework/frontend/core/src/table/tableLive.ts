@@ -10,8 +10,8 @@
 
 /**
  * One kind of live message over a table: a bulk run report, bulk run progress,
- * changes waiting for Apply, rows created above the window, a source that stopped
- * being kept up to date, and work running on the table as a whole.
+ * changes waiting for Apply, rows created that the window cannot show, a source that
+ * stopped being kept up to date, and work running on the table as a whole.
  */
 export type HilosTableLiveKind =
   | 'report'

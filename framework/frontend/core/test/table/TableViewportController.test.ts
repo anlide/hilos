@@ -1829,6 +1829,15 @@ describe('TableViewportController', () => {
     })
   })
 
+  it('raises the announce message for rows announced inside the window alone', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+
+    controller.ingestAnnounce('b', 'inside', 2, true)
+
+    expect(controller.live.get()).toEqual({ top: 'announce', rest: [] })
+  })
+
   it('runBulk sets bulk.started on acceptance and ignores refusal without unhandled rejection', async () => {
     const { controller } = makeController()
     expect(controller.bulk.started.get()).toBeNull()
