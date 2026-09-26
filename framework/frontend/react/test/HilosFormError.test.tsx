@@ -157,6 +157,24 @@ describe('HilosFormError', () => {
     expect(byId('e-detail')?.textContent).toBe('PDOException\nSQLSTATE[23000]')
   })
 
+  it('heads the details panel with the title it is given', () => {
+    render(
+      <HilosFormError
+        message="Refused"
+        dataId="e"
+        detailsTitle="Couldn't save"
+      />,
+    )
+    fireEvent.click(byId('e-details') as HTMLElement)
+
+    expect(document.querySelector('.modal-title')?.textContent).toBe(
+      "Couldn't save",
+    )
+    expect(
+      document.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
+    ).toBe("Couldn't save")
+  })
+
   it('draws no original-text block without one', () => {
     render(<HilosFormError message="Refused" dataId="e" />)
     fireEvent.click(byId('e-details') as HTMLElement)

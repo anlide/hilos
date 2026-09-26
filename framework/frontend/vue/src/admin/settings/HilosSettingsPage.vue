@@ -343,7 +343,7 @@ async function submitDelete(): Promise<void> {
       <template #header>
         <ConflictHeader :title="editTitle" :conflict="live.conflict" />
       </template>
-      <HilosActionError :action="editAction" />
+      <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div v-if="!isOrphanSetting(editRow)" class="mb-3">
           <span class="form-label d-block">Catalog default</span>
@@ -446,7 +446,10 @@ async function submitDelete(): Promise<void> {
       initial-focus="dialog"
       @cancel="closeDelete"
     >
-      <HilosActionError :action="deleteAction" />
+      <HilosActionError
+        :action="deleteAction"
+        details-title="Couldn't delete the setting"
+      />
       <p class="mb-0 text-body-secondary">
         This removes the orphan row from the database. Orphan keys are not in
         the catalog.

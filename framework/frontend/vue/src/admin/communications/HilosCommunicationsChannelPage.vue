@@ -348,7 +348,7 @@ async function submitEdit(): Promise<void> {
       <template #header>
         <ConflictHeader :title="editTitle" :conflict="live.conflict" />
       </template>
-      <HilosActionError :action="editAction" />
+      <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div v-if="editInputType === 'checkbox'" class="form-check form-switch">
           <input

@@ -537,7 +537,10 @@ export function HilosLogsRotationsPage({
           </>
         )}
       >
-        <HilosActionError action={takeout} />
+        <HilosActionError
+          action={takeout}
+          detailsTitle="Couldn't mark the batch as taken"
+        />
         <p>
           This batch is recommended for carrying off: it is older than the
           retention rule keeps. The system does <strong>not delete it</strong> —
@@ -619,7 +622,10 @@ export function HilosLogsRotationsPage({
           </>
         )}
       >
-        <HilosActionError action={undo} />
+        <HilosActionError
+          action={undo}
+          detailsTitle="Couldn't withdraw the acknowledgement"
+        />
         <p>
           Your word that you have taken it is the only thing that lets the
           cleaner delete this batch. Take that word back and the batch returns

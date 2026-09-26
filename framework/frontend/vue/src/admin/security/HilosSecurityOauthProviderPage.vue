@@ -258,7 +258,7 @@ async function submitEdit(): Promise<void> {
       "
       @cancel="closeEdit"
     >
-      <HilosActionError :action="editAction" />
+      <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <label class="form-label" for="hilos-oauth-field-input">
           {{ editRow.label }}

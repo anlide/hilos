@@ -36,17 +36,22 @@ function fakeAction(
   }
 }
 
-/** A host that hands the component an action and a suppressed flag. */
+/** A host that hands the component an action, a suppressed flag and a title. */
 @Component({
   selector: 'test-action-error-host',
   imports: [HilosActionError],
   template: `
-    <hilos-action-error [action]="action" [suppressed]="suppressed()" />
+    <hilos-action-error
+      [action]="action"
+      [suppressed]="suppressed()"
+      [detailsTitle]="detailsTitle()"
+    />
   `,
 })
 class ActionErrorHost {
   action: FakeAction = fakeAction(null)
   readonly suppressed = signal(false)
+  readonly detailsTitle = signal("Couldn't save")
 }
 
 /**
@@ -54,15 +59,18 @@ class ActionErrorHost {
  *
  * @param action The tracked action to draw.
  * @param suppressed Whether the action is answering elsewhere.
+ * @param detailsTitle What the mounting place says the action failed to do.
  * @returns The mounted fixture.
  */
 function mountError(
   action: FakeAction,
   suppressed = false,
+  detailsTitle = "Couldn't save",
 ): ComponentFixture<ActionErrorHost> {
   const fixture = TestBed.createComponent(ActionErrorHost)
   fixture.componentInstance.action = action
   fixture.componentInstance.suppressed.set(suppressed)
+  fixture.componentInstance.detailsTitle.set(detailsTitle)
   fixture.detectChanges()
 
   return fixture
@@ -187,5 +195,22 @@ describe('HilosActionError', () => {
     mountError(fakeAction(''))
     expect(byId('hilos-action-error-idle')).not.toBeNull()
     expect(byId('hilos-action-error')).toBeNull()
+  })
+
+  it('heads the details panel with what the place says failed', () => {
+    const fixture = mountError(
+      fakeAction('Value must be an integer of 0 or more'),
+      false,
+      "Couldn't delete the backup",
+    )
+    byId('hilos-action-error-details')?.click()
+    fixture.detectChanges()
+
+    expect(document.querySelector('.modal-title')?.textContent).toBe(
+      "Couldn't delete the backup",
+    )
+    expect(
+      document.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
+    ).toBe("Couldn't delete the backup")
   })
 })

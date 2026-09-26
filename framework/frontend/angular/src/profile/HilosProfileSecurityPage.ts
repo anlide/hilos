@@ -261,7 +261,10 @@ function focusStep(form: HTMLFormElement | undefined): void {
             Request removal
           </button>
         }
-        <hilos-action-error [action]="resetCancelAction" />
+        <hilos-action-error
+          [action]="resetCancelAction"
+          detailsTitle="Couldn't cancel the removal"
+        />
         <p class="small text-body-secondary mb-0">
           While a removal waits, every channel you have is told about it, and
           any of those messages stops it. A longer wait makes the account harder
@@ -282,7 +285,10 @@ function focusStep(form: HTMLFormElement | undefined): void {
         confirmOkText="Close"
         confirmCancelText="Back to the codes"
       >
-        <hilos-action-error [action]="enrollAction" />
+        <hilos-action-error
+          [action]="enrollAction"
+          detailsTitle="Couldn't add the authenticator app"
+        />
         <form
           #enrollForm
           data-id="profile-2fa-enroll"
@@ -399,7 +405,10 @@ function focusStep(form: HTMLFormElement | undefined): void {
         confirmOkText="Close"
         confirmCancelText="Back to the codes"
       >
-        <hilos-action-error [action]="codesAction" />
+        <hilos-action-error
+          [action]="codesAction"
+          [detailsTitle]="codesRefusalTitle()"
+        />
         <form
           #codesForm
           data-id="profile-2fa-codes"
@@ -474,7 +483,10 @@ function focusStep(form: HTMLFormElement | undefined): void {
         [title]="removeTitle()"
         initialFocus="inner"
       >
-        <hilos-action-error [action]="removeAction" />
+        <hilos-action-error
+          [action]="removeAction"
+          detailsTitle="Couldn't remove the app"
+        />
         <form data-id="profile-2fa-remove" (submit)="removeSubmit($event)">
           @if (apps().length === 1) {
             <p class="small" data-id="profile-2fa-remove-last">
@@ -518,7 +530,10 @@ function focusStep(form: HTMLFormElement | undefined): void {
         (openChange)="waitOpen.set($event)"
         title="Wait before removal"
       >
-        <hilos-action-error [action]="waitAction" />
+        <hilos-action-error
+          [action]="waitAction"
+          detailsTitle="Couldn't change the wait"
+        />
         <form data-id="profile-2fa-wait-form" (submit)="waitSubmit($event)">
           <label class="form-label" for="profile-2fa-wait-days">Days</label>
           <input
@@ -569,7 +584,10 @@ function focusStep(form: HTMLFormElement | undefined): void {
         title="Request removal"
         initialFocus="dialog"
       >
-        <hilos-action-error [action]="resetAction" />
+        <hilos-action-error
+          [action]="resetAction"
+          detailsTitle="Couldn't request the removal"
+        />
         <p class="small" data-id="profile-2fa-reset-date">
           Two-step verification will be removed on
           <strong>{{ resetDate() }}</strong
@@ -662,6 +680,15 @@ export class HilosProfileSecurityPage {
   protected readonly renewedCodes = signal<readonly string[]>([])
   protected readonly renewedSaved = signal(false)
   protected readonly codesAction = createHilosTrackedAction()
+  /**
+   * One tracked action runs both steps that can be refused, so the refusal
+   * details name the one that was: showing the codes, or issuing new ones.
+   */
+  protected readonly codesRefusalTitle = computed(() =>
+    this.codesStep() === 'renew'
+      ? "Couldn't create new backup codes"
+      : "Couldn't show the backup codes",
+  )
   private readonly codesForm =
     viewChild<ElementRef<HTMLFormElement>>('codesForm')
   protected readonly codesSubmitLabel = computed(

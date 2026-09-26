@@ -207,7 +207,10 @@ export function HilosTableSelection<R>({
           </>
         )}
       >
-        <HilosActionError action={bulkTracked} />
+        <HilosActionError
+          action={bulkTracked}
+          detailsTitle={confirmAction?.refusalTitle ?? ''}
+        />
         <p className="mb-0">{confirmBody}</p>
       </HilosModal>
     </>

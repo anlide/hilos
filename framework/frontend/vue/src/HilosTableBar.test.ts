@@ -648,7 +648,13 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
     search: {},
     columns: COLUMNS,
     bulkActions: [
-      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+      {
+        key: 'delete',
+        label: 'Delete',
+        refusalTitle: "Couldn't delete",
+        danger: true,
+        run: neverRun,
+      },
     ],
   }
 

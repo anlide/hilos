@@ -165,6 +165,11 @@ function currentInput(): ModeratorPieceInput {
 }
 
 const editing = computed(() => formMode.value === 'edit')
+// What the form's refusal details are headed with: adding and saving fail
+// differently, and the panel names which one did.
+const formRefusalTitle = computed(() =>
+  editing.value ? "Couldn't save" : "Couldn't add the prompt piece",
+)
 // The live row the edit dialog is about, projected onto the edited fields; gone
 // once the row is. An add has no row to follow.
 const liveRow = computed(() => (editing.value ? focusedRow.value : undefined))
@@ -419,7 +424,10 @@ async function submitDelete(): Promise<void> {
             :conflict="formConflict"
           />
         </template>
-        <HilosActionError :action="formAction" />
+        <HilosActionError
+          :action="formAction"
+          :details-title="formRefusalTitle"
+        />
         <form @submit.prevent="submitForm">
           <div class="mb-3">
             <label class="form-label" for="admin-moderator-section"
@@ -497,7 +505,10 @@ async function submitDelete(): Promise<void> {
         initial-focus="dialog"
         @cancel="closeDelete"
       >
-        <HilosActionError :action="deleteAction" />
+        <HilosActionError
+          :action="deleteAction"
+          details-title="Couldn't delete the prompt piece"
+        />
         <p class="mb-0 text-body-secondary">
           This permanently removes the prompt piece from the moderation rules.
         </p>

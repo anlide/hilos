@@ -8,6 +8,8 @@ translates a TrackedAction into that row's inputs — the sentence, the class na
 of what actually failed (the sign the framework held something back, HIL-779),
 the original text, and what Copy copies — so a change to how a refusal looks is
 made in one place, not two (rules-and-violations.md).
+`detailsTitle` is the one thing the plate cannot learn from the action: what it
+failed to do, which only the place that mounts it knows.
 The slot is the live region here, and not on a form: an admin surface does not
 change under the row, so a region on the slot lives as long as the room does and
 announces each refusal once (accessibility.md). A form that swaps its steps
@@ -30,6 +32,13 @@ const props = withDefaults(
     action: TrackedAction
     /** Hold the room and stay silent — this action is answering somewhere else. */
     suppressed?: boolean
+    /**
+     * What the action failed to do, as the heading of its details panel - a
+     * verb, the way every modal title is: "Couldn't save", "Couldn't delete the
+     * backup". Required: a panel headed "Error details" tells the person nothing
+     * the row did not.
+     */
+    detailsTitle: string
   }>(),
   { suppressed: false },
 )
@@ -64,6 +73,7 @@ const copyText = computed(() => {
     :error-type="errorType"
     :error-detail="errorDetail"
     :copy-text="copyText"
+    :details-title="detailsTitle"
     announce
   />
 </template>

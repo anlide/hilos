@@ -180,7 +180,7 @@ async function submitEdit(): Promise<void> {
       :title="editRow ? labelOf(editRow) : 'Edit setting'"
       @cancel="closeEdit"
     >
-      <HilosActionError :action="editAction" />
+      <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <label class="form-label" for="hilos-2fa-input">
           {{ labelOf(editRow) }}

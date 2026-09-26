@@ -215,7 +215,7 @@ async function submitEdit(): Promise<void> {
       title="Edit · Return address"
       @cancel="closeEdit"
     >
-      <HilosActionError :action="editAction" />
+      <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form @submit.prevent="submitEdit">
         <label class="form-label" for="hilos-oauth-redirect-input">
           Return address

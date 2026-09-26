@@ -889,7 +889,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
-        <HilosActionError action={del} />
+        <HilosActionError
+          action={del}
+          detailsTitle="Couldn't delete the backup"
+        />
         <p className="mb-0 text-body-secondary">
           This permanently deletes the backup archive and its metadata. A pinned
           backup is deleted too — the pin only protects it from rotation.
@@ -929,7 +932,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
-        <HilosActionError action={reopen} />
+        <HilosActionError
+          action={reopen}
+          detailsTitle={HILOS_BACKUP_REOPEN_COPY.refusalTitle}
+        />
         <p className="mb-0 text-body-secondary">
           {HILOS_BACKUP_REOPEN_COPY.modalBody}
         </p>
@@ -1036,7 +1042,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
-        <HilosActionError action={restore} />
+        <HilosActionError
+          action={restore}
+          detailsTitle="Couldn't start the restore"
+        />
         <p className="mb-2">
           This overwrites every database of this installation with the contents
           of the archive. Everyone else is shown a maintenance screen until it
@@ -1178,7 +1187,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
-        <HilosActionError action={circleAdd} />
+        <HilosActionError
+          action={circleAdd}
+          detailsTitle={HILOS_BACKUP_CIRCLE_COPY.addRefusalTitle}
+        />
         <label className="form-label" htmlFor="hilos-backup-circle-add-field">
           {HILOS_BACKUP_CIRCLE_COPY.addField}
         </label>
@@ -1223,7 +1235,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
-        <HilosActionError action={circleRemove} />
+        <HilosActionError
+          action={circleRemove}
+          detailsTitle={HILOS_BACKUP_CIRCLE_COPY.removeRefusalTitle}
+        />
         <p className="mb-0 text-body-secondary">
           {HILOS_BACKUP_CIRCLE_COPY.removeBody}
         </p>
@@ -1261,7 +1276,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
-        <HilosActionError action={create} />
+        <HilosActionError
+          action={create}
+          detailsTitle="Couldn't start the backup"
+        />
         <label className="form-label" htmlFor="hilos-backup-create-scope">
           Scope
         </label>

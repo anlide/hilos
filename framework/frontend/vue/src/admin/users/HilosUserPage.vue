@@ -459,7 +459,10 @@ watch(error, (reason) => {
       <div class="visually-hidden" role="alert" aria-live="assertive">
         {{ mergeAction.error.value }}
       </div>
-      <HilosActionError :action="mergeAction" />
+      <HilosActionError
+        :action="mergeAction"
+        details-title="Couldn't merge the accounts"
+      />
       <template v-if="mergeStep === 1">
         <div role="radiogroup" aria-label="Account to merge">
           <HilosViewportTable

@@ -225,6 +225,13 @@ const renewedSaved = ref(false)
 const codesAction = useTrackedAction()
 const codesForm = ref<HTMLFormElement | null>(null)
 watch(codesStep, () => focusStep(codesForm))
+// One tracked action runs both steps that can be refused, so the refusal
+// details name the one that was: showing the codes, or issuing new ones.
+const codesRefusalTitle = computed(() =>
+  codesStep.value === 'renew'
+    ? "Couldn't create new backup codes"
+    : "Couldn't show the backup codes",
+)
 /** A new set not yet marked saved: closing asks first, it is shown once. */
 const renewedUnsaved = computed(
   () => codesStep.value === 'new' && !renewedSaved.value,
@@ -526,7 +533,10 @@ function cancelReset(): void {
       >
         Request removal
       </button>
-      <HilosActionError :action="resetCancelAction" />
+      <HilosActionError
+        :action="resetCancelAction"
+        details-title="Couldn't cancel the removal"
+      />
       <p class="small text-body-secondary mb-0">
         While a removal waits, every channel you have is told about it, and any
         of those messages stops it. A longer wait makes the account harder to
@@ -545,7 +555,10 @@ function cancelReset(): void {
       confirm-ok-text="Close"
       confirm-cancel-text="Back to the codes"
     >
-      <HilosActionError :action="enrollAction" />
+      <HilosActionError
+        :action="enrollAction"
+        details-title="Couldn't add the authenticator app"
+      />
       <form
         ref="enrollForm"
         data-id="profile-2fa-enroll"
@@ -667,7 +680,10 @@ function cancelReset(): void {
       confirm-ok-text="Close"
       confirm-cancel-text="Back to the codes"
     >
-      <HilosActionError :action="codesAction" />
+      <HilosActionError
+        :action="codesAction"
+        :details-title="codesRefusalTitle"
+      />
       <form
         ref="codesForm"
         data-id="profile-2fa-codes"
@@ -757,7 +773,10 @@ function cancelReset(): void {
       v-model="removeOpen"
       :title="removeTarget ? `Remove ${removeTarget.label}` : 'Remove app'"
     >
-      <HilosActionError :action="removeAction" />
+      <HilosActionError
+        :action="removeAction"
+        details-title="Couldn't remove the app"
+      />
       <form data-id="profile-2fa-remove" @submit.prevent="removeSubmit()">
         <p v-if="removingLast" class="small" data-id="profile-2fa-remove-last">
           This is your last app: two-step verification turns off, your backup
@@ -809,7 +828,10 @@ function cancelReset(): void {
 
     <!-- The removal wait. -->
     <HilosModal v-model="waitOpen" title="Wait before removal">
-      <HilosActionError :action="waitAction" />
+      <HilosActionError
+        :action="waitAction"
+        details-title="Couldn't change the wait"
+      />
       <form data-id="profile-2fa-wait-form" @submit.prevent="waitSubmit()">
         <label class="form-label" for="profile-2fa-wait-days">Days</label>
         <input
@@ -858,7 +880,10 @@ function cancelReset(): void {
       title="Request removal"
       initial-focus="dialog"
     >
-      <HilosActionError :action="resetAction" />
+      <HilosActionError
+        :action="resetAction"
+        details-title="Couldn't request the removal"
+      />
       <p class="small" data-id="profile-2fa-reset-date">
         Two-step verification will be removed on <strong>{{ resetDate }}</strong
         >.

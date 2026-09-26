@@ -192,6 +192,8 @@ export interface HilosSettingPresetsVocabulary {
   readonly unknownSelectionNote: string
   /** The title of the overwrite confirmation. */
   readonly confirmTitle: string
+  /** The heading of the refusal details when applying a preset is refused: what failed, e.g. "Couldn't change the logging mode". */
+  readonly refusalTitle: string
   /**
    * The body of the overwrite confirmation.
    *

@@ -215,7 +215,7 @@ function noticeText(
           [title]="editTitle()"
           [conflict]="live().conflict"
         ></h5>
-        <hilos-action-error [action]="edit" />
+        <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             @if (editInputType() === 'checkbox') {

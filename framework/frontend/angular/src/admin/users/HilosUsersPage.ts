@@ -105,7 +105,10 @@ export interface UsersRowActionsContext {
         [closeOnEsc]="!takeover.busy()"
         initialFocus="dialog"
       >
-        <hilos-action-error [action]="takeover" />
+        <hilos-action-error
+          [action]="takeover"
+          detailsTitle="Couldn't sign in as this user"
+        />
         @if (impersonateRow(); as row) {
           <p class="mb-0">
             Become <strong>{{ row.name }}</strong> and see the app as they do?

@@ -163,7 +163,10 @@ const circleColumns: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
       :close-on-esc="!circleAddBusy"
       @cancel="closeCircleAdd"
     >
-      <HilosActionError :action="circleAddAction" />
+      <HilosActionError
+        :action="circleAddAction"
+        :details-title="HILOS_MAINTENANCE_CIRCLE_COPY.addRefusalTitle"
+      />
       <p class="mb-2 text-body-secondary">
         {{ HILOS_MAINTENANCE_CIRCLE_COPY.addLead }}
       </p>

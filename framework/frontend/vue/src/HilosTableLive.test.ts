@@ -99,6 +99,7 @@ function deleteAction(label = 'Delete'): HilosTableBulkAction {
   return {
     key: 'delete',
     label,
+    refusalTitle: "Couldn't delete",
     danger: true,
     run: () => accepted('run-1'),
   }

@@ -129,10 +129,7 @@ export const HILOS_MAINTENANCE_CIRCLE_COPY = {
   addPlaceholder: 'ops@example.com',
   /** Label of the dialog's confirm button. */
   addConfirm: 'Add',
-  /**
-   * Title of the refusal details window of the add dialog. SCAFFOLD: not read yet -
-   * the refusal plate takes a details title with HIL-1052, which passes this one.
-   */
+  /** Title of the refusal details window of the add dialog. */
   addRefusalTitle: "Couldn't add the verifier",
 } as const
 

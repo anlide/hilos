@@ -103,6 +103,8 @@ export interface HilosTableBulkAction {
   readonly key: string
   /** Menu text. */
   readonly label: string
+  /** The heading of the refusal details when a run is refused: what it failed to do, e.g. "Couldn't delete the marked backups". */
+  readonly refusalTitle: string
   /** Whether the operation reads as destructive (default false). */
   readonly danger?: boolean
   /**

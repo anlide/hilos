@@ -85,7 +85,13 @@ const backupsFrame: HilosTableFrame = {
     { key: 'kind', label: 'Kind' },
   ],
   bulkActions: [
-    { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+    {
+      key: 'delete',
+      label: 'Delete',
+      refusalTitle: "Couldn't delete",
+      danger: true,
+      run: neverRun,
+    },
   ],
   empty: {
     title: 'Nothing here yet',
@@ -113,7 +119,13 @@ describe('TableViewportController frame declaration', () => {
       'kind',
     ])
     expect(declaration?.bulkActions).toEqual([
-      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+      {
+        key: 'delete',
+        label: 'Delete',
+        refusalTitle: "Couldn't delete",
+        danger: true,
+        run: neverRun,
+      },
     ])
     expect(declaration?.empty?.title).toBe('Nothing here yet')
   })

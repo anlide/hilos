@@ -160,7 +160,10 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
           </>
         )}
       >
-        <HilosActionError action={takeover} />
+        <HilosActionError
+          action={takeover}
+          detailsTitle="Couldn't sign in as this user"
+        />
         {impersonateRow ? (
           <p className="mb-0">
             Become <strong>{impersonateRow.name}</strong> and see the app as

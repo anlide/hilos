@@ -130,7 +130,10 @@ async function submitImpersonate(): Promise<void> {
       initial-focus="dialog"
       @cancel="closeImpersonate"
     >
-      <HilosActionError :action="impersonateAction" />
+      <HilosActionError
+        :action="impersonateAction"
+        details-title="Couldn't sign in as this user"
+      />
       <p v-if="impersonateRow" class="mb-0">
         Become <strong>{{ impersonateRow.name }}</strong> and see the app as
         they do? You can stop from the banner at any time.

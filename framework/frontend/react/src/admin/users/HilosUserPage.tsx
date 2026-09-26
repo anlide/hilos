@@ -527,7 +527,10 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
         <div className="visually-hidden" role="alert" aria-live="assertive">
           {mergeAction.error}
         </div>
-        <HilosActionError action={mergeAction} />
+        <HilosActionError
+          action={mergeAction}
+          detailsTitle="Couldn't merge the accounts"
+        />
         {mergeStep === 1 ? (
           <div role="radiogroup" aria-label="Account to merge">
             <HilosViewportTable

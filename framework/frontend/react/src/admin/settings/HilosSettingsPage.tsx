@@ -362,7 +362,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
           </>
         )}
       >
-        <HilosActionError action={edit} />
+        <HilosActionError action={edit} detailsTitle="Couldn't save" />
         {editRow ? (
           <form
             onSubmit={(event) => {
@@ -481,7 +481,10 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
           </>
         )}
       >
-        <HilosActionError action={del} />
+        <HilosActionError
+          action={del}
+          detailsTitle="Couldn't delete the setting"
+        />
         <p className="mb-0 text-body-secondary">
           This removes the orphan row from the database. Orphan keys are not in
           the catalog.

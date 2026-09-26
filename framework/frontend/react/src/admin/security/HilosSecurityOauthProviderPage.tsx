@@ -304,7 +304,7 @@ export function HilosSecurityOauthProviderPage({
           </>
         )}
       >
-        <HilosActionError action={edit} />
+        <HilosActionError action={edit} detailsTitle="Couldn't save" />
         {editRow ? (
           <form
             onSubmit={(event) => {

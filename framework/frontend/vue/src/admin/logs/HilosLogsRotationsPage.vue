@@ -490,7 +490,10 @@ const legendOpen = ref(false)
       :close-on-esc="!takeoutBusy"
       initial-focus="dialog"
     >
-      <HilosActionError :action="takeoutAction" />
+      <HilosActionError
+        :action="takeoutAction"
+        details-title="Couldn't mark the batch as taken"
+      />
       <p>
         This batch is recommended for carrying off: it is older than the
         retention rule keeps. The system does
@@ -566,7 +569,10 @@ const legendOpen = ref(false)
       :close-on-esc="!undoBusy"
       initial-focus="dialog"
     >
-      <HilosActionError :action="undoAction" />
+      <HilosActionError
+        :action="undoAction"
+        details-title="Couldn't withdraw the acknowledgement"
+      />
       <p>
         Your word that you have taken it is the only thing that lets the cleaner
         delete this batch. Take that word back and the batch returns to the list

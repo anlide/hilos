@@ -51,6 +51,7 @@ const vocabulary: HilosSettingPresetsVocabulary = {
   generalSettingsPage: HilosPages.SETTINGS,
   unknownSelectionNote: 'The stored mode is gone.',
   confirmTitle: 'Overwrite your own edits?',
+  refusalTitle: "Couldn't change the mode",
   confirmBody: (title) => `${title} writes all of its values.`,
   confirmLabel: (title) => `Apply ${title}`,
   presetTitle: (name) => name.toUpperCase(),

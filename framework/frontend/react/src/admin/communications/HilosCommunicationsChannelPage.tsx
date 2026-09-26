@@ -399,7 +399,7 @@ export function HilosCommunicationsChannelPage({
           </>
         )}
       >
-        <HilosActionError action={edit} />
+        <HilosActionError action={edit} detailsTitle="Couldn't save" />
         {editRow ? (
           <form
             onSubmit={(event) => {

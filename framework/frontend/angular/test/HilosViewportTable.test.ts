@@ -1066,7 +1066,13 @@ describe('HilosViewportTable drawing a row as a card', () => {
   const BULK_CARD_FRAME: HilosTableFrame = {
     ...CARD_FRAME,
     bulkActions: [
-      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+      {
+        key: 'delete',
+        label: 'Delete',
+        refusalTitle: "Couldn't delete",
+        danger: true,
+        run: neverRun,
+      },
     ],
   }
 
@@ -1526,7 +1532,13 @@ describe('HilosViewportTable with a selection column', () => {
     title: 'Backups',
     columns: COLUMNS,
     bulkActions: [
-      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+      {
+        key: 'delete',
+        label: 'Delete',
+        refusalTitle: "Couldn't delete",
+        danger: true,
+        run: neverRun,
+      },
     ],
   }
 

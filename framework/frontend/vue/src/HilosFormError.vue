@@ -15,6 +15,8 @@ action's refusal by mounting it, and what that needs beyond a form's sentence �
 the class name beside the details icon, the original text under an "Exception"
 caption, the Copy button, a live region on the slot — lives here as inputs that
 are off by default, one behavior rather than a second copy of the row.
+The heading of the details panel is an input too: a form keeps the general one,
+a tracked action's plate names what the action failed to do.
 The row carries no role at all. A form's voice is the surface's own permanent
 live region, kept apart from the sight of it (accessibility.md) — a live region
 living inside a form that swaps its steps would die with its step; only a
@@ -47,8 +49,20 @@ const props = withDefaults(
      * surface").
      */
     announce?: boolean
+    /**
+     * The heading of the details panel. A form leaves it at 'Error details'; a
+     * tracked action's plate passes what the action failed to do
+     * (HilosActionError).
+     */
+    detailsTitle?: string
   }>(),
-  { errorType: null, errorDetail: null, copyText: '', announce: false },
+  {
+    errorType: null,
+    errorDetail: null,
+    copyText: '',
+    announce: false,
+    detailsTitle: 'Error details',
+  },
 )
 
 /**
@@ -130,7 +144,7 @@ watch(shown, (value) => {
 
   <HilosModal
     v-model="detailOpen"
-    title="Error details"
+    :title="detailsTitle"
     :copy-text="copyText"
     initial-focus="dialog"
   >

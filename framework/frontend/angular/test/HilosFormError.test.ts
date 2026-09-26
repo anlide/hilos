@@ -30,6 +30,20 @@ class FormErrorHost {
   readonly announce = signal(false)
 }
 
+/** A host that heads the details panel the way a tracked action's plate does. */
+@Component({
+  selector: 'test-titled-form-error-host',
+  imports: [HilosFormError],
+  template: `
+    <hilos-form-error
+      message="Refused"
+      dataId="e"
+      detailsTitle="Couldn't save"
+    />
+  `,
+})
+class TitledFormErrorHost {}
+
 /** What a test sets on the host before the first render. */
 interface HostInputs {
   message?: string | null
@@ -205,6 +219,20 @@ describe('HilosFormError', () => {
     )
     expect(byId('e-close')).not.toBeNull()
     expect(byId('e-detail')?.textContent).toBe('PDOException\nSQLSTATE[23000]')
+  })
+
+  it('heads the details panel with the title it is given', () => {
+    const fixture = TestBed.createComponent(TitledFormErrorHost)
+    fixture.detectChanges()
+    byId('e-details')?.click()
+    fixture.detectChanges()
+
+    expect(document.querySelector('.modal-title')?.textContent).toBe(
+      "Couldn't save",
+    )
+    expect(
+      document.querySelector('[role="dialog"]')?.getAttribute('aria-label'),
+    ).toBe("Couldn't save")
   })
 
   it('draws no original-text block without one', () => {

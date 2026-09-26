@@ -522,7 +522,10 @@ export function HilosProfileSecurityPage({
               Request removal
             </button>
           ) : null}
-          <HilosActionError action={resetCancelAction} />
+          <HilosActionError
+            action={resetCancelAction}
+            detailsTitle="Couldn't cancel the removal"
+          />
           <p className="small text-body-secondary mb-0">
             While a removal waits, every channel you have is told about it, and
             any of those messages stops it. A longer wait makes the account
@@ -563,7 +566,10 @@ export function HilosProfileSecurityPage({
           </>
         )}
       >
-        <HilosActionError action={enrollAction} />
+        <HilosActionError
+          action={enrollAction}
+          detailsTitle="Couldn't add the authenticator app"
+        />
         <form
           ref={enrollForm}
           data-id="profile-2fa-enroll"
@@ -685,7 +691,14 @@ export function HilosProfileSecurityPage({
           </>
         )}
       >
-        <HilosActionError action={codesAction} />
+        <HilosActionError
+          action={codesAction}
+          detailsTitle={
+            codesStep === 'renew'
+              ? "Couldn't create new backup codes"
+              : "Couldn't show the backup codes"
+          }
+        />
         <form
           ref={codesForm}
           data-id="profile-2fa-codes"
@@ -764,7 +777,10 @@ export function HilosProfileSecurityPage({
           </>
         )}
       >
-        <HilosActionError action={removeAction} />
+        <HilosActionError
+          action={removeAction}
+          detailsTitle="Couldn't remove the app"
+        />
         <form
           data-id="profile-2fa-remove"
           onSubmit={(event) => {
@@ -816,7 +832,10 @@ export function HilosProfileSecurityPage({
           </>
         )}
       >
-        <HilosActionError action={waitAction} />
+        <HilosActionError
+          action={waitAction}
+          detailsTitle="Couldn't change the wait"
+        />
         <form
           data-id="profile-2fa-wait-form"
           onSubmit={(event) => {
@@ -875,7 +894,10 @@ export function HilosProfileSecurityPage({
           </>
         )}
       >
-        <HilosActionError action={resetAction} />
+        <HilosActionError
+          action={resetAction}
+          detailsTitle="Couldn't request the removal"
+        />
         <p className="small" data-id="profile-2fa-reset-date">
           Two-step verification will be removed on{' '}
           <strong>

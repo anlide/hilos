@@ -16,6 +16,8 @@
 // "Exception" caption, the Copy button, a live region on the slot — lives here
 // as props that are off by default, one behavior rather than a second copy of
 // the row.
+// The heading of the details panel is a prop too: a form keeps the general
+// one, a tracked action's plate names what the action failed to do.
 // The row carries no role at all. A form's voice is the surface's own permanent
 // live region, kept apart from the sight of it (accessibility.md) — a live
 // region living inside a form that swaps its steps would die with its step;
@@ -47,6 +49,12 @@ export interface HilosFormErrorProps {
    * surface").
    */
   announce?: boolean
+  /**
+   * The heading of the details panel. A form leaves it at 'Error details'; a
+   * tracked action's plate passes what the action failed to do
+   * (HilosActionError).
+   */
+  detailsTitle?: string
 }
 
 /**
@@ -73,6 +81,7 @@ export function HilosFormError({
   errorDetail = null,
   copyText = '',
   announce = false,
+  detailsTitle = 'Error details',
 }: HilosFormErrorProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   // An empty string is the absence of a refusal, the same as null: one meaning,
@@ -148,7 +157,7 @@ export function HilosFormError({
 
       <HilosModal
         open={detailOpen}
-        title="Error details"
+        title={detailsTitle}
         copyText={copyText}
         initialFocus="dialog"
         onClose={() => setDetailOpen(false)}

@@ -54,6 +54,7 @@ function deleteAction(
   return {
     key: 'delete',
     label: 'Delete',
+    refusalTitle: "Couldn't delete the marked rows",
     danger: true,
     run: (target) => {
       asked.push(target)
@@ -207,6 +208,27 @@ describe('HilosTableSelection', () => {
 
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
     expect(document.body.textContent).toContain('The node is frozen')
+  })
+
+  it('heads the refusal details with what the refused operation failed to do', async () => {
+    const controller = makeController([deleteAction([], refused)])
+    controller.selectRow('a', true)
+    const wrapper = mountPanel(controller)
+
+    await wrapper.find('[data-id="hilos-table-bulk-delete"]').trigger('click')
+    document
+      .querySelector<HTMLElement>('[data-id="hilos-table-bulk-confirm"]')
+      ?.click()
+    await flushPromises()
+    document
+      .querySelector<HTMLElement>('[data-id="hilos-action-error-details"]')
+      ?.click()
+    await flushPromises()
+
+    const titles = [...document.querySelectorAll('[role="dialog"]')].map(
+      (dialog) => dialog.getAttribute('aria-label'),
+    )
+    expect(titles).toContain("Couldn't delete the marked rows")
   })
 
   it('keeps an open confirmation when the panel stops standing', async () => {

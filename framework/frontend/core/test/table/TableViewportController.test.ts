@@ -1293,6 +1293,7 @@ describe('TableViewportController', () => {
           {
             key: 'delete',
             label: 'Delete',
+            refusalTitle: "Couldn't delete",
             run: () => {
               throw new Error('not called')
             },
@@ -2302,6 +2303,7 @@ describe('TableViewportController', () => {
     const successAction: HilosTableBulkAction = {
       key: 'delete',
       label: 'Delete rows',
+      refusalTitle: "Couldn't delete the rows",
       run: vi.fn(() => successHandle),
     }
 
@@ -2333,6 +2335,7 @@ describe('TableViewportController', () => {
     const failAction: HilosTableBulkAction = {
       key: 'delete',
       label: 'Delete rows',
+      refusalTitle: "Couldn't delete the rows",
       run: vi.fn(() => failHandle),
     }
 

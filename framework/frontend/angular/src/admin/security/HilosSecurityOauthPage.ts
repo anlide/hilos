@@ -174,7 +174,7 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
         (openChange)="editOpen.set($event)"
         [title]="'Edit · Return address'"
       >
-        <hilos-action-error [action]="edit" />
+        <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         <form (submit)="submitEdit($event)">
           <label class="form-label" for="hilos-oauth-redirect-input">
             Return address

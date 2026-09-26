@@ -176,7 +176,11 @@ function valueLines(preset: HilosSettingPreset): string[] {
       {{ vocabulary.unknownSelectionNote }}
     </p>
 
-    <HilosActionError :action="applyAction" :suppressed="confirmOpen" />
+    <HilosActionError
+      :action="applyAction"
+      :suppressed="confirmOpen"
+      :details-title="vocabulary.refusalTitle"
+    />
 
     <div class="row row-cols-1 row-cols-md-3 g-3 mb-2">
       <div v-for="preset in cards" :key="preset.name" class="col">
@@ -275,7 +279,10 @@ function valueLines(preset: HilosSettingPreset): string[] {
       initial-focus="dialog"
       @cancel="closeConfirm"
     >
-      <HilosActionError :action="applyAction" />
+      <HilosActionError
+        :action="applyAction"
+        :details-title="vocabulary.refusalTitle"
+      />
       <p class="mb-0 text-body-secondary">
         {{ vocabulary.confirmBody(confirmTitle) }}
       </p>

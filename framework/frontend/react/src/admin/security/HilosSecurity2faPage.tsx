@@ -225,7 +225,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
           </>
         )}
       >
-        <HilosActionError action={edit} />
+        <HilosActionError action={edit} detailsTitle="Couldn't save" />
         {editRow ? (
           <form
             onSubmit={(event) => {

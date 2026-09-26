@@ -277,7 +277,10 @@ function noticeText(live: RowEditState<UserEditFields>): string {
         <div class="visually-hidden" role="alert" aria-live="assertive">
           {{ mergeAction.error() }}
         </div>
-        <hilos-action-error [action]="mergeAction" />
+        <hilos-action-error
+          [action]="mergeAction"
+          detailsTitle="Couldn't merge the accounts"
+        />
         @if (mergeStep() === 1) {
           <div role="radiogroup" aria-label="Account to merge">
             @if (mergeCandidatesController(); as controller) {

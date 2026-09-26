@@ -258,7 +258,7 @@ export function HilosSecurityOauthPage({
           </>
         )}
       >
-        <HilosActionError action={edit} />
+        <HilosActionError action={edit} detailsTitle="Couldn't save" />
         <form
           onSubmit={(event) => {
             event.preventDefault()

@@ -173,7 +173,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
           [title]="editTitle()"
           [conflict]="live().conflict"
         ></h5>
-        <hilos-action-error [action]="edit" />
+        <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             @if (!isOrphan(row)) {
@@ -295,7 +295,10 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
         [closeOnEsc]="!del.busy()"
         initialFocus="dialog"
       >
-        <hilos-action-error [action]="del" />
+        <hilos-action-error
+          [action]="del"
+          detailsTitle="Couldn't delete the setting"
+        />
         <p class="mb-0 text-body-secondary">
           This removes the orphan row from the database. Orphan keys are not in
           the catalog.

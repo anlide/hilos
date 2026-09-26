@@ -315,6 +315,7 @@ export const hilosLogSettingsVocabulary: HilosSettingPresetsVocabulary = {
     '— it was renamed or dropped after somebody applied it. Nothing is highlighted ' +
     'below; choosing any mode repairs it.',
   confirmTitle: 'Overwrite your own edits?',
+  refusalTitle: "Couldn't change the logging mode",
   confirmBody(title) {
     return `${title} writes all of its values, and the settings you changed by hand go with them.`
   },

@@ -240,7 +240,7 @@ async function submitEdit(): Promise<void> {
         <template #header>
           <ConflictHeader :title="editTitle" :conflict="live.conflict" />
         </template>
-        <HilosActionError :action="editAction" />
+        <HilosActionError :action="editAction" details-title="Couldn't save" />
         <form v-if="editShown" @submit.prevent="submitEdit">
           <div class="mb-3">
             <label class="form-label" for="admin-users-name">Name</label>

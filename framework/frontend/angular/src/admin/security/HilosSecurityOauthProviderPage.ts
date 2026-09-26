@@ -195,7 +195,7 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
         [title]="editTitle()"
         (cancel)="closeEdit()"
       >
-        <hilos-action-error [action]="edit" />
+        <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             <label class="form-label" for="hilos-oauth-field-input">

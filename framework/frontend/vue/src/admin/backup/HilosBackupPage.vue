@@ -807,7 +807,10 @@ function openOutcome(row: HilosBackupRow): void {
       initial-focus="dialog"
       @cancel="closeDelete"
     >
-      <HilosActionError :action="deleteAction" />
+      <HilosActionError
+        :action="deleteAction"
+        details-title="Couldn't delete the backup"
+      />
       <p class="mb-0 text-body-secondary">
         This permanently deletes the backup archive and its metadata. A pinned
         backup is deleted too — the pin only protects it from rotation.
@@ -843,7 +846,10 @@ function openOutcome(row: HilosBackupRow): void {
       initial-focus="dialog"
       @cancel="closeReopen"
     >
-      <HilosActionError :action="reopenAction" />
+      <HilosActionError
+        :action="reopenAction"
+        :details-title="HILOS_BACKUP_REOPEN_COPY.refusalTitle"
+      />
       <p class="mb-0 text-body-secondary">
         {{ HILOS_BACKUP_REOPEN_COPY.modalBody }}
       </p>
@@ -932,7 +938,10 @@ function openOutcome(row: HilosBackupRow): void {
       :close-on-esc="!restoreBusy"
       @cancel="closeRestore"
     >
-      <HilosActionError :action="restoreAction" />
+      <HilosActionError
+        :action="restoreAction"
+        details-title="Couldn't start the restore"
+      />
       <p class="mb-2">
         This overwrites every database of this installation with the contents of
         the archive. Everyone else is shown a maintenance screen until it ends,
@@ -1055,7 +1064,10 @@ function openOutcome(row: HilosBackupRow): void {
       :close-on-esc="!circleAddBusy"
       @cancel="closeCircleAdd"
     >
-      <HilosActionError :action="circleAddAction" />
+      <HilosActionError
+        :action="circleAddAction"
+        :details-title="HILOS_BACKUP_CIRCLE_COPY.addRefusalTitle"
+      />
       <label class="form-label" for="hilos-backup-circle-add-field">
         {{ HILOS_BACKUP_CIRCLE_COPY.addField }}
       </label>
@@ -1098,7 +1110,10 @@ function openOutcome(row: HilosBackupRow): void {
       initial-focus="dialog"
       @cancel="closeCircleRemove"
     >
-      <HilosActionError :action="circleRemoveAction" />
+      <HilosActionError
+        :action="circleRemoveAction"
+        :details-title="HILOS_BACKUP_CIRCLE_COPY.removeRefusalTitle"
+      />
       <p class="mb-0 text-body-secondary">
         {{ HILOS_BACKUP_CIRCLE_COPY.removeBody }}
       </p>
@@ -1132,7 +1147,10 @@ function openOutcome(row: HilosBackupRow): void {
       :close-on-esc="!createBusy"
       @cancel="closeCreate"
     >
-      <HilosActionError :action="createAction" />
+      <HilosActionError
+        :action="createAction"
+        details-title="Couldn't start the backup"
+      />
       <label class="form-label" for="hilos-backup-create-scope">Scope</label>
       <select
         id="hilos-backup-create-scope"

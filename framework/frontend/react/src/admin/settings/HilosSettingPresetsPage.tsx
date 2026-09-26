@@ -212,7 +212,11 @@ export function HilosSettingPresetsPage({
         </p>
       ) : null}
 
-      <HilosActionError action={applyAction} suppressed={confirmOpen} />
+      <HilosActionError
+        action={applyAction}
+        suppressed={confirmOpen}
+        detailsTitle={vocabulary.refusalTitle}
+      />
 
       <div className="row row-cols-1 row-cols-md-3 g-3 mb-2">
         {cards.map((preset) => (
@@ -334,7 +338,10 @@ export function HilosSettingPresetsPage({
           </>
         )}
       >
-        <HilosActionError action={applyAction} />
+        <HilosActionError
+          action={applyAction}
+          detailsTitle={vocabulary.refusalTitle}
+        />
         <p className="mb-0 text-body-secondary">
           {vocabulary.confirmBody(confirmTitle)}
         </p>

@@ -82,7 +82,11 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         </p>
       }
 
-      <hilos-action-error [action]="applyAction" [suppressed]="confirmOpen()" />
+      <hilos-action-error
+        [action]="applyAction"
+        [suppressed]="confirmOpen()"
+        [detailsTitle]="vocabulary().refusalTitle"
+      />
 
       <div class="row row-cols-1 row-cols-md-3 g-3 mb-2">
         @for (preset of cards(); track preset.name) {
@@ -186,7 +190,10 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         initialFocus="dialog"
         (cancel)="closeConfirm()"
       >
-        <hilos-action-error [action]="applyAction" />
+        <hilos-action-error
+          [action]="applyAction"
+          [detailsTitle]="vocabulary().refusalTitle"
+        />
         <p class="mb-0 text-body-secondary">
           {{ vocabulary().confirmBody(confirmTitle()) }}
         </p>

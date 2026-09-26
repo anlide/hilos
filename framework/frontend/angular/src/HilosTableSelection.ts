@@ -109,7 +109,10 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
       [title]="confirmAction()?.label ?? ''"
       initialFocus="dialog"
     >
-      <hilos-action-error [action]="bulkTracked" />
+      <hilos-action-error
+        [action]="bulkTracked"
+        [detailsTitle]="confirmAction()?.refusalTitle ?? ''"
+      />
       <p class="mb-0">{{ confirmBody() }}</p>
       <ng-template #modalActions let-requestClose="requestClose">
         <button

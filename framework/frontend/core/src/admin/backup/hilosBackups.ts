@@ -1314,6 +1314,8 @@ export const HILOS_BACKUP_REOPEN_COPY = {
   button: 'Reopen the system',
   /** Heading of the confirmation modal. */
   modalTitle: 'Reopen the system',
+  /** Heading of the refusal details when reopening is refused: what failed. */
+  refusalTitle: "Couldn't reopen the system",
   /** The modal's body: the cost of the click, and the way back. */
   modalBody:
     'This ends the verification window and lets everyone back in. Every connected page ' +
@@ -1346,10 +1348,14 @@ export const HILOS_BACKUP_CIRCLE_COPY = {
   addButton: 'Add a checker',
   /** Heading of the add modal. */
   addTitle: 'Add a checker',
+  /** Heading of the refusal details when adding is refused: what failed. */
+  addRefusalTitle: "Couldn't add the checker",
   /** Label of the add modal's single field. */
   addField: 'Email or phone',
   /** Heading of the removal confirmation modal. */
   removeTitle: 'Remove from the circle',
+  /** Heading of the refusal details when removing is refused: what failed. */
+  removeRefusalTitle: "Couldn't remove from the circle",
   /** The removal modal's body: what the person loses. */
   removeBody:
     'They will not be let into the verification window after the next restore.',
@@ -1559,6 +1565,7 @@ function backupsFrame(
       {
         key: 'delete',
         label: 'Delete',
+        refusalTitle: "Couldn't delete the marked backups",
         danger: true,
         run: (target) =>
           context.actions.dispatch(

@@ -175,6 +175,11 @@ function currentInput(): BotInput {
 }
 
 const editing = computed(() => formMode.value === 'edit')
+// What the form's refusal details are headed with: adding and saving fail
+// differently, and the panel names which one did.
+const formRefusalTitle = computed(() =>
+  editing.value ? "Couldn't save" : "Couldn't add the bot",
+)
 // The live row the edit dialog is about, projected onto the edited fields; gone
 // once the row is. resolveBotRow already normalizes an empty optional to null,
 // the way currentInput() does, so an untouched field never reads as changed. An
@@ -479,7 +484,10 @@ async function submitDelete(): Promise<void> {
             :conflict="formConflict"
           />
         </template>
-        <HilosActionError :action="formAction" />
+        <HilosActionError
+          :action="formAction"
+          :details-title="formRefusalTitle"
+        />
         <form @submit.prevent="submitForm">
           <div class="mb-3">
             <label class="form-label" for="admin-bots-name">Name</label>
@@ -597,7 +605,10 @@ async function submitDelete(): Promise<void> {
         initial-focus="dialog"
         @cancel="closeDelete"
       >
-        <HilosActionError :action="deleteAction" />
+        <HilosActionError
+          :action="deleteAction"
+          details-title="Couldn't delete the bot"
+        />
         <p class="mb-0 text-body-secondary">
           This permanently removes the bot and stops its agent.
         </p>

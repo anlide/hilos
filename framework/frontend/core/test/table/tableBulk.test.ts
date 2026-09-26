@@ -22,7 +22,13 @@ const bulkFrame: HilosTableFrame = {
   title: 'Backups',
   columns: [{ key: 'createdAt', label: 'Date', sortable: true }],
   bulkActions: [
-    { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+    {
+      key: 'delete',
+      label: 'Delete',
+      refusalTitle: "Couldn't delete",
+      danger: true,
+      run: neverRun,
+    },
   ],
 }
 

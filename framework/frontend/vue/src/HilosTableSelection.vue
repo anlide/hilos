@@ -177,7 +177,10 @@ async function submitBulk(): Promise<void> {
     initial-focus="dialog"
     @cancel="closeConfirm"
   >
-    <HilosActionError :action="bulkTracked" />
+    <HilosActionError
+      :action="bulkTracked"
+      :details-title="confirmAction?.refusalTitle ?? ''"
+    />
     <p class="mb-0">{{ confirmBody }}</p>
     <template #actions="{ requestClose }">
       <button

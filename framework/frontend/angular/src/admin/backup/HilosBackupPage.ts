@@ -459,7 +459,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [closeOnEsc]="!del.busy()"
         initialFocus="dialog"
       >
-        <hilos-action-error [action]="del" />
+        <hilos-action-error
+          [action]="del"
+          detailsTitle="Couldn't delete the backup"
+        />
         <p class="mb-0 text-body-secondary">
           This permanently deletes the backup archive and its metadata. A pinned
           backup is deleted too — the pin only protects it from rotation.
@@ -498,7 +501,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [closeOnEsc]="!reopen.busy()"
         initialFocus="dialog"
       >
-        <hilos-action-error [action]="reopen" />
+        <hilos-action-error
+          [action]="reopen"
+          [detailsTitle]="reopenCopy.refusalTitle"
+        />
         <p class="mb-0 text-body-secondary">{{ reopenCopy.modalBody }}</p>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
@@ -528,7 +534,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [closeOnBackdrop]="!circleAdd.busy()"
         [closeOnEsc]="!circleAdd.busy()"
       >
-        <hilos-action-error [action]="circleAdd" />
+        <hilos-action-error
+          [action]="circleAdd"
+          [detailsTitle]="circleCopy.addRefusalTitle"
+        />
         <label class="form-label" for="hilos-backup-circle-add-field">{{
           circleCopy.addField
         }}</label>
@@ -573,7 +582,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [closeOnEsc]="!circleRemove.busy()"
         initialFocus="dialog"
       >
-        <hilos-action-error [action]="circleRemove" />
+        <hilos-action-error
+          [action]="circleRemove"
+          [detailsTitle]="circleCopy.removeRefusalTitle"
+        />
         <p class="mb-0 text-body-secondary">{{ circleCopy.removeBody }}</p>
         @if (circleRemoveRow(); as member) {
           <p class="mb-0 mt-2">
@@ -675,7 +687,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [closeOnBackdrop]="!restore.busy()"
         [closeOnEsc]="!restore.busy()"
       >
-        <hilos-action-error [action]="restore" />
+        <hilos-action-error
+          [action]="restore"
+          detailsTitle="Couldn't start the restore"
+        />
         <p class="mb-2">
           This overwrites every database of this installation with the contents
           of the archive. Everyone else is shown a maintenance screen until it
@@ -817,7 +832,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [closeOnBackdrop]="!create.busy()"
         [closeOnEsc]="!create.busy()"
       >
-        <hilos-action-error [action]="create" />
+        <hilos-action-error
+          [action]="create"
+          detailsTitle="Couldn't start the backup"
+        />
         <label class="form-label" for="hilos-backup-create-scope">Scope</label>
         <select
           id="hilos-backup-create-scope"
