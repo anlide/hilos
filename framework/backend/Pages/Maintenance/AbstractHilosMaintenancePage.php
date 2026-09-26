@@ -22,6 +22,7 @@ use Hilos\Database\View\Item\VerifierCircleMember;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 
@@ -32,10 +33,10 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
  * project activates the section by registering its page and binding {@see HilosVerifierCircleTable}
  * to it in the topology, with no line in FEATURES (docs/agents/architecture/admin-features.md).
  *
- * The page declares one action: naming a verifier to the circle (HIL-1120). Taking one out is
- * still done on the backup page (HIL-1121). The circle's window rides the page response by itself
- * because the table is bound to the page, and a named person arrives as a row of that table. The
- * page is served by the hilos index agent ({@see AbstractHilosIndexAgent}), which is also the one
+ * The page declares two actions: naming a verifier to the circle (HIL-1120) and taking one out
+ * (HIL-1121). The circle's window rides the page response by itself because the table is bound to
+ * the page; a named person arrives as a row of that table, and one taken out leaves as a row of the
+ * same table. The page is served by the hilos index agent ({@see AbstractHilosIndexAgent}), which is also the one
  * that owns the circle.
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage).
@@ -48,6 +49,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
 
     public const array ACTIONS = [
         HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
+        HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -55,7 +57,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     ];
 
     /**
-     * Routes the verifier-circle action of the section.
+     * Routes the verifier-circle actions of the section.
      *
      * @param string $acceptKey WebSocket accept key for the client (unused: the circle is not per connection)
      * @param string $action Action name from the WebSocket envelope
@@ -63,8 +65,9 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      * @return ?ActionReplyDTO Always null: the ack carries the success sentence and the row arrives over the table
      * @throws AgentUnknownActionException When the action is not supported by this page
      * @throws InvalidActionPayloadException When the action payload does not match the action name
-     * @throws TableActionException When the address cannot be named to the circle
-     * @throws HilosException When an identity lookup or the circle write fails
+     * @throws TableActionException When the address cannot be named to the circle, or the membership
+     *     being taken out is no longer there
+     * @throws HilosException When an identity lookup, the circle read, the circle write or the delete fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -74,6 +77,14 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, MaintenanceCircleAddActionDTO::class, $dto);
                 }
                 $this->handleCircleAdd($dto);
+
+                break;
+
+            case HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE:
+                if (!$dto instanceof MaintenanceCircleRemoveActionDTO) {
+                    throw new InvalidActionPayloadException($action, MaintenanceCircleRemoveActionDTO::class, $dto);
+                }
+                $this->handleCircleRemove($dto);
 
                 break;
 
@@ -160,6 +171,41 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
         }
 
         $this->setActionSuccessMessage("{$identifier} added to the circle.");
+    }
+
+    /**
+     * Takes one person out of the verifier circle, by the key the table handed out.
+     *
+     * The membership goes by its key, not by the address printed beside it: the key names the
+     * row the operator looked at, whatever the screen happened to display.
+     *
+     * A key that names no row is refused, and that differs from the backup page on purpose
+     * (AbstractHilosBackupPage::handleCircleRemove() answers it with a silent success, HIL-643).
+     * The key is gone because somebody else took the membership out, or took it out and named the
+     * same address again under a new key. A success would credit this operator with another's
+     * work, and in the second case would call removed an address that stands in the circle. The
+     * confirmation dialog holds its row in focus and says the row is gone before anybody presses
+     * anything, so the refusal answers only a press that overtook that frame.
+     *
+     * Written from this page and not sent to an agent, for the reason adding is: the agent that
+     * serves this page is the one that claims the table ({@see AbstractHilosIndexAgent}), so the
+     * read and the delete are one turn of that agent with nothing between them.
+     *
+     * @param MaintenanceCircleRemoveActionDTO $dto Remove action payload carrying the membership key
+     * @throws TableActionException When the membership is no longer in the circle
+     * @throws HilosException When the circle lookup or the delete fails
+     */
+    private function handleCircleRemove(MaintenanceCircleRemoveActionDTO $dto): void
+    {
+        $member = Hilos::$db->verifierCircle[$dto->memberId] ?? null;
+        if ($member === null) {
+            throw new TableActionException('This verifier is no longer in the circle');
+        }
+
+        $identifier = $member->identifier;
+        $member->actions->delete();
+
+        $this->setActionSuccessMessage("{$identifier} removed from the circle.");
     }
 
     /**

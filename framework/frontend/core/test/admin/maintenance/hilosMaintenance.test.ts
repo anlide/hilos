@@ -75,6 +75,52 @@ describe('createHilosMaintenanceCircleTable', () => {
     })
     circle.dispose()
   })
+
+  it('hands a row into focus to the dialog over it, and lets it go with an empty key', () => {
+    const focus: Array<{ page: string; tableKey: string; rowKey: string }> = []
+    const connection = {
+      sendTableViewport: () => true,
+      sendTableRowFocus: (page: string, tableKey: string, rowKey: string) =>
+        focus.push({ page, tableKey, rowKey }) > 0,
+    } as unknown as HilosConnection
+    const circle = createHilosMaintenanceCircleTable({
+      connection,
+      scopes: new ScopeManager(),
+      actions: {} as unknown as ActionLifecycle,
+    })
+    circle.controller.ingestSubscriptionWindow(
+      [
+        circleRow('7', {
+          identityType: 'password',
+          identifier: 'ann@example.test',
+          online: false,
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    expect(circle.controller.focusRow('7')?.identifier).toBe('ann@example.test')
+    circle.controller.releaseFocus()
+
+    expect(focus).toEqual([
+      {
+        page: 'hilos_maintenance',
+        tableKey: 'hilosVerifierCircle',
+        rowKey: '7',
+      },
+      {
+        page: 'hilos_maintenance',
+        tableKey: 'hilosVerifierCircle',
+        rowKey: '',
+      },
+    ])
+  })
 })
 
 describe('createHilosMaintenanceActions', () => {
@@ -106,6 +152,18 @@ describe('createHilosMaintenanceActions', () => {
         action: 'maintenance_circle_add',
         payload: { identifier: '+7 900 000-00-00' },
       },
+    ])
+  })
+
+  it('takes a verifier out by the membership key, not by the address', () => {
+    const sent: Array<{ action: string; payload: unknown }> = []
+
+    createHilosMaintenanceActions(
+      dispatchContext(sent),
+    ).sendMaintenanceCircleRemove(7)
+
+    expect(sent).toEqual([
+      { action: 'maintenance_circle_remove', payload: { memberId: 7 } },
     ])
   })
 })

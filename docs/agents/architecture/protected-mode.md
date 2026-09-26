@@ -431,11 +431,10 @@ no fourth way in.
 **The third door opens on a photograph rather than on a presentation
 (HIL-643).** The other two are earned at the door — the initiator by having
 asked for the freeze, a verifier by producing a code. The circle is decided
-before the door exists: an operator names people to the circle in the
-Maintenance section of the admin surface (`hilos_maintenance`) — a name is
-still taken out through the block the backup page carries (not in the section
-yet — HIL-1121), and the backup page only points there (not in the code yet —
-HIL-1122) — and at the moment the node freezes
+before the door exists: an operator names people to the circle and takes them
+out in the Maintenance section of the admin surface (`hilos_maintenance`) — the
+backup page only points there (not in the code yet — HIL-1122) — and at the
+moment the node freezes
 `VerifierCircleSnapshot::capture()` reads that list against the live connections
 and writes the session hashes of the members who were online onto the row.
 Nothing is presented afterwards; the tab that was already open walks in.
@@ -502,8 +501,7 @@ carries `circleNamedCount = 0`.
 
 Without `HilosFeature::BACKUP` the circle loses nothing: the freeze alone admits
 its member, and the Maintenance section shows it the same way. Somebody is named
-there too; taking somebody out is the one thing still missing (not in the code
-yet — HIL-1121), and empty means nobody was named.
+and taken out there too, and empty means nobody was named.
 
 **Both presented doors are gated on `PHASE_VERIFYING`, and for one reason: that is the
 first phase with anything behind them.** Under `PHASE_ACTIVATING` and

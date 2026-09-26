@@ -417,6 +417,17 @@ final class HilosSignalConstants
      */
     public const string MAINTENANCE_CIRCLE_ADD = 'maintenance_circle_add';
 
+    /**
+     * Client -> server: take one person out of the verifier circle from the maintenance
+     * section (HIL-1121).
+     *
+     * Carries the row key the table handed out, not the address shown beside it: what is
+     * being removed is a membership, and the key that names it does not change with what the
+     * screen happens to display. A key that names no row any more is refused rather than
+     * answered with a silent success.
+     */
+    public const string MAINTENANCE_CIRCLE_REMOVE = 'maintenance_circle_remove';
+
     // ── Hilos backup admin: restore progress (server → the connection that asked) ──
     /**
      * BackupAgent → restore initiator: one snapshot of the restore runtime row.

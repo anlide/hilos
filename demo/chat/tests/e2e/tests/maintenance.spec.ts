@@ -3,21 +3,22 @@ import { test, expect } from '@playwright/test'
 import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
-import { addToMaintenanceCircle, clearCircle } from '../helpers/protectedMode'
+import {
+  addToMaintenanceCircle,
+  clearMaintenanceCircle,
+  confirmMaintenanceCircleRemoval,
+} from '../helpers/protectedMode'
 import { signUpWithVerifiedEmail, uniqueEmail } from '../helpers/session'
 
-// Maintenance section e2e (/hilos/maintenance, HIL-1119, HIL-1120): what the section
-// promises on top of the list itself. The mark of whether a named person is signed in
-// is live - the seam no unit test crosses: the member's socket closes in one process,
-// the section is served by the hilos index agent in another, and the row has to be
-// re-drawn on the administrator's open page from that closing alone. And a person is
-// named here: the row arrives over the live table, and a refusal is said twice - in
-// the dialog and in the corner.
-//
-// The circle is named here and still emptied on the backup page, where its remove
-// modal lives until HIL-1121 brings it to the section.
-
-const BACKUP_URL = '/hilos/backup'
+// Maintenance section e2e (/hilos/maintenance, HIL-1119, HIL-1120, HIL-1121): what the
+// section promises on top of the list itself. The mark of whether a named person is
+// signed in is live - the seam no unit test crosses: the member's socket closes in one
+// process, the section is served by the hilos index agent in another, and the row has
+// to be re-drawn on the administrator's open page from that closing alone. A person is
+// named here: the row arrives over the live table, and a refusal is said twice - in the
+// dialog and in the corner. And a person is taken out here: the row leaves over the
+// live table, and a dialog open over a row another tab took out says so before anybody
+// presses Remove.
 
 const MAINTENANCE_URL = '/hilos/maintenance'
 
@@ -32,15 +33,14 @@ test('the signed-in mark of a circle member follows their tab live', async ({
   // The circle is a durable list that outlives a case, so the case owns it first: a
   // member some other case left named would be one more row to read around.
   await signUpAdmin(page)
-  await gotoPage(page, BACKUP_URL)
-  await clearCircle(page)
+  await gotoPage(page, MAINTENANCE_URL)
+  await clearMaintenanceCircle(page)
 
   // Named with a PROVEN address: naming resolves the address against the confirmed
   // identities, and plain registration leaves it unverified.
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
   const { email: memberEmail } = await signUpWithVerifiedEmail(member)
-  await gotoPage(page, MAINTENANCE_URL)
   await addToMaintenanceCircle(page, memberEmail)
 
   await gotoPage(member, '/')
@@ -64,8 +64,8 @@ test('the signed-in mark of a circle member follows their tab live', async ({
   await memberContext.close()
   await expect(mark).toHaveText(CIRCLE_OFFLINE)
 
-  await gotoPage(page, BACKUP_URL)
-  await clearCircle(page)
+  await gotoPage(page, MAINTENANCE_URL)
+  await clearMaintenanceCircle(page)
 })
 
 test('naming a verifier shows the row, and refuses an unproven address and a repeat in the dialog and in the corner', async ({
@@ -73,8 +73,8 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   browser,
 }) => {
   await signUpAdmin(page)
-  await gotoPage(page, BACKUP_URL)
-  await clearCircle(page)
+  await gotoPage(page, MAINTENANCE_URL)
+  await clearMaintenanceCircle(page)
 
   // Named with a PROVEN address: plain registration leaves it unverified, and an
   // unproven address is exactly what the section refuses.
@@ -82,7 +82,6 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   const member = await memberContext.newPage()
   const { email: memberEmail } = await signUpWithVerifiedEmail(member)
 
-  await gotoPage(page, MAINTENANCE_URL)
   await addToMaintenanceCircle(page, memberEmail)
 
   // The row comes over the live table - there is no optimistic row to wait out - and
@@ -145,6 +144,67 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   await expect(dialog).toHaveCount(0)
   await memberContext.close()
 
-  await gotoPage(page, BACKUP_URL)
-  await clearCircle(page)
+  await gotoPage(page, MAINTENANCE_URL)
+  await clearMaintenanceCircle(page)
+})
+
+test('taking a verifier out removes the row, and a dialog over a row taken out in another tab says so and locks Remove', async ({
+  page,
+  browser,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, MAINTENANCE_URL)
+  await clearMaintenanceCircle(page)
+
+  const memberContext = await browser.newContext()
+  const member = await memberContext.newPage()
+  const { email: memberEmail } = await signUpWithVerifiedEmail(member)
+  await addToMaintenanceCircle(page, memberEmail)
+  await dismissToasts(page)
+
+  // A second tab of the same administrator, on the same section and the same row.
+  const tabB = await page.context().newPage()
+  await gotoPage(tabB, MAINTENANCE_URL)
+  await expect(
+    tabB.getByTestId(`hilos-maintenance-circle-row-${memberEmail}`),
+  ).toBeVisible()
+
+  // A opens the dialog over the row: it names the address and Remove is live.
+  await page
+    .getByTestId('hilos-maintenance-circle-table')
+    .getByTestId(`hilos-maintenance-circle-remove-${memberEmail}`)
+    .click()
+  const dialogA = page.getByTestId('modal')
+  const confirmA = page.getByTestId('hilos-maintenance-circle-remove-confirm')
+  await expect(confirmA).toBeEnabled()
+  await expect(dialogA).toContainText(memberEmail)
+
+  // B takes the member out: the row leaves B's table over the live table, and the
+  // ack's own sentence is B's toast.
+  await tabB
+    .getByTestId('hilos-maintenance-circle-table')
+    .getByTestId(`hilos-maintenance-circle-remove-${memberEmail}`)
+    .click()
+  await confirmMaintenanceCircleRemoval(tabB)
+  await expect(
+    tabB.getByTestId(`hilos-maintenance-circle-row-${memberEmail}`),
+  ).toHaveCount(0)
+  await expect(
+    tabB
+      .getByTestId('hilos-toasts')
+      .getByText(`${memberEmail} removed from the circle.`),
+  ).toBeVisible()
+
+  // A's dialog heard it before anybody pressed anything: Remove reads Removed and is
+  // locked, and the message line says why. Cancel is all that is left to press.
+  await expect(confirmA).toHaveText('Removed')
+  await expect(confirmA).toBeDisabled()
+  await expect(
+    page.getByTestId('hilos-maintenance-circle-remove-notice'),
+  ).toContainText('Removed from the circle elsewhere.')
+  await dialogA.getByTestId('modal-close').click()
+  await expect(confirmA).toHaveCount(0)
+
+  await tabB.close()
+  await memberContext.close()
 })

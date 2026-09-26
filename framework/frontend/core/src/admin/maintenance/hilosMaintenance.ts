@@ -8,9 +8,10 @@
 // by registering the page and binding the circle table to it. Its one block today is
 // the verifier circle - who will check the system after a freeze - delivered through
 // the page-scoped `hilosVerifierCircle` viewport table. The section names a verifier
-// as a tracked action (HIL-1120) and the named row arrives over the live table;
-// taking one out is still done on the backup page (HIL-1121). The online mark on the
-// rows is live: a named person opening or closing a tab re-draws that person's row.
+// and takes one out as tracked actions (HIL-1120, HIL-1121): the named row arrives
+// over the live table and the removed one leaves it the same way, and the dialog
+// confirming a removal holds its row in focus. The online mark on the rows is live:
+// a named person opening or closing a tab re-draws that person's row.
 // A project supplies a HilosMaintenanceContext - its scope stores, its live
 // connection and its action lifecycle - and the framework owns the rest.
 
@@ -30,8 +31,10 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 // after the circle's DB source. A project binds its backend to these keys.
 const HILOS_MAINTENANCE_CIRCLE_TABLE = 'hilosVerifierCircle'
 const HILOS_MAINTENANCE_CIRCLE_SLOT = 'verifierCircle'
-// Wire action name: byte-equal to the backend HilosSignalConstants::MAINTENANCE_CIRCLE_ADD.
+// Wire action names: byte-equal to the backend HilosSignalConstants::MAINTENANCE_CIRCLE_ADD
+// and HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE.
 const MAINTENANCE_CIRCLE_ADD_ACTION = 'maintenance_circle_add'
+const MAINTENANCE_CIRCLE_REMOVE_ACTION = 'maintenance_circle_remove'
 
 // Row payload keys of the verifier circle slot. The membership id is not among them
 // and is not missing either: it is the row key, and it stays off the slot because a
@@ -76,6 +79,15 @@ export interface HilosMaintenanceActions {
    * @param identifier The email or phone number the person is named by, as typed.
    */
   sendMaintenanceCircleAdd(identifier: string): ActionHandle
+  /**
+   * Take one person out of the verifier circle, as a tracked action. The membership
+   * goes by the row key the table handed out, not by the address shown beside it. A
+   * key that names no row any more is refused in the ack; on success the ack carries
+   * the sentence the toast shows and the row leaves over the live table.
+   *
+   * @param memberId The membership id — the row key of the circle table.
+   */
+  sendMaintenanceCircleRemove(memberId: number): ActionHandle
 }
 
 /** One row of the verifier circle table — a person named to check the system after a freeze. */
@@ -131,6 +143,24 @@ export const HILOS_MAINTENANCE_CIRCLE_COPY = {
   addConfirm: 'Add',
   /** Title of the refusal details window of the add dialog. */
   addRefusalTitle: "Couldn't add the verifier",
+  /** Title of the remove dialog, and the title and label of the row's remove button. */
+  removeTitle: 'Remove from the circle',
+  /** Words of the remove question before the address. */
+  removeAskBefore: 'Remove',
+  /** Words of the remove question after the address. */
+  removeAskAfter: 'from the verifier circle?',
+  /** Why a removal changes nothing about an operation already under way. */
+  removeNote:
+    'An operation already under way is not affected: the circle is photographed the moment ' +
+    'the system is frozen, and a change after that lets nobody in and shuts nobody out.',
+  /** Label of the remove dialog's confirm button. */
+  removeConfirm: 'Remove',
+  /** Notice of the remove dialog when its row was taken out in another tab. */
+  removeGone: 'Removed from the circle elsewhere.',
+  /** Label of the remove dialog's confirm button once its row is gone. */
+  removeGoneConfirm: 'Removed',
+  /** Title of the refusal details window of the remove dialog. */
+  removeRefusalTitle: "Couldn't remove the verifier",
 } as const
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -178,7 +208,8 @@ export interface HilosMaintenanceCircleTable {
  * The server-windowed controller for the verifier circle table on the maintenance page.
  * Rows resolve through {@link resolveHilosMaintenanceCircleRow}; the backend orders the
  * first window by address, so the list reads the way the administrator typed it rather
- * than by the order memberships happened to be made.
+ * than by the order memberships happened to be made. The table hands a row into focus to
+ * the dialog confirming its removal, so the dialog sees the row leave in another tab.
  *
  * @param context The project context (connection and scope stores).
  */
@@ -192,6 +223,12 @@ export function createHilosMaintenanceCircleTable(
         HilosPages.MAINTENANCE,
         HILOS_MAINTENANCE_CIRCLE_TABLE,
         descriptor,
+      ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.MAINTENANCE,
+        HILOS_MAINTENANCE_CIRCLE_TABLE,
+        rowKey,
       ),
   })
   const teardown: Array<() => void> = []
@@ -220,10 +257,11 @@ export function createHilosMaintenanceCircleTable(
 }
 
 /**
- * The verifier circle mutation surface: naming a person submits as a tracked action
- * over the lifecycle, returning an ActionHandle whose `done` resolves on the backend's
- * success ack and rejects on its refusal. The action is answered in its own ack, so
- * no listener for addressed failures is set here, and the toast is the driver's.
+ * The verifier circle mutation surface: naming a person and taking one out each submit
+ * as a tracked action over the lifecycle, returning an ActionHandle whose `done`
+ * resolves on the backend's success ack and rejects on its refusal. Each action is
+ * answered in its own ack, so no listener for addressed failures is set here, and the
+ * toast is the driver's.
  *
  * @param context The project context (the action lifecycle the action dispatches over).
  */
@@ -234,6 +272,11 @@ export function createHilosMaintenanceActions(
     sendMaintenanceCircleAdd(identifier) {
       return context.actions.dispatch(MAINTENANCE_CIRCLE_ADD_ACTION, {
         identifier,
+      })
+    },
+    sendMaintenanceCircleRemove(memberId) {
+      return context.actions.dispatch(MAINTENANCE_CIRCLE_REMOVE_ACTION, {
+        memberId,
       })
     },
   }

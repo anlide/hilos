@@ -349,10 +349,12 @@ function protectedModeReAskError(
   )
 }
 
-// The verifier circle is named from the maintenance section (HIL-1120) and still taken
-// out through the block the backup page carries, until HIL-1121 brings removal to the
-// section - so the removal steps and `addToCircle` expect the operator's page on
-// /hilos/backup, and `addToMaintenanceCircle` expects it on /hilos/maintenance.
+// The verifier circle is named and taken out in the maintenance section (HIL-1120,
+// HIL-1121): `addToMaintenanceCircle`, `confirmMaintenanceCircleRemoval` and
+// `clearMaintenanceCircle` expect the operator's page on /hilos/maintenance. The block the
+// backup page still carries keeps its own steps - `addToCircle`, `confirmCircleRemoval` and
+// `clearCircle` expect /hilos/backup - for protected-mode.spec.ts, until its circle cases
+// move to the section (HIL-1124).
 
 /**
  * Drives the confirmation of a removal modal that is already open.
@@ -461,4 +463,51 @@ export async function addToMaintenanceCircle(
   // The modal closes on the ack and stays open on a refusal, so waiting for the field
   // to go is waiting for the write to have landed rather than for a fixed moment.
   await expect(field).toHaveCount(0)
+}
+
+/**
+ * Drives the confirmation of the maintenance section's removal modal that is already open.
+ *
+ * Its own step for the reason {@link confirmCircleRemoval} is: a case taking one named person
+ * out and the clearing every circle case starts with both open that modal.
+ *
+ * @param page The operator's page, with the section's removal modal open.
+ */
+export async function confirmMaintenanceCircleRemoval(page: Page): Promise<void> {
+  const submit = page.getByTestId('hilos-maintenance-circle-remove-confirm')
+  await expect(submit).toBeVisible()
+  await submit.scrollIntoViewIfNeeded()
+  await expect(submit).toBeEnabled()
+  await submit.focus()
+  await submit.click()
+  // The modal closes on the ack and stays open on a refusal, so waiting for the button
+  // to go is waiting for the removal to have landed rather than for a fixed moment.
+  await expect(submit).toHaveCount(0)
+}
+
+/**
+ * Empties the verifier circle through the maintenance section's own removal modal.
+ *
+ * The section's counterpart of {@link clearCircle}, for the same reasons: the circle is a
+ * durable list that outlives a case, the first window is waited for rather than assumed, and
+ * the search is scoped to the circle table so the modal's own confirm button, which shares
+ * the removal prefix, cannot be taken for a row's.
+ *
+ * @param page The operator's page, already on the maintenance section.
+ */
+export async function clearMaintenanceCircle(page: Page): Promise<void> {
+  const table = page.getByTestId('hilos-maintenance-circle-table')
+  await expect(table).toBeVisible()
+  await expect(table.getByTestId('hilos-table-loading')).toHaveCount(0)
+
+  const removals = table.getByTestId(/^hilos-maintenance-circle-remove-/)
+  for (let guard = 0; guard < CIRCLE_CLEAR_LIMIT; guard++) {
+    if ((await removals.count()) === 0) {
+      break
+    }
+    await removals.first().click()
+    await confirmMaintenanceCircleRemoval(page)
+  }
+
+  await expect(removals).toHaveCount(0)
 }

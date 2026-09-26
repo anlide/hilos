@@ -113,9 +113,12 @@ function seededContext(
   actions: ActionLifecycle = makeActions().actions,
 ): {
   context: HilosMaintenanceContext
+  focus: string[]
   pushUpdate: (next: CircleMember) => void
+  pushRemove: (memberId: number, own?: boolean) => void
 } {
   const rows = initial.slice()
+  const focus: string[] = []
   const scopes = new ScopeManager()
   scopes.openPage(HilosPages.MAINTENANCE)
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
@@ -151,6 +154,11 @@ function seededContext(
 
       return true
     },
+    sendTableRowFocus(page: string, tableKey: string, rowKey: string): boolean {
+      focus.push(rowKey)
+
+      return true
+    },
     on(
       event: string,
       listener: (signal: { data: unknown }) => void,
@@ -177,6 +185,7 @@ function seededContext(
       scopes,
       actions,
     },
+    focus,
     pushUpdate(next: CircleMember): void {
       for (const listener of deltaListeners) {
         listener({
@@ -186,6 +195,22 @@ function seededContext(
             kind: 'row_updated',
             rowKey: String(next.memberId),
             row: wireRow(next),
+          },
+        })
+      }
+    },
+    // The membership was taken out: a removal without a body, tagged as this tab's own
+    // when this tab is the one that took it out.
+    pushRemove(memberId: number, own = false): void {
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.MAINTENANCE,
+            tableKey: CIRCLE_TABLE,
+            kind: 'row_removed',
+            rowKey: String(memberId),
+            reason: 'deleted',
+            own,
           },
         })
       }
@@ -240,6 +265,28 @@ function addConfirm(): HTMLButtonElement {
   return document.querySelector(
     '[data-id="hilos-maintenance-circle-add-confirm"]',
   ) as HTMLButtonElement
+}
+
+/** The row's remove button, looked up through the table. */
+function trash(identifier: string): HTMLButtonElement {
+  return document.querySelector(
+    `table [data-id="hilos-maintenance-circle-remove-${identifier}"]`,
+  ) as HTMLButtonElement
+}
+
+/** The remove dialog's confirm button, or null while the dialog is closed. */
+function removeConfirm(): HTMLButtonElement | null {
+  return document.querySelector(
+    '[data-id="hilos-maintenance-circle-remove-confirm"]',
+  )
+}
+
+/** The one member the remove cases open their dialog over. */
+const ANN: CircleMember = {
+  memberId: 1,
+  identityType: 'password',
+  identifier: 'ann@example.test',
+  online: true,
 }
 
 /** Open the add dialog and type an address into its field. */
@@ -308,25 +355,141 @@ describe('HilosMaintenancePage', () => {
     expect(wrapper.text()).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.empty)
   })
 
-  it('offers adding a member and not removing one', async () => {
-    const { context } = seededContext([
-      {
-        memberId: 1,
-        identityType: 'password',
-        identifier: 'ann@example.test',
-        online: true,
-      },
-    ])
+  it('offers adding a member and removing one', async () => {
+    const { context } = seededContext([ANN])
     const wrapper = await mountPage(context)
     const panel = wrapper.get('[data-id="hilos-maintenance-circle-panel"]')
 
-    // Taking a member out is still the backup page's until the remove leaf lands.
     expect(panel.get('[data-id="hilos-maintenance-circle-add"]').text()).toBe(
       HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
     )
-    expect(panel.findAll('[data-id*="circle-remove"]').length).toBe(0)
-    expect(panel.findAll('.bi-trash').length).toBe(0)
+    expect(trash('ann@example.test').getAttribute('aria-label')).toBe(
+      HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle,
+    )
+    expect(trash('ann@example.test').querySelector('.bi-trash')).not.toBeNull()
     expect(wrapper.text()).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.title)
+  })
+
+  it('opens the remove dialog over the row, naming its address and taking it into focus', async () => {
+    const { context, focus } = seededContext([ANN])
+    await mountPage(context)
+
+    trash('ann@example.test').click()
+    await nextTick()
+
+    expect(focus).toEqual(['1'])
+    expect(document.querySelector('[data-id="modal"] code')?.textContent).toBe(
+      'ann@example.test',
+    )
+    expect(document.body.textContent).toContain(
+      HILOS_MAINTENANCE_CIRCLE_COPY.removeNote,
+    )
+    expect(removeConfirm()?.disabled).toBe(false)
+    expect(removeConfirm()?.textContent?.trim()).toBe(
+      HILOS_MAINTENANCE_CIRCLE_COPY.removeConfirm,
+    )
+  })
+
+  it("takes the member out by the row key and closes only on the server's word", async () => {
+    const { actions, dispatched } = makeActions()
+    const { context, focus } = seededContext([ANN], actions)
+    await mountPage(context)
+
+    trash('ann@example.test').click()
+    await nextTick()
+    removeConfirm()?.click()
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      { action: 'maintenance_circle_remove', payload: { memberId: 1 } },
+    ])
+    expect(removeConfirm()).not.toBeNull()
+
+    dispatched[0]?.settle({
+      action: 'maintenance_circle_remove',
+    } as ActionResult)
+    await settled()
+
+    expect(removeConfirm()).toBeNull()
+    expect(focus).toEqual(['1', ''])
+  })
+
+  it('keeps the remove dialog open with the refusal on it', async () => {
+    const { actions, dispatched } = makeActions()
+    const { context } = seededContext([ANN], actions)
+    await mountPage(context)
+
+    trash('ann@example.test').click()
+    await nextTick()
+    removeConfirm()?.click()
+    await settled()
+    dispatched[0]?.refuse(
+      new ActionError(
+        'maintenance_circle_remove',
+        'fail',
+        'This verifier is no longer in the circle',
+      ),
+    )
+    await settled()
+
+    expect(removeConfirm()).not.toBeNull()
+    expect(
+      document.querySelector('[data-id="hilos-action-error"]')?.textContent,
+    ).toContain('This verifier is no longer in the circle')
+  })
+
+  it('says the row was taken out elsewhere and locks Remove', async () => {
+    const { context, pushRemove } = seededContext([ANN])
+    await mountPage(context)
+
+    trash('ann@example.test').click()
+    await nextTick()
+    pushRemove(1)
+    await nextTick()
+
+    expect(
+      document.querySelector(
+        '[data-id="hilos-maintenance-circle-remove-notice"]',
+      )?.textContent,
+    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.removeGone)
+    expect(removeConfirm()?.textContent?.trim()).toBe(
+      HILOS_MAINTENANCE_CIRCLE_COPY.removeGoneConfirm,
+    )
+    expect(removeConfirm()?.disabled).toBe(true)
+    // The address the dialog opened with stays on screen.
+    expect(document.querySelector('[data-id="modal"] code')?.textContent).toBe(
+      'ann@example.test',
+    )
+  })
+
+  it('does not read its own removal, echoed before the answer, as taken out elsewhere', async () => {
+    const { actions, dispatched } = makeActions()
+    const { context, pushRemove } = seededContext([ANN], actions)
+    await mountPage(context)
+
+    trash('ann@example.test').click()
+    await nextTick()
+    removeConfirm()?.click()
+    await settled()
+    pushRemove(1, true)
+    await nextTick()
+
+    // No message: the notice's room is held by its invisible twin only.
+    expect(
+      document.querySelector(
+        '[data-id="hilos-maintenance-circle-remove-notice"]',
+      ),
+    ).toBeNull()
+    expect(removeConfirm()?.textContent?.trim()).toBe(
+      HILOS_MAINTENANCE_CIRCLE_COPY.removeConfirm,
+    )
+
+    dispatched[0]?.settle({
+      action: 'maintenance_circle_remove',
+    } as ActionResult)
+    await settled()
+
+    expect(removeConfirm()).toBeNull()
   })
 
   it('opens the add dialog with an empty field and holds Add until something is typed', async () => {
