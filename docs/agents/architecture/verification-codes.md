@@ -276,6 +276,46 @@ a stand that wants to read its SMS configures a gateway endpoint. The `.eml` of
 the paragraph above is not an exception to this: mail is the one channel that
 writes what it sends, and only where an installation asked it to.
 
+## A Registration Without a Code: the Passkey Policy
+
+Every registration spends a code before the account exists: both endings of
+the registration flow take a PROVEN address reservation. One installation
+setting lets exactly one registration skip that — an account whose only way in
+is a passkey, created before its address is confirmed (HIL-1105).
+
+- **The setting** is `auth.passkey.allow_unproven_address`
+  (`PasskeyAddressPolicy::SETTING_KEY`), a boolean in the sign-in method catalog
+  fragment (`AuthMethodSettingsCatalog`), **off by default**. The address is the
+  email or the phone the account is registered on; one setting answers for both.
+- **It decides the creation of an account and nothing else.** Turning it off
+  stops new accounts only: an account already created without a confirmed
+  address keeps signing in with its passkey, because signing in does not read
+  the setting. That is deliberate — there is no way to confirm an address after
+  signing in, so a sign-in gated on it would lock those people out for good.
+- **The reader is `PasskeyAddressPolicy::allowsUnproven()`, and it fails
+  CLOSED.** No settings, a catalog without the key, or a read that throws all
+  answer no (the last with a warning in the log). It is read on every call,
+  never cached. A wrong no only asks for a confirmed address first, which is
+  the path every installation had before the setting; a wrong yes would let an
+  account start on an address nobody proved.
+- **Its one reader on the server is the door that registers an account by
+  passkey**, at the moment that door takes the reservation (HIL-1104): a proven
+  reservation passes always, an unproven one only while the setting says yes.
+  Not the method gate (it sees an action name, not a reservation) and not
+  identifier detection (a hint the action can arrive without).
+- **Every tab gets the value with the sign-in method set**, never apart from
+  it: `passkeyAllowsUnproven` rides the handshake's data section and the
+  `hilos_auth_methods` frame (`AuthMethodsSignalData::current()` builds both
+  halves together). The settings library compares the whole frame before and
+  after a write, so a write that moved only the policy — from the sign-in
+  methods screen, the general settings table or a preset — is sent the same
+  way. On the frontend `sessionPasskeyAllowsUnproven()` reads it, and an absent
+  value is no.
+- **The administrator's switch** sits under the table of
+  `/hilos/security/sign-in-methods`, drawn only where the project wired a
+  passkey (`security_passkey_unproven_set { allowed }`, refused with
+  "Unknown sign-in method: passkey" where none is wired).
+
 ## Anti-Patterns
 
 - Do not spend a challenge with a bare UPDATE of `consumed_at` outside
@@ -326,3 +366,12 @@ address). None of it is proved by e2e, said out loud so its absence is not read 
 coverage: every stand pins `MAIL_TRANSPORT=smtp` at its own Mailpit, and proving the
 mark needs a stand with no relay — the same wall the refusal hits, lifted by the same
 epic (HIL-918).
+
+The passkey policy is pinned by `PasskeyAddressPolicyTest` (the reader fails
+closed), `HandshakeResponseSignalDataTest` (the flag's round trip, null before the
+stamp), `SettingsPageActionTest` (a write of the policy alone sends the method-set
+frame once, the same value sends none), `SecuritySignInMethodsPageActionTest` (the
+screen's switch writes the setting) and `HilosSecuritySignInMethodsPageTest` (the
+refusal where no passkey is wired). On the frontend, `core/test/session/sessionScope.test.ts`
+holds the slot, and the Vue, React and Angular `HilosSecuritySignInMethodsPage` specs
+hold the switch.

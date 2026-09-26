@@ -2,7 +2,9 @@
 // vue/src/admin/security/HilosSecuritySignInMethodsPage.test.ts (HIL-427): the
 // switch reads the live enabled set the session scope holds, not the row the table
 // drew, and a click dispatches the one-method switch as a tracked action — a
-// refusal puts the clicked box back to what the set still says.
+// refusal puts the clicked box back to what the set still says. The passkey policy
+// switch under the table (HIL-1105) is drawn only beside a passkey row, follows the
+// live value rather than the click, and waits while a method write is in flight.
 //
 // The world below — the connection, the action lifecycle and the row on the wire —
 // is the React peer's. What is Angular's own is the mount (TestBed) and the fact
@@ -218,6 +220,20 @@ function switchesOf(
 }
 
 /**
+ * The passkey policy switch under the table.
+ *
+ * @param fixture The mounted screen to look inside.
+ * @returns The switch, or null when it is not drawn.
+ */
+function passkeyPolicyOf(
+  fixture: ComponentFixture<HilosSecuritySignInMethodsPage>,
+): HTMLInputElement | null {
+  return (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(
+    '[data-id="hilos-sign-in-passkey-unproven"]',
+  )
+}
+
+/**
  * Let the microtasks a settled action resolves through run out, then render.
  *
  * @param fixture The mounted screen to flush the render of.
@@ -300,5 +316,62 @@ describe('HilosSecuritySignInMethodsPage', () => {
 
     expect(smsSwitch?.checked).toBe(true)
     expect(smsSwitch?.disabled).toBe(false)
+  })
+
+  it('draws no passkey policy switch without a passkey row (HIL-1105)', () => {
+    const { connection, pushWindow } = makeConnection()
+    const fixture = mountPage(connection, makeScopes())
+
+    pushWindow(METHOD_ROWS.filter((row) => row.methodKey !== 'passkey'))
+    fixture.detectChanges()
+
+    expect(passkeyPolicyOf(fixture)).toBeNull()
+  })
+
+  it('draws the passkey policy switch from the session and dispatches only the flag (HIL-1105)', async () => {
+    const { connection, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const scopes = makeScopes()
+    const fixture = mountPage(connection, scopes, actions)
+
+    pushWindow(METHOD_ROWS)
+    fixture.detectChanges()
+    expect(passkeyPolicyOf(fixture)?.checked).toBe(false)
+
+    scopes.session.data.set('passkeyAllowsUnproven', true)
+    fixture.detectChanges()
+    expect(passkeyPolicyOf(fixture)?.checked).toBe(true)
+
+    passkeyPolicyOf(fixture)?.click()
+    fixture.detectChanges()
+
+    expect(dispatched).toMatchObject([
+      { action: 'security_passkey_unproven_set', payload: { allowed: false } },
+    ])
+    // Nothing optimistic: the switch stays on the live value until it moves.
+    expect(passkeyPolicyOf(fixture)?.checked).toBe(true)
+    for (const box of switchesOf(fixture, 'sms')) {
+      expect(box.disabled).toBe(true)
+    }
+
+    dispatched[0]?.refuse(
+      new ActionError('security_passkey_unproven_set', 'fail', 'Refused.'),
+    )
+    await settled(fixture)
+
+    expect(passkeyPolicyOf(fixture)?.checked).toBe(true)
+    expect(passkeyPolicyOf(fixture)?.disabled).toBe(false)
+  })
+
+  it('holds the passkey policy switch while a method write is in flight (HIL-1105)', () => {
+    const { connection, pushWindow } = makeConnection()
+    const fixture = mountPage(connection, makeScopes())
+
+    pushWindow(METHOD_ROWS)
+    fixture.detectChanges()
+    switchesOf(fixture, 'sms')[0]?.click()
+    fixture.detectChanges()
+
+    expect(passkeyPolicyOf(fixture)?.disabled).toBe(true)
   })
 })

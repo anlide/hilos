@@ -11,6 +11,7 @@ use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
+use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -310,6 +311,51 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertSame(EnabledAuthMethods::toWire(), $frames[0]->data->data->authMethods);
             $this->assertNotContains(AuthMethodKey::SMS, array_column($frames[0]->data->data->authMethods, 'key'));
         }, [AuthMethodSettings::DISABLED_KEY]);
+    }
+
+    /**
+     * A write that moved only the passkey policy sends the method-set frame, once, carrying it (HIL-1105).
+     *
+     * Through the general settings table, for the reason the case above gives: the policy
+     * rides the frame of the set, and the frame has to go whichever door moved it.
+     */
+    public function testAWriteThatMovedThePasskeyPolicySendsTheFrameWithIt(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(PasskeyAddressPolicy::SETTING_KEY);
+
+            $this->assertNull($this->submit(
+                'passkey-policy-changed-ak',
+                HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO(PasskeyAddressPolicy::SETTING_KEY, true),
+            ));
+
+            $frames = $this->methodSetFrames();
+            $this->assertCount(1, $frames);
+            $this->assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
+            $this->assertInstanceOf(WebSocketSignalData::class, $frames[0]->data);
+            $this->assertInstanceOf(AuthMethodsSignalData::class, $frames[0]->data->data);
+            $this->assertTrue($frames[0]->data->data->passkeyAllowsUnproven);
+            $this->assertSame(EnabledAuthMethods::toWire(), $frames[0]->data->data->authMethods);
+        }, [PasskeyAddressPolicy::SETTING_KEY]);
+    }
+
+    /**
+     * Writing the passkey policy it already holds changes nothing and sends no frame.
+     */
+    public function testWritingThePasskeyPolicyItAlreadyHoldsSendsNothing(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(PasskeyAddressPolicy::SETTING_KEY);
+
+            $this->assertNull($this->submit(
+                'passkey-policy-unchanged-ak',
+                HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO(PasskeyAddressPolicy::SETTING_KEY, false),
+            ));
+
+            $this->assertSame([], $this->methodSetFrames());
+        }, [PasskeyAddressPolicy::SETTING_KEY]);
     }
 
     /**

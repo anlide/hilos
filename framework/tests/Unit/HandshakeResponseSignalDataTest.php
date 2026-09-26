@@ -52,6 +52,9 @@ final class HandshakeResponseSignalDataTest extends TestCase
         ['key' => 'oauth:github', 'name' => 'GitHub', 'ready' => false],
     ];
 
+    /** The passkey policy as the stamp hands it - a yes, so it cannot pass for the unstamped null or the default no. */
+    private const bool PASSKEY_ALLOWS_UNPROVEN = true;
+
     public function testImplementsSignalDataInterface(): void
     {
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');
@@ -79,6 +82,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'pendingAuthStep' => null,
                     'codeDelivery' => null,
                     'authMethods' => null,
+                    'passkeyAllowsUnproven' => null,
                 ],
             ],
             $data->toArray(),
@@ -112,6 +116,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'pendingAuthStep' => null,
                     'codeDelivery' => null,
                     'authMethods' => null,
+                    'passkeyAllowsUnproven' => null,
                 ],
             ],
             $data->toArray(),
@@ -156,6 +161,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'pendingAuthStep' => null,
                     'codeDelivery' => null,
                     'authMethods' => null,
+                    'passkeyAllowsUnproven' => null,
                 ],
             ],
             $data->toArray(),
@@ -192,6 +198,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'pendingAuthStep' => null,
                 'codeDelivery' => null,
                 'authMethods' => null,
+                'passkeyAllowsUnproven' => null,
             ],
             $data->toArray()['data'],
         );
@@ -244,7 +251,13 @@ final class HandshakeResponseSignalDataTest extends TestCase
     public function testSessionContextTravelsInTheDataSection(): void
     {
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS);
+            ->withSessionContext(
+                self::SERVER_TIME_MS,
+                self::PENDING_AUTH_STEP,
+                self::CODE_DELIVERY,
+                self::AUTH_METHODS,
+                self::PASSKEY_ALLOWS_UNPROVEN,
+            );
 
         $this->assertSame(
             [
@@ -253,6 +266,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'pendingAuthStep' => self::PENDING_AUTH_STEP,
                 'codeDelivery' => self::CODE_DELIVERY,
                 'authMethods' => self::AUTH_METHODS,
+                'passkeyAllowsUnproven' => self::PASSKEY_ALLOWS_UNPROVEN,
             ],
             $data->toArray()['data'],
         );
@@ -263,7 +277,13 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // The two re-address different halves of the same response and are applied
         // in this order on every send path, so the clock has to outlive the ack.
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->withSessionContext(
+                self::SERVER_TIME_MS,
+                self::PENDING_AUTH_STEP,
+                self::CODE_DELIVERY,
+                self::AUTH_METHODS,
+                self::PASSKEY_ALLOWS_UNPROVEN,
+            )
             ->withPendingAck(SessionAck::SIGNED_IN);
 
         $this->assertSame(self::SERVER_TIME_MS, $data->serverTimeMs);
@@ -276,7 +296,13 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // The anonymous branch is the one that matters here: a session halfway
         // through registration or recovery has no user yet.
         $data = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS);
+            ->withSessionContext(
+                self::SERVER_TIME_MS,
+                self::PENDING_AUTH_STEP,
+                self::CODE_DELIVERY,
+                self::AUTH_METHODS,
+                self::PASSKEY_ALLOWS_UNPROVEN,
+            );
 
         $restored = HandshakeResponseSignalData::fromArray($data->toArray());
 
@@ -285,6 +311,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertSame(self::PENDING_AUTH_STEP, $restored->pendingAuthStep);
         $this->assertSame(self::CODE_DELIVERY, $restored->codeDelivery);
         $this->assertSame(self::AUTH_METHODS, $restored->authMethods);
+        $this->assertSame(self::PASSKEY_ALLOWS_UNPROVEN, $restored->passkeyAllowsUnproven);
         $this->assertSame($data->toArray(), $restored->toArray());
     }
 
@@ -304,7 +331,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
             'secondFactor' => ['trustDeviceDays' => 30, 'resetEffectiveAt' => null],
         ];
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, $step, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->withSessionContext(self::SERVER_TIME_MS, $step, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
             ->toArray();
 
         $restored = HandshakeResponseSignalData::fromArray($payload);
@@ -318,7 +345,13 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // cannot tell a code screen from a new-password one, which is the whole point
         // of the node reaching a tab that submitted nothing.
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->withSessionContext(
+                self::SERVER_TIME_MS,
+                self::PENDING_AUTH_STEP,
+                self::CODE_DELIVERY,
+                self::AUTH_METHODS,
+                self::PASSKEY_ALLOWS_UNPROVEN,
+            )
             ->toArray();
         unset($payload['data']['pendingAuthStep']['step']);
 
@@ -334,7 +367,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // travelling beside it the surface could not tell "your address was taken" from
         // "you were never in a flow" - both of which look like the address field.
         $data = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::TAKEN_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS);
+            ->withSessionContext(self::SERVER_TIME_MS, self::TAKEN_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN);
 
         $restored = HandshakeResponseSignalData::fromArray($data->toArray());
 
@@ -348,7 +381,13 @@ final class HandshakeResponseSignalDataTest extends TestCase
         // "everything is deliverable", so a node arriving without one of its two
         // flags has to be refused rather than read as a false (HIL-830).
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->withSessionContext(
+                self::SERVER_TIME_MS,
+                self::PENDING_AUTH_STEP,
+                self::CODE_DELIVERY,
+                self::AUTH_METHODS,
+                self::PASSKEY_ALLOWS_UNPROVEN,
+            )
             ->toArray();
         unset($payload['data']['codeDelivery']['phone']);
 
@@ -361,10 +400,20 @@ final class HandshakeResponseSignalDataTest extends TestCase
     {
         // The set is stamped with the clock and has to outlive the ack the same way (HIL-427).
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
-            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
             ->withPendingAck(SessionAck::SIGNED_IN);
 
         $this->assertSame(self::AUTH_METHODS, $data->authMethods);
+    }
+
+    public function testThePasskeyPolicySurvivesReAddressingWithAnAck(): void
+    {
+        // Stamped beside the method set, it has to outlive the ack the same way (HIL-1105).
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->withPendingAck(SessionAck::SIGNED_IN);
+
+        $this->assertSame(self::PASSKEY_ALLOWS_UNPROVEN, $data->passkeyAllowsUnproven);
     }
 
     public function testAResponseThatNeverPassedTheStampCarriesNoMethodSet(): void
@@ -372,12 +421,25 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $restored = HandshakeResponseSignalData::fromArray(new HandshakeResponseSignalData()->toArray());
 
         $this->assertNull($restored->authMethods);
+        $this->assertNull($restored->passkeyAllowsUnproven);
+    }
+
+    public function testRoundtripRejectsAPasskeyPolicyThatIsNotABoolean(): void
+    {
+        $payload = new HandshakeResponseSignalData()
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->toArray();
+        $payload['data']['passkeyAllowsUnproven'] = 'yes';
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
     }
 
     public function testRoundtripRejectsAMethodEntryWithoutItsKey(): void
     {
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
             ->toArray();
         unset($payload['data']['authMethods'][1]['key']);
 
@@ -389,7 +451,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
     public function testRoundtripRejectsAMethodEntryWithoutItsReadiness(): void
     {
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
             ->toArray();
         unset($payload['data']['authMethods'][1]['ready']);
 

@@ -489,6 +489,14 @@ final class HilosSignalConstants
      */
     public const string SECURITY_SIGN_IN_METHOD_SET = 'security_sign_in_method_set';
 
+    /**
+     * Client → server: allow or refuse a passkey as the only way into an account on an unconfirmed address (HIL-1105).
+     *
+     * Owned by the sign-in methods page, which asks the settings library to store the one
+     * yes-or-no setting; the answer comes back under the page's existing write-done name.
+     */
+    public const string SECURITY_PASSKEY_UNPROVEN_SET = 'security_passkey_unproven_set';
+
     // ── Hilos security admin: two-factor settings action (client → server, HIL-494) ──
     /**
      * Client → server: write one of the six second-factor settings.
@@ -1108,7 +1116,8 @@ final class HilosSignalConstants
      * surface rebuilds itself without asking. ws_all_connected, because a guest on the sign-in
      * page is subscribed to no page the set belongs to. Carried by
      * {@see AuthMethodsSignalData}; the handshake carries the same entries for a connection
-     * that opens later.
+     * that opens later. The frame also carries whether a passkey may start an account on an
+     * unconfirmed address (HIL-1105), and a write that moved only that is sent the same way.
      */
     public const string HILOS_AUTH_METHODS = 'hilos_auth_methods';
 

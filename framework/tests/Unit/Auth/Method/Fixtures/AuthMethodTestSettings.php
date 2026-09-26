@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Auth\Method\Fixtures;
 
 use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
+use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -13,13 +14,16 @@ use Hilos\Database\Settings\SettingsAccessor;
 /**
  * Settings over the framework's method-set fragment, with the persisted layer scripted.
  *
- * Carries the real catalog entry, so the key exists and its rule is the real one; only
- * what a stored row would say is replaced.
+ * Carries the real catalog entries, so the keys exist and their rules are the real ones;
+ * only what a stored row would say is replaced.
  */
 final class AuthMethodTestSettings extends SettingsAccessor
 {
     /** Stored switched-off list, or null for no stored row. */
     public static ?string $disabled = null;
+
+    /** Stored passkey unproven-address value, or null for no stored row. */
+    public static bool|string|null $passkeyAllowsUnproven = null;
 
     public function __construct()
     {
@@ -27,7 +31,7 @@ final class AuthMethodTestSettings extends SettingsAccessor
     }
 
     /**
-     * Returns the scripted stored list for the method key, or the catalog default otherwise.
+     * Returns the scripted stored value for a scripted key, or the catalog default otherwise.
      *
      * @param string $key Setting key
      * @return mixed Scripted stored value, or the resolved catalog default
@@ -38,6 +42,9 @@ final class AuthMethodTestSettings extends SettingsAccessor
     {
         if ($key === AuthMethodSettings::DISABLED_KEY && self::$disabled !== null) {
             return self::$disabled;
+        }
+        if ($key === PasskeyAddressPolicy::SETTING_KEY && self::$passkeyAllowsUnproven !== null) {
+            return self::$passkeyAllowsUnproven;
         }
 
         return parent::effectiveValueFor($key);

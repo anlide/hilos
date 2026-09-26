@@ -183,18 +183,20 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
     }
 
     /**
-     * Reads the enabled sign-in method set in the shape a surface is handed it, or null when it cannot be read.
+     * Reads the frame of the sign-in method set as a surface is handed it, or null when it cannot be read.
      *
-     * A read that fails is logged and answered with null rather than thrown: the field write
-     * this page is serving is answered either way, and a set nobody could read is not a change
-     * anybody can announce.
+     * The whole frame, the passkey policy included (HIL-1105), because the frame is what goes out:
+     * a field write cannot move the policy, but the frame sent after it must carry the policy as
+     * it stands, or a surface would take a stale one from it. A read that fails is logged and
+     * answered with null rather than thrown: the field write this page is serving is answered
+     * either way, and a set nobody could read is not a change anybody can announce.
      *
-     * @return ?list<array{key: string, name: ?string, ready: bool}> Enabled methods in button order, or null when unread
+     * @return ?AuthMethodsSignalData The frame as it stands, or null when unread
      */
-    private function offeredMethods(): ?array
+    private function offeredMethods(): ?AuthMethodsSignalData
     {
         try {
-            return EnabledAuthMethods::toWire();
+            return AuthMethodsSignalData::current();
         } catch (HilosException $e) {
             $this->logAgentError("Sign-in method set could not be read: {$e->getMessage()}");
 
@@ -209,18 +211,18 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
      * with it the entry the sign-in surfaces read. A set unread on either side of the write
      * sends nothing.
      *
-     * @param ?list<array{key: string, name: ?string, ready: bool}> $methodsBefore Method set before the write, or null when unread
+     * @param ?AuthMethodsSignalData $methodsBefore Method-set frame before the write, or null when unread
      * @throws InvalidArgumentException When the new method set cannot be named or queued
      */
-    private function announceMethods(?array $methodsBefore): void
+    private function announceMethods(?AuthMethodsSignalData $methodsBefore): void
     {
         if ($methodsBefore === null) {
             return;
         }
 
         $methodsAfter = $this->offeredMethods();
-        if ($methodsAfter !== null && $methodsAfter !== $methodsBefore) {
-            $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, new AuthMethodsSignalData($methodsAfter));
+        if ($methodsAfter !== null && $methodsAfter->toArray() !== $methodsBefore->toArray()) {
+            $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, $methodsAfter);
         }
     }
 

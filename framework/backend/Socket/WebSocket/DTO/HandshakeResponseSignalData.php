@@ -81,6 +81,11 @@ use Hilos\Core\Router\SignalDataInterface;
  * connection on its own frame. The handshake gives a new connection the set as it is
  * now; the frame keeps the old ones in step. Null means the stamp never ran.
  *
+ * `passkeyAllowsUnproven` rides beside it (HIL-1105): whether a passkey may start an account
+ * on an unconfirmed address. It is read together with the set and travels on the same frame
+ * after a change, so a new connection gets the two as they stand together. Null means the
+ * stamp never ran; the surface reads that, and an absent key, as no.
+ *
  * The step node also describes a sign-in held on its SECOND FACTOR (HIL-494): step
  * `second_factor` or `second_factor_setup` under the sign-in intent, `expiresAt` the moment
  * the held sign-in runs out, and a `secondFactor` member with what the code screen needs -
@@ -103,6 +108,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string pendingAuthStep = 'pendingAuthStep';
     public const string codeDelivery = 'codeDelivery';
     public const string authMethods = 'authMethods';
+    public const string passkeyAllowsUnproven = 'passkeyAllowsUnproven';
     public const string email = 'email';
     public const string phone = 'phone';
     public const string identifier = 'identifier';
@@ -145,6 +151,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     code to, or null before the session context is stamped
      * @param ?list<array{key: string, name: ?string, ready: bool}> $authMethods Enabled sign-in methods in button order,
      *     or null before the session context is stamped
+     * @param ?bool $passkeyAllowsUnproven Whether a passkey may start an account on an unconfirmed address,
+     *     or null before the session context is stamped
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -157,6 +165,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?array $pendingAuthStep = null,
         public readonly ?array $codeDelivery = null,
         public readonly ?array $authMethods = null,
+        public readonly ?bool $passkeyAllowsUnproven = null,
     ) {
     }
 
@@ -184,6 +193,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             pendingAuthStep: $this->pendingAuthStep,
             codeDelivery: $this->codeDelivery,
             authMethods: $this->authMethods,
+            passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
         );
     }
 
@@ -204,10 +214,16 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     Authentication step the session stands on, or null when it stands on none
      * @param array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time code to
      * @param list<array{key: string, name: ?string, ready: bool}> $authMethods Enabled sign-in methods in button order
+     * @param bool $passkeyAllowsUnproven Whether a passkey may start an account on an unconfirmed address
      * @return self The same response carrying that session context
      */
-    public function withSessionContext(int $serverTimeMs, ?array $pendingAuthStep, array $codeDelivery, array $authMethods): self
-    {
+    public function withSessionContext(
+        int $serverTimeMs,
+        ?array $pendingAuthStep,
+        array $codeDelivery,
+        array $authMethods,
+        bool $passkeyAllowsUnproven,
+    ): self {
         return new self(
             selfId: $this->selfId,
             selfName: $this->selfName,
@@ -219,6 +235,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             pendingAuthStep: $pendingAuthStep,
             codeDelivery: $codeDelivery,
             authMethods: $authMethods,
+            passkeyAllowsUnproven: $passkeyAllowsUnproven,
         );
     }
 
@@ -251,6 +268,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::pendingAuthStep => $this->pendingAuthStep,
                 self::codeDelivery => $this->codeDelivery,
                 self::authMethods => $this->authMethods,
+                self::passkeyAllowsUnproven => $this->passkeyAllowsUnproven,
             ],
         ];
     }
@@ -287,6 +305,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $pendingAuthStep = self::readPendingAuthStep($section);
         $codeDelivery = self::readCodeDelivery($section);
         $authMethods = self::readAuthMethods($section);
+        $passkeyAllowsUnproven = self::optionalBool($section, self::passkeyAllowsUnproven);
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
@@ -294,6 +313,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 pendingAuthStep: $pendingAuthStep,
                 codeDelivery: $codeDelivery,
                 authMethods: $authMethods,
+                passkeyAllowsUnproven: $passkeyAllowsUnproven,
             );
         }
 
@@ -308,6 +328,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             pendingAuthStep: $pendingAuthStep,
             codeDelivery: $codeDelivery,
             authMethods: $authMethods,
+            passkeyAllowsUnproven: $passkeyAllowsUnproven,
         );
     }
 

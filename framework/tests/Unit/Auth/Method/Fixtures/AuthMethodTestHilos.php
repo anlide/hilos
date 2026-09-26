@@ -38,6 +38,7 @@ final class AuthMethodTestHilos extends Hilos
     public static function unmount(): void
     {
         AuthMethodTestSettings::$disabled = null;
+        AuthMethodTestSettings::$passkeyAllowsUnproven = null;
         static::$setting = null;
         Hilos::initBrowser();
         Hilos::resetBrowser();

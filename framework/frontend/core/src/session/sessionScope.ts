@@ -65,9 +65,18 @@ const CODE_DELIVERY_KEY = 'codeDelivery'
 const AUTH_METHODS_KEY = 'authMethods'
 
 /**
+ * Plain session-scope key carrying whether a passkey may start an account on an
+ * unconfirmed address (HIL-1105). It travels beside {@link AUTH_METHODS_KEY} —
+ * in the handshake's data section, which lands in the scope whole, and in the
+ * same {@link SIGNAL_AUTH_METHODS} frame — so the two are always read together.
+ */
+const PASSKEY_ALLOWS_UNPROVEN_KEY = 'passkeyAllowsUnproven'
+
+/**
  * The settings library, and the OAuth provider page → every connection: the
- * installation's enabled sign-in methods with their readiness, sent after a
- * setting or provider write that changed them (PHP `HILOS_AUTH_METHODS`).
+ * installation's enabled sign-in methods with their readiness, and the passkey
+ * policy beside them (HIL-1105), sent after a setting or provider write that
+ * changed either (PHP `HILOS_AUTH_METHODS`).
  */
 export const SIGNAL_AUTH_METHODS = 'hilos_auth_methods'
 
@@ -97,9 +106,13 @@ interface AuthMethodWireEntry extends AuthMethodEntry {
   readonly ready: boolean
 }
 
-/** The payload of {@link SIGNAL_AUTH_METHODS}: the whole set, in button order. */
+/**
+ * The payload of {@link SIGNAL_AUTH_METHODS}: the whole set, in button order,
+ * and the passkey policy (HIL-1105).
+ */
 export const authMethodsSchema = z.looseObject({
   authMethods: z.array(authMethodEntrySchema),
+  passkeyAllowsUnproven: z.boolean().optional(),
 })
 
 /**
@@ -364,11 +377,16 @@ export function bindSessionScope(
       })
     }
     if (signal.type === SIGNAL_AUTH_METHODS) {
-      // The same key the handshake writes (HIL-427): a surface reads one slot and
-      // cannot tell which of the two brought the set, which is the point.
+      // The same keys the handshake writes (HIL-427, HIL-1105): a surface reads
+      // one slot and cannot tell which of the two brought the set, which is the
+      // point. Both keys in one ingest, so no reader sees the set of one frame
+      // beside the policy of another.
       const frame = signal.data as z.infer<typeof authMethodsSchema>
       ingest(scopes.session, {
-        data: { [AUTH_METHODS_KEY]: frame.authMethods },
+        data: {
+          [AUTH_METHODS_KEY]: frame.authMethods,
+          [PASSKEY_ALLOWS_UNPROVEN_KEY]: frame.passkeyAllowsUnproven === true,
+        },
       })
     }
     if (signal.type === SIGNAL_SECOND_FACTOR_POLICY) {
@@ -770,6 +788,26 @@ export function sessionEnabledAuthMethods(
   const slot = scopes.session.data.signal(AUTH_METHODS_KEY)
 
   return computedSignal(() => readAuthMethods(slot.get()).map(publicEntry))
+}
+
+/**
+ * Whether a passkey may start an account on an unconfirmed address (HIL-1105).
+ *
+ * Live beside {@link sessionEnabledAuthMethods}: the handshake writes it and
+ * the method-set frame rewrites it. True only when the backend said so —
+ * absent before the handshake, missing or malformed reads as no, the answer
+ * the backend policy itself gives when it is not told: a wrong no only asks
+ * for a confirmed address first, while a wrong yes would offer a way in the
+ * installation refuses.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionPasskeyAllowsUnproven(
+  scopes: ScopeManager,
+): ReadonlySignal<boolean> {
+  const slot = scopes.session.data.signal(PASSKEY_ALLOWS_UNPROVEN_KEY)
+
+  return computedSignal(() => slot.get() === true)
 }
 
 /**

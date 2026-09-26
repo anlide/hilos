@@ -14,14 +14,24 @@
 // door changed it. The ENABLED set, not the offered one the sign-in surface is
 // drawn from (HIL-1080): a provider an administrator switched on stays on here
 // even while it has no client pair, and its row says it is not ready.
+//
+// A second switch sits under the table (HIL-1105): whether a passkey may start
+// an account on an unconfirmed address. It is drawn only where the project wired
+// a passkey — a passkey row stands in the table — and, like the method switches,
+// it reads the live value every connection is sent with the set
+// ({@link sessionPasskeyAllowsUnproven}); a click only asks for the write.
 
+import { PASSKEY_METHOD_KEY } from '../../auth/authFlow.js'
 import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { sessionEnabledAuthMethods } from '../../session/sessionScope.js'
+import {
+  sessionEnabledAuthMethods,
+  sessionPasskeyAllowsUnproven,
+} from '../../session/sessionScope.js'
 import {
   readBoolean,
   readString,
@@ -50,10 +60,11 @@ export interface HilosSignInMethodRow {
 }
 
 // Wire keys: the framework sign-in methods table, its inline row slot, and the
-// switch action. A project binds its backend to these (Hilos::TABLES / PAGE_TABLES).
+// two switch actions. A project binds its backend to these (Hilos::TABLES / PAGE_TABLES).
 const METHODS_TABLE = 'hilosSecuritySignInMethods'
 const METHODS_SLOT = 'method'
 const METHOD_SET_ACTION = 'security_sign_in_method_set'
+const PASSKEY_UNPROVEN_SET_ACTION = 'security_passkey_unproven_set'
 
 /**
  * Payload keys of the sign-in methods row slot (mirrors the backend row shape).
@@ -82,7 +93,7 @@ export interface HilosSignInMethodsContext {
   readonly actions: ActionLifecycle
 }
 
-/** The switch a sign-in methods view binds to. */
+/** The switches a sign-in methods view binds to. */
 export interface HilosSignInMethodsActions {
   /**
    * Switch one method on or off, as a tracked action. The backend refuses the
@@ -93,6 +104,14 @@ export interface HilosSignInMethodsActions {
    * @param enabled Whether it should be on.
    */
   sendMethodSet(methodKey: string, enabled: boolean): ActionHandle
+  /**
+   * Allow or refuse a passkey as the only way into an account on an unconfirmed
+   * address (HIL-1105), as a tracked action. The switch redraws when the new
+   * value arrives with the method set; a refusal comes on the action's `::fail`.
+   *
+   * @param allowed Whether a passkey may start such an account.
+   */
+  sendPasskeyUnprovenSet(allowed: boolean): ActionHandle
 }
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -131,6 +150,10 @@ export interface HilosSignInMethodsTable {
   readonly controller: TableViewportController<HilosSignInMethodRow>
   /** The keys of the methods switched on now, live from the session scope. */
   readonly enabledKeys: ReadonlySignal<readonly string[]>
+  /** Whether the project wired a passkey: a passkey row stands in the table. */
+  readonly passkeyWired: ReadonlySignal<boolean>
+  /** Whether a passkey may start an account on an unconfirmed address, live from the session scope. */
+  readonly passkeyAllowsUnproven: ReadonlySignal<boolean>
   /** Bind the table to the connection — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
@@ -169,8 +192,8 @@ const METHODS_FRAME: HilosTableFrame = {
 
 /**
  * The server-windowed controller for the sign-in methods table, plus the live
- * enabled set its switches read. Rows resolve through
- * {@link resolveHilosSignInMethodRow}.
+ * enabled set its switches read and the live passkey policy the switch under it
+ * reads. Rows resolve through {@link resolveHilosSignInMethodRow}.
  *
  * @param context The project context (connection and scope stores).
  */
@@ -199,6 +222,12 @@ export function createHilosSignInMethodsTable(
   return {
     controller,
     enabledKeys: computedSignal(() => methods.get().map((entry) => entry.key)),
+    passkeyWired: computedSignal(() =>
+      controller.rows
+        .get()
+        .some((entry) => entry.row?.methodKey === PASSKEY_METHOD_KEY),
+    ),
+    passkeyAllowsUnproven: sessionPasskeyAllowsUnproven(context.scopes),
     start() {
       teardown = [
         bindTableViewport(
@@ -221,7 +250,7 @@ export function createHilosSignInMethodsTable(
 }
 
 /**
- * The sign-in methods switch: a tracked action over the lifecycle. The handle's
+ * The sign-in methods switches: tracked actions over the lifecycle. The handle's
  * `done` resolves on the backend's `::success` and rejects on `::fail` — the view
  * toasts the refusal and puts the switch back.
  *
@@ -233,6 +262,9 @@ export function createHilosSignInMethodsActions(
   return {
     sendMethodSet(methodKey, enabled) {
       return context.actions.dispatch(METHOD_SET_ACTION, { methodKey, enabled })
+    },
+    sendPasskeyUnprovenSet(allowed) {
+      return context.actions.dispatch(PASSKEY_UNPROVEN_SET_ACTION, { allowed })
     },
   }
 }

@@ -9,8 +9,12 @@ The switch is a tracked action: it dispatches the one-method switch, the refusal
 toasts ("at least one sign-in method must stay on") and the switch goes back, and
 the switch redraws from the live enabled set when it arrives — that set, not the
 row, is what says a method is on (the same set every sign-in surface reshapes
-from). The screen is built from text: the mockup has no node for it yet (D-093).
-Bootstrap classes only (styling-rules.md). -->
+from). Under the table, where the project wired a passkey, one more switch says
+whether a passkey may start an account on an unconfirmed address (HIL-1105): it
+follows the live value that arrives with the set, shares the busy guard of the
+method switches, and is drawn even while the passkey method is switched off.
+The screen is built from text: the mockup has no node for it yet (D-093), nor for
+the passkey block (D-122). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosSignInMethodsActions,
@@ -20,7 +24,7 @@ import {
   type HilosSignInMethodRow,
   type HilosSignInMethodsContext,
 } from '@hilos/core'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, useId } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
@@ -37,7 +41,11 @@ const props = defineProps<{
 const methods = createHilosSignInMethodsTable(props.context)
 const methodsTable = methods.controller
 const enabledKeys = useSignal(methods.enabledKeys)
-const { sendMethodSet } = createHilosSignInMethodsActions(props.context)
+const passkeyWired = useSignal(methods.passkeyWired)
+const passkeyAllowsUnproven = useSignal(methods.passkeyAllowsUnproven)
+const { sendMethodSet, sendPasskeyUnprovenSet } =
+  createHilosSignInMethodsActions(props.context)
+const passkeyHintId = useId()
 
 onMounted(() => methods.start())
 onUnmounted(() => methods.dispose())
@@ -46,6 +54,7 @@ onUnmounted(() => methods.dispose())
 // enough, and the busy flag disables every switch while one write is settling.
 const { busy: switchBusy, run: runSwitch } = useTrackedAction()
 const pendingMethodKey = ref<string | null>(null)
+const passkeyPending = ref(false)
 
 /** Whether the method is on now, by the live set rather than the row. */
 function isOn(row: HilosSignInMethodRow): boolean {
@@ -67,6 +76,17 @@ async function toggle(row: HilosSignInMethodRow, next: boolean): Promise<void> {
     await runSwitch(sendMethodSet(row.methodKey, next))
   } finally {
     pendingMethodKey.value = null
+  }
+}
+
+// The passkey policy switch rides the same runner, with the same rule: nothing
+// optimistic, the switch moves when the new value arrives with the set.
+async function togglePasskeyUnproven(next: boolean): Promise<void> {
+  passkeyPending.value = true
+  try {
+    await runSwitch(sendPasskeyUnprovenSet(next))
+  } finally {
+    passkeyPending.value = false
   }
 }
 </script>
@@ -111,5 +131,28 @@ async function toggle(row: HilosSignInMethodRow, next: boolean): Promise<void> {
         </HilosLink>
       </template>
     </HilosViewportTable>
+    <div
+      v-if="passkeyWired"
+      class="d-flex align-items-center gap-3 py-3 border-top"
+    >
+      <div class="flex-grow-1">
+        <div class="fw-semibold small">Passkey without a confirmed address</div>
+        <div :id="passkeyHintId" class="small text-body-secondary">
+          A new account may start with only a passkey, before its email or phone
+          is confirmed. Turning this off stops new accounts only: those already
+          created keep signing in with their passkey.
+        </div>
+      </div>
+      <HilosSwitch
+        class="mb-0"
+        :checked="passkeyAllowsUnproven"
+        :busy="passkeyPending"
+        :disabled="switchBusy"
+        aria-label="Allow passkey without a confirmed address"
+        :described-by="passkeyHintId"
+        data-id="hilos-sign-in-passkey-unproven"
+        @toggle="togglePasskeyUnproven"
+      />
+    </div>
   </HilosAdminPage>
 </template>

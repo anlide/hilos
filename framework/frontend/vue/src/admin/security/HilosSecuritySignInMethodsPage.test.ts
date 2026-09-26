@@ -1,7 +1,9 @@
 // The sign-in methods page (HIL-427): the switch reads the live enabled set the
 // session scope holds, not the row the table drew, and a click dispatches the
 // one-method switch as a tracked action — a refusal puts the clicked box back to
-// what the set still says.
+// what the set still says. The passkey policy switch under the table (HIL-1105) is
+// drawn only beside a passkey row, follows the live value rather than the click,
+// and waits while a method write is in flight.
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -159,6 +161,9 @@ const METHOD_ROWS: Record<string, unknown>[] = [
   },
 ]
 
+/** The passkey policy switch under the table. */
+const PASSKEY_POLICY_SWITCH = '[data-id="hilos-sign-in-passkey-unproven"]'
+
 const mounted: ReturnType<typeof mount>[] = []
 
 afterEach(() => {
@@ -270,5 +275,69 @@ describe('HilosSecuritySignInMethodsPage', () => {
     const [smsSwitch] = switchesOf(wrapper, 'sms')
     expect(smsSwitch?.checked).toBe(true)
     expect(smsSwitch?.disabled).toBe(false)
+  })
+
+  it('draws no passkey policy switch without a passkey row (HIL-1105)', async () => {
+    const { connection, pushWindow } = makeConnection()
+    const wrapper = mountPage(connection, makeScopes())
+
+    pushWindow(METHOD_ROWS.filter((row) => row.methodKey !== 'passkey'))
+    await nextTick()
+
+    expect(wrapper.find(PASSKEY_POLICY_SWITCH).exists()).toBe(false)
+  })
+
+  it('draws the passkey policy switch from the session and dispatches only the flag (HIL-1105)', async () => {
+    const { connection, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const scopes = makeScopes()
+    const wrapper = mountPage(connection, scopes, actions)
+
+    pushWindow(METHOD_ROWS)
+    await nextTick()
+
+    const policy = (): HTMLInputElement =>
+      wrapper.find(PASSKEY_POLICY_SWITCH).element as HTMLInputElement
+    expect(policy().checked).toBe(false)
+
+    scopes.session.data.set('passkeyAllowsUnproven', true)
+    await nextTick()
+    expect(policy().checked).toBe(true)
+
+    await wrapper.find(PASSKEY_POLICY_SWITCH).trigger('click')
+
+    expect(dispatched).toMatchObject([
+      { action: 'security_passkey_unproven_set', payload: { allowed: false } },
+    ])
+    // Nothing optimistic: the switch stays on the live value until it moves.
+    expect(policy().checked).toBe(true)
+    for (const box of switchesOf(wrapper, 'sms')) {
+      expect(box.disabled).toBe(true)
+    }
+
+    dispatched[0]?.refuse(
+      new ActionError('security_passkey_unproven_set', 'fail', 'Refused.'),
+    )
+    await settled()
+
+    expect(policy().checked).toBe(true)
+    expect(policy().disabled).toBe(false)
+  })
+
+  it('holds the passkey policy switch while a method write is in flight (HIL-1105)', async () => {
+    const { connection, pushWindow } = makeConnection()
+    const { actions } = makeActions()
+    const wrapper = mountPage(connection, makeScopes(), actions)
+
+    pushWindow(METHOD_ROWS)
+    await nextTick()
+    await wrapper
+      .find('[data-id="hilos-sign-in-method-enabled-sms"]')
+      .trigger('click')
+
+    expect(
+      (wrapper.find(PASSKEY_POLICY_SWITCH).element as HTMLInputElement)
+        .disabled,
+    ).toBe(true)
   })
 })

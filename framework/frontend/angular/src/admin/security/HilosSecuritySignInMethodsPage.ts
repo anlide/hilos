@@ -11,8 +11,12 @@
 // toasts ("at least one sign-in method must stay on") and the switch goes back, and
 // the switch redraws from the live enabled set when it arrives — that set, not the
 // row, is what says a method is on (the same set every sign-in surface reshapes
-// from). The screen is built from text: the mockup has no node for it yet (D-093).
-// Bootstrap classes only (styling-rules.md).
+// from). Under the table, where the project wired a passkey, one more switch says
+// whether a passkey may start an account on an unconfirmed address (HIL-1105): it
+// follows the live value that arrives with the set, shares the busy guard of the
+// method switches, and is drawn even while the passkey method is switched off.
+// The screen is built from text: the mockup has no node for it yet (D-093), nor
+// for the passkey block (D-122). Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -39,6 +43,9 @@ import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+
+/** Numbers the passkey hint of each mounted page, so two pages never share an id. */
+let passkeyHintSeq = 0
 
 /** The framework sign-in methods page: the methods table with a switch per method. */
 @Component({
@@ -95,6 +102,30 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
           }
         </ng-template>
       </hilos-viewport-table>
+      @if (passkeyWired()) {
+        <div class="d-flex align-items-center gap-3 py-3 border-top">
+          <div class="flex-grow-1">
+            <div class="fw-semibold small">
+              Passkey without a confirmed address
+            </div>
+            <div [id]="passkeyHintId" class="small text-body-secondary">
+              A new account may start with only a passkey, before its email or
+              phone is confirmed. Turning this off stops new accounts only:
+              those already created keep signing in with their passkey.
+            </div>
+          </div>
+          <hilos-switch
+            class="mb-0"
+            [checked]="passkeyAllowsUnproven()"
+            [busy]="passkeyPending()"
+            [disabled]="toggle.busy()"
+            [aria-label]="'Allow passkey without a confirmed address'"
+            [describedBy]="passkeyHintId"
+            dataId="hilos-sign-in-passkey-unproven"
+            (toggle)="onTogglePasskeyUnproven($event)"
+          />
+        </div>
+      }
     </hilos-admin-page>
   `,
 })
@@ -114,25 +145,42 @@ export class HilosSecuritySignInMethodsPage {
   // The live enabled set, mirrored from the core table handle: the handle arrives
   // through a computed, so hilosSignal cannot take it at field init.
   private readonly enabledKeys = signal<readonly string[]>([])
+  // The passkey row and the passkey policy, mirrored the same way (HIL-1105).
+  protected readonly passkeyWired = signal(false)
+  protected readonly passkeyAllowsUnproven = signal(false)
+  protected readonly passkeyHintId = `hilos-sign-in-passkey-hint-${passkeyHintSeq++}`
 
   // One tracked runner for every switch: a single in-flight guard across rows is
   // enough, and the busy flag disables every switch while one write is settling.
   protected readonly toggle = createHilosTrackedAction()
   protected readonly pendingMethodKey = signal<string | null>(null)
+  protected readonly passkeyPending = signal(false)
 
   constructor() {
     // Bind the server-windowed table to the connection and request the first
-    // window once the context input is bound, and follow the live enabled set;
-    // unbind on destroy or context swap.
+    // window once the context input is bound, and follow the live enabled set,
+    // the passkey row and the passkey policy; unbind on destroy or context swap.
     effect((onCleanup) => {
       const methods = this.methods()
       methods.start()
       this.enabledKeys.set(methods.enabledKeys.get())
-      const unsubscribe = subscribeSignal(methods.enabledKeys, (keys) =>
-        this.enabledKeys.set(keys),
-      )
+      this.passkeyWired.set(methods.passkeyWired.get())
+      this.passkeyAllowsUnproven.set(methods.passkeyAllowsUnproven.get())
+      const unsubscribers = [
+        subscribeSignal(methods.enabledKeys, (keys) =>
+          this.enabledKeys.set(keys),
+        ),
+        subscribeSignal(methods.passkeyWired, (wired) =>
+          this.passkeyWired.set(wired),
+        ),
+        subscribeSignal(methods.passkeyAllowsUnproven, (allowed) =>
+          this.passkeyAllowsUnproven.set(allowed),
+        ),
+      ]
       onCleanup(() => {
-        unsubscribe()
+        for (const unsubscribe of unsubscribers) {
+          unsubscribe()
+        }
         methods.dispose()
       })
     })
@@ -161,6 +209,17 @@ export class HilosSecuritySignInMethodsPage {
       await this.toggle.run(this.actions().sendMethodSet(row.methodKey, next))
     } finally {
       this.pendingMethodKey.set(null)
+    }
+  }
+
+  // The passkey policy switch rides the same runner, with the same rule: nothing
+  // optimistic, the switch moves when the new value arrives with the set.
+  protected async onTogglePasskeyUnproven(next: boolean): Promise<void> {
+    this.passkeyPending.set(true)
+    try {
+      await this.toggle.run(this.actions().sendPasskeyUnprovenSet(next))
+    } finally {
+      this.passkeyPending.set(false)
     }
   }
 }

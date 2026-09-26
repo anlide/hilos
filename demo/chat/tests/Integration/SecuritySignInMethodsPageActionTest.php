@@ -11,25 +11,30 @@ use Demo\Chat\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\Method\EnabledAuthMethods;
+use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Pages\Security\DTO\HilosPasskeyUnprovenSetActionDTO;
 use Hilos\Pages\Security\DTO\HilosSignInMethodSetActionDTO;
 
 /**
- * Integration coverage for the sign-in methods screen's switch (HIL-427).
+ * Integration coverage for the sign-in methods screen's switches (HIL-427, HIL-1105).
  *
  * The page rebuilds the stored list of switched-off methods and forwards it; the settings
- * library writes it under the key's rule. Both halves run here in one process against the
- * real catalog and database, the frame carried across by hand as the general settings screen's
- * suite carries it ({@see SettingsPageActionTest}).
+ * library writes it under the key's rule. The passkey policy switch forwards its one flag the
+ * same way. Both halves run here in one process against the real catalog and database, the
+ * frame carried across by hand as the general settings screen's suite carries it
+ * ({@see SettingsPageActionTest}). The page's refusal of the policy where no passkey is wired
+ * is a unit case: every demo wires one.
  */
 final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
 {
@@ -116,7 +121,31 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
     }
 
     /**
-     * Runs one switch end to end: the page checks and forwards, the library writes.
+     * The passkey policy switch stores the flag and the policy reads it back; switching it off stores no.
+     */
+    public function testThePasskeyPolicySwitchWritesTheSetting(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->assertFalse(PasskeyAddressPolicy::allowsUnproven());
+
+            $this->assertNull($this->dispatch(
+                'passkey-policy-ak',
+                HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET,
+                new HilosPasskeyUnprovenSetActionDTO(true),
+            ));
+            $this->assertTrue(PasskeyAddressPolicy::allowsUnproven());
+
+            $this->assertNull($this->dispatch(
+                'passkey-policy-ak',
+                HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET,
+                new HilosPasskeyUnprovenSetActionDTO(false),
+            ));
+            $this->assertFalse(PasskeyAddressPolicy::allowsUnproven());
+        });
+    }
+
+    /**
+     * Runs one method switch end to end: the page checks and forwards, the library writes.
      *
      * @param string $acceptKey Connection accept key the action arrives on
      * @param string $methodKey Method to switch
@@ -125,11 +154,24 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
      */
     private function submit(string $acceptKey, string $methodKey, bool $enabled): ?string
     {
-        $this->page()->onAction(
+        return $this->dispatch(
             $acceptKey,
             HilosSignalConstants::SECURITY_SIGN_IN_METHOD_SET,
             new HilosSignInMethodSetActionDTO($methodKey, $enabled),
         );
+    }
+
+    /**
+     * Runs one action of the page end to end: the page checks and forwards, the library writes.
+     *
+     * @param string $acceptKey Connection accept key the action arrives on
+     * @param string $action Action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?string Sentence the library refused with, or null when the write went through
+     */
+    private function dispatch(string $acceptKey, string $action, ActionPayloadDTO $dto): ?string
+    {
+        $this->page()->onAction($acceptKey, $action, $dto);
 
         $asks = array_keys(SettingsLibraryAgent::AGENT_SIGNALS);
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
@@ -182,7 +224,7 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
     }
 
     /**
-     * Holds the settings writer around a body and takes the stored list away afterwards.
+     * Holds the settings writer around a body and takes the stored list and policy away afterwards.
      *
      * @param callable():void $body Test body run while the settings writer is held
      */
@@ -190,11 +232,13 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
     {
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
         Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->actions->delete();
+        Hilos::$db->settings[PasskeyAddressPolicy::SETTING_KEY]?->actions->delete();
 
         try {
             $body();
         } finally {
             Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->actions->delete();
+            Hilos::$db->settings[PasskeyAddressPolicy::SETTING_KEY]?->actions->delete();
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }
     }

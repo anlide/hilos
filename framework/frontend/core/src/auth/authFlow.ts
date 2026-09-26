@@ -875,6 +875,12 @@ export const PASSWORD_METHOD_KEY = 'password'
  */
 export const MAGIC_LINK_METHOD_KEY = 'magic_link'
 
+/**
+ * The `passkey` method key. Core-known because the sign-in methods screen draws
+ * the passkey policy switch only where a passkey row stands (HIL-1105).
+ */
+export const PASSKEY_METHOD_KEY = 'passkey'
+
 /** The key prefix every OAuth provider method carries, e.g. `oauth:github`. */
 export const OAUTH_METHOD_PREFIX = 'oauth:'
 
@@ -1022,7 +1028,7 @@ export function oauthFlowMethod(
  * discoverable credential needs no identifier); it disappears as the user types.
  */
 export const PASSKEY_FLOW_METHOD: AuthFlowMethodDescriptor = {
-  key: 'passkey',
+  key: PASSKEY_METHOD_KEY,
   label: 'Sign in with a passkey',
   kind: 'icon',
   visibility: { whenEmpty: true, whenTyping: false },

@@ -12,6 +12,7 @@ import {
   sessionCodeDelivery,
   sessionAuthMethods,
   sessionEnabledAuthMethods,
+  sessionPasskeyAllowsUnproven,
   sessionSecondFactorPolicy,
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
@@ -321,6 +322,54 @@ describe('sessionScope', () => {
       { key: 'oauth:github', name: 'GitHub' },
     ])
     expect(SESSION_SIGNAL_SCHEMAS[SIGNAL_AUTH_METHODS]).toBeDefined()
+  })
+
+  it('reads the passkey policy the handshake and the method-set frame write (HIL-1105)', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const allowed = sessionPasskeyAllowsUnproven(scopes)
+    const methods = sessionEnabledAuthMethods(scopes)
+
+    // Nothing said yet: the policy reads as no, the backend's own default.
+    expect(allowed.get()).toBe(false)
+
+    connection.emitHandshakeResponse({
+      data: {
+        authMethods: [{ key: 'passkey', name: null, ready: true }],
+        passkeyAllowsUnproven: true,
+      },
+    })
+    expect(allowed.get()).toBe(true)
+
+    // The frame carries the set and the policy together and rewrites both.
+    connection.emit(SIGNAL_AUTH_METHODS, {
+      authMethods: [
+        { key: 'password', name: null, ready: true },
+        { key: 'passkey', name: null, ready: true },
+      ],
+      passkeyAllowsUnproven: false,
+    })
+    expect(allowed.get()).toBe(false)
+    expect(methods.get()).toHaveLength(2)
+
+    connection.emit(SIGNAL_AUTH_METHODS, {
+      authMethods: [{ key: 'passkey', name: null, ready: true }],
+      passkeyAllowsUnproven: true,
+    })
+    expect(allowed.get()).toBe(true)
+
+    // A frame without the flag reads as no rather than keeping the old yes.
+    connection.emit(SIGNAL_AUTH_METHODS, {
+      authMethods: [{ key: 'passkey', name: null, ready: true }],
+    })
+    expect(allowed.get()).toBe(false)
+
+    // A handshake whose flag is not a boolean is no as well.
+    connection.emitHandshakeResponse({
+      data: { passkeyAllowsUnproven: 'yes' },
+    })
+    expect(allowed.get()).toBe(false)
   })
 
   it('offers only the ready methods and keeps the unready ones enabled (HIL-1080)', () => {

@@ -96,6 +96,9 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
+  // Narrow the table to the row first: the first page holds ten rows, and every
+  // catalog key that sorts before this one pushes it further down.
+  await typeInto(page.getByTestId('hilos-table-search'), 'example_integer')
   const integerRow = page.getByTestId('hilos-table-row-example_integer')
   await expect(integerRow).toContainText('default')
 

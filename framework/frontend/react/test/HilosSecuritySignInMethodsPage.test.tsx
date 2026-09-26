@@ -1,7 +1,9 @@
 // The sign-in methods page (HIL-427): the switch reads the live enabled set the
 // session scope holds, not the row the table drew, and a click dispatches the
 // one-method switch as a tracked action — a refusal leaves the switch on what the
-// set still says.
+// set still says. The passkey policy switch under the table (HIL-1105) is drawn
+// only beside a passkey row, follows the live value rather than the click, and
+// waits while a method write is in flight.
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
@@ -175,6 +177,13 @@ function switchesOf(
   )
 }
 
+/** The passkey policy switch under the table, or null when it is not drawn. */
+function passkeyPolicyOf(container: HTMLElement): HTMLInputElement | null {
+  return container.querySelector<HTMLInputElement>(
+    '[data-id="hilos-sign-in-passkey-unproven"]',
+  )
+}
+
 /** Wait out the microtasks a settled action resolves through. */
 async function settled(): Promise<void> {
   await act(async () => {
@@ -263,5 +272,85 @@ describe('HilosSecuritySignInMethodsPage', () => {
       expect(box.checked).toBe(true)
       expect(box.disabled).toBe(false)
     }
+  })
+
+  it('draws no passkey policy switch without a passkey row (HIL-1105)', () => {
+    const { connection, pushWindow } = makeConnection()
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosSecuritySignInMethodsPage
+          context={{
+            connection,
+            scopes: makeScopes(),
+            actions: makeActions().actions,
+          }}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    pushWindow(METHOD_ROWS.filter((row) => row.methodKey !== 'passkey'))
+
+    expect(passkeyPolicyOf(container)).toBeNull()
+  })
+
+  it('draws the passkey policy switch from the session and dispatches only the flag (HIL-1105)', async () => {
+    const { connection, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const scopes = makeScopes()
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosSecuritySignInMethodsPage
+          context={{ connection, scopes, actions }}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    pushWindow(METHOD_ROWS)
+    expect(passkeyPolicyOf(container)?.checked).toBe(false)
+
+    act(() => {
+      scopes.session.data.set('passkeyAllowsUnproven', true)
+    })
+    expect(passkeyPolicyOf(container)?.checked).toBe(true)
+
+    fireEvent.click(passkeyPolicyOf(container) as HTMLInputElement)
+
+    expect(dispatched).toMatchObject([
+      { action: 'security_passkey_unproven_set', payload: { allowed: false } },
+    ])
+    // In flight: every switch waits for the answer.
+    for (const box of switchesOf(container, 'sms')) {
+      expect(box.disabled).toBe(true)
+    }
+
+    dispatched[0]?.refuse(
+      new ActionError('security_passkey_unproven_set', 'fail', 'Refused.'),
+    )
+    await settled()
+
+    // Nothing optimistic: refused, the switch is on the live value still.
+    expect(passkeyPolicyOf(container)?.checked).toBe(true)
+    expect(passkeyPolicyOf(container)?.disabled).toBe(false)
+  })
+
+  it('holds the passkey policy switch while a method write is in flight (HIL-1105)', () => {
+    const { connection, pushWindow } = makeConnection()
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosSecuritySignInMethodsPage
+          context={{
+            connection,
+            scopes: makeScopes(),
+            actions: makeActions().actions,
+          }}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    pushWindow(METHOD_ROWS)
+    const [smsSwitch] = switchesOf(container, 'sms')
+    fireEvent.click(smsSwitch as HTMLInputElement)
+
+    expect(passkeyPolicyOf(container)?.disabled).toBe(true)
   })
 })

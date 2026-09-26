@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Settings\Library;
 
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
-use Hilos\Auth\Method\EnabledAuthMethods;
+use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Constants\HilosAgentType;
@@ -75,10 +75,12 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * to rebuild itself when that setting moves - whichever door moved it: the sign-in methods
  * screen, the general settings table, a preset. This library is the only writer all three
  * pass through, so it is the one place a change of the set can be seen whole: it reads the
- * enabled set before and after each write, and when the two differ it sends the new set to
- * every connection ({@see HilosSignalConstants::HILOS_AUTH_METHODS}). A screen could not do it
- * - the general table knows nothing of sign-in - and a subscriber to the settings collection
- * would fire once per worker instead of once per write.
+ * frame of the set before and after each write, and when the two differ it sends the new
+ * frame to every connection ({@see HilosSignalConstants::HILOS_AUTH_METHODS}). The frame
+ * carries the passkey policy as well ({@see PasskeyAddressPolicy}, HIL-1105), so a write that
+ * moved only the policy is sent the same way. A screen could not do it - the general table
+ * knows nothing of sign-in - and a subscriber to the settings collection would fire once per
+ * worker instead of once per write.
  *
  * WHY THE REPLY NAME RIDES IN THE ASK. There are three gatekeepers to this one scribe, and a
  * fixed pair of names would make it know each screen by name - the next screen that writes a
@@ -310,14 +312,14 @@ final class SettingsLibraryAgent extends AbstractAgent
      * The second-factor settings travel the same way (HIL-494): a write that moved them is told to
      * every connection, so the profile section and the code step redraw without a reload.
      *
-     * @param ?list<array{key: string, name: ?string, ready: bool}> $methodsBefore Enabled method set before the write, or null when unread
+     * @param ?AuthMethodsSignalData $methodsBefore Method-set frame before the write, or null when unread
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
      * @throws InvalidArgumentException When the answer, the new method set or the new policy cannot be named or queued
      */
     private function settle(
         HandoverAskInterface $ask,
         ?ActionRefusal $refusal,
-        ?array $methodsBefore,
+        ?AuthMethodsSignalData $methodsBefore,
         ?SecondFactorPolicy $policyBefore,
     ): void {
         $this->answer($ask, $refusal);
@@ -326,8 +328,8 @@ final class SettingsLibraryAgent extends AbstractAgent
         }
 
         $methodsAfter = $methodsBefore === null ? null : $this->offeredMethods();
-        if ($methodsAfter !== null && $methodsAfter !== $methodsBefore) {
-            $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, new AuthMethodsSignalData($methodsAfter));
+        if ($methodsAfter !== null && $methodsAfter->toArray() !== $methodsBefore->toArray()) {
+            $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, $methodsAfter);
         }
 
         $policyAfter = $policyBefore === null ? null : $this->secondFactorPolicy();
@@ -360,18 +362,19 @@ final class SettingsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Reads the enabled sign-in method set in the shape a surface is handed it, or null when it cannot be read.
+     * Reads the frame of the sign-in method set as a surface is handed it, or null when it cannot be read.
      *
-     * A read that fails is logged and answered with null rather than thrown: the write this
-     * library is serving must be answered either way, and a set nobody could read is not a
-     * change anybody can announce.
+     * The whole frame - the enabled set and the passkey policy - because the frame is what a
+     * surface holds, and a change to either half is a change to announce. A read that fails is
+     * logged and answered with null rather than thrown: the write this library is serving must
+     * be answered either way, and a set nobody could read is not a change anybody can announce.
      *
-     * @return ?list<array{key: string, name: ?string, ready: bool}> Enabled methods in button order, or null when unread
+     * @return ?AuthMethodsSignalData The frame as it stands, or null when unread
      */
-    private function offeredMethods(): ?array
+    private function offeredMethods(): ?AuthMethodsSignalData
     {
         try {
-            return EnabledAuthMethods::toWire();
+            return AuthMethodsSignalData::current();
         } catch (HilosException $e) {
             $this->logAgentError("Sign-in method set could not be read: {$e->getMessage()}");
 
