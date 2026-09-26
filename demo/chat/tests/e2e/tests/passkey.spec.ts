@@ -1,6 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import {
+  platformsLeftOut,
+  readPasskeyCreations,
+  watchPasskeyCreation,
+} from '../../../../../framework/frontend/e2e/index.js'
+import {
   clickSubmit,
   continueFromDone,
   finishWithPasskey,
@@ -31,9 +36,14 @@ import { gotoPage } from '../helpers/page'
 // no OS prompt. The crypto itself is unit-covered (framework Auth/WebAuthn); this
 // file is the UI-driven cross-surface flow. It relies on the daemon's
 // HILOS_WEBAUTHN_RP_ID / _ORIGIN matching the e2e host (chat-nginx-test, set in
-// tests/.env): the authenticator scopes the credential to the RP id and the
-// server matches the clientDataJSON origin exactly, so a mismatch fails the
-// assertion before any assertion is even attempted.
+// demo/chat/docker/docker-compose.test.yml): the authenticator scopes the
+// credential to the RP id and the server matches clientDataJSON's origin exactly,
+// so a mismatch fails the ceremony before its assertion is accepted.
+//
+// CDP cannot vary the authenticator's algorithms or show an OS chooser. Both
+// creation legs judge the actual request against the promised platform table
+// (HIL-659), catching an ES256-only request that leaves Windows Hello out.
+// Real-device checks and the limits of this table live in docs/agents/manual-checks.md.
 //
 // HIL-695 adds the third ceremony this file covers: CANCEL. An anonymous visitor
 // parks the discoverable login on the waiting screen and backs out of it. That
@@ -95,6 +105,7 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   // A resident credential must exist for a discoverable login; the register
   // ceremony (HIL-284) mints one, so enroll a passkey first, then sign out.
   await addVirtualAuthenticator(page)
+  await watchPasskeyCreation(page)
   await signUp(page)
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
@@ -102,6 +113,9 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   await expect(
     page.getByTestId('hilos-toasts').getByText('Passkey added.'),
   ).toBeVisible()
+  const creations = await readPasskeyCreations(page)
+  expect(creations).toHaveLength(1)
+  expect(platformsLeftOut(creations[0])).toEqual([])
 
   // The key reads by DEVICE (HIL-418): the row the enrollment adds carries a
   // "Passkey · added <date>" line, and the credential-id line the list used to
@@ -144,6 +158,7 @@ test('creates an account on a passkey from the password screen and signs back in
   page,
 }) => {
   await addVirtualAuthenticator(page)
+  await watchPasskeyCreation(page)
   const email = uniqueEmail()
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
@@ -155,6 +170,9 @@ test('creates an account on a passkey from the password screen and signs back in
   await expect(page.getByTestId('auth-error')).toHaveCount(0)
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
+  const creations = await readPasskeyCreations(page)
+  expect(creations).toHaveLength(1)
+  expect(platformsLeftOut(creations[0])).toEqual([])
 
   // The account signs in with the key the device just made: the profile lists it
   // by device, beside the confirmed address it was registered on.

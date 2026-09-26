@@ -639,10 +639,20 @@ The eight directions, and where each stands. This table is also the epic's map:
 | External model — `framework/backend/LLM/External/Chat/AsyncOpenAIChatProvider.php` | nothing | an emulated model | no leaf yet |
 | Web Push — `framework/backend/Push/WebPushRequestFactory.php`, `Push/Delivery/PushEndpointSend.php` | nothing | does not settle by address substitution | a separate interview of HIL-918, [below](#what-the-house-cannot-house-yet) |
 
+An emulator proves the route, not the provider behind it; what only a real
+provider shows is listed by direction in [manual-checks.md](manual-checks.md).
+
 ## What the House Cannot House Yet
 
-Two honest lines, so the gap is found here and not at the moment someone tries
+Three honest lines, so the gap is found here and not at the moment someone tries
 to move in.
+
+**A passkey authenticator is not a service at all.** Its ceremony leaves the
+browser for the OS and the device behind it; there is no route from the daemon
+for this house to emulate. e2e drives Chrome's virtual authenticator over CDP,
+whose `VirtualAuthenticatorOptions` (Playwright 1.60.0) cannot set an algorithm
+list. Instead, `framework/frontend/e2e/passkeyCreation.ts` judges the request
+against a platform table; the rest is in [manual-checks.md](manual-checks.md).
 
 **Web Push does not settle by substituting a base address.** The endpoint a push
 goes to is issued by the BROWSER when it subscribes, and the daemon sends to

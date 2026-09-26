@@ -209,6 +209,26 @@ Prove the drop by the **next socket**, counted with `page.on('websocket')`, not
 by a glimpse of the disconnected label, which a fast reconnect can pass through
 unseen.
 
+### `watchPasskeyCreation(page)` / `readPasskeyCreations(page)` / `platformsLeftOut(creation)` — judge what the page asks an authenticator for
+
+HIL-658 left Windows Hello out of the OS chooser: the request offered no
+algorithm that its TPM could sign with, while the virtual authenticator kept
+the suite green. CDP cannot vary that device's algorithms, so the toolbox
+judges the request itself against the promised platform table.
+
+Call `watchPasskeyCreation(page)` **before loading the page**. It records each
+`navigator.credentials.create` request and passes it unchanged to the native
+API, preserving its promise and the virtual authenticator's ceremony.
+`readPasskeyCreations(page)` returns the records without consuming them;
+`platformsLeftOut(creation)` returns a platform name and reason for each missing
+algorithm match. An empty list means every promised platform can answer with
+one of its signing algorithms. Both profile enrollment and passkey sign-up
+assert that verdict in chat's passkey spec.
+
+The table is our knowledge: a change in a platform's own behavior is caught
+only by a manual run. The real-device steps and the hand-over rule are in
+[manual-checks.md](../manual-checks.md).
+
 ### The settings edit form — open, draft, set and clear
 
 The toolbox owns the moves of the framework settings dialog through

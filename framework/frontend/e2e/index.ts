@@ -29,6 +29,14 @@ export {
   Watched,
 } from './geometry.js'
 export { armSocketDrop, dropSocket } from './socket.js'
+export {
+  PASSKEY_PLATFORMS,
+  platformsLeftOut,
+  readPasskeyCreations,
+  watchPasskeyCreation,
+  type PasskeyCreation,
+  type PasskeyPlatform,
+} from './passkeyCreation.js'
 export { dismissToasts } from './toasts.js'
 export {
   clearCustomSetting,

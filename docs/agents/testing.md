@@ -174,6 +174,13 @@ require re-running them. The normative AA requirements those specs guard are in
 A data-mutating e2e is **re-run through the full cycle, pointed or not** — the cycle
 resets for you; see [Re-running tests and state between runs](#re-running-tests-and-state-between-runs).
 
+### What no run proves
+
+What only a person sees on a real device or at a real provider is listed in
+[manual-checks.md](manual-checks.md). A change touching one of those surfaces
+names the affected numbered items in its hand-over for acceptance; the person
+records the result there. A green run does not stand in for those checks.
+
 ### A cross-process defect is an e2e defect first
 
 A defect where **two processes see different state** — the master appends an

@@ -13,6 +13,8 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 
 - The change-type → test-set map and the rare-full-run rule:
   `docs/agents/testing.md`, section "Selective testing — what to run for which change".
+- What no run can prove — the part a person checks on a real device or provider,
+  and what a change touching it names in its hand-over: `docs/agents/manual-checks.md`.
 - The ladder for a defect two processes disagree about, and when a unit test may
   spawn a second process: `docs/agents/testing.md`, section "A cross-process
   defect is an e2e defect first".

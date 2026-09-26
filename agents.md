@@ -158,6 +158,7 @@ Minimum ORM rules before editing:
 |---|---|
 | [testing.md](docs/agents/testing.md) | running unit / integration / e2e tests — **always** via the composer scripts, never `phpunit` directly |
 | [stand-services.md](docs/agents/stand-services.md) | a spec needs an external service on the stand: adding a channel or an emulator, choosing between a stub and an emulator, or reading where a caught message lands |
+| [manual-checks.md](docs/agents/manual-checks.md) | a change touches something only a person on a real device or a real provider sees — the passkey ceremony, a letter in a real mail client, a provider's consent screen: which items your hand-over names, and which platforms we promise |
 
 ## Code Style Rules
 
