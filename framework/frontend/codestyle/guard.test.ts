@@ -29,6 +29,7 @@ import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
 import { checkRepository as checkIconNameExists } from './iconNameExists.js'
 import { checkRepository as checkModalFocus } from './modalFocus.js'
 import { checkRepository as checkShellParity } from './shellParity.js'
+import { checkRepository as checkUnbuiltPages } from './unbuiltPages.js'
 import { checkRepository as checkSpelling } from './spelling.js'
 import { checkRepository as checkStyleInline } from './inlineStyle.js'
 import { checkRepository as checkStyleSheetHome } from './styleSheetHome.js'
@@ -56,6 +57,7 @@ const RULES = [
   checkIconNameExists,
   checkModalFocus,
   checkShellParity,
+  checkUnbuiltPages,
   checkSpelling,
   checkStyleInline,
   checkStyleSheetHome,

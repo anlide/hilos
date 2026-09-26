@@ -13,6 +13,10 @@
 // every visit.
 // Bootstrap classes only (styling-rules.md).
 import {
+  hilosDashboardLinks,
+  type HilosDashboardLinkSection,
+} from '@hilos/core'
+import {
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -22,22 +26,6 @@ import {
 import { HilosLink } from '../../HilosLink.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
 import { hilosSignal } from '../../hilosSignal.js'
-
-/** One section card resolved to an address. */
-interface DashboardCard {
-  page: string
-  label: string
-  lead: string
-  icon: string | null
-  to: string
-}
-
-/** A labelled group of section cards on the dashboard. */
-interface DashboardSection {
-  title: string
-  description: string
-  items: DashboardCard[]
-}
 
 /** Placeholder cards drawn while the sections are still on the wire. */
 const SKELETON_CARDS: readonly number[] = [0, 1, 2, 3, 4, 5]
@@ -137,17 +125,7 @@ export class HilosDashboardPage {
   protected readonly answered = hilosSignal(this.router.dashboardSections)
 
   /** Section cards grouped for display, resolved against the app's route map. */
-  protected readonly sections = computed<DashboardSection[]>(() =>
-    (this.answered() ?? []).map((section) => ({
-      title: section.title,
-      description: section.description,
-      // A card with no address is left out: a card IS its target, and the shell
-      // must not offer one that goes nowhere.
-      items: section.items.flatMap((item) => {
-        const to = this.router.resolvePath(item.page)
-
-        return to === undefined ? [] : [{ ...item, to }]
-      }),
-    })),
+  protected readonly sections = computed<HilosDashboardLinkSection[]>(() =>
+    hilosDashboardLinks(this.answered() ?? [], this.router.resolvePath),
   )
 }

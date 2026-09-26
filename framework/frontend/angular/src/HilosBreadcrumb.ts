@@ -28,7 +28,11 @@ import { HilosLink } from './HilosLink.js'
             } @else {
               <li class="breadcrumb-item">
                 @if (crumb.to; as to) {
-                  <a [hilosLink]="to">{{ crumb.label }}</a>
+                  <a
+                    [hilosLink]="to"
+                    [attr.data-id]="'hilos-breadcrumb-' + crumb.page"
+                    >{{ crumb.label }}</a
+                  >
                 } @else {
                   {{ crumb.label }}
                 }

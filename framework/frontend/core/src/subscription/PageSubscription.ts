@@ -26,7 +26,11 @@ import {
   type ConnectionState,
   type TableViewportDescriptor,
 } from '../connection/HilosConnection.js'
-import { type PageSubscriptionError } from '../protocol/pageError.js'
+import {
+  PAGE_ERROR_NOT_SERVED,
+  PAGE_ERROR_NOT_SERVED_MESSAGE,
+  type PageSubscriptionError,
+} from '../protocol/pageError.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
 import {
   ingest,
@@ -37,6 +41,9 @@ import { createSignal, type ReadonlySignal } from '../state/signal.js'
 
 /** The page status the auth gate owns: only its resume takes this one down. */
 const UNAUTHORIZED = 401
+
+/** The status of a page the application's view layer has not built. */
+const NOT_FOUND = 404
 
 /** The connection events the manager listens to. */
 type PageSubscriptionEventMap = Pick<
@@ -306,6 +313,24 @@ export class PageSubscription {
         [FIELD_PAGE]: left,
       }),
     )
+  }
+
+  /**
+   * Refuse a page the application's view layer has not built, without asking
+   * the server. The surface is the same as a server not_served refusal (HIL-1090).
+   * Leaving the current subscription also drops its scope and held frames.
+   *
+   * @param pageKey The page the application cannot render.
+   */
+  refuseUnbuilt(pageKey: string): void {
+    this.unsubscribe()
+    this.pageErrorSignal.set({
+      page: pageKey,
+      httpCode: NOT_FOUND,
+      errorCode: PAGE_ERROR_NOT_SERVED,
+      message: PAGE_ERROR_NOT_SERVED_MESSAGE,
+    })
+    this.pageLoadingSignal.set(false)
   }
 
   /**

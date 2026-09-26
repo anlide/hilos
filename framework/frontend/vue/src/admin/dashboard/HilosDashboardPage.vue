@@ -13,6 +13,7 @@ the layout on every visit.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, inject } from 'vue'
+import { hilosDashboardLinks } from '@hilos/core'
 
 import HilosLink from '../../HilosLink.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -28,17 +29,7 @@ if (!router) {
 const identity = useSignal(router.pageIdentity)
 const answered = useSignal(router.dashboardSections)
 const sections = computed(() =>
-  (answered.value ?? []).map((section) => ({
-    title: section.title,
-    description: section.description,
-    // A card with no address is left out: a card IS its target, and the shell
-    // must not offer one that goes nowhere.
-    items: section.items.flatMap((item) => {
-      const to = router.resolvePath(item.page)
-
-      return to === undefined ? [] : [{ ...item, to }]
-    }),
-  })),
+  hilosDashboardLinks(answered.value ?? [], router.resolvePath),
 )
 </script>
 

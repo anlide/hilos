@@ -14,9 +14,8 @@ const HILOS_USERS_TABLE = 'hilosUsers'
 // sections, and every section / sub-page / deep link resolves over the live
 // socket with no document reload. Each `/hilos` page renders through the
 // framework HilosAdminPage shell (breadcrumb + children resolved from the core
-// admin tree) — an un-implemented page via the framework default view
-// (hilosAdminViews), a real one via its own override module — so this proves
-// both the dashboard menu and the per-page admin routing.
+// admin tree). Built sections and their children exercise both the dashboard
+// menu and per-page admin routing; unbuilt pages are covered by unbuilt-page.spec.
 test('navigates the admin tree with no reload or reconnect', async ({
   page,
 }) => {
@@ -33,50 +32,48 @@ test('navigates the admin tree with no reload or reconnect', async ({
   // Gear -> dashboard, which lists the sections as cards.
   await page.getByTestId('nav-admin').click()
   await expect(page.getByTestId('dashboard-view')).toBeVisible()
-  await expect(page.getByTestId('dashboard-card-hilos_daemon')).toBeVisible()
+  await expect(page.getByTestId('dashboard-card-hilos_security')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos')
 
   // Dashboard card -> a top-level section page with its sub-navigation.
-  await page.getByTestId('dashboard-card-hilos_daemon').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Daemon')
-  expect(new URL(page.url()).pathname).toBe('/hilos/daemon')
+  await page.getByTestId('dashboard-card-hilos_security').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Security Center')
+  expect(new URL(page.url()).pathname).toBe('/hilos/security')
   await expect(
-    page.getByTestId('hilos-admin-child-hilos_daemon_workers'),
+    page.getByTestId('hilos-admin-child-hilos_security_oauth'),
   ).toBeVisible()
 
   // Section -> a sub-page, then back up through the breadcrumb.
-  await page.getByTestId('hilos-admin-child-hilos_daemon_workers').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Workers')
-  expect(new URL(page.url()).pathname).toBe('/hilos/daemon/workers')
-  await page.getByTestId('hilos-breadcrumb').getByText('Daemon').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Daemon')
-  expect(new URL(page.url()).pathname).toBe('/hilos/daemon')
+  await page.getByTestId('hilos-admin-child-hilos_security_oauth').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('OAuth providers')
+  expect(new URL(page.url()).pathname).toBe('/hilos/security/oauth')
+  await page.getByTestId('hilos-breadcrumb-hilos_security').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Security Center')
+  expect(new URL(page.url()).pathname).toBe('/hilos/security')
 
   // The whole tour stayed in one live document on one socket.
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   expect(fullLoads).toBe(loadsAfterColdLoad)
 })
 
-// A parametrized admin page resolves on cold load through the framework shell:
-// the Billing leaf is still an un-implemented page, so it renders via the
-// framework default view (hilosAdminViews) — the route param is captured and the
-// leaf renders with the breadcrumb its own subscription answered with, proving a
-// deep link works without a per-project stub file.
+// A built parametrized admin page resolves on cold load through the framework
+// shell, and its breadcrumb preserves the channel on the way to its parent.
 test('cold-loads a parametrized admin page through the framework shell', async ({
   page,
 }) => {
   await signUpAdmin(page)
-  await gotoPage(page, '/hilos/billing/stripe/payments')
+  await gotoPage(page, '/hilos/communications/email/deliveries')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Payments')
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Deliveries')
 
-  // The framework breadcrumb walks back to the provider and the billing hub,
-  // keeping the providerId from the current route.
-  const breadcrumb = page.getByTestId('hilos-breadcrumb')
-  await expect(breadcrumb.getByText('Billing')).toBeVisible()
-  await breadcrumb.getByText('Billing', { exact: true }).click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Billing')
-  expect(new URL(page.url()).pathname).toBe('/hilos/billing')
+  // The framework breadcrumb keeps channelId in the channel's own address.
+  const channel = page.getByTestId('hilos-breadcrumb-hilos_communications_channel')
+  await expect(channel).toHaveAttribute('href', '/hilos/communications/email')
+  const communications = page.getByTestId('hilos-breadcrumb-hilos_communications')
+  await expect(communications).toHaveText('Communications')
+  await communications.click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Communications')
+  expect(new URL(page.url()).pathname).toBe('/hilos/communications')
 })
 
 // Identity-race e2e (HIL-599): an admin page whose socket drops comes back with

@@ -182,7 +182,7 @@ The Hilos admin pages are the bulk of tier 2. They live under
 `@hilos/core/src/admin/<section>/`, grouped by section to mirror the backend
 `Pages/Hilos/<Section>/` layout — one file per page, named `Hilos<Remainder>Page`.
 The framework ships a real default page for every admin key, collected by
-`hilosAdminViews()`, so a project mounts the whole section for free and overrides
+`hilosAdminViews()`, so a project mounts the whole section for free (pages its view layer has not built are hidden through `HILOS_UNBUILT_PAGES`) and overrides
 only the pages it customizes (see
 [page-module-structure.md](page-module-structure.md)).
 

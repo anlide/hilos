@@ -26,6 +26,7 @@ export { useSignal } from './useSignal.js'
 export { useEntity } from './useEntity.js'
 export { useTrackedAction, type TrackedAction } from './useTrackedAction.js'
 export { hilosRouterKey } from './hilosRouterKey.js'
+export { HILOS_VIEW_LAYER } from './hilosViewLayer.js'
 export { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 export {
   hilosTableSelectionEdgeKey,

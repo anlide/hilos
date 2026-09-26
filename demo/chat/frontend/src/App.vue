@@ -90,8 +90,8 @@ const props = defineProps<{ authGate: AuthGate }>()
 // framework admin defaults (hilosAdminViews), then the demo's real admin pages
 // overriding the default for their key (and users/user, which the framework's
 // default map omits — they need a project context, so the demo mounts them
-// directly). Pages without a mapped view (guardian, its own real page) render
-// nothing.
+// directly). Unbuilt framework pages, including guardian, are refused with
+// 404 by the router through HILOS_UNBUILT_PAGES.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   [PAGE_USER]: User,

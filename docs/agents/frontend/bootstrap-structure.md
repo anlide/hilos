@@ -23,7 +23,7 @@ configures rather than re-implements:
   the socket opens.
 - `bindSessionScope` / `sessionUserName` — route the handshake response into the
   session scope and expose the current user.
-- `bootHilos({ connection, actions, scopes, router, pageEntityTypes?, pageTitles?, appName? })`
+- `bootHilos({ connection, actions, scopes, router, viewLayer, projectViews?, pageEntityTypes?, pageTitles?, appName? })`
   — bind the session scope, the page scope, and the page-ready gate, build the
   navigator, open the socket, apply the URL, and return the navigator to provide
   to the view. `actions` is the application's one action reply lifecycle (the
@@ -33,7 +33,7 @@ configures rather than re-implements:
   `appName` feed the navigator's `currentTitle`, which the app shell binds to
   `document.title` and a page-change live region (WCAG 2.4.2); framework admin
   and footer pages are titled from their own catalogs, so a project lists only
-  its own pages.
+  its own pages. `viewLayer` is the kit's `HILOS_VIEW_LAYER`, selecting the unbuilt-page registry slice; `projectViews` names pages (and their sections) the project implements itself.
 
 The page-ready gate is the part of that sequence a project never sees but a
 return route depends on. `bindPageReady` latches the first page answer — a

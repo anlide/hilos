@@ -19,9 +19,12 @@ defineProps<{ crumbs: HilosCrumb[] }>()
     <ol class="breadcrumb small mb-2">
       <template v-for="(crumb, index) in crumbs" :key="crumb.page">
         <li v-if="index < crumbs.length - 1" class="breadcrumb-item">
-          <HilosLink v-if="crumb.to" :to="crumb.to">{{
-            crumb.label
-          }}</HilosLink>
+          <HilosLink
+            v-if="crumb.to"
+            :to="crumb.to"
+            :data-id="`hilos-breadcrumb-${crumb.page}`"
+            >{{ crumb.label }}</HilosLink
+          >
           <template v-else>{{ crumb.label }}</template>
         </li>
         <li v-else class="breadcrumb-item active" aria-current="page">

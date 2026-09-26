@@ -18,6 +18,7 @@ export {
   type HilosTrackedAction,
 } from './hilosTrackedAction.js'
 export { HILOS_ROUTER } from './hilosRouterToken.js'
+export { HILOS_VIEW_LAYER } from './hilosViewLayer.js'
 export {
   HILOS_TABLE_SELECTION_EDGE,
   type HilosTableSelectionEdge,

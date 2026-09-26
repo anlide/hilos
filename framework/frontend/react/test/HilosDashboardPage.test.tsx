@@ -132,6 +132,23 @@ describe('HilosDashboardPage', () => {
     ).not.toBeNull()
   })
 
+  it('leaves out a section with no cards that have addresses', () => {
+    const { container } = renderPage([
+      ...SECTIONS,
+      {
+        title: 'Hidden',
+        description: 'No destination',
+        items: [{ page: 'unrouted', label: 'Nowhere', lead: '', icon: null }],
+      },
+    ])
+    expect(
+      [...container.querySelectorAll('h2')].map(
+        (heading) => heading.textContent,
+      ),
+    ).toEqual(['Access & identity', 'Chat administration'])
+    expect(container.textContent).not.toContain('No destination')
+  })
+
   it('draws placeholders while the sections are still on the wire', () => {
     // An empty grid would jump the layout on every visit to the dashboard.
     const { container } = renderPage(undefined)

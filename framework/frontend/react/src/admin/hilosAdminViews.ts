@@ -3,7 +3,9 @@
 // (the folders mirror the backend Pages/Hilos/ section grouping) — a thin default
 // that renders the shared HilosAdminPage shell for its key until the page grows
 // its own content. A project spreads this map into its app page map, then
-// overrides only the keys it implements itself.
+// overrides only the keys it implements itself, also naming unbuilt keys in
+// bootHilos projectViews. HILOS_UNBUILT_PAGES hides pages the layer has not built:
+// the router answers 404 and no card links to them.
 //
 // The users / user / settings / backup, communications hub / channel and the log
 // pages that read live data are intentionally absent: they are real framework pages
@@ -71,9 +73,9 @@ import { HilosSilUserHistoryPage } from './sil/HilosSilUserHistoryPage.js'
 /**
  * The default admin view map: every framework admin page key (except users/user)
  * bound to its one-per-file default page component. Spread it into the app page
- * map ahead of the project's own overrides, so an un-implemented admin page
- * renders the framework default and an implemented one (mapped after the spread)
- * wins.
+ * map ahead of the project's own overrides. HILOS_UNBUILT_PAGES hides unbuilt
+ * pages with a 404 and no cards; a project implementing one overrides its key
+ * and names it in bootHilos projectViews.
  */
 export function hilosAdminViews(): Record<string, ComponentType> {
   return {

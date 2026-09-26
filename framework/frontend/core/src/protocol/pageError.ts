@@ -11,6 +11,12 @@ import { z } from 'zod'
 export const PAGE_ERROR_NOT_SERVED = 'not_served'
 
 /**
+ * The server's not_served message (PHP SignalConstants::SUBSCRIPTION_FAILED_REASON).
+ * ErrorPage does not show it, but the error payload requires a message.
+ */
+export const PAGE_ERROR_NOT_SERVED_MESSAGE = 'The page could not be opened.'
+
+/**
  * The page-subscription error payload (PHP `PageSubscriptionErrorSignalData`):
  * the page the error is for — so a late one for a page already left is dropped,
  * mirroring page_response — plus the HTTP status, a machine-readable code, and a

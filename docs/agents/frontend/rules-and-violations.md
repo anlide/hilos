@@ -252,7 +252,7 @@ Topic documents are referenced by filename; several are still being authored.
   un-implemented pages — one real, per-file page per catalog key (under
   `@hilos/vue/src/admin/`, each rendering the page-agnostic shell), collected into
   a key → component map (`hilosAdminViews`) — is likewise sanctioned: a project
-  spreads it and overrides a key only when it implements that page itself. The
+  spreads it and overrides a key only when it implements that page itself, also naming it in `bootHilos` `projectViews` if it is in `HILOS_UNBUILT_PAGES`. The
   bright line holds — every page is its own file, no page content/metadata map in
   the project, and only `HilosView` reads the navigator. See
   [page-module-structure.md](page-module-structure.md).

@@ -17,6 +17,10 @@ import {
   type NavigationEnvironment,
 } from '../routing/HilosRouter.js'
 import { resolvePageTitle } from '../routing/pageTitle.js'
+import {
+  hilosUnbuiltPages,
+  type HilosViewLayer,
+} from '../routing/hilosUnbuiltPages.js'
 import { type PageRouter } from '../routing/PageRouter.js'
 import {
   bindSessionScope,
@@ -54,6 +58,13 @@ export interface BootHilosConfig {
   scopes: ScopeManager
   /** The page router resolving a URL to its page key and route params. */
   router: PageRouter
+  /** The app's view layer: pass the kit's HILOS_VIEW_LAYER, not a literal. */
+  viewLayer: HilosViewLayer
+  /**
+   * Pages in HILOS_UNBUILT_PAGES the project renders itself, visible only in
+   * this application. Name their sections too: the frontend carries no tree.
+   */
+  projectViews?: readonly string[]
   /** Per-slot canonical entity types for the page payloads. */
   pageEntityTypes?: Record<string, string>
   /**
@@ -163,6 +174,7 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
         pages.pageIdentity.get()?.label,
         !pages.pageLoading.get(),
       ),
+    hilosUnbuiltPages(config.viewLayer, config.projectViews),
   )
   // A rights change reaches the open tab (HIL-621): the handshake response the
   // grant re-sends moves this marker, and the page on screen is judged again -

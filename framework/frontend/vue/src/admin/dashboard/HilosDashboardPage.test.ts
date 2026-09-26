@@ -51,7 +51,7 @@ function router(
     pageLoading: createSignal(false),
     pageIdentity: createSignal(identity),
     dashboardSections: createSignal(sections),
-    resolvePath: (page) => `/hilos/${page}`,
+    resolvePath: (page) => (page === 'unrouted' ? undefined : `/hilos/${page}`),
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -74,6 +74,21 @@ function mountPage(
 }
 
 describe('HilosDashboardPage', () => {
+  it('leaves out a section with no cards that have addresses', () => {
+    const wrapper = mountPage(IDENTITY, [
+      ...SECTIONS,
+      {
+        title: 'Hidden',
+        description: 'No destination',
+        items: [{ page: 'unrouted', label: 'Nowhere', lead: '', icon: null }],
+      },
+    ])
+    expect(wrapper.findAll('h2').map((heading) => heading.text())).toEqual([
+      'Access & identity',
+    ])
+    expect(wrapper.text()).not.toContain('No destination')
+  })
+
   it('renders the heading and the lead the page answered with', () => {
     const wrapper = mountPage(IDENTITY, SECTIONS)
 

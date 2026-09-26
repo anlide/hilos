@@ -11,6 +11,7 @@
 // why no literal is left. Until it does the heading and the cards are placeholders —
 // an empty grid would jump the layout on every visit. Bootstrap classes only
 // (styling-rules.md).
+import { hilosDashboardLinks } from '@hilos/core'
 import { useContext } from 'react'
 import type { ReactNode } from 'react'
 
@@ -42,17 +43,7 @@ export function HilosDashboardPage({ children }: HilosDashboardPageProps) {
 
   const identity = useSignal(router.pageIdentity)
   const answered = useSignal(router.dashboardSections)
-  const sections = (answered ?? []).map((section) => ({
-    title: section.title,
-    description: section.description,
-    // A card with no address is left out: a card IS its target, and the shell
-    // must not offer one that goes nowhere.
-    items: section.items.flatMap((item) => {
-      const to = router.resolvePath(item.page)
-
-      return to === undefined ? [] : [{ ...item, to }]
-    }),
-  }))
+  const sections = hilosDashboardLinks(answered ?? [], router.resolvePath)
 
   return (
     <section data-id="dashboard-view">

@@ -46,7 +46,8 @@ const FORBIDDEN = 403
  *
  * An unserved page keeps its 404 through both reactions: nobody can re-decide a
  * page with no registered owner, and awaiting that answer would leave a permanent
- * placeholder.
+ * placeholder. The client draws not_served for an unbuilt view too; there is
+ * likewise nobody to await a new verdict from.
  *
  * @param router The navigator, for the current route and the two page controls.
  * @param isAdmin Whether the session holds the admin privilege; one trigger.

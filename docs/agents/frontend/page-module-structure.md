@@ -192,7 +192,9 @@ God-map: every page is its own module file (no page content or metadata map in a
 project), the catalog of identity stays in `@hilos/core` (`HILOS_ADMIN_PAGES`),
 each file renders the page-agnostic shell, and the navigator is read only by
 `HilosView`. To implement a page, replace its file's shell body with real content
-(or, in a consumer, override the key with a project module).
+and strike that layer from `HILOS_UNBUILT_PAGES` in `@hilos/core` (remove the entry when no layers remain); a consumer overriding an unbuilt key names it and its section in `bootHilos` `projectViews`.
+An unbuilt page is listed for each layer that has not built it: the router draws 404 `not_served` without subscribing, and dashboard/child cards omit it.
+A section stays in the registry while none of its pages is built in that layer; checked automatically by `UNBUILT-PAGE` against the views and the PHP catalog tree.
 
 ## Type placement: domain vs page-local
 

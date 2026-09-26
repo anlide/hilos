@@ -90,11 +90,15 @@ function fakePages() {
   )
   let cleared = 0
   const calledOnPages: string[] = []
+  const refused: string[] = []
   const pages: NavigablePages = {
     subscribe: (page, params = {}) => {
       calls.push({ page, params })
 
       return null
+    },
+    refuseUnbuilt: (page) => {
+      refused.push(page)
     },
     pageError,
     pageLoading,
@@ -116,8 +120,54 @@ function fakePages() {
     dashboardSections,
     clearedCount: () => cleared,
     calledOnPages,
+    refused,
   }
 }
+
+describe('unbuilt pages', () => {
+  it('refuses a cold entry and resolves no address for it', () => {
+    const { env } = fakeEnvironment('/hilos')
+    const { pages, calls, refused } = fakePages()
+    const navigator = createHilosRouter(
+      router,
+      pages,
+      env,
+      undefined,
+      new Set(['dash']),
+    )
+    navigator.start()
+
+    expect(calls).toEqual([])
+    expect(refused).toEqual(['dash'])
+    expect(navigator.currentRoute.get().page).toBe('dash')
+    expect(navigator.resolvePath('dash')).toBeUndefined()
+    expect(navigator.resolvePath('user', { id: '42' })).toBe('/user/42')
+  })
+
+  it('refuses a navigation and subscribes again when history returns', () => {
+    const { env, pop } = fakeEnvironment('/')
+    const { pages, calls, refused } = fakePages()
+    const navigator = createHilosRouter(
+      router,
+      pages,
+      env,
+      undefined,
+      new Set(['dash']),
+    )
+    navigator.start()
+    navigator.navigate('/hilos')
+
+    expect(calls).toEqual([{ page: 'main', params: {} }])
+    expect(refused).toEqual(['dash'])
+    pop('/')
+    expect(calls).toEqual([
+      { page: 'main', params: {} },
+      { page: 'main', params: {} },
+    ])
+    pop('/hilos')
+    expect(refused).toEqual(['dash', 'dash'])
+  })
+})
 
 describe('createHilosRouter', () => {
   it('seeds the current route from the location before start', () => {

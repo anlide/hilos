@@ -36,7 +36,12 @@ export function HilosBreadcrumb({ crumbs }: HilosBreadcrumbProps) {
               {crumb.to === undefined ? (
                 crumb.label
               ) : (
-                <HilosLink to={crumb.to}>{crumb.label}</HilosLink>
+                <HilosLink
+                  to={crumb.to}
+                  data-id={`hilos-breadcrumb-${crumb.page}`}
+                >
+                  {crumb.label}
+                </HilosLink>
               )}
             </li>
           ) : (

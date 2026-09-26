@@ -75,6 +75,7 @@ function boot(connection: ReturnType<typeof fakeConnection>) {
   )
   const hilosConnection = connection as unknown as HilosConnection
   const hilosRouter = bootHilos({
+    viewLayer: 'vue',
     connection: hilosConnection,
     actions: new ActionLifecycle(hilosConnection),
     scopes,
@@ -90,6 +91,46 @@ describe('bootHilos', () => {
     // The stack is the shared singleton every boot binds to.
     hilosToasts.clear()
   })
+
+  it.each([false, true])(
+    'cold roles entry, project view = %s',
+    (projectView) => {
+      const connection = fakeConnection()
+      const hilosConnection = connection as unknown as HilosConnection
+      const router = bootHilos({
+        viewLayer: 'vue',
+        projectViews: projectView ? [HilosPages.ROLES] : [],
+        connection: hilosConnection,
+        actions: new ActionLifecycle(hilosConnection),
+        scopes: new ScopeManager(),
+        router: createAppPageRouter(
+          { main: { path: '/', admin: false } },
+          { fallback: 'main' },
+        ),
+        navigationEnvironment: fakeNavigation('/hilos/roles'),
+        appName: 'Demo',
+      })
+      expect(connection.sent).toEqual([])
+      expect(router.pageError.get()?.errorCode).toBe(
+        projectView ? undefined : 'not_served',
+      )
+      expect(router.pageLoading.get()).toBe(projectView)
+      if (!projectView) expect(router.currentTitle.get()).toBe('Demo')
+      connection.emitProjectSignal('handshake_response', {
+        entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
+      })
+      connection.emitProjectSignal('handshake_response', {
+        entities: { currentUser: null },
+      })
+      expect(connection.sent).toEqual(
+        projectView
+          ? [{ type: 'page_subscribe', page: HilosPages.ROLES, params: {} }]
+          : [],
+      )
+      if (!projectView)
+        expect(router.pageError.get()?.errorCode).toBe('not_served')
+    },
+  )
 
   it('opens the connection and subscribes the located page', () => {
     const connection = fakeConnection()
@@ -148,6 +189,7 @@ describe('bootHilos', () => {
     )
     const hilosConnection = connection as unknown as HilosConnection
     const hilosRouter = bootHilos({
+      viewLayer: 'vue',
       connection: hilosConnection,
       actions: new ActionLifecycle(hilosConnection),
       scopes,
@@ -173,6 +215,7 @@ describe('bootHilos', () => {
     )
     const hilosConnection = connection as unknown as HilosConnection
     const hilosRouter = bootHilos({
+      viewLayer: 'vue',
       connection: hilosConnection,
       actions: new ActionLifecycle(hilosConnection),
       scopes,

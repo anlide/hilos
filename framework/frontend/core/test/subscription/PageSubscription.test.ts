@@ -78,6 +78,70 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
   }
 }
 
+describe('PageSubscription.refuseUnbuilt', () => {
+  it('leaves the current page, drops its data and held frames, and ignores late answers', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
+    pages.subscribe('main')
+    pages.ingestPageResponse('main', { data: { greeting: 'hi' } })
+    const forgotten = connection.forgotPageFrames
+
+    pages.refuseUnbuilt('hilos_roles')
+
+    expect(connection.sent).toEqual([
+      { type: 'page_subscribe', page: 'main', params: {} },
+      { type: 'page_unsubscribe', page: 'main' },
+    ])
+    expect(pages.pageKey()).toBeUndefined()
+    expect(scopes.page()).toBeUndefined()
+    expect(connection.forgotPageFrames).toBe(forgotten + 1)
+    expect(pages.pageError.get()).toEqual({
+      page: 'hilos_roles',
+      httpCode: 404,
+      errorCode: 'not_served',
+      message: 'The page could not be opened.',
+    })
+    expect(pages.pageLoading.get()).toBe(false)
+    expect(
+      pages.ingestPageResponse('main', { data: { greeting: 'late' } }),
+    ).toBe(false)
+    expect(
+      pages.handleSubscriptionError({
+        page: 'main',
+        httpCode: 403,
+        errorCode: 'forbidden',
+        message: 'late',
+      }),
+    ).toBe(false)
+    expect(pages.pageError.get()?.errorCode).toBe('not_served')
+  })
+
+  it('never subscribes a cold refusal after the handshake, reconnect, or thaw', () => {
+    const connection = fakeConnection('connecting')
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.refuseUnbuilt('hilos_roles')
+    expect(connection.sent).toEqual([])
+    expect(pages.pageLoading.get()).toBe(false)
+    connection.setState('connected')
+    pages.releaseOnSession()
+    connection.setState('disconnected')
+    connection.setState('connected')
+    pages.releaseOnSession()
+    connection.setProtectedMode(PROTECTED_MODE_INACTIVE)
+    expect(connection.sent).toEqual([])
+    expect(pages.pageError.get()?.errorCode).toBe('not_served')
+
+    pages.subscribe('main')
+    expect(pages.pageError.get()).toBeNull()
+    expect(pages.pageLoading.get()).toBe(true)
+    expect(connection.sent).toEqual([
+      { type: 'page_subscribe', page: 'main', params: {} },
+    ])
+  })
+})
+
 describe('PageSubscription', () => {
   it('subscribing while connected sends one page_subscribe frame', () => {
     const connection = fakeConnection()

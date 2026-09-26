@@ -4,7 +4,7 @@
 // module supplies the project inputs and provides the navigator so HilosView and
 // HilosLink resolve the current route (docs/agents/frontend/bootstrap-structure.md).
 import { bootHilos, createAuthGate, createOAuthLogin } from '@hilos/core'
-import { hilosAuthGateKey, hilosRouterKey } from '@hilos/vue'
+import { HILOS_VIEW_LAYER, hilosAuthGateKey, hilosRouterKey } from '@hilos/vue'
 import { createApp } from 'vue'
 
 import App from '../App.vue'
@@ -35,6 +35,7 @@ oauth.bindOAuthTrip()
 oauth.bindOAuthLinkReplay(currentUserId)
 
 const hilosRouter = bootHilos({
+  viewLayer: HILOS_VIEW_LAYER,
   connection,
   actions,
   scopes,

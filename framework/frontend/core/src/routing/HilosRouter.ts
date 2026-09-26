@@ -29,6 +29,8 @@ export interface NavigablePages {
    * @param params Route params for the subscription.
    */
   subscribe(pageKey: string, params?: Record<string, string>): unknown
+  /** Refuse a page the view layer has not built, leaving any live subscription. */
+  refuseUnbuilt(pageKey: string): void
   /** The current page's subscription error, or null while it loads cleanly. */
   readonly pageError: ReadonlySignal<PageSubscriptionError | null>
   /** True while the subscribed page has not answered yet. */
@@ -120,7 +122,8 @@ export interface HilosRouter {
    * `undefined` when the page has no route or a required slot is uncovered. It
    * reads the application's whole route map — the framework's pages and the
    * project's alike — so a link out of a breadcrumb or a card reaches a project
-   * screen as readily as a framework one.
+   * screen as readily as a framework one. A page the view layer has not built
+   * has no address either, so dashboard and section cards cannot link to it.
    *
    * @param page The page key to resolve.
    * @param params The route params to fill the slots from, defaulting to none.
@@ -189,12 +192,14 @@ export interface HilosRouter {
  * @param env The browser binding; see {@link browserNavigationEnvironment}.
  * @param resolveTitle Maps the current page key to its document title; defaults
  *   to no title (an empty string). `bootHilos` supplies the project resolver.
+ * @param unbuilt Pages the view layer has not built; bootHilos supplies hilosUnbuiltPages().
  */
 export function createHilosRouter(
   router: PageRouter,
   pages: NavigablePages,
   env: NavigationEnvironment,
   resolveTitle: (pageKey: string) => string = () => '',
+  unbuilt: ReadonlySet<string> = new Set(),
 ): HilosRouter {
   const currentRoute = createSignal<PageRouteMatch>(
     router.match(env.pathname()),
@@ -221,7 +226,11 @@ export function createHilosRouter(
   // and the popstate listener.
   const apply = (pathname: string): void => {
     const match = publish(pathname)
-    pages.subscribe(match.page, match.params)
+    if (unbuilt.has(match.page)) {
+      pages.refuseUnbuilt(match.page)
+    } else {
+      pages.subscribe(match.page, match.params)
+    }
   }
 
   return {
@@ -232,7 +241,8 @@ export function createHilosRouter(
     pageLoading: pages.pageLoading,
     pageIdentity: pages.pageIdentity,
     dashboardSections: pages.dashboardSections,
-    resolvePath: (page, params) => router.path(page, params),
+    resolvePath: (page, params) =>
+      unbuilt.has(page) ? undefined : router.path(page, params),
     clearPageError: () => pages.clearPageError(),
     denyCurrentPage: () => pages.denyCurrentPage(),
     awaitPageAnswer: () => pages.awaitPageAnswer(),

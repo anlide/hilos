@@ -4,7 +4,11 @@
 // applies the URL; this module supplies the project inputs and provides the
 // navigator through HilosRouterContext (docs/agents/frontend/bootstrap-structure.md).
 import { bootHilos, createAuthGate, createOAuthLogin } from '@hilos/core'
-import { HilosAuthGateContext, HilosRouterContext } from '@hilos/react'
+import {
+  HILOS_VIEW_LAYER,
+  HilosAuthGateContext,
+  HilosRouterContext,
+} from '@hilos/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -41,6 +45,7 @@ oauth.bindOAuthTrip()
 oauth.bindOAuthLinkReplay(currentUserId)
 
 const hilosRouter = bootHilos({
+  viewLayer: HILOS_VIEW_LAYER,
   connection,
   actions,
   scopes,

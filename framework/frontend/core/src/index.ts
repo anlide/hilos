@@ -731,6 +731,11 @@ export {
   type HilosPageKey,
 } from './routing/hilosPages.js'
 export {
+  HILOS_UNBUILT_PAGES,
+  hilosUnbuiltPages,
+  type HilosViewLayer,
+} from './routing/hilosUnbuiltPages.js'
+export {
   HILOS_SUPPORT_TIERS,
   HILOS_SUPPORT_DEFAULT_TIER,
   HILOS_SUPPORT_REFUSAL,
@@ -741,6 +746,8 @@ export {
   resolveHilosPath,
   hilosCrumbLinks,
   hilosChildLinks,
+  hilosDashboardLinks,
+  type HilosDashboardLinkSection,
   type HilosCrumb,
   type HilosAdminChild,
   type HilosPathResolver,

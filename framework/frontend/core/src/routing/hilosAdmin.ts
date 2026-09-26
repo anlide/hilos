@@ -12,6 +12,7 @@
 // application's merged route map knows those (HilosRouter.resolvePath).
 
 import {
+  type HilosDashboardSection,
   type HilosPageChild,
   type HilosPageCrumb,
 } from '../admin/identity/hilosPageIdentity.js'
@@ -143,5 +144,32 @@ export function hilosChildLinks(
             to,
           },
         ]
+  })
+}
+
+/** A dashboard section whose cards have addresses in this application. */
+export interface HilosDashboardLinkSection {
+  /** The section's visible heading. */
+  title: string
+  /** The section's lead. */
+  description: string
+  /** Cards in catalog order, each with an address. */
+  items: HilosAdminChild[]
+}
+
+/**
+ * Resolve dashboard cards, dropping cards without addresses and empty sections.
+ *
+ * @param sections The dashboard's sections, in catalog order.
+ * @param resolvePath Resolves a page key to its path.
+ */
+export function hilosDashboardLinks(
+  sections: readonly HilosDashboardSection[],
+  resolvePath: HilosPathResolver,
+): HilosDashboardLinkSection[] {
+  return sections.flatMap((section) => {
+    const items = hilosChildLinks(section.items, {}, resolvePath)
+
+    return items.length === 0 ? [] : [{ ...section, items }]
   })
 }
