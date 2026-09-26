@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -39,6 +40,7 @@ final class VerifierCircleMemberActions extends DbActions
      * @throws UnknownLazyStrategyException When the circle collection has an unsupported lazy strategy
      * @throws LogicException When the circle object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the member delete
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the item door for a row not stored yet
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */

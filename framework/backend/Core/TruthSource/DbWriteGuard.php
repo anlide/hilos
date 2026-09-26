@@ -31,16 +31,23 @@ class DbWriteGuard
     /**
      * Judges creating a row in a collection.
      *
+     * The door hands over the set keys the new row lands in, because a claim over a set creates
+     * rows of its own set alone. They come as a closure for the reason {@see guardItemWrite()}
+     * gives: reaching the top may read a parent row the owner of the whole table may not read.
+     *
      * @param string $collection Collection key, empty for a manual collection nobody owns
-     * @throws CreateNotAllowedException When no grant in this process may add a row here
+     * @param Closure(): list<string> $setKeys Set keys at the top of the set tree the new row lands in,
+     *     each once, empty for a row outside every set; called only when a claim over a set judges the
+     *     creation, and whatever it raises reaches the caller
+     * @throws CreateNotAllowedException When no grant in this process may add this row here
      */
-    public static function guardCreate(string $collection): void
+    public static function guardCreate(string $collection, Closure $setKeys): void
     {
         if ($collection === '') {
             return;
         }
 
-        TruthSourceRegistry::checkCanCreate($collection);
+        TruthSourceRegistry::checkCanCreate($collection, $setKeys);
     }
 
     /**

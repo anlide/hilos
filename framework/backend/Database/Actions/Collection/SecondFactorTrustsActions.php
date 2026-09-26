@@ -45,7 +45,7 @@ final class SecondFactorTrustsActions extends DbActions
      */
     public function trust(int $sessionId, int $userId, string $until): void
     {
-        $this->ensureCanCreate();
+        $this->ensureCanCreateInSet((string)$userId);
 
         $this->objectCollection->trust($sessionId, $userId, $until);
     }

@@ -163,8 +163,9 @@ covers no rows — carrying the single operation `TruthSourceOperation::Add`
 (`registerCreate()` on the database registry). Minting a record is not owning
 one, and a grant limited to named rows cannot mint: a record that does not exist
 yet is not among the rows it was given. Creation therefore asks for a grant that
-allows adding and is not row-limited — the whole collection, or the mint-only
-claim that owns no row at all.
+allows adding and covers the new row — the whole collection, the mint-only claim
+that owns no row at all, or a claim over the set the new row lands in (see
+*A Claim Over A Set*).
 
 Both runtime forms carry operations: the registry keeps them on every grant, the
 declaration names them per collection, and the runtime seam takes them as its
@@ -311,6 +312,21 @@ asks the collection door, which keeps its one width. The living callers are
 `Notifications::markAllReadForUser()` and the three `deleteForUser()` of the
 second factor, through `DbActions::ensureCanWriteSet()`.
 
+**A row is created into a set by that set's owner.** The creation door asks a
+claim over a set two things: that it allows `Add`, and that the new row lands in
+its set — `TruthSourceKeys::coversNewRow()`, handed the new row's set keys. The
+key is the value the row will carry in `_setVia`, climbed to the top as any
+write's is; a row not in the table yet names that edited key alone
+(`Object_::touchedSetKeys()`), since a creation writes into one set. A row that
+reaches no top is in nobody's set and is created by no set claim, and a borrowed
+claim creates nothing, in its own set either. The whole collection and the
+mint-only claim create as before and never climb. The doors are two:
+`DbActions::ensureCanCreate()` for a table cut by no set, which refuses a set's
+owner, and `ensureCanCreateInSet()`, handed the new row's `_setVia` value. The
+object save asks the same with the row in hand, so a door and a row that
+disagree are caught before the insert. With no agent, a creation passes when
+some claim in the process could create this row.
+
 **The set tree is walked upward, by default and to any depth.** A set hangs on a
 row that is itself in a set: a passkey credential is cut by `identity_id` and
 the identity by `user_id`, so a credential is two steps from its person. A claim
@@ -368,7 +384,7 @@ until a set is handed over by snapshot, which is HIL-1116's (owner's decision,
 | the value of the width, and belonging asked of the row's set column | HIL-1109 |
 | the declaration on the agent, the three exclusive maps, both floors of refusal, the borrowed set claim | HIL-1110 |
 | the walk up the set tree, and the short path a row declares | HIL-1111 |
-| what the creation door asks under this width | HIL-1112 — open, and not answered here |
+| what the creation door asks under this width | HIL-1112 |
 | how one statement over many rows asks within one set | HIL-1113 |
 | two owners of one set refused, and the receipt for a pair the project lives with | HIL-1114 |
 | the runtime half | HIL-1115 |
@@ -729,10 +745,11 @@ the chain, over each half (`DeclaredDbOwnershipTest`,
 the empty set key and the borrowed wait (`DeclaredSetOwnershipTest`), the one
 call that lays every map (`DeclaredClaimAllTest`), the operation axis and the
 guards on it (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
-`DbWriteGuardLazyCollectionsTest`, the set door beside the collection door
-there), the third width answered by the row's set column at the value, the
-registry and the door, a row born after the declared start included, and one
-statement over one set asked at the value and the registry
+`DbWriteGuardLazyCollectionsTest`, the set door and the two create doors beside
+the collection door there), the third width answered by the row's set column at the value, the
+registry and the door, a row born after the declared start included, one
+statement over one set asked at the value and the registry, and a row created
+into a set at the value, the registry and the door of a row not stored yet
 (`TruthSourceSetWidthTest`, with the set keys asked lazily and once), the same
 width on the runtime half at the row, the registry and every runtime door
 (`RtTruthSourceSetWidthTest`) and its declaration (the runtime cases of

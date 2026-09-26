@@ -191,11 +191,13 @@ abstract class DbActions
      * questions: who may write this table, and how much of it has to be in memory first. The
      * load that follows is left with the second one only.
      *
-     * The operation has no default: this door is shared by actions that mint rows, edit them in
-     * bulk and delete them, and no one value is right for all of them.
+     * The operation has no default: this door is shared by actions that insert rows in bulk, edit
+     * them in bulk and delete them, and no one value is right for all of them. A door that creates
+     * one row asks ensureCanCreate() or ensureCanCreateInSet() instead, which the owner of a set
+     * passes too; this one asks for the whole table.
      *
-     * @param TruthSourceOperation $operation Operation the caller performs across the collection: Add for a door that
-     *     mints a row, Update for a bulk edit, Remove for a delete
+     * @param TruthSourceOperation $operation Operation the caller performs across the collection: Add for an insert
+     *     in bulk through the whole table, Update for a bulk edit, Remove for a delete
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If write is not allowed
      * @throws LogicException When the object collection entity class is not configured
@@ -245,6 +247,11 @@ abstract class DbActions
      * The right is asked before the strategy is looked at, for the same reason the write door
      * does it: the switch answers how much of the table has to be in memory, not who owns it.
      *
+     * The door for a table cut by no set. On a table cut by one it names no set for the new row,
+     * so it lets the owner of the whole table and the mint-only claim create, as before, and
+     * refuses the owner of a set: to that claim the row belongs to nobody's set. A row that lands
+     * in a set asks ensureCanCreateInSet().
+     *
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws CreateNotAllowedException If create is not allowed
      * @throws LogicException When the object collection entity class is not configured
@@ -252,25 +259,34 @@ abstract class DbActions
      */
     protected function ensureCanCreate(): void
     {
-        $objectCollection = $this->objectCollection;
+        DbWriteGuard::guardCreate($this->objectCollection->getCollectionKey(), static fn(): array => []);
 
-        DbWriteGuard::guardCreate($objectCollection->getCollectionKey());
+        $this->loadForWrite();
+    }
 
-        switch ($objectCollection->getLazyStrategy()) {
-            case Objects::LAZY_STRATEGY_NONE:
-                if (!$objectCollection->isAllLoaded()) {
-                    $objectCollection->loadAllFromDB();
-                }
-                break;
+    /**
+     * Ensure creating a row in one set is allowed and data is loaded if needed
+     * Asks the write guard for the create right in that set, then loads data based on lazy loading strategy
+     *
+     * The door for a row of a table cut by a set - the rows of one person, of one room. The set
+     * column is the entity's own, so only the value the new row will carry in it is named here,
+     * and a claim over a set judges it by the key that value reaches at the top of the set tree,
+     * climbed only when such a claim asks. The caller passes the same value the row will be saved
+     * with: the save asks the right again from the row itself, so a door and a row that disagree are
+     * caught before the insert.
+     *
+     * @param string $setKey Value of the table's set column the new row will carry
+     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws CreateNotAllowedException If creating a row in that set is not allowed
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws DatabaseException On connection or load error
+     */
+    protected function ensureCanCreateInSet(string $setKey): void
+    {
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        DbWriteGuard::guardCreate($this->objectCollection->getCollectionKey(), SetTree::climb($objectClass::ENTITY_CLASS, $setKey));
 
-            case Objects::LAZY_STRATEGY_KEY:
-            case Objects::LAZY_STRATEGY_BATCH:
-            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
-                break;
-
-            default:
-                throw new UnknownLazyStrategyException("Unknown lazy loading strategy for create check");
-        }
+        $this->loadForWrite();
     }
 
     /**
@@ -334,8 +350,8 @@ abstract class DbActions
     /**
      * Loads as much of the table as the lazy loading strategy asks a write to hold in memory.
      *
-     * Shared by the collection door and the set door: each asks its own right first, and this
-     * answers only how much of the table has to be loaded before the write.
+     * Shared by the collection door, the set door and the two create doors: each asks its own right
+     * first, and this answers only how much of the table has to be loaded before the write.
      *
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws LogicException When the object collection entity class is not configured

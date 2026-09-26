@@ -7,11 +7,9 @@ namespace Demo\Tasks\Database\Actions\Collection;
 use Demo\Tasks\Database\Entity\Item\UserRename as EntityUserRename;
 use Demo\Tasks\Database\Object\Collection\UserRenames as ObjectUserRenames;
 use Demo\Tasks\Database\Object\Item\UserRename as ObjectUserRename;
-use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Demo\Tasks\Database\View\Item\UserRename as DbUserRename;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -46,8 +44,7 @@ final class UserRenamesActions extends DbActions
      */
     public function add(int $targetUserId, string $oldName, string $newName): DbUserRename
     {
-        TruthSourceRegistry::checkCanCreate(TasksDbContext::userRenames);
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreateInSet((string)$targetUserId);
 
         $audit = ObjectUserRename::create();
         $audit->targetUserId = $targetUserId;

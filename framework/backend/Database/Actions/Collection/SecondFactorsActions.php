@@ -52,7 +52,7 @@ final class SecondFactorsActions extends DbActions
      */
     public function startEnrolment(int $userId, string $label, string $secret): SecondFactor
     {
-        $this->ensureCanCreate();
+        $this->ensureCanCreateInSet((string)$userId);
 
         return $this->createDbItemFromObject($this->objectCollection->startEnrolment($userId, $label, $secret));
     }

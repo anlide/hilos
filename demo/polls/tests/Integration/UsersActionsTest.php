@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Tests\Integration;
 
+use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Hilos;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\HilosException;
 
 /**
@@ -14,6 +17,17 @@ use Hilos\HilosException;
  */
 final class UsersActionsTest extends IntegrationTestCase
 {
+    /** Agent that holds the right to create users and owns none of them. */
+    private const string MINT_ONLY_AGENT_ID = 'test-agent:mint-only';
+
+    protected function tearDown(): void
+    {
+        ExecutionContext::setCurrentAgentId(null);
+        TruthSourceRegistry::unregisterAgent(self::MINT_ONLY_AGENT_ID);
+
+        parent::tearDown();
+    }
+
     /**
      * Each registration mints its own user.
      *
@@ -67,6 +81,23 @@ final class UsersActionsTest extends IntegrationTestCase
         $this->assertNotNull($user->id);
         $this->assertSame('Ada Lovelace', $user->name);
         $this->assertFalse($user->admin);
+    }
+
+    /**
+     * The sign-in mint asks the right to create, and so a claim that owns no user is enough.
+     *
+     * @throws HilosException On database error
+     */
+    public function testCreateWithNameIsOpenToTheRightToCreateAlone(): void
+    {
+        // Until HIL-1112 this door asked for the whole table, where its chat and tasks twins asked the right to create.
+        TruthSourceRegistry::registerCreate(PollsDbContext::users, self::MINT_ONLY_AGENT_ID);
+        ExecutionContext::setCurrentAgentId(self::MINT_ONLY_AGENT_ID);
+
+        $user = Hilos::$db->users->actions->createWithName('Grace Hopper');
+
+        $this->assertNotNull($user->id);
+        $this->assertSame('Grace Hopper', $user->name);
     }
 
     /**

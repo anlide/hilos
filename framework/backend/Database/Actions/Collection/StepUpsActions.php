@@ -44,7 +44,7 @@ final class StepUpsActions extends DbActions
      */
     public function confirm(string $tokenHash, int $userId, string $operation, string $until): void
     {
-        $this->ensureCanCreate();
+        $this->ensureCanCreateInSet((string)$userId);
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
 
         $this->objectCollection->confirm($tokenHash, $userId, $operation, $until);

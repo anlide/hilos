@@ -53,8 +53,7 @@ final class EventUserRenamesActions extends DbActions
         string $newName,
     ): DbEventUserRename
     {
-        TruthSourceRegistry::checkCanCreate(ChatDbContext::eventUserRenames);
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreateInSet((string)$eventId);
 
         $detail = ObjectEventUserRename::create();
         $detail->eventId = $eventId;

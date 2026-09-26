@@ -90,6 +90,7 @@ final class OAuthProviderActions extends DbActions
      * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
      * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the row write
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the item door for a row not stored yet
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */

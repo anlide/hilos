@@ -7,6 +7,7 @@ namespace Hilos\Database\Actions\Item;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -82,6 +83,7 @@ abstract class DbActions
      * @throws ObjectGetIdStringNotImplementedException When the item primary key is null during the per-item write check
      * @throws UnknownLazyStrategyException If lazy strategy is unknown
      * @throws WriteNotAllowedException If write not allowed by truth source
+     * @throws CreateNotAllowedException If the row is not in the database yet and creating it is not allowed
      * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException If load fails
      */
@@ -99,8 +101,9 @@ abstract class DbActions
                 $operation,
             );
         } else {
-            // The row is not in the database yet, so an insert is the one write it can receive: the door asks for adding, whatever the caller named.
-            DbWriteGuard::guardCollectionWrite($collectionKey, TruthSourceOperation::Add);
+            // The row is not in the database yet, so an insert is the one write it can receive: the door asks the right to
+            // create in the set it lands in, whatever the caller named.
+            DbWriteGuard::guardCreate($collectionKey, $this->object->touchedSetKeys(...));
         }
 
         switch ($objectCollection->getLazyStrategy()) {

@@ -44,8 +44,7 @@ final class EventUserRegistrationsActions extends DbActions
      */
     public function create(int $eventId, int $targetUserId): DbEventUserRegistration
     {
-        TruthSourceRegistry::checkCanCreate(ChatDbContext::eventUserRegistrations);
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreateInSet((string)$eventId);
 
         $detail = ObjectEventUserRegistration::create();
         $detail->eventId = $eventId;

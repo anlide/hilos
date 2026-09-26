@@ -69,7 +69,7 @@ final class TruthSourceRegistryTest extends TestCase
         TruthSourceRegistry::registerCreate(self::COLLECTION, self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanCreate(self::COLLECTION);
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => []);
 
         $this->expectException(WriteNotAllowedException::class);
         TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Update);
@@ -81,7 +81,7 @@ final class TruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_B);
 
         $this->expectException(CreateNotAllowedException::class);
-        TruthSourceRegistry::checkCanCreate(self::COLLECTION);
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => []);
     }
 
     public function testUnregisterCurrentAgentClearsDbContext(): void
@@ -116,7 +116,7 @@ final class TruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         $this->expectException(CreateNotAllowedException::class);
-        TruthSourceRegistry::checkCanCreate(self::COLLECTION);
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => []);
     }
 
     public function testUnregisterCreateLeavesTheRestOfAGrantStanding(): void
@@ -128,7 +128,7 @@ final class TruthSourceRegistryTest extends TestCase
         TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [], TruthSourceOperation::Update);
 
         $this->expectException(CreateNotAllowedException::class);
-        TruthSourceRegistry::checkCanCreate(self::COLLECTION);
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => []);
     }
 
     /**
@@ -159,7 +159,7 @@ final class TruthSourceRegistryTest extends TestCase
         TruthSourceRegistry::registerCreate(self::COLLECTION, self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanCreate(self::COLLECTION);
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => []);
         TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [], TruthSourceOperation::Update);
 
         $this->assertTrue(TruthSourceRegistry::getTruthSourceKeys(self::COLLECTION)?->coversEveryKey());

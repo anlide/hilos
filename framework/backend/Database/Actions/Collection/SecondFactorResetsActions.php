@@ -48,7 +48,7 @@ final class SecondFactorResetsActions extends DbActions
      */
     public function request(int $userId, string $effectiveAt, string $cancelTokenHash): SecondFactorReset
     {
-        $this->ensureCanCreate();
+        $this->ensureCanCreateInSet((string)$userId);
 
         return $this->createDbItemFromObject(
             $this->objectCollection->request($userId, $effectiveAt, $cancelTokenHash),

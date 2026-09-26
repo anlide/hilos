@@ -34,6 +34,9 @@ use PHPUnit\Framework\TestCase;
  *
  * HIL-1113 asks the same width of one statement over every row of a set: the owner of the set
  * writes its set in one go, and is refused a statement over another set or across the table.
+ *
+ * HIL-1112 asks it of creation: the owner of a set that may add creates a row of its own set, and
+ * is refused a row of another set or of nobody's set; a borrowed claim over a set creates nothing.
  */
 final class TruthSourceSetWidthTest extends TestCase
 {
@@ -166,13 +169,140 @@ final class TruthSourceSetWidthTest extends TestCase
         TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [self::OWN_SET], TruthSourceOperation::Remove);
     }
 
-    public function testSetClaimWithAddDoesNotMintRows(): void
+    public function testSetClaimWithAddDoesNotMintARowInNobodysSet(): void
     {
         TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         $this->expectException(CreateNotAllowedException::class);
-        TruthSourceRegistry::checkCanCreate(self::COLLECTION);
+        $this->expectExceptionMessage("it holds set '42' with operations [add, update, remove], and the new row's set keys are [].");
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => []);
+    }
+
+    public function testCoversNewRowAnswersEachWidthByItsOwnQuestion(): void
+    {
+        $this->assertTrue(TruthSourceKeys::all()->coversNewRow([]));
+        $this->assertTrue(TruthSourceKeys::all()->coversNewRow([self::FOREIGN_SET]));
+
+        $this->assertTrue(TruthSourceKeys::listed()->coversNewRow([]));
+        $this->assertTrue(TruthSourceKeys::listed()->coversNewRow([self::FOREIGN_SET]));
+        $this->assertFalse(TruthSourceKeys::listed('1')->coversNewRow([]));
+        $this->assertFalse(TruthSourceKeys::listed('1')->coversNewRow([self::OWN_SET]));
+
+        $set = TruthSourceKeys::set(self::OWN_SET);
+        $this->assertTrue($set->coversNewRow([self::OWN_SET]));
+        $this->assertFalse($set->coversNewRow([self::FOREIGN_SET]));
+        $this->assertFalse($set->coversNewRow([self::OWN_SET, self::FOREIGN_SET]));
+        $this->assertFalse($set->coversNewRow([]));
+    }
+
+    public function testSetOwnerCreatesARowOfItsSet(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => [self::OWN_SET]);
+
+        $this->assertTrue(TruthSourceRegistry::hasCreateSource(self::COLLECTION));
+    }
+
+    public function testSetOwnerIsRefusedCreatingARowOfAnotherSetNamingBothKeys(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $this->expectException(CreateNotAllowedException::class);
+        $this->expectExceptionMessage(
+            "Create operation not allowed: agent '" . self::AGENT_A . "' is not allowed to create in table '"
+            . self::COLLECTION . "': it holds set '42' with operations [add, update, remove], and the new row's set keys are [7]."
+        );
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => [self::FOREIGN_SET]);
+    }
+
+    /**
+     * Borrowed, as the agent of one person will be: without the create operation the owner of a set
+     * brings no row into being, in its own set either.
+     */
+    public function testBorrowedSetClaimCreatesNowhereItsOwnSetIncluded(): void
+    {
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::set(self::OWN_SET),
+            self::AGENT_A,
+            TruthSourceOperations::of(TruthSourceOperation::Update, TruthSourceOperation::Remove),
+        );
+        TruthSourceRegistry::registerCreate(self::COLLECTION, self::AGENT_B);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $this->expectException(CreateNotAllowedException::class);
+        $this->expectExceptionMessage("it holds set '42' with operations [update, remove], and the new row's set keys are [42].");
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => [self::OWN_SET]);
+    }
+
+    /**
+     * The set keys may read a parent row, so the claims that look at no set key never ask for them.
+     */
+    public function testTheWholeTableAndTheMintOnlyClaimCreateWithoutAskingTheSetKeys(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $trap = static fn(): array => throw new LogicException('the set keys were asked of a claim that reads none');
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT_A);
+        TruthSourceRegistry::registerCreate(self::COLLECTION, self::AGENT_B);
+
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, $trap);
+
+        ExecutionContext::setCurrentAgentId(self::AGENT_B);
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, $trap);
+
+        ExecutionContext::setCurrentAgentId(null);
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, $trap);
+    }
+
+    public function testAgentlessPathCreatesInAHeldSetAndNotInAnother(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::set('9'),
+            self::AGENT_B,
+            TruthSourceOperations::of(TruthSourceOperation::Update),
+        );
+        $calls = 0;
+        $setKeys = static function () use (&$calls): array {
+            $calls++;
+
+            return [self::OWN_SET];
+        };
+
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, $setKeys);
+        $this->assertSame(1, $calls);
+
+        try {
+            TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => ['9']);
+            $this->fail('Expected a borrowed claim over a set to create nothing');
+        } catch (CreateNotAllowedException $e) {
+            $this->assertStringContainsString('with set keys [9].', $e->getMessage());
+        }
+
+        $this->expectException(CreateNotAllowedException::class);
+        $this->expectExceptionMessage(
+            "Create operation not allowed: no truth source in this process may create a row in table '"
+            . self::COLLECTION . "' with set keys [7]."
+        );
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => [self::FOREIGN_SET]);
+    }
+
+    public function testAgentlessPathWithNoClaimOverASetNamesNoSetKeys(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('1'), self::AGENT_A);
+
+        $this->expectException(CreateNotAllowedException::class);
+        $this->expectExceptionMessage(
+            "Create operation not allowed: no truth source in this process may create a row in table '" . self::COLLECTION . "'."
+        );
+        TruthSourceRegistry::checkCanCreate(self::COLLECTION, static fn(): array => [self::OWN_SET]);
     }
 
     public function testSetClaimNamesNoKeysToReaders(): void
@@ -486,6 +616,58 @@ final class TruthSourceSetWidthTest extends TestCase
         $this->assertSame([], $object->touchedSetKeys());
 
         $this->assertSame([], SetWidthObject::fromEntity(SetWidthEntity::stored(3, null))->touchedSetKeys());
+    }
+
+    public function testTouchedSetKeysOfANewRowNameItsEditedSetAlone(): void
+    {
+        $object = SetWidthObject::create();
+        $this->assertSame([], $object->touchedSetKeys());
+
+        $object->moveTo(self::OWN_OWNER_ID);
+        $this->assertSame([self::OWN_SET], $object->touchedSetKeys());
+    }
+
+    public function testDoorLetsTheSetOwnerCreateARowOfItsSet(): void
+    {
+        $object = SetWidthObject::create();
+        $object->moveTo(self::OWN_OWNER_ID);
+        $actions = $this->actionsFor($object);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $actions->writePublic();
+
+        $this->assertTrue(TruthSourceRegistry::hasCreateSource(self::COLLECTION));
+    }
+
+    /**
+     * An unsaved row asks for creation whatever the caller named, so it is judged by the set it
+     * lands in and not across the whole table.
+     */
+    public function testDoorRefusesTheSetOwnerCreatingARowOfAnotherSet(): void
+    {
+        $object = SetWidthObject::create();
+        $object->moveTo(self::FOREIGN_OWNER_ID);
+        $actions = $this->actionsFor($object);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $this->expectException(CreateNotAllowedException::class);
+        $this->expectExceptionMessage("it holds set '42' with operations [add, update, remove], and the new row's set keys are [7].");
+        $actions->deletePublic();
+    }
+
+    public function testDoorLetsTheMintOnlyClaimCreateAnUnsavedRow(): void
+    {
+        $object = SetWidthObject::create();
+        $object->moveTo(self::FOREIGN_OWNER_ID);
+        $actions = $this->actionsFor($object);
+        TruthSourceRegistry::registerCreate(self::COLLECTION, self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $actions->writePublic();
+
+        $this->assertTrue(TruthSourceRegistry::hasCreateSource(self::COLLECTION));
     }
 
     public function testTouchedSetKeysAreEmptyForATableCutByNoSetColumn(): void

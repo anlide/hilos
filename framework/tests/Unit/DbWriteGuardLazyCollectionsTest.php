@@ -193,6 +193,50 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
         $actions->writeSetPublic(self::OWN_SET);
     }
 
+    /**
+     * @param int $strategy Lazy-loading strategy the collection is registered with
+     */
+    #[DataProvider('lazyStrategies')]
+    public function testCreateInSetDoorLetsTheSetOwnerCreateInItsSetAndRefusesAnother(int $strategy): void
+    {
+        $actions = $this->actionsFor(GuardedObjects::class, $strategy);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT);
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $actions->createInSetPublic(self::OWN_SET);
+
+        $this->expectException(CreateNotAllowedException::class);
+        $this->expectExceptionMessage("it holds set '42' with operations [add, update, remove], and the new row's set keys are [7].");
+        $actions->createInSetPublic(self::FOREIGN_SET);
+    }
+
+    /**
+     * The door that names no set hands the new row to nobody's set, which is not the set owner's to create in.
+     */
+    public function testCreateDoorRefusesTheSetOwner(): void
+    {
+        $actions = $this->actionsFor(GuardedObjects::class, Objects::LAZY_STRATEGY_KEY);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT);
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $this->expectException(CreateNotAllowedException::class);
+        $this->expectExceptionMessage("and the new row's set keys are [].");
+        $actions->createPublic();
+    }
+
+    public function testTheWholeTablePassesBothCreateDoors(): void
+    {
+        $actions = $this->actionsFor(GuardedObjects::class, Objects::LAZY_STRATEGY_KEY);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT);
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $actions->createPublic();
+        $actions->createInSetPublic(self::OWN_SET);
+        $actions->createInSetPublic(self::FOREIGN_SET);
+
+        $this->assertTrue(TruthSourceRegistry::hasCreateSource(self::COLLECTION));
+    }
+
     public function testManualCollectionWithNoKeyIsNotJudged(): void
     {
         $actions = $this->actionsFor(UnkeyedObjects::class, Objects::LAZY_STRATEGY_KEY);
@@ -200,6 +244,7 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
 
         $actions->writePublic();
         $actions->createPublic();
+        $actions->createInSetPublic(self::OWN_SET);
         $actions->writeSetPublic(self::OWN_SET);
 
         $this->assertFalse(TruthSourceRegistry::hasTruthSource(''));
@@ -315,6 +360,17 @@ final class GuardedDbActions extends DbActions
     public function createPublic(): void
     {
         $this->ensureCanCreate();
+    }
+
+    /**
+     * Asks the create door for a row of one set.
+     *
+     * @param string $setKey Set column value the new row would carry
+     * @throws CreateNotAllowedException When the truth source rejects creating a row in that set
+     */
+    public function createInSetPublic(string $setKey): void
+    {
+        $this->ensureCanCreateInSet($setKey);
     }
 
     public function deleteAllPublic(): void

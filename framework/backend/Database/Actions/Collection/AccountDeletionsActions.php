@@ -47,7 +47,7 @@ final class AccountDeletionsActions extends DbActions
      */
     public function request(int $userId, string $effectiveAt): AccountDeletion
     {
-        $this->ensureCanCreate();
+        $this->ensureCanCreateInSet((string)$userId);
 
         return $this->createDbItemFromObject($this->objectCollection->request($userId, $effectiveAt));
     }

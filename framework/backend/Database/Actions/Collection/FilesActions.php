@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Object\Collection\Files as ObjectFiles;
 use Hilos\Database\Object\Item\File as ObjectFile;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
@@ -55,7 +54,7 @@ final class FilesActions extends DbActions
         int $ownerUserId,
         FileVisibility $visibility,
     ): File {
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreateInSet((string)$ownerUserId);
 
         if ($storedName === '' || basename($storedName) !== $storedName) {
             throw new ValidationException('File stored_name must be a bare file name without a path');

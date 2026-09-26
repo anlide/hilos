@@ -59,7 +59,7 @@ final class GuestsActions extends DbActions
      */
     public function ensureForSession(string $sessionToken): Guest
     {
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreate();
 
         $guest = $this->objectCollection->ensureForSession(
             $sessionToken,

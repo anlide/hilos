@@ -10,7 +10,6 @@ use Demo\Polls\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\Polls\Database\View\Item\User;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
-use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -97,7 +96,7 @@ final class UsersActions extends DbActions
      */
     public function createWithName(string $name): User
     {
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreate();
 
         $displayName = trim($name);
         if ($displayName === '') {

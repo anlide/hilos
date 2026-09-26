@@ -8,6 +8,7 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
@@ -44,11 +45,11 @@ final class PushSubscriptionsActions extends DbActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws LogicException When the collection has no usable object metadata
      * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
-     * @throws WriteNotAllowedException When the notifications library cannot add subscriptions
+     * @throws CreateNotAllowedException When the caller may not add a subscription of that person
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreateInSet((string)$userId);
         $this->objectCollection->subscribe($userId, $endpoint, $p256dh, $auth, $userAgent);
     }
 

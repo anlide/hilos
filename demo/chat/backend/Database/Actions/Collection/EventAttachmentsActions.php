@@ -46,8 +46,7 @@ final class EventAttachmentsActions extends DbActions
      */
     public function create(int $eventId, string $filename, string $mimeType, string $storedName): DbEventAttachment
     {
-        TruthSourceRegistry::checkCanCreate(ChatDbContext::eventAttachments);
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreateInSet((string)$eventId);
 
         $attachment = ObjectEventAttachment::create();
         $attachment->eventId = $eventId;

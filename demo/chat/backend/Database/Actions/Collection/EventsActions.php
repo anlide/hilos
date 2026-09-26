@@ -199,7 +199,7 @@ final class EventsActions extends DbActions
      */
     private function add(string $type): DbEvent
     {
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreate();
 
         $objectEvent = ObjectEvent::create();
         $objectEvent->type = $type;

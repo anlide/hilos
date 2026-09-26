@@ -47,7 +47,7 @@ final class SecondFactorSettingsActions extends DbActions
      */
     public function setResetWait(int $userId, ?int $days, ?int $pendingDays, ?string $pendingFrom): void
     {
-        $this->ensureCanCreate();
+        $this->ensureCanCreateInSet((string)$userId);
 
         $this->objectCollection->setResetWait($userId, $days, $pendingDays, $pendingFrom);
     }

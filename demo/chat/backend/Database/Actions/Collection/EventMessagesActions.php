@@ -49,8 +49,7 @@ final class EventMessagesActions extends DbActions
      */
     public function create(int $eventId, ?int $authorUserId, ?int $authorBotId, string $message): DbEventMessage
     {
-        TruthSourceRegistry::checkCanCreate(ChatDbContext::eventMessages);
-        $this->ensureCanWrite(TruthSourceOperation::Add);
+        $this->ensureCanCreateInSet((string)$eventId);
 
         $detail = ObjectEventMessage::create();
         $detail->eventId = $eventId;

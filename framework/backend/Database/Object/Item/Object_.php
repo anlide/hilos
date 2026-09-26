@@ -342,8 +342,10 @@ abstract class Object_
     /**
      * Asks the write guard before a row is saved, naming creation and editing apart.
      *
-     * The id is read only for an edit: a row that does not exist yet has none. A collection
-     * with no key has no owner to ask at all - the same skip delete() makes.
+     * The id is read only for an edit: a row that does not exist yet has none. A creation is asked
+     * with the set keys the row lands in, read off the row itself, so a door that named another set
+     * is caught here before the insert. A collection with no key has no owner to ask at all - the
+     * same skip delete() makes.
      *
      * @param bool $isCreate True when the row does not exist in the table yet
      */
@@ -355,7 +357,7 @@ abstract class Object_
         }
 
         if ($isCreate) {
-            DbWriteGuard::guardCreate($collectionKey);
+            DbWriteGuard::guardCreate($collectionKey, $this->touchedSetKeys(...));
 
             return;
         }
@@ -517,10 +519,12 @@ abstract class Object_
      * either value is null, and when a value reaches no top because the parent it names is gone:
      * such a row is in nobody's set, and the write guard reads the empty list as belonging to no
      * claim over a set. A write that moves the row under another top names two keys, so only the
-     * owner of the whole table may make it.
+     * owner of the whole table may make it. A row that is not in the database yet is stored under
+     * no set, and creating it writes into one: it names the key of its edited pointer alone.
      *
-     * The write doors hand this method over uncalled ({@see DbWriteGuard::guardItemWrite()}): the
-     * climb reads the parent's table, and only a claim over a set asks for it.
+     * The write doors hand this method over uncalled ({@see DbWriteGuard::guardItemWrite()},
+     * {@see DbWriteGuard::guardCreate()}): the climb reads the parent's table, and only a claim over
+     * a set asks for it.
      *
      * @return list<string> Keys at the top of the set tree the write touches, empty for a row in nobody's set
      * @throws DbCollectionNotReadableException When this process does not read a table the climb passes through
@@ -535,8 +539,8 @@ abstract class Object_
             return [];
         }
 
-        $stored = $this->entitySync->$column;
         $edited = $this->entity->$column;
+        $stored = $this->entity->isRelated() ? $this->entitySync->$column : $edited;
         if ($stored === null || $edited === null) {
             return [];
         }

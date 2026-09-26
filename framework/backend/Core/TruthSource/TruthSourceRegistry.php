@@ -30,7 +30,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
  *   // In DbActions (automatic check)
  *   TruthSourceRegistry::checkCanWrite($tableName, $operation);
  *   TruthSourceRegistry::checkCanWriteSet($tableName, $setKey, $topSetKeys, $operation);
- *   TruthSourceRegistry::checkCanCreate($tableName);
+ *   TruthSourceRegistry::checkCanCreate($tableName, $setKeys);
  */
 class TruthSourceRegistry extends AbstractTruthSourceRegistry
 {
@@ -56,7 +56,8 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      * create right moved onto the operation axis. An agent that already holds a grant here
      * keeps it and gains the create operation - the two rights used to live in two stores and
      * could be claimed in either order, and folding them onto one axis must not turn the
-     * second call into a revocation of the first.
+     * second call into a revocation of the first. Over a claim on a set the create operation
+     * lets its holder create rows in that set, not anywhere.
      *
      * @param string $collection Collection/table name
      * @param string $agentId Agent ID from agent->getId()
@@ -133,13 +134,23 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      * Check if create operation is allowed for database table
      *
      * A grant limited to named rows cannot mint: a record that does not exist yet is not among
-     * the rows it was given. Creation therefore asks for a grant that allows adding and is not
-     * row-limited - the whole collection, or the mint-only claim that owns no row at all.
+     * the rows it was given. Creation therefore asks for a grant that allows adding and covers the
+     * new row - the whole collection, the mint-only claim that owns no row at all, or a claim over
+     * the set the new row lands in. A claim over a set creates rows of its own set and of no other,
+     * a row in nobody's set included, and without the create operation it creates nowhere, its own
+     * set too. The path with no agent passes when some grant in this process could create this row.
+     *
+     * The set keys are asked of the closure only when a claim over a set is what decides, and at
+     * most once, for the reason {@see checkCanWriteItem()} gives: reaching the top may read a parent
+     * row, which the owner of the whole table may not read at all.
      *
      * @param string $collection Table name
+     * @param Closure(): list<string> $setKeys Set keys at the top of the set tree the new row lands in,
+     *     each once, empty for a row outside every set; called only when a claim over a set judges the
+     *     creation, and whatever it raises reaches the caller
      * @throws CreateNotAllowedException If create is not allowed
      */
-    public static function checkCanCreate(string $collection): void
+    public static function checkCanCreate(string $collection, Closure $setKeys): void
     {
         if (!self::hasCreateSource($collection)) {
             throw new CreateNotAllowedException(
@@ -148,24 +159,39 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
+        $setKeysOnce = self::once($setKeys);
         $agentId = ExecutionContext::currentAgentId();
         if ($agentId === null) {
-            return;
+            if (self::isNewRowCovered($collection, $setKeysOnce)) {
+                return;
+            }
+
+            $reason = "Create operation not allowed: no truth source in this process may create a row in table '{$collection}'";
+            if (self::hasSetCreateSource($collection)) {
+                throw new CreateNotAllowedException("{$reason} with set keys [" . implode(', ', $setKeysOnce()) . "].");
+            }
+
+            throw new CreateNotAllowedException("{$reason}.");
         }
 
         $grant = self::grantOf($collection, $agentId);
         if (
             $grant !== null
             && $grant->allows(TruthSourceOperation::Add)
-            && ($grant->keys->coversEveryKey() || $grant->keys->coversNoKey())
+            && self::grantCoversNewRow($grant, $setKeysOnce)
         ) {
             return;
         }
 
-        throw new CreateNotAllowedException(
-            "Create operation not allowed: agent '{$agentId}' is not allowed to create in " .
-            "table '{$collection}'."
-        );
+        $reason = "Create operation not allowed: agent '{$agentId}' is not allowed to create in table '{$collection}'";
+        if ($grant !== null && $grant->keys->coversSet()) {
+            throw new CreateNotAllowedException(
+                "{$reason}: it holds set '{$grant->keys->setKey()}' with operations [" . $grant->operations->asText() .
+                "], and the new row's set keys are [" . implode(', ', $setKeysOnce()) . "]."
+            );
+        }
+
+        throw new CreateNotAllowedException("{$reason}.");
     }
 
     /**
@@ -394,6 +420,61 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             "with operations [" . $grant->operations->asText() . "] and may not " .
             "{$operation->value} rows of set '{$setKey}'."
         );
+    }
+
+    /**
+     * Whether any grant in this process may create one row.
+     *
+     * Asked by the agent-less path, for the reason {@see isRowCovered()} gives. A grant is asked
+     * for the create operation before its width, so a borrowed claim over a set never climbs.
+     *
+     * @param string $collection Table name
+     * @param Closure(): list<string> $setKeys Set keys the new row lands in, called once at most across the check
+     * @return bool True when at least one grant allows adding and covers the new row
+     */
+    private static function isNewRowCovered(string $collection, Closure $setKeys): bool
+    {
+        $sources = &self::getSources();
+        foreach ($sources[$collection] ?? [] as $grant) {
+            if ($grant->allows(TruthSourceOperation::Add) && self::grantCoversNewRow($grant, $setKeys)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a claim over a set that allows adding is among the collection's grants.
+     *
+     * Exactly the case in which the agent-less path asked for the new row's set keys and found them
+     * no claim's own, so its refusal names them.
+     *
+     * @param string $collection Table name
+     * @return bool True when some grant runs over a set and allows adding
+     */
+    private static function hasSetCreateSource(string $collection): bool
+    {
+        $sources = &self::getSources();
+        foreach ($sources[$collection] ?? [] as $grant) {
+            if ($grant->keys->coversSet() && $grant->allows(TruthSourceOperation::Add)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether one grant's width covers creating one row, asking the set keys only of a claim over a set.
+     *
+     * @param TruthSourceGrant $grant Grant to judge
+     * @param Closure(): list<string> $setKeys Set keys the new row lands in
+     * @return bool True when the grant's width covers the new row
+     */
+    private static function grantCoversNewRow(TruthSourceGrant $grant, Closure $setKeys): bool
+    {
+        return $grant->keys->coversNewRow($grant->keys->coversSet() ? $setKeys() : []);
     }
 
     /**

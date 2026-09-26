@@ -45,7 +45,7 @@ final class SecondFactorBackupCodesActions extends DbActions
      */
     public function issueSet(int $userId, array $codes): void
     {
-        $this->ensureCanCreate();
+        $this->ensureCanCreateInSet((string)$userId);
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
 
         $this->objectCollection->issueSet($userId, $codes);

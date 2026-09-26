@@ -132,17 +132,28 @@ final readonly class TruthSourceKeys
             return $this->covers($key);
         }
 
-        if ($setKeys === []) {
-            return false;
+        return $this->holdsEverySetKey($setKeys);
+    }
+
+    /**
+     * Whether the claim covers creating one row.
+     *
+     * A question of width alone; whether the claim may add at all is the registry's to ask. The
+     * whole collection covers every new row, and so does the claim that names no row, which is the
+     * width the right to create has. Named rows cover none: a row that does not exist yet is not
+     * among the rows they name. A set covers a new row only when every set key the row lands in is
+     * its own, so a row of another set, or of nobody's set, is not its to create.
+     *
+     * @param list<string> $setKeys Set keys at the top of the set tree the new row lands in, empty for a row outside every set
+     * @return bool True when this claim covers creating that row
+     */
+    public function coversNewRow(array $setKeys): bool
+    {
+        if ($this->setKey === null) {
+            return $this->everyKey || $this->keys === [];
         }
 
-        foreach ($setKeys as $setKey) {
-            if ($setKey !== $this->setKey) {
-                return false;
-            }
-        }
-
-        return true;
+        return $this->holdsEverySetKey($setKeys);
     }
 
     /**
@@ -166,5 +177,26 @@ final readonly class TruthSourceKeys
     public function listedKeys(): array
     {
         return $this->keys;
+    }
+
+    /**
+     * Whether every set key a row touches is the one this claim runs over; none touched is nobody's set.
+     *
+     * @param list<string> $setKeys Set keys at the top of the set tree the row touches
+     * @return bool True when the list is not empty and names this claim's set alone
+     */
+    private function holdsEverySetKey(array $setKeys): bool
+    {
+        if ($setKeys === []) {
+            return false;
+        }
+
+        foreach ($setKeys as $setKey) {
+            if ($setKey !== $this->setKey) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

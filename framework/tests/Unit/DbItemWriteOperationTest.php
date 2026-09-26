@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -119,8 +120,9 @@ final class DbItemWriteOperationTest extends TestCase
         );
         ExecutionContext::setCurrentAgentId(self::AGENT);
 
-        $this->expectException(WriteNotAllowedException::class);
-        $this->expectExceptionMessage('may not add rows across the whole table');
+        // The unsaved row asks the create door (HIL-1112), so the refusal is creation's own.
+        $this->expectException(CreateNotAllowedException::class);
+        $this->expectExceptionMessage("no create or write permission registered for table '" . self::COLLECTION . "'");
         $actions->writePublic();
     }
 
