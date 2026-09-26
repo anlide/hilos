@@ -237,6 +237,9 @@ final class LogStoreReader
      * That is a consequence of how the raw name is built rather than a rule stated here, which is
      * exactly why a test holds it — it would stop being true the day that name changes.
      *
+     * {@see LogLineReader} reads this same answer and classifies every physical line of the stream
+     * as ERROR, including continuation lines and entries with no level prefix (HIL-1025).
+     *
      * @param string $basename Basename of a live stream, as {@see LogStoreSnapshot::liveFiles()} names it
      *
      * @return bool Whether the stream is one of failures

@@ -54,6 +54,9 @@ final class LogStoreAgentFollowTest extends TestCase
     /** @var string Live file every case follows */
     private const string STREAM = 'worker-0.log';
 
+    /** @var string Worker error stream used to prove filename-based classification */
+    private const string ERROR_STREAM = 'worker-regular-1.error.log';
+
     private string $dir = '';
 
     private string $logFile = '';
@@ -120,6 +123,36 @@ final class LogStoreAgentFollowTest extends TestCase
         $this->assertFalse($frame->rotated);
         $this->assertNull($frame->skippedBytes);
         $this->assertFalse($frame->stopped);
+    }
+
+    public function testAFollowStartedInsideAnEntryGivesItsTailTheLevelOfItsHead(): void
+    {
+        $this->write("[2026-08-01 00:00:00.000] ERROR: before the follow\n");
+        $agent = $this->following(level: Logger::LEVEL_ERROR);
+        $this->acked(self::REQUEST_ID);
+
+        $this->append("#0 first frame\n#1 second frame\n");
+        $agent->pushAppendedLines();
+
+        $this->assertSame(
+            [Logger::LEVEL_ERROR, Logger::LEVEL_ERROR],
+            array_column($this->frame(self::ACCEPT_KEY)->lines, LogsReadLinesReplyDTO::level),
+        );
+    }
+
+    public function testAFollowedWorkerErrorStreamIsErrorFromItsFirstLine(): void
+    {
+        $this->write('', self::ERROR_STREAM);
+        $agent = $this->following(level: Logger::LEVEL_ERROR, stream: self::ERROR_STREAM);
+        $this->acked(self::REQUEST_ID);
+
+        $this->append("[2026-08-01 00:00:00.000] worker failure\n", self::ERROR_STREAM);
+        $agent->pushAppendedLines();
+
+        $this->assertSame(
+            [Logger::LEVEL_ERROR],
+            array_column($this->frame(self::ACCEPT_KEY)->lines, LogsReadLinesReplyDTO::level),
+        );
     }
 
     public function testAFileThatGainedNothingProducesNoFrameAtAll(): void
@@ -326,15 +359,16 @@ final class LogStoreAgentFollowTest extends TestCase
      * Starts a follow of the fixture file as the viewer page hands it over.
      *
      * @param ?string $level Level filter, or null for any level
+     * @param string $stream File name of the live stream to follow
      * @return LogStoreAgent Agent already following, its ack still queued
      */
-    private function following(?string $level = null): LogStoreAgent
+    private function following(?string $level = null, string $stream = self::STREAM): LogStoreAgent
     {
         $agent = new LogStoreAgent();
         $agent->onSignalAgent(
             new AgentSignalData(new LogsFollowStartSignalData(
                 nodeId: '',
-                stream: self::STREAM,
+                stream: $stream,
                 level: $level,
                 substring: null,
                 acceptKey: self::ACCEPT_KEY,
@@ -410,31 +444,34 @@ final class LogStoreAgentFollowTest extends TestCase
     }
 
     /**
+     * @param string $stream File name of the live stream
      * @return string Absolute path of the followed fixture file
      */
-    private function path(): string
+    private function path(string $stream = self::STREAM): string
     {
-        return $this->dir . DIRECTORY_SEPARATOR . self::STREAM;
+        return $this->dir . DIRECTORY_SEPARATOR . $stream;
     }
 
     /**
      * Writes the followed file from scratch.
      *
      * @param string $contents File contents
+     * @param string $stream File name of the live stream
      */
-    private function write(string $contents): void
+    private function write(string $contents, string $stream = self::STREAM): void
     {
-        file_put_contents($this->path(), $contents);
+        file_put_contents($this->path($stream), $contents);
     }
 
     /**
      * Appends to the followed file, the way a running process writes its log.
      *
      * @param string $contents Bytes to append
+     * @param string $stream File name of the live stream
      */
-    private function append(string $contents): void
+    private function append(string $contents, string $stream = self::STREAM): void
     {
-        file_put_contents($this->path(), $contents, FILE_APPEND);
+        file_put_contents($this->path($stream), $contents, FILE_APPEND);
     }
 
     /**

@@ -12,9 +12,10 @@ use Hilos\Utils\Logger;
  * Produced by {@see LogLineReader} while scanning a single log file. {@see $detectedLevel} is a
  * best-effort classification (one of the {@see Logger} `LEVEL_*` constants): a line carrying a
  * recognized prefix sets the level, while a line without one is a {@see $isContinuation} (a wrapped
- * message body or exception stack trace) that inherits the level of the entry it belongs to. This is
- * what lets a level filter for `ERROR` also carry that entry's stack-trace lines. Internal read
- * value-object, not a signal payload.
+ * message body or exception stack trace) that inherits the level of the entry it belongs to. Every
+ * line of a stream {@see LogStoreReader::isErrorStream()} recognizes has ERROR as its detected level.
+ * This is what lets a level filter for `ERROR` carry the whole error stream or an ordinary entry's
+ * stack-trace lines. Internal read value-object, not a signal payload.
  */
 final class LogLine
 {

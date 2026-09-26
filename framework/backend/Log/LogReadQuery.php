@@ -15,10 +15,12 @@ use Hilos\Utils\Logger;
  * means start at the anchor's natural end. Up to {@see $limit} lines that pass the optional
  * {@see $levelFilter} (a {@see Logger} `LEVEL_*` value) and {@see $substring} filter are returned.
  * {@see $inheritedLevel} carries the running level across a cut, so a live tail resuming mid-entry keeps
- * the stack trace of an ERROR classified as ERROR (HIL-389). {@see $maxWindowBytes} caps a backward scan
- * alone and means "read no further back than this": a scan looking for a level a healthy stream rarely
- * holds would otherwise read that stream whole on every pass (HIL-868); null grows the window to the start
- * of the file, as before. Internal read value-object, not a signal payload.
+ * the stack trace of an ERROR classified as ERROR (HIL-389). Null asks the reader to find the level from
+ * the error-stream name or the entry head at most one read step behind the cut, falling back to INFO
+ * (HIL-1025). {@see $maxWindowBytes} caps a backward scan alone and means "read no further back than this":
+ * a scan looking for a level a healthy stream rarely holds would otherwise read that stream whole on every
+ * pass (HIL-868); null grows the window to the start of the file, as before. Internal read value-object,
+ * not a signal payload.
  */
 final class LogReadQuery
 {
@@ -35,8 +37,8 @@ final class LogReadQuery
      * @param ?string $levelFilter Keep only lines of this level (a {@see Logger} `LEVEL_*` value), or null for any level
      * @param ?string $substring Keep only lines containing this text, or null/empty for no substring filter
      * @param ?string $inheritedLevel Entry level (a {@see Logger} `LEVEL_*` value) inherited from the page before this
-     *     one, so a continuation opening this page keeps its entry's level; null starts the scan at the reader's
-     *     {@see Logger::LEVEL_INFO} default
+     *     one, so a continuation opening this page keeps its entry's level; null asks the reader to detect the level
+     *     from the stream or one read step behind the cut and then fall back to {@see Logger::LEVEL_INFO}
      * @param ?int $maxWindowBytes Furthest a backward scan reads back from where it starts, in bytes, or null to grow
      *     to the start of the file; ignored by a forward read
      */

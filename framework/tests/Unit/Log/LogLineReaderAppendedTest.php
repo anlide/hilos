@@ -99,7 +99,7 @@ final class LogLineReaderAppendedTest extends TestCase
         $this->assertSame([true, true], array_map(static fn (LogLine $line): bool => $line->isContinuation, $second->lines));
     }
 
-    public function testContinuationOpeningAPageFallsBackToInfoWithoutAnInheritedLevel(): void
+    public function testContinuationOpeningAPageFindsItsEntryLevelWithoutAnInheritedLevel(): void
     {
         $this->write(
             'worker-1.log',
@@ -108,9 +108,21 @@ final class LogLineReaderAppendedTest extends TestCase
         $reader = new LogLineReader($this->root);
 
         $first = $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD, limit: 1));
-        $second = $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD, cursor: $first->endCursor));
+        $detected = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_HEAD, cursor: $first->endCursor),
+        );
+        $inherited = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(
+                LogReadQuery::ANCHOR_HEAD,
+                cursor: $first->endCursor,
+                inheritedLevel: Logger::LEVEL_INFO,
+            ),
+        );
 
-        $this->assertSame(Logger::LEVEL_INFO, $second->lines[0]->detectedLevel);
+        $this->assertSame(Logger::LEVEL_ERROR, $detected->lines[0]->detectedLevel);
+        $this->assertSame(Logger::LEVEL_INFO, $inherited->lines[0]->detectedLevel);
     }
 
     public function testEndPositionIsFilledBothWhenTheLimitFillsUpAndWhenTheFileRunsOut(): void
@@ -141,10 +153,16 @@ final class LogLineReaderAppendedTest extends TestCase
             cursor: $size,
             inheritedLevel: Logger::LEVEL_ERROR,
         ));
+        $unknown = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_HEAD, cursor: $size),
+        );
 
         $this->assertSame([], $page->lines);
         $this->assertSame($size, $page->endCursor);
         $this->assertSame(Logger::LEVEL_ERROR, $page->endLevel);
+        $this->assertSame($size, $unknown->endCursor);
+        $this->assertNull($unknown->endLevel);
     }
 
     public function testLinesFilteredOutStillAdvanceTheEndCursor(): void

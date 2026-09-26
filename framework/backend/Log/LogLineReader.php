@@ -6,11 +6,8 @@ namespace Hilos\Log;
 
 use DateTimeImmutable;
 use Generator;
-use Hilos\Constants\EnvConstants;
-use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
-use Hilos\Hilos;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Utils\Logger;
 
@@ -20,8 +17,9 @@ use Hilos\Utils\Logger;
  * Companion to {@see LogStoreReader}: where that enumerates the store, this reads the lines of a single
  * chosen file with cursor pagination and level/substring filtering, feeding the log viewer (HIL-388)
  * and live-tail (HIL-389) pages from the worker, off the master loop. Like the store reader it holds no
- * state and does no DI — it is bound to the log root and each {@see read()} does a fresh filesystem
- * read (it reads the filesystem, not a `DbCollection`, so the no-repository-service rule does not apply).
+ * mutable state: it is bound to the log root and the store's stream classification, and each
+ * {@see read()} does a fresh filesystem read (it reads the filesystem, not a `DbCollection`, so the
+ * no-repository-service rule does not apply).
  *
  * Two independent scans share one line classifier: {@see LogReadQuery::ANCHOR_HEAD} walks forward from
  * the cursor a line at a time; {@see LogReadQuery::ANCHOR_TAIL} grows a byte window backward from the end
@@ -30,13 +28,13 @@ use Hilos\Utils\Logger;
  * bytes before the page can be all non-matching under a filter, so only a found match proves one remains.
  * A query may cap that growth ({@see LogReadQuery::$maxWindowBytes}): a scan stopped by its ceiling has not
  * looked past it and answers "maybe" from the window's boundary instead (HIL-868).
- * Level detection is per line: a recognized prefix
- * (`[ERROR]`/`ERROR:` and the like, or the `agentId|level|message` agent-pipe format under
- * {@see Logger::AGENT_LOG_MARKER}) updates a running level, a line without one is a continuation that
- * inherits it — so an `ERROR` filter also catches the entry's stack trace. The running level resets to
- * {@see Logger::LEVEL_INFO} at each page boundary unless the caller carries it over in
- * {@see LogReadQuery::$inheritedLevel}, so a continuation at the very start of a page defaults to INFO
- * rather than inheriting across the cut.
+ * Level detection is per line: every line of a stream {@see LogStoreReader::isErrorStream()} recognizes
+ * is ERROR; elsewhere a recognized prefix (`[ERROR]`/`ERROR:` and the like, or the
+ * `agentId|level|message` agent-pipe format under {@see Logger::AGENT_LOG_MARKER}) updates a running
+ * level, and a line without one is a continuation that inherits it. The running level resets to
+ * {@see Logger::LEVEL_INFO} unless the caller carries it over in {@see LogReadQuery::$inheritedLevel}
+ * or a read opening on a continuation finds its entry head at most one {@see CHUNK_SIZE} step behind
+ * the cut (HIL-1025).
  *
  * A forward read serves the live tail too (HIL-389) and is therefore append-aware: a trailing line with no
  * newline yet is half-written, so it is neither returned nor counted into {@see LogLinePage::$endCursor} —
@@ -87,9 +85,12 @@ final class LogLineReader
 
     /**
      * @param ?string $logDirectory Log root holding the live `*.log` files and the archive subtree, or null when it could not be resolved
+     * @param ?LogStoreReader $store Store reader naming which streams carry only errors, or null when none are known
      */
-    public function __construct(private readonly ?string $logDirectory)
-    {
+    public function __construct(
+        private readonly ?string $logDirectory,
+        private readonly ?LogStoreReader $store = null,
+    ) {
     }
 
     /**
@@ -102,11 +103,9 @@ final class LogLineReader
      */
     public static function fromEnv(): self
     {
-        try {
-            return new self(dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string()));
-        } catch (EnvException) {
-            return new self(null);
-        }
+        $store = LogStoreReader::fromEnv();
+
+        return new self($store->logDirectory(), $store);
     }
 
     /**
@@ -127,10 +126,11 @@ final class LogLineReader
         }
 
         $limit = max(1, $query->limit);
+        $errorStream = $this->store !== null && $this->store->isErrorStream(basename($relativePath));
 
         return $query->anchor === LogReadQuery::ANCHOR_TAIL
-            ? $this->readTail($path, $query, $limit)
-            : $this->readHead($path, $query, $limit);
+            ? $this->readTail($path, $query, $limit, $errorStream)
+            : $this->readHead($path, $query, $limit, $errorStream);
     }
 
     /**
@@ -345,18 +345,19 @@ final class LogLineReader
      * @param string $path Canonical file path
      * @param LogReadQuery $query Query providing the cursor, the inherited level and the filters
      * @param int $limit Positive page size
+     * @param bool $errorStream Whether every line of the file carries the ERROR level
      *
      * @return LogLinePage Matched lines in file order plus the next forward cursor and the read's end position
      */
-    private function readHead(string $path, LogReadQuery $query, int $limit): LogLinePage
+    private function readHead(string $path, LogReadQuery $query, int $limit, bool $errorStream): LogLinePage
     {
         try {
-            return FsPath::readWith($path, static function ($handle) use ($query, $limit): LogLinePage {
+            return FsPath::readWith($path, static function ($handle) use ($query, $limit, $errorStream): LogLinePage {
                 $fileSize = self::openFileSize($handle);
                 $start = max(0, $query->cursor ?? 0);
-                $currentLevel = $query->inheritedLevel ?? Logger::LEVEL_INFO;
+                $currentLevel = $errorStream ? Logger::LEVEL_ERROR : ($query->inheritedLevel ?? Logger::LEVEL_INFO);
                 if ($fileSize === null || $start >= $fileSize) {
-                    return new LogLinePage(true, [], null, false, $start, $currentLevel);
+                    return new LogLinePage(true, [], null, false, $start, $query->inheritedLevel);
                 }
                 fseek($handle, $start);
 
@@ -364,13 +365,24 @@ final class LogLineReader
                 $nextCursor = null;
                 $hasMore = false;
                 $endCursor = $start;
-                $endLevel = $currentLevel;
+                $endLevel = $query->inheritedLevel;
+                $first = true;
                 while (($raw = fgets($handle)) !== false) {
                     if (!str_ends_with($raw, "\n")) {
                         break;
                     }
                     $text = rtrim($raw, "\r\n");
-                    [$currentLevel, $isContinuation] = self::classify($text, $currentLevel);
+                    if ($first) {
+                        $first = false;
+                        if ($start > 0
+                            && $query->inheritedLevel === null
+                            && !$errorStream
+                            && self::isContinuation($text)
+                        ) {
+                            $currentLevel = self::entryLevelBefore($handle, $start) ?? Logger::LEVEL_INFO;
+                        }
+                    }
+                    [$currentLevel, $isContinuation] = self::classify($text, $currentLevel, $errorStream);
                     $endCursor += strlen($raw);
                     $endLevel = $currentLevel;
                     if (self::passesFilter($text, $currentLevel, $query)) {
@@ -402,13 +414,14 @@ final class LogLineReader
      * @param string $path Canonical file path
      * @param LogReadQuery $query Query providing the cursor and filters
      * @param int $limit Positive page size
+     * @param bool $errorStream Whether every line of the file carries the ERROR level
      *
      * @return LogLinePage The last `$limit` matched lines in file order plus the next backward cursor
      */
-    private function readTail(string $path, LogReadQuery $query, int $limit): LogLinePage
+    private function readTail(string $path, LogReadQuery $query, int $limit, bool $errorStream): LogLinePage
     {
         try {
-            return FsPath::readWith($path, static function ($handle) use ($query, $limit): LogLinePage {
+            return FsPath::readWith($path, static function ($handle) use ($query, $limit, $errorStream): LogLinePage {
                 $fileSize = self::openFileSize($handle);
                 if ($fileSize === null) {
                     return LogLinePage::unavailable();
@@ -431,7 +444,33 @@ final class LogLineReader
                         return LogLinePage::unavailable();
                     }
 
-                    $matches = self::matchWindow($buffer, $windowStart, $windowStart > 0, $query);
+                    $startLevel = $errorStream ? Logger::LEVEL_ERROR : Logger::LEVEL_INFO;
+                    if (!$errorStream && $windowStart > 0 && $query->maxWindowBytes === null) {
+                        $firstNewline = strpos($buffer, "\n");
+                        $firstWholePosition = $firstNewline === false ? strlen($buffer) : $firstNewline + 1;
+                        if ($firstWholePosition < strlen($buffer)) {
+                            $nextNewline = strpos($buffer, "\n", $firstWholePosition);
+                            $firstWholeEnd = $nextNewline === false ? strlen($buffer) : $nextNewline + 1;
+                            $firstWholeText = rtrim(
+                                substr($buffer, $firstWholePosition, $firstWholeEnd - $firstWholePosition),
+                                "\r\n",
+                            );
+                            if (self::isContinuation($firstWholeText)) {
+                                $startLevel = self::entryLevelBefore(
+                                    $handle,
+                                    $windowStart + $firstWholePosition,
+                                ) ?? Logger::LEVEL_INFO;
+                            }
+                        }
+                    }
+                    $matches = self::matchWindow(
+                        $buffer,
+                        $windowStart,
+                        $windowStart > 0,
+                        $query,
+                        $startLevel,
+                        $errorStream,
+                    );
                     if (count($matches) > $limit || $windowStart === 0) {
                         return self::tailPageFromMatches($matches, $limit);
                     }
@@ -463,19 +502,76 @@ final class LogLineReader
     }
 
     /**
+     * Find the level of the last entry head before a read cut, looking back one chunk at most.
+     *
+     * @param resource $handle Open read handle whose position is restored before returning
+     * @param int $offset Byte offset of the continuation the caller is about to classify
+     *
+     * @return ?string Level of the last entry head in reach, or null when the chunk carries none
+     */
+    private static function entryLevelBefore($handle, int $offset): ?string
+    {
+        $returnPosition = ftell($handle);
+        if ($returnPosition === false) {
+            return null;
+        }
+
+        try {
+            $start = max(0, $offset - self::CHUNK_SIZE);
+            fseek($handle, $start);
+            $buffer = fread($handle, $offset - $start);
+            if ($buffer === false) {
+                return null;
+            }
+
+            $length = strlen($buffer);
+            $position = 0;
+            if ($start > 0) {
+                $firstNewline = strpos($buffer, "\n");
+                $position = $firstNewline === false ? $length : $firstNewline + 1;
+            }
+
+            $currentLevel = Logger::LEVEL_INFO;
+            $entryLevel = null;
+            while ($position < $length) {
+                $newline = strpos($buffer, "\n", $position);
+                $lineEnd = $newline === false ? $length : $newline + 1;
+                $text = rtrim(substr($buffer, $position, $lineEnd - $position), "\r\n");
+                [$currentLevel, $isContinuation] = self::classify($text, $currentLevel, false);
+                if (!$isContinuation) {
+                    $entryLevel = $currentLevel;
+                }
+                $position = $lineEnd;
+            }
+
+            return $entryLevel;
+        } finally {
+            fseek($handle, $returnPosition);
+        }
+    }
+
+    /**
      * Classify and filter every complete line in a backward window, tracking level forward.
      *
      * @param string $buffer Raw bytes of the window `[$windowStart, $end)`
      * @param int $windowStart Absolute byte offset the buffer begins at
      * @param bool $dropPartialHead Whether to discard the first line (a fragment when the window does not start at BOF)
      * @param LogReadQuery $query Query providing the filters
+     * @param string $startLevel Running level before the first whole line in the window
+     * @param bool $errorStream Whether every line of the file carries the ERROR level
      *
      * @return list<array{offset: int, line: LogLine}> Matched lines with their absolute start offsets, in file order
      */
-    private static function matchWindow(string $buffer, int $windowStart, bool $dropPartialHead, LogReadQuery $query): array
-    {
+    private static function matchWindow(
+        string $buffer,
+        int $windowStart,
+        bool $dropPartialHead,
+        LogReadQuery $query,
+        string $startLevel,
+        bool $errorStream,
+    ): array {
         $matches = [];
-        $currentLevel = Logger::LEVEL_INFO;
+        $currentLevel = $startLevel;
         $length = strlen($buffer);
         $position = 0;
         $first = true;
@@ -493,7 +589,7 @@ final class LogLineReader
                 }
             }
 
-            [$currentLevel, $isContinuation] = self::classify($text, $currentLevel);
+            [$currentLevel, $isContinuation] = self::classify($text, $currentLevel, $errorStream);
             if (self::passesFilter($text, $currentLevel, $query)) {
                 $matches[] = ['offset' => $offset, 'line' => new LogLine($text, $currentLevel, $isContinuation)];
             }
@@ -586,19 +682,34 @@ final class LogLineReader
      *
      * @param string $text Line text without the trailing newline
      * @param string $currentLevel Running level inherited from the preceding line
+     * @param bool $errorStream Whether every line of the file carries the ERROR level
      *
      * @return array{0: string, 1: bool} New running level and whether the line is a continuation
      */
-    private static function classify(string $text, string $currentLevel): array
+    private static function classify(string $text, string $currentLevel, bool $errorStream): array
     {
         if (str_starts_with($text, Logger::AGENT_LOG_MARKER)) {
-            return [self::detectAgentLevel($text, $currentLevel), false];
+            return [$errorStream ? Logger::LEVEL_ERROR : self::detectAgentLevel($text, $currentLevel), false];
         }
         if (preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text, $match) === 1) {
-            return [self::detectEntryLevel(substr($text, strlen($match[0]))), false];
+            return [
+                $errorStream ? Logger::LEVEL_ERROR : self::detectEntryLevel(substr($text, strlen($match[0]))),
+                false,
+            ];
         }
 
-        return [$currentLevel, true];
+        return [$errorStream ? Logger::LEVEL_ERROR : $currentLevel, true];
+    }
+
+    /**
+     * @param string $text Line text without the trailing newline
+     *
+     * @return bool Whether the line carries no entry head of its own
+     */
+    private static function isContinuation(string $text): bool
+    {
+        return !str_starts_with($text, Logger::AGENT_LOG_MARKER)
+            && preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text) !== 1;
     }
 
     /**

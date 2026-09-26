@@ -17,7 +17,8 @@ use Hilos\Utils\Logger;
  *
  * {@see $nextCursor} answers "is there another page" and is null at the end of the file, so a live tail
  * cannot follow it; {@see $endCursor} and {@see $endLevel} answer "where did this read stop, and what
- * level does the next line inherit" and are always filled by a forward read (HIL-389).
+ * level does the next line inherit". A readable forward read always fills the cursor; it fills the
+ * level after consuming a complete line or when the query supplied one (HIL-389, HIL-1025).
  */
 final class LogLinePage
 {
@@ -33,7 +34,8 @@ final class LogLinePage
      * @param ?int $endCursor Byte offset just past the last complete line this read consumed, or null when the
      *     read direction does not track one (a backward tail scan, or an unavailable file)
      * @param ?string $endLevel Running entry level (a {@see Logger} `LEVEL_*` value) at {@see $endCursor}, to be
-     *     passed back as {@see LogReadQuery::$inheritedLevel}, or null when {@see $endCursor} is null
+     *     passed back as {@see LogReadQuery::$inheritedLevel}; null when {@see $endCursor} is null or a forward read
+     *     received no inherited level and consumed no complete line
      */
     public function __construct(
         public readonly bool $readable,

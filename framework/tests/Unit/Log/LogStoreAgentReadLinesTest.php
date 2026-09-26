@@ -76,6 +76,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
     protected function tearDown(): void
     {
         putenv(EnvConstants::DAEMON_LOG_FILE->name);
+        putenv(EnvConstants::DAEMON_ERROR_LOG_FILE->name);
         if ($this->previousEnv !== null) {
             Hilos::$env = $this->previousEnv;
         }
@@ -152,6 +153,26 @@ final class LogStoreAgentReadLinesTest extends TestCase
             array_column($earlier[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
         $this->assertNull($earlier[LogsReadLinesReplyDTO::anchorFound]);
+    }
+
+    public function testAnAnchoredReadOfTheDaemonErrorStreamTagsTheEntryError(): void
+    {
+        putenv(EnvConstants::DAEMON_ERROR_LOG_FILE->name . '=' . $this->dir . '/daemon-error.log');
+        $this->write('daemon-error.log', "[2026-08-01 00:00:02.500] failure\n");
+
+        $this->read($this->request(
+            LogsReadLinesActionDTO::SOURCE_LIVE,
+            null,
+            'daemon-error.log',
+            anchorAtMs: $this->milliseconds('2026-08-01 00:00:02', 500),
+        ));
+
+        $reply = $this->acked();
+        $this->assertTrue($reply[LogsReadLinesReplyDTO::anchorFound]);
+        $this->assertSame(
+            Logger::LEVEL_ERROR,
+            $reply[LogsReadLinesReplyDTO::lines][0][LogsReadLinesReplyDTO::level],
+        );
     }
 
     /**

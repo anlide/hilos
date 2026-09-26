@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
-use Hilos\Utils\Logger;
-
 /**
  * One viewer following one live log file, as {@see LogStoreAgent} holds it in memory (HIL-389).
  *
@@ -15,9 +13,9 @@ use Hilos\Utils\Logger;
  * whole reason this is the one mutable class of the leaf: a read position is a state, not a value,
  * and an immutable copy per viewer per second would be garbage minted for the shape of it.
  *
- * {@see $inheritedLevel} is the second half of the position. A stack trace cut by a tick boundary
- * loses the ERROR of its entry without it and slips past a level filter - the property
- * continuations were introduced for (HIL-384).
+ * {@see $inheritedLevel} is the second half of the position. A known value carries an entry level
+ * across a tick boundary; null asks the reader to recover it from the stream or the entry head at
+ * most one read step behind the position (HIL-384, HIL-1025).
  */
 final class LogFollowWatcher
 {
@@ -28,7 +26,7 @@ final class LogFollowWatcher
      * @param ?string $level Level filter, or null for any level
      * @param ?string $substring Substring filter, or null for no substring filter
      * @param int $offset Byte offset reading has reached
-     * @param string $inheritedLevel Entry level a line at {@see $offset} inherits
+     * @param ?string $inheritedLevel Entry level a line at {@see $offset} inherits, or null for the reader to detect it
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -37,7 +35,7 @@ final class LogFollowWatcher
         public readonly ?string $level,
         public readonly ?string $substring,
         private int $offset,
-        private string $inheritedLevel = Logger::LEVEL_INFO,
+        private ?string $inheritedLevel = null,
     ) {
     }
 
@@ -50,9 +48,9 @@ final class LogFollowWatcher
     }
 
     /**
-     * @return string Entry level a line at {@see offset()} inherits
+     * @return ?string Entry level a line at {@see offset()} inherits, or null for the reader to detect it
      */
-    public function inheritedLevel(): string
+    public function inheritedLevel(): ?string
     {
         return $this->inheritedLevel;
     }
@@ -60,11 +58,11 @@ final class LogFollowWatcher
     /**
      * Moves the position to where the read stopped, and remembers the level it stopped on.
      *
-     * A page that reached no complete line reports neither, and the position stays where it was:
+     * A page that reached no complete line reports no level, and the position stays where it was:
      * the writer is mid-line and the rest of it is coming.
      *
      * @param ?int $endCursor Byte offset the read stopped at, or null when it reached no complete line
-     * @param ?string $endLevel Entry level at that offset, or null alongside a null offset
+     * @param ?string $endLevel Entry level at that offset, or null when the read consumed no complete line
      */
     public function advanceTo(?int $endCursor, ?string $endLevel): void
     {
@@ -80,14 +78,14 @@ final class LogFollowWatcher
      * Moves the position without reading what is in between, and forgets the inherited level.
      *
      * Both jumps use it: back to the start of a file that rotation replaced, and forward to the
-     * end of one the viewer fell too far behind. Neither has an entry to inherit from - one is a
-     * file this follow has never read, the other is bytes it deliberately never will.
+     * end of one the viewer fell too far behind. Neither carries a known entry level; the next read
+     * detects one from the stream or at most one read step behind its new position.
      *
      * @param int $offset Byte offset to continue from
      */
     public function jumpTo(int $offset): void
     {
         $this->offset = $offset;
-        $this->inheritedLevel = Logger::LEVEL_INFO;
+        $this->inheritedLevel = null;
     }
 }

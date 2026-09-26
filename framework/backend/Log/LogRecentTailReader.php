@@ -22,10 +22,9 @@ use Hilos\Utils\Logger;
  * too ({@see LogLineReader::textAfterLevel()}): the tab an entry sits in already names its level,
  * and the row draws it as a tag of its own (HIL-868).
  *
- * A line without a timestamp is dropped rather than shown with a made-up time. Error streams hold
- * no continuation lines by construction, while an ordinary stream may, and anything may append to
- * either past the Logger — and an entry that cannot be ordered cannot be cut off by the panel's
- * window either, so silence is the honest answer.
+ * A line without a timestamp is dropped rather than shown with a made-up time. Such lines may occur
+ * in an ordinary stream or an error stream and are dropped from both: an entry that cannot be ordered
+ * cannot be cut off by the panel's window either, so silence is the honest answer.
  *
  * When a line was written is {@see LogLineReader::stampMilliseconds()}'s answer, not this reader's.
  * Holds no state; an unreadable or missing file yields an empty list, not a refusal.

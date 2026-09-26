@@ -77,6 +77,12 @@ field of its own is written into `agent-<id>.log` between the stamp and the
 text — `[stamp] [WARNING] text`, the form `Logger` writes when it shows the level
 — so a reader tells an agent's warning from its info; the `.error.log` twin
 keeps the bare `[stamp] text` of every error stream (HIL-868).
+The line reader does not look for a level prefix in an error stream: it classifies
+every line as `ERROR`, stamped or unstamped, because only failures are written
+there. Which files are error streams is the filename answer from
+`LogStoreReader::isErrorStream()`, shared with the recent-failures reader, so
+existing live and archived files read correctly without being rewritten
+(HIL-1025).
 
 A line written through `Logger::logAgent*()` by code that runs IN the master (the
 protected-mode watchdog, its alert notifier, the agent manager's stop-hook
@@ -381,7 +387,13 @@ one continues a page, the other starts one. Following is a different mechanism:
   left without a word.
 - A stack trace cut by a tick boundary keeps the level of its entry: the reader
   carries the running level across the cut (`inheritedLevel`), so an `ERROR`
-  filter still shows the trace that belongs to the error.
+  filter still shows the trace that belongs to the error. When a read opens
+  inside an entry without an inherited level — a backward window whose first
+  whole lines are an earlier entry's tail, the first follow tick, or a tick after
+  a forward jump — the reader looks back by at most one 64-KiB read step and
+  takes the last entry head's level, falling back to `INFO` when none is in
+  reach. A backward scan under a window ceiling does not look behind that
+  ceiling (HIL-1025).
 
 The viewer has no *Refresh* button, and none is to be added: freshness arrives
 as a push, never as a re-request.

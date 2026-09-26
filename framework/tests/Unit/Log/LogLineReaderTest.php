@@ -8,6 +8,7 @@ use Hilos\Log\LogLine;
 use Hilos\Log\LogLinePage;
 use Hilos\Log\LogLineReader;
 use Hilos\Log\LogReadQuery;
+use Hilos\Log\LogStoreReader;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
@@ -68,10 +69,7 @@ final class LogLineReaderTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (glob($this->root . DIRECTORY_SEPARATOR . '*') ?: [] as $file) {
-            unlink($file);
-        }
-        rmdir($this->root);
+        $this->removeTree($this->root);
     }
 
     public function testHeadReadsFirstLinesAndReportsMore(): void
@@ -172,6 +170,94 @@ final class LogLineReaderTest extends TestCase
         );
     }
 
+    public function testEveryLineOfTheDaemonErrorStreamIsError(): void
+    {
+        $lines = [
+            '[2026-07-28 12:00:00.001] first failure',
+            '[2026-07-28 12:00:00.002] second failure',
+            '#0 /app/foo.php(10): bar()',
+        ];
+        $this->writeLines('daemon-error.log', $lines);
+        $reader = new LogLineReader(
+            $this->root,
+            new LogStoreReader($this->root, [], 'daemon-error.log'),
+        );
+
+        $page = $reader->read('daemon-error.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
+
+        $this->assertSame(
+            [Logger::LEVEL_ERROR, Logger::LEVEL_ERROR, Logger::LEVEL_ERROR],
+            array_map(static fn (LogLine $line): string => $line->detectedLevel, $page->lines),
+        );
+        $this->assertSame(
+            [false, false, true],
+            array_map(static fn (LogLine $line): bool => $line->isContinuation, $page->lines),
+        );
+    }
+
+    public function testAnErrorStreamIsKnownByItsSuffixInsideAnArchiveBatch(): void
+    {
+        $relativePath = 'archive/2026-07-28-12-00-00/worker-regular-1.error.log';
+        mkdir(dirname($this->root . DIRECTORY_SEPARATOR . $relativePath), recursive: true);
+        file_put_contents(
+            $this->root . DIRECTORY_SEPARATOR . $relativePath,
+            "[2026-07-28 12:00:00.001] archived failure\n",
+        );
+        $reader = new LogLineReader($this->root, new LogStoreReader($this->root));
+
+        $page = $reader->read($relativePath, new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
+
+        $this->assertSame(Logger::LEVEL_ERROR, $page->lines[0]->detectedLevel);
+    }
+
+    public function testALevelWordOpeningAnErrorStreamLineIsText(): void
+    {
+        $text = '[2026-07-28 12:00:00.001] WARNING: disk almost full';
+        $this->writeLines('agent-x.error.log', [$text]);
+        $reader = new LogLineReader($this->root, new LogStoreReader($this->root));
+
+        $page = $reader->read('agent-x.error.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
+
+        $this->assertSame($text, $page->lines[0]->text);
+        $this->assertSame(Logger::LEVEL_ERROR, $page->lines[0]->detectedLevel);
+    }
+
+    public function testTheErrorFilterReturnsTheWholeErrorStreamAndInfoNothing(): void
+    {
+        $lines = [
+            '[2026-07-28 12:00:00.001] first failure',
+            '[2026-07-28 12:00:00.002] second failure',
+            '#0 /app/foo.php(10): bar()',
+        ];
+        $this->writeLines('daemon-error.log', $lines);
+        $reader = new LogLineReader(
+            $this->root,
+            new LogStoreReader($this->root, [], 'daemon-error.log'),
+        );
+
+        $errorPage = $reader->read(
+            'daemon-error.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_HEAD, levelFilter: Logger::LEVEL_ERROR),
+        );
+        $infoPage = $reader->read(
+            'daemon-error.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_HEAD, levelFilter: Logger::LEVEL_INFO),
+        );
+
+        $this->assertSame($lines, array_map(static fn (LogLine $line): string => $line->text, $errorPage->lines));
+        $this->assertSame([], $infoPage->lines);
+    }
+
+    public function testAReaderWithoutAStoreKnowsNoErrorStream(): void
+    {
+        $this->writeLines('daemon-error.log', ['[2026-07-28 12:00:00.001] failure']);
+        $reader = new LogLineReader($this->root);
+
+        $page = $reader->read('daemon-error.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD));
+
+        $this->assertSame(Logger::LEVEL_INFO, $page->lines[0]->detectedLevel);
+    }
+
     public function testSubstringFilterKeepsOnlyMatchingLines(): void
     {
         $this->writeFixture('worker-1.log');
@@ -203,6 +289,101 @@ final class LogLineReaderTest extends TestCase
             [self::FIXTURE[3]['text'], self::FIXTURE[6]['text']],
             array_map(static fn (LogLine $line): string => $line->text, $page->lines),
         );
+    }
+
+    public function testATailWindowOpeningInsideAnEntryTakesTheLevelOfItsHead(): void
+    {
+        $lines = [
+            '[2026-07-28 12:00:00.001] ERROR: connection failed',
+            'continuation 1 ' . str_repeat('a', 1000),
+            'continuation 2 ' . str_repeat('b', 16000),
+            'continuation 3 ' . str_repeat('c', 16000),
+            'continuation 4 ' . str_repeat('d', 16000),
+            'continuation 5 ' . str_repeat('e', 16000),
+        ];
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+
+        $errorPage = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: 3, levelFilter: Logger::LEVEL_ERROR),
+        );
+        $infoPage = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: 100, levelFilter: Logger::LEVEL_INFO),
+        );
+
+        $this->assertSame(array_slice($lines, -3), array_map(static fn (LogLine $line): string => $line->text, $errorPage->lines));
+        $this->assertSame([], $infoPage->lines);
+    }
+
+    public function testATailUnderACeilingDoesNotLookBack(): void
+    {
+        $lines = [
+            '[2026-07-28 12:00:00.001] ERROR: connection failed',
+            str_repeat('x', 5000),
+            '#1 first frame',
+            '#2 second frame',
+            '#3 third frame',
+        ];
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+
+        $page = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: 100, maxWindowBytes: self::CEILING_BYTES),
+        );
+
+        $this->assertSame(
+            [Logger::LEVEL_INFO, Logger::LEVEL_INFO, Logger::LEVEL_INFO],
+            array_map(static fn (LogLine $line): string => $line->detectedLevel, $page->lines),
+        );
+    }
+
+    public function testAHeadReadStartingOnAContinuationLooksBackForItsEntry(): void
+    {
+        $lines = [
+            '[2026-07-28 12:00:00.001] ERROR: connection failed',
+            '#0 /app/foo.php(10): bar()',
+        ];
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+        $cursor = strlen($lines[0]) + 1;
+
+        $detected = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_HEAD, cursor: $cursor),
+        );
+        $inherited = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(
+                LogReadQuery::ANCHOR_HEAD,
+                cursor: $cursor,
+                inheritedLevel: Logger::LEVEL_INFO,
+            ),
+        );
+
+        $this->assertSame(Logger::LEVEL_ERROR, $detected->lines[0]->detectedLevel);
+        $this->assertSame(Logger::LEVEL_INFO, $inherited->lines[0]->detectedLevel);
+    }
+
+    public function testLookingBackStopsAfterOneReadStep(): void
+    {
+        $lines = [
+            '[2026-07-28 12:00:00.001] ERROR: connection failed',
+            str_repeat('x', self::PADDING_BYTES),
+            '#1 {main}',
+        ];
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+        $cursor = strlen($lines[0]) + strlen($lines[1]) + 2;
+
+        $page = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_HEAD, cursor: $cursor),
+        );
+
+        $this->assertSame(Logger::LEVEL_INFO, $page->lines[0]->detectedLevel);
     }
 
     public function testTailLastPageOfAFilteredSetPromisesNoMore(): void
@@ -572,5 +753,28 @@ final class LogLineReaderTest extends TestCase
     {
         $body = implode("\n", array_column(self::FIXTURE, 'text')) . "\n";
         file_put_contents($this->root . DIRECTORY_SEPARATOR . $name, $body);
+    }
+
+    /**
+     * Remove the fixture directory and everything under it.
+     *
+     * @param string $path Directory to remove
+     */
+    private function removeTree(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $child = $path . DIRECTORY_SEPARATOR . $entry;
+            is_dir($child) ? $this->removeTree($child) : unlink($child);
+        }
+
+        rmdir($path);
     }
 }
