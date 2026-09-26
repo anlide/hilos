@@ -158,6 +158,7 @@ export interface TableWindowDescriptorSource {
  * `frame_binary` upload frames, mirroring the browser `send` overload.
  */
 export interface WebSocketLike {
+  readonly bufferedAmount?: number
   send(data: string | ArrayBuffer | Blob): void
   close(code?: number, reason?: string): void
   addEventListener(
@@ -479,6 +480,19 @@ export class HilosConnection {
 
   get state(): ConnectionState {
     return this.currentState
+  }
+
+  /**
+   * Bytes handed to the socket but not yet sent over the network.
+   *
+   * Zero before a socket exists and for a transport mock that does not expose
+   * the browser's buffer. Stream senders use this value to keep a whole file
+   * from accumulating in browser memory.
+   *
+   * @returns Bytes waiting in the active socket's send buffer.
+   */
+  get bufferedAmount(): number {
+    return this.socket?.bufferedAmount ?? 0
   }
 
   /**

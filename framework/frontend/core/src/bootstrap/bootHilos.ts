@@ -36,6 +36,7 @@ import { type ScopeManager } from '../state/ScopeManager.js'
 import { bindAccessReaction } from '../subscription/bindAccessReaction.js'
 import { bindPageScope } from '../subscription/bindPageScope.js'
 import { bindPageReady } from '../subscription/pageReadyGate.js'
+import { bindUploads } from '../uploads/hilosUploads.js'
 
 /** Configuration for {@link bootHilos}. */
 export interface BootHilosConfig {
@@ -118,6 +119,14 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // own lifecycle. One behavior, no option: a project with takeovers has the
   // strip, and one without them is never told it is impersonated.
   bindImpersonation(config.scopes, config.actions, config.session)
+  // One upload client follows the application connection for its whole life.
+  // It uses the same action lifecycle as the shell: another lifecycle on the
+  // same connection would mint the same request ids and mix up their replies.
+  bindUploads(
+    config.connection,
+    config.actions,
+    sessionUserId(config.scopes, config.session),
+  )
   if (config.notifications === true) {
     bindNotificationsScope(
       config.connection,

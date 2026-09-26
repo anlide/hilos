@@ -116,6 +116,52 @@ at once. The row is not written per chunk because the collection is held in
 every process and every write is a sync to all of them; the exact count between
 writes lives in the agent's memory.
 
+## The Browser Client
+
+The framework-agnostic client lives in `@hilos/core`, under `uploads/`.
+`bootHilos` binds its one application-wide instance to the connection, the
+application's one tracked `ActionLifecycle`, and the current session user. There
+is no feature flag on the client: a project that does not declare `UPLOADS`
+receives no upload-state frames, and an attempted declaration is refused by the
+server.
+
+A project uses three exports:
+
+- `uploadFile(target, file)` adds a browser `File` to the queue and returns its
+  client-minted upload id;
+- `cancelUpload(clientUploadId)` removes an unannounced queued file immediately,
+  or sends the tracked cancel action once the server knows the upload;
+- `hilosUploads` is the readonly signal of uploads, in selection order. Each
+  record carries `clientUploadId`, `target`, `filename`, `declaredSize`,
+  `receivedBytes`, `phase`, `errorCode`, `errorMessage`, and `canceling`.
+
+Files run one at a time. The client does not declare the next file until its
+turn, and does not stream until the declaration succeeds. It regards the first
+`page_response` or `subscription_page_error` after a connection opens as the
+readiness cue: actions route through that page subscription, so an open socket
+alone is not enough. Each chunk contains at most 64 KiB of file bytes, and the
+client waits while the socket's `bufferedAmount` is above 1 MiB rather than
+letting the whole file accumulate in browser memory.
+
+The server remains authoritative for every phase and received-byte count. The
+client owns only `queued`, before a declaration; it replaces each public record
+and the containing array when a state frame arrives. A server `failed` frame
+stops the stream. A gone frame removes a complete, failed, or canceling upload;
+for a ready or uploading one it leaves a failed record with `interrupted` and
+`Upload interrupted`.
+
+A connection drop stops the stream and returns ready, uploading, and complete
+records to `queued` with zero received bytes. Once the replacement connection's
+page answers, they are declared from the beginning under the same id; failed
+records stay failed. When the session user changes, the client sends cancellation
+for every upload known to the current connection and clears the list, so a file
+chosen by one person is never replayed under another identity. Navigation inside
+the SPA does neither: the client and its queue live above pages.
+
+The browser client does not apply target policy, publish a complete upload, or
+draw progress, failures, pickers, or drop zones. Target checks and publication
+belong to the server/project; presentation belongs to the consuming view.
+
 ## Cleanup
 
 An upload goes with its file when:
@@ -134,8 +180,7 @@ An upload goes with its file when:
 
 - Publishing a received file to storage and the `hilos_file` row, the storage
   limit and duplicates — HIL-136, through `extraChecks()` and the complete rows.
-- The browser half — building signed chunks, the queue, reading
-  `hilos_upload_state` — HIL-139; drag and drop — HIL-140.
+- Drag and drop, the file picker and the upload list — HIL-140.
 - Moving the chat onto this feature — HIL-144.
 - Streaming a file without writing it to disk — HIL-142.
 - Placing the agent so chunks stay on one node: it runs as an ordinary cluster

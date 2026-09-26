@@ -33,6 +33,10 @@ import {
   createDeferredFlagState,
   DEFAULT_SKELETON_DELAY_MS,
   HILOS_SKELETON_LINES,
+  bindUploads,
+  cancelUpload,
+  uploadFile,
+  UPLOAD_ACTION_INIT,
   type DeferredDelay,
   type DeferredFlagState,
 } from '../src/index.js'
@@ -69,6 +73,10 @@ it('exports the @hilos/core public surface', () => {
   expect(createDeferredFlagState).toBeTypeOf('function')
   expect(DEFAULT_SKELETON_DELAY_MS).toBeTypeOf('number')
   expect(HILOS_SKELETON_LINES).toEqual([9, 6, 10])
+  expect(bindUploads).toBeTypeOf('function')
+  expect(uploadFile).toBeTypeOf('function')
+  expect(cancelUpload).toBeTypeOf('function')
+  expect(UPLOAD_ACTION_INIT).toBe('hilos_upload_init')
   const delay: DeferredDelay = DEFAULT_SKELETON_DELAY_MS
   const flag: DeferredFlagState = createDeferredFlagState(delay)
   expect(flag.shown.get()).toBe(false)

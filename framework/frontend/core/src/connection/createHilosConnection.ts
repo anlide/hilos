@@ -20,6 +20,7 @@ import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
 import { SESSION_SIGNAL_SCHEMAS } from '../session/sessionScope.js'
 import { GROUP_SIGNAL_SCHEMAS } from '../protocol/groupError.js'
 import { PAGE_SIGNAL_SCHEMAS } from '../subscription/bindPageScope.js'
+import { UPLOAD_SIGNAL_SCHEMAS } from '../uploads/uploadProtocol.js'
 import { ActionErrorStore } from './ActionErrorStore.js'
 import { ActionLifecycle } from './actionLifecycle.js'
 import {
@@ -169,6 +170,7 @@ export function createHilosConnection(
       ...SECOND_FACTOR_SIGNAL_SCHEMAS,
       ...ACCOUNT_DELETION_SIGNAL_SCHEMAS,
       ...PROFILE_PASSWORD_SIGNAL_SCHEMAS,
+      ...UPLOAD_SIGNAL_SCHEMAS,
       ...options.projectSchemas,
     },
     webSocketFactory: options.webSocketFactory,

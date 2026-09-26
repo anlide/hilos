@@ -17,6 +17,7 @@ class MockWebSocket implements WebSocketLike {
 
   readonly url: string
   readonly sent: (string | ArrayBuffer | Blob)[] = []
+  bufferedAmount = 0
   closeCalls = 0
 
   private readonly listeners = new Map<
@@ -582,6 +583,17 @@ describe('table viewport send', () => {
 })
 
 describe('binary send', () => {
+  it('reports the active socket send buffer', () => {
+    const { connection } = createConnection()
+
+    expect(connection.bufferedAmount).toBe(0)
+
+    connection.connect()
+    MockWebSocket.last.bufferedAmount = 321
+
+    expect(connection.bufferedAmount).toBe(321)
+  })
+
   it('sends a raw binary frame while connected', () => {
     const { connection } = createConnection()
     connection.connect()

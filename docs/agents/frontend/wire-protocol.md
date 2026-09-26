@@ -382,6 +382,9 @@ tracked actions `hilos_upload_init` (declare a file) and `hilos_upload_cancel`,
 every chunk signed `[1 byte L][L bytes clientUploadId][file bytes]`, and the
 `hilos_upload_state` frame carrying the whole state of one upload (`phase: null`
 = gone). See [architecture/uploads.md](../architecture/uploads.md).
+In the browser this protocol is spoken by `hilosUploads` from `@hilos/core`;
+project code hands it a `File` and does not assemble action or binary frames.
+See [The Browser Client](../architecture/uploads.md#the-browser-client).
 
 ## Build-version check and forced refresh
 

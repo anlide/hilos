@@ -70,7 +70,7 @@ describe('createHilosConnection', () => {
     expect(actionErrors).toBeInstanceOf(ActionErrorStore)
   })
 
-  it('merges the framework session and page schemas', () => {
+  it('merges the framework session, page, and upload schemas', () => {
     const { connection, socket } = openConnection()
     const projectTypes: string[] = []
     let unknownCount = 0
@@ -91,8 +91,18 @@ describe('createHilosConnection', () => {
         data: { page: 'main', payload: { data: {} } },
       }),
     })
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'hilos_upload_state',
+        data: { clientUploadId: 'upload-1' },
+      }),
+    })
 
-    expect(projectTypes).toEqual(['handshake_response', 'page_response'])
+    expect(projectTypes).toEqual([
+      'handshake_response',
+      'page_response',
+      'hilos_upload_state',
+    ])
     expect(unknownCount).toBe(0)
   })
 

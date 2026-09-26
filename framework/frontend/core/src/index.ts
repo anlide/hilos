@@ -297,6 +297,31 @@ export {
   type ImpersonationStrip,
 } from './session/impersonation.js'
 export {
+  bindUploads,
+  cancelUpload,
+  hilosUploads,
+  uploadFile,
+  type HilosUpload,
+} from './uploads/hilosUploads.js'
+export {
+  SIGNAL_UPLOAD_STATE,
+  UPLOAD_ACTION_CANCEL,
+  UPLOAD_ACTION_INIT,
+  UPLOAD_COPY,
+  UPLOAD_ERROR_INTERRUPTED,
+  UPLOAD_ERROR_REFUSED,
+  UPLOAD_ERROR_TIMEOUT,
+  UPLOAD_ERROR_UNREADABLE,
+  UPLOAD_PHASE_COMPLETE,
+  UPLOAD_PHASE_FAILED,
+  UPLOAD_PHASE_QUEUED,
+  UPLOAD_PHASE_READY,
+  UPLOAD_PHASE_UPLOADING,
+  UPLOAD_SIGNAL_SCHEMAS,
+  uploadStateSchema,
+  type HilosUploadPhase,
+} from './uploads/uploadProtocol.js'
+export {
   bindNotificationsScope,
   createHilosNotificationStore,
   hilosNotifications,
