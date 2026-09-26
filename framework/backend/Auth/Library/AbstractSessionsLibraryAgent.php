@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Detection\IdentifierDetection;
@@ -429,7 +430,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE} - so the two entrances share one core
      * and differ only in whom the answer goes to.
      *
-     * Every project that registers the library answers all six, and one that wires no
+     * The seventh name, {@see CliCommands::ACCOUNT_TEST_FORCE_PURGE}, is test-only:
+     * the command socket's non-production gate refuses it on production. This holder
+     * already has the request's update right and owns the erasure and session sign-out.
+     *
+     * Every project that registers the library answers all seven, and one that wires no
      * seam answers a REFUSAL ({@see ensureAdminUser()}, {@see applyAdminGrant()},
      * {@see assertImpersonationAllowed()}, {@see assertMergeable()}) rather than nothing at
      * all. That is the honest outcome for an operator who typed it into the wrong
@@ -444,6 +449,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         CliCommands::IMPERSONATE_START,
         CliCommands::IMPERSONATE_STOP,
         CliCommands::ACCOUNT_MERGE,
+        CliCommands::ACCOUNT_TEST_FORCE_PURGE,
     ];
 
     /** @var int Times a rotation re-mints a token another session already holds before giving up */
@@ -3532,7 +3538,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Routes a CLI command sent to this library.
      *
-     * The six names of {@see self::AGENT_COMMANDS}; anything else gets an error reply
+     * The seven names of {@see self::AGENT_COMMANDS}; anything else gets an error reply
      * rather than silence, because the socket parks the caller until it is answered.
      *
      * @param CommandRequestDTO $data Command request payload
@@ -3568,6 +3574,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         if ($data->command === CliCommands::ACCOUNT_MERGE) {
             $this->handleAccountMergeCommand($data);
+
+            return;
+        }
+
+        if ($data->command === CliCommands::ACCOUNT_TEST_FORCE_PURGE) {
+            $this->handleForcePurgeCommand($data);
 
             return;
         }
@@ -3886,6 +3898,31 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Runs the test-only account purge and answers the parked socket exactly once.
+     *
+     * @param CommandRequestDTO $data Command request carrying the user id
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleForcePurgeCommand(CommandRequestDTO $data): void
+    {
+        // external-boundary: an operator or e2e command payload, refused by forcePurge()
+        $userId = (int)($data->payload[AccountDeletionCommandConstants::FIELD_USER_ID] ?? 0);
+
+        try {
+            $erasure = $this->forcePurge($userId);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            AccountDeletionCommandConstants::FIELD_USER_ID => $userId,
+            AccountDeletionCommandConstants::FIELD_ROWS_ERASED => $erasure->rowsErased,
+        ]));
+    }
+
+    /**
      * Runs the merge the Hilos user page asked for, and hands the outcome back to it.
      *
      * The second way into one core (HIL-378, HIL-411). The password fate is read at the write
@@ -4157,6 +4194,33 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Ages and carries out one standing deletion request through the scheduled erasure core.
+     *
+     * @param int $userId User whose account is erased
+     * @return AccountErasure Project deletion tally and published files
+     * @throws ValidationException When account deletion is unavailable or no live request can be carried out
+     * @throws HilosException When the request lookup, aging, or erasure fails
+     */
+    private function forcePurge(int $userId): AccountErasure
+    {
+        if (!$this->hasSignInSurface()) {
+            throw new ValidationException('Account deletion is not part of this installation');
+        }
+
+        $deletion = $userId > 0 ? Hilos::$db->accountDeletions->liveOf($userId) : null;
+        if ($deletion === null) {
+            throw new ValidationException("No scheduled deletion for user {$userId}");
+        }
+
+        if (!$deletion->actions->expireGrace()) {
+            throw new ValidationException("The deletion of user {$userId} was canceled before it could be carried out");
+        }
+
+        return $this->eraseAccount($deletion)
+            ?? throw new ValidationException("The deletion of user {$userId} was canceled before it could be carried out");
+    }
+
+    /**
      * Erases one account whose deletion fell due - irreversibly and whole (HIL-302).
      *
      * One transaction, so half an erased account never exists: the request is marked carried
@@ -4173,10 +4237,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * there is logged and not retried - the request is carried out, and no sweep returns to it.
      *
      * @param AccountDeletion $deletion Standing request whose moment has come
+     * @return ?AccountErasure Project erasure outcome, or null when cancellation won the race
      * @throws NotImplementedException When the project has not wired the erasure seam
      * @throws HilosException On database or truth-source failure (transaction rolled back)
      */
-    private function eraseAccount(AccountDeletion $deletion): void
+    private function eraseAccount(AccountDeletion $deletion): ?AccountErasure
     {
         $userId = $deletion->userId;
 
@@ -4185,7 +4250,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             if (!$deletion->actions->complete()) {
                 Database::transactionRollback();
 
-                return;
+                return null;
             }
 
             // The device keys before the ways in: a credential restricts the delete of its anchor.
@@ -4225,6 +4290,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // The account is gone and the request carried out, so no sweep comes back for it.
             $this->logAgentError("Account of user {$userId} erased, but what follows the commit failed: {$e->getMessage()}");
         }
+
+        return $erasure;
     }
 
     /**

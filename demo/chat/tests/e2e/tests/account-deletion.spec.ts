@@ -2,8 +2,9 @@
 // profile, a window that asks for the operation's confirmation only when the
 // account has something stronger than its address, a code to that address, the
 // warning with the date in every open tab, and "Keep my account" in one press.
-// The code is read from the stand mailbox, never a backdoor. The erasure itself
-// is not driven here: its moment is a month away, and forcing it is HIL-316.
+// The code is read from the stand mailbox, never a backdoor. Erasure in chat
+// is covered by demo/chat/tests/Integration/AccountErasureTest.php; live erasure
+// runs in the polls and tasks e2e suites through test:account:force-purge.
 import { expect, test } from '@playwright/test'
 
 import { waitForMailCode } from '../helpers/mail'

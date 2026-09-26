@@ -170,9 +170,10 @@ family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` and the tw
 beside it, `test:cluster:db:announce` and `test:cluster:agent:place` (same reason: the
 master answers them out of memory, and a partitioned node is exactly where they are worth
 running),
-`test:notification:emit` (every row it causes is written by the agent that answers it, so
-the CLI process itself has nothing to read or write), `test:table:lag` (the master answers
-it out of memory and writes its own node's lag row, so the CLI process has nothing to read or
+`test:notification:emit` and `test:account:force-purge` (every row they cause is written
+by the agent that answers them, so the CLI process itself has nothing to read or write),
+`test:table:lag` (the master answers it out of memory and writes its own node's lag row,
+so the CLI process has nothing to read or
 write either — HIL-1020), `test:table:refuse` (the same shape: the master answers it out of
 memory and writes its own node's refusal row — HIL-1131), `protected-mode:inspect` (reads
 in-memory state and has to answer on a frozen node, which is exactly where a connect would

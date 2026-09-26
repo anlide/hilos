@@ -69,6 +69,10 @@ transaction:
 Any failure rolls all of it back; the request stays live and due, and the next
 minute tries again. Half an erased account never exists.
 
+Tests can bring a request due with `test:account:force-purge <userId>`: the session
+holder moves its moment to now and erases it through this path, returning the
+project's tally. A failed erasure leaves the request due for the next sweep.
+
 After the commit, outside the transaction: every session the person stands in
 is signed out — signed in as them, taking over somebody else's account, or
 waiting on their second factor; the files the project named are removed from

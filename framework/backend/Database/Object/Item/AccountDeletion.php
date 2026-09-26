@@ -26,7 +26,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * A person's own request to delete their account. It ends one of two ways, and only one:
  * {@see cancel()} and {@see complete()} both carry the condition that neither has
  * happened on their write, so "Keep my account" pressed in the minute the erasure runs
- * decides the race in the database.
+ * decides the race in the database. {@see expireGrace()} is the third conditional write,
+ * reserved for the test-only force-purge command (HIL-316).
  *
  * @extends Object_<EntityAccountDeletion>
  *
@@ -140,6 +141,51 @@ final class AccountDeletion extends Object_
     public function complete(): bool
     {
         return $this->end(EntityAccountDeletion::completed_at);
+    }
+
+    /**
+     * Moves a standing request's erasure moment to now for the test-only purge command.
+     *
+     * @return bool True when this call aged the request, false when it no longer stands
+     * @throws DatabaseException When the update, the row count or the re-announcement fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If the primary key is null during the re-announcement
+     */
+    public function expireGrace(): bool
+    {
+        if ($this->entity->id === null) {
+            return false;
+        }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            $this->touchedSetKeys(...),
+            TruthSourceOperation::Update,
+        );
+
+        $now = TimeHelper::getSqlDateTime();
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityAccountDeletion::_table . '` SET `' . EntityAccountDeletion::effective_at . '` = ? WHERE `'
+                . EntityAccountDeletion::id . '` = ?'
+                . ' AND `' . EntityAccountDeletion::canceled_at . '` IS NULL'
+                . ' AND `' . EntityAccountDeletion::completed_at . '` IS NULL',
+            $params,
+        );
+        if (Database::affectedRows() !== 1) {
+            return false;
+        }
+
+        $this->entity->effective_at = $now;
+        $this->sync();
+
+        return true;
     }
 
     /**

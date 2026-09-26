@@ -198,6 +198,19 @@ final class CliCommands
     public const string THROTTLE_TEST_RESET = 'test:throttle:reset';
 
     /**
+     * Carry out one standing account-deletion request immediately (test-only).
+     *
+     * Doubles as the command-channel wire name routed to
+     * {@see AbstractSessionsLibraryAgent}, the same one-string arrangement
+     * {@see self::NOTIFICATION_TEST_EMIT} uses: there is exactly one route for it. The
+     * session holder owns the erasure and already borrows the update right on the request,
+     * so aging and carrying it out happen in the same process as the scheduled sweep.
+     *
+     * @var string Command: Carry out one standing account-deletion request (test-only)
+     */
+    public const string ACCOUNT_TEST_FORCE_PURGE = 'test:account:force-purge';
+
+    /**
      * Append lines to this node's own log through the live daemon (test-only).
      *
      * Doubles as the command-channel wire name routed to {@see LogStoreAgent}, the same

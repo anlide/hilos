@@ -68,4 +68,25 @@ final class AccountDeletionActions extends DbActions
 
         return $this->object->complete();
     }
+
+    /**
+     * Moves a standing request's erasure moment to now for test:account:force-purge (HIL-316).
+     *
+     * @return bool True when this call aged the request, false when it no longer stands
+     * @throws ObjectCollectionNullException When the action is detached from its object collection
+     * @throws ObjectGetIdStringNotImplementedException When the request cannot expose its id string
+     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws WriteNotAllowedException When the truth source rejects the update
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
+     * @throws DatabaseException When the update, the row count or the re-announcement fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     */
+    public function expireGrace(): bool
+    {
+        $this->ensureCanWrite();
+
+        return $this->object->expireGrace();
+    }
 }

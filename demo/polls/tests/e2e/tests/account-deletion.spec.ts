@@ -2,9 +2,10 @@
 // the password first, since a password account has something stronger than its
 // address, then a code to the address, the warning with the date, and "Keep my
 // account" in one press. The code is read from the stand mailbox, never a
-// backdoor. The erasure itself is not driven here: forcing it is HIL-316.
-import { expect, test } from '@playwright/test'
+// backdoor. The erasure case drives test:account:force-purge through the live daemon.
+import { expect, test, type Page } from '@playwright/test'
 
+import { forceAccountPurge } from '../helpers/accountDeletion'
 import { waitForMailCode } from '../helpers/mail'
 import { gotoPage } from '../helpers/page'
 import {
@@ -20,16 +21,14 @@ import {
 /** The subject AccountDeletionMailTemplate sends the code under. */
 const SUBJECT = 'Confirm deleting your account'
 
-test('starts a deletion after the password and a code, then keeps the account', async ({
-  page,
-}) => {
-  const email = uniqueEmail()
-  await gotoPage(page, '/')
-  await openSignIn(page)
-  await register(page, email)
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+/**
+ * Schedule deletion through the password and address-code window.
+ *
+ * @param page Signed-in browser page.
+ * @param email Address receiving the deletion code.
+ */
+async function scheduleDeletion(page: Page, email: string): Promise<void> {
   await gotoPage(page, '/profile/security')
-
   await clickSubmit(page.getByTestId('account-deletion-open'))
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
   await clickSubmit(page.getByTestId('account-deletion-confirm'))
@@ -48,8 +47,45 @@ test('starts a deletion after the password and a code, then keeps the account', 
   await expect(page.getByTestId('account-deletion-scheduled')).toContainText(
     'days left',
   )
+}
+
+test('starts a deletion after the password and a code, then keeps the account', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+  await gotoPage(page, '/')
+  await openSignIn(page)
+  await register(page, email)
+  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  await scheduleDeletion(page, email)
 
   await clickSubmit(page.getByTestId('account-deletion-manage'))
   await clickSubmit(page.getByTestId('account-deletion-keep'))
   await expect(page.getByTestId('account-deletion-open')).toBeVisible()
+})
+
+test('an account whose moment came is erased: every tab turns guest and the address is new again', async ({
+  context,
+  page,
+}) => {
+  const email = uniqueEmail()
+  await gotoPage(page, '/')
+  await openSignIn(page)
+  await register(page, email)
+  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  const userId = Number(await page.getByTestId('self-user-id').textContent())
+  const other = await context.newPage()
+  await gotoPage(other, '/')
+
+  await scheduleDeletion(page, email)
+  await forceAccountPurge(userId)
+
+  await expect(page.getByTestId('nav-profile-name')).toHaveCount(0)
+  await expect(other.getByTestId('nav-profile-name')).toHaveCount(0)
+  await gotoPage(page, '/')
+  await openSignIn(page)
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
+  )
 })

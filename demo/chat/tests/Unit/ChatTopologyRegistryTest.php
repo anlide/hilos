@@ -578,6 +578,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::IMPERSONATE_START => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::IMPERSONATE_STOP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            CliCommands::ACCOUNT_TEST_FORCE_PURGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::NOTIFICATION_TEST_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             CliCommands::COMMAND_TEST_ECHO => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::HILOS_INDEX,

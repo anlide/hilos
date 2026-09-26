@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
@@ -36,8 +39,11 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountErasure;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
 /**
@@ -226,6 +232,134 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     }
 
     /**
+     * The test command ages a future request, erases the person, and reports the project's tally.
+     *
+     * @throws HilosException When seeding, routing, or erasure fails
+     */
+    public function testForcePurgeAgesAndErasesAStandingRequest(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
+        self::seedSession(self::TAKEOVER_TOKEN, self::NEIGHBOUR_ID, self::CREATED_AT, null, self::USER_ID);
+        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
+        $requestId = (int)$request->id;
+        $agent = new AccountErasureTestAgent();
+        $agent->onStart();
+
+        $this->sendForcePurgeCommand($agent, self::USER_ID);
+
+        $outcome = $this->consumeForcePurgeOutcome();
+        self::assertTrue($outcome->reply->isOk());
+        self::assertSame(
+            self::USER_ID,
+            $outcome->reply->payload[AccountDeletionCommandConstants::FIELD_USER_ID] ?? null,
+        );
+        self::assertSame(
+            ['projectRows' => 1],
+            $outcome->reply->payload[AccountDeletionCommandConstants::FIELD_ROWS_ERASED] ?? null,
+        );
+        self::assertSame([self::USER_ID], $agent->erased);
+        self::assertSame([self::USER_ID], $outcome->forgottenUsers);
+
+        foreach (self::ERASED_TABLES as $table) {
+            self::assertSame(0, self::rowsOf($table, self::USER_ID), "{$table} keeps nothing of the person");
+            self::assertSame(1, self::rowsOf($table, self::NEIGHBOUR_ID), "{$table} keeps the neighbour");
+        }
+
+        $row = self::requestRow($requestId);
+        self::assertNotNull($row['completed_at']);
+        self::assertLessThanOrEqual($row['completed_at'], $row['effective_at']);
+        self::assertNull($row['canceled_at']);
+        self::assertNull(self::userOf(self::SIGNED_IN_TOKEN));
+        self::assertNull(self::userOf(self::TAKEOVER_TOKEN));
+        self::assertSame(self::NEIGHBOUR_ID, self::userOf(self::NEIGHBOUR_TOKEN));
+    }
+
+    /**
+     * A user with no standing request is refused without changing their rows.
+     *
+     * @throws HilosException When seeding, routing, or a read-back fails
+     */
+    public function testForcePurgeRefusesAUserWithNoRequest(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $agent = new AccountErasureTestAgent();
+        $agent->onStart();
+
+        $this->sendForcePurgeCommand($agent, self::USER_ID);
+
+        $outcome = $this->consumeForcePurgeOutcome();
+        self::assertSame("No scheduled deletion for user " . self::USER_ID, self::refusalMessage($outcome->reply));
+        self::assertSame([], $outcome->forgottenUsers);
+        self::assertSame(self::USER_ID, self::userOf(self::SIGNED_IN_TOKEN));
+        foreach (self::ERASED_TABLES as $table) {
+            self::assertSame(1, self::rowsOf($table, self::USER_ID), "{$table} keeps the person");
+        }
+    }
+
+    /**
+     * A canceled request is domain absence and gets the same refusal as no request.
+     *
+     * @throws HilosException When seeding, routing, or a read-back fails
+     */
+    public function testForcePurgeRefusesACanceledRequest(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
+        $requestId = (int)$request->id;
+        $request->actions->cancel();
+        $agent = new AccountErasureTestAgent();
+        $agent->onStart();
+
+        $this->sendForcePurgeCommand($agent, self::USER_ID);
+
+        $outcome = $this->consumeForcePurgeOutcome();
+        self::assertSame("No scheduled deletion for user " . self::USER_ID, self::refusalMessage($outcome->reply));
+        self::assertSame([], $outcome->forgottenUsers);
+        self::assertNotNull(self::requestRow($requestId)['canceled_at']);
+        self::assertSame(self::USER_ID, self::userOf(self::SIGNED_IN_TOKEN));
+    }
+
+    /**
+     * A failed project seam leaves the request live and due for the next scheduled sweep.
+     *
+     * @throws HilosException When seeding, routing, erasure, or a read-back fails
+     */
+    public function testForcePurgeFailureLeavesTheRequestDueForTheSweep(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
+        $requestId = (int)$request->id;
+        $agent = new AccountErasureTestAgent();
+        $agent->failing = true;
+        $agent->onStart();
+
+        $this->sendForcePurgeCommand($agent, self::USER_ID);
+
+        $outcome = $this->consumeForcePurgeOutcome();
+        self::assertSame('The project refused the erasure', self::refusalMessage($outcome->reply));
+        self::assertSame([], $outcome->forgottenUsers);
+        $row = self::requestRow($requestId);
+        self::assertLessThanOrEqual(TimeHelper::getSqlDateTime(), $row['effective_at']);
+        self::assertNull($row['completed_at']);
+        self::assertNull($row['canceled_at']);
+        foreach (self::ERASED_TABLES as $table) {
+            self::assertSame(1, self::rowsOf($table, self::USER_ID), "{$table} is rolled back");
+        }
+
+        $sweepAgent = $this->runSweep();
+
+        self::assertSame([self::USER_ID], $sweepAgent->erased);
+        self::assertSame([self::USER_ID], $this->forgottenUsers());
+        self::assertNotNull(self::requestRow($requestId)['completed_at']);
+    }
+
+    public function testSessionHolderDeclaresTheForcePurgeCommand(): void
+    {
+        self::assertContains(CliCommands::ACCOUNT_TEST_FORCE_PURGE, AccountErasureTestAgent::AGENT_COMMANDS);
+    }
+
+    /**
      * Seeds one row of the person in every table the erasure cuts, and a session signed in as them.
      *
      * @param int $userId Person
@@ -300,6 +434,70 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     }
 
     /**
+     * Sends the force-purge command the way the daemon routes it.
+     *
+     * @param AccountErasureTestAgent $agent Session holder under test
+     * @param int $userId User whose account should be erased
+     * @throws HilosException When the command handler fails
+     */
+    private function sendForcePurgeCommand(AccountErasureTestAgent $agent, int $userId): void
+    {
+        $agent->onSignalCommand(
+            new CommandRequestDTO(
+                'force-purge-correlation',
+                CliCommands::ACCOUNT_TEST_FORCE_PURGE,
+                [AccountDeletionCommandConstants::FIELD_USER_ID => $userId],
+            ),
+            '',
+            '',
+        );
+    }
+
+    /**
+     * Drains one command reply and the notification-forget signal emitted beside it.
+     *
+     * @return AccountErasureCommandOutcome Reply and forgotten users from the same queue pass
+     */
+    private function consumeForcePurgeOutcome(): AccountErasureCommandOutcome
+    {
+        $replies = [];
+        $forgottenUsers = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof CommandReplyDTO) {
+                $replies[] = $signal->data;
+
+                continue;
+            }
+            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER) {
+                continue;
+            }
+
+            self::assertInstanceOf(AgentSignalData::class, $signal->data);
+            self::assertInstanceOf(NotificationForgetUserSignalData::class, $signal->data->data);
+            $forgottenUsers[] = $signal->data->data->userId;
+        }
+
+        self::assertCount(1, $replies, 'Every force purge answers the operator exactly once');
+
+        return new AccountErasureCommandOutcome($replies[0], $forgottenUsers);
+    }
+
+    /**
+     * Reads the sentence an error reply carried.
+     *
+     * @param CommandReplyDTO $reply Error reply from the session holder
+     * @return string Refusal as it reaches the command line
+     */
+    private static function refusalMessage(CommandReplyDTO $reply): string
+    {
+        self::assertFalse($reply->isOk());
+        $message = $reply->payload[CommandConstants::FIELD_MESSAGE] ?? null;
+        self::assertIsString($message);
+
+        return $message;
+    }
+
+    /**
      * @param string $table Table cut by a user id column
      * @param int $userId Person
      * @return int Rows of the person in the table
@@ -319,7 +517,10 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
      */
     private static function requestRow(int $id): array
     {
-        Database::sql('SELECT `canceled_at`, `completed_at` FROM `hilos_account_deletion` WHERE `id` = ?', [$id]);
+        Database::sql(
+            'SELECT `effective_at`, `canceled_at`, `completed_at` FROM `hilos_account_deletion` WHERE `id` = ?',
+            [$id],
+        );
 
         return Database::row() ?? [];
     }
@@ -393,6 +594,22 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
 }
 
 /**
+ * One queue pass after the force-purge command.
+ */
+final readonly class AccountErasureCommandOutcome
+{
+    /**
+     * @param CommandReplyDTO $reply The command's one reply
+     * @param list<int> $forgottenUsers Users the notification library was asked to forget
+     */
+    public function __construct(
+        public CommandReplyDTO $reply,
+        public array $forgottenUsers,
+    ) {
+    }
+}
+
+/**
  * Fixture project that draws a sign-in surface, so the holder arms the erasure.
  */
 abstract class AccountErasureTestHilos extends Hilos
@@ -427,7 +644,7 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
         }
         $this->erased[] = $userId;
 
-        return new AccountErasure([], []);
+        return new AccountErasure(['projectRows' => 1], []);
     }
 }
 

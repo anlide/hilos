@@ -9,6 +9,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\AccountMergeCommand;
+use Hilos\Core\CLI\Commands\AccountTestForcePurgeCommand;
 use Hilos\Core\CLI\Commands\AdminCreateCommand;
 use Hilos\Core\CLI\Commands\AdminGrantCommand;
 use Hilos\Core\CLI\Commands\AdminRevokeCommand;
@@ -171,6 +172,7 @@ class CliManager
         $this->commands[CliCommands::IMPERSONATE_START] = new ImpersonateStartCommand();
         $this->commands[CliCommands::IMPERSONATE_STOP] = new ImpersonateStopCommand();
         $this->commands[CliCommands::ACCOUNT_MERGE] = new AccountMergeCommand();
+        $this->commands[CliCommands::ACCOUNT_TEST_FORCE_PURGE] = new AccountTestForcePurgeCommand();
         $this->commands[CliCommands::THROTTLE_TEST_RESET] = new ThrottleTestResetCommand();
         $this->commands[CliCommands::BACKUP_VERIFY] = new BackupVerifyCommand();
         $this->commands[CliCommands::BACKUP_RESTORE] = new BackupRestoreCommand();
