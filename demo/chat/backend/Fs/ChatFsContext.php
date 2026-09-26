@@ -11,11 +11,12 @@ use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsTmpDirectory;
 
 /**
- * Chat-project filesystem context: quarantine, published, and tmp directories.
+ * Chat-project filesystem context: quarantine, published, files, and tmp directories.
  *
  * @property-read FsTmpDirectory $tmp
  * @property-read FsDirectory $quarantine
  * @property-read FsDirectory $published
+ * @property-read FsDirectory $files The published directory under the name the files registry reads
  */
 final class ChatFsContext extends FsContext
 {
@@ -46,9 +47,11 @@ final class ChatFsContext extends FsContext
             $quarantinePath !== '' ? $quarantinePath : $base . DIRECTORY_SEPARATOR . self::quarantine,
         );
 
-        $this->registerDirectory(
-            self::published,
-            $publishedPath !== '' ? $publishedPath : $base . DIRECTORY_SEPARATOR . self::published,
-        );
+        // The files registry keeps its files where attachments are published today (HIL-336):
+        // moving attachments onto the registry (HIL-144) then moves no file, and the web server
+        // already serves from there. CHAT_FILES_PUBLISHED_DIR moves both names at once.
+        $publishedDirectory = $publishedPath !== '' ? $publishedPath : $base . DIRECTORY_SEPARATOR . self::published;
+        $this->registerDirectory(self::published, $publishedDirectory);
+        $this->registerDirectory(FsContext::FILES, $publishedDirectory);
     }
 }

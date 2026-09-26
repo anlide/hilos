@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Fs\Context;
 
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsTmpDirectory;
@@ -13,11 +14,20 @@ use Hilos\Hilos;
  * Base filesystem context — project subclasses register named directories.
  *
  * @property-read FsTmpDirectory $tmp Built-in temporary directory
+ * @property-read FsDirectory $files Published files of the files registry, where the project registers it
  */
 abstract class FsContext
 {
     /** Reserved logical name for the built-in temporary directory. */
     public const string TMP = 'tmp';
+
+    /**
+     * Reserved logical name for the published files of the files registry (HIL-336).
+     *
+     * A project declaring {@see HilosFeature::FILES} registers it in configure(); startup refuses
+     * the project that declares the feature and registers no such directory.
+     */
+    public const string FILES = 'files';
 
     /** @var FsTmpDirectory|null */
     protected ?FsTmpDirectory $_tmp = null;
@@ -46,6 +56,15 @@ abstract class FsContext
     protected function registerDirectory(string $name, string $path): void
     {
         $this->_directories[$name] = new FsDirectory($this, $name, $path);
+    }
+
+    /**
+     * @param string $name Logical directory name
+     * @return bool Whether a directory is registered under the name
+     */
+    public function hasDirectory(string $name): bool
+    {
+        return isset($this->_directories[$name]);
     }
 
     /**

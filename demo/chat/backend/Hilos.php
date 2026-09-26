@@ -11,6 +11,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\Chat\Agents\Hilos\FilesLibraryAgent;
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
@@ -24,6 +25,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
@@ -274,6 +276,7 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::CODE_CHANNELS,
+        HilosFeature::FILES,
     ];
 
     public const array PAGES = [
@@ -383,6 +386,11 @@ final class Hilos extends HilosFacade
         NotificationsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => NotificationsLibraryAgent::class,
             AgentRegistryKey::DAEMON => NotificationsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        FilesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FilesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => FilesLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         SettingsLibraryAgent::AGENT_TYPE => [

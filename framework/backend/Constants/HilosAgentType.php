@@ -58,6 +58,9 @@ final class HilosAgentType
     /** @var string Hilos notifications library agent (owner of the notification set, its preferences, deliveries and push endpoints) */
     public const string HILOS_NOTIFICATIONS_LIBRARY = 'hilos_notifications_library';
 
+    /** @var string Hilos files library agent (owner of the files registry, its bind door and the janitor of unbound files) */
+    public const string HILOS_FILES_LIBRARY = 'hilos_files_library';
+
     /** @var string Hilos settings library agent (single writer of the settings collection) */
     public const string HILOS_SETTINGS_LIBRARY = 'hilos_settings_library';
 

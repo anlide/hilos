@@ -137,6 +137,37 @@ final class FeatureRuntimeMountTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testDeclaringFilesWithoutAFilesDirectoryIsRefused(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::FILES keeps published files in the files directory, but the FS context registers none',
+        );
+
+        $this->withFs(new FeatureFilesTestFsContext(withFiles: false), FeatureFilesHilos::refuseForTest(...));
+    }
+
+    public function testDeclaringFilesWithoutAnFsContextIsRefused(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+
+        $this->withFs(null, FeatureFilesHilos::refuseForTest(...));
+    }
+
+    public function testDeclaringFilesWithAFilesDirectoryPasses(): void
+    {
+        $this->withFs(new FeatureFilesTestFsContext(withFiles: true), FeatureFilesHilos::refuseForTest(...));
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testAProjectWithoutFilesNeedsNoFilesDirectory(): void
+    {
+        $this->withFs(null, FeatureRuntimeContextlessHilos::refuseFilesForTest(...));
+
+        $this->addToAssertionCount(1);
+    }
+
     /**
      * Runs one check with the FS context set, and puts the previous one back whatever happens.
      *
@@ -197,6 +228,16 @@ final class FeatureRuntimeContextlessHilos extends HilosFacade
     public static function refuseUploadsForTest(): void
     {
         static::refuseUploadsWithoutTmp();
+    }
+
+    /**
+     * Runs the files directory check the way init() does, on a project that declares no files registry.
+     *
+     * @throws IncompleteFeatureActivationException When FILES is declared and no files directory is registered
+     */
+    public static function refuseFilesForTest(): void
+    {
+        static::refuseFilesWithoutDirectory();
     }
 
     /**
@@ -274,3 +315,54 @@ final class FeatureUploadsTestFsContext extends FsContext
     }
 }
 
+
+/**
+ * Facade standing in for a project that declares the files registry; only its directory check is run.
+ */
+final class FeatureFilesHilos extends HilosFacade
+{
+    protected const array FEATURES = [HilosFeature::FILES];
+
+    /**
+     * Runs the files directory check the way init() does.
+     *
+     * @throws IncompleteFeatureActivationException When no files directory is registered
+     */
+    public static function refuseForTest(): void
+    {
+        static::refuseFilesWithoutDirectory();
+    }
+
+    /**
+     * Creates a no-op DB context; the fixture never reaches a layer.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new FeatureRuntimeTestDbContext();
+    }
+}
+
+/**
+ * FS context with or without the files directory; nothing is ever written through it.
+ */
+final class FeatureFilesTestFsContext extends FsContext
+{
+    /**
+     * @param bool $withFiles Whether the context registers the files directory
+     */
+    public function __construct(bool $withFiles)
+    {
+        if ($withFiles) {
+            $this->registerDirectory(FsContext::FILES, sys_get_temp_dir());
+        }
+    }
+
+    /**
+     * The constructor already configured what this fixture has.
+     */
+    public function configure(): void
+    {
+    }
+}

@@ -9,6 +9,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Feature\Definition\FilesFeature;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureDefinition;
@@ -20,7 +21,12 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\Library\AbstractFilesLibraryAgent;
+use Hilos\Files\Library\AbstractFilesLibraryAgentDaemon;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Files\Upload\UploadsAgentDaemon;
@@ -244,6 +250,44 @@ final class FeatureActivationValidatorTest extends TestCase
 
         FeatureActivationPageUploadHilos::validateFeatureActivation();
     }
+
+    public function testDeclaredFilesWithItsLibraryAndFragmentPasses(): void
+    {
+        FeatureActivationFilesHilos::validateFeatureActivation();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDeclaredFilesWithoutItsLibraryIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::FILES is declared but agent ' . HilosAgentType::HILOS_FILES_LIBRARY . ' is not registered in AGENTS',
+        );
+
+        FeatureActivationFilesWithoutLibraryHilos::validateFeatureActivation();
+    }
+
+    public function testFilesLibraryWithoutTheDeclarationIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'AGENTS registers ' . HilosAgentType::HILOS_FILES_LIBRARY . ' but HilosFeature::FILES is not declared in FEATURES',
+        );
+
+        FeatureActivationFilesLibraryOnlyHilos::validateFeatureActivation();
+    }
+
+    public function testDeclaredFilesWithoutItsFragmentIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::FILES is declared but ' . FeatureActivationBareCatalog::class . ' does not fold in '
+            . FilesSettingsCatalog::class . ': ' . FilesSettingsCatalog::UNBOUND_TTL_HOURS_KEY,
+        );
+
+        FeatureActivationFilesUnfoldedHilos::validateFeatureActivation();
+    }
 }
 
 /**
@@ -262,6 +306,7 @@ final class FeatureActivationTestRegistry extends FeatureRegistry
             new FeatureActivationSessionsLibraryFeature(),
             new FeatureActivationFragmentFeature(),
             new UploadsFeature(),
+            new FilesFeature(),
         ];
     }
 }
@@ -866,3 +911,89 @@ final class FeatureActivationPageUploadHilos extends FeatureActivationUploadsHil
     ];
 }
 
+
+/**
+ * Files library of the activation tests; the validator reads only its registry entry.
+ */
+final class FeatureActivationFilesLibraryAgent extends AbstractFilesLibraryAgent
+{
+}
+
+/**
+ * Daemon of the files library pair.
+ */
+final class FeatureActivationFilesLibraryAgentDaemon extends AbstractFilesLibraryAgentDaemon
+{
+}
+
+/**
+ * Settings catalog folding in the files registry fragment.
+ */
+final class FeatureActivationFilesCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> The files fragment alone
+     */
+    public static function getCatalog(): array
+    {
+        return FilesSettingsCatalog::getCatalog();
+    }
+}
+
+/**
+ * Facade that declares the files registry with its library, the settings library and the fragment.
+ */
+class FeatureActivationFilesHilos extends FeatureActivationValidHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::FILES];
+
+    protected const string SETTINGS_CATALOG = FeatureActivationFilesCatalog::class;
+
+    public const array AGENTS = [
+        FeatureActivationTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationTestAgent::class,
+            AgentRegistryKey::DAEMON => FeatureActivationTestAgentDaemon::class,
+        ],
+        HilosAgentType::HILOS_SETTINGS_LIBRARY => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+        ],
+        FeatureActivationFilesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationFilesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => FeatureActivationFilesLibraryAgentDaemon::class,
+        ],
+    ];
+}
+
+/**
+ * Facade that declares the files registry without registering its library.
+ */
+final class FeatureActivationFilesWithoutLibraryHilos extends FeatureActivationFilesHilos
+{
+    public const array AGENTS = [
+        FeatureActivationTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationTestAgent::class,
+            AgentRegistryKey::DAEMON => FeatureActivationTestAgentDaemon::class,
+        ],
+        HilosAgentType::HILOS_SETTINGS_LIBRARY => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+        ],
+    ];
+}
+
+/**
+ * Facade that registers the files library without declaring the feature.
+ */
+final class FeatureActivationFilesLibraryOnlyHilos extends FeatureActivationFilesHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS];
+}
+
+/**
+ * Facade that declares the files registry and forgets to fold its fragment into the catalog.
+ */
+final class FeatureActivationFilesUnfoldedHilos extends FeatureActivationFilesHilos
+{
+    protected const string SETTINGS_CATALOG = FeatureActivationBareCatalog::class;
+}

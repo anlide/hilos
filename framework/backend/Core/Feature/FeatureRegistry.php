@@ -8,6 +8,7 @@ use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Feature\Definition\CodeChannelsFeature;
 use Hilos\Core\Feature\Definition\BackupFeature;
+use Hilos\Core\Feature\Definition\FilesFeature;
 use Hilos\Core\Feature\Definition\HilosUsersFeature;
 use Hilos\Core\Feature\Definition\LogsFeature;
 use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
@@ -95,6 +96,7 @@ class FeatureRegistry
             new AuthThrottleFeature(),
             new CodeChannelsFeature(),
             new AuthFeature(),
+            new FilesFeature(),
             new UploadsFeature(),
         ];
     }

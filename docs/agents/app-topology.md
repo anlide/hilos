@@ -121,7 +121,7 @@ facades.
 ## Feature Declaration
 
 Framework features — `settings`, `hilos_users`, `backup`, `logs`,
-`notifications`, `notification_delivery`, `uploads` — are switched on in one place:
+`notifications`, `notification_delivery`, `uploads`, `files` — are switched on in one place:
 
 ```php
 protected const array FEATURES = [

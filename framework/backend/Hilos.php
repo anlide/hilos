@@ -62,6 +62,7 @@ use Hilos\LLM\Routing\LlmProfileCatalogStub;
 use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Mail\HilosMailer;
@@ -90,6 +91,7 @@ use Hilos\Users\AdminAudience;
  * - Hilos::$ac         — analytics collector
  * - Hilos::$cluster    — cluster mode and local node identity
  * - Hilos::$notify     — durable notification emit seam
+ * - Hilos::$files      — files registry door
  */
 abstract class Hilos implements TruthSourceOwner
 {
@@ -402,6 +404,9 @@ abstract class Hilos implements TruthSourceOwner
 
     /** @var ?HilosNotifier Durable notification emit seam singleton */
     public static ?HilosNotifier $notify = null;
+
+    /** @var ?HilosFiles Files registry door singleton */
+    public static ?HilosFiles $files = null;
 
     /** @var ?HilosMailer Mail send seam singleton */
     public static ?HilosMailer $mail = null;
@@ -1035,6 +1040,10 @@ abstract class Hilos implements TruthSourceOwner
             static::$notify = static::createNotifier();
         }
 
+        if (static::$files === null) {
+            static::$files = static::createFiles();
+        }
+
         if (static::$mail === null) {
             static::$mail = static::createMail();
         }
@@ -1071,6 +1080,7 @@ abstract class Hilos implements TruthSourceOwner
             static::$fs = static::createFs();
             static::$fs?->configure();
             static::refuseUploadsWithoutTmp();
+            static::refuseFilesWithoutDirectory();
         }
 
         SourceChangeBus::reset();
@@ -1170,6 +1180,30 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['HilosFeature::UPLOADS keeps chunks in the tmp directory, but the FS context configures none'],
+        );
+    }
+
+    /**
+     * Refuses HilosFeature::FILES on a project whose FS context names no files directory (HIL-336).
+     *
+     * Checked here for the reason the tmp refusal above is: the directory is known only once
+     * createFs() has been asked and the context configured. The janitor removes files from that
+     * directory, and a registry with nowhere to keep its files would pass every check at start and
+     * fail on the first unbound row.
+     *
+     * @throws IncompleteFeatureActivationException When FILES is declared and no files directory is registered
+     */
+    protected static function refuseFilesWithoutDirectory(): void
+    {
+        if (!in_array(HilosFeature::FILES, static::FEATURES, true)
+            || static::$fs?->hasDirectory(FsContext::FILES) === true
+        ) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            ['HilosFeature::FILES keeps published files in the files directory, but the FS context registers none'],
         );
     }
 
@@ -1364,6 +1398,16 @@ abstract class Hilos implements TruthSourceOwner
     protected static function createNotifier(): HilosNotifier
     {
         return new HilosNotifier();
+    }
+
+    /**
+     * Creates the files registry door.
+     *
+     * @return HilosFiles Files registry door
+     */
+    protected static function createFiles(): HilosFiles
+    {
+        return new HilosFiles();
     }
 
     /**

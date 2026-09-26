@@ -13,6 +13,7 @@ use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
@@ -130,6 +131,7 @@ final class SettingsCatalog implements CatalogProviderInterface
         ],
             ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()),
             DeliveryLogSettingsCatalog::getCatalog(),
+            FilesSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),

@@ -45,6 +45,8 @@ use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
+use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
@@ -1325,6 +1327,17 @@ final class HilosSignalConstants
      * with the library's outcome. Carried by {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_ACCOUNT_MERGE_DONE = 'hilos_account_merge_done';
+
+    // ── Hilos files registry: the project → the files library (agent signal) ──
+    /**
+     * {@see HilosFiles::markBound()} → files library: these files are linked by the project now;
+     * no answer (HIL-336).
+     *
+     * The project has already written its own link to each file, so there is nothing for it to
+     * wait for; a frame lost on the way is caught by the janitor, which reads a foreign-key
+     * refusal as the same fact. Carried by {@see FileBindSignalData}.
+     */
+    public const string HILOS_FILE_BIND = 'hilos_file_bind';
 
     // ── Hilos notification seam: any worker → the notifications library (agent signal) ──
     /**

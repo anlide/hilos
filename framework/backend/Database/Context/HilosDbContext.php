@@ -8,6 +8,7 @@ use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
+use Hilos\Database\Object\Collection\Files as ObjectFiles;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
@@ -28,6 +29,7 @@ use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerification
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
+use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
@@ -46,6 +48,7 @@ use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
+use Hilos\Database\Actions\Collection\FilesActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\OAuthProvidersActions;
@@ -59,6 +62,7 @@ use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
+use Hilos\Database\Actions\Item\FileActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
 use Hilos\Database\Actions\Item\SecondFactorActions;
@@ -95,6 +99,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionSecondFactorResets $secondFactorResets
  * @property-read DbCollectionSecondFactorSettings $secondFactorSettings
  * @property-read DbCollectionStepUps $stepUps
+ * @property-read DbCollectionFiles $files
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -135,12 +140,15 @@ abstract class HilosDbContext extends DbContext
     public const string secondFactorSetting = 'secondFactorSetting';
     public const string stepUps = 'stepUps';
     public const string stepUp = 'stepUp';
+    public const string files = 'files';
+    public const string file = 'file';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
      * notification preferences, push subscriptions, the verifier circle, auth blocks,
-     * OAuth providers, the five tables of the second factor, and operation confirmations).
+     * OAuth providers, the five tables of the second factor, operation confirmations, and the
+     * files registry).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
      * notification deliveries, notification preferences, push subscriptions and auth
@@ -168,6 +176,10 @@ abstract class HilosDbContext extends DbContext
      * Its table is in every installation that builds a runtime context - the one that can
      * freeze - because the project's own unit test refuses such a project without the
      * hilos_verifier_circle migration (HIL-1118).
+     *
+     * The files registry (HIL-336) loads by row id and by the files library's bounded batch of
+     * unbound rows, never as a full set, so it stays inert for projects that do not activate the
+     * hilos_file table.
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      */
@@ -258,6 +270,9 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::stepUps] = ObjectStepUps::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::stepUps, DbCollectionStepUps::class, StepUpsActions::class);
+
+        $this->_objectCollections[self::files] = ObjectFiles::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::files, DbCollectionFiles::class, FilesActions::class, FileActions::class);
     }
 
     /**

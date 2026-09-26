@@ -159,6 +159,7 @@ use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
 use Hilos\Push\DTO\PushRemoveActionDTO;
+use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
@@ -274,12 +275,13 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // The four libraries, the backup agent, the delivery shards and the log aggregator: one
+        // The five libraries, the backup agent, the delivery shards and the log aggregator: one
         // instance cluster-wide (per shard index, for the shards), on the node policy picks. An
-        // entity library is placed rather than pinned by rule, and each of the four has a reason
+        // entity library is placed rather than pinned by rule, and each of the five has a reason
         // of its own besides: minting an account is a claim one process holds wherever it sits,
-        // every handshake touches sessions, every worker emits into notifications, every admin
-        // screen writes settings through one hand, and the leader has enough to do. The backup
+        // every handshake touches sessions, every worker emits into notifications, every published
+        // file is bound and swept by one owner, every admin screen writes settings through one
+        // hand, and the leader has enough to do. The backup
         // agent owns a directory on one node's disk, so it has to stay with it: following
         // leadership would move it on every master restart to a node whose directory holds none
         // of its archives. The aggregator is placed so that one holder of the merged log picture
@@ -288,6 +290,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosAgentType::HILOS_FILES_LIBRARY,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_BACKUP,
             AgentType::HILOS_MAIL,
@@ -521,6 +524,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
@@ -663,6 +667,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
+            HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
             HilosSignalConstants::HILOS_SETTING_WRITE => SettingWriteSignalData::class,
             HilosSignalConstants::HILOS_SETTING_RESET => SettingResetSignalData::class,
             HilosSignalConstants::HILOS_SETTING_DELETE => SettingDeleteSignalData::class,
