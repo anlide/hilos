@@ -40,8 +40,10 @@ use Hilos\Auth\SecondFactor\SecondFactorGate;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
+use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
+use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
@@ -127,6 +129,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Users\AccountBlockReader;
 use Hilos\Users\AccountErasure;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
@@ -175,7 +178,9 @@ use Throwable;
  * token alive. The session-expiry drop (HIL-398) is enforced in
  * {@see resolveHandshakeSession()}: a cookie that resolves to an authenticated but expired
  * session is downgraded to anonymous before it is handed back, so a stale cookie can never
- * resume an authenticated identity. A session row is removed only by this library's sweep,
+ * resume an authenticated identity. The same door drops the session of a blocked person and
+ * leaves the "Access closed" card on it (HIL-289), catching a tab the block's own sign-out could
+ * not reach. A session row is removed only by this library's sweep,
  * after its cookie lifetime ends or after an anonymous browser never returns.
  */
 abstract class AbstractSessionsLibraryAgent extends AbstractAgent
@@ -316,10 +321,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * has to end what they will never answer. Beside it, the code agent's word that a code went out
      * to a free number: what a browser waits on is written here and nowhere else.
      *
-     * The last four are the second factor's (HIL-494): a proven sign-in waits on it on the session
+     * Four more are the second factor's (HIL-494): a proven sign-in waits on it on the session
      * row, which is this library's, so the users library that checks the codes asks for every move
      * of the wait by frame - a wrong code counted, an enrolment on the way in confirmed, a factor
      * gone, a wait to let go.
+     *
+     * The newest has no fixed sender (HIL-289): whoever wrote a person's block flag says "look
+     * at this person again", and it arrives here because what a block takes away - every session
+     * of the person - and the card it leaves behind are this library's to write.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -344,6 +353,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
+        HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
     ];
 
     /**
@@ -377,6 +387,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the person clicking may have no account at all - and the session it ends they have
      * regardless (HIL-839).
      *
+     * {@see HilosSignalConstants::HILOS_DISMISS_ACCOUNT_BLOCKED} is the Sign out button of the
+     * "Access closed" card (HIL-289), and it passes both halves the way the erase does: the browser
+     * pressing it has nobody in it any more, and the mark it clears stands on its own session.
+     *
      * {@see HilosSignalConstants::HILOS_OAUTH_RESUME} is a tab presenting the key of its provider
      * sign-in after a reconnect (HIL-1044). It passes both halves as plainly as the sign-out: the
      * person presenting it is usually nobody yet, and the trip it presents is this library's row.
@@ -390,6 +404,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_SESSIONS_END_OTHERS => SessionsEndOthersActionDTO::class,
         HilosSignalConstants::HILOS_BROWSER_ERASE => BrowserEraseActionDTO::class,
         HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
+        HilosSignalConstants::HILOS_DISMISS_ACCOUNT_BLOCKED => DismissAccountBlockedActionDTO::class,
         HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_DISMISS => DismissSessionToastActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_EXPIRED => SessionToastExpiredActionDTO::class,
@@ -610,6 +625,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function hasSignInSurface(): bool
     {
         return Hilos::hasFeature(HilosFeature::AUTH);
+    }
+
+    /**
+     * Whether this project enforces account blocks at all (HIL-289).
+     *
+     * Only a project that declares {@see HilosFeature::HILOS_USERS} carries the fact: activating
+     * that feature is what requires a block source ({@see AccountBlockReader}, HIL-944). Without
+     * it nothing is read and nothing is refused - a project with no users administration has no
+     * way to block anybody - and the missing source is never asked about, rather than asked and
+     * caught.
+     *
+     * @return bool True when {@see HilosFeature::HILOS_USERS} is declared by this project
+     */
+    private function enforcesAccountBlock(): bool
+    {
+        return Hilos::hasFeature(HilosFeature::HILOS_USERS);
     }
 
     /**
@@ -1090,15 +1121,53 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the answer with it and the dispatcher is told to keep quiet - the ack has to leave
      * behind the identity it announces, and from now on it leaves from the other process.
      *
+     * Every frame is stamped here with the "Access closed" card the session holds (HIL-289), and
+     * nowhere else. A frame is built in more than a dozen places, and a card left off one of them
+     * would be taken down by it; stamped at the one door they all leave through, no ending - a
+     * sign-out, a handshake, a refused sign-in, the card's own dismissal - can leave without it.
+     *
      * @param SessionStateSignalData $state What the session is now, and whom to answer
      * @throws InvalidArgumentException When the frame cannot be named or queued
+     * @throws HilosException When the session or its confirmed address cannot be read
      */
     private function publishSessionState(SessionStateSignalData $state): void
     {
-        $this->sendToAgent(HilosSignalConstants::HILOS_SESSION_STATE, $state);
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_SESSION_STATE,
+            $state->withAccountBlocked($this->accountBlockedNotice($state->sessionToken)),
+        );
         if ($state->requestId !== null) {
             $this->deferActionReply();
         }
+    }
+
+    /**
+     * Describes the "Access closed" card one session holds, or null when it holds none (HIL-289).
+     *
+     * Read off the session row the token names now, so a frame about a session that lost its
+     * account says so whatever its builder knew. The account is named by its confirmed address -
+     * the email, else the number - and by nothing when it has neither: the card still stands,
+     * it only cannot say whose account it was. A project that enforces no block reads nothing.
+     *
+     * @param string $sessionToken Session cookie token the frame is about
+     * @return ?array{identifier: ?string} Card, or null when the session holds none
+     * @throws HilosException When the session or the identity lookup fails
+     */
+    private function accountBlockedNotice(string $sessionToken): ?array
+    {
+        if (!$this->enforcesAccountBlock()) {
+            return null;
+        }
+
+        $blockedUserId = Hilos::$db->sessions->findByToken($sessionToken)?->blockedUserId;
+        if ($blockedUserId === null) {
+            return null;
+        }
+
+        return [
+            HandshakeResponseSignalData::identifier => Hilos::$db->identities->findVerifiedEmailByUser($blockedUserId)
+                ?? Hilos::$db->identities->findVerifiedSmsByUser($blockedUserId),
+        ];
     }
 
     /**
@@ -1749,6 +1818,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * refresh its last-seen and expiry. The caller (the project handshake handler)
      * registers the connection and emits the handshake response.
      *
+     * A session whose person at the keyboard is blocked is marked with the account and
+     * dropped to anonymous the same way (HIL-289), and a mark whose account has been
+     * unblocked since is lowered - both only in a project that enforces blocks.
+     *
      * @param string $sessionToken Daemon-resolved session cookie token (validated by the caller)
      * @return Session Resolved session, anonymous or authenticated
      * @throws InvalidFormatException When a new token is not a 32-character hex string
@@ -1782,6 +1855,29 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $session->actions->touch();
 
             return $session;
+        }
+
+        if ($this->enforcesAccountBlock()) {
+            // The block door (HIL-289), taken the way the expiry above is: a sign-out reaches the
+            // tabs of its own node only, so a tab held open elsewhere is caught when it comes back.
+            // The person asked about is whoever is at the keyboard - an administrator taking over a
+            // blocked account is not the blocked person, and a blocked administrator taking over
+            // somebody else is.
+            $blockReader = new AccountBlockReader();
+            $atKeyboard = $session->userAtKeyboard();
+            if ($atKeyboard !== null && $blockReader->isBlocked($atKeyboard)) {
+                $session->actions->holdBlockedNotice($atKeyboard);
+                $this->logAgentInfo('account_block_enforced ' . json_encode([
+                    'event' => 'account_block_enforced',
+                    'user' => $atKeyboard,
+                    'sessions' => [$session->id],
+                ]));
+                $this->deauthenticateSession($sessionToken);
+                $session = Hilos::$db->sessions->findByToken($sessionToken) ?? $session;
+            } elseif ($session->blockedUserId !== null && !$blockReader->isBlocked($session->blockedUserId)) {
+                // The account was unblocked while this browser was away: the card has nothing left to say.
+                $session->actions->releaseBlockedNotice();
+            }
         }
 
         $session->actions->touch();
@@ -1878,6 +1974,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // which would otherwise hand the freshly authenticated browser back the code
         // screen it just left.
         $session->actions->releasePendingRegistration();
+
+        // A browser that gets a person back owes no card about the account it lost before (HIL-289).
+        // Every way in passes here - a sign-in, an operator's command, a takeover - and none of
+        // them is refused by the block of an account this session merely remembers.
+        if ($session->blockedUserId !== null) {
+            $session->actions->releaseBlockedNotice();
+        }
 
         // A sign-in that waited on its second factor is through now, by the code that ended the
         // wait or by an operator who needs none (HIL-494). The sentence the wait was holding - the
@@ -2306,6 +2409,37 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Takes the "Access closed" card down in every tab of a browser: its Sign out button (HIL-289).
+     *
+     * Shaped like {@see clearSessionAck()}: the mark on the row is lowered and the frame that
+     * re-publishes the session carries the card away, in the other tabs and, with the answer, in
+     * the tab that pressed. The press is always answered and never refused - a second press, or one
+     * from a tab whose card another tab already closed, finds no mark and writes nothing, and still
+     * gets its reply. A token no session answers to has no tab to tell; the dispatcher's own
+     * acknowledgement answers the press then.
+     *
+     * @param string $sessionToken Session cookie token of the browser that pressed
+     * @param string $acceptKey Accept key of the connection that pressed
+     * @param ?string $requestId Request id of the action waiting on the answer, or null when nobody waits
+     * @param ?string $action Action name the state frame answers, or null when it answers none
+     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws HilosException On database or runtime failure
+     */
+    private function dismissAccountBlocked(string $sessionToken, string $acceptKey, ?string $requestId, ?string $action): void
+    {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            return;
+        }
+
+        if ($session->blockedUserId !== null) {
+            $session->actions->releaseBlockedNotice();
+        }
+
+        $this->publishBlockedCardState($session, $acceptKey, $requestId, $action, null);
+    }
+
+    /**
      * Writes one ack on the session row and states it in the frame that re-publishes it.
      *
      * The write and the re-publish are one step on purpose: the frontend draws from the
@@ -2694,7 +2828,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the takeover's name and forwards its write here (HIL-824), one from whoever is carrying
      * a code, each time the send moves (HIL-826), one from the agent holding the logins a
      * restore left (HIL-846), two about a provider sign-in a tab is waiting on and one from the
-     * master about agents that are gone (HIL-1044).
+     * master about agents that are gone (HIL-1044), and one from whoever wrote a block flag (HIL-289).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -2820,6 +2954,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->rebindSession($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED:
+                if (!$data->data instanceof AccountBlockChangedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AccountBlockChangedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->enforceAccountBlock($data->data->userId);
 
                 return;
 
@@ -3491,6 +3638,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return null;
 
+            case HilosSignalConstants::HILOS_DISMISS_ACCOUNT_BLOCKED:
+                if (!$dto instanceof DismissAccountBlockedActionDTO) {
+                    throw new InvalidActionPayloadException($action, DismissAccountBlockedActionDTO::class, $dto);
+                }
+                $this->dismissAccountBlocked($sessionToken, $acceptKey, $this->currentActionRequestId(), $action);
+
+                return null;
+
             case HilosSignalConstants::HILOS_IMPERSONATE_STOP:
                 if (!$dto instanceof ImpersonateStopActionDTO) {
                     throw new InvalidActionPayloadException($action, ImpersonateStopActionDTO::class, $dto);
@@ -4104,6 +4259,65 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Brings every session of one person in line with the person's block flag (HIL-289).
+     *
+     * The flag is read here rather than taken from the frame that asked, so the frame only says
+     * whom to look at. Blocked: every session where the person is at the keyboard goes - their
+     * own, and the ones where they take over somebody else - and each is marked with the account
+     * BEFORE its sign-out, so the one frame the sign-out sends already carries the "Access closed"
+     * card. A session where an administrator takes the blocked person over is not theirs to lose
+     * (HIL-304). Not blocked: every browser still holding a card about the account is told it is
+     * gone. Either way a second frame finds nothing left to do and writes nothing.
+     *
+     * The sign-out reaches the tabs of this node; a tab of another node is caught at its next
+     * handshake ({@see self::resolveHandshakeSession()}). {@see self::killUserSessions()} is left
+     * as it is: a merged loser is not a punished person, and its tabs get the plain sign-in form.
+     *
+     * @param int $userId Person whose block flag was written
+     * @throws InvalidArgumentException When a state frame cannot be named
+     * @throws HilosException When the flag, the sessions or the identities cannot be read or written
+     */
+    private function enforceAccountBlock(int $userId): void
+    {
+        if (!$this->enforcesAccountBlock()) {
+            return;
+        }
+
+        if (!new AccountBlockReader()->isBlocked($userId)) {
+            foreach (Hilos::$db->sessions->findByBlockedUserId($userId) as $session) {
+                $session->actions->releaseBlockedNotice();
+                $this->publishBlockedCardState($session, null, null, null, null);
+            }
+
+            return;
+        }
+
+        $sessions = array_merge(
+            array_filter(
+                Hilos::$db->sessions->findByUserId($userId),
+                static fn(Session $session): bool => $session->impersonatorUserId === null,
+            ),
+            Hilos::$db->sessions->findByImpersonator($userId),
+        );
+        if ($sessions === []) {
+            return;
+        }
+
+        $ended = [];
+        foreach ($sessions as $session) {
+            $session->actions->holdBlockedNotice($userId);
+            $this->deauthenticateSession($session->token);
+            $ended[] = $session->id;
+        }
+
+        $this->logAgentInfo('account_block_enforced ' . json_encode([
+            'event' => 'account_block_enforced',
+            'user' => $userId,
+            'sessions' => $ended,
+        ]));
+    }
+
+    /**
      * Decides whether these two accounts may be merged at all - the project's first half of
      * the merge pair.
      *
@@ -4565,6 +4779,117 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Refuses a proven sign-in into a blocked account, and leaves the "Access closed" card instead (HIL-289).
+     *
+     * Asked on every path that ends a proof, BEFORE the second-factor gate: a person whose account
+     * is blocked is not asked for a code only to be turned away after it. Nothing is bound, so the
+     * session stays what it was, and it is marked with the account - every tab of the browser
+     * shows the card, the reply to the submit rolls the surface back to the address field under it.
+     * A second-factor wait the proof arrived on is let go: nothing it could lead to is allowed.
+     *
+     * The throttle is not told ({@see ThrottleGate::reportAuthenticated()} is reached only by the
+     * sign-in itself): the password was right, and the session did not come up either.
+     *
+     * @param Session $session Session the proof arrived on
+     * @param int $userId Person the proof resolved to
+     * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
+     * @param ?string $requestId Request id of the submit waiting on the answer, or null
+     * @param ?string $action Action name the answer is for, or null
+     * @return bool True when the sign-in was refused, false when the account is not blocked
+     * @throws HilosException When the flag, the session or the identities cannot be read or written
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function refuseBlockedSignIn(
+        Session $session,
+        int $userId,
+        ?string $initiatorAcceptKey,
+        ?string $requestId,
+        ?string $action,
+    ): bool {
+        if (!$this->enforcesAccountBlock() || !new AccountBlockReader()->isBlocked($userId)) {
+            return false;
+        }
+
+        $session->actions->holdBlockedNotice($userId);
+        if ($session->pendingSecondFactorUserId !== null) {
+            $session->actions->releasePendingSecondFactor();
+        }
+        $this->logAgentInfo('account_block_refused ' . json_encode([
+            'event' => 'account_block_refused',
+            'user' => $userId,
+            'session' => $session->id,
+        ]));
+
+        $this->publishBlockedCardState(
+            $session,
+            $initiatorAcceptKey,
+            $requestId,
+            $action,
+            AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_ACCOUNT_BLOCKED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+            )->toArray(),
+        );
+
+        return true;
+    }
+
+    /**
+     * Tells every tab of a browser what its session is now that its card went up or down, answering one submit (HIL-289).
+     *
+     * The shape {@see publishSecondFactorStep()} gives its step: the tabs that did not act get the
+     * state, the one whose submit is waiting gets the same state with the answer, in a frame of its
+     * own - an answer names a single connection, and the project answers the first one a frame names.
+     * The card itself is not passed: {@see publishSessionState()} reads it off the row for both.
+     *
+     * @param Session $session Session whose tabs are told
+     * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
+     * @param ?string $requestId Request id of the submit waiting on the answer, or null
+     * @param ?string $action Action name the answer is for, or null
+     * @param ?array<string, mixed> $outcome Answer to give that submit, or null for a plain acknowledgement
+     * @throws InvalidArgumentException When a state frame cannot be named
+     * @throws HilosException When the session's step, its connections or its card cannot be read
+     */
+    private function publishBlockedCardState(
+        Session $session,
+        ?string $initiatorAcceptKey,
+        ?string $requestId,
+        ?string $action,
+        ?array $outcome,
+    ): void {
+        $step = $this->pendingAuthStepFor($session);
+        $answered = $requestId !== null && $action !== null ? $initiatorAcceptKey : null;
+        $others = array_values(array_filter(
+            $this->sessionConnectionKeys($session->token),
+            static fn (string $acceptKey): bool => $acceptKey !== $answered,
+        ));
+        if ($others !== []) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $session->token,
+                sessionId: $session->id,
+                userId: $session->userId,
+                acceptKeys: $others,
+                pendingAck: $this->sessionPendingAck($session),
+                pendingAuthStep: $step,
+            ));
+        }
+        if ($answered !== null) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $session->token,
+                sessionId: $session->id,
+                userId: $session->userId,
+                acceptKeys: [$answered],
+                pendingAck: $this->sessionPendingAck($session),
+                pendingAuthStep: $step,
+                requestId: $requestId,
+                action: $action,
+                outcome: $outcome,
+            ));
+        }
+    }
+
+    /**
      * Asks the second-factor gate about one person on one browser (HIL-494).
      *
      * @param Session $session Session the proof arrived on
@@ -4903,6 +5228,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * row instead, and the surface is moved to that step. A grant that says the factor was just
      * shown passes the gate, and writes the browser's trust if the person asked for it.
      *
+     * Ahead of both, a blocked account is refused outright ({@see refuseBlockedSignIn()}, HIL-289).
+     *
      * @param AuthSessionGrantSignalData $frame Session, user, and the answer to give
      * @throws HilosException On database, runtime, or session failure
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
@@ -4917,6 +5244,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session !== null && $this->refuseBlockedSignIn(
+            $session,
+            $frame->userId,
+            $frame->acceptKey,
+            $frame->requestId,
+            $frame->action,
+        )) {
+            return;
+        }
         if (!$frame->secondFactorProven && $session !== null && $this->holdForSecondFactor(
             $session,
             $frame->userId,
@@ -5056,6 +5392,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $trip = Hilos::$rt->hilosOAuthTrips[$tripKeyHash];
         if ($trip === null) {
             $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+            if ($session !== null && $this->refuseBlockedSignIn(
+                $session,
+                $frame->userId,
+                $frame->acceptKey,
+                $frame->requestId,
+                $frame->action,
+            )) {
+                return;
+            }
             if ($session !== null && $this->holdForSecondFactor(
                 $session,
                 $frame->userId,
@@ -5099,6 +5444,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Held, the trip ends in the second-factor step instead of a sign-in: nothing is bound,
         // and the tab learns where to go from the ending and from the frame the hold sent.
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session !== null && $this->refuseBlockedSignIn($session, $frame->userId, null, null, null)) {
+            // Refused like the second factor holds it (HIL-289): the trip ends in its own reason, and
+            // the card reaches the tab on the frame the refusal sent.
+            $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_BLOCKED);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_BLOCKED);
+
+            return;
+        }
         if ($session !== null && $this->holdForSecondFactor($session, $frame->userId, null, $frame->ack, null, null)) {
             $trip->actions->end(OAuthResultSignalData::REASON_SECOND_FACTOR);
             $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_SECOND_FACTOR);
@@ -5209,6 +5562,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Asked again at the moment the grant is applied (HIL-494): the person may have enrolled a
         // second factor, or had it required, while the grant was waiting for its tab.
         $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session !== null && $this->refuseBlockedSignIn($session, $userId, null, null, null)) {
+            $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_BLOCKED);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_BLOCKED);
+
+            return;
+        }
         if ($session !== null && $this->holdForSecondFactor($session, $userId, null, null, null, null)) {
             $trip->actions->end(OAuthResultSignalData::REASON_SECOND_FACTOR);
             $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_SECOND_FACTOR);
@@ -5556,11 +5915,28 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function settleChangedPassword(AuthPasswordChangedSignalData $frame): void
     {
+        // A blocked account keeps the password it was just given - the users library wrote it before
+        // this frame, and the person did prove the mailbox - but not the session (HIL-289): the
+        // browser gets the card where the "password changed" panel would have been, and every other
+        // session still goes, as a reset promises.
+        $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session !== null && $this->refuseBlockedSignIn(
+            $session,
+            $frame->userId,
+            $frame->acceptKey,
+            $frame->requestId,
+            $frame->action,
+        )) {
+            $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey, sameSessionHeld: true);
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken);
+
+            return;
+        }
+
         // A mailbox is exactly what a second factor stands against, so recovering the password
         // by mail does not sign in past it (HIL-494): the password is saved and every other
         // session still goes, but this browser waits on the code step, holding the sentence
         // about the new password for the moment it is let through.
-        $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
         $verdict = $session === null ? SecondFactorGate::PASS : $this->secondFactorVerdict($session, $frame->userId);
         if ($session !== null && $verdict !== SecondFactorGate::PASS) {
             $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey, sameSessionHeld: true);

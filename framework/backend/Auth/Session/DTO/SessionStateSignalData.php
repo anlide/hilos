@@ -34,10 +34,16 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  * {@see self::$pendingAuthStep} travels here rather than being read again by the
  * project: the unfinished authentication step is the library's knowledge, and a project
  * asking for it would be a second reader of a table it does not own.
+ *
+ * {@see self::$accountBlocked} travels here for the same reason (HIL-289): the blocked account
+ * this browser lost is a mark on the session row. No place that builds a frame passes it - the
+ * library stamps it on every frame at the one door they all leave through, so a frame built
+ * without it cannot take the "Access closed" card down by forgetting it.
  */
 final class SessionStateSignalData extends BaseDTO implements SignalDataInterface
 {
     public const string sessionId = 'sessionId';
+    public const string accountBlocked = 'accountBlocked';
 
     /**
      * @param string $sessionToken Session cookie token the named sockets belong to now
@@ -53,6 +59,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name to answer, or null when this ending finished none
      * @param ?array<string, mixed> $outcome Reply the answer carries ({@see AuthFlowOutcome::toArray()}), or null
+     * @param ?array{identifier: ?string} $accountBlocked Blocked account the session lost, named by its confirmed
+     *     address or not at all, or null when the session holds no such card
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -65,7 +73,31 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?string $requestId = null,
         public readonly ?string $action = null,
         public readonly ?array $outcome = null,
+        public readonly ?array $accountBlocked = null,
     ) {
+    }
+
+    /**
+     * Returns the same frame stamped with the blocked account the session lost (HIL-289).
+     *
+     * @param ?array{identifier: ?string} $accountBlocked Blocked account the session lost, or null when it holds no card
+     * @return self The same frame carrying that card
+     */
+    public function withAccountBlocked(?array $accountBlocked): self
+    {
+        return new self(
+            sessionToken: $this->sessionToken,
+            sessionId: $this->sessionId,
+            userId: $this->userId,
+            acceptKeys: $this->acceptKeys,
+            pendingAck: $this->pendingAck,
+            pendingAuthStep: $this->pendingAuthStep,
+            rotationTicket: $this->rotationTicket,
+            requestId: $this->requestId,
+            action: $this->action,
+            outcome: $this->outcome,
+            accountBlocked: $accountBlocked,
+        );
     }
 
     /**
@@ -86,6 +118,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             'requestId' => $this->requestId,
             'action' => $this->action,
             'outcome' => $this->outcome,
+            self::accountBlocked => $this->accountBlocked,
         ];
     }
 
@@ -98,7 +131,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload names no session
+     * @throws InvalidFormatException When the payload names no session, or a present field is not of its declared type
      */
     public static function fromArray(array $data): static
     {
@@ -120,6 +153,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             requestId: self::optionalString($data, 'requestId'),
             action: self::optionalString($data, 'action'),
             outcome: self::optionalArray($data, 'outcome'),
+            accountBlocked: HandshakeResponseSignalData::readAccountBlocked($data),
         );
     }
 

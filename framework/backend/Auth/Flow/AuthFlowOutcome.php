@@ -63,6 +63,13 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** The sign-in waiting on a second factor took too many wrong codes: back to the address field (HIL-494). */
     public const string CODE_SECOND_FACTOR_ATTEMPTS = 'second_factor_attempts';
 
+    /**
+     * The person proved who they are, and the account is blocked (HIL-289): nothing is signed in,
+     * the browser shows the "Access closed" card, and the surface behind it rolls back to the
+     * address field.
+     */
+    public const string CODE_ACCOUNT_BLOCKED = 'account_blocked';
+
     /** Wire key for the success flag. */
     private const string FIELD_OK = 'ok';
 

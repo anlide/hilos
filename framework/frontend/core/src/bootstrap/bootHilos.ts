@@ -26,6 +26,7 @@ import {
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
+import { bindAccountBlocked } from '../session/accountBlocked.js'
 import { bindImpersonation } from '../session/impersonation.js'
 import {
   bindSessionToasts,
@@ -119,6 +120,11 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // own lifecycle. One behavior, no option: a project with takeovers has the
   // strip, and one without them is never told it is impersonated.
   bindImpersonation(config.scopes, config.actions, config.session)
+  // The "Access closed" card (HIL-289) is the shell's for the same reason: the
+  // server stamps it on the handshake of a browser whose account was blocked,
+  // and its Sign out runs on the application's own lifecycle. One behavior, no
+  // option: a project that never blocks anybody is never sent a card.
+  bindAccountBlocked(config.scopes, config.actions)
   // One upload client follows the application connection for its whole life.
   // It uses the same action lifecycle as the shell: another lifecycle on the
   // same connection would mint the same request ids and mix up their replies.

@@ -6,6 +6,7 @@ namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -93,6 +94,13 @@ use Hilos\Core\Router\SignalDataInterface;
  * Such a step names no address - the person proved one on the way in and the screen does
  * not repeat it - so `identifier` and `kind` are null on it and only on it; every other
  * step still names both.
+ *
+ * `accountBlocked` is the "Access closed" card (HIL-289): the blocked account this browser lost
+ * or was refused, named by its confirmed address - `{identifier: null}` when it has none - or
+ * null when the session holds no card. It rides every response, the anonymous one above all,
+ * because the browser that lost an account is anonymous by then; a response carrying null takes
+ * the card down, so a stamp that forgot it would too, which is why the framework stamps it
+ * ({@see withAccountBlocked()}) rather than the project.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -121,6 +129,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string secondFactor = 'secondFactor';
     public const string trustDeviceDays = 'trustDeviceDays';
     public const string resetEffectiveAt = 'resetEffectiveAt';
+    public const string accountBlocked = 'accountBlocked';
 
     /**
      * Creates handshake response signal data.
@@ -153,6 +162,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     or null before the session context is stamped
      * @param ?bool $passkeyAllowsUnproven Whether a passkey may start an account on an unconfirmed address,
      *     or null before the session context is stamped
+     * @param ?array{identifier: ?string} $accountBlocked Blocked account the session lost, or null when it holds no card
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -166,6 +176,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?array $codeDelivery = null,
         public readonly ?array $authMethods = null,
         public readonly ?bool $passkeyAllowsUnproven = null,
+        public readonly ?array $accountBlocked = null,
     ) {
     }
 
@@ -194,6 +205,35 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             codeDelivery: $this->codeDelivery,
             authMethods: $this->authMethods,
             passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
+            accountBlocked: $this->accountBlocked,
+        );
+    }
+
+    /**
+     * Returns the same response carrying the "Access closed" card the session holds (HIL-289).
+     *
+     * The third axis beside {@see withPendingAck()} and {@see withSessionContext()}: the card is a
+     * mark on the session row, which the project does not read, so it arrives on the state frame
+     * and the framework stamps it here on every send path.
+     *
+     * @param ?array{identifier: ?string} $accountBlocked Blocked account the session lost, or null when it holds no card
+     * @return self The same response carrying that card
+     */
+    public function withAccountBlocked(?array $accountBlocked): self
+    {
+        return new self(
+            selfId: $this->selfId,
+            selfName: $this->selfName,
+            selfAdmin: $this->selfAdmin,
+            impersonatorId: $this->impersonatorId,
+            impersonatorName: $this->impersonatorName,
+            pendingAck: $this->pendingAck,
+            serverTimeMs: $this->serverTimeMs,
+            pendingAuthStep: $this->pendingAuthStep,
+            codeDelivery: $this->codeDelivery,
+            authMethods: $this->authMethods,
+            passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
+            accountBlocked: $accountBlocked,
         );
     }
 
@@ -236,6 +276,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             codeDelivery: $codeDelivery,
             authMethods: $authMethods,
             passkeyAllowsUnproven: $passkeyAllowsUnproven,
+            accountBlocked: $this->accountBlocked,
         );
     }
 
@@ -269,6 +310,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::codeDelivery => $this->codeDelivery,
                 self::authMethods => $this->authMethods,
                 self::passkeyAllowsUnproven => $this->passkeyAllowsUnproven,
+                self::accountBlocked => $this->accountBlocked,
             ],
         ];
     }
@@ -306,6 +348,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $codeDelivery = self::readCodeDelivery($section);
         $authMethods = self::readAuthMethods($section);
         $passkeyAllowsUnproven = self::optionalBool($section, self::passkeyAllowsUnproven);
+        $accountBlocked = self::readAccountBlocked($section);
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
@@ -314,6 +357,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 codeDelivery: $codeDelivery,
                 authMethods: $authMethods,
                 passkeyAllowsUnproven: $passkeyAllowsUnproven,
+                accountBlocked: $accountBlocked,
             );
         }
 
@@ -329,7 +373,29 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             codeDelivery: $codeDelivery,
             authMethods: $authMethods,
             passkeyAllowsUnproven: $passkeyAllowsUnproven,
+            accountBlocked: $accountBlocked,
         );
+    }
+
+    /**
+     * Reads the "Access closed" card back into its declared shape (HIL-289).
+     *
+     * Shared with {@see SessionStateSignalData}, which carries the same node under the same key, so
+     * the two ends of the seam cannot read it differently. A present node always comes back with its
+     * one member, the address being optional: an account with no confirmed address is still a card.
+     *
+     * @param array<string, mixed> $section Map holding the node under `accountBlocked`
+     * @return ?array{identifier: ?string} Node, or null when the session holds no card
+     * @throws InvalidFormatException When the node or its address is not of the declared type
+     */
+    public static function readAccountBlocked(array $section): ?array
+    {
+        $node = self::optionalArray($section, self::accountBlocked);
+        if ($node === null) {
+            return null;
+        }
+
+        return [self::identifier => self::optionalString($node, self::identifier)];
     }
 
     /**

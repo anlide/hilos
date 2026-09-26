@@ -73,6 +73,14 @@ const AUTH_METHODS_KEY = 'authMethods'
 const PASSKEY_ALLOWS_UNPROVEN_KEY = 'passkeyAllowsUnproven'
 
 /**
+ * Plain session-scope key carrying the "Access closed" card (HIL-289): the
+ * blocked account this browser lost or was refused, or `null` when it holds no
+ * card. The backend stamps it on every handshake, so a response carrying `null`
+ * takes the card down by overwriting the key — no frame of its own is needed.
+ */
+const ACCOUNT_BLOCKED_KEY = 'accountBlocked'
+
+/**
  * The settings library, and the OAuth provider page → every connection: the
  * installation's enabled sign-in methods with their readiness, and the passkey
  * policy beside them (HIL-1105), sent after a setting or provider write that
@@ -243,6 +251,12 @@ export interface PendingAuthStep {
    * or `null` on every other step.
    */
   readonly secondFactor: PendingSecondFactor | null
+}
+
+/** The "Access closed" card a session holds after its account was blocked (HIL-289). */
+export interface AccountBlockedNotice {
+  /** The account's confirmed address, or `null` when it had none the server could name. */
+  readonly identifier: string | null
 }
 
 /** What a sign-in held on its second factor carries into the step it is restored to (HIL-494). */
@@ -808,6 +822,35 @@ export function sessionPasskeyAllowsUnproven(
   const slot = scopes.session.data.signal(PASSKEY_ALLOWS_UNPROVEN_KEY)
 
   return computedSignal(() => slot.get() === true)
+}
+
+/**
+ * The "Access closed" card this session holds, or `null` when it holds none (HIL-289).
+ *
+ * Live: every handshake writes the key, a card and its removal alike. An object
+ * is a card whatever else it carries — a blocked account with no address is
+ * still blocked — and its address is kept only as a non-empty string; anything
+ * that is not an object reads as no card.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionAccountBlocked(
+  scopes: ScopeManager,
+): ReadonlySignal<AccountBlockedNotice | null> {
+  const slot = scopes.session.data.signal(ACCOUNT_BLOCKED_KEY)
+
+  return computedSignal(() => {
+    const value = slot.get()
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return null
+    }
+    const identifier = (value as { identifier?: unknown }).identifier
+
+    return {
+      identifier:
+        typeof identifier === 'string' && identifier !== '' ? identifier : null,
+    }
+  })
 }
 
 /**

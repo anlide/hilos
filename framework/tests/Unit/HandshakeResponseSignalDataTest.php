@@ -83,6 +83,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'codeDelivery' => null,
                     'authMethods' => null,
                     'passkeyAllowsUnproven' => null,
+                    'accountBlocked' => null,
                 ],
             ],
             $data->toArray(),
@@ -117,6 +118,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'codeDelivery' => null,
                     'authMethods' => null,
                     'passkeyAllowsUnproven' => null,
+                    'accountBlocked' => null,
                 ],
             ],
             $data->toArray(),
@@ -162,6 +164,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'codeDelivery' => null,
                     'authMethods' => null,
                     'passkeyAllowsUnproven' => null,
+                    'accountBlocked' => null,
                 ],
             ],
             $data->toArray(),
@@ -199,6 +202,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'codeDelivery' => null,
                 'authMethods' => null,
                 'passkeyAllowsUnproven' => null,
+                'accountBlocked' => null,
             ],
             $data->toArray()['data'],
         );
@@ -267,6 +271,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'codeDelivery' => self::CODE_DELIVERY,
                 'authMethods' => self::AUTH_METHODS,
                 'passkeyAllowsUnproven' => self::PASSKEY_ALLOWS_UNPROVEN,
+                'accountBlocked' => null,
             ],
             $data->toArray()['data'],
         );
@@ -414,6 +419,48 @@ final class HandshakeResponseSignalDataTest extends TestCase
             ->withPendingAck(SessionAck::SIGNED_IN);
 
         $this->assertSame(self::PASSKEY_ALLOWS_UNPROVEN, $data->passkeyAllowsUnproven);
+    }
+
+    public function testTheBlockedCardTravelsInTheDataSectionOfAnAnonymousResponse(): void
+    {
+        $data = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => 'maria@example.com']);
+
+        $this->assertNull($data->toArray()['entities']['currentUser']);
+        $this->assertSame(['identifier' => 'maria@example.com'], $data->toArray()['data']['accountBlocked']);
+    }
+
+    public function testTheBlockedCardSurvivesTheRoundtripWithAndWithoutAnAddress(): void
+    {
+        $named = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => '+380501234567']);
+        $unnamed = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => null]);
+
+        $this->assertSame(
+            ['identifier' => '+380501234567'],
+            HandshakeResponseSignalData::fromArray($named->toArray())->accountBlocked,
+        );
+        $this->assertSame(['identifier' => null], HandshakeResponseSignalData::fromArray($unnamed->toArray())->accountBlocked);
+        $this->assertNull(HandshakeResponseSignalData::fromArray(new HandshakeResponseSignalData()->toArray())->accountBlocked);
+    }
+
+    public function testTheBlockedCardSurvivesTheStampAndReAddressing(): void
+    {
+        // The card is stamped after the session context and the ack, and neither may take it off again.
+        $data = new HandshakeResponseSignalData()
+            ->withAccountBlocked(['identifier' => 'maria@example.com'])
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->withPendingAck(null);
+
+        $this->assertSame(['identifier' => 'maria@example.com'], $data->accountBlocked);
+    }
+
+    public function testRoundtripRejectsABlockedCardThatIsNotANode(): void
+    {
+        $payload = new HandshakeResponseSignalData()->toArray();
+        $payload['data']['accountBlocked'] = 'maria@example.com';
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
     }
 
     public function testAResponseThatNeverPassedTheStampCarriesNoMethodSet(): void

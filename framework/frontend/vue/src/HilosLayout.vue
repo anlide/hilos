@@ -22,7 +22,10 @@ the connection indicator — every other region of the shell links to a page the
 freeze has shut. On the very first frame there is nothing to report yet, and on a
 browser that has met maintenance here the core holds that frame back (HIL-613):
 the shell then renders only the hidden hilos-boot-state marker, so a reload into a
-frozen node never flashes the ordinary layout. Styling is Bootstrap classes only
+frozen node never flashes the ordinary layout. While the session holds a blocked
+account the routed content gives way to the "Access closed" card
+(HilosAccountBlocked, HIL-289) — the header and footer stay, maintenance still
+comes first. Styling is Bootstrap classes only
 and the shell carries no CSS of its own (styling-rules.md); the status and admin
 icons are Bootstrap Icons (`bi-*`), shipped with the view layer (src/index.ts)
 like Bootstrap. -->
@@ -32,6 +35,7 @@ import {
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  hilosAccountBlocked,
   hilosImpersonation,
   IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
@@ -41,6 +45,7 @@ import {
 } from '@hilos/core'
 import { computed, inject, watch } from 'vue'
 
+import HilosAccountBlocked from './HilosAccountBlocked.vue'
 import HilosLink from './HilosLink.vue'
 import LoadingButton from './LoadingButton.vue'
 import HilosMaintenance from './HilosMaintenance.vue'
@@ -105,6 +110,12 @@ const verificationBanner = computed(() =>
 // identity the answer rides behind. Below the protected-mode strip because what
 // is about the node comes before what is about the session.
 const impersonation = useSignal(hilosImpersonation)
+
+// The "Access closed" card (HIL-289): the session lost its account to a block,
+// so the content gives way to the card on every url - the header and the footer
+// stay, and whatever the content held, modals included, goes with it. Under the
+// maintenance surface rather than over it: what is about the node comes first.
+const accountBlocked = useSignal(hilosAccountBlocked)
 const { busy: impersonationStopBusy, run: runImpersonationStop } =
   useTrackedAction()
 const onImpersonationStop = (): void => {
@@ -344,6 +355,10 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         :status="protectedMode"
         :connection="props.connection"
         :admin-surface="currentRoute?.admin ?? false"
+      />
+      <HilosAccountBlocked
+        v-else-if="accountBlocked !== null"
+        :notice="accountBlocked"
       />
       <slot v-else />
     </main>

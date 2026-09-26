@@ -25,6 +25,7 @@ import { Component } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import {
   ActionLifecycle,
+  bindAccountBlocked,
   bindImpersonation,
   bindSessionScope,
   hilosToasts,
@@ -295,11 +296,17 @@ function bindSession() {
   const scopes = new ScopeManager()
   bindSessionScope(handshakes, scopes)
   const source = new ReplyingSource()
-  const unbind = bindImpersonation(scopes, new ActionLifecycle(source))
+  // One lifecycle for both, as bootHilos binds them: two would mint the same ids.
+  const actions = new ActionLifecycle(source)
+  const unbindStrip = bindImpersonation(scopes, actions)
+  const unbindCard = bindAccountBlocked(scopes, actions)
 
   return {
     source,
-    unbind,
+    unbind(): void {
+      unbindStrip()
+      unbindCard()
+    },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
         kind: 'project',
@@ -479,5 +486,114 @@ describe('HilosLayout impersonation strip', () => {
 
     expect(up.querySelector('[data-id="impersonation-banner"]')).not.toBeNull()
     expect(up.querySelectorAll(live).length).toBe(liveWithout)
+  })
+})
+
+/** The anonymous handshake a browser gets after its account was blocked. */
+const BLOCKED = {
+  entities: { currentUser: null },
+  data: { accountBlocked: { identifier: 'maria@example.com' } },
+}
+
+describe('HilosLayout account blocked card', () => {
+  let unbind: (() => void) | undefined
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+    hilosToasts.clear()
+  })
+
+  it('stands in place of the content and keeps the header and footer', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+
+    const root = mountShell().nativeElement as HTMLElement
+
+    expect(root.querySelector('[data-id="account-blocked"]')).not.toBeNull()
+    expect(root.querySelector('[data-id="app-footer"]')).not.toBeNull()
+    expect(root.querySelector('nav')).not.toBeNull()
+    expect(
+      root
+        .querySelector('[data-id="account-blocked-heading"]')
+        ?.textContent?.trim(),
+    ).toBe('Access closed')
+    expect(
+      root
+        .querySelector('[data-id="account-blocked-account"]')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe(
+      'The account maria@example.com has been blocked by the project administration.',
+    )
+    expect(
+      root.querySelector('[data-id="account-blocked-reason"]')?.textContent,
+    ).toContain('No reason given')
+  })
+
+  it('says "This account" when the server could name no address', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake({ data: { accountBlocked: { identifier: null } } })
+
+    const root = mountShell().nativeElement as HTMLElement
+
+    expect(
+      root
+        .querySelector('[data-id="account-blocked-account"]')
+        ?.textContent?.trim(),
+    ).toBe('This account has been blocked by the project administration.')
+  })
+
+  it('sends Sign out tracked and keeps it disabled until the reply settles', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+    const fixture = mountShell()
+    const signOut = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="account-blocked-sign-out"]',
+    ) as HTMLButtonElement
+
+    signOut.click()
+    fixture.detectChanges()
+
+    expect(session.source.sent).toHaveLength(1)
+    expect(session.source.sent[0]?.action).toBe('hilos_dismiss_account_blocked')
+    expect(session.source.sent[0]?.data).toEqual({})
+    expect(session.source.sent[0]?.requestId).toBeTruthy()
+    expect(signOut.disabled).toBe(true)
+
+    session.source.succeed(session.source.sent[0]?.requestId)
+    await settle()
+    fixture.detectChanges()
+
+    expect(signOut.disabled).toBe(false)
+  })
+
+  it('takes the card down when a handshake carries none', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+    const fixture = mountShell()
+
+    session.handshake({ data: { accountBlocked: null } })
+    fixture.detectChanges()
+
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-id="account-blocked"]',
+      ),
+    ).toBeNull()
+  })
+
+  it('gives way to the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+
+    const root = mountShell(FROZEN).nativeElement as HTMLElement
+
+    expect(root.querySelector('[data-id="account-blocked"]')).toBeNull()
   })
 })

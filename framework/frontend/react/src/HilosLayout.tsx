@@ -23,7 +23,10 @@
 // frame there is nothing to report yet, and on a browser that has met
 // maintenance here the core holds that frame back (HIL-613): the shell then
 // renders only the hidden hilos-boot-state marker, so a reload into a frozen
-// node never flashes the ordinary layout. Styling is Bootstrap classes only and
+// node never flashes the ordinary layout. While the session holds a blocked
+// account the routed content gives way to the "Access closed" card
+// (HilosAccountBlocked, HIL-289) — the header and footer stay, maintenance
+// still comes first. Styling is Bootstrap classes only and
 // the shell carries no CSS of its own (styling-rules.md); the status and admin
 // icons are Bootstrap Icons (`bi-*`), shipped with the view layer
 // (src/index.ts) like Bootstrap.
@@ -37,6 +40,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   createSignal,
+  hilosAccountBlocked,
   hilosImpersonation,
   IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
@@ -47,6 +51,7 @@ import {
 import { useContext, useEffect } from 'react'
 import type { ReactNode } from 'react'
 
+import { HilosAccountBlocked } from './HilosAccountBlocked.js'
 import { HilosLink } from './HilosLink.js'
 import { HilosMaintenance } from './HilosMaintenance.js'
 import { LoadingButton } from './LoadingButton.js'
@@ -179,6 +184,12 @@ export function HilosLayout({
   // what is about the node comes before what is about the session.
   const impersonation = useSignal(hilosImpersonation)
   const impersonationStop = useTrackedAction()
+  // The "Access closed" card (HIL-289): the session lost its account to a
+  // block, so the content gives way to the card on every url - the header and
+  // the footer stay, and whatever the content held, modals included, goes with
+  // it. Under the maintenance surface rather than over it: what is about the
+  // node comes first.
+  const accountBlocked = useSignal(hilosAccountBlocked)
   const onImpersonationStop = (): void => {
     if (impersonationStop.busy) {
       return
@@ -384,6 +395,8 @@ export function HilosLayout({
                 connection={connection}
                 adminSurface={currentRoute.admin}
               />
+            ) : accountBlocked !== null ? (
+              <HilosAccountBlocked notice={accountBlocked} />
             ) : (
               children
             )}

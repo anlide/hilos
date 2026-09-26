@@ -196,7 +196,11 @@ Follow the framework extension contract in
   `HilosUserBlockSource`, and framework code asks through `AccountBlockReader`
   (bulk and single read off the one project method). The collection must be a
   process-wide read, because the question is asked wherever a guard runs; a
-  missing source is refused, never answered `false`.
+  missing source is refused, never answered `false`. Whoever writes `block`
+  sends the sessions library `hilos_account_block_changed` {userId}; the library
+  reads the flag itself, signs the person out, refuses their sign-in and leaves
+  the "Access closed" card the shell draws (HIL-289). A missed frame is caught at
+  the next handshake.
 
 ## hilos-users base
 

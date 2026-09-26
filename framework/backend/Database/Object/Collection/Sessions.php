@@ -72,6 +72,40 @@ final class Sessions extends Objects
     }
 
     /**
+     * Lists every session holding the "Access closed" card for a blocked account (HIL-289).
+     *
+     * The unblock read path: the sessions library lowers the mark on each browser that lost
+     * this account or was refused it, so their cards go. A browser that never met the block
+     * holds no mark, so an account nobody saw blocked yields an empty list.
+     *
+     * @param int $userId Blocked account the mark names
+     * @return list<ObjectSession> Session objects marked with the account (empty when none)
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findByBlockedUserId(int $userId): array
+    {
+        return $this->hydrateAll(EntitySession::get([EntitySession::blocked_user_id => $userId]));
+    }
+
+    /**
+     * Lists every session in which an administrator is acting as somebody else (HIL-289).
+     *
+     * The block enforcement read path for a blocked administrator: the takeover goes with the
+     * rest of that person's access, or the block would leave them a way in through another
+     * account. An administrator who impersonates nobody yields an empty list.
+     *
+     * @param int $userId Administrator behind the impersonation
+     * @return list<ObjectSession> Session objects the administrator is impersonating in (empty when none)
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findByImpersonator(int $userId): array
+    {
+        return $this->hydrateAll(EntitySession::get([EntitySession::impersonator_user_id => $userId]));
+    }
+
+    /**
      * Lists every session a person stands in, in any of the three places a session names one (HIL-302).
      *
      * The erasure's sign-out read path: the person signed in on it, the administrator behind

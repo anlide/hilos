@@ -61,6 +61,14 @@ export const OAUTH_REASON_LINK_FAILED = 'oauth_link_failed'
 export const OAUTH_REASON_SECOND_FACTOR = 'second_factor'
 
 /**
+ * `reason` marking a sign-in the provider proved into an account that is blocked
+ * (PHP `OAuthResultSignalData::REASON_ACCOUNT_BLOCKED`, HIL-289). Nobody was
+ * signed in: the session holds the "Access closed" card, which every tab of it
+ * draws by itself, so the trip ends here with nothing left to say.
+ */
+export const OAUTH_REASON_ACCOUNT_BLOCKED = 'account_blocked'
+
+/**
  * The authorize-reply payload: the absolute provider URL to navigate to, and the
  * `tripId` the start named, echoed back so the reaction can tell an answer to the
  * trip it is running from a late answer to one it abandoned (HIL-707). The

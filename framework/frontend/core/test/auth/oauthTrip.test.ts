@@ -31,6 +31,7 @@ import {
 import {
   OAUTH_AUTHORIZE_SIGNAL,
   OAUTH_REASON_LINK_DUPLICATE,
+  OAUTH_REASON_ACCOUNT_BLOCKED,
   OAUTH_REASON_LINK_OK,
   OAUTH_REASON_REAUTH_REQUIRED,
   OAUTH_RESULT_SIGNAL,
@@ -930,6 +931,21 @@ describe('the OAuth trip machine', () => {
     })
 
     expect(world.outcomes).toEqual([{ kind: 'linked', message: '' }])
+  })
+
+  it('lets a sign-in into a blocked account go quietly (HIL-289)', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+
+    world.emit(OAUTH_RESULT_SIGNAL, {
+      acceptKey: 'accept-1',
+      provider: GITHUB,
+      reason: OAUTH_REASON_ACCOUNT_BLOCKED,
+      email: null,
+      linkToken: null,
+    })
+
+    expect(world.outcomes).toEqual([{ kind: 'account_blocked', message: '' }])
   })
 
   it('names the duplicate a link collides with', async () => {

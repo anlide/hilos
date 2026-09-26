@@ -13,6 +13,7 @@ import {
   sessionAuthMethods,
   sessionEnabledAuthMethods,
   sessionPasskeyAllowsUnproven,
+  sessionAccountBlocked,
   sessionSecondFactorPolicy,
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
@@ -370,6 +371,35 @@ describe('sessionScope', () => {
       data: { passkeyAllowsUnproven: 'yes' },
     })
     expect(allowed.get()).toBe(false)
+  })
+
+  it('reads the "Access closed" card every handshake writes (HIL-289)', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const card = sessionAccountBlocked(scopes)
+
+    // Nothing said yet: no card.
+    expect(card.get()).toBeNull()
+
+    connection.emitHandshakeResponse({
+      data: { accountBlocked: { identifier: 'maria@example.com' } },
+    })
+    expect(card.get()).toEqual({ identifier: 'maria@example.com' })
+
+    // A card is a card without an address, and an empty address names nobody.
+    connection.emitHandshakeResponse({
+      data: { accountBlocked: { identifier: '' } },
+    })
+    expect(card.get()).toEqual({ identifier: null })
+
+    // The next handshake without a card takes it down by overwriting the key.
+    connection.emitHandshakeResponse({ data: { accountBlocked: null } })
+    expect(card.get()).toBeNull()
+
+    // Anything that is not a node reads as no card.
+    connection.emitHandshakeResponse({ data: { accountBlocked: 'blocked' } })
+    expect(card.get()).toBeNull()
   })
 
   it('offers only the ready methods and keeps the unready ones enabled (HIL-1080)', () => {

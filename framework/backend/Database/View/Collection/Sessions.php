@@ -82,6 +82,59 @@ final class Sessions extends DbCollection
     }
 
     /**
+     * Lists every session holding the "Access closed" card for a blocked account (HIL-289).
+     *
+     * The read half of an unblock: see the object collection. Delegates to it and wraps each
+     * row as a Db item; an account nobody saw blocked yields an empty list.
+     *
+     * @param int $userId Blocked account the mark names
+     * @return list<Session> Session Db items marked with the account (empty when none)
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws DatabaseException When the lookup or lazy session load fails
+     */
+    public function findByBlockedUserId(int $userId): array
+    {
+        $result = [];
+        foreach ($this->objectCollection->findByBlockedUserId($userId) as $objectSession) {
+            $item = $objectSession->id !== null ? $this->getItemForKey($objectSession->id) : null;
+            if ($item === null) {
+                continue;
+            }
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Lists every session in which an administrator is acting as somebody else (HIL-289).
+     *
+     * The read half of the takeover a blocked administrator loses: see the object collection.
+     * Delegates to it and wraps each row as a Db item; an administrator who impersonates
+     * nobody yields an empty list.
+     *
+     * @param int $userId Administrator behind the impersonation
+     * @return list<Session> Session Db items the administrator is impersonating in (empty when none)
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws DatabaseException When the lookup or lazy session load fails
+     */
+    public function findByImpersonator(int $userId): array
+    {
+        $result = [];
+        foreach ($this->objectCollection->findByImpersonator($userId) as $objectSession) {
+            $item = $objectSession->id !== null ? $this->getItemForKey($objectSession->id) : null;
+            if ($item === null) {
+                continue;
+            }
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
      * Lists every session a person stands in - signed in, taking over, or waiting on a second factor (HIL-302).
      *
      * The read half of the erasure's sign-out; see the object collection for the three places.

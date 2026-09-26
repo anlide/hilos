@@ -66,6 +66,15 @@
 -- handshake time. It is display-only and may be NULL when the header is absent or
 -- unrecognized. The table is purged as a whole by the framework anonymization verdict,
 -- so the new personal label needs no per-column strategy of its own.
+--
+-- `blocked_user_id` (HIL-289) is the account this browser lost, or was refused, because
+-- that account is blocked. It is memory ABOUT this session by the same argument as the
+-- groups above: the "Access closed" card is served from it on every handshake, so it
+-- survives a dropped connection, a reload, a new tab and a restarted daemon. It is
+-- lowered by the card's Sign out button, by a sign-in and by an unblock. The column
+-- carries an index for the reverse lookup an unblock makes; `impersonator_user_id`
+-- gets one beside it for the impersonations a blocked administrator loses. Purged with
+-- the table like the rest, so the column needs no anonymization strategy of its own.
 
 CREATE TABLE `hilos_session` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -84,11 +93,14 @@ CREATE TABLE `hilos_session` (
     `pending_second_factor_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `pending_second_factor_ack` VARCHAR(64) DEFAULT NULL,
     `device_name` VARCHAR(64) DEFAULT NULL,
+    `blocked_user_id` INT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_session_token` (`token`),
     KEY `idx_session_user` (`user_id`),
     KEY `idx_session_pending_registration` (`pending_registration_identifier`),
     KEY `idx_session_expires` (`expires_at`),
     KEY `idx_session_anonymous_seen` (`user_id`, `last_seen_at`),
-    KEY `idx_session_pending_second_factor` (`pending_second_factor_user_id`)
+    KEY `idx_session_pending_second_factor` (`pending_second_factor_user_id`),
+    KEY `idx_session_blocked_user` (`blocked_user_id`),
+    KEY `idx_session_impersonator` (`impersonator_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

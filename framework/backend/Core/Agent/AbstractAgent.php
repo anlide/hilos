@@ -484,8 +484,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * stamps on what no project can know: the server clock the browser measures its own
      * offset against, the registration step the session left unfinished, whether this
      * installation can deliver a one-time code at all, the sign-in methods it offers and
-     * whether a passkey may start an account on an unconfirmed address, and the success ack
-     * the socket still owes (HIL-486, HIL-422, HIL-830, HIL-427, HIL-1105).
+     * whether a passkey may start an account on an unconfirmed address, the success ack
+     * the socket still owes, and the "Access closed" card the session holds (HIL-486, HIL-422,
+     * HIL-830, HIL-427, HIL-1105, HIL-289).
      *
      * It lives here, and every send path goes through it, so that no project can ship a
      * response without the stamp. That guarantee used to come from a final method on the
@@ -518,7 +519,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                     EnabledAuthMethods::toWire(),
                     PasskeyAddressPolicy::allowsUnproven(),
                 )
-                ->withPendingAck($state->pendingAck),
+                ->withPendingAck($state->pendingAck)
+                ->withAccountBlocked($state->accountBlocked),
         );
     }
 

@@ -264,6 +264,7 @@ export {
   sessionAuthMethods,
   sessionEnabledAuthMethods,
   sessionPasskeyAllowsUnproven,
+  sessionAccountBlocked,
   sessionSecondFactorPolicy,
   SIGNAL_AUTH_METHODS,
   SIGNAL_SECOND_FACTOR_POLICY,
@@ -272,6 +273,7 @@ export {
   SESSION_ACK_REGISTERED,
   SESSION_ACK_SIGNED_IN,
   SESSION_SIGNAL_SCHEMAS,
+  type AccountBlockedNotice,
   type AuthMethodEntry,
   type CodeDelivery,
   type PendingAuthStep,
@@ -296,6 +298,13 @@ export {
   IMPERSONATION_STRIP_COPY,
   type ImpersonationStrip,
 } from './session/impersonation.js'
+export {
+  bindAccountBlocked,
+  hilosAccountBlocked,
+  dismissAccountBlocked,
+  ACCOUNT_BLOCKED_ACTION_DISMISS,
+  ACCOUNT_BLOCKED_COPY,
+} from './session/accountBlocked.js'
 export {
   bindUploads,
   cancelUpload,
@@ -542,6 +551,7 @@ export {
   OAUTH_REASON_LINK_DUPLICATE,
   OAUTH_REASON_LINK_FAILED,
   OAUTH_REASON_SECOND_FACTOR,
+  OAUTH_REASON_ACCOUNT_BLOCKED,
   oauthAuthorizeSignalSchema,
   oauthResultSignalSchema,
   OAUTH_SIGNAL_SCHEMAS,

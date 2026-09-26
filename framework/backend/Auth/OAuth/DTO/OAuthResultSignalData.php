@@ -33,6 +33,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  *   second factor to show before being let in (HIL-494): nobody was signed in, the
  *   session waits on the code step, and the surface moves there. {@see email} /
  *   {@see linkToken} are null.
+ * - {@see REASON_ACCOUNT_BLOCKED} — the provider proved the person, and the account is
+ *   blocked (HIL-289): nobody was signed in, the session holds the "Access closed" card, and
+ *   the surface lets the trip go. {@see email} / {@see linkToken} are null.
  *
  * The {@see reason} is a stable, non-sensitive code; network/provider failure
  * detail stays in the agent log, never on the wire. {@see linkToken} is a signed,
@@ -58,6 +61,9 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
 
     /** The provider proved the person, who now owes the second factor: the session waits on its step (HIL-494). */
     public const string REASON_SECOND_FACTOR = 'second_factor';
+
+    /** The provider proved the person, whose account is blocked: nobody is signed in (HIL-289). */
+    public const string REASON_ACCOUNT_BLOCKED = 'account_blocked';
 
     /**
      * @param string $acceptKey Initiating connection accept key the signal targets

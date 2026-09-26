@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  bindAccountBlocked,
   bindImpersonation,
   bindSessionScope,
   hilosToasts,
@@ -129,11 +130,17 @@ function bindSession() {
   const scopes = new ScopeManager()
   bindSessionScope(handshakes, scopes)
   const source = new ReplyingSource()
-  const unbind = bindImpersonation(scopes, new ActionLifecycle(source))
+  // One lifecycle for both, as bootHilos binds them: two would mint the same ids.
+  const actions = new ActionLifecycle(source)
+  const unbindStrip = bindImpersonation(scopes, actions)
+  const unbindCard = bindAccountBlocked(scopes, actions)
 
   return {
     source,
-    unbind,
+    unbind(): void {
+      unbindStrip()
+      unbindCard()
+    },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
         kind: 'project',
@@ -290,5 +297,104 @@ describe('HilosLayout impersonation strip', () => {
 
     expect(up.find('[data-id="impersonation-banner"]').exists()).toBe(true)
     expect(up.element.querySelectorAll(live).length).toBe(liveWithout)
+  })
+})
+
+/** The anonymous handshake a browser gets after its account was blocked. */
+const BLOCKED = {
+  entities: { currentUser: null },
+  data: { accountBlocked: { identifier: 'maria@example.com' } },
+}
+
+describe('HilosLayout account blocked card', () => {
+  let unbind: (() => void) | undefined
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+    hilosToasts.clear()
+  })
+
+  it('stands in place of the content and keeps the header and footer', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+
+    const wrapper = mountShell(shellConnection())
+
+    const card = wrapper.find('[data-id="account-blocked"]')
+    expect(card.exists()).toBe(true)
+    expect(wrapper.find('[data-id="page-body"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="app-footer"]').exists()).toBe(true)
+    expect(wrapper.find('nav').exists()).toBe(true)
+    expect(card.find('[data-id="account-blocked-heading"]').text()).toBe(
+      'Access closed',
+    )
+    expect(card.find('[data-id="account-blocked-account"]').text()).toBe(
+      'The account maria@example.com has been blocked by the project administration.',
+    )
+    expect(card.find('[data-id="account-blocked-reason"]').text()).toContain(
+      'No reason given',
+    )
+  })
+
+  it('says "This account" when the server could name no address', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake({ data: { accountBlocked: { identifier: null } } })
+
+    const wrapper = mountShell(shellConnection())
+
+    expect(wrapper.find('[data-id="account-blocked-account"]').text()).toBe(
+      'This account has been blocked by the project administration.',
+    )
+  })
+
+  it('sends Sign out tracked and keeps it disabled until the reply settles', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+    const wrapper = mountShell(shellConnection())
+    const signOut = wrapper.find('[data-id="account-blocked-sign-out"]')
+
+    await signOut.trigger('click')
+
+    expect(session.source.sent).toHaveLength(1)
+    expect(session.source.sent[0]?.action).toBe('hilos_dismiss_account_blocked')
+    expect(session.source.sent[0]?.data).toEqual({})
+    expect(session.source.sent[0]?.requestId).toBeTruthy()
+    expect(signOut.attributes('disabled')).toBeDefined()
+
+    session.source.succeed(session.source.sent[0]?.requestId)
+    await flushPromises()
+
+    expect(
+      wrapper
+        .find('[data-id="account-blocked-sign-out"]')
+        .attributes('disabled'),
+    ).toBeUndefined()
+  })
+
+  it('gives the content back when a handshake carries no card', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+    const wrapper = mountShell(shellConnection())
+
+    session.handshake({ data: { accountBlocked: null } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-id="account-blocked"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="page-body"]').exists()).toBe(true)
+  })
+
+  it('gives way to the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(BLOCKED)
+
+    const wrapper = mountShell(shellConnection(FROZEN))
+
+    expect(wrapper.find('[data-id="account-blocked"]').exists()).toBe(false)
   })
 })

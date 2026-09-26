@@ -256,6 +256,53 @@ final class SessionActions extends DbActions
     }
 
     /**
+     * Marks this session with the blocked account it lost or was refused (HIL-289).
+     *
+     * The "Access closed" card is served from this mark on every handshake, so it is written
+     * before the session loses its person: the one state frame the sign-out sends then already
+     * carries the card. {@see unbindUser()} leaves the mark alone for the same reason - the
+     * sign-out is exactly the moment it is raised, not the moment it ends. A second call over the
+     * same account writes the same value.
+     *
+     * @param int $userId Blocked account this browser lost or was refused
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function holdBlockedNotice(int $userId): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for holdBlockedNotice (id is null)');
+        }
+
+        $this->object->blockedUserId = $userId;
+        $this->object->sync();
+    }
+
+    /**
+     * Forgets the blocked account this session held a card for (HIL-289).
+     *
+     * Written by the card's Sign out button, by a sign-in that gives the browser a person again
+     * and by an unblock of the account. None of the three is implied by a bind: the sessions
+     * library lowers the mark explicitly where the browser gets its person back.
+     *
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function releaseBlockedNotice(): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for releaseBlockedNotice (id is null)');
+        }
+
+        $this->object->blockedUserId = null;
+        $this->object->sync();
+    }
+
+    /**
      * Holds a proven sign-in on this session until the person shows their second factor (HIL-494).
      *
      * The durable half of the second-factor step: the handshake serves the step from here,

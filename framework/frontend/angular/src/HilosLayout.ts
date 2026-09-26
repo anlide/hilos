@@ -23,7 +23,10 @@
 // frame there is nothing to report yet, and on a browser that has met
 // maintenance here the core holds that frame back (HIL-613): the shell then
 // renders only the hidden hilos-boot-state marker, so a reload into a frozen
-// node never flashes the ordinary layout. Styling is Bootstrap classes only and
+// node never flashes the ordinary layout. While the session holds a blocked
+// account the routed content gives way to the "Access closed" card
+// (HilosAccountBlocked, HIL-289) — the header and footer stay, maintenance
+// still comes first. Styling is Bootstrap classes only and
 // the shell carries no CSS of its own (styling-rules.md); the status and admin
 // icons are Bootstrap Icons (`bi-*`).
 import {
@@ -48,6 +51,7 @@ import {
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
   HilosPages,
+  hilosAccountBlocked,
   hilosImpersonation,
   IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
@@ -57,6 +61,7 @@ import {
 } from '@hilos/core'
 
 import { HilosLink } from './HilosLink.js'
+import { HilosAccountBlocked } from './HilosAccountBlocked.js'
 import { HilosMaintenance } from './HilosMaintenance.js'
 import { LoadingButton } from './LoadingButton.js'
 import { HilosToastHost } from './HilosToastHost.js'
@@ -89,6 +94,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   selector: 'hilos-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    HilosAccountBlocked,
     HilosLink,
     HilosMaintenance,
     HilosOAuthWaitModal,
@@ -239,6 +245,8 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
               [connection]="connection()"
               [adminSurface]="adminSurface()"
             />
+          } @else if (accountBlocked(); as notice) {
+            <hilos-account-blocked [notice]="notice" />
           } @else {
             <ng-content />
           }
@@ -335,6 +343,12 @@ export class HilosLayout {
   protected readonly impersonation = hilosSignal(hilosImpersonation)
   protected readonly impersonationStop = createHilosTrackedAction()
   protected readonly stripCopy = IMPERSONATION_STRIP_COPY
+  // The "Access closed" card (HIL-289): the session lost its account to a
+  // block, so the content gives way to the card on every url - the header and
+  // the footer stay, and whatever the content held, modals included, goes with
+  // it. Under the maintenance surface rather than over it: what is about the
+  // node comes first.
+  protected readonly accountBlocked = hilosSignal(hilosAccountBlocked)
   // Before any of that can be read there is a frame where nothing has been
   // announced yet, and drawing the ordinary shell in it is what makes a reload
   // into a frozen node flash (HIL-613). On a browser that has met maintenance

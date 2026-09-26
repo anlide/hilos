@@ -33,6 +33,13 @@ import {
   createDeferredFlagState,
   DEFAULT_SKELETON_DELAY_MS,
   HILOS_SKELETON_LINES,
+  bindAccountBlocked,
+  hilosAccountBlocked,
+  dismissAccountBlocked,
+  sessionAccountBlocked,
+  ACCOUNT_BLOCKED_ACTION_DISMISS,
+  ACCOUNT_BLOCKED_COPY,
+  OAUTH_REASON_ACCOUNT_BLOCKED,
   bindUploads,
   cancelUpload,
   uploadFile,
@@ -73,6 +80,13 @@ it('exports the @hilos/core public surface', () => {
   expect(createDeferredFlagState).toBeTypeOf('function')
   expect(DEFAULT_SKELETON_DELAY_MS).toBeTypeOf('number')
   expect(HILOS_SKELETON_LINES).toEqual([9, 6, 10])
+  expect(bindAccountBlocked).toBeTypeOf('function')
+  expect(hilosAccountBlocked.get()).toBeNull()
+  expect(dismissAccountBlocked).toBeTypeOf('function')
+  expect(sessionAccountBlocked).toBeTypeOf('function')
+  expect(ACCOUNT_BLOCKED_ACTION_DISMISS).toBe('hilos_dismiss_account_blocked')
+  expect(ACCOUNT_BLOCKED_COPY.title).toBe('Access closed')
+  expect(OAUTH_REASON_ACCOUNT_BLOCKED).toBe('account_blocked')
   expect(bindUploads).toBeTypeOf('function')
   expect(uploadFile).toBeTypeOf('function')
   expect(cancelUpload).toBeTypeOf('function')

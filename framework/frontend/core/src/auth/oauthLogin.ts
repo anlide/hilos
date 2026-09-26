@@ -63,6 +63,7 @@ import {
 } from './authProtocol.js'
 import {
   OAUTH_AUTHORIZE_SIGNAL,
+  OAUTH_REASON_ACCOUNT_BLOCKED,
   OAUTH_REASON_LINK_DUPLICATE,
   OAUTH_REASON_LINK_FAILED,
   OAUTH_REASON_LINK_OK,
@@ -103,7 +104,9 @@ export interface OAuthTrip {
  * carries no message, because none of them is a failure to report.
  * `second_factor` is a sign-in the provider proved and the second factor holds
  * (HIL-494): the session moves every tab to the code step itself, so the surface
- * waiting on the trip has nothing to do but let it go.
+ * waiting on the trip has nothing to do but let it go. `account_blocked` is the
+ * same for a blocked account (HIL-289): the session holds the "Access closed"
+ * card instead of a person, and the shell draws it in every tab.
  */
 export interface OAuthTripOutcome {
   /** The ending. */
@@ -112,6 +115,7 @@ export interface OAuthTripOutcome {
     | 'linked'
     | 'reauth_pending'
     | 'second_factor'
+    | 'account_blocked'
     | 'canceled'
     | 'error'
   /** The sentence to show, empty on every arm but `error`. */
@@ -1091,6 +1095,11 @@ function applyResult(data: OAuthResultSignalData): void {
   }
   if (data.reason === OAUTH_REASON_SECOND_FACTOR) {
     finishTrip({ kind: 'second_factor', message: '' })
+
+    return
+  }
+  if (data.reason === OAUTH_REASON_ACCOUNT_BLOCKED) {
+    finishTrip({ kind: 'account_blocked', message: '' })
 
     return
   }

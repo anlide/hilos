@@ -184,6 +184,8 @@ const CODE_MESSAGES: Record<string, string> = {
   challenge_required: 'Please confirm you are not a robot and try again.',
   second_factor_expired: 'Your sign-in step expired. Sign in again.',
   second_factor_attempts: 'Too many wrong codes. Sign in again.',
+  account_blocked:
+    'This account has been blocked by the project administration.',
 }
 
 /** What is shown when a refusal carried neither a sentence nor a known code. */
@@ -1232,12 +1234,18 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         if (auth.flow.get().step !== 'external') {
           return
         }
-        if (outcome.kind === 'signed_in' || outcome.kind === 'second_factor') {
+        if (
+          outcome.kind === 'signed_in' ||
+          outcome.kind === 'second_factor' ||
+          outcome.kind === 'account_blocked'
+        ) {
           // The gate closes this surface on the upgrade; saying anything here
           // would be saying it to a screen already on its way out (HIL-422). A
           // sign-in the second factor holds moves every tab to its code step
           // through the session itself (HIL-494), and cancelling here would
           // undo that move.
+          // A blocked account (HIL-289) leaves the "Access closed" card over the
+          // shell, and the surface under it has nothing left to show either.
           return
         }
         if (outcome.kind === 'error') {

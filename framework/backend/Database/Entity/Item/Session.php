@@ -45,6 +45,10 @@ use Hilos\Database\PhpType;
  * it took and the sentence owed once it passes. Memory ABOUT this session for the same
  * reason as the two above, and written only by the session holder.
  *
+ * `blocked_user_id` is the account this browser lost, or was refused, because that account is
+ * blocked (HIL-289): the "Access closed" card is served from it on every handshake until the
+ * card's Sign out, a sign-in or an unblock lowers it. Written only by the session holder.
+ *
  * @method static EntitySessions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySessions getAll()
  */
@@ -66,6 +70,7 @@ final class Session extends Entity
     public const string pending_second_factor_attempts = 'pending_second_factor_attempts';
     public const string pending_second_factor_ack = 'pending_second_factor_ack';
     public const string device_name = 'device_name';
+    public const string blocked_user_id = 'blocked_user_id';
 
     public const string _table = 'hilos_session';
     public const string _primary = self::id;
@@ -86,6 +91,7 @@ final class Session extends Entity
         self::pending_second_factor_attempts,
         self::pending_second_factor_ack,
         self::device_name,
+        self::blocked_user_id,
     ];
 
     public const array _types = [
@@ -105,6 +111,7 @@ final class Session extends Entity
         self::pending_second_factor_attempts => PhpType::INTEGER->value,
         self::pending_second_factor_ack => PhpType::STRING->value,
         self::device_name => PhpType::STRING->value,
+        self::blocked_user_id => PhpType::INTEGER->value,
     ];
 
     public const array _indexes = [
@@ -120,6 +127,8 @@ final class Session extends Entity
         'idx_session_pending_second_factor' => [
             Entity::INDEX_COLUMNS => [self::pending_second_factor_user_id],
         ],
+        'idx_session_blocked_user' => [Entity::INDEX_COLUMNS => [self::blocked_user_id]],
+        'idx_session_impersonator' => [Entity::INDEX_COLUMNS => [self::impersonator_user_id]],
     ];
 
     // A session is anonymous while user_id is empty, and a nullable column is not an owner:
@@ -147,4 +156,5 @@ final class Session extends Entity
     public int $pending_second_factor_attempts = 0;
     public ?string $pending_second_factor_ack = null;
     public ?string $device_name = null;
+    public ?int $blocked_user_id = null;
 }

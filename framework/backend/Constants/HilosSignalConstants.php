@@ -28,7 +28,9 @@ use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStateSignalData;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
+use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
+use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
@@ -87,6 +89,7 @@ use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\HilosSmsSender;
+use Hilos\Users\AccountBlockReader;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 
@@ -765,6 +768,16 @@ final class HilosSignalConstants
     public const string HILOS_DISMISS_SESSION_ACK = 'hilos_dismiss_session_ack';
 
     /**
+     * Client → sessions library (page-independent): the person pressed Sign out on the "Access
+     * closed" card, so forget the blocked account this browser lost in every tab of it (HIL-289).
+     *
+     * Declared on the library and not among its authenticated actions: a browser holding the card
+     * has nobody in it. Pressing it where the mark is already gone is a quiet success. Carried by
+     * {@see DismissAccountBlockedActionDTO}.
+     */
+    public const string HILOS_DISMISS_ACCOUNT_BLOCKED = 'hilos_dismiss_account_blocked';
+
+    /**
      * Client → agent (page-independent): the person closed a toast the server raised, so take
      * it off every tab of this session (HIL-768).
      *
@@ -1413,6 +1426,19 @@ final class HilosSignalConstants
      * the operation from it. Carried by {@see SessionRebindSignalData}.
      */
     public const string HILOS_SESSION_REBIND = 'hilos_session_rebind';
+
+    /**
+     * Block writer → sessions library: look at this person's block flag again (HIL-289).
+     *
+     * Sent by whoever wrote the flag - the admin button (HIL-304), the operator command (HIL-98),
+     * the test command (HIL-324) or a project's own writer. The frame names only whom to look at:
+     * the library reads the flag itself through {@see AccountBlockReader}, so a false or repeated
+     * frame is harmless - it can neither sign out an account that is not blocked nor leave a blocked
+     * one signed in. Blocked, every session of the person goes and shows the "Access closed" card;
+     * not blocked, every card the person's block left behind comes down. Carried by
+     * {@see AccountBlockChangedSignalData}.
+     */
+    public const string HILOS_ACCOUNT_BLOCK_CHANGED = 'hilos_account_block_changed';
 
     /**
      * {@see BackupAgent} → sessions library: here are the logins a restore left for you (HIL-846).

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
+use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
@@ -83,6 +84,7 @@ final class SessionsLibraryActionRefusalTest extends TestCase
             'end other sessions' => [HilosSignalConstants::HILOS_SESSIONS_END_OTHERS, new SessionsEndOthersActionDTO()],
             'browser erase' => [HilosSignalConstants::HILOS_BROWSER_ERASE, new BrowserEraseActionDTO()],
             'dismiss ack' => [HilosSignalConstants::HILOS_DISMISS_SESSION_ACK, new DismissSessionAckActionDTO()],
+            'dismiss blocked card' => [HilosSignalConstants::HILOS_DISMISS_ACCOUNT_BLOCKED, new DismissAccountBlockedActionDTO()],
             'impersonate stop' => [HilosSignalConstants::HILOS_IMPERSONATE_STOP, new ImpersonateStopActionDTO()],
         ];
     }
