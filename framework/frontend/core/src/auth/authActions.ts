@@ -87,7 +87,10 @@ import {
   AUTH_ACTION_SECOND_FACTOR_SETUP_START,
 } from './authProtocol.js'
 import { describeOAuthError, startOAuthLogin } from './oauthLogin.js'
-import { runPasskeyDiscoverableLogin } from './passkeyCeremony.js'
+import {
+  runPasskeyDiscoverableLogin,
+  runPasskeyNewAccount,
+} from './passkeyCeremony.js'
 
 /**
  * The states a send can close in (HIL-1044). The code agent's closing step is the
@@ -167,11 +170,13 @@ export interface HilosAuthActions {
    * @param action Whether this is the step's submit or a re-send.
    * @param flow The current flow state (step, intent, identifier kind, channel).
    * @param form The current form values.
+   * @param signal Aborted when the machine calls the dispatch off; only the passkey ending passes one.
    */
   onSubmit(
     action: AuthSubmitAction,
     flow: AuthFlowState,
     form: AuthFlowForm,
+    signal?: AbortSignal,
   ): Promise<AuthFlowSubmitOutcome>
   /**
    * Run an icon method's ceremony — its OAuth redirect or WebAuthn ceremony.
@@ -221,8 +226,8 @@ export interface HilosAuthActions {
 export function createAuthActions(context: HilosAuthContext): HilosAuthActions {
   return {
     onDetect: (identifier) => detectIdentifier(context, identifier),
-    onSubmit: (action, flow, form) =>
-      submitAuthFlow(context, action, flow, form),
+    onSubmit: (action, flow, form, signal) =>
+      submitAuthFlow(context, action, flow, form, signal),
     onMethodAction: (key, form, signal) =>
       runAuthMethod(context, key, form, signal),
     cancelRegistration: () => cancelRegistration(context),
@@ -282,6 +287,7 @@ async function detectIdentifier(
  * @param action Whether this is the step's submit or a re-send of its code.
  * @param flow The current flow state (step, intent, identifier kind, channel).
  * @param form The current form values.
+ * @param signal Aborted when the machine calls the dispatch off; only the passkey ending passes one.
  * @returns The outcome the machine applies (error inline, or the next step).
  */
 function submitAuthFlow(
@@ -289,6 +295,7 @@ function submitAuthFlow(
   action: AuthSubmitAction,
   flow: AuthFlowState,
   form: AuthFlowForm,
+  signal?: AbortSignal,
 ): Promise<AuthFlowSubmitOutcome> {
   // The two errands of a sign-in held on its second factor are named rather than
   // read off the step (HIL-494): neither is what the screen SENDS, and the step
@@ -325,6 +332,13 @@ function submitAuthFlow(
       // with it, for a registration, the hold this address was kept under.
       return startCodeFlow(context, flow, form)
     case 'set_password':
+      // The third ending, a key the device makes now (HIL-1104), is a ceremony
+      // rather than one dispatch, and the machine may call it off. The address in
+      // its payload does not choose an account: on this screen the server reads
+      // the address off the proved hold, and the payload only names which hold.
+      if (action === 'finish_with_passkey') {
+        return runPasskeyNewAccount(context, form.identifier, signal)
+      }
       // The way PAST the password is asked for by name rather than by intent
       // (HIL-1008): it is the same screen and the same proved hold, but a
       // different ending, and reading it off the intent would make the branch

@@ -21,7 +21,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * {@see $publicKeyOptions} to navigator.credentials.create/get and returns
  * {@see $signedChallenge} on confirm (the "client action = loading + signal, never
  * fire-forget" pattern). The {@see $ceremony} discriminator tells the client which
- * ceremony (register / login) the options are for.
+ * ceremony (register / login / new account) the options are for.
  *
  * {@see $publicKeyOptions} is the WebAuthn PublicKeyCredential{Creation,Request}Options
  * wire shape (spec-defined keys, binary fields base64url) — a boundary structure
@@ -30,10 +30,18 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 final class PasskeyOptionsSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     /**
+     * Ceremony of a key that starts a new account (HIL-1104). Not a challenge purpose like the
+     * other two values: its challenge is minted under one of two purposes, one per road, and the
+     * browser has no business knowing which - it runs the same device prompt either way.
+     */
+    public const string CEREMONY_NEW_ACCOUNT = 'new_account';
+
+    /**
      * Creates a passkey options signal payload.
      *
      * @param string $acceptKey Initiating connection accept key the signal targets
-     * @param string $ceremony Ceremony the options are for (WebAuthnChallengeSigner::PURPOSE_REGISTER | PURPOSE_LOGIN)
+     * @param string $ceremony Ceremony the options are for: WebAuthnChallengeSigner::PURPOSE_REGISTER (a key added from
+     *     the profile), WebAuthnChallengeSigner::PURPOSE_LOGIN, or {@see CEREMONY_NEW_ACCOUNT}
      * @param array<string, mixed> $publicKeyOptions WebAuthn publicKey options wire shape for the client
      * @param string $signedChallenge Signed challenge token to hand back on confirm
      */

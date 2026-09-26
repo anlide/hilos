@@ -703,6 +703,17 @@ final class HilosSignalConstants
     public const string HILOS_COMPLETE_REGISTRATION_PASSWORDLESS = 'hilos_complete_registration_passwordless';
 
     /**
+     * Client → server: create an account whose way in is the passkey the device just made
+     * (public, anonymous-reachable, HIL-1104).
+     *
+     * The second submit of the guest's passkey door, after {@see HILOS_REGISTRATION_PASSKEY_OPTIONS}.
+     * Two roads lead here: an address this browser proved with a code - the third ending of the
+     * password screen - and, where the installation allows it, an address nobody proved, which
+     * is then not stored at all.
+     */
+    public const string HILOS_COMPLETE_REGISTRATION_PASSKEY = 'hilos_complete_registration_passkey';
+
+    /**
      * Client → server: send a one-time login code to a phone over a chosen channel
      * (public, anonymous-reachable, HIL-492).
      *
@@ -912,6 +923,17 @@ final class HilosSignalConstants
 
     /** Client → server: submit a WebAuthn registration attestation to store a new passkey (authenticated, HIL-284). */
     public const string HILOS_PASSKEY_REGISTER_CONFIRM = 'hilos_passkey_register_confirm';
+
+    /**
+     * Client → server: request WebAuthn creation options for a NEW account, on the address typed
+     * into the surface (public, anonymous-reachable, HIL-1104).
+     *
+     * The first submit of the guest's passkey door. The server picks the road - this browser's
+     * proven hold on exactly that address, or none - and seals it into the signed challenge that
+     * arrives on {@see HILOS_PASSKEY_OPTIONS}; a refusal is the action's own answer instead, and
+     * then no device prompt opens.
+     */
+    public const string HILOS_REGISTRATION_PASSKEY_OPTIONS = 'hilos_registration_passkey_options';
 
     // ── Hilos sign-in surface: second factor (client → server, HIL-494) ──
     /**

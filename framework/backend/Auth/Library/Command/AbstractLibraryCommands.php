@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Closure;
 use Hilos\Auth\Code\CodeSendTicket;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Auth\Verification\VerificationSendOutcome;
 use Hilos\Constants\HilosSignalConstants;
@@ -22,6 +25,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Database;
+use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -226,6 +230,28 @@ abstract class AbstractLibraryCommands
     }
 
     /**
+     * Whether an identifier of either kind already belongs to an account (HIL-1104).
+     *
+     * The same question as {@see emailBelongsToAccount()}, asked by the first door that meets
+     * both kinds before any code: the passkey door takes whatever stands in the field. A number
+     * belongs to an account when it is somebody's phone identity - the answer the identifier
+     * lookup gives for a number, and the only one a phone registration could collide with.
+     *
+     * @param string $kind Classification of the identifier (see IdentifierDetection::KIND_*)
+     * @param string $normalized Identifier in its canonical form (lowercased address or E.164 number)
+     * @return bool True when an account already holds the identifier
+     * @throws HilosException When the identity lookup fails
+     */
+    protected function identifierBelongsToAccount(string $kind, string $normalized): bool
+    {
+        if ($kind === IdentifierDetection::KIND_PHONE) {
+            return Hilos::$db->identities->findByIdentity(IdentityType::SMS, $normalized) !== null;
+        }
+
+        return $this->emailBelongsToAccount($normalized);
+    }
+
+    /**
      * Derives the default display name from an email address.
      *
      * Uses the local part (everything before the first `@`); the name is not an
@@ -265,6 +291,13 @@ abstract class AbstractLibraryCommands
      * earn. A caller whose hold does not name it says so itself: the way past the password
      * screen (HIL-1008) leaves a hold taken for a password and earns the mailed link.
      *
+     * An ending may owe the account more than its address, and then says so with
+     * `$withAccount` (HIL-1104): the passkey ending writes the key the account signs in with.
+     * It is called with the new user's id INSIDE the transaction, after the address landed
+     * and before the commit, because an account whose key failed to store is an account
+     * nobody can sign into - it has to go the way the loser of the race goes, leaving nothing.
+     * What it throws rolls the landing back and reaches the caller as it was thrown.
+     *
      * The sign-in, the marks on the sockets and the word to the losers are all one frame to
      * the session holder ({@see AbstractUsersLibraryAgent::announceRegistrationLanded()}):
      * the library has no session to raise and no parked socket to reach.
@@ -274,11 +307,13 @@ abstract class AbstractLibraryCommands
      * @param string $displayName Name the new account is created with
      * @param ?string $plainPassword Password the account signs in with, or null for a way in that carries none
      * @param ?string $landAs Identity a secret-less landing earns (see IdentityType), or null to take the hold's own type
+     * @param ?Closure(int): void $withAccount What else the new account is written with, given its user id, or null for nothing
      * @return ?AuthFlowOutcome The taken-address rollback to answer with, or null when the holder answers
      * @throws EmptyValueException When the display name is empty
      * @throws InvalidFormatException When the proven identifier is neither an address nor a number
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
-     * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
+     * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails,
+     *     or whatever `$withAccount` throws
      */
     protected function landRegistration(
         ActingSession $acting,
@@ -286,12 +321,16 @@ abstract class AbstractLibraryCommands
         string $displayName,
         ?string $plainPassword = null,
         ?string $landAs = null,
+        ?Closure $withAccount = null,
     ): ?AuthFlowOutcome {
         Database::transactionStart();
         try {
             $userId = $this->library->createUser($displayName);
             $losers = new RegistrationReservationService()
                 ->confirmProvenAddress($acting->sessionToken, $identifier, $userId, $plainPassword, $landAs);
+            if ($withAccount !== null) {
+                $withAccount($userId);
+            }
             Database::transactionCommit();
         } catch (DuplicateValueException) {
             $this->endFailedLanding();
@@ -321,11 +360,69 @@ abstract class AbstractLibraryCommands
     }
 
     /**
+     * Mints an account that holds no address at all, with the way in the caller writes (HIL-1104).
+     *
+     * The ending of the passkey door's road without a code. Nobody proved the typed address,
+     * and the owner decided on 26.09.2026 that it is NOT stored: an unproven address is read by
+     * nothing - letters, recovery and step-up all go to a confirmed one only - and since an
+     * identity's (type, identifier) pair is unique, storing it would let anybody take a stranger's
+     * address, whose owner would later hear "this address is taken" when registering it. The
+     * typed address only labeled the key in the device prompt and named the account.
+     *
+     * So this is {@see landRegistration()} without the address. The mint and the way in go in ONE
+     * transaction for the same reason the landing's do: an account without its key is an account
+     * nobody will ever sign into. No other browser is told anything - the address was not taken,
+     * so whoever else is registering it is still registering it - and only this browser's own
+     * hold, if it had one on an address it never proved, is dropped: it names a registration this
+     * browser is no longer running.
+     *
+     * The sign-in is a grant rather than a landing: there is no address for the holder to settle
+     * and no loser to tell. It carries the same mark and the same answer the landing carries, so
+     * the surface ends on the same "account created" screen.
+     *
+     * @param ActingSession $acting Browser that asked for the account
+     * @param string $identifier Normalized identifier that was typed, handed to the project's new-member bookkeeping
+     * @param string $displayName Name the new account is created with
+     * @param Closure(int): void $withAccount The way in the new account is written with, given its user id
+     * @throws EmptyValueException When the display name is empty
+     * @throws InvalidArgumentException When the grant frame cannot be named or queued
+     * @throws HilosException When the account, project bookkeeping, or reservation write fails, or whatever
+     *     `$withAccount` throws
+     */
+    protected function landAccountWithoutAddress(
+        ActingSession $acting,
+        string $identifier,
+        string $displayName,
+        Closure $withAccount,
+    ): void {
+        Database::transactionStart();
+        try {
+            $userId = $this->library->createUser($displayName);
+            $withAccount($userId);
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            $this->endFailedLanding();
+
+            throw $failure;
+        }
+
+        $this->library->afterUserCreated($userId, $identifier);
+        new RegistrationReservationService()->release($acting->sessionToken);
+        $this->library->grantSession(
+            $acting,
+            $userId,
+            SessionAck::REGISTERED,
+            AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::REGISTER),
+        );
+    }
+
+    /**
      * Ends the landing transaction after a failure, whichever failure it was.
      *
-     * Every way out of {@see landRegistration()} that is not a commit goes through here,
-     * because the connection under it belongs to the WORKER and outlives the action: the
-     * router answers the caller and keeps the worker running, so a transaction left open
+     * Every way out of {@see landRegistration()} and {@see landAccountWithoutAddress()} that is
+     * not a commit goes through here, because the connection under it belongs to the WORKER and
+     * outlives the action: the router answers the caller and keeps the worker running, so a
+     * transaction left open
      * would quietly take in every later write that worker makes and would in the end be
      * committed by an unrelated BEGIN - together with the orphan account that has no
      * identity, which is the very thing this transaction exists to prevent.

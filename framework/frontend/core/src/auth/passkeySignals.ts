@@ -9,8 +9,8 @@
 // signal instead; the driver hands the options to `navigator.credentials` and
 // returns the signed challenge on confirm (the "client action = loading + signal,
 // never fire-forget" pattern). The `ceremony` discriminator says which ceremony
-// (register / login) the options are for, so the driver matches the reply to its
-// in-flight request. The name is byte-equal to the backend
+// (register / login / new account) the options are for, so the driver matches the
+// reply to its in-flight request. The name is byte-equal to the backend
 // `HilosSignalConstants::HILOS_PASSKEY_OPTIONS` constant.
 import { z } from 'zod'
 
@@ -25,10 +25,19 @@ export const PASSKEY_CEREMONY_REGISTER = 'register'
 /** Ceremony discriminator for a login reply (PHP `WebAuthnChallengeSigner::PURPOSE_LOGIN`). */
 export const PASSKEY_CEREMONY_LOGIN = 'login'
 
-/** Either ceremony, narrow enough that a caller cannot name a third one. */
+/**
+ * Ceremony discriminator for a key that starts a new account (PHP
+ * `PasskeyOptionsSignalData::CEREMONY_NEW_ACCOUNT`, HIL-1104). Not a challenge
+ * purpose: the server mints that challenge under one of two, one per road, and
+ * the browser runs the same device prompt either way.
+ */
+export const PASSKEY_CEREMONY_NEW_ACCOUNT = 'new_account'
+
+/** One of the three ceremonies, narrow enough that a caller cannot name a fourth. */
 export type PasskeyCeremony =
   | typeof PASSKEY_CEREMONY_LOGIN
   | typeof PASSKEY_CEREMONY_REGISTER
+  | typeof PASSKEY_CEREMONY_NEW_ACCOUNT
 
 /**
  * The options-reply payload: the ceremony discriminator, the opaque WebAuthn

@@ -314,6 +314,21 @@ export async function finishWithoutPassword(page: Page): Promise<void> {
 }
 
 /**
+ * Take the passkey ending of the registration password step (HIL-1104).
+ *
+ * The third ending of the same screen: the device makes a key, and the account is
+ * created on it with the proved address beside it and no password. The key comes
+ * from whatever authenticator the page carries - a spec attaches a virtual one
+ * first - and it settles where the other two endings settle, on the same landing.
+ *
+ * @param page The page sitting on the registration password step.
+ */
+export async function finishWithPasskey(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('auth-complete-passkey'))
+  await waitDoneSettled(page)
+}
+
+/**
  * Register an account with NO password end to end, the way somebody who means to
  * sign in by a mailed link does (HIL-1008): submit the address, confirm the code,
  * then take the exit instead of choosing a password.

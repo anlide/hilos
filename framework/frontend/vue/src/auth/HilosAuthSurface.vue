@@ -17,6 +17,10 @@ channel controls render `flow.channels`, and the main control is whatever
 `primaryAction` says it is. That is what lets HIL-427 ship the enabled set from
 settings without touching this file.
 
+The password screen of a registration offers a passkey ending the mockup does
+not draw yet (HIL-1104): its place and its words are the owner's decision, kept
+in design debt D-132 until the mockup catches up.
+
 Bootstrap classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
 import {
@@ -47,6 +51,7 @@ import {
   formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
+  isPasskeySupported,
   MAGIC_LINK_FLOW_METHOD,
   oauthTrip,
   oauthTripMessage,
@@ -220,6 +225,10 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
  */
 const SET_PASSWORD_LEAD_WITH_EXIT =
   'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.'
+const SET_PASSWORD_LEAD_WITH_PASSKEY =
+  'Your address is confirmed. Choose a password, or create the account with a passkey instead.'
+const SET_PASSWORD_LEAD_WITH_BOTH =
+  'Your address is confirmed. Choose a password, or create the account without one and sign in with a passkey or a mailed link.'
 const SET_PASSWORD_LEAD_PLAIN =
   'Your address is confirmed. Choose a password — your account is created when you save it.'
 const SET_PASSWORD_LEAD_RECOVERY =
@@ -322,6 +331,7 @@ const pending = useSignal(auth.pending)
 const error = useSignal(auth.error)
 const submittable = useSignal(auth.submittable)
 const canFinishWithoutPassword = useSignal(auth.canFinishWithoutPassword)
+const canFinishWithPasskey = useSignal(auth.canFinishWithPasskey)
 const icons = useSignal(auth.icons)
 const methods = useSignal(auth.methods)
 const channels = useSignal(auth.channels)
@@ -407,15 +417,28 @@ const showFinishWithoutPassword = computed(
   () => canFinishWithoutPassword.value && codeDelivery.value.email,
 )
 
-// The password screen says which of its two endings this is. A recovery is
+// The passkey ending, gated by its two halves the same way (HIL-1104): the
+// machine knows whether the installation offers passkeys right now, and only
+// this browser knows whether it can make one. No platform key is asked for — the
+// account has its confirmed address, so a phone or a security key serves too.
+const showFinishWithPasskey = computed(
+  () => canFinishWithPasskey.value && isPasskeySupported(),
+)
+
+// The password screen says which of its endings this is. A recovery is
 // replacing a password that exists; a registration is about to create the
 // account, and the sentence has to say so before the button does (HIL-825).
-// A registration that is ALSO offered the way past the password says so here
-// too (HIL-1008): the sentence is the only place the second road is explained,
-// and promising it where the exit is not offered would be a lie.
+// A registration that is ALSO offered a way past the password says so here
+// too (HIL-1008, HIL-1104): the sentence is the only place the other roads are
+// explained, and promising one that is not offered would be a lie.
 const setPasswordLead = computed(() => {
   if (state.value.intent !== 'register') {
     return SET_PASSWORD_LEAD_RECOVERY
+  }
+  if (showFinishWithPasskey.value) {
+    return showFinishWithoutPassword.value
+      ? SET_PASSWORD_LEAD_WITH_BOTH
+      : SET_PASSWORD_LEAD_WITH_PASSKEY
   }
 
   return showFinishWithoutPassword.value
@@ -424,13 +447,13 @@ const setPasswordLead = computed(() => {
 })
 
 // The twin that holds the lead's height (HIL-1101, styling-rules.md "The room
-// a live message takes"). For a registration the twin says the longer of the
-// two sentences so neither arrival nor loss of the exit moves the fields under
-// it; for a recovery the exit is never offered, so the twin says the recovery
-// sentence itself.
+// a live message takes"). For a registration the twin says the longest of the
+// sentences so no ending arriving or leaving moves the fields under it; for a
+// recovery no ending is ever offered, so the twin says the recovery sentence
+// itself.
 const setPasswordLeadIdle = computed(() =>
   state.value.intent === 'register'
-    ? SET_PASSWORD_LEAD_WITH_EXIT
+    ? SET_PASSWORD_LEAD_WITH_BOTH
     : SET_PASSWORD_LEAD_RECOVERY,
 )
 
@@ -951,6 +974,14 @@ function cancelRegistration(): void {
 // exactly as the password save's does.
 function completeWithoutPassword(): void {
   void auth.finishWithoutPassword()
+}
+
+// The third ending: the account is created on a key the device makes now
+// (HIL-1104). The machine runs it as a ceremony, so "Cancel registration" can
+// still close the device prompt, and a refusal lands in the error row as the
+// other two endings' do.
+function completeWithPasskey(): void {
+  void auth.finishWithPasskey()
 }
 
 // The way back into a code this browser is already holding, offered by the
@@ -1482,11 +1513,11 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- The password step at its tallest: the longer of its two leads, the
+          <!-- The password step at its tallest: the longest of its leads, the
         field with its hint, the refusal row, the main button and the tail. -->
           <div class="d-flex flex-column">
             <p class="text-body-secondary small mb-3">
-              {{ SET_PASSWORD_LEAD_WITH_EXIT }}
+              {{ SET_PASSWORD_LEAD_WITH_BOTH }}
             </p>
             <div class="mb-3">
               <label class="form-label small fw-semibold">Password</label>
@@ -2230,11 +2261,30 @@ onUnmounted(() => {
             </LoadingButton>
 
             <HilosAuthStepTail data-id="auth-step-tail">
-              <!-- Two ways to FINISH the registration, then the way to drop it, and
-          the order carries that meaning (HIL-1008). Unemphasized rather than a
-          second primary: choosing a password is still the road this screen is
-          named after. The slot holds its room in both states so neither arrival
-          nor loss of the exit moves the cancel button (HIL-1101). -->
+              <!-- The ways to FINISH the registration, then the way to drop it, and
+          the order carries that meaning (HIL-1008): first the endings, the key
+          above the link (HIL-1104, D-132). Unemphasized rather than a second
+          primary: choosing a password is still the road this screen is named
+          after. Each slot holds its room in both states, so no ending arriving
+          or leaving moves the cancel button (HIL-1101, D-125); with the key the
+          tail carries three rows, which is the room it always held. -->
+              <button
+                v-if="showFinishWithPasskey"
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                :disabled="pending"
+                data-id="auth-complete-passkey"
+                @click="completeWithPasskey()"
+              >
+                Create it with a passkey
+              </button>
+              <span
+                v-else-if="state.intent === 'register'"
+                class="btn btn-link btn-sm w-100 invisible"
+                aria-hidden="true"
+                data-id="auth-complete-passkey-idle"
+                >Create it with a passkey</span
+              >
               <button
                 v-if="showFinishWithoutPassword"
                 type="button"

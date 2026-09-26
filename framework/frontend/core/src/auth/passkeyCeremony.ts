@@ -15,16 +15,24 @@
 // token from the options signal and handing it back on confirm; the ceremony
 // discriminator matches the signal to the in-flight request (single-flight — the
 // UI blocks a second ceremony while one runs).
+//
+// The third ceremony, a key that starts a new account (HIL-1104), is the one whose
+// options action can REFUSE: an address that is somebody's, a hold that ran out, an
+// installation that wants the address proved first. The refusal is the action's own
+// answer, and it arrives instead of the signal — so no device prompt ever opens for
+// an account the server was never going to create.
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
 import { type HilosAuthContext } from './authContext.js'
 import { type AuthFlowSubmitOutcome } from './authFlow.js'
 import { authFlowOutcomeOf, authFlowOutcomeSchema } from './authFlowReply.js'
 import {
+  AUTH_ACTION_COMPLETE_REGISTRATION_PASSKEY,
   AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
   AUTH_ACTION_PASSKEY_LOGIN_CONFIRM,
   AUTH_ACTION_PASSKEY_REGISTER_CONFIRM,
   AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+  AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
 } from './authProtocol.js'
 import {
   createPasskey,
@@ -35,6 +43,7 @@ import {
 } from './passkey.js'
 import {
   PASSKEY_CEREMONY_LOGIN,
+  PASSKEY_CEREMONY_NEW_ACCOUNT,
   PASSKEY_CEREMONY_REGISTER,
   PASSKEY_OPTIONS_SIGNAL,
   passkeyOptionsSignalSchema,
@@ -54,7 +63,25 @@ export interface HilosPasskeyCeremony {
   ): Promise<AuthFlowSubmitOutcome>
   /** Run the register ceremony for the signed-in user (HIL-284/418). */
   runPasskeyRegister(): Promise<AuthFlowSubmitOutcome>
+  /**
+   * Create an account on a key the device makes now (HIL-1104).
+   *
+   * @param identifier The identifier as it stands in the field.
+   * @param abort Aborted when the person calls the registration off.
+   */
+  runPasskeyNewAccount(
+    identifier: string,
+    abort?: AbortSignal,
+  ): Promise<AuthFlowSubmitOutcome>
 }
+
+/**
+ * What an options action ended in: the options the device prompt runs on, or the
+ * action's own answer when it refused to mint any (HIL-1104).
+ */
+type PasskeyOptionsResult =
+  | { readonly options: PasskeyOptionsSignalData }
+  | { readonly answered: AuthFlowSubmitOutcome }
 
 /** Shown when the browser has no WebAuthn support. */
 const PASSKEY_UNSUPPORTED_MESSAGE = 'This browser does not support passkeys.'
@@ -82,6 +109,11 @@ const PASSKEY_CANCELED_REGISTER_MESSAGE =
  * matches the ceremony discriminator to this request (single-flight). Rejects if
  * the action itself fails before any signal lands.
  *
+ * An options action may also ANSWER instead of signalling (HIL-1104): the door of a
+ * new account refuses before the device prompt, and its refusal is the action's
+ * reply. A reply ends the wait with that outcome; an action that answers nothing -
+ * the other two always, this one on success - leaves the wait on the signal.
+ *
  * The abort has to reach THIS wait too, not only the browser call after it
  * (HIL-418): the options round-trip is where a slow server leaves the ceremony
  * parked longest, and a cancel that only unsubscribed would leave the caller
@@ -100,7 +132,7 @@ function requestOptions(
   payload: Record<string, string>,
   ceremony: PasskeyCeremony,
   abort?: AbortSignal,
-): Promise<PasskeyOptionsSignalData> {
+): Promise<PasskeyOptionsResult> {
   return new Promise((resolve, reject) => {
     if (abort?.aborted === true) {
       reject(abort.reason as unknown)
@@ -140,16 +172,23 @@ function requestOptions(
           return
         }
         if (claim()) {
-          resolve(data)
+          resolve({ options: data })
         }
       },
     )
     abort?.addEventListener('abort', onAbort)
-    context.actions.dispatch(action, payload).done.catch((error: unknown) => {
-      if (claim()) {
-        reject(error)
-      }
-    })
+    context.actions
+      .dispatch(action, payload, { replySchema: authFlowOutcomeSchema })
+      .done.then(({ reply }) => {
+        if (reply !== undefined && claim()) {
+          resolve({ answered: authFlowOutcomeOf(reply) })
+        }
+      })
+      .catch((error: unknown) => {
+        if (claim()) {
+          reject(error)
+        }
+      })
   })
 }
 
@@ -185,13 +224,17 @@ export async function runPasskeyDiscoverableLogin(
     return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
   }
   try {
-    const options = await requestOptions(
+    const requested = await requestOptions(
       context,
       AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
       {},
       PASSKEY_CEREMONY_LOGIN,
       abort,
     )
+    if ('answered' in requested) {
+      return requested.answered
+    }
+    const options = requested.options
     const assertion = await getPasskey(
       options.publicKeyOptions as unknown as PasskeyRequestOptions,
       abort,
@@ -240,12 +283,16 @@ async function runPasskeyRegister(
     return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
   }
   try {
-    const options = await requestOptions(
+    const requested = await requestOptions(
       context,
       AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
       {},
       PASSKEY_CEREMONY_REGISTER,
     )
+    if ('answered' in requested) {
+      return requested.answered
+    }
+    const options = requested.options
     const attestation = await createPasskey(
       options.publicKeyOptions as unknown as PasskeyCreationOptions,
     )
@@ -267,6 +314,81 @@ async function runPasskeyRegister(
 }
 
 /**
+ * Create an account on a key the device makes now — the guest's passkey door
+ * (HIL-1104): ask the options for the identifier in the field, run the WebAuthn
+ * attestation, and send the key with the same identifier.
+ *
+ * The server picks the road on the first submit - the address this browser proved
+ * with a code, or none where the installation allows it - and every refusal is the
+ * answer of that submit, handed on as it came; the device prompt then never opens.
+ * On the road with a code the identifier only names which proved hold is meant: the
+ * address itself is read off that hold.
+ *
+ * A success answers nothing here: the session holder raises the session and moves
+ * the surface to "account created". The confirm is asked for a reply because a
+ * refusal - the hold ran out, the address became somebody's while the prompt was
+ * open - comes back as one.
+ *
+ * Calling the registration off reaches every stage, as it does for the discoverable
+ * login: the options wait, the device prompt, and the last check before the key is
+ * sent. A key the person made after the cancel is never sent, because it would
+ * create the account they just refused.
+ *
+ * @param context The project auth context the wire dispatches over.
+ * @param identifier The identifier as it stands in the field.
+ * @param abort Aborted when the person calls the registration off.
+ * @returns The outcome the machine applies.
+ */
+export async function runPasskeyNewAccount(
+  context: HilosAuthContext,
+  identifier: string,
+  abort?: AbortSignal,
+): Promise<AuthFlowSubmitOutcome> {
+  if (!isPasskeySupported()) {
+    return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
+  }
+  try {
+    const requested = await requestOptions(
+      context,
+      AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
+      { identifier },
+      PASSKEY_CEREMONY_NEW_ACCOUNT,
+      abort,
+    )
+    if ('answered' in requested) {
+      return requested.answered
+    }
+    const options = requested.options
+    const attestation = await createPasskey(
+      options.publicKeyOptions as unknown as PasskeyCreationOptions,
+      abort,
+    )
+    // The last place a cancel can still stop the account: past this line the key
+    // is on its way and the server creates what it names.
+    abort?.throwIfAborted()
+    const { reply } = await context.actions.dispatch(
+      AUTH_ACTION_COMPLETE_REGISTRATION_PASSKEY,
+      {
+        identifier,
+        signedChallenge: options.signedChallenge,
+        attestationObject: attestation.attestationObject,
+        clientDataJson: attestation.clientDataJson,
+        transports: attestation.transports,
+        userAgent: navigator.userAgent,
+      },
+      { replySchema: authFlowOutcomeSchema },
+    ).done
+
+    return authFlowOutcomeOf(reply)
+  } catch (error) {
+    return {
+      ok: false,
+      message: describePasskeyError(error, PASSKEY_CEREMONY_NEW_ACCOUNT),
+    }
+  }
+}
+
+/**
  * Map a failed passkey ceremony to an inline message: the backend reason for a
  * rejected action, a friendly phrasing for the two common authenticator
  * outcomes, and a generic fallback otherwise.
@@ -283,9 +405,9 @@ function describePasskeyError(
   }
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'AbortError') {
-      return ceremony === PASSKEY_CEREMONY_REGISTER
-        ? PASSKEY_CANCELED_REGISTER_MESSAGE
-        : PASSKEY_CANCELED_LOGIN_MESSAGE
+      return ceremony === PASSKEY_CEREMONY_LOGIN
+        ? PASSKEY_CANCELED_LOGIN_MESSAGE
+        : PASSKEY_CANCELED_REGISTER_MESSAGE
     }
     if (error.name === 'InvalidStateError') {
       return 'This device already has a passkey for this account.'
@@ -297,8 +419,9 @@ function describePasskeyError(
 
 /**
  * The passkey half of one sign-in surface and of the profile: the usernameless
- * login the surface offers as an icon method, and the registration the profile's
- * "Add a passkey" button runs (HIL-284/400/418).
+ * login the surface offers as an icon method, the registration the profile's
+ * "Add a passkey" button runs (HIL-284/400/418), and the account a guest starts
+ * on a key (HIL-1104).
  *
  * @param context The project auth context the wire dispatches over.
  * @returns The bound ceremonies a surface and a profile view call.
@@ -310,5 +433,7 @@ export function createPasskeyCeremony(
     runPasskeyDiscoverableLogin: (abort) =>
       runPasskeyDiscoverableLogin(context, abort),
     runPasskeyRegister: () => runPasskeyRegister(context),
+    runPasskeyNewAccount: (identifier, abort) =>
+      runPasskeyNewAccount(context, identifier, abort),
   }
 }

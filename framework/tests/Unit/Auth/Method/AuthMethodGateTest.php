@@ -59,6 +59,8 @@ final class AuthMethodGateTest extends TestCase
             [HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM, AuthMethodKey::PASSKEY],
             [HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS, AuthMethodKey::PASSKEY],
             [HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM, AuthMethodKey::PASSKEY],
+            [HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS, AuthMethodKey::PASSKEY],
+            [HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY, AuthMethodKey::PASSKEY],
         ];
     }
 

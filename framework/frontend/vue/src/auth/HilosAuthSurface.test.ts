@@ -19,6 +19,7 @@ import {
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_LOGIN,
+  AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
@@ -1408,7 +1409,7 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
 
     const exit = wrapper.find('[data-id="auth-complete-passwordless"]')
@@ -1452,7 +1453,7 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
   })
 
@@ -1487,7 +1488,7 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
   })
 
@@ -1512,7 +1513,7 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
 
     context.scopes.session.data.set('authMethods', [
@@ -1535,7 +1536,7 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
 
     context.scopes.session.data.set('authMethods', [
@@ -1556,7 +1557,7 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
   })
 
@@ -2260,5 +2261,147 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     )
     const plaque = wrapper.find('form .bg-body-tertiary')
     expect(plaque.find('i').classes()).toContain('bi-envelope')
+  })
+})
+
+describe('HilosAuthSurface offers the passkey ending of a registration (HIL-1104)', () => {
+  /** Make this browser one that can run WebAuthn, the half of the gate the view asks. */
+  function supportPasskeys(): void {
+    ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential =
+      class {}
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: { create: vi.fn(), get: vi.fn() },
+    })
+  }
+
+  afterEach(() => {
+    delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+    delete (navigator as { credentials?: unknown }).credentials
+  })
+
+  it('draws the key above the link, says both in the lead, and runs the ending on a click', async () => {
+    supportPasskeys()
+    const { context, dispatched } = magicLinkContext()
+    context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+      { key: 'passkey', name: null },
+      { key: 'magic_link', name: null },
+    ])
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    const tail = wrapper.find('[data-id="auth-step-tail"]')
+    const order = tail
+      .findAll('[data-id]')
+      .map((node) => node.attributes('data-id'))
+    expect(order).toEqual([
+      'auth-complete-passkey',
+      'auth-complete-passwordless',
+      'auth-cancel-registration',
+    ])
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
+    )
+
+    await wrapper.find('[data-id="auth-complete-passkey"]').trigger('click')
+    await flush(wrapper)
+
+    expect(dispatched.map((call) => call.action)).toEqual([
+      AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
+    ])
+    expect(dispatched[0]?.payload).toEqual({
+      identifier: 'newcomer@example.com',
+    })
+  })
+
+  it('names only the key when no link can be mailed', async () => {
+    supportPasskeys()
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+      { key: 'passkey', name: null },
+    ])
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-complete-passkey"]').exists()).toBe(
+      true,
+    )
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless-idle"]').exists(),
+    ).toBe(true)
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
+      'Choose a password, or create the account with a passkey instead.',
+    )
+  })
+
+  it("holds the key's room with a twin in a browser that cannot make one", async () => {
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+      { key: 'passkey', name: null },
+      { key: 'magic_link', name: null },
+    ])
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-complete-passkey"]').exists()).toBe(
+      false,
+    )
+    const idle = wrapper.find('[data-id="auth-complete-passkey-idle"]')
+    expect(idle.exists()).toBe(true)
+    expect(idle.attributes('aria-hidden')).toBe('true')
+    expect(idle.classes()).toContain('invisible')
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('holds it too where passkeys are off, and not at all on a recovery', async () => {
+    supportPasskeys()
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-complete-passkey"]').exists()).toBe(
+      false,
+    )
+    expect(
+      wrapper.find('[data-id="auth-complete-passkey-idle"]').exists(),
+    ).toBe(true)
+
+    const recovery = magicLinkContext().context
+    recovery.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'recovery',
+    })
+    const recovering = mount(HilosAuthSurface, {
+      props: { context: recovery },
+    })
+    await flush(recovering)
+
+    expect(
+      recovering.find('[data-id="auth-complete-passkey-idle"]').exists(),
+    ).toBe(false)
+    expect(recovering.find('[data-id="auth-complete-passkey"]').exists()).toBe(
+      false,
+    )
   })
 })

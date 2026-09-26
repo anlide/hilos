@@ -41,6 +41,7 @@ use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CancelSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CompleteRegistrationPasskeyActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationPasswordlessActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
@@ -69,6 +70,7 @@ use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
+use Hilos\Auth\Library\DTO\RegistrationPasskeyOptionsActionDTO;
 use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\RequestPhoneCodeActionDTO;
@@ -232,6 +234,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION => CompleteRegistrationActionDTO::class,
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS =>
             CompleteRegistrationPasswordlessActionDTO::class,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY => CompleteRegistrationPasskeyActionDTO::class,
         HilosSignalConstants::HILOS_CANCEL_REGISTRATION => CancelRegistrationActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
@@ -243,6 +246,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH => LinkOAuthAfterReauthActionDTO::class,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS => PasskeyRegisterOptionsActionDTO::class,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
+        HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS => RegistrationPasskeyOptionsActionDTO::class,
         HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS =>
             PasskeyDiscoverableLoginOptionsActionDTO::class,
         HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
@@ -305,6 +309,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      *
      * Account deletion adds its start by the same rule (HIL-302): it guesses the code the
      * address received. Opening the window, sending the code and calling it off guess nothing.
+     *
+     * The passkey door of a new account adds both its submits (HIL-1104): the first answers
+     * whether an identifier is somebody's, which is what the lookup is throttled for, and the
+     * second creates an account.
      */
     public const array THROTTLED_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
@@ -317,6 +325,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_CONFIRM_REGISTER,
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS,
+        HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY,
         HilosSignalConstants::HILOS_REQUEST_PHONE_CODE,
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE,
         HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
@@ -1124,6 +1134,20 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 }
 
                 return $this->passwordCommands()->completeRegistrationPasswordless($acceptKey, $dto);
+
+            case HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS:
+                if (!$dto instanceof RegistrationPasskeyOptionsActionDTO) {
+                    throw new InvalidActionPayloadException($action, RegistrationPasskeyOptionsActionDTO::class, $dto);
+                }
+
+                return $this->passkeyCommands()->registrationOptions($acceptKey, $dto);
+
+            case HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY:
+                if (!$dto instanceof CompleteRegistrationPasskeyActionDTO) {
+                    throw new InvalidActionPayloadException($action, CompleteRegistrationPasskeyActionDTO::class, $dto);
+                }
+
+                return $this->passkeyCommands()->completeRegistration($acceptKey, $dto);
 
             case HilosSignalConstants::HILOS_CANCEL_REGISTRATION:
                 if (!$dto instanceof CancelRegistrationActionDTO) {

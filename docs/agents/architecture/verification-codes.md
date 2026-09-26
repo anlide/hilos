@@ -278,15 +278,45 @@ writes what it sends, and only where an installation asked it to.
 
 ## A Registration Without a Code: the Passkey Policy
 
-Every registration spends a code before the account exists: both endings of
-the registration flow take a PROVEN address reservation. One installation
-setting lets exactly one registration skip that — an account whose only way in
-is a passkey, created before its address is confirmed (HIL-1105).
+Every registration spends a code before the account exists: the endings of
+the registration password screen take a PROVEN address reservation. One
+installation setting lets exactly one registration skip that — an account whose
+only way in is a passkey, created before its address is confirmed (HIL-1105).
+
+**The door is two actions of the users library** (HIL-1104), both a guest's —
+throttled, closed by the passkey method lock, outside `AUTH_ACTIONS`:
+`hilos_registration_passkey_options { identifier }` mints the creation options,
+and `hilos_complete_registration_passkey { identifier, signedChallenge,
+attestationObject, clientDataJson, transports, userAgent }` stores the key and
+creates the account. The first action picks the road and seals it into the
+signed challenge (`new_account_proven` / `new_account_unproven`); the second reads
+it back with `WebAuthnChallengeSigner::verifyOneOf()` and does not pick again.
+Every refusal is the first action's own answer, before the device prompt opens —
+a refusal after `navigator.credentials.create()` would leave a key in the
+person's keychain the server never heard of — and the second action asks the
+same questions again, because seconds pass between the two.
+
+- **The road with a code**: this browser's proven reservation names exactly the
+  typed address. It is the third ending of the password screen ("Create it with a
+  passkey"), and the setting is not read. The account lands through the same
+  landing as a password: the address as a confirmed `magic_link` identity, and
+  the passkey identity with its credential written inside the same transaction.
+  A reservation that ran out while the prompt was open answers "expired"; it does
+  not quietly become the other road.
+- **The road without a code**: anything else, open only while the setting says
+  yes, and refused with `passkey_address_unproven` otherwise. The account is the
+  user and the passkey, and **the typed address is not stored** (owner's decision,
+  26.09.2026): nothing reads an unconfirmed address — letters, recovery and
+  step-up go to a confirmed one only — and since an identity's `(type,
+  identifier)` pair is unique, storing it would let anybody take a stranger's
+  address, whose owner would then hear "this address is taken". The address only
+  labels the key in the device prompt and names the account. This browser's own
+  reservation, if it had one, is released; nobody else's is touched.
 
 - **The setting** is `auth.passkey.allow_unproven_address`
   (`PasskeyAddressPolicy::SETTING_KEY`), a boolean in the sign-in method catalog
   fragment (`AuthMethodSettingsCatalog`), **off by default**. The address is the
-  email or the phone the account is registered on; one setting answers for both.
+  email or the phone typed on the sign-in surface; one setting answers for both.
 - **It decides the creation of an account and nothing else.** Turning it off
   stops new accounts only: an account already created without a confirmed
   address keeps signing in with its passkey, because signing in does not read
@@ -297,10 +327,11 @@ is a passkey, created before its address is confirmed (HIL-1105).
   answer no (the last with a warning in the log). It is read on every call,
   never cached. A wrong no only asks for a confirmed address first, which is
   the path every installation had before the setting; a wrong yes would let an
-  account start on an address nobody proved.
-- **Its one reader on the server is the door that registers an account by
-  passkey**, at the moment that door takes the reservation (HIL-1104): a proven
-  reservation passes always, an unproven one only while the setting says yes.
+  account start without a confirmed address.
+- **Its readers on the server are the two actions of that door**, each at the
+  moment it finds this browser's proven reservation on the typed address or its
+  absence: a proven reservation passes always, none only while the setting says
+  yes.
   Not the method gate (it sees an action name, not a reservation) and not
   identifier detection (a hint the action can arrive without).
 - **Every tab gets the value with the sign-in method set**, never apart from

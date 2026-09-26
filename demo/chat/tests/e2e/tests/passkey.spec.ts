@@ -1,6 +1,17 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { clickSubmit, login, logout, signUp } from '../helpers/session'
+import {
+  clickSubmit,
+  continueFromDone,
+  finishWithPasskey,
+  login,
+  logout,
+  signUp,
+  submitRegistration,
+  submitRegistrationCode,
+  uniqueEmail,
+} from '../helpers/session'
+import { readRegisterCode } from '../helpers/mail'
 import { gotoPage } from '../helpers/page'
 
 // Passkey (WebAuthn) e2e (HIL-284): the register -> login round-trip driven
@@ -39,6 +50,12 @@ import { gotoPage } from '../helpers/page'
 // ticket came from, checked on the surface: the Unlink button has to be
 // clickable while another sign-in method remains, and the removal has to take
 // the stored credential with it rather than only the row on the screen.
+//
+// HIL-1104 adds the fifth: an account STARTED on a passkey. A guest registers,
+// proves the address with the mailed code, and on the password screen takes
+// "Create it with a passkey" instead of choosing a password. The key the virtual
+// authenticator makes there is the account's way in, which is what the leg ends
+// on: signed out, the same key opens the account from an empty field.
 
 /**
  * Attach a CDP virtual platform authenticator to the page so
@@ -121,6 +138,43 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   // user's name renders with no navigation.
   await expect(page.getByTestId('profile-name')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/profile')
+})
+
+test('creates an account on a passkey from the password screen and signs back in with it', async ({
+  page,
+}) => {
+  await addVirtualAuthenticator(page)
+  const email = uniqueEmail()
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  await submitRegistration(page, email)
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  // The third ending of the password screen: no password is typed at all.
+  await finishWithPasskey(page)
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
+  await continueFromDone(page)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+
+  // The account signs in with the key the device just made: the profile lists it
+  // by device, beside the confirmed address it was registered on.
+  const passkeyRow = page
+    .getByTestId('profile-identity-item')
+    .filter({ has: page.getByTestId('identity-passkey-added') })
+  await expect(passkeyRow).toHaveCount(1)
+
+  await logout(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // Signed out, the same key opens the account from an empty field.
+  const discoverable = page.getByTestId('auth-icon-passkey')
+  await discoverable.scrollIntoViewIfNeeded()
+  await expect(discoverable).toBeEnabled()
+  await discoverable.click()
+
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
 })
 
 test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {

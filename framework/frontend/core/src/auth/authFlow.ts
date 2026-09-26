@@ -449,17 +449,19 @@ export type AuthFlowScreen =
   | 'done_signed_in'
 
 /**
- * What a submit dispatch is: the step's form, a code re-send, the way past the
- * password, or one of the two errands of a sign-in held on its second factor
- * (HIL-494) — asking the server for the secret of the enrolment on the way in,
- * and letting the held sign-in go when the person steps back from it. What a
- * second-factor screen SENDS is its submit, told apart by the step like every
- * other screen's.
+ * What a submit dispatch is: the step's form, a code re-send, one of the two
+ * ways past the password - no password at all, or a passkey the device makes
+ * now (HIL-1104) - or one of the two errands of a sign-in held on its second
+ * factor (HIL-494) — asking the server for the secret of the enrolment on the
+ * way in, and letting the held sign-in go when the person steps back from it.
+ * What a second-factor screen SENDS is its submit, told apart by the step like
+ * every other screen's.
  */
 export type AuthSubmitAction =
   | 'submit'
   | 'resend'
   | 'finish_without_password'
+  | 'finish_with_passkey'
   | 'second_factor_setup_start'
   | 'second_factor_cancel'
 
@@ -499,11 +501,16 @@ export interface AuthFlowOptions {
    * @param action What is being dispatched.
    * @param flow The current flow state (step/intent/channel tell it what to do).
    * @param form The current form values.
+   * @param signal Passed only to a dispatch the machine can call off - the
+   *   passkey ending of a registration (HIL-1104) - and aborted when it does; a
+   *   driver MUST hand it to the browser call it awaits, as with
+   *   {@link AuthFlowOptions.onMethodAction}.
    */
   onSubmit: (
     action: AuthSubmitAction,
     flow: AuthFlowState,
     form: AuthFlowForm,
+    signal?: AbortSignal,
   ) => Promise<AuthFlowSubmitOutcome>
   /**
    * Run an icon method's registered behavior — its OAuth redirect or WebAuthn
@@ -572,6 +579,15 @@ export interface AuthFlow {
    * account nobody can get back into.
    */
   readonly canFinishWithoutPassword: ReadonlySignal<boolean>
+  /**
+   * Whether the password screen may offer the passkey ending — creating the
+   * account on a key the device makes now (HIL-1104).
+   *
+   * Half of the gate and the half the machine owns: a registration on the password
+   * screen, with the passkey method in the live set. The other half is whether
+   * this browser can run WebAuthn at all, which the view asks beside this signal.
+   */
+  readonly canFinishWithPasskey: ReadonlySignal<boolean>
   /** The icon methods currently visible against the identifier field. */
   readonly icons: ReadonlySignal<readonly AuthFlowMethodDescriptor[]>
   /** The code channels applicable to the current identifier kind. */
@@ -702,6 +718,17 @@ export interface AuthFlow {
    */
   finishWithoutPassword(): Promise<void>
   /**
+   * Finish a proved registration on a passkey the device makes now — the third
+   * ending of the password screen (HIL-1104).
+   *
+   * The machine's own dispatch for the reason {@link finishWithoutPassword} is: a
+   * refusal is applied inline, with its rollback. It is a CEREMONY as well - the
+   * device prompt is open while it runs - so it is registered as one, and calling
+   * the registration off ({@link backToIdentifier}) ends it at whatever stage it
+   * is: a key made after that would create the account the person refused.
+   */
+  finishWithPasskey(): Promise<void>
+  /**
    * Re-send the active code. Blocked (a silent no-op) until
    * {@link resendAvailableAt}; the backend re-arms the gate via
    * `resendAt`. A no-op while pending.
@@ -764,6 +791,10 @@ export interface AuthFlow {
    * next handshake would put the person back on its code. It is told and not
    * waited for: the person is already on the field, and a failure to forget the
    * wait is nothing they can act on.
+   *
+   * A ceremony still running under the screen - the passkey ending of a
+   * registration (HIL-1104) - is ended first, device prompt included, and
+   * whatever it would have answered is dropped.
    */
   backToIdentifier(): void
   /**
@@ -1610,6 +1641,18 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         .some((descriptor) => descriptor.key === MAGIC_LINK_METHOD_KEY)
     )
   })
+  // The key is not a way back in that has to exist beforehand, as the mailed link
+  // is for the exit above: the key IS the way in the ending creates. So all the
+  // machine asks is whether the installation offers passkeys right now.
+  const canFinishWithPasskey = computedSignal(() => {
+    const state = flow.get()
+
+    return (
+      state.step === 'set_password' &&
+      state.intent === 'register' &&
+      methods.get().some((descriptor) => descriptor.key === PASSKEY_METHOD_KEY)
+    )
+  })
   const primaryAction = computedSignal<AuthFlowPrimaryAction>(() => {
     const state = flow.get()
     switch (state.step) {
@@ -2268,6 +2311,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     error,
     submittable,
     canFinishWithoutPassword,
+    canFinishWithPasskey,
     icons,
     channels,
     primaryAction,
@@ -2442,6 +2486,34 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         options.onSubmit('finish_without_password', flow.get(), form.get()),
       )
     },
+    async finishWithPasskey(): Promise<void> {
+      if (pending.get() || !canFinishWithPasskey.get()) {
+        return
+      }
+      // Registered as the consent screen registers the send it starts, so a
+      // call-off reaches the device prompt and a late key is dropped by the
+      // generation guard (HIL-1104).
+      const run: CeremonyRun = {
+        key: PASSKEY_METHOD_KEY,
+        controller: new AbortController(),
+        canceled: null,
+      }
+      ceremony = run
+      try {
+        await dispatch(() =>
+          options.onSubmit(
+            'finish_with_passkey',
+            flow.get(),
+            form.get(),
+            run.controller.signal,
+          ),
+        )
+      } finally {
+        if (ceremony === run) {
+          ceremony = null
+        }
+      }
+    },
     async resend(): Promise<void> {
       if (pending.get() || isResendBlocked()) {
         return
@@ -2609,6 +2681,18 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     },
     backToIdentifier(): void {
       const leaving = flow.get()
+      if (ceremony !== null) {
+        // Calling a registration off while its passkey ending runs (HIL-1104) has
+        // to END the ceremony, as a cancel and a reset do: an open device prompt a
+        // late finger satisfies would create the account just refused. The
+        // generation moves so that ceremony's outcome is orphaned, and pending is
+        // released because it may never settle.
+        ceremony.controller.abort()
+        ceremony.canceled = { at: Date.now(), intent: leaving.intent }
+        ceremony = null
+        dispatchSeq += 1
+        pending.set(false)
+      }
       returnToIdentifier()
       if (SECOND_FACTOR_WAIT_STEPS.includes(leaving.step)) {
         // Told, not waited for: the person is on the field already, and the

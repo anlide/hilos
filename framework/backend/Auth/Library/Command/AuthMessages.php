@@ -77,6 +77,14 @@ final class AuthMessages
     public const string IDENTIFIER_TAKEN = 'This email already has an account';
 
     /**
+     * The same redirection for a phone number (HIL-1104). The passkey door is the first
+     * registration submit that can meet a taken NUMBER - the phone road lands on its code,
+     * where a taken number signs in instead - and telling a number it is an email would be
+     * the one wrong word on the screen.
+     */
+    public const string PHONE_TAKEN = 'This phone number already has an account';
+
+    /**
      * Message for a code submitted against a registration hold that has run out.
      * Deliberately distinct from {@see self::INVALID_CODE}: the code may well
      * have been right, and telling the person it was invalid would send them looking
@@ -155,6 +163,14 @@ final class AuthMessages
 
     /** The same authenticator, enrolled twice on one account. */
     public const string PASSKEY_ALREADY_REGISTERED = 'This passkey is already registered';
+
+    /**
+     * A passkey asked to start an account on an address nobody proved, where the installation
+     * allows that only after a code (HIL-1104). It rides the outcome that takes the surface back
+     * to the address step, so it says what to do there rather than what went wrong.
+     */
+    public const string PASSKEY_ADDRESS_UNPROVEN =
+        'Confirm your address with a code first — a passkey can start an account here only after that.';
 
     /**
      * Refusal for an unknown OAuth provider named by a start payload (HIL-281).

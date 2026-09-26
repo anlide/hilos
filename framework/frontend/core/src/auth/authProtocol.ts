@@ -41,6 +41,10 @@ export const AUTH_ACTION_COMPLETE_REGISTRATION = 'hilos_complete_registration'
 export const AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS =
   'hilos_complete_registration_passwordless'
 
+/** Client→server: create an account on the passkey the device just made (PHP `HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY`, HIL-1104). */
+export const AUTH_ACTION_COMPLETE_REGISTRATION_PASSKEY =
+  'hilos_complete_registration_passkey'
+
 /** Client→server: send a one-time login code to a phone over a chosen channel (PHP `HilosSignalConstants::HILOS_REQUEST_PHONE_CODE`). */
 export const AUTH_ACTION_REQUEST_PHONE_CODE = 'hilos_request_phone_code'
 
@@ -82,6 +86,10 @@ export const AUTH_ACTION_PASSKEY_LOGIN_CONFIRM = 'hilos_passkey_login_confirm'
 /** Client→server: mint register-ceremony options for the signed-in user (PHP `HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS`). */
 export const AUTH_ACTION_PASSKEY_REGISTER_OPTIONS =
   'hilos_passkey_register_options'
+
+/** Client→server: mint creation options of a passkey that starts a new account, or refuse (PHP `HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS`, HIL-1104). */
+export const AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS =
+  'hilos_registration_passkey_options'
 
 /** Client→server: verify a WebAuthn register attestation (PHP `HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM`). */
 export const AUTH_ACTION_PASSKEY_REGISTER_CONFIRM =

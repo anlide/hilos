@@ -38,6 +38,13 @@ final class AuthFlowOutcome extends ActionReplyDTO
     public const string CODE_RESERVATION_EXPIRED = 'reservation_expired';
 
     /**
+     * A passkey was asked to start an account on an address nobody proved, and the installation
+     * does not allow that (HIL-1104, the setting of HIL-1105): the surface goes back to the address
+     * step, where a code can prove it first.
+     */
+    public const string CODE_PASSKEY_ADDRESS_UNPROVEN = 'passkey_address_unproven';
+
+    /**
      * The clicked sign-in link is not good any more - wrong, expired, or already
      * used (HIL-417). Its own code rather than the generic refusal, because the
      * return screen owes this person a new link rather than a sign-in form: nobody

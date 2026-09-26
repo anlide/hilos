@@ -21,8 +21,10 @@ import {
   type ActionLifecycle,
 } from '../../src/connection/actionLifecycle.js'
 import {
+  AUTH_ACTION_COMPLETE_REGISTRATION_PASSKEY,
   AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
   AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
+  AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
 } from '../../src/auth/authProtocol.js'
 import {
   createHilosAuthContext,
@@ -31,9 +33,11 @@ import {
 import {
   createPasskeyCeremony,
   runPasskeyDiscoverableLogin,
+  runPasskeyNewAccount,
 } from '../../src/auth/passkeyCeremony.js'
 import {
   PASSKEY_CEREMONY_LOGIN,
+  PASSKEY_CEREMONY_NEW_ACCOUNT,
   PASSKEY_CEREMONY_REGISTER,
   PASSKEY_OPTIONS_SIGNAL,
   type PasskeyCeremony,
@@ -50,6 +54,7 @@ const CEREMONY_BY_OPTIONS_ACTION: Record<string, PasskeyCeremony | undefined> =
   {
     [AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS]: PASSKEY_CEREMONY_LOGIN,
     [AUTH_ACTION_PASSKEY_REGISTER_OPTIONS]: PASSKEY_CEREMONY_REGISTER,
+    [AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS]: PASSKEY_CEREMONY_NEW_ACCOUNT,
   }
 
 /**
@@ -63,6 +68,12 @@ const PUBLIC_KEY_OPTIONS: Record<PasskeyCeremony, Record<string, unknown>> = {
     challenge: CHALLENGE,
     rp: { name: 'Hilos' },
     user: { id: CHALLENGE, name: 'a@b.test', displayName: 'A' },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+  },
+  [PASSKEY_CEREMONY_NEW_ACCOUNT]: {
+    challenge: CHALLENGE,
+    rp: { name: 'Hilos' },
+    user: { id: CHALLENGE, name: 'a@b.test', displayName: 'a@b.test' },
     pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
   },
 }
@@ -238,5 +249,214 @@ describe('the copy a refused passkey ceremony shows', () => {
       ok: false,
       message: 'This device already has a passkey for this account.',
     })
+  })
+})
+
+/** One dispatch the new-account world saw: the action and what it carried. */
+interface Dispatched {
+  readonly action: string
+  readonly payload: Record<string, unknown>
+}
+
+/** What the new-account world is told to do. */
+interface NewAccountWorldScript {
+  /** The options action's own answer, or undefined for an answer-less success that signals. */
+  readonly optionsReply?: Record<string, unknown>
+  /** What the authenticator's create() does. */
+  readonly create: () => Promise<unknown>
+}
+
+/**
+ * Stand up the guest's passkey door (HIL-1104): an options action that either
+ * signals the options or answers with a refusal, a confirm that answers nothing,
+ * and an authenticator scripted by the case. Every dispatch and every create()
+ * call is recorded, because what these cases pin is what was NOT sent.
+ *
+ * @param script What the options action and the authenticator do.
+ * @returns The context, the dispatches made, and the create() count.
+ */
+function newAccountWorld(script: NewAccountWorldScript): {
+  context: HilosAuthContext
+  dispatched: Dispatched[]
+  creates: () => number
+} {
+  const listeners: Array<(signal: ProjectSignal) => void> = []
+  const dispatched: Dispatched[] = []
+  let createCalls = 0
+
+  const connection = {
+    on(event: string, listener: (payload: never) => void): () => void {
+      const typed = listener as unknown as (signal: ProjectSignal) => void
+      if (event !== 'projectSignal') {
+        return () => undefined
+      }
+      listeners.push(typed)
+
+      return () => {
+        const at = listeners.indexOf(typed)
+        if (at >= 0) {
+          listeners.splice(at, 1)
+        }
+      }
+    },
+  } as unknown as HilosConnection
+
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched.push({ action, payload })
+      const refusing =
+        action === AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS &&
+        script.optionsReply !== undefined
+      if (action === AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS && !refusing) {
+        const signal = {
+          kind: 'project',
+          type: PASSKEY_OPTIONS_SIGNAL,
+          data: {
+            acceptKey: 'accept-1',
+            ceremony: PASSKEY_CEREMONY_NEW_ACCOUNT,
+            publicKeyOptions: PUBLIC_KEY_OPTIONS[PASSKEY_CEREMONY_NEW_ACCOUNT],
+            signedChallenge: 'signed',
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of [...listeners]) {
+          listener(signal)
+        }
+      }
+
+      return {
+        requestId: 'req-1',
+        loading: createSignal(false),
+        done: Promise.resolve({
+          reply: refusing ? script.optionsReply : undefined,
+        }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  const globals = globalThis as PasskeyGlobals
+  globals.PublicKeyCredential = class {}
+  Object.defineProperty(navigator, 'credentials', {
+    configurable: true,
+    value: {
+      create: () => {
+        createCalls += 1
+
+        return script.create()
+      },
+      get: () => Promise.reject(new DOMException('', 'NotAllowedError')),
+    },
+  })
+
+  return {
+    context: createHilosAuthContext({
+      connection,
+      scopes: new ScopeManager(),
+      actions,
+      channels: [],
+      termsPath: '/terms',
+      privacyPath: '/privacy',
+    }),
+    dispatched,
+    creates: () => createCalls,
+  }
+}
+
+/** A credential of the shape create() resolves to, with bytes the encoder accepts. */
+const MADE_CREDENTIAL = {
+  response: {
+    attestationObject: new Uint8Array([1, 2, 3]).buffer,
+    clientDataJSON: new Uint8Array([4, 5, 6]).buffer,
+    getTransports: () => ['internal'],
+  },
+}
+
+describe('the passkey door of a new account (HIL-1104)', () => {
+  it('hands on a refusal the options action answered, and never opens the device prompt', async () => {
+    const world = newAccountWorld({
+      optionsReply: {
+        ok: false,
+        next: { step: 'identifier', intent: 'login' },
+        code: 'identifier_taken',
+        message: 'This email already has an account',
+      },
+      create: () => Promise.resolve(MADE_CREDENTIAL),
+    })
+
+    const outcome = await runPasskeyNewAccount(world.context, 'a@b.test')
+
+    expect(outcome).toEqual({
+      ok: false,
+      code: 'identifier_taken',
+      message: 'This email already has an account',
+      next: { step: 'identifier', intent: 'login' },
+      resendAt: undefined,
+      expiresAt: undefined,
+      secondFactor: undefined,
+    })
+    expect(world.creates()).toBe(0)
+    expect(world.dispatched.map((entry) => entry.action)).toEqual([
+      AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
+    ])
+  })
+
+  it('tells a canceled device prompt how else to make a key, and sends nothing', async () => {
+    const world = newAccountWorld({
+      create: () => Promise.reject(new DOMException('', 'NotAllowedError')),
+    })
+
+    const outcome = await runPasskeyNewAccount(world.context, 'a@b.test')
+
+    expect(outcome).toEqual({
+      ok: false,
+      message:
+        'The passkey request was canceled, or this device had no way to add one — try a security key or your phone.',
+    })
+    expect(world.dispatched.map((entry) => entry.action)).toEqual([
+      AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
+    ])
+  })
+
+  it('sends the key with the identifier and this device, as the options were asked', async () => {
+    const world = newAccountWorld({
+      create: () => Promise.resolve(MADE_CREDENTIAL),
+    })
+
+    const outcome = await runPasskeyNewAccount(world.context, ' a@b.test ')
+
+    expect(outcome).toEqual({ ok: true })
+    expect(world.dispatched).toHaveLength(2)
+    expect(world.dispatched[0]?.payload).toEqual({ identifier: ' a@b.test ' })
+    expect(world.dispatched[1]?.action).toBe(
+      AUTH_ACTION_COMPLETE_REGISTRATION_PASSKEY,
+    )
+    expect(world.dispatched[1]?.payload).toMatchObject({
+      identifier: ' a@b.test ',
+      signedChallenge: 'signed',
+      transports: ['internal'],
+      userAgent: navigator.userAgent,
+    })
+  })
+
+  it('does not send a key made after the registration was called off', async () => {
+    const abort = new AbortController()
+    const world = newAccountWorld({
+      create: () => {
+        abort.abort()
+
+        return Promise.resolve(MADE_CREDENTIAL)
+      },
+    })
+
+    const outcome = await runPasskeyNewAccount(
+      world.context,
+      'a@b.test',
+      abort.signal,
+    )
+
+    expect(outcome.ok).toBe(false)
+    expect(world.dispatched.map((entry) => entry.action)).toEqual([
+      AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
+    ])
   })
 })

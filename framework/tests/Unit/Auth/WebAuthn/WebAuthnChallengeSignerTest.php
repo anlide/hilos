@@ -35,7 +35,48 @@ final class WebAuthnChallengeSignerTest extends TestCase
         $claims = $signer->verify($issued->token, WebAuthnChallengeSigner::PURPOSE_REGISTER, self::SESSION);
 
         self::assertSame($issued->challenge, $claims->challenge);
+        self::assertSame(WebAuthnChallengeSigner::PURPOSE_REGISTER, $claims->purpose);
         self::assertSame(42, $claims->userId);
+    }
+
+    /**
+     * A token checked against a list of purposes passes on the one it was minted for, and says which (HIL-1104).
+     *
+     * @throws RandomException When the CSPRNG cannot produce a challenge
+     * @throws WebAuthnChallengeException Never in the success path
+     */
+    public function testVerifyOneOfReturnsThePurposeTheTokenWasMintedFor(): void
+    {
+        $signer = new WebAuthnChallengeSigner(self::SECRET);
+        $roads = [
+            WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_PROVEN,
+            WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_UNPROVEN,
+        ];
+
+        $issued = $signer->issue(WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_UNPROVEN, self::SESSION, null, 300);
+        $claims = $signer->verifyOneOf($issued->token, $roads, self::SESSION);
+
+        self::assertSame($issued->challenge, $claims->challenge);
+        self::assertSame(WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_UNPROVEN, $claims->purpose);
+        self::assertNull($claims->userId);
+    }
+
+    /**
+     * A token minted for a purpose outside the list is refused by the list check too (HIL-1104).
+     *
+     * @throws RandomException When the CSPRNG cannot produce a challenge
+     */
+    public function testVerifyOneOfRejectsAPurposeOutsideTheList(): void
+    {
+        $signer = new WebAuthnChallengeSigner(self::SECRET);
+        $login = $signer->issue(WebAuthnChallengeSigner::PURPOSE_LOGIN, self::SESSION, null, 300);
+
+        $this->expectException(WebAuthnChallengeException::class);
+        $signer->verifyOneOf(
+            $login->token,
+            [WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_PROVEN, WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_UNPROVEN],
+            self::SESSION,
+        );
     }
 
     /**

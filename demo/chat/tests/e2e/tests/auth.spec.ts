@@ -538,11 +538,13 @@ test('keeps the password screen still while the way past the password comes and 
     const code = await readRegisterCode(email)
     await submitRegistrationCode(guestPage, code)
 
+    // The stand offers passkeys too and Chromium can make one, so the screen has
+    // the key's ending beside the link's, and the lead names both (HIL-1104).
     await expect(
       guestPage.getByTestId('auth-complete-passwordless'),
     ).toBeVisible()
     await expect(guestPage.getByTestId('auth-set-password-lead')).toHaveText(
-      'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Your address is confirmed. Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
 
     const submitTop = await watchTop(guestPage.getByTestId('auth-submit'))
@@ -559,7 +561,7 @@ test('keeps the password screen still while the way past the password comes and 
       guestPage.getByTestId('auth-complete-passwordless'),
     ).toHaveCount(0)
     await expect(guestPage.getByTestId('auth-set-password-lead')).toHaveText(
-      'Your address is confirmed. Choose a password — your account is created when you save it.',
+      'Your address is confirmed. Choose a password, or create the account with a passkey instead.',
     )
     await submitTop.unchanged()
     await cancelTop.unchanged()
@@ -572,7 +574,7 @@ test('keeps the password screen still while the way past the password comes and 
       guestPage.getByTestId('auth-complete-passwordless'),
     ).toBeVisible()
     await expect(guestPage.getByTestId('auth-set-password-lead')).toHaveText(
-      'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Your address is confirmed. Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
     await submitTop.unchanged()
     await cancelTop.unchanged()

@@ -11,6 +11,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
   bindPageReady,
@@ -1100,7 +1101,7 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(
       byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
 
     const exit = byId(fixture, 'auth-complete-passwordless')
@@ -1138,7 +1139,7 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(
       byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
   })
 
@@ -1168,7 +1169,7 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(
       byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
   })
 
@@ -1191,7 +1192,7 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(
       byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
 
     world.context.scopes.session.data.set('authMethods', [
@@ -1212,7 +1213,7 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(
       byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
 
     world.context.scopes.session.data.set('authMethods', [
@@ -1231,7 +1232,7 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(
       byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
     ).toContain(
-      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
     )
   })
 
@@ -1252,5 +1253,143 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(
       byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
     ).toBe('The code was accepted. Choose a new password.')
+  })
+})
+
+describe('HilosAuthSurface offers the passkey ending of a registration (HIL-1104)', () => {
+  /** Make this browser one that can run WebAuthn, the half of the gate the view asks. */
+  function supportPasskeys(): void {
+    ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential =
+      class {}
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: { create: vi.fn(), get: vi.fn() },
+    })
+  }
+
+  /**
+   * A proved registration on the password screen, over the given methods.
+   *
+   * @param methods The live sign-in methods, in button order.
+   * @param dispatched Where the world records what the surface sent.
+   * @returns The mounted surface.
+   */
+  function passwordScreen(
+    methods: readonly string[],
+    dispatched: Array<{
+      action: string
+      payload: Record<string, unknown>
+    }> = [],
+  ): ComponentFixture<HilosAuthSurface> {
+    const world = magicLinkWorld(dispatched)
+    world.context.scopes.session.data.set(
+      'authMethods',
+      methods.map((key) => ({ key, name: null })),
+    )
+    world.context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+
+    return mountSurface(world)
+  }
+
+  afterEach(() => {
+    delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+    delete (navigator as { credentials?: unknown }).credentials
+  })
+
+  it('draws the key above the link, says both in the lead, and runs the ending on a click', async () => {
+    supportPasskeys()
+    const dispatched: Array<{
+      action: string
+      payload: Record<string, unknown>
+    }> = []
+    const fixture = passwordScreen(
+      ['password', 'passkey', 'magic_link'],
+      dispatched,
+    )
+    await flush(fixture)
+
+    const order = [
+      ...(byId(fixture, 'auth-step-tail')?.querySelectorAll('[data-id]') ?? []),
+    ].map((node) => node.getAttribute('data-id'))
+    expect(order).toEqual([
+      'auth-complete-passkey',
+      'auth-complete-passwordless',
+      'auth-cancel-registration',
+    ])
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in with a passkey or a mailed link.',
+    )
+
+    byId(fixture, 'auth-complete-passkey')?.click()
+    await flush(fixture)
+
+    expect(dispatched.map((call) => call.action)).toEqual([
+      AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
+    ])
+    expect(dispatched[0]?.payload).toEqual({
+      identifier: 'newcomer@example.com',
+    })
+  })
+
+  it('names only the key when no link can be mailed', async () => {
+    supportPasskeys()
+    const fixture = passwordScreen(['password', 'passkey'])
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passkey')).not.toBeNull()
+    expect(byId(fixture, 'auth-complete-passwordless-idle')).not.toBeNull()
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account with a passkey instead.',
+    )
+  })
+
+  it("holds the key's room with a twin in a browser that cannot make one", async () => {
+    const fixture = passwordScreen(['password', 'passkey', 'magic_link'])
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passkey')).toBeNull()
+    const idle = byId(fixture, 'auth-complete-passkey-idle')
+    expect(idle).not.toBeNull()
+    expect(idle?.getAttribute('aria-hidden')).toBe('true')
+    expect(idle?.className).toContain('invisible')
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('holds it too where passkeys are off', async () => {
+    supportPasskeys()
+    const fixture = passwordScreen(['password', 'magic_link'])
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passkey')).toBeNull()
+    expect(byId(fixture, 'auth-complete-passkey-idle')).not.toBeNull()
+  })
+
+  it('offers no key and holds no room for it on a recovery', async () => {
+    supportPasskeys()
+    const world = magicLinkWorld([])
+    world.context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+      { key: 'passkey', name: null },
+    ])
+    world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'recovery',
+    })
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passkey')).toBeNull()
+    expect(byId(fixture, 'auth-complete-passkey-idle')).toBeNull()
   })
 })

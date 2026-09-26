@@ -31,6 +31,16 @@ final class WebAuthnChallengeSigner
     public const string PURPOSE_LOGIN = 'login';
     public const string PURPOSE_STEP_UP = 'step_up';
 
+    /**
+     * A new account on an address this browser proved with a code (HIL-1104). The road is sealed
+     * into the token so the second submit cannot pick another one: a proven hold that ran out
+     * while the device prompt was open answers "expired", not a quiet move to the other road.
+     */
+    public const string PURPOSE_NEW_ACCOUNT_PROVEN = 'new_account_proven';
+
+    /** A new account on an address nobody proved, allowed only by the installation's setting (HIL-1104). */
+    public const string PURPOSE_NEW_ACCOUNT_UNPROVEN = 'new_account_unproven';
+
     private const int CHALLENGE_BYTES = 32;
     private const string FIELD_SEPARATOR = '|';
     private const string PART_SEPARATOR = '.';
@@ -47,7 +57,7 @@ final class WebAuthnChallengeSigner
     /**
      * Mints a random challenge bound to a purpose/session/user, valid for `ttlSeconds`.
      *
-     * @param string $purpose Ceremony purpose (PURPOSE_REGISTER | PURPOSE_LOGIN)
+     * @param string $purpose Ceremony purpose (one of the PURPOSE_* constants)
      * @param string $sessionToken Initiating session token to bind
      * @param ?int $userId User to bind (register), or null (login)
      * @param int $ttlSeconds Lifetime in seconds from now
@@ -78,11 +88,45 @@ final class WebAuthnChallengeSigner
      * @param string $token Signed token returned on confirm
      * @param string $purpose Ceremony purpose the token must have been minted for
      * @param string $sessionToken Session token the confirm arrived on
-     * @return WebAuthnChallengeClaims The recovered challenge and bound user id
+     * @return WebAuthnChallengeClaims The recovered challenge, purpose and bound user id
      * @throws WebAuthnChallengeException When the token is malformed, has a bad
      *   signature, was minted for a different purpose/session, or has expired
      */
     public function verify(string $token, string $purpose, string $sessionToken): WebAuthnChallengeClaims
+    {
+        return $this->verifyAgainst($token, [$purpose], $sessionToken);
+    }
+
+    /**
+     * Verifies a challenge token minted for any one of several purposes, and says which (HIL-1104).
+     *
+     * For a ceremony whose first submit chose between roads and sealed the choice into the
+     * token: the second submit accepts either road, but only the one the token names, and reads
+     * it back off {@see WebAuthnChallengeClaims::$purpose} rather than deciding again.
+     *
+     * @param string $token Signed token returned on confirm
+     * @param list<string> $purposes Ceremony purposes the token may have been minted for
+     * @param string $sessionToken Session token the confirm arrived on
+     * @return WebAuthnChallengeClaims The recovered challenge, the purpose it was minted for, and the bound user id
+     * @throws WebAuthnChallengeException When the token is malformed, has a bad
+     *   signature, was minted for a purpose outside the list or for another session, or has expired
+     */
+    public function verifyOneOf(string $token, array $purposes, string $sessionToken): WebAuthnChallengeClaims
+    {
+        return $this->verifyAgainst($token, $purposes, $sessionToken);
+    }
+
+    /**
+     * Recovers a token's claims once its signature, purpose, session binding and expiry check out.
+     *
+     * @param string $token Signed token returned on confirm
+     * @param list<string> $purposes Ceremony purposes the token may have been minted for
+     * @param string $sessionToken Session token the confirm arrived on
+     * @return WebAuthnChallengeClaims The recovered challenge, the purpose it was minted for, and the bound user id
+     * @throws WebAuthnChallengeException When the token is malformed, has a bad
+     *   signature, was minted for a purpose outside the list or for another session, or has expired
+     */
+    private function verifyAgainst(string $token, array $purposes, string $sessionToken): WebAuthnChallengeClaims
     {
         $parts = explode(self::PART_SEPARATOR, $token, 2);
         if (count($parts) !== 2) {
@@ -105,7 +149,7 @@ final class WebAuthnChallengeSigner
         }
 
         [$challenge, $boundPurpose, $boundSessionToken, $userId, $expiry] = $fields;
-        if (!hash_equals($boundPurpose, $purpose)) {
+        if (!in_array($boundPurpose, $purposes, true)) {
             throw new WebAuthnChallengeException('WebAuthn challenge is bound to a different purpose');
         }
 
@@ -117,7 +161,7 @@ final class WebAuthnChallengeSigner
             throw new WebAuthnChallengeException('WebAuthn challenge has expired');
         }
 
-        return new WebAuthnChallengeClaims($challenge, $userId === '' ? null : (int)$userId);
+        return new WebAuthnChallengeClaims($challenge, $boundPurpose, $userId === '' ? null : (int)$userId);
     }
 
     /**

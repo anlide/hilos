@@ -24,6 +24,10 @@
 // with one feature, and HIL-426's parity specs are only parity specs while the
 // name set is shared.
 //
+// The password screen of a registration offers a passkey ending the mockup does
+// not draw yet (HIL-1104): its place and its words are the owner's decision,
+// kept in design debt D-132 until the mockup catches up.
+//
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
 import { NgTemplateOutlet } from '@angular/common'
 import {
@@ -56,6 +60,7 @@ import {
   formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
+  isPasskeySupported,
   handshakeResponseAck,
   oauthTrip,
   oauthTripMessage,
@@ -334,6 +339,10 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
  */
 const SET_PASSWORD_LEAD_WITH_EXIT =
   'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.'
+const SET_PASSWORD_LEAD_WITH_PASSKEY =
+  'Your address is confirmed. Choose a password, or create the account with a passkey instead.'
+const SET_PASSWORD_LEAD_WITH_BOTH =
+  'Your address is confirmed. Choose a password, or create the account without one and sign in with a passkey or a mailed link.'
 const SET_PASSWORD_LEAD_PLAIN =
   'Your address is confirmed. Choose a password — your account is created when you save it.'
 const SET_PASSWORD_LEAD_RECOVERY =
@@ -586,12 +595,12 @@ const ERROR_DETAILS_TWIN_CLASS =
               <ng-container *ngTemplateOutlet="actionsTwin"></ng-container>
             </div>
 
-            <!-- The password step at its tallest: the longer of its two leads,
-          the field with its hint, the refusal row, the main button and the
+            <!-- The password step at its tallest: the longest of its leads, the
+          field with its hint, the refusal row, the main button and the
           tail. -->
             <div class="d-flex flex-column">
               <p class="text-body-secondary small mb-3">
-                {{ setPasswordLeadWithExit }}
+                {{ setPasswordLeadWithBoth }}
               </p>
               <div class="mb-3">
                 <label class="form-label small fw-semibold">Password</label>
@@ -1416,12 +1425,33 @@ const ERROR_DETAILS_TWIN_CLASS =
 
                 <div class="hilos-stack mt-2" data-id="auth-step-tail">
                   <div class="d-flex flex-column">
-                    <!-- Two ways to FINISH the registration, then the way to drop
-                it, and the order carries that meaning (HIL-1008). Unemphasized
+                    <!-- The ways to FINISH the registration, then the way to drop
+                it, and the order carries that meaning (HIL-1008): first the
+                endings, the key above the link (HIL-1104, D-132). Unemphasized
                 rather than a second primary: choosing a password is still the
-                road this screen is named after. The slot holds its room in both
-                states so neither arrival nor loss of the exit moves the cancel
-                button (HIL-1101). -->
+                road this screen is named after. Each slot holds its room in
+                both states, so no ending arriving or leaving moves the cancel
+                button (HIL-1101, D-125); with the key the tail carries three
+                rows, which is the room it always held. -->
+                    @if (showFinishWithPasskey()) {
+                      <button
+                        type="button"
+                        class="btn btn-link btn-sm w-100"
+                        [disabled]="pending()"
+                        data-id="auth-complete-passkey"
+                        (click)="completeWithPasskey()"
+                      >
+                        Create it with a passkey
+                      </button>
+                    } @else if (state().intent === 'register') {
+                      <span
+                        class="btn btn-link btn-sm w-100 invisible"
+                        aria-hidden="true"
+                        data-id="auth-complete-passkey-idle"
+                      >
+                        Create it with a passkey
+                      </span>
+                    }
                     @if (showFinishWithoutPassword()) {
                       <button
                         type="button"
@@ -2001,6 +2031,7 @@ export class HilosAuthSurface {
   protected readonly error = signal<AuthFlowError | null>(null)
   protected readonly submittable = signal(false)
   protected readonly canFinishWithoutPassword = signal(false)
+  protected readonly canFinishWithPasskey = signal(false)
   protected readonly icons = signal<readonly AuthFlowMethodDescriptor[]>([])
   private readonly methods = signal<readonly AuthFlowMethodDescriptor[]>([])
   protected readonly channels = signal<readonly CodeChannelDescriptor[]>([])
@@ -2042,7 +2073,7 @@ export class HilosAuthSurface {
 
   // The leads the twins of the password and second-factor steps say word for
   // word, so that they wrap where the live ones wrap.
-  protected readonly setPasswordLeadWithExit = SET_PASSWORD_LEAD_WITH_EXIT
+  protected readonly setPasswordLeadWithBoth = SET_PASSWORD_LEAD_WITH_BOTH
   protected readonly twoStepLeadApp = TWO_STEP_LEAD_APP
   protected readonly twoStepLeadBackup = TWO_STEP_LEAD_BACKUP
 
@@ -2166,15 +2197,29 @@ export class HilosAuthSurface {
     () => this.canFinishWithoutPassword() && this.codeDelivery().email,
   )
 
-  // The password screen says which of its two endings this is. A recovery is
+  // The passkey ending, gated by its two halves the same way (HIL-1104): the
+  // machine knows whether the installation offers passkeys right now, and only
+  // this browser knows whether it can make one. No platform key is asked for —
+  // the account has its confirmed address, so a phone or a security key serves
+  // too.
+  protected readonly showFinishWithPasskey = computed(
+    () => this.canFinishWithPasskey() && isPasskeySupported(),
+  )
+
+  // The password screen says which of its endings this is. A recovery is
   // replacing a password that exists; a registration is about to create the
   // account, and the sentence has to say so before the button does (HIL-825).
-  // A registration that is ALSO offered the way past the password says so here
-  // too (HIL-1008): the sentence is the only place the second road is explained,
-  // and promising it where the exit is not offered would be a lie.
+  // A registration that is ALSO offered a way past the password says so here
+  // too (HIL-1008, HIL-1104): the sentence is the only place the other roads are
+  // explained, and promising one that is not offered would be a lie.
   protected readonly setPasswordLead = computed<string>(() => {
     if (this.state().intent !== 'register') {
       return SET_PASSWORD_LEAD_RECOVERY
+    }
+    if (this.showFinishWithPasskey()) {
+      return this.showFinishWithoutPassword()
+        ? SET_PASSWORD_LEAD_WITH_BOTH
+        : SET_PASSWORD_LEAD_WITH_PASSKEY
     }
 
     return this.showFinishWithoutPassword()
@@ -2183,13 +2228,13 @@ export class HilosAuthSurface {
   })
 
   // The twin that holds the lead's height (HIL-1101, styling-rules.md "The room
-  // a live message takes"). For a registration the twin says the longer of the
-  // two sentences so neither arrival nor loss of the exit moves the fields under
-  // it; for a recovery the exit is never offered, so the twin says the recovery
-  // sentence itself.
+  // a live message takes"). For a registration the twin says the longest of the
+  // sentences so no ending arriving or leaving moves the fields under it; for a
+  // recovery no ending is ever offered, so the twin says the recovery sentence
+  // itself.
   protected readonly setPasswordLeadIdle = computed<string>(() =>
     this.state().intent === 'register'
-      ? SET_PASSWORD_LEAD_WITH_EXIT
+      ? SET_PASSWORD_LEAD_WITH_BOTH
       : SET_PASSWORD_LEAD_RECOVERY,
   )
 
@@ -2537,6 +2582,7 @@ export class HilosAuthSurface {
         bind(auth.error, this.error),
         bind(auth.submittable, this.submittable),
         bind(auth.canFinishWithoutPassword, this.canFinishWithoutPassword),
+        bind(auth.canFinishWithPasskey, this.canFinishWithPasskey),
         bind(auth.icons, this.icons),
         bind(auth.methods, this.methods),
         bind(auth.channels, this.channels),
@@ -3034,6 +3080,14 @@ export class HilosAuthSurface {
   // exactly as the password save's does.
   protected completeWithoutPassword(): void {
     void this.auth().finishWithoutPassword()
+  }
+
+  // The third ending: the account is created on a key the device makes now
+  // (HIL-1104). The machine runs it as a ceremony, so "Cancel registration" can
+  // still close the device prompt, and a refusal lands in the error row as the
+  // other two endings' do.
+  protected completeWithPasskey(): void {
+    void this.auth().finishWithPasskey()
   }
 
   // The way back into a code this browser is already holding, offered by the

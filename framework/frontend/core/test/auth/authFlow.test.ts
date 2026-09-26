@@ -2910,3 +2910,93 @@ describe('a code that ran out says so itself (HIL-828)', () => {
     expect(flow.flow.get().step).toBe('code_expired')
   })
 })
+
+describe('the passkey ending of a registration (HIL-1104)', () => {
+  it('is offered on the password screen of a registration while passkeys are on', () => {
+    const flow = setup()
+    expect(flow.canFinishWithPasskey.get()).toBe(false)
+
+    flow.applyExternal({ step: 'set_password', intent: 'register' })
+
+    expect(flow.canFinishWithPasskey.get()).toBe(true)
+  })
+
+  it('is offered neither to a recovery nor where passkeys are off', () => {
+    const recovery = setup()
+    recovery.applyExternal({ step: 'set_password', intent: 'recovery' })
+    const withoutPasskeys = setup({
+      authMethods: enabledSet(['password', MAGIC_LINK_METHOD_KEY]),
+    })
+    withoutPasskeys.applyExternal({ step: 'set_password', intent: 'register' })
+
+    expect(recovery.canFinishWithPasskey.get()).toBe(false)
+    expect(withoutPasskeys.canFinishWithPasskey.get()).toBe(false)
+  })
+
+  it('dispatches the ending with a signal it can call off, and applies its refusal', async () => {
+    const onSubmit = vi
+      .fn<AuthFlowOptions['onSubmit']>()
+      .mockImplementation(async () => ({
+        ok: false,
+        message: 'That registration expired, please start again',
+        code: 'reservation_expired',
+        next: { step: 'identifier' as const, intent: 'register' as const },
+      }))
+    const flow = setup({ onSubmit })
+    flow.applyExternal({ step: 'set_password', intent: 'register' })
+
+    await flow.finishWithPasskey()
+
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      'finish_with_passkey',
+      expect.objectContaining({ step: 'set_password', intent: 'register' }),
+      expect.anything(),
+      expect.any(AbortSignal),
+    )
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.error.get()?.code).toBe('reservation_expired')
+    expect(flow.pending.get()).toBe(false)
+  })
+
+  it('does nothing where the ending is not offered', async () => {
+    const onSubmit = vi.fn<AuthFlowOptions['onSubmit']>()
+    const flow = setup({ onSubmit })
+    flow.applyExternal({ step: 'set_password', intent: 'recovery' })
+
+    await flow.finishWithPasskey()
+
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('ends the ceremony when the registration is called off, and drops its late success', async () => {
+    let received: AbortSignal | undefined
+    let settle: (outcome: AuthFlowSubmitOutcome) => void = () => undefined
+    const onSubmit = vi
+      .fn<AuthFlowOptions['onSubmit']>()
+      .mockImplementation((_action, _flow, _form, signal) => {
+        received = signal
+
+        return new Promise<AuthFlowSubmitOutcome>((resolve) => {
+          settle = resolve
+        })
+      })
+    const flow = setup({ onSubmit })
+    flow.applyExternal({ step: 'set_password', intent: 'register' })
+
+    const running = flow.finishWithPasskey()
+    expect(flow.pending.get()).toBe(true)
+    flow.backToIdentifier()
+
+    expect(received?.aborted).toBe(true)
+    expect(flow.pending.get()).toBe(false)
+    expect(flow.flow.get().step).toBe('identifier')
+
+    // A finger on the device after the call-off: the account it would announce
+    // is the one the person just refused.
+    settle({ ok: true, next: { step: 'done', intent: 'register' } })
+    await running
+
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.error.get()).toBeNull()
+  })
+})
