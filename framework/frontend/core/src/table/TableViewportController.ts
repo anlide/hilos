@@ -72,6 +72,7 @@ import {
   type HilosTableSelectionTarget,
 } from './tableSelection.js'
 import {
+  hilosTableColumnOrders,
   hilosTableOfferedOrders,
   hilosTableOrderLabel,
   hilosTableOrderViews,
@@ -437,8 +438,9 @@ export interface TableViewportControllerOptions<R> {
    *
    * Every order carries the key it is picked by — the same slug the backend
    * declares it under, and the one the menu item's `data-id` is built from.
-   * Declaring none leaves the table without a menu at all: one item, "the way it
-   * opened", is no choice to offer.
+   * Declaring none leaves the menu to the narrow screen, where it offers the
+   * sortable columns of the frame; with neither there is no menu at all — one
+   * item, "the way it opened", is no choice to offer.
    */
   declaredOrders?: readonly HilosTableSortOrder[]
   /**
@@ -817,14 +819,18 @@ export class TableViewportController<R> implements TableWindowSink {
   private readonly bulkState: HilosTableBulkState
 
   /**
-   * The orders the menu offers after the way home — each declared order followed by its
-   * mirror. Settled once here: the declaration is a constant of the table, and a view
-   * answers every pick by looking the key up in this very list.
+   * The orders the menu offers after the way home — every sortable column of the frame
+   * in both directions, then each declared order followed by its mirror. Settled once
+   * here: the declaration is a constant of the table, and a view answers every pick by
+   * looking the key up in this very list.
    */
   private readonly offeredOrders: readonly HilosTableSortOrder[]
 
   constructor(private readonly options: TableViewportControllerOptions<R>) {
-    this.offeredOrders = hilosTableOfferedOrders(options.declaredOrders ?? [])
+    this.offeredOrders = [
+      ...hilosTableColumnOrders(options.frame?.columns ?? []),
+      ...hilosTableOfferedOrders(options.declaredOrders ?? []),
+    ]
     this.filterSignal = createSignal<Record<string, unknown>>({
       ...(options.initialFilter ?? {}),
     })
@@ -1131,10 +1137,11 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * The orders the menu offers after the way home — each declared order followed
-   * by its mirror — each with the key it is picked by. What the menu DRAWS is
-   * {@link frameState}'s `orders`; this is the list behind it, which a view reads
-   * to answer a pick with the components behind the key.
+   * The orders the menu offers after the way home — every sortable column in both
+   * directions, then each declared order followed by its mirror — each with the key
+   * it is picked by. What the menu DRAWS is {@link frameState}'s `orders`; this is
+   * the list behind it, which a view reads to answer a pick with the components
+   * behind the key.
    */
   get orders(): readonly HilosTableSortOrder[] {
     return this.offeredOrders
@@ -1369,12 +1376,14 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Run the window in one of the orders the table declares. The order is taken
+   * Run the window in one of the orders the menu offers. The order is taken
    * whole — the reader picks it from the list rather than assembling it — and the
-   * backend holds it against that same list before any of it reaches a query.
+   * backend holds it against the orders it declares before any of it reaches a
+   * query; an order of one column it takes by any column it declares sortable.
    * Return to the first page, then request the new window.
    *
-   * SCAFFOLD: called by the "Order" menu, which is HIL-802 and HIL-811.
+   * Called by the "Order" menu — its composite items and, below md, its items of
+   * one column.
    *
    * @param order The order to run the window in.
    */

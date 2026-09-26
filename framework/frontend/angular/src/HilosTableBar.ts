@@ -23,6 +23,7 @@ import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,
   TABLE_STALENESS_COPY,
+  hilosTableOrderMenuNarrowOnly,
   subscribeSignal,
 } from '@hilos/core'
 import type {
@@ -83,6 +84,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
             <div
               class="d-flex flex-wrap align-items-center gap-2"
               [class.invisible]="selectionPanel()"
+              [class.d-md-none]="controlsNarrowOnly()"
               [attr.aria-hidden]="selectionPanel() ? 'true' : null"
               data-id="hilos-table-controls"
             >
@@ -154,9 +156,15 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
               <!-- Outside the row that leaves the bar below md: the menu is the only
               way to change the order on a narrow screen, where the header of a column
               is out of reach, so hiding it behind the Filters button would remove
-              it. -->
+              it. Below md it carries every sortable column in both directions as
+              well; above md those items hide, and a menu of nothing else hides with
+              them. -->
               @if (orders().length > 0) {
-                <div class="w-auto" data-id="hilos-table-order">
+                <div
+                  class="w-auto"
+                  [class.d-md-none]="orderMenuNarrowOnly()"
+                  data-id="hilos-table-order"
+                >
                   <hilos-dropdown
                     [options]="orderOptions()"
                     [value]="activeOrderKey()"
@@ -178,6 +186,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                         type="button"
                         class="dropdown-item d-flex align-items-center justify-content-between gap-2"
                         [class.active]="selected"
+                        [class.d-md-none]="narrowOrderKeys().has(option.value)"
                         role="option"
                         [attr.aria-selected]="selected"
                         [attr.data-id]="'hilos-table-order-' + option.value"
@@ -246,6 +255,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
       ) {
         <div
           class="d-flex flex-wrap align-items-center gap-2 mb-3"
+          [class.d-md-none]="controlsNarrowOnly()"
           data-id="hilos-table-controls"
         >
           @if (searchBox()) {
@@ -314,9 +324,15 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
           <!-- Outside the row that leaves the bar below md: the menu is the only
           way to change the order on a narrow screen, where the header of a column
           is out of reach, so hiding it behind the Filters button would remove
-          it. -->
+          it. Below md it carries every sortable column in both directions as
+          well; above md those items hide, and a menu of nothing else hides with
+          them. -->
           @if (orders().length > 0) {
-            <div class="w-auto" data-id="hilos-table-order">
+            <div
+              class="w-auto"
+              [class.d-md-none]="orderMenuNarrowOnly()"
+              data-id="hilos-table-order"
+            >
               <hilos-dropdown
                 [options]="orderOptions()"
                 [value]="activeOrderKey()"
@@ -338,6 +354,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                     type="button"
                     class="dropdown-item d-flex align-items-center justify-content-between gap-2"
                     [class.active]="selected"
+                    [class.d-md-none]="narrowOrderKeys().has(option.value)"
                     role="option"
                     [attr.aria-selected]="selected"
                     [attr.data-id]="'hilos-table-order-' + option.value"
@@ -487,9 +504,36 @@ export class HilosTableBar<R> {
       ),
   )
 
-  // Null while the window runs in an order the menu does not offer — one that came
-  // from a click on a header. Saying so is the truth about how the rows lie;
-  // lighting up the nearest item instead would not be (tableFrame.ts, orderLabel).
+  // The items offered below md alone, where no header can be clicked; above md each
+  // of them hides by its own class (tableSortOrder.ts, narrowOnly).
+  protected readonly narrowOrderKeys = computed(
+    () =>
+      new Set(
+        this.orders()
+          .filter((view) => view.narrowOnly)
+          .map((view) => view.key),
+      ),
+  )
+
+  // A table with sortable columns and no composite order has its menu below md
+  // alone, and a bar holding nothing else hides above md with it rather than stand
+  // there as an empty row (Design D5).
+  protected readonly orderMenuNarrowOnly = computed(() =>
+    hilosTableOrderMenuNarrowOnly(this.orders()),
+  )
+  protected readonly controlsNarrowOnly = computed(
+    () =>
+      !this.searchBox() &&
+      this.filters().length === 0 &&
+      !this.mainAction() &&
+      this.orderMenuNarrowOnly(),
+  )
+
+  // Below md an order a header click gave is offered, and its item is the active
+  // one; above md that item is hidden, so the part of the menu on display carries
+  // no mark — lighting up the nearest item would not be the truth about how the
+  // rows lie (tableFrame.ts, orderLabel). Null only for an order the menu does not
+  // offer.
   protected readonly activeOrderKey = computed(
     () => this.orders().find((view) => view.active)?.key ?? null,
   )
@@ -573,9 +617,9 @@ export class HilosTableBar<R> {
 
       return
     }
-    const declared = controller.orders.find((order) => order.key === key)
-    if (declared) {
-      controller.setOrder(declared.components)
+    const offered = controller.orders.find((order) => order.key === key)
+    if (offered) {
+      controller.setOrder(offered.components)
     }
   }
 

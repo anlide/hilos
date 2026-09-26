@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, onTestFinished } from 'vitest'
 
 import { HilosDropdown } from '../src/HilosDropdown.js'
 import type { HilosDropdownOption } from '../src/hilosDropdown.js'
@@ -161,6 +161,55 @@ describe('HilosDropdown', () => {
 
     fireEvent.keyDown(menu, { key: 'End' })
     expect(document.activeElement).toBe(buttons[2])
+  })
+
+  it('roves only the options on display, around the ring and on Home/End', async () => {
+    render(
+      <HilosDropdown
+        value={null}
+        options={[
+          { value: 'a', label: 'Alpha' },
+          { value: 'b', label: 'Beta' },
+          { value: 'c', label: 'Gamma' },
+          { value: 'd', label: 'Delta' },
+          { value: 'e', label: 'Epsilon' },
+        ]}
+        onChange={vi.fn()}
+      />,
+    )
+
+    const toggle = byId('hilos-dropdown-toggle') as HTMLButtonElement
+    const menu = byId('hilos-dropdown-menu') as HTMLElement
+    const buttons = optionButtons()
+    // A width hides an option by a class of its own; the walk must not stop on it.
+    // The sheet stands in for Bootstrap's, which the test document does not load.
+    const sheet = document.createElement('style')
+    sheet.textContent = '.d-none { display: none !important; }'
+    document.head.append(sheet)
+    onTestFinished(() => sheet.remove())
+    for (const hidden of [buttons[0], buttons[2], buttons[4]]) {
+      hidden?.classList.add('d-none')
+    }
+
+    fireEvent.keyDown(toggle, { key: 'ArrowDown' })
+    await nextFrame()
+    expect(document.activeElement).toBe(buttons[1])
+
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(buttons[3])
+
+    // The ring closes over the hidden last and first options alike.
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(buttons[1])
+
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(buttons[3])
+
+    fireEvent.keyDown(menu, { key: 'Home' })
+    expect(document.activeElement).toBe(buttons[1])
+
+    fireEvent.keyDown(menu, { key: 'End' })
+    expect(document.activeElement).toBe(buttons[3])
   })
 
   it('emits the chosen value, marks it selected, and closes', () => {

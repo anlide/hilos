@@ -302,7 +302,9 @@ no `matchMedia` anywhere in the frontend, and a view that read one would have to
 guard itself for the server, where `@hilos/prerender` renders it with no window
 at all. There is no width at which both branches are seen and none at which
 neither is, and crossing the boundary re-renders nothing — both are mounted, and
-only the showing of them changes.
+only the showing of them changes. The "Order" menu's items of one column, and a
+menu of nothing else, stand on the same boundary by the same classes, and the
+dropdown's keyboard walk steps only over the items on display.
 
 **Both branches stand in the document at once, so a row's `data-id` is in it
 twice** — its own (`hilos-table-row-<rowKey>` against
@@ -1143,7 +1145,9 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-facet-<filterKey>-<value>-modal`. `hilos-table-order`,
   `hilos-table-order-<orderKey>`, `hilos-table-order-<orderKey>-mirror` — the
   mirror of a declared order, every direction turned, standing right after its
-  original and declared by no table, `hilos-table-sort-<key>`. The "Order" menu's
+  original and declared by no table, `hilos-table-order-<columnKey>-asc`,
+  `hilos-table-order-<columnKey>-desc` — the order of one column, offered below md
+  alone, `hilos-table-sort-<key>`. The "Order" menu's
   first item is the way back to the order the table opened in, and it answers to
   the one key no table declares: `hilos-table-order-opening`;
 - **rows:** `hilos-table-row-<rowKey>`, `hilos-table-cards` — the container of

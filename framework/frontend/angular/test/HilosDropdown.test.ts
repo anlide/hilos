@@ -1,4 +1,4 @@
-// The Angular port of the tier-1 dropdown, under the same nine case names the
+// The Angular port of the tier-1 dropdown, under the same ten case names the
 // Vue reference and the React port run (HIL-934). Every case mounts a host
 // rather than the component itself: the selection is a two-way binding and the
 // look is filled by projection, and neither can be handed to a component created
@@ -9,7 +9,7 @@
 // laid down by HIL-848; this file configures none of it.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 
 import { HilosDropdown } from '../src/HilosDropdown.js'
 import type { HilosDropdownOption } from '../src/hilosDropdownOption.js'
@@ -246,6 +246,56 @@ describe('HilosDropdown', () => {
 
     press('End')
     expect(document.activeElement).toBe(buttons[2])
+  })
+
+  it('roves only the options on display, around the ring and on Home/End', async () => {
+    const fixture = mountHost([
+      { value: 'a', label: 'Alpha' },
+      { value: 'b', label: 'Beta' },
+      { value: 'c', label: 'Gamma' },
+      { value: 'd', label: 'Delta' },
+      { value: 'e', label: 'Epsilon' },
+    ])
+    const toggle = byId(fixture, 'hilos-dropdown-toggle')
+    const menu = byId(fixture, 'hilos-dropdown-menu')
+    const buttons = optionButtons(fixture)
+    // A width hides an option by a class of its own; the walk must not stop on it.
+    // The sheet stands in for Bootstrap's, which the test document does not load.
+    const sheet = document.createElement('style')
+    sheet.textContent = '.d-none { display: none !important; }'
+    document.head.append(sheet)
+    onTestFinished(() => sheet.remove())
+    for (const hidden of [buttons[0], buttons[2], buttons[4]]) {
+      hidden?.classList.add('d-none')
+    }
+
+    toggle.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    )
+    fixture.detectChanges()
+    await nextFrame(fixture)
+    expect(document.activeElement).toBe(buttons[1])
+
+    const press = (key: string): void => {
+      menu.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      fixture.detectChanges()
+    }
+
+    press('ArrowDown')
+    expect(document.activeElement).toBe(buttons[3])
+
+    // The ring closes over the hidden last and first options alike.
+    press('ArrowDown')
+    expect(document.activeElement).toBe(buttons[1])
+
+    press('ArrowUp')
+    expect(document.activeElement).toBe(buttons[3])
+
+    press('Home')
+    expect(document.activeElement).toBe(buttons[1])
+
+    press('End')
+    expect(document.activeElement).toBe(buttons[3])
   })
 
   it('emits the chosen value, marks it selected, and closes', () => {

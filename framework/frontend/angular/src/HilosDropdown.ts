@@ -5,8 +5,8 @@
 // button face and `#option` (context: option / selected / select) replaces each
 // item, so a project customizes the look by filling those templates, never by
 // re-implementing the behavior. The selection is the two-way `value` binding.
-// Outside-click and Escape close it, arrow keys rove the options, and the
-// listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md). A
+// Outside-click and Escape close it, arrow keys rove the options on display, and
+// the listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md). A
 // substituted option (projected #option) must itself carry role="option" and
 // aria-selected — the <li> is presentational, and the SDK does not write the
 // option role for a project.
@@ -32,6 +32,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core'
+import { isDisplayed } from '@hilos/core'
 
 import type { HilosDropdownOption } from './hilosDropdownOption.js'
 
@@ -271,6 +272,8 @@ export class HilosDropdown<V extends string | number> {
     }
   }
 
+  // Only the options on display take focus: an option a width hides with a class
+  // of its own would stop the walk on something nobody sees.
   private optionButtons(): HTMLButtonElement[] {
     const menu = this.menu()
     return menu
@@ -278,7 +281,7 @@ export class HilosDropdown<V extends string | number> {
           menu.nativeElement.querySelectorAll<HTMLButtonElement>(
             '.dropdown-item:not(:disabled)',
           ),
-        )
+        ).filter(isDisplayed)
       : []
   }
 

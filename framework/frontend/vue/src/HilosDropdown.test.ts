@@ -1,5 +1,5 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { nextTick } from 'vue'
 
 import HilosDropdown from './HilosDropdown.vue'
@@ -183,6 +183,51 @@ describe('HilosDropdown', () => {
 
     await menu.trigger('keydown', { key: 'End' })
     expect(document.activeElement).toBe(buttons[2])
+  })
+
+  it('roves only the options on display, around the ring and on Home/End', async () => {
+    const wrapper = mountAttached({
+      modelValue: null,
+      options: [
+        { value: 'a', label: 'Alpha' },
+        { value: 'b', label: 'Beta' },
+        { value: 'c', label: 'Gamma' },
+        { value: 'd', label: 'Delta' },
+        { value: 'e', label: 'Epsilon' },
+      ],
+    })
+    const toggle = wrapper.find('[data-id="hilos-dropdown-toggle"]')
+    const menu = wrapper.find('[data-id="hilos-dropdown-menu"]')
+    const buttons = optionButtons(wrapper)
+    // A width hides an option by a class of its own; the walk must not stop on it.
+    // The sheet stands in for Bootstrap's, which the test document does not load.
+    const sheet = document.createElement('style')
+    sheet.textContent = '.d-none { display: none !important; }'
+    document.head.append(sheet)
+    onTestFinished(() => sheet.remove())
+    for (const hidden of [buttons[0], buttons[2], buttons[4]]) {
+      hidden?.classList.add('d-none')
+    }
+
+    await toggle.trigger('keydown', { key: 'ArrowDown' })
+    await nextTick()
+    expect(document.activeElement).toBe(buttons[1])
+
+    await menu.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(buttons[3])
+
+    // The ring closes over the hidden last and first options alike.
+    await menu.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(buttons[1])
+
+    await menu.trigger('keydown', { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(buttons[3])
+
+    await menu.trigger('keydown', { key: 'Home' })
+    expect(document.activeElement).toBe(buttons[1])
+
+    await menu.trigger('keydown', { key: 'End' })
+    expect(document.activeElement).toBe(buttons[3])
   })
 
   it('emits the chosen value, marks it selected, and closes', async () => {

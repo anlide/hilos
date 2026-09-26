@@ -6,7 +6,8 @@
 // derivation sits in the core rather than in the three views because the words of an
 // item are built from the declared column labels and the active item is decided by
 // comparing orders: three views doing that each in its own way would be three
-// different menus on one product.
+// different menus on one product. Below md, where there is no header to click, the
+// menu carries every sortable column in both directions as well.
 
 import { type HilosTableColumn } from './hilosTableColumn.js'
 import { isSameOrder, type TableSortOrder } from './TableViewportController.js'
@@ -32,13 +33,14 @@ export const HILOS_TABLE_OPENING_ORDER_KEY = 'opening'
 export const HILOS_TABLE_MIRROR_ORDER_SUFFIX = '-mirror'
 
 /**
- * One composite order a table declares: the key it is picked by, and the components
- * it runs in.
+ * One order the menu offers: the key it is picked by, and the components it runs in.
  *
- * The key is the same slug the backend's `sortOrders()` declares the order under, and
- * the menu item's `data-id` is built from it (table-subscription.md, the stable
- * selector registry). Deriving a key from the components instead would give one order
- * two names — one on each side of the wire.
+ * The key of a composite order is the same slug the backend's `sortOrders()` declares
+ * the order under, and the menu item's `data-id` is built from it (table-subscription.md,
+ * the stable selector registry). Deriving a key from the components instead would give
+ * one order two names — one on each side of the wire. An order of one column has no
+ * slug on either side: its key is the column's and its direction
+ * ({@link hilosTableColumnOrders}).
  */
 export interface HilosTableSortOrder {
   /** Slug of the order; the `data-id` of its menu item is built from it. */
@@ -49,7 +51,7 @@ export interface HilosTableSortOrder {
 
 /** One item of the "Order" menu: what it is picked by, how it reads, whether it runs. */
 export interface HilosTableOrderView {
-  /** Key of the declared order, or {@link HILOS_TABLE_OPENING_ORDER_KEY}. */
+  /** Key of the offered order, or {@link HILOS_TABLE_OPENING_ORDER_KEY}. */
   readonly key: string
   /** The item's words, e.g. `Kind ↑, then Date ↓`. */
   readonly label: string
@@ -57,6 +59,13 @@ export interface HilosTableOrderView {
   readonly active: boolean
   /** Whether this order runs over a column whose source is lagging. */
   readonly stale: boolean
+  /**
+   * Whether the item is offered only below md, where no header can be clicked: the
+   * order of one column, or the way home of a table that declared no composite
+   * order. Above md the header gives both, so the menu there carries only the
+   * composite orders and the way home from them.
+   */
+  readonly narrowOnly: boolean
 }
 
 /**
@@ -116,6 +125,32 @@ export function hilosTableOrderLabel(
 }
 
 /**
+ * The orders of one column the menu offers: every sortable column, in the sequence
+ * the columns are declared, ascending and then descending.
+ *
+ * These are the orders a click on a header gives, less the third state of its cycle —
+ * the way home, which the menu names by an item of its own. Below md there is no header
+ * to click, and the menu is the only way to take them (mockups/components/table section
+ * 9, D-131). Each is picked by the column's key and the direction it runs in, the same
+ * word the order carries on the wire.
+ *
+ * @param columns The columns as the page declared them.
+ * @returns Two orders for every sortable column, or an empty list for none.
+ */
+export function hilosTableColumnOrders(
+  columns: readonly HilosTableColumn[],
+): readonly HilosTableSortOrder[] {
+  return columns
+    .filter(({ sortable }) => sortable === true)
+    .flatMap(({ key }) =>
+      (['asc', 'desc'] as const).map((direction) => ({
+        key: `${key}-${direction}`,
+        components: [{ field: key, direction }],
+      })),
+    )
+}
+
+/**
  * The orders the menu offers: every declared order, each followed by its mirror.
  *
  * The mirror runs by the same fields in the same sequence with every direction turned
@@ -152,21 +187,29 @@ export function hilosTableOfferedOrders(
 
 /**
  * The items of the "Order" menu: the way home first, then the offered orders in the
- * sequence they are offered — each declared order followed by its mirror.
+ * sequence they are offered — every sortable column in both directions, then each
+ * declared order followed by its mirror.
  *
- * A table that declared no composite order gets no items at all — a menu offering only
- * "the way it opened" offers no choice, and the bar draws nothing where there is
- * nothing to draw (Design D9). The first item stands for the order the table opened in
- * and is picked by {@link HILOS_TABLE_OPENING_ORDER_KEY}; it is a way home rather than
- * one more order, and a table that opened in no order of its own keeps it all the same,
- * because a reader who left for a composite order has no other way back.
+ * The menu is empty only for a table with neither a sortable column nor a composite
+ * order — a menu offering only "the way it opened" offers no choice, and the bar draws
+ * nothing where there is nothing to draw (Design D9). The first item stands for the
+ * order the table opened in and is picked by {@link HILOS_TABLE_OPENING_ORDER_KEY}; it
+ * is a way home rather than one more order, and a table that opened in no order of its
+ * own keeps it all the same, because a reader who left for another order has no other
+ * way back. An order of one column that is the opening order itself is not listed a
+ * second time: the way home already names it.
  *
- * At most one item is active, and on an order that came from a header click none is:
- * that order is a state of the table which the menu does not offer, and lighting up the
- * nearest item would say the rows lie in an order they do not.
+ * The items of one column are marked {@link HilosTableOrderView.narrowOnly}, and so is
+ * the way home of a table that declared no composite order: above md the header gives
+ * them, and the menu there carries only the composite orders and the way home from them.
  *
- * @param declared The orders the menu offers after the way home — each declared order
- *   followed by its mirror, as {@link hilosTableOfferedOrders} lists them.
+ * At most one item is active. On an order that came from a header click it is that
+ * column's item — offered below md, hidden above it, so there the part of the menu on
+ * display carries no mark: lighting up the nearest item would say the rows lie in an
+ * order they do not.
+ *
+ * @param offered The orders the menu offers after the way home — the columns in both
+ *   directions, then each declared order followed by its mirror.
  * @param opening The order the table opened in, or undefined when it opened in none.
  * @param current The order the window runs in, or undefined when it runs in none.
  * @param columns The columns as the page declared them.
@@ -174,13 +217,13 @@ export function hilosTableOfferedOrders(
  * @returns The menu items, or an empty list when there is no menu to draw.
  */
 export function hilosTableOrderViews(
-  declared: readonly HilosTableSortOrder[],
+  offered: readonly HilosTableSortOrder[],
   opening: TableSortOrder | undefined,
   current: TableSortOrder | undefined,
   columns: readonly HilosTableColumn[],
   staleSources: ReadonlySet<string>,
 ): readonly HilosTableOrderView[] {
-  if (declared.length === 0) {
+  if (offered.length === 0) {
     return []
   }
 
@@ -200,14 +243,36 @@ export function hilosTableOrderViews(
       label: hilosTableOrderLabel(opening, columns),
       active: isSameOrder(opening, current),
       stale: isOrderStale(opening),
+      narrowOnly: !offered.some(({ components }) => components.length > 1),
     },
-    ...declared.map(({ key, components }) => ({
-      key,
-      label: hilosTableOrderLabel(components, columns),
-      active: isSameOrder(components, current),
-      stale: isOrderStale(components),
-    })),
+    ...offered
+      .filter(
+        ({ components }) =>
+          components.length > 1 || !isSameOrder(components, opening),
+      )
+      .map(({ key, components }) => ({
+        key,
+        label: hilosTableOrderLabel(components, columns),
+        active: isSameOrder(components, current),
+        stale: isOrderStale(components),
+        narrowOnly: components.length === 1,
+      })),
   ]
+}
+
+/**
+ * Whether the whole menu is offered only below md: it has items, and every one of them
+ * is {@link HilosTableOrderView.narrowOnly} — a table with sortable columns and no
+ * composite order. One rule for the three views: the menu and a bar holding nothing
+ * else both hide above md by it.
+ *
+ * @param views The menu items, as {@link hilosTableOrderViews} lists them.
+ * @returns Whether no item of the menu is on display above md.
+ */
+export function hilosTableOrderMenuNarrowOnly(
+  views: readonly HilosTableOrderView[],
+): boolean {
+  return views.length > 0 && views.every(({ narrowOnly }) => narrowOnly)
 }
 
 /**

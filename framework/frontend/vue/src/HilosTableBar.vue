@@ -15,6 +15,7 @@ import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,
   TABLE_STALENESS_COPY,
+  hilosTableOrderMenuNarrowOnly,
 } from '@hilos/core'
 import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
 
@@ -74,9 +75,33 @@ const staleOrderKeys = computed(
     new Set(orders.value.filter((view) => view.stale).map((view) => view.key)),
 )
 
-// Null while the window runs in an order the menu does not offer — one that came
-// from a click on a header. Saying so is the truth about how the rows lie;
-// lighting up the nearest item instead would not be (tableFrame.ts, orderLabel).
+// The items offered below md alone, where no header can be clicked; above md each
+// of them hides by its own class (tableSortOrder.ts, narrowOnly).
+const narrowOrderKeys = computed(
+  () =>
+    new Set(
+      orders.value.filter((view) => view.narrowOnly).map((view) => view.key),
+    ),
+)
+
+// A table with sortable columns and no composite order has its menu below md alone,
+// and a bar holding nothing else hides above md with it rather than stand there as
+// an empty row (Design D5).
+const orderMenuNarrowOnly = computed(() =>
+  hilosTableOrderMenuNarrowOnly(orders.value),
+)
+const controlsNarrowOnly = computed(
+  () =>
+    !searchBox &&
+    filters.value.length === 0 &&
+    !mainAction &&
+    orderMenuNarrowOnly.value,
+)
+
+// Below md an order a header click gave is offered, and its item is the active
+// one; above md that item is hidden, so the part of the menu on display carries no
+// mark — lighting up the nearest item would not be the truth about how the rows
+// lie (tableFrame.ts, orderLabel). Null only for an order the menu does not offer.
 const activeOrderKey = computed(
   () => orders.value.find((view) => view.active)?.key ?? null,
 )
@@ -92,9 +117,9 @@ function onOrder(key: string): void {
 
     return
   }
-  const declared = props.controller.orders.find((order) => order.key === key)
-  if (declared) {
-    props.controller.setOrder(declared.components)
+  const offered = props.controller.orders.find((order) => order.key === key)
+  if (offered) {
+    props.controller.setOrder(offered.components)
   }
 }
 
@@ -154,7 +179,7 @@ function onSearchInput(event: Event): void {
           searchBox || filters.length > 0 || mainAction || orders.length > 0
         "
         class="d-flex flex-wrap align-items-center gap-2"
-        :class="{ invisible: selectionPanel }"
+        :class="{ invisible: selectionPanel, 'd-md-none': controlsNarrowOnly }"
         :aria-hidden="selectionPanel ? 'true' : undefined"
         data-id="hilos-table-controls"
       >
@@ -221,10 +246,13 @@ function onSearchInput(event: Event): void {
 
         <!-- Outside the row that leaves the bar below md: the menu is the only way
         to change the order on a narrow screen, where the header of a column is out
-        of reach, so hiding it behind the Filters button would remove it. -->
+        of reach, so hiding it behind the Filters button would remove it. Below md
+        it carries every sortable column in both directions as well; above md those
+        items hide, and a menu of nothing else hides with them. -->
         <div
           v-if="orders.length > 0"
           class="w-auto"
+          :class="{ 'd-md-none': orderMenuNarrowOnly }"
           data-id="hilos-table-order"
         >
           <HilosDropdown
@@ -242,7 +270,10 @@ function onSearchInput(event: Event): void {
               <button
                 type="button"
                 class="dropdown-item d-flex align-items-center justify-content-between gap-2"
-                :class="{ active: selected }"
+                :class="{
+                  active: selected,
+                  'd-md-none': narrowOrderKeys.has(option.value),
+                }"
                 role="option"
                 :aria-selected="selected"
                 :data-id="`hilos-table-order-${option.value}`"
@@ -301,6 +332,7 @@ function onSearchInput(event: Event): void {
         searchBox || filters.length > 0 || mainAction || orders.length > 0
       "
       class="d-flex flex-wrap align-items-center gap-2 mb-3"
+      :class="{ 'd-md-none': controlsNarrowOnly }"
       data-id="hilos-table-controls"
     >
       <div
@@ -366,8 +398,15 @@ function onSearchInput(event: Event): void {
 
       <!-- Outside the row that leaves the bar below md: the menu is the only way
       to change the order on a narrow screen, where the header of a column is out
-      of reach, so hiding it behind the Filters button would remove it. -->
-      <div v-if="orders.length > 0" class="w-auto" data-id="hilos-table-order">
+      of reach, so hiding it behind the Filters button would remove it. Below md
+      it carries every sortable column in both directions as well; above md those
+      items hide, and a menu of nothing else hides with them. -->
+      <div
+        v-if="orders.length > 0"
+        class="w-auto"
+        :class="{ 'd-md-none': orderMenuNarrowOnly }"
+        data-id="hilos-table-order"
+      >
         <HilosDropdown
           :model-value="activeOrderKey"
           :options="orderOptions"
@@ -383,7 +422,10 @@ function onSearchInput(event: Event): void {
             <button
               type="button"
               class="dropdown-item d-flex align-items-center justify-content-between gap-2"
-              :class="{ active: selected }"
+              :class="{
+                active: selected,
+                'd-md-none': narrowOrderKeys.has(option.value),
+              }"
               role="option"
               :aria-selected="selected"
               :data-id="`hilos-table-order-${option.value}`"

@@ -299,18 +299,19 @@ export interface HilosTableFrameState {
    */
   readonly activeFilterCount: ReadonlySignal<number>
   /**
-   * The items of the "Order" menu: the way home first, then the orders the table
-   * declared. Empty exactly when it declared none — and then there is no menu in
-   * the bar at all, a single item being no choice to offer.
+   * The items of the "Order" menu: the way home first, then every sortable column
+   * in both directions — marked `narrowOnly`, offered below md alone — then the
+   * orders the table declared. Empty exactly when it has neither a sortable column
+   * nor a composite order — and then there is no menu in the bar at all, a single
+   * item being no choice to offer.
    */
   readonly orders: ReadonlySignal<readonly HilosTableOrderView[]>
   /**
    * The words of the order the window runs in, for the face of the menu button —
    * whoever set that order, a menu pick or a click on a header.
    *
-   * Not the words of the active item: after a header click the window runs in an
-   * order the menu does not offer, so there is no active item and this still has
-   * something true to say.
+   * Not the words of the active item: after a header click above md the item of
+   * that order is hidden, and the face still has to say the order the rows lie in.
    */
   readonly orderLabel: ReadonlySignal<string>
   /** What the footer says: the range on screen, the total, and where the pager can go. */

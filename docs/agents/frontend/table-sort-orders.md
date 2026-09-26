@@ -16,7 +16,14 @@ A table declares its orders in two places, and which one depends on how many
 columns the order runs by. `TableDefinition::sortableFields()` is the sort
 vocabulary — `wire field => column` — and at the same time the declaration of
 every single-column order, each offered in both directions, which is what a click
-on a column header asks for. `TableDefinition::sortOrders()` declares the orders
+on a column header asks for. Below md, where there is no header to click, the
+"Order" menu offers them too: every sortable column in both directions, in the
+order the columns are declared, right after the way home and before the
+composite orders, under the keys `<field>-asc` and `<field>-desc`
+(`hilosTableColumnOrders()`). An item that is the opening order itself is not
+listed, the way home already naming it. Above md these items are hidden, and a
+table that declares no composite order has its menu below md alone.
+`TableDefinition::sortOrders()` declares the orders
 of more than one column, one per key: the key is the order's own slug, the one the
 frontend builds its `hilos-table-order-<orderKey>` selector out of, and it stays
 on this side of the wire — a client picks an order and echoes the order itself

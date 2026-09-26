@@ -6,8 +6,8 @@
 // item, so a project customizes the look by filling those, never by
 // re-implementing the behavior. The selection is a controlled pair — `value` in,
 // `onChange` out. Outside-click and Escape close it, arrow keys rove the
-// options, and the listbox/option ARIA roles ship by default (a11y is v1,
-// styling-rules.md). A substituted option (render prop option) must itself
+// options on display, and the listbox/option ARIA roles ship by default (a11y is
+// v1, styling-rules.md). A substituted option (render prop option) must itself
 // carry role="option" and aria-selected — the <li> is presentational, and the
 // SDK does not write the option role for a project. Exported as part of the
 // public SDK surface (index.ts) and kept intentionally: no in-repo consumer
@@ -18,6 +18,7 @@
 // projected templates in Angular (multiframework-core.md).
 // Bootstrap classes only — no CSS of its own.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { isDisplayed } from '@hilos/core'
 
 import type { HilosDropdownOption } from './hilosDropdown.js'
 
@@ -93,13 +94,15 @@ export function HilosDropdown<V extends string | number>({
     return () => document.removeEventListener('click', onDocumentClick)
   }, [open])
 
+  // Only the options on display take focus: an option a width hides with a class
+  // of its own would stop the walk on something nobody sees.
   function optionButtons(): HTMLButtonElement[] {
     return menu.current
       ? Array.from(
           menu.current.querySelectorAll<HTMLButtonElement>(
             '.dropdown-item:not(:disabled)',
           ),
-        )
+        ).filter(isDisplayed)
       : []
   }
 

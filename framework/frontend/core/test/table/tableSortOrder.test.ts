@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { type HilosTableColumn } from '../../src/table/hilosTableColumn.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumn,
+} from '../../src/table/hilosTableColumn.js'
 import { type TableSortOrder } from '../../src/table/TableViewportController.js'
 import {
   HILOS_TABLE_MIRROR_ORDER_SUFFIX,
   HILOS_TABLE_OPENING_ORDER_KEY,
+  hilosTableColumnOrders,
   hilosTableOfferedOrders,
   hilosTableOrderLabel,
+  hilosTableOrderMenuNarrowOnly,
   hilosTableOrderPosition,
   hilosTableOrderViews,
   hilosTableSortPositionLabel,
@@ -103,13 +108,150 @@ describe('hilosTableOfferedOrders', () => {
   })
 })
 
+describe('hilosTableColumnOrders', () => {
+  it('offers every sortable column in column order, ascending and then descending', () => {
+    const offered = hilosTableColumnOrders(columns)
+
+    expect(offered).toEqual([
+      {
+        key: 'channel-asc',
+        components: [{ field: 'channel', direction: 'asc' }],
+      },
+      {
+        key: 'channel-desc',
+        components: [{ field: 'channel', direction: 'desc' }],
+      },
+      {
+        key: 'createdAt-asc',
+        components: [{ field: 'createdAt', direction: 'asc' }],
+      },
+      {
+        key: 'createdAt-desc',
+        components: [{ field: 'createdAt', direction: 'desc' }],
+      },
+    ])
+  })
+
+  it('offers nothing for a column that is not sortable, the actions column among them', () => {
+    const offered = hilosTableColumnOrders([
+      { key: 'name', label: 'Name' },
+      { key: 'state', label: 'State', sortable: false },
+      { key: 'createdAt', label: 'Date', sortable: true },
+      { key: HILOS_TABLE_ACTIONS_KEY, label: '', reads: [] },
+    ])
+
+    expect(offered.map(({ key }) => key)).toEqual([
+      'createdAt-asc',
+      'createdAt-desc',
+    ])
+  })
+
+  it('offers nothing to a table without columns', () => {
+    expect(hilosTableColumnOrders([])).toEqual([])
+  })
+})
+
 const emptyStale = new Set<string>()
 
+/** What the controller offers: the columns in both directions, then the declared orders. */
+const offeredWithColumns: readonly HilosTableSortOrder[] = [
+  ...hilosTableColumnOrders(columns),
+  ...hilosTableOfferedOrders(declared),
+]
+
 describe('hilosTableOrderViews', () => {
-  it('offers nothing at all to a table that declared no composite order', () => {
+  it('offers nothing at all to a table with neither a sortable column nor a composite order', () => {
     expect(
       hilosTableOrderViews([], byDate, byDate, columns, emptyStale),
     ).toEqual([])
+  })
+
+  it('puts the columns after the way home and leaves out the one the table opened in', () => {
+    // The way home already names the opening order; a second item for it would name
+    // one order twice.
+    const views = hilosTableOrderViews(
+      offeredWithColumns,
+      byDate,
+      byDate,
+      columns,
+      emptyStale,
+    )
+
+    expect(views.map(({ key }) => key)).toEqual([
+      HILOS_TABLE_OPENING_ORDER_KEY,
+      'channel-asc',
+      'channel-desc',
+      'createdAt-asc',
+      'by_channel',
+      'by_channel-mirror',
+      'by_state',
+      'by_state-mirror',
+    ])
+    expect(views.find(({ key }) => key === 'createdAt-asc')?.label).toBe(
+      'Date ↑',
+    )
+  })
+
+  it('offers the columns below md alone, and the composite orders on both widths', () => {
+    const views = hilosTableOrderViews(
+      offeredWithColumns,
+      byDate,
+      byDate,
+      columns,
+      emptyStale,
+    )
+
+    expect(
+      views.filter(({ narrowOnly }) => narrowOnly).map(({ key }) => key),
+    ).toEqual(['channel-asc', 'channel-desc', 'createdAt-asc'])
+    expect(views[0]?.narrowOnly).toBe(false)
+  })
+
+  it('offers the way home below md alone on a table that declared no composite order', () => {
+    const views = hilosTableOrderViews(
+      hilosTableColumnOrders(columns),
+      byDate,
+      byDate,
+      columns,
+      emptyStale,
+    )
+
+    expect(views[0]?.key).toBe(HILOS_TABLE_OPENING_ORDER_KEY)
+    expect(views.every(({ narrowOnly }) => narrowOnly)).toBe(true)
+  })
+
+  it('marks the item of a column while the window runs in the order a header click gave', () => {
+    const clicked: TableSortOrder = [{ field: 'channel', direction: 'desc' }]
+    const views = hilosTableOrderViews(
+      offeredWithColumns,
+      byDate,
+      clicked,
+      columns,
+      emptyStale,
+    )
+
+    expect(views.filter(({ active }) => active).map(({ key }) => key)).toEqual([
+      'channel-desc',
+    ])
+  })
+
+  it('marks the item of a column whose source is lagging', () => {
+    const sourcedColumns: readonly HilosTableColumn[] = [
+      { key: 'channel', label: 'Kind', sortable: true, source: 'channels' },
+      { key: 'createdAt', label: 'Date', sortable: true },
+    ]
+    const views = hilosTableOrderViews(
+      hilosTableColumnOrders(sourcedColumns),
+      byDate,
+      byDate,
+      sourcedColumns,
+      new Set(['channels']),
+    )
+
+    expect(views.filter(({ stale }) => stale).map(({ key }) => key)).toEqual([
+      'channel-asc',
+      'channel-desc',
+    ])
   })
 
   it('puts the way home first and the declared orders after it, in declaration order', () => {
@@ -175,7 +317,7 @@ describe('hilosTableOrderViews', () => {
     )
   })
 
-  it('marks nothing while the window runs in an order that came from a header click', () => {
+  it('marks nothing while the window runs in an order the menu does not offer', () => {
     const clicked: TableSortOrder = [{ field: 'channel', direction: 'asc' }]
     const views = hilosTableOrderViews(
       declared,
@@ -251,6 +393,36 @@ describe('hilosTableOrderViews', () => {
 
     expect(views[0]?.key).toBe(HILOS_TABLE_OPENING_ORDER_KEY)
     expect(views[0]?.stale).toBe(true)
+  })
+})
+
+describe('hilosTableOrderMenuNarrowOnly', () => {
+  it('is false for a menu with no items', () => {
+    expect(hilosTableOrderMenuNarrowOnly([])).toBe(false)
+  })
+
+  it('is true for a menu of columns alone', () => {
+    const views = hilosTableOrderViews(
+      hilosTableColumnOrders(columns),
+      byDate,
+      byDate,
+      columns,
+      emptyStale,
+    )
+
+    expect(hilosTableOrderMenuNarrowOnly(views)).toBe(true)
+  })
+
+  it('is false once the table declares a composite order', () => {
+    const views = hilosTableOrderViews(
+      offeredWithColumns,
+      byDate,
+      byDate,
+      columns,
+      emptyStale,
+    )
+
+    expect(hilosTableOrderMenuNarrowOnly(views)).toBe(false)
   })
 })
 

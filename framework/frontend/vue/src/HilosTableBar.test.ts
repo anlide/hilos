@@ -330,7 +330,7 @@ describe('HilosTableBar', () => {
     wrapper.unmount()
   })
 
-  it('draws no order menu at all for a table that declared no composite order', () => {
+  it('draws no order menu at all for a table with neither a sortable column nor a composite order', () => {
     const { controller } = makeController({
       title: 'Backups',
       search: {},
@@ -341,18 +341,92 @@ describe('HilosTableBar', () => {
     expect(wrapper.find('[data-id="hilos-table-order"]').exists()).toBe(false)
   })
 
-  it('offers the way home first, then every declared order with its mirror right after it', () => {
+  it('offers a table with sortable columns and no composite order a menu below md alone', () => {
+    const { controller } = makeOrdered(ORDERED_COLUMNS, [])
+    const wrapper = mountBar(controller)
+
+    // Above md the header gives every one of these, so the menu, and the bar holding
+    // nothing else, hide there rather than stand as an empty row.
+    expect(wrapper.find('[data-id="hilos-table-order"]').classes()).toContain(
+      'd-md-none',
+    )
+    expect(
+      wrapper.find('[data-id="hilos-table-controls"]').classes(),
+    ).toContain('d-md-none')
+    expect(
+      wrapper
+        .findAll('[data-id^="hilos-table-order-"]')
+        .map((item) => [item.text(), item.classes('d-md-none')]),
+    ).toEqual([
+      ['Date ↓', true],
+      ['Kind ↑', true],
+      ['Kind ↓', true],
+      ['Date ↑', true],
+    ])
+  })
+
+  it('keeps the bar above md when it holds more than a menu for the narrow screen', () => {
+    const { controller } = makeController({
+      title: 'Settings',
+      search: {},
+      columns: ORDERED_COLUMNS,
+    })
+    const wrapper = mountBar(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-order"]').classes()).toContain(
+      'd-md-none',
+    )
+    expect(
+      wrapper.find('[data-id="hilos-table-controls"]').classes(),
+    ).not.toContain('d-md-none')
+  })
+
+  it('hides the items of one column above md and keeps the composite orders on both widths', () => {
+    const { controller } = makeOrdered()
+    const wrapper = mountBar(controller)
+    const narrowOnly = (key: string): boolean =>
+      wrapper.find(`[data-id="hilos-table-order-${key}"]`).classes('d-md-none')
+
+    expect(
+      wrapper.find('[data-id="hilos-table-order"]').classes(),
+    ).not.toContain('d-md-none')
+    expect(narrowOnly(HILOS_TABLE_OPENING_ORDER_KEY)).toBe(false)
+    expect(narrowOnly('channel-asc')).toBe(true)
+    expect(narrowOnly('createdAt-asc')).toBe(true)
+    expect(narrowOnly('by_channel')).toBe(false)
+    expect(narrowOnly('by_channel-mirror')).toBe(false)
+  })
+
+  it('runs the window by one column when its item is picked', async () => {
+    const { controller, sent } = makeOrdered(ORDERED_COLUMNS, [])
+    const wrapper = mountBar(controller)
+
+    await wrapper
+      .find('[data-id="hilos-table-order-channel-desc"]')
+      .trigger('click')
+
+    expect(sent.at(-1)).toMatchObject({
+      sort: [{ field: 'channel', direction: 'desc' }],
+    })
+  })
+
+  it('offers the way home first, then the columns both ways, then every declared order with its mirror', () => {
     const { controller } = makeOrdered()
     const wrapper = mountBar(controller)
 
-    // The mirror is the framework's: the same columns with every direction turned,
-    // offered right after the order it mirrors, and declared by no table (HIL-1095).
+    // The columns stand in the order they are declared, the one the table opened in
+    // left out — the way home names it. The mirror is the framework's: the same
+    // columns with every direction turned, offered right after the order it mirrors,
+    // and declared by no table (HIL-1095).
     expect(
       wrapper
         .findAll('[data-id^="hilos-table-order-"]')
         .map((item) => item.text()),
     ).toEqual([
       'Date ↓',
+      'Kind ↑',
+      'Kind ↓',
+      'Date ↑',
       'Kind ↑, then Date ↓',
       'Kind ↓, then Date ↑',
       'Date ↑, then Kind ↑',
@@ -425,18 +499,20 @@ describe('HilosTableBar', () => {
     expect(sent).toEqual([])
   })
 
-  it('marks no item at all once a header click has left an order of one column', async () => {
+  it('marks the item of the column, hidden above md, once a header click has left an order of one column', async () => {
     const { controller } = makeOrdered()
     const wrapper = mountBar(controller)
 
     controller.setSort('channel')
     await wrapper.vm.$nextTick()
 
-    expect(
-      wrapper
-        .findAll('[data-id^="hilos-table-order-"]')
-        .filter((item) => item.classes('active')),
-    ).toEqual([])
+    const active = wrapper
+      .findAll('[data-id^="hilos-table-order-"]')
+      .filter((item) => item.classes('active'))
+    expect(active.map((item) => item.attributes('data-id'))).toEqual([
+      'hilos-table-order-channel-asc',
+    ])
+    expect(active[0]?.classes()).toContain('d-md-none')
     expect(wrapper.find('[data-id="hilos-dropdown-toggle"]').text()).toBe(
       'Order: Kind ↑',
     )
@@ -486,6 +562,13 @@ describe('HilosTableBar', () => {
 
     expect(
       wrapper.find('[data-id="hilos-table-order-stale-by_state"]').exists(),
+    ).toBe(false)
+    // The column of the frozen source carries the mark on its own items too.
+    expect(
+      wrapper.find('[data-id="hilos-table-order-stale-channel-desc"]').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.find('[data-id="hilos-table-order-stale-state-asc"]').exists(),
     ).toBe(false)
 
     await wrapper

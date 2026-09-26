@@ -162,3 +162,48 @@ test('a narrow window draws the settings as cards and never scrolls sideways', a
   await expect(row).toBeVisible()
   await expect(cards).toBeHidden()
 })
+
+test('a narrow window sorts the settings by one column from the Order menu', async ({
+  page,
+}) => {
+  // HIL-1145 acceptance. Below md the table is a list of cards, and a card has no
+  // header to click, so the "Order" menu offers every sortable column both ways.
+  // The settings declare no composite order: above md the header gives all of it,
+  // and the menu is not there at all. The grant runs at the usual width, the page
+  // is opened narrow, the way a phone opens it.
+  await grantAdminToSelf(page)
+  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
+  await page.setViewportSize({ width: 375, height: desktop.height })
+  await gotoPage(page, '/hilos/settings')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+
+  const menu = page.getByTestId('hilos-table-order')
+  const keyHeader = page.locator('th:has([data-id="hilos-table-sort-key"])')
+  const firstCard = page
+    .getByTestId('hilos-table-cards')
+    .locator('[data-id^="hilos-table-card-"]')
+    .first()
+
+  // The settings open by key, first to last. The header that says so is on the
+  // hidden wide branch, and it still carries the order the window runs in.
+  await expect(keyHeader).toHaveAttribute('aria-sort', 'ascending')
+  await expect(menu).toBeVisible()
+  await expect(firstCard).toBeVisible()
+  const firstByKey = await firstCard.getAttribute('data-id')
+  expect(firstByKey).not.toBeNull()
+
+  // The way home names the opening order, so its column item is not offered twice.
+  await menu.getByTestId('hilos-dropdown-toggle').click()
+  await expect(page.getByTestId('hilos-table-order-key-asc')).toHaveCount(0)
+  await page.getByTestId('hilos-table-order-key-desc').click()
+
+  // The window comes back last to first: another setting heads the cards.
+  await expect(keyHeader).toHaveAttribute('aria-sort', 'descending')
+  await expect(firstCard).not.toHaveAttribute('data-id', firstByKey ?? '')
+
+  // On a wide screen the header sorts, and a menu of columns alone is not drawn.
+  await page.setViewportSize(desktop)
+  await expect(menu).toBeHidden()
+})

@@ -136,8 +136,10 @@ export {
   TABLE_ORDER_COPY,
   type HilosTableOrderView,
   type HilosTableSortOrder,
+  hilosTableColumnOrders,
   hilosTableOfferedOrders,
   hilosTableOrderLabel,
+  hilosTableOrderMenuNarrowOnly,
   hilosTableOrderPosition,
   hilosTableOrderViews,
   hilosTableSortPositionLabel,
@@ -201,6 +203,7 @@ export {
   type ModalLayerOwner,
 } from './dom/modalStack.js'
 export { copyToClipboard, isClipboardAvailable } from './dom/clipboard.js'
+export { isDisplayed } from './dom/displayed.js'
 export { downloadTextFile } from './dom/downloadTextFile.js'
 export {
   filterLicenseEntries,

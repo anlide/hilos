@@ -604,10 +604,10 @@ describe('TableViewportController', () => {
     expect(activeKeys()).toEqual(['by_channel'])
     expect(controller.frame.orderLabel.get()).toBe('Kind ↓, then Date ↓')
 
-    // A header click leaves an order the menu does not offer: nothing is active, and
-    // the button still says what the rows are sorted by.
+    // A header click leaves an order of one column: the menu offers it below md, so
+    // its item is the active one, and the button says what the rows are sorted by.
     controller.setSort('channel')
-    expect(activeKeys()).toEqual([])
+    expect(activeKeys()).toEqual(['channel-asc'])
     expect(controller.frame.orderLabel.get()).toBe('Kind ↑')
 
     controller.resetOrder()
@@ -619,6 +619,97 @@ describe('TableViewportController', () => {
     const { controller } = makeController()
 
     expect(controller.orders).toEqual([])
+  })
+
+  it('reports the sortable columns in both directions ahead of the declared orders', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      declaredOrders: [
+        {
+          key: 'by_channel',
+          components: [
+            { field: 'channel', direction: 'desc' },
+            { field: 'created', direction: 'desc' },
+          ],
+        },
+      ],
+      frame: {
+        title: 'Messages',
+        columns: [
+          { key: 'channel', label: 'Kind', sortable: true },
+          { key: 'body', label: 'Text' },
+          { key: 'created', label: 'Date', sortable: true },
+        ],
+      },
+    })
+
+    expect(controller.orders.map(({ key }) => key)).toEqual([
+      'channel-asc',
+      'channel-desc',
+      'created-asc',
+      'created-desc',
+      'by_channel',
+      'by_channel-mirror',
+    ])
+  })
+
+  it('a table with sortable columns and no declared order still has a menu, below md alone', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      frame: {
+        title: 'Settings',
+        columns: [
+          { key: 'key', label: 'Key', sortable: true },
+          { key: 'value', label: 'Value' },
+        ],
+      },
+    })
+
+    expect(controller.orders).toEqual([
+      { key: 'key-asc', components: [{ field: 'key', direction: 'asc' }] },
+      { key: 'key-desc', components: [{ field: 'key', direction: 'desc' }] },
+    ])
+    expect(
+      controller.frame.orders.get().map(({ key, narrowOnly }) => ({
+        key,
+        narrowOnly,
+      })),
+    ).toEqual([
+      { key: HILOS_TABLE_OPENING_ORDER_KEY, narrowOnly: true },
+      { key: 'key-asc', narrowOnly: true },
+      { key: 'key-desc', narrowOnly: true },
+    ])
+  })
+
+  it('once the first window names the opening order, the menu drops the item of that order', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      frame: {
+        title: 'Settings',
+        columns: [{ key: 'key', label: 'Key', sortable: true }],
+      },
+    })
+
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      [{ field: 'key', direction: 'asc' }],
+      [],
+    )
+
+    // The way home names the opening order already; a second item would name it twice.
+    expect(controller.frame.orders.get().map(({ key }) => key)).toEqual([
+      HILOS_TABLE_OPENING_ORDER_KEY,
+      'key-desc',
+    ])
+    expect(controller.frame.orders.get()[0]?.label).toBe('Key ↑')
   })
 
   it('setPage asks for the page by number, clamped to the page count', () => {

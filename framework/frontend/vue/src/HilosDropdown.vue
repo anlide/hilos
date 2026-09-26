@@ -5,8 +5,8 @@ toggling and outside-click are owned here, like HilosModal). It is slot-first:
 `#option` (scoped: option / selected / select) replaces each item, so a project
 customizes the look by filling slots, never by re-implementing the behavior —
 "template inheritance" via slots (sdk-packaging.md). v-model is the selected
-value. Outside-click and Escape close it, arrow keys rove the options, and the
-listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md). A
+value. Outside-click and Escape close it, arrow keys rove the options on display,
+and the listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md). A
 substituted option (slot #option) must itself carry role="option" and
 aria-selected — the <li> is presentational, and the SDK does not write the
 option role for a project.
@@ -20,6 +20,7 @@ projected templates in Angular (multiframework-core.md).
 Bootstrap classes only — no CSS of its own. -->
 <script setup lang="ts" generic="V extends string | number">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { isDisplayed } from '@hilos/core'
 
 import type { HilosDropdownOption } from './hilosDropdown.js'
 
@@ -60,13 +61,15 @@ const selected = computed(
 )
 const label = computed(() => selected.value?.label ?? props.placeholder)
 
+// Only the options on display take focus: an option a width hides with a class of
+// its own would stop the walk on something nobody sees.
 function optionButtons(): HTMLButtonElement[] {
   return menu.value
     ? Array.from(
         menu.value.querySelectorAll<HTMLButtonElement>(
           '.dropdown-item:not(:disabled)',
         ),
-      )
+      ).filter(isDisplayed)
     : []
 }
 
