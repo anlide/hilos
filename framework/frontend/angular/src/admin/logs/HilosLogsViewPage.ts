@@ -8,9 +8,11 @@
 // the server answers with what matched. The Follow switch runs the live tail, and
 // there is no Refresh button on purpose: freshness arrives as a push. Scrolling up
 // releases only the STICKING — the tail keeps running, what arrives while the
-// reader is up waits beside the pane, and the return control at the bottom carries
-// its count; so nothing ever moves under the reader's eyes, and nothing is lost
-// without saying so. The catalog, the address, the read, the buffer and the row
+// reader is up waits beside the pane, and the return control carries its count.
+// That control stands in the strip above the pane, in a room taken always (HIL-1024),
+// so neither its arrival nor its count moves the pane (styling-rules.md, "The room a
+// live message takes"); so nothing ever moves under the reader's eyes, and nothing is
+// lost without saying so. The catalog, the address, the read, the buffer and the row
 // view-model are the core headless's (hilosLogViewer), including the threshold that
 // decides "at the tail" and the wording of the notes — this view owns only the
 // markup and the scrolling, so a project mounts it by passing its
@@ -34,6 +36,7 @@ import {
   HILOS_LOG_LEVEL_OPTIONS,
   HilosPages,
   LOG_SOURCE_LIVE,
+  LOG_VIEWER_PENDING_WIDEST_LABEL,
   createHilosLogViewer,
   createSignal,
   hasLogViewerNodes,
@@ -41,6 +44,7 @@ import {
   logLevelVariant,
   logViewerNodeOf,
   logViewerPaneState,
+  logViewerPendingLabel,
   logViewerStreamsOf,
   readLogViewerAddress,
   subscribeSignal,
@@ -248,167 +252,185 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
             running
           </span>
         }
+        <span
+          class="hilos-stack"
+          [class.ms-auto]="!following()"
+          data-id="hilos-log-back-to-tail-room"
+        >
+          <!-- Holds the room at the widest the control ever gets: a span rather
+          than a button, since it keeps a place and must never take the focus. -->
+          <span class="btn btn-sm invisible" aria-hidden="true">
+            <i class="bi bi-arrow-down me-1"></i>Back to the tail
+            <span class="badge text-bg-light ms-1">{{
+              widestPendingLabel
+            }}</span>
+          </span>
+          @if (!pinned()) {
+            <button
+              type="button"
+              class="btn btn-sm btn-primary"
+              data-id="hilos-log-back-to-tail"
+              (click)="viewer().returnToTail()"
+            >
+              <i class="bi bi-arrow-down me-1" aria-hidden="true"></i>Back to
+              the tail
+              @if (pendingLines() > 0) {
+                <span
+                  class="badge text-bg-light ms-1"
+                  data-id="hilos-log-back-to-tail-count"
+                  >{{ pendingLabel() }}</span
+                ><span class="visually-hidden"> new lines</span>
+              }
+            </button>
+          }
+        </span>
       </div>
 
-      <div class="position-relative">
-        <div
-          #pane
-          class="border rounded-3 bg-body-tertiary py-2 overflow-auto"
-          style="max-height: 26rem; white-space: pre-wrap"
-          data-id="hilos-log-pane"
-          (scroll)="onScroll()"
-        >
-          @if (refusal(); as text) {
-            <p class="px-3 mb-0 small text-danger" data-id="hilos-log-refusal">
-              {{ text }}
-            </p>
-          } @else if (paneState() === 'unknown') {
-            <p
-              class="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-unknown"
-            >
-              The cluster picture has not arrived yet, so there is nothing to
-              choose between — not nothing to read.
-            </p>
-          } @else if (paneState() === 'unreadable') {
-            <p
-              class="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-unreadable"
-            >
-              @if (clustered()) {
-                No node could read its log store.
-              } @else {
-                The log store could not be read.
-              }
-            </p>
-          } @else if (paneState() === 'empty') {
-            <p
-              class="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-catalog"
-            >
-              No streams have been reported yet.
-            </p>
-          } @else if (paneState() === 'unchosen') {
-            <p
-              class="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-unchosen"
-            >
-              Choose a stream to read.
-            </p>
-          } @else if (paneState() === 'missing') {
-            <p
-              class="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-missing"
-            >
-              This file cannot be read. The rotation may have carried it off, or
-              nothing has written to it yet.
-            </p>
-          } @else if (paneState() === 'nomatch') {
-            <p
-              class="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-nomatch"
-            >
-              Nothing in this file matched.
-            </p>
-          } @else if (paneState() === 'silent') {
-            <p
-              class="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-silent"
-            >
-              This file is empty.
-            </p>
-          } @else {
-            @for (row of rows(); track row.key) {
-              @if (row.kind === 'notice') {
+      <div
+        #pane
+        class="border rounded-3 bg-body-tertiary py-2 overflow-auto"
+        style="max-height: 26rem; white-space: pre-wrap"
+        data-id="hilos-log-pane"
+        (scroll)="onScroll()"
+      >
+        @if (refusal(); as text) {
+          <p class="px-3 mb-0 small text-danger" data-id="hilos-log-refusal">
+            {{ text }}
+          </p>
+        } @else if (paneState() === 'unknown') {
+          <p
+            class="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-unknown"
+          >
+            The cluster picture has not arrived yet, so there is nothing to
+            choose between — not nothing to read.
+          </p>
+        } @else if (paneState() === 'unreadable') {
+          <p
+            class="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-unreadable"
+          >
+            @if (clustered()) {
+              No node could read its log store.
+            } @else {
+              The log store could not be read.
+            }
+          </p>
+        } @else if (paneState() === 'empty') {
+          <p
+            class="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-catalog"
+          >
+            No streams have been reported yet.
+          </p>
+        } @else if (paneState() === 'unchosen') {
+          <p
+            class="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-unchosen"
+          >
+            Choose a stream to read.
+          </p>
+        } @else if (paneState() === 'missing') {
+          <p
+            class="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-missing"
+          >
+            This file cannot be read. The rotation may have carried it off, or
+            nothing has written to it yet.
+          </p>
+        } @else if (paneState() === 'nomatch') {
+          <p
+            class="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-nomatch"
+          >
+            Nothing in this file matched.
+          </p>
+        } @else if (paneState() === 'silent') {
+          <p
+            class="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-silent"
+          >
+            This file is empty.
+          </p>
+        } @else {
+          @for (row of rows(); track row.key) {
+            @if (row.kind === 'notice') {
+              <div
+                class="d-flex align-items-center justify-content-center gap-2 px-3 py-1 small text-body-secondary"
+                data-id="hilos-log-notice"
+              >
+                <i
+                  [class]="'bi ' + noticeIcons[row.notice]"
+                  aria-hidden="true"
+                ></i>
+                <span>{{ row.text }}</span>
+              </div>
+            } @else {
+              <!-- The entry a link opened the viewer on is framed so the eye lands on it;
+              it comes first on its page, so nothing has to scroll to it. -->
+              <div
+                data-id="hilos-log-entry"
+                [class]="
+                  row.anchored
+                    ? 'border border-primary rounded-1 bg-primary-subtle'
+                    : ''
+                "
+                [attr.aria-current]="row.anchored ? 'location' : null"
+              >
                 <div
-                  class="d-flex align-items-center justify-content-center gap-2 px-3 py-1 small text-body-secondary"
-                  data-id="hilos-log-notice"
-                >
-                  <i
-                    [class]="'bi ' + noticeIcons[row.notice]"
-                    aria-hidden="true"
-                  ></i>
-                  <span>{{ row.text }}</span>
-                </div>
-              } @else {
-                <!-- The entry a link opened the viewer on is framed so the eye lands on it;
-                it comes first on its page, so nothing has to scroll to it. -->
-                <div
-                  data-id="hilos-log-entry"
+                  class="d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4"
                   [class]="
-                    row.anchored
-                      ? 'border border-primary rounded-1 bg-primary-subtle'
-                      : ''
+                    'border-' +
+                    levelVariant(row.level) +
+                    (row.orphan ? ' opacity-75' : '')
                   "
-                  [attr.aria-current]="row.anchored ? 'location' : null"
+                  [attr.data-id]="
+                    row.anchored ? 'hilos-log-entry-anchor' : null
+                  "
                 >
-                  <div
-                    class="d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4"
-                    [class]="
-                      'border-' +
-                      levelVariant(row.level) +
-                      (row.orphan ? ' opacity-75' : '')
-                    "
-                    [attr.data-id]="
-                      row.anchored ? 'hilos-log-entry-anchor' : null
-                    "
+                  <span
+                    class="fw-semibold text-nowrap"
+                    [class]="'text-' + levelVariant(row.level)"
                   >
-                    <span
-                      class="fw-semibold text-nowrap"
-                      [class]="'text-' + levelVariant(row.level)"
+                    {{ row.level }}
+                  </span>
+                  <span class="text-body-secondary text-nowrap">{{
+                    row.time
+                  }}</span>
+                  <span class="flex-grow-1">{{ row.text }}</span>
+                  @if (row.frames.length > 0) {
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-link p-0 text-decoration-none text-nowrap"
+                      [attr.aria-expanded]="isOpen(row)"
+                      [attr.aria-label]="
+                        'Call stack of this entry, ' +
+                        row.frames.length +
+                        ' frames'
+                      "
+                      data-id="hilos-log-stack-toggle"
+                      (click)="toggle(row)"
                     >
-                      {{ row.level }}
-                    </span>
-                    <span class="text-body-secondary text-nowrap">{{
-                      row.time
-                    }}</span>
-                    <span class="flex-grow-1">{{ row.text }}</span>
-                    @if (row.frames.length > 0) {
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-link p-0 text-decoration-none text-nowrap"
-                        [attr.aria-expanded]="isOpen(row)"
-                        [attr.aria-label]="
-                          'Call stack of this entry, ' +
-                          row.frames.length +
-                          ' frames'
-                        "
-                        data-id="hilos-log-stack-toggle"
-                        (click)="toggle(row)"
-                      >
-                        <i class="bi bi-info-circle me-1" aria-hidden="true"></i
-                        >{{ row.frames.length }}
-                      </button>
-                    }
-                  </div>
-                  @if (row.frames.length > 0 && isOpen(row)) {
-                    <div class="bg-body" data-id="hilos-log-stack">
-                      @for (frame of row.frames; track $index) {
-                        <div
-                          class="d-flex gap-2 px-3 py-1 font-monospace small text-break opacity-75 border-start border-4"
-                          [class]="'border-' + levelVariant(row.level)"
-                        >
-                          <span class="flex-grow-1">{{ frame.text }}</span>
-                        </div>
-                      }
-                    </div>
+                      <i class="bi bi-info-circle me-1" aria-hidden="true"></i
+                      >{{ row.frames.length }}
+                    </button>
                   }
                 </div>
-              }
+                @if (row.frames.length > 0 && isOpen(row)) {
+                  <div class="bg-body" data-id="hilos-log-stack">
+                    @for (frame of row.frames; track $index) {
+                      <div
+                        class="d-flex gap-2 px-3 py-1 font-monospace small text-break opacity-75 border-start border-4"
+                        [class]="'border-' + levelVariant(row.level)"
+                      >
+                        <span class="flex-grow-1">{{ frame.text }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
             }
           }
-        </div>
-        @if (!pinned()) {
-          <button
-            type="button"
-            class="btn btn-sm btn-primary position-absolute bottom-0 start-50 translate-middle-x mb-2"
-            data-id="hilos-log-back-to-tail"
-            (click)="viewer().returnToTail()"
-          >
-            Back to the tail{{
-              pendingLines() > 0 ? ' · ' + pendingLines() + ' new' : ''
-            }}
-          </button>
         }
       </div>
     </hilos-admin-page>
@@ -423,6 +445,7 @@ export class HilosLogsViewPage {
   protected readonly levelOptions = HILOS_LOG_LEVEL_OPTIONS
   protected readonly noticeIcons = NOTICE_ICONS
   protected readonly levelVariant = logLevelVariant
+  protected readonly widestPendingLabel = LOG_VIEWER_PENDING_WIDEST_LABEL
 
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 
@@ -467,6 +490,9 @@ export class HilosLogsViewPage {
   protected readonly canFollow = signal(false)
   protected readonly pinned = signal(true)
   protected readonly pendingLines = signal(0)
+  protected readonly pendingLabel = computed(() =>
+    logViewerPendingLabel(this.pendingLines()),
+  )
 
   // The node select exists only where nodes have names: a picker with one nameless
   // option is furniture for a choice that does not exist.

@@ -155,6 +155,29 @@ export async function overlapSpot(
 }
 
 /**
+ * Refuse `upper` unless its bottom edge stands no lower than the top edge of
+ * `lower` — that is, unless it is drawn above it and over none of it.
+ *
+ * A live control that must not cover the content it belongs to is proven clear
+ * of it here, in the toolbox, rather than by boxes compared in the spec
+ * (HIL-1024 — the way back to the tail stands in the strip over the log pane,
+ * not on its lines). One read each, no polling: wait in the spec for the state
+ * that puts both on screen. A tolerance of 1px is allowed for subpixel rounding.
+ *
+ * @param upper The element that must stand above, such as a button.
+ * @param lower The element it must not cover, such as a scrolling pane.
+ */
+export async function liesAbove(upper: Locator, lower: Locator): Promise<void> {
+  const top = await readBox(upper, `${upper.toString()} box`)
+  const bottom = await readBox(lower, `${lower.toString()} box`)
+  if (top.y + top.height > bottom.y + SLACK_PX) {
+    throw new Error(
+      `${upper.toString()} does not lie above ${lower.toString()}: its bottom edge ${top.y + top.height} is below the other's top edge ${bottom.y}`,
+    )
+  }
+}
+
+/**
  * Assert that elements sit in one row with equal width and equal top edge.
  *
  * One read each, no polling: wait in the spec for the state that puts both on

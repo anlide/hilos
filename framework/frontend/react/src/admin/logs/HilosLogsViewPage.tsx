@@ -8,9 +8,11 @@
 // the server answers with what matched. The Follow switch runs the live tail, and
 // there is no Refresh button on purpose: freshness arrives as a push. Scrolling up
 // releases only the STICKING — the tail keeps running, what arrives while the
-// reader is up waits beside the pane, and the return control at the bottom carries
-// its count; so nothing ever moves under the reader's eyes, and nothing is lost
-// without saying so. The catalog, the address, the read, the buffer and the row
+// reader is up waits beside the pane, and the return control carries its count.
+// That control stands in the strip above the pane, in a room taken always (HIL-1024),
+// so neither its arrival nor its count moves the pane (styling-rules.md, "The room a
+// live message takes"); so nothing ever moves under the reader's eyes, and nothing is
+// lost without saying so. The catalog, the address, the read, the buffer and the row
 // view-model are the core headless's (hilosLogViewer), including the threshold that
 // decides "at the tail" and the wording of the notes — this view owns only the
 // markup and the scrolling, so a project mounts it by passing its
@@ -30,6 +32,7 @@ import {
   HILOS_LOG_LEVEL_OPTIONS,
   HilosPages,
   LOG_SOURCE_LIVE,
+  LOG_VIEWER_PENDING_WIDEST_LABEL,
   createHilosLogViewer,
   createSignal,
   hasLogViewerNodes,
@@ -37,6 +40,7 @@ import {
   logLevelVariant,
   logViewerNodeOf,
   logViewerPaneState,
+  logViewerPendingLabel,
   logViewerStreamsOf,
 } from '@hilos/core'
 import type {
@@ -420,162 +424,185 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
             Tail is running
           </span>
         ) : null}
+        <span
+          className={following ? 'hilos-stack' : 'hilos-stack ms-auto'}
+          data-id="hilos-log-back-to-tail-room"
+        >
+          {/* Holds the room at the widest the control ever gets: a span rather
+          than a button, since it keeps a place and must never take the focus. */}
+          <span className="btn btn-sm invisible" aria-hidden="true">
+            <i className="bi bi-arrow-down me-1" />
+            Back to the tail{' '}
+            <span className="badge text-bg-light ms-1">
+              {LOG_VIEWER_PENDING_WIDEST_LABEL}
+            </span>
+          </span>
+          {!pinned ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              data-id="hilos-log-back-to-tail"
+              onClick={() => viewer.returnToTail()}
+            >
+              <i className="bi bi-arrow-down me-1" aria-hidden="true" />
+              Back to the tail
+              {pendingLines > 0 ? (
+                <>
+                  {' '}
+                  <span
+                    className="badge text-bg-light ms-1"
+                    data-id="hilos-log-back-to-tail-count"
+                  >
+                    {logViewerPendingLabel(pendingLines)}
+                  </span>
+                  <span className="visually-hidden"> new lines</span>
+                </>
+              ) : null}
+            </button>
+          ) : null}
+        </span>
       </div>
 
-      <div className="position-relative">
-        <div
-          ref={pane}
-          className="border rounded-3 bg-body-tertiary py-2 overflow-auto"
-          style={{ maxHeight: '26rem', whiteSpace: 'pre-wrap' }}
-          data-id="hilos-log-pane"
-          onScroll={onScroll}
-        >
-          {refusal ? (
-            <p
-              className="px-3 mb-0 small text-danger"
-              data-id="hilos-log-refusal"
-            >
-              {refusal}
-            </p>
-          ) : paneState === 'unknown' ? (
-            <p
-              className="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-unknown"
-            >
-              The cluster picture has not arrived yet, so there is nothing to
-              choose between — not nothing to read.
-            </p>
-          ) : paneState === 'unreadable' ? (
-            <p
-              className="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-unreadable"
-            >
-              {clustered
-                ? 'No node could read its log store.'
-                : 'The log store could not be read.'}
-            </p>
-          ) : paneState === 'empty' ? (
-            <p
-              className="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-catalog"
-            >
-              No streams have been reported yet.
-            </p>
-          ) : paneState === 'unchosen' ? (
-            <p
-              className="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-unchosen"
-            >
-              Choose a stream to read.
-            </p>
-          ) : paneState === 'missing' ? (
-            <p
-              className="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-missing"
-            >
-              This file cannot be read. The rotation may have carried it off, or
-              nothing has written to it yet.
-            </p>
-          ) : paneState === 'nomatch' ? (
-            <p
-              className="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-nomatch"
-            >
-              Nothing in this file matched.
-            </p>
-          ) : paneState === 'silent' ? (
-            <p
-              className="px-3 mb-0 small text-body-secondary"
-              data-id="hilos-log-empty-silent"
-            >
-              This file is empty.
-            </p>
-          ) : (
-            rows.map((row) =>
-              row.kind === 'notice' ? (
+      <div
+        ref={pane}
+        className="border rounded-3 bg-body-tertiary py-2 overflow-auto"
+        style={{ maxHeight: '26rem', whiteSpace: 'pre-wrap' }}
+        data-id="hilos-log-pane"
+        onScroll={onScroll}
+      >
+        {refusal ? (
+          <p
+            className="px-3 mb-0 small text-danger"
+            data-id="hilos-log-refusal"
+          >
+            {refusal}
+          </p>
+        ) : paneState === 'unknown' ? (
+          <p
+            className="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-unknown"
+          >
+            The cluster picture has not arrived yet, so there is nothing to
+            choose between — not nothing to read.
+          </p>
+        ) : paneState === 'unreadable' ? (
+          <p
+            className="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-unreadable"
+          >
+            {clustered
+              ? 'No node could read its log store.'
+              : 'The log store could not be read.'}
+          </p>
+        ) : paneState === 'empty' ? (
+          <p
+            className="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-catalog"
+          >
+            No streams have been reported yet.
+          </p>
+        ) : paneState === 'unchosen' ? (
+          <p
+            className="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-unchosen"
+          >
+            Choose a stream to read.
+          </p>
+        ) : paneState === 'missing' ? (
+          <p
+            className="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-missing"
+          >
+            This file cannot be read. The rotation may have carried it off, or
+            nothing has written to it yet.
+          </p>
+        ) : paneState === 'nomatch' ? (
+          <p
+            className="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-nomatch"
+          >
+            Nothing in this file matched.
+          </p>
+        ) : paneState === 'silent' ? (
+          <p
+            className="px-3 mb-0 small text-body-secondary"
+            data-id="hilos-log-empty-silent"
+          >
+            This file is empty.
+          </p>
+        ) : (
+          rows.map((row) =>
+            row.kind === 'notice' ? (
+              <div
+                key={row.key}
+                className="d-flex align-items-center justify-content-center gap-2 px-3 py-1 small text-body-secondary"
+                data-id="hilos-log-notice"
+              >
+                <i
+                  className={`bi ${NOTICE_ICONS[row.notice]}`}
+                  aria-hidden="true"
+                />
+                <span>{row.text}</span>
+              </div>
+            ) : (
+              // The entry a link opened the viewer on is framed so the eye lands on
+              // it; it comes first on its page, so nothing has to scroll to it.
+              <div
+                key={row.key}
+                data-id="hilos-log-entry"
+                className={
+                  row.anchored
+                    ? 'border border-primary rounded-1 bg-primary-subtle'
+                    : undefined
+                }
+                aria-current={row.anchored ? 'location' : undefined}
+              >
                 <div
-                  key={row.key}
-                  className="d-flex align-items-center justify-content-center gap-2 px-3 py-1 small text-body-secondary"
-                  data-id="hilos-log-notice"
+                  className={`d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4 border-${logLevelVariant(row.level)}${row.orphan ? ' opacity-75' : ''}`}
+                  data-id={row.anchored ? 'hilos-log-entry-anchor' : undefined}
                 >
-                  <i
-                    className={`bi ${NOTICE_ICONS[row.notice]}`}
-                    aria-hidden="true"
-                  />
-                  <span>{row.text}</span>
-                </div>
-              ) : (
-                // The entry a link opened the viewer on is framed so the eye lands on
-                // it; it comes first on its page, so nothing has to scroll to it.
-                <div
-                  key={row.key}
-                  data-id="hilos-log-entry"
-                  className={
-                    row.anchored
-                      ? 'border border-primary rounded-1 bg-primary-subtle'
-                      : undefined
-                  }
-                  aria-current={row.anchored ? 'location' : undefined}
-                >
-                  <div
-                    className={`d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4 border-${logLevelVariant(row.level)}${row.orphan ? ' opacity-75' : ''}`}
-                    data-id={
-                      row.anchored ? 'hilos-log-entry-anchor' : undefined
-                    }
+                  <span
+                    className={`fw-semibold text-nowrap text-${logLevelVariant(row.level)}`}
                   >
-                    <span
-                      className={`fw-semibold text-nowrap text-${logLevelVariant(row.level)}`}
+                    {row.level}
+                  </span>
+                  <span className="text-body-secondary text-nowrap">
+                    {row.time}
+                  </span>
+                  <span className="flex-grow-1">{row.text}</span>
+                  {row.frames.length > 0 ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-link p-0 text-decoration-none text-nowrap"
+                      aria-expanded={isOpen(row)}
+                      aria-label={`Call stack of this entry, ${row.frames.length} frames`}
+                      data-id="hilos-log-stack-toggle"
+                      onClick={() => toggle(row)}
                     >
-                      {row.level}
-                    </span>
-                    <span className="text-body-secondary text-nowrap">
-                      {row.time}
-                    </span>
-                    <span className="flex-grow-1">{row.text}</span>
-                    {row.frames.length > 0 ? (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-link p-0 text-decoration-none text-nowrap"
-                        aria-expanded={isOpen(row)}
-                        aria-label={`Call stack of this entry, ${row.frames.length} frames`}
-                        data-id="hilos-log-stack-toggle"
-                        onClick={() => toggle(row)}
-                      >
-                        <i
-                          className="bi bi-info-circle me-1"
-                          aria-hidden="true"
-                        />
-                        {row.frames.length}
-                      </button>
-                    ) : null}
-                  </div>
-                  {row.frames.length > 0 && isOpen(row) ? (
-                    <div className="bg-body" data-id="hilos-log-stack">
-                      {row.frames.map((frame, index) => (
-                        <div
-                          key={index}
-                          className={`d-flex gap-2 px-3 py-1 font-monospace small text-break opacity-75 border-start border-4 border-${logLevelVariant(row.level)}`}
-                        >
-                          <span className="flex-grow-1">{frame.text}</span>
-                        </div>
-                      ))}
-                    </div>
+                      <i
+                        className="bi bi-info-circle me-1"
+                        aria-hidden="true"
+                      />
+                      {row.frames.length}
+                    </button>
                   ) : null}
                 </div>
-              ),
-            )
-          )}
-        </div>
-        {!pinned ? (
-          <button
-            type="button"
-            className="btn btn-sm btn-primary position-absolute bottom-0 start-50 translate-middle-x mb-2"
-            data-id="hilos-log-back-to-tail"
-            onClick={() => viewer.returnToTail()}
-          >
-            Back to the tail{pendingLines > 0 ? ` · ${pendingLines} new` : ''}
-          </button>
-        ) : null}
+                {row.frames.length > 0 && isOpen(row) ? (
+                  <div className="bg-body" data-id="hilos-log-stack">
+                    {row.frames.map((frame, index) => (
+                      <div
+                        key={index}
+                        className={`d-flex gap-2 px-3 py-1 font-monospace small text-break opacity-75 border-start border-4 border-${logLevelVariant(row.level)}`}
+                      >
+                        <span className="flex-grow-1">{frame.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ),
+          )
+        )}
       </div>
     </HilosAdminPage>
   )

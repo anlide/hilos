@@ -5,6 +5,7 @@ import {
   hasLogViewerNodes,
   isLogViewerPinned,
   logViewerNodeOf,
+  logViewerPendingLabel,
   logViewerPaneState,
   logViewerPath,
   logViewerStreamsOf,
@@ -18,6 +19,7 @@ import {
   LOGS_VIEWER_SIGNAL_SCHEMAS,
   LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
+  LOG_VIEWER_PENDING_WIDEST_LABEL,
   type HilosLogViewer,
   type HilosLogViewerAddress,
   type HilosLogViewerCatalog,
@@ -618,6 +620,19 @@ describe('isLogViewerPinned', () => {
     expect(isLogViewerPinned(0, 1000, 1000)).toBe(true)
     expect(isLogViewerPinned(0, 1024, 1000)).toBe(true)
     expect(isLogViewerPinned(0, 1025, 1000)).toBe(false)
+  })
+})
+
+describe('logViewerPendingLabel', () => {
+  it('writes nothing for no lines, the number up to the ceiling, and the widest label past it', () => {
+    // The ceiling keeps the live control inside the room its invisible twin
+    // holds: a count without one would widen it and wrap the strip on a phone.
+    expect(logViewerPendingLabel(0)).toBe('')
+    expect(logViewerPendingLabel(14)).toBe('14')
+    expect(logViewerPendingLabel(999)).toBe('999')
+    expect(logViewerPendingLabel(1000)).toBe('999+')
+    expect(logViewerPendingLabel(1270)).toBe('999+')
+    expect(LOG_VIEWER_PENDING_WIDEST_LABEL).toBe('999+')
   })
 })
 

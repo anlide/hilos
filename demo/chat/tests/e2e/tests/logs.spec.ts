@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test'
 
+import {
+  liesAbove,
+  watchTop,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import {
   appendLogLines,
@@ -84,11 +88,16 @@ test('follows a live log file: an appended line arrives on its own, and one appe
   // Reading something above. A programmatic scroll raises the ordinary scroll
   // event the view listens to; neither the code nor the test tries to tell a
   // reader's scroll from its own.
+  const paneTop = await watchTop(pane)
   await pane.evaluate((element) => {
     element.scrollTop = 0
   })
   const backToTail = page.getByTestId('hilos-log-back-to-tail')
   await expect(backToTail).toBeVisible()
+  // The way back arrives in the room the strip above the pane held for it all
+  // along (HIL-1024): the pane does not move, and no line lies under the button.
+  await paneTop.unchanged()
+  await liesAbove(backToTail, pane)
 
   const waiting = logMarker('e2e-follow-waits')
   expect(await appendLogLines(waiting, 1)).toBe(1)
@@ -98,9 +107,12 @@ test('follows a live log file: an appended line arrives on its own, and one appe
   // flight. It is matched by shape rather than against a strict one — the owner
   // of the logs writes into this same file now and then (a start, a stop, a
   // rotation), and a hard number would go red on its own schedule.
-  await expect(backToTail).toHaveText(/\d+ new/, {
-    timeout: TAIL_ARRIVAL_TIMEOUT_MS,
-  })
+  await expect(page.getByTestId('hilos-log-back-to-tail-count')).toHaveText(
+    /^\d+\+?$/,
+    { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+  )
+  // The count came in its own room too: the pane still has not moved.
+  await paneTop.unchanged()
   await expect(
     page.getByTestId('hilos-log-entry').filter({ hasText: `${waiting} #1` }),
   ).toHaveCount(0)

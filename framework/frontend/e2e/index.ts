@@ -20,6 +20,7 @@
 // any demo runner does.
 
 export {
+  liesAbove,
   overlapSpot,
   shareOneRow,
   watchFirstRowTop,

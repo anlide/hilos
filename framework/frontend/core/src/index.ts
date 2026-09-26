@@ -1320,6 +1320,8 @@ export {
   splitLogTrace,
   toLogViewerRows,
   isLogViewerPinned,
+  logViewerPendingLabel,
+  LOG_VIEWER_PENDING_WIDEST_LABEL,
   HILOS_LOG_LEVEL_OPTIONS,
   LOG_VIEWER_CATALOG_SIGNAL,
   LOG_LINES_APPENDED_SIGNAL,

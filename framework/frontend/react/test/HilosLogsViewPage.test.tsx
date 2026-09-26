@@ -249,6 +249,22 @@ function scrollUp(pane: Element): void {
   fireEvent.scroll(pane)
 }
 
+/**
+ * Asserts the room of the way back to the tail stands in the strip, held by
+ * exactly one invisible twin hidden from assistive technology, and returns it.
+ *
+ * @param container The mounted page.
+ */
+function expectBackToTailRoom(container: HTMLElement): HTMLElement {
+  const room = byId(container, 'hilos-log-back-to-tail-room')
+  expect(room).not.toBeNull()
+  const twins = (room as HTMLElement).querySelectorAll('.invisible')
+  expect(twins).toHaveLength(1)
+  expect(twins[0].getAttribute('aria-hidden')).toBe('true')
+
+  return room as HTMLElement
+}
+
 describe('HilosLogsViewPage', () => {
   afterEach(cleanup)
 
@@ -446,13 +462,22 @@ describe('HilosLogsViewPage', () => {
     const followId = sent.at(-1)?.requestId ?? ''
 
     expect(byId(container, 'hilos-log-back-to-tail')).toBeNull()
+    // The room is taken before there is anything to say, by a twin that holds
+    // the place and never takes the focus.
+    expectBackToTailRoom(container)
 
     scrollUp(byId(container, 'hilos-log-pane') as Element)
     pushAppended({ followId, lines: [wireLine('one'), wireLine('two')] })
 
-    expect(byId(container, 'hilos-log-back-to-tail')?.textContent).toBe(
-      'Back to the tail · 2 new',
+    expect(byId(container, 'hilos-log-back-to-tail-count')?.textContent).toBe(
+      '2',
     )
+    // The control stands in its room, in the flow, and not over the pane.
+    const back = expectBackToTailRoom(container).querySelector(
+      '[data-id="hilos-log-back-to-tail"]',
+    )
+    expect(back).not.toBeNull()
+    expect(back?.classList.contains('position-absolute')).toBe(false)
     // The pane under the reader's eyes does not move at all while they are up.
     expect(
       container.querySelectorAll('[data-id="hilos-log-entry"]'),
@@ -464,6 +489,22 @@ describe('HilosLogsViewPage', () => {
       container.querySelectorAll('[data-id="hilos-log-entry"]'),
     ).toHaveLength(2)
     expect(byId(container, 'hilos-log-back-to-tail')).toBeNull()
+  })
+
+  it('writes a count past the ceiling as the widest label', () => {
+    const { connection, pushCatalog, pushAppended, sent } = makeConnection()
+    const container = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    const followId = sent.at(-1)?.requestId ?? ''
+
+    scrollUp(byId(container, 'hilos-log-pane') as Element)
+    const lines = Array.from({ length: 600 }, (_, i) => wireLine(`line ${i}`))
+    pushAppended({ followId, lines })
+    pushAppended({ followId, lines })
+
+    expect(byId(container, 'hilos-log-back-to-tail-count')?.textContent).toBe(
+      '999+',
+    )
   })
 
   it('takes the pane back to the tail when the reader goes back with nothing waiting', () => {

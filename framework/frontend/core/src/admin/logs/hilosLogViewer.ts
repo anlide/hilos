@@ -108,6 +108,9 @@ const LOG_VIEWER_ANCHOR_PARAM = 'anchor'
  */
 const LOG_VIEWER_TAIL_THRESHOLD_PX = 24
 
+/** The largest count the badge on the way back to the tail writes in digits. */
+const LOG_VIEWER_PENDING_SHOWN_MAX = 999
+
 /**
  * The most lines the feed holds; the oldest are cut off the top past it.
  *
@@ -714,6 +717,38 @@ export function isLogViewerPinned(
   clientHeight: number,
 ): boolean {
   return scrollHeight - scrollTop - clientHeight <= LOG_VIEWER_TAIL_THRESHOLD_PX
+}
+
+/**
+ * The widest text the badge on the way back to the tail ever shows.
+ *
+ * The room for that control is held by an invisible twin carrying exactly this
+ * text, so the room never changes size when the control arrives or its count
+ * grows (docs/agents/frontend/styling-rules.md, "The room a live message
+ * takes"). It lives here rather than in a view for the same reason as the tail
+ * threshold: the React and Angular viewers hold the same room as the Vue one.
+ */
+export const LOG_VIEWER_PENDING_WIDEST_LABEL = `${LOG_VIEWER_PENDING_SHOWN_MAX}+`
+
+/**
+ * The text of the badge counting lines that arrived while the reader was away
+ * from the tail: empty for none, the number up to the ceiling, and
+ * {@link LOG_VIEWER_PENDING_WIDEST_LABEL} past it.
+ *
+ * The ceiling is what keeps the live control inside its room: a count without
+ * one would grow the control wider than the twin holding its place, and on a
+ * phone the strip above the feed would wrap and push the feed down.
+ *
+ * @param count How many lines are waiting in the buffer.
+ */
+export function logViewerPendingLabel(count: number): string {
+  if (count <= 0) {
+    return ''
+  }
+
+  return count <= LOG_VIEWER_PENDING_SHOWN_MAX
+    ? String(count)
+    : LOG_VIEWER_PENDING_WIDEST_LABEL
 }
 
 /**

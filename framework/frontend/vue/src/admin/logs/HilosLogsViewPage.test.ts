@@ -429,14 +429,22 @@ describe('HilosLogsViewPage', () => {
     expect(wrapper.find('[data-id="hilos-log-back-to-tail"]').exists()).toBe(
       false,
     )
+    // The room is taken before there is anything to say, by a twin that holds
+    // the place and never takes the focus.
+    expectBackToTailRoom(wrapper)
 
     await scrollUp(wrapper.find('[data-id="hilos-log-pane"]').element)
     pushAppended({ followId, lines: [wireLine('one'), wireLine('two')] })
     await nextTick()
 
-    expect(wrapper.find('[data-id="hilos-log-back-to-tail"]').text()).toBe(
-      'Back to the tail · 2 new',
-    )
+    expect(
+      wrapper.find('[data-id="hilos-log-back-to-tail-count"]').text(),
+    ).toBe('2')
+    // The control stands in its room, in the flow, and not over the pane.
+    const room = expectBackToTailRoom(wrapper)
+    const back = room.find('[data-id="hilos-log-back-to-tail"]')
+    expect(back.exists()).toBe(true)
+    expect(back.classes()).not.toContain('position-absolute')
     // The pane under the reader's eyes does not move at all while they are up.
     expect(wrapper.findAll('[data-id="hilos-log-entry"]')).toHaveLength(0)
 
@@ -446,6 +454,24 @@ describe('HilosLogsViewPage', () => {
     expect(wrapper.find('[data-id="hilos-log-back-to-tail"]').exists()).toBe(
       false,
     )
+  })
+
+  it('writes a count past the ceiling as the widest label', async () => {
+    const { connection, pushCatalog, pushAppended, sent } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+    const followId = sent.at(-1)?.requestId ?? ''
+
+    await scrollUp(wrapper.find('[data-id="hilos-log-pane"]').element)
+    const lines = Array.from({ length: 600 }, (_, i) => wireLine(`line ${i}`))
+    pushAppended({ followId, lines })
+    pushAppended({ followId, lines })
+    await nextTick()
+
+    expect(
+      wrapper.find('[data-id="hilos-log-back-to-tail-count"]').text(),
+    ).toBe('999+')
   })
 
   it('takes the pane back to the tail when the reader goes back with nothing waiting', async () => {
@@ -556,4 +582,22 @@ async function scrollUp(pane: Element): Promise<void> {
   pane.scrollTop = 0
   pane.dispatchEvent(new Event('scroll'))
   await nextTick()
+}
+
+/**
+ * Asserts the room of the way back to the tail stands in the strip, held by
+ * exactly one invisible twin hidden from assistive technology, and returns it.
+ *
+ * @param wrapper The mounted page.
+ */
+function expectBackToTailRoom(
+  wrapper: ReturnType<typeof mountPage>,
+): ReturnType<ReturnType<typeof mountPage>['find']> {
+  const room = wrapper.find('[data-id="hilos-log-back-to-tail-room"]')
+  expect(room.exists()).toBe(true)
+  const twins = room.findAll('.invisible')
+  expect(twins).toHaveLength(1)
+  expect(twins[0].attributes('aria-hidden')).toBe('true')
+
+  return room
 }
