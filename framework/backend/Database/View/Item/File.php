@@ -22,6 +22,7 @@ use Hilos\HilosException;
  * @property-read string $filename
  * @property-read string $mimeType
  * @property-read int $size
+ * @property-read string $contentHash
  * @property-read int $ownerUserId
  * @property-read FileVisibility $visibility
  * @property-read bool $bound
@@ -32,7 +33,7 @@ final class File extends DbItem
     /**
      * Magic getter for file properties.
      *
-     * @param string $name Property name (id, storedName, filename, mimeType, size, ownerUserId, visibility, bound, createdAt)
+     * @param string $name Property name (id, storedName, filename, mimeType, size, contentHash, ownerUserId, visibility, bound, createdAt)
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
@@ -46,6 +47,7 @@ final class File extends DbItem
             ObjectFile::filename => $this->_object->filename,
             ObjectFile::mimeType => $this->_object->mimeType,
             ObjectFile::size => $this->_object->size,
+            ObjectFile::contentHash => $this->_object->contentHash,
             ObjectFile::ownerUserId => $this->_object->ownerUserId,
             ObjectFile::visibility => FileVisibility::from($this->_object->visibility),
             ObjectFile::bound => $this->_object->bound,

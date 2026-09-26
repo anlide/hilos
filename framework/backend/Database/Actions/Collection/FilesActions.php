@@ -10,6 +10,7 @@ use Hilos\Database\Object\Collection\Files as ObjectFiles;
 use Hilos\Database\Object\Item\File as ObjectFile;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Item\File;
+use Hilos\Files\ContentHash;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Fs\FsDirectory;
@@ -38,10 +39,11 @@ final class FilesActions extends DbActions
      * @param string $filename Name the uploader gave the file
      * @param string $mimeType MIME type of the file
      * @param int $size Size of the file in bytes
+     * @param string $contentHash Fingerprint of the file's content ({@see ContentHash})
      * @param int $ownerUserId Id of the person who owns the file
      * @param FileVisibility $visibility Who may be given the file
      * @return File Created file
-     * @throws ValidationException When a field is empty, out of range, or the stored name carries a path
+     * @throws ValidationException When a field is empty, out of range or malformed, or the stored name carries a path
      * @throws HilosException On database or ownership error
      */
     public function create(
@@ -49,6 +51,7 @@ final class FilesActions extends DbActions
         string $filename,
         string $mimeType,
         int $size,
+        string $contentHash,
         int $ownerUserId,
         FileVisibility $visibility,
     ): File {
@@ -66,6 +69,9 @@ final class FilesActions extends DbActions
         if ($size < 0) {
             throw new ValidationException('File size must not be negative');
         }
+        if (!ContentHash::isValid($contentHash)) {
+            throw new ValidationException('File content_hash must be 64 lowercase hex characters');
+        }
         if ($ownerUserId <= 0) {
             throw new ValidationException('File owner_user_id must be a positive user id');
         }
@@ -75,6 +81,7 @@ final class FilesActions extends DbActions
         $file->filename = $filename;
         $file->mimeType = $mimeType;
         $file->size = $size;
+        $file->contentHash = $contentHash;
         $file->ownerUserId = $ownerUserId;
         $file->visibility = $visibility->value;
         $file->bound = false;

@@ -128,6 +128,7 @@ final class UploadChecksTest extends TestCase
             StateHilosUpload::tmpIndex => 'abc',
             StateHilosUpload::phase => UploadPhase::UPLOADING->value,
             StateHilosUpload::detectedMimeType => $detectedMimeType,
+            StateHilosUpload::contentHash => hash('sha256', 'a.png'),
             StateHilosUpload::errorCode => null,
             StateHilosUpload::errorMessage => null,
             StateHilosUpload::updatedAt => 1,

@@ -24,7 +24,9 @@ use Hilos\Database\View\Item\File;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Files\FileVisibility;
+use Hilos\Files\HilosFiles;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
+use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -32,6 +34,9 @@ use ReflectionProperty;
 
 /**
  * Integration coverage for the files registry: the janitor of unbound files and the bind frame (HIL-336).
+ *
+ * The janitor removes a file through the storage seam (HIL-136), so the case puts the local
+ * storage on the door, over the files directory of the case.
  *
  * The selection, the row-then-file order and the foreign-key refusal are database behavior end to
  * end, so the cases use the real hilos_file table, a real directory, and the library tick
@@ -65,6 +70,8 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
 
     private ?FsContext $previousFs = null;
 
+    private ?HilosFiles $previousFiles = null;
+
     private string $filesPath;
 
     private FileSweepTestAgent $agent;
@@ -89,6 +96,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         $this->previousDb = Hilos::$db;
         $this->previousSetting = Hilos::$setting;
         $this->previousFs = Hilos::$fs;
+        $this->previousFiles = Hilos::$files;
         Hilos::$db = new FileSweepTestDbContext();
         Hilos::$db->configure();
         Hilos::$setting = new SettingsAccessor(FilesSettingsCatalog::class);
@@ -96,6 +104,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         mkdir($this->filesPath);
         Hilos::$fs = new FileSweepTestFsContext($this->filesPath);
         Hilos::$fs->configure();
+        Hilos::$files = new HilosFiles(new LocalFilesStorage());
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
 
@@ -119,6 +128,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         }
         rmdir($this->filesPath);
 
+        Hilos::$files = $this->previousFiles;
         Hilos::$fs = $this->previousFs;
         Hilos::$setting = $this->previousSetting;
         Hilos::$db = $this->previousDb;
@@ -274,6 +284,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
             'Original ' . $storedName,
             'application/octet-stream',
             1,
+            hash('sha256', $storedName),
             self::OWNER,
             FileVisibility::AUTHENTICATED,
         );

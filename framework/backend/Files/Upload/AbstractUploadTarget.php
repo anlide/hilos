@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Files\Upload;
 
+use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
+use Hilos\Files\Upload\Check\DuplicateContentCheck;
+use Hilos\Files\Upload\Check\StorageLimitCheck;
 use Hilos\Hilos;
 
 /**
@@ -57,9 +60,13 @@ abstract class AbstractUploadTarget
     /**
      * Checks the project adds after the built-in ones, in their order.
      *
-     * The point a storage limit or a duplicate check connects to (HIL-136).
+     * Called once, when the uploads agent starts. The framework ships one ready check to add
+     * here, {@see DuplicateContentCheck} - `return [new DuplicateContentCheck()];` - and it is off
+     * until a target adds it. The storage limit needs nothing here: {@see StorageLimitCheck} is
+     * built in wherever the project keeps files.
      *
      * @return list<UploadCheckInterface> Additional checks
+     * @throws FeatureNotDeclaredException When a check needs a feature the project did not declare; the agent does not start
      */
     public function extraChecks(): array
     {

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Collection;
 
+use Hilos\Files\ContentHash;
+use Hilos\Files\Upload\UploadPhase;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
@@ -83,6 +85,51 @@ final class HilosUploads extends RtCollection
         }
 
         return $count;
+    }
+
+    /**
+     * Sums the declared sizes of every upload that holds a file, on every connection.
+     *
+     * What the uploads take of the storage limit: a declared upload has its place reserved
+     * from the moment it is accepted, and a complete one keeps it until it is handed over.
+     *
+     * @return int Bytes declared by the uploads holding a file
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     */
+    public function sumHoldingBytes(): int
+    {
+        $bytes = 0;
+        foreach ($this as $upload) {
+            if ($upload->phase->holdsFile()) {
+                $bytes += $upload->declaredSize;
+            }
+        }
+
+        return $bytes;
+    }
+
+    /**
+     * Tells whether a person has another complete upload of this content.
+     *
+     * @param int $userId Person whose uploads are looked at
+     * @param string $contentHash Fingerprint of the content ({@see ContentHash})
+     * @param string $exceptRowId Row id of the upload asking, which is not counted
+     * @return bool Whether another complete upload of that person carries that fingerprint
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     */
+    public function hasCompleteWithContent(int $userId, string $contentHash, string $exceptRowId): bool
+    {
+        foreach ($this as $upload) {
+            if ($upload->userId === $userId
+                && $upload->phase === UploadPhase::COMPLETE
+                && $upload->contentHash === $contentHash
+                && $upload->getId() !== $exceptRowId
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

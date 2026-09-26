@@ -9,17 +9,30 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Files\ContentHash;
+use Hilos\Files\DTO\FilePublishItemData;
+use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\Upload\Check\AllowedContentCheck;
 use Hilos\Files\Upload\Check\DeclaredMimeCheck;
 use Hilos\Files\Upload\Check\SizeLimitCheck;
+use Hilos\Files\Upload\Check\StorageLimitCheck;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
+use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsException;
@@ -33,7 +46,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 
 /**
  * The one writer of the uploads: accepts declarations, receives signed chunks, checks, cleans up
- * (HIL-135).
+ * (HIL-135), and hands complete uploads over to the files registry on the project's word
+ * (HIL-136).
  *
  * An upload lives on the connection, so this agent - not a page - answers the two upload actions
  * and receives every frame_binary chunk of a project that declares HilosFeature::UPLOADS,
@@ -66,6 +80,22 @@ final class UploadsAgent extends AbstractAgent
         HilosSignalConstants::HILOS_UPLOAD_CANCEL => UploadCancelActionDTO::class,
     ];
 
+    /**
+     * The one frame the agent is addressed by from the project's side: publish these uploads.
+     */
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_UPLOAD_PUBLISH => UploadPublishSignalData::class,
+    ];
+
+    /**
+     * The files registry, read for the storage limit and the duplicate check. The collection is
+     * mounted in every project - inert without HilosFeature::FILES - so the declaration holds in
+     * a project that keeps no files too.
+     *
+     * @var list<string>
+     */
+    public const array READS_DB = [HilosDbContext::files];
+
     /** Uploads one connection may hold a file for at once, while nothing else limits the disk. */
     public const int MAX_OPEN_UPLOADS_PER_CONNECTION = 16;
 
@@ -95,6 +125,16 @@ final class UploadsAgent extends AbstractAgent
 
     private const string MESSAGE_CANNOT_FINISH = 'Cannot finish upload';
 
+    private const string MESSAGE_FILES_NOT_KEPT = 'Files are not kept here';
+
+    private const string MESSAGE_GONE = 'This file is gone; upload it again';
+
+    private const string MESSAGE_NOT_FINISHED = 'This file has not finished uploading';
+
+    private const string MESSAGE_OTHER_TARGET = 'This file was uploaded for something else';
+
+    private const string MESSAGE_SIGN_IN = 'Sign in to keep this file';
+
     /** @var array<string, AbstractUploadTarget> Targets by name, created once on start */
     private array $targets = [];
 
@@ -107,12 +147,16 @@ final class UploadsAgent extends AbstractAgent
     /** @var array<string, float> Moment of the last write of each upload row, by row id */
     private array $writtenAt = [];
 
+    /** @var array<string, ContentHash> Running fingerprint of each receiving upload, by row id */
+    private array $hashes = [];
+
     /** Moment of the last sweep. */
     private float $lastSweepAt = 0.0;
 
     /**
      * Creates the targets and drops whatever a predecessor left: its chunks will not continue.
      *
+     * @throws FeatureNotDeclaredException When a target adds a check needing a feature the project did not declare
      * @throws HilosException Whatever wiping the collection and its files raises
      */
     public function onStart(): void
@@ -192,6 +236,33 @@ final class UploadsAgent extends AbstractAgent
     }
 
     /**
+     * Hands complete uploads over to the files registry, on the project's word.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the name is not one this agent declares
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
+     * @throws HilosException Whatever removing an upload row raises
+     * @throws InvalidArgumentException When the answer, the state frame or the frame to the library cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::HILOS_UPLOAD_PUBLISH:
+                if (!$data->data instanceof UploadPublishSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UploadPublishSignalData::class, $data->data);
+                }
+                $this->handOver($data->data);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
      * Drops the uploads whose connection is gone, silently, and those unchanged for an hour.
      *
      * An upload that cannot be dropped - its file will not delete - is logged and tried again on
@@ -246,6 +317,7 @@ final class UploadsAgent extends AbstractAgent
 
         $this->receivedBytes = [];
         $this->writtenAt = [];
+        $this->hashes = [];
     }
 
     /**
@@ -316,8 +388,104 @@ final class UploadsAgent extends AbstractAgent
         $key = StateHilosUpload::keyFor($acceptKey, $dto->clientUploadId);
         $this->receivedBytes[$key] = 0;
         $this->writtenAt[$key] = microtime(true);
+        $this->hashes[$key] = ContentHash::start();
 
         $this->sendState($acceptKey, UploadStateSignalData::fromUpload($upload));
+    }
+
+    /**
+     * Hands the named uploads over to the files library, or refuses them all.
+     *
+     * Every upload is judged before any is touched, in the order the request names them, and the
+     * first that does not pass refuses the whole request: nothing moves, and the answer goes
+     * straight back to the asker. The uploads that pass leave their rows - their temporary files
+     * stay, handed over - and go on to the library in one frame; each connection hears that its
+     * upload is gone, as it would after a cancel.
+     *
+     * @param UploadPublishSignalData $request Publication request of the project
+     * @throws HilosException Whatever removing an upload row raises
+     * @throws InvalidArgumentException When the answer, the state frame or the frame to the library cannot be named
+     */
+    private function handOver(UploadPublishSignalData $request): void
+    {
+        if (!Hilos::hasFeature(HilosFeature::FILES)) {
+            $this->refuseHandOver($request, self::MESSAGE_FILES_NOT_KEPT);
+
+            return;
+        }
+
+        $uploads = [];
+        foreach ($request->clientUploadIds as $clientUploadId) {
+            $upload = Hilos::$rt->hilosUploads->find($request->acceptKey, $clientUploadId);
+            $refusal = $upload === null ? self::MESSAGE_GONE : $this->refusalToHandOver($upload, $request->target);
+            if ($refusal !== null) {
+                $this->refuseHandOver($request, $refusal);
+
+                return;
+            }
+            $uploads[] = $upload;
+        }
+
+        $files = [];
+        foreach ($uploads as $upload) {
+            $files[] = new FilePublishItemData(
+                tmpIndex: $upload->tmpIndex,
+                filename: $upload->filename,
+                mimeType: $upload->detectedMimeType ?? $upload->mimeType,
+                size: $upload->declaredSize,
+                ownerUserId: $upload->userId,
+                contentHash: $upload->contentHash,
+            );
+        }
+
+        foreach ($uploads as $upload) {
+            $this->forgetMemory($upload);
+            $upload->actions->handOver();
+            $this->sendState($request->acceptKey, UploadStateSignalData::gone($upload->clientUploadId));
+        }
+
+        $this->sendToAgent(HilosSignalConstants::HILOS_FILE_PUBLISH, new FilePublishSignalData(
+            acceptKey: $request->acceptKey,
+            clientUploadIds: $request->clientUploadIds,
+            visibility: $request->visibility,
+            replySignal: $request->replySignal,
+            files: $files,
+        ));
+    }
+
+    /**
+     * Answers a publication request with a refusal; nothing has moved.
+     *
+     * @param UploadPublishSignalData $request Publication request of the project
+     * @param string $error Sentence for the person
+     * @throws InvalidArgumentException When the answer cannot be named
+     */
+    private function refuseHandOver(UploadPublishSignalData $request, string $error): void
+    {
+        $this->sendToAgent($request->replySignal, FilesPublishedSignalData::refused($request->acceptKey, $request->clientUploadIds, $error));
+    }
+
+    /**
+     * Judges one upload named for publication, in the order the refusals are specified.
+     *
+     * A complete upload always has its file and its fingerprint; one that has lost either is as
+     * gone as a failed one, and saying so keeps the asker from waiting on a frame that would
+     * never be built.
+     *
+     * @param HilosUpload $upload Upload the request names
+     * @param string $target Upload target the request publishes for
+     * @return ?string Sentence of the refusal, or null when the upload may be handed over
+     */
+    private function refusalToHandOver(HilosUpload $upload, string $target): ?string
+    {
+        return match (true) {
+            $upload->phase === UploadPhase::FAILED => self::MESSAGE_GONE,
+            $upload->phase->isReceiving() => self::MESSAGE_NOT_FINISHED,
+            $upload->tmpIndex === null, $upload->contentHash === null => self::MESSAGE_GONE,
+            $upload->target !== $target => self::MESSAGE_OTHER_TARGET,
+            $upload->userId === null => self::MESSAGE_SIGN_IN,
+            default => null,
+        };
     }
 
     /**
@@ -365,6 +533,7 @@ final class UploadsAgent extends AbstractAgent
             return;
         }
         $this->receivedBytes[$key] = $received;
+        ($this->hashes[$key] ?? null)?->update($bytes);
 
         if ($received === $upload->declaredSize) {
             $this->finish($upload);
@@ -383,15 +552,23 @@ final class UploadsAgent extends AbstractAgent
     /**
      * Judges the whole received file and completes or fails the upload.
      *
-     * The sniffed type is written onto the row before the checks run, so every check - a
-     * project's included - reads it there; the row does not become complete until they all let
-     * it through.
+     * The fingerprint and the sniffed type are written onto the row before the checks run, so
+     * every check - a project's included - reads them there; the row does not become complete
+     * until they all let it through.
      *
      * @param HilosUpload $upload Upload whose declared bytes have all arrived
      * @throws HilosException Whatever writing the upload row or deleting its file raises
      */
     private function finish(HilosUpload $upload): void
     {
+        $hash = $this->fingerprint($upload);
+        if ($hash === null) {
+            $this->fail($upload, UploadFailureCode::STORAGE_ERROR, self::MESSAGE_CANNOT_FINISH);
+
+            return;
+        }
+
+        $detected = null;
         if ($this->targets[$upload->target]->sniffsContent()) {
             $detected = $this->sniff($upload);
             if ($detected === null) {
@@ -399,8 +576,8 @@ final class UploadsAgent extends AbstractAgent
 
                 return;
             }
-            $upload->actions->detect($detected);
         }
+        $upload->actions->inspect($hash, $detected);
 
         foreach ($this->checks[$upload->target] as $check) {
             $refusal = $check->checkReceived($upload);
@@ -414,6 +591,36 @@ final class UploadsAgent extends AbstractAgent
         $upload->actions->complete();
         $this->forgetMemory($upload);
         $this->sendState($upload->acceptKey, UploadStateSignalData::fromUpload($upload));
+    }
+
+    /**
+     * Takes the fingerprint of a received file, counted while its chunks arrived.
+     *
+     * An upload with no running fingerprint in memory should not occur - a row does not outlive
+     * the start of the agent that opened it - and is fingerprinted from its file instead.
+     *
+     * @param HilosUpload $upload Upload whose file is whole
+     * @return ?string Fingerprint, or null when the file could not be read
+     */
+    private function fingerprint(HilosUpload $upload): ?string
+    {
+        $key = StateHilosUpload::keyFor($upload->acceptKey, $upload->clientUploadId);
+        $hash = $this->hashes[$key] ?? null;
+        if ($hash !== null) {
+            unset($this->hashes[$key]);
+
+            return $hash->finish();
+        }
+
+        try {
+            return ContentHash::ofFile(
+                $this->tmp()[$upload->tmpIndex ?? throw new DirectoryNotFoundException('The upload has no temporary file')]->getPath(),
+            );
+        } catch (FsException $unreadable) {
+            $this->logAgentError("Cannot fingerprint upload {$upload->clientUploadId} of {$upload->acceptKey}: {$unreadable->getMessage()}");
+
+            return null;
+        }
     }
 
     /**
@@ -478,7 +685,7 @@ final class UploadsAgent extends AbstractAgent
     private function forgetMemory(HilosUpload $upload): void
     {
         $key = StateHilosUpload::keyFor($upload->acceptKey, $upload->clientUploadId);
-        unset($this->receivedBytes[$key], $this->writtenAt[$key]);
+        unset($this->receivedBytes[$key], $this->writtenAt[$key], $this->hashes[$key]);
     }
 
     /**
@@ -503,7 +710,8 @@ final class UploadsAgent extends AbstractAgent
     }
 
     /**
-     * Lists the checks of one target in the order they run: size, declared type, content, the project's.
+     * Lists the checks of one target in the order they run: size, declared type, the storage
+     * limit where the project keeps files, content, the project's.
      *
      * @param AbstractUploadTarget $target Target to check for
      * @return list<UploadCheckInterface> Its checks
@@ -514,6 +722,9 @@ final class UploadsAgent extends AbstractAgent
             new SizeLimitCheck($target->maxBytes()),
             new DeclaredMimeCheck($target->acceptedMimeTypes()),
         ];
+        if (Hilos::hasFeature(HilosFeature::FILES)) {
+            $checks[] = new StorageLimitCheck();
+        }
         if ($target->sniffsContent() && $target->acceptedMimeTypes() !== []) {
             $checks[] = new AllowedContentCheck($target->acceptedMimeTypes());
         }

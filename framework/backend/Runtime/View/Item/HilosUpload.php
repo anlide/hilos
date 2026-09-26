@@ -30,6 +30,7 @@ use Hilos\Runtime\View\Actions\Item\HilosUploadActions;
  * @property-read ?string $tmpIndex Index of the temporary file, or null once it is deleted
  * @property-read UploadPhase $phase Where the upload stands
  * @property-read ?string $detectedMimeType Type read from the content, only for a target that sniffs
+ * @property-read ?string $contentHash Fingerprint of the whole file, or null until every byte has arrived
  * @property-read ?string $errorCode Code of the failure, on the failed phase alone
  * @property-read ?string $errorMessage Sentence of the failure, on the failed phase alone
  * @property-read int $updatedAt Unix seconds of the last change of the row
@@ -66,6 +67,7 @@ final class HilosUpload extends RtItem
             // The state refuses any other value on the way in (StateHilosUpload::readPhase()), so from() cannot fail here.
             StateHilosUpload::phase => UploadPhase::from($this->_state->phase),
             StateHilosUpload::detectedMimeType => $this->_state->detectedMimeType,
+            StateHilosUpload::contentHash => $this->_state->contentHash,
             StateHilosUpload::errorCode => $this->_state->errorCode,
             StateHilosUpload::errorMessage => $this->_state->errorMessage,
             StateHilosUpload::updatedAt => $this->_state->updatedAt,

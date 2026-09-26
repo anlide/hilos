@@ -63,10 +63,32 @@ null there. The agent runs them in this order and the first refusal wins:
 1. `SizeLimitCheck` — empty file, or above `maxBytes()`;
 2. `DeclaredMimeCheck` — a type that is not `type/subtype` after
    `UploadMime::normalize()`, or one outside a non-empty list;
-3. `AllowedContentCheck` — only for a sniffing target with a list: the type
+3. `StorageLimitCheck` — only where the project declares `FILES`: the
+   registry's files, every upload holding a file on any connection, and the
+   declared size together exceed the setting `files.max_total_bytes`
+   (`storage_limit`, `Storage limit would be exceeded`). Zero or less — the
+   default — is no limit, and the setting is read on every declaration. Judged
+   on the declaration alone: from then on the place is reserved;
+4. `AllowedContentCheck` — only for a sniffing target with a list: the type
    read from the content is outside it;
-4. the target's `extraChecks()`, in their order — the point where HIL-136
-   connects the storage limit and duplicates.
+5. the target's `extraChecks()`, in their order.
+
+The framework ships one check for `extraChecks()`, off until a target adds it:
+
+```php
+public function extraChecks(): array
+{
+    return [new DuplicateContentCheck()];
+}
+```
+
+`DuplicateContentCheck` fails a received file whose fingerprint the same person
+already keeps — in a published file ([files-registry.md](files-registry.md)) or
+in another complete upload of theirs — with `duplicate_content`, `This file is
+already uploaded`. Only the same person: a refusal over somebody else's file
+would tell a stranger that such a file is kept. A guest's upload is not judged.
+The check reads the registry, so a project without `FILES` cannot create it,
+and the uploads agent, which creates its checks when it starts, does not start.
 
 A declared type that differs from the detected one is not a refusal by itself:
 browsers declare `application/octet-stream` for everything they do not know.
@@ -92,15 +114,17 @@ Every chunk is a signed `frame_binary` frame (`UploadFrame`):
 A frame without a readable signature, or naming no ready/uploading upload of
 its connection, is dropped with a debug line and creates nothing. More bytes
 than declared fail the upload `size_overflow`; an append that fails,
-`write_error`. Exactly the declared size runs the received checks — a sniffing
-target first writes the detected type onto the row, reading the head of the
-file with libmagic — and completes the upload, or fails it with the refusing
-check's code (`content_mismatch`, `storage_error` when the file cannot be read
-back, or a project check's own).
+`write_error`. Exactly the declared size first writes onto the row, in one
+write, the fingerprint of the whole file (`contentHash`, sha256 counted while
+the chunks arrived) and, for a sniffing target, the type read from the head of
+the file with libmagic; then the received checks run, and the upload completes
+or fails with the refusing check's code (`content_mismatch`,
+`duplicate_content`, `storage_error` when the file cannot be read back, or a
+project check's own).
 
 Phases: `ready → uploading → complete | failed` (`UploadPhase`). A failed upload
 keeps its row to say why and has no file; a complete one keeps its file in the
-tmp directory until its consumer takes it.
+tmp directory until it is published into the files registry or goes.
 
 ## What The Browser Sees
 
@@ -164,6 +188,11 @@ belong to the server/project; presentation belongs to the consuming view.
 
 ## Cleanup
 
+An upload goes **without** its file when it is handed over to the files
+registry ([files-registry.md](files-registry.md), *Publishing*) — frame `gone`;
+the temporary file is the files library's from then on, and nothing of the
+upload's own touches it again.
+
 An upload goes with its file when:
 
 - the browser cancels it (`hilos_upload_cancel {clientUploadId}`, in any phase;
@@ -178,8 +207,8 @@ An upload goes with its file when:
 
 ## Not Here
 
-- Publishing a received file to storage and the `hilos_file` row, the storage
-  limit and duplicates — HIL-136, through `extraChecks()` and the complete rows.
+- Publishing a received file into the registry — see
+  [files-registry.md](files-registry.md).
 - Drag and drop, the file picker and the upload list — HIL-140.
 - Moving the chat onto this feature — HIL-144.
 - Streaming a file without writing it to disk — HIL-142.
@@ -190,5 +219,6 @@ An upload goes with its file when:
 
 `composer run test:framework:unit` (frame, MIME, checks, DTOs, activation,
 the frame route, the tmp refusal) and `composer run test:framework:integration`
-(`UploadsAgentIntegrationTest`: every refusal, chunks, sniffing, cancel, sweep,
-start and stop).
+(`UploadsAgentIntegrationTest`: every refusal, chunks, sniffing, the
+fingerprint, cancel, sweep, start and stop; `FilePublishIntegrationTest`: the
+storage limit and the duplicate check, beside publication itself).

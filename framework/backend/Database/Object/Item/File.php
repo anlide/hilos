@@ -23,6 +23,7 @@ use Hilos\Files\FileVisibility;
  * @property string $filename
  * @property string $mimeType
  * @property int $size
+ * @property string $contentHash
  * @property int $ownerUserId
  * @property string $visibility
  * @property bool $bound
@@ -36,6 +37,7 @@ final class File extends Object_
     public const string filename = 'filename';
     public const string mimeType = 'mimeType';
     public const string size = 'size';
+    public const string contentHash = 'contentHash';
     public const string ownerUserId = 'ownerUserId';
     public const string visibility = 'visibility';
     public const string bound = 'bound';
@@ -54,7 +56,7 @@ final class File extends Object_
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, storedName, filename, mimeType, size, ownerUserId, visibility, bound, createdAt)
+     * @param string $property Property name (id, storedName, filename, mimeType, size, contentHash, ownerUserId, visibility, bound, createdAt)
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known File field
      */
@@ -66,6 +68,7 @@ final class File extends Object_
             self::filename => $this->entity->filename,
             self::mimeType => $this->entity->mime_type,
             self::size => $this->entity->size,
+            self::contentHash => $this->entity->content_hash,
             self::ownerUserId => $this->entity->owner_user_id,
             self::visibility => $this->entity->visibility,
             self::bound => $this->entity->bound,
@@ -77,7 +80,7 @@ final class File extends Object_
     /**
      * Magic setter for entity properties.
      *
-     * @param string $property Property name (storedName, filename, mimeType, size, ownerUserId, visibility, bound, createdAt)
+     * @param string $property Property name (storedName, filename, mimeType, size, contentHash, ownerUserId, visibility, bound, createdAt)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a File
      */
@@ -88,6 +91,7 @@ final class File extends Object_
             self::filename => $this->entity->filename = (string)$value,
             self::mimeType => $this->entity->mime_type = (string)$value,
             self::size => $this->entity->size = (int)$value,
+            self::contentHash => $this->entity->content_hash = (string)$value,
             self::ownerUserId => $this->entity->owner_user_id = (int)$value,
             self::visibility => $this->entity->visibility = (string)$value,
             self::bound => $this->entity->bound = (bool)$value,
@@ -99,7 +103,7 @@ final class File extends Object_
     /**
      * Converts the file to an associative array.
      *
-     * @return array<string, mixed> File data (id, storedName, filename, mimeType, size, ownerUserId, visibility, bound, createdAt)
+     * @return array<string, mixed> File data (id, storedName, filename, mimeType, size, contentHash, ownerUserId, visibility, bound, createdAt)
      */
     public function toArray(): array
     {
@@ -109,6 +113,7 @@ final class File extends Object_
             self::filename => $this->entity->filename,
             self::mimeType => $this->entity->mime_type,
             self::size => $this->entity->size,
+            self::contentHash => $this->entity->content_hash,
             self::ownerUserId => $this->entity->owner_user_id,
             self::visibility => $this->entity->visibility,
             self::bound => $this->entity->bound,

@@ -63,6 +63,8 @@ use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Files\HilosFiles;
+use Hilos\Files\Storage\FilesStorageInterface;
+use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Mail\HilosMailer;
@@ -1408,7 +1410,20 @@ abstract class Hilos implements TruthSourceOwner
      */
     protected static function createFiles(): HilosFiles
     {
-        return new HilosFiles();
+        return new HilosFiles(static::createFilesStorage());
+    }
+
+    /**
+     * Creates the storage the files registry keeps its files in.
+     *
+     * The framework ships one, the files directory on the local disk; a project keeps its files
+     * elsewhere by overriding this.
+     *
+     * @return FilesStorageInterface Storage of the files registry
+     */
+    protected static function createFilesStorage(): FilesStorageInterface
+    {
+        return new LocalFilesStorage();
     }
 
     /**

@@ -277,7 +277,21 @@ final class UploadsAgentIntegrationTest extends TestCase
         $this->assertSame(UploadPhase::COMPLETE, $upload->phase);
         $this->assertSame(4, $upload->receivedBytes);
         $this->assertNull($upload->detectedMimeType);
+        $this->assertSame(hash('sha256', 'abcd'), $upload->contentHash);
         $this->assertSame('abcd', file_get_contents($this->path($upload)));
+    }
+
+    public function testTheFingerprintCountedOverTheChunksIsTheOneOfTheWholeFile(): void
+    {
+        $this->declare(self::GUEST, 'u1', size: 6);
+
+        $this->chunk(self::GUEST, 'u1', 'abc');
+        $this->assertNull($this->upload(self::GUEST, 'u1')->contentHash, 'No fingerprint before the last byte');
+        $this->chunk(self::GUEST, 'u1', 'def');
+
+        $upload = $this->upload(self::GUEST, 'u1');
+        $this->assertSame(UploadPhase::COMPLETE, $upload->phase);
+        $this->assertSame(hash('sha256', 'abcdef'), $upload->contentHash);
     }
 
     public function testASniffedPngCompletesWithItsDetectedType(): void
@@ -290,6 +304,7 @@ final class UploadsAgentIntegrationTest extends TestCase
         $upload = $this->upload(self::SIGNED_IN, 'u1');
         $this->assertSame(UploadPhase::COMPLETE, $upload->phase);
         $this->assertSame('image/png', $upload->detectedMimeType);
+        $this->assertSame(hash('sha256', $png), $upload->contentHash);
     }
 
     public function testSniffedTextUnderAnImageTargetFailsAsContentMismatch(): void

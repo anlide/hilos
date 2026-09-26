@@ -13,10 +13,10 @@ use Hilos\Database\PhpType;
  * File Entity - represents the hilos_file table row.
  *
  * One published file of the files registry (HIL-336): the name it is kept under in the
- * project's files directory, what the uploader called it, who owns it, who may be given it,
- * and whether the project has linked it yet. Framework holds the contract; projects activate
- * the table thinly (copy the migration stub) and the framework DbContext exposes the
- * collection.
+ * project's files directory, what the uploader called it, the fingerprint of its content
+ * (HIL-136), who owns it, who may be given it, and whether the project has linked it yet.
+ * Framework holds the contract; projects activate the table thinly (copy the migration stub)
+ * and the framework DbContext exposes the collection.
  *
  * `owner_user_id` is a soft reference: the person table is still the project's (HIL-1133).
  *
@@ -30,6 +30,7 @@ final class File extends Entity
     public const string filename = 'filename';
     public const string mime_type = 'mime_type';
     public const string size = 'size';
+    public const string content_hash = 'content_hash';
     public const string owner_user_id = 'owner_user_id';
     public const string visibility = 'visibility';
     public const string bound = 'bound';
@@ -43,6 +44,7 @@ final class File extends Entity
         self::filename,
         self::mime_type,
         self::size,
+        self::content_hash,
         self::owner_user_id,
         self::visibility,
         self::bound,
@@ -55,6 +57,7 @@ final class File extends Entity
         self::filename => PhpType::STRING->value,
         self::mime_type => PhpType::STRING->value,
         self::size => PhpType::INTEGER->value,
+        self::content_hash => PhpType::STRING->value,
         self::owner_user_id => PhpType::INTEGER->value,
         self::visibility => PhpType::STRING->value,
         self::bound => PhpType::BOOLEAN->value,
@@ -64,6 +67,7 @@ final class File extends Entity
     public const array _indexes = [
         'uk_file_stored_name' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::stored_name]],
         'idx_file_bound_created' => [Entity::INDEX_COLUMNS => [self::bound, self::created_at]],
+        'idx_file_owner_hash' => [Entity::INDEX_COLUMNS => [self::owner_user_id, self::content_hash]],
     ];
 
     // The owner is the NOT NULL column that names a person; nobody hangs a set on a file yet.
@@ -71,7 +75,8 @@ final class File extends Entity
     public const bool _setRoot = false;
 
     // The name a person gave the file can say who they are or what it is about; the rest
-    // is the registry's own bookkeeping.
+    // is the registry's own bookkeeping. The content hash is a fingerprint of bytes, not a
+    // fact about a person.
     public const array _pii = [
         self::filename => AnonymizationStrategy::MASK,
     ];
@@ -81,6 +86,7 @@ final class File extends Entity
         self::stored_name,
         self::mime_type,
         self::size,
+        self::content_hash,
         self::owner_user_id,
         self::visibility,
         self::bound,
@@ -92,6 +98,7 @@ final class File extends Entity
     public string $filename;
     public string $mime_type;
     public int $size;
+    public string $content_hash;
     public int $owner_user_id;
     public string $visibility;
     public bool $bound;

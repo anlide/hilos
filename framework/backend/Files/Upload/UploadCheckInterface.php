@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Files\Upload;
 
+use Hilos\HilosException;
 use Hilos\Runtime\View\Item\HilosUpload;
 
 /**
@@ -20,6 +21,7 @@ interface UploadCheckInterface
      *
      * @param UploadDeclaration $declaration What the browser declared, in its checked shape
      * @return ?UploadRefusal Refusal of the declaration, or null when the check lets it through
+     * @throws HilosException When the check cannot read what it judges by - a setting, the registry, the uploads
      */
     public function checkDeclared(UploadDeclaration $declaration): ?UploadRefusal;
 
@@ -28,6 +30,7 @@ interface UploadCheckInterface
      *
      * @param HilosUpload $upload Upload whose bytes have all arrived, with its detected type when the target sniffs
      * @return ?UploadRefusal Refusal that fails the upload, or null when the check lets it through
+     * @throws HilosException When the check cannot read what it judges by - a setting, the registry, the uploads
      */
     public function checkReceived(HilosUpload $upload): ?UploadRefusal;
 }

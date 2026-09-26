@@ -10,6 +10,7 @@ use Hilos\Database\Actions\Collection\FilesActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Files as ObjectFiles;
 use Hilos\Database\View\Item\File;
+use Hilos\Files\ContentHash;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 
 /**
@@ -53,5 +54,29 @@ final class Files extends DbCollection
         }
 
         return $result;
+    }
+
+    /**
+     * Sums the sizes of every registered file, bound or not.
+     *
+     * @return int Bytes the registry's files take, 0 when it holds none
+     * @throws DatabaseException When the sum query fails
+     */
+    public function totalSize(): int
+    {
+        return $this->objectCollection->totalSize();
+    }
+
+    /**
+     * Tells whether a person already owns a registered file of this content.
+     *
+     * @param int $ownerUserId Person the file would belong to
+     * @param string $contentHash Fingerprint of the content ({@see ContentHash})
+     * @return bool Whether a row of that owner carries that fingerprint
+     * @throws DatabaseException When the lookup query fails
+     */
+    public function hasOwnerContent(int $ownerUserId, string $contentHash): bool
+    {
+        return $this->objectCollection->hasOwnerContent($ownerUserId, $contentHash);
     }
 }

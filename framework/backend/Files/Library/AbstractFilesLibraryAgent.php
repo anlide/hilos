@@ -11,36 +11,55 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
+use Hilos\Database\View\Item\File;
 use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\DTO\FilePublishItemData;
+use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
+use Hilos\Files\Storage\FilesStorageInterface;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileDeleteException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsFile;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\RandomHelper;
+use Random\RandomException;
 
 /**
  * The files library: the one owner of the files registry (HIL-336).
  *
  * An entity library in the sense of docs/agents/architecture/entity-libraries.md. What it owns is
  * the hilos_file table: every row is written here - created, marked bound, removed - and nowhere
- * else. A project reaches it through {@see HilosFiles::markBound()}, which sends
+ * else. A row is born by publication: the project asks {@see HilosFiles::publishUploads()}, the
+ * uploads agent hands the files over with {@see HilosSignalConstants::HILOS_FILE_PUBLISH}, and
+ * the library keeps each one in the storage and registers it, all or nothing (HIL-136). The
+ * project then reaches it through {@see HilosFiles::markBound()}, which sends
  * {@see HilosSignalConstants::HILOS_FILE_BIND} here.
  *
  * It also keeps the registry clean. A row is born unbound, and a row nobody bound within the
  * `files.unbound_ttl_hours` setting is taken by the janitor: the row first, then the file of the
- * same name in the files directory ({@see FsContext::FILES}). Row first, because a file left
- * behind costs disk space while a row left behind points at nothing. A row whose removal the
- * database refuses with a foreign key is one the project linked without saying so - its bind frame
- * was lost on the way - so the janitor marks it bound instead and keeps the file.
+ * same name in the storage ({@see HilosFiles::$storage}; the local one is the files directory,
+ * {@see FsContext::FILES}). Row first, because a file left behind costs disk space while a row
+ * left behind points at nothing. A row whose removal the database refuses with a foreign key is
+ * one the project linked without saying so - its bind frame was lost on the way - so the janitor
+ * marks it bound instead and keeps the file.
  *
- * The janitor never walks the directory: files without a row are not its own, and in the chat
- * demo that directory also holds the attachments published before the registry existed.
+ * The janitor never walks the storage: files without a row are not its own, and in the chat
+ * demo the files directory also holds the attachments published before the registry existed.
  *
  * Abstract by convention, as the notifications library is: the files registry has no project
  * half, and a project subclass adds nothing but its name.
@@ -59,10 +78,12 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_FILES_LIBRARY;
 
     /**
-     * The one frame the library is addressed by: the project linked these files.
+     * The two frames the library is addressed by: the project linked these files, and the
+     * uploads agent handed these files over to be kept.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
+        HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
     ];
 
     /** Name of the cron rule that removes files nobody linked. */
@@ -73,6 +94,15 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
 
     /** Maximum unbound rows considered by one tick. */
     public const int FILES_SWEEP_BATCH = 100;
+
+    /**
+     * Random bytes of a stored name: 32 hex characters, before the extension of the type. Drawn
+     * from the secure axis (docs/agents/code-style/random-source.md): the name is the handle of a
+     * file whose visibility may be its owner alone, and nobody should be able to guess it.
+     */
+    private const int STORED_NAME_BYTES = 16;
+
+    private const string MESSAGE_CANNOT_KEEP = 'Cannot keep the file';
 
     /** @var ?CronRule Schedule of the unbound-file sweep */
     private ?CronRule $filesSweepRule = null;
@@ -111,7 +141,8 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Marks bound the files the project says it linked.
+     * Marks bound the files the project says it linked, or keeps and registers the files the
+     * uploads agent handed over.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -119,6 +150,8 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      * @throws AgentUnknownSignalException When the name is not one this library declares
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When a row cannot be read or written
+     * @throws InvalidArgumentException When the answer to a publication cannot be named
+     * @throws RandomException When the stored names of a publication cannot be drawn
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -128,6 +161,14 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, FileBindSignalData::class, $data->data);
                 }
                 $this->markBound($data->data->fileIds);
+
+                return;
+
+            case HilosSignalConstants::HILOS_FILE_PUBLISH:
+                if (!$data->data instanceof FilePublishSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, FilePublishSignalData::class, $data->data);
+                }
+                $this->publish($data->data);
 
                 return;
 
@@ -152,6 +193,110 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             }
 
             $file->actions->markBound();
+        }
+    }
+
+    /**
+     * Keeps each handed-over file under a random name and registers it unbound, or undoes the
+     * whole request.
+     *
+     * The stored names are drawn first, so nothing is moved before the request is known to be
+     * doable. A failure on one file - the storage did not keep it, the row was not written, a
+     * field was refused - undoes the request at once: the rows it wrote go with their files, and
+     * every temporary file still waiting is deleted. Not left to the janitor: the asker is told
+     * no and will link nothing, and an unbound row would hold its place in the storage limit for
+     * a day. Only those three failures are caught; anything else - a collection the process may
+     * not read, an ownership refusal - leaves the handler (docs/agents/code-style/wiring-refusals.md).
+     *
+     * @param FilePublishSignalData $request Files handed over by the uploads agent
+     * @throws HilosException When a row of the registry cannot be read or written past the three failures caught
+     * @throws InvalidArgumentException When the answer cannot be named
+     * @throws RandomException When the stored names cannot be drawn
+     */
+    private function publish(FilePublishSignalData $request): void
+    {
+        $storedNames = [];
+        foreach ($request->files as $item) {
+            $storedNames[] = RandomHelper::secureHex(self::STORED_NAME_BYTES) . FsFile::extensionForMime($item->mimeType);
+        }
+
+        $storage = $this->storage();
+        $visibility = FileVisibility::from($request->visibility);
+        $published = [];
+        foreach ($request->files as $index => $item) {
+            try {
+                $storage->storeFromTmp($storedNames[$index], $item->tmpIndex);
+                $published[] = Hilos::$db->files->actions->create(
+                    $storedNames[$index],
+                    $item->filename,
+                    $item->mimeType,
+                    $item->size,
+                    $item->contentHash,
+                    $item->ownerUserId,
+                    $visibility,
+                );
+            } catch (FsException | DatabaseException | ValidationException $failure) {
+                $this->logAgentError(
+                    "Cannot publish upload {$request->clientUploadIds[$index]} of {$request->acceptKey}: {$failure->getMessage()}",
+                );
+                $this->undoPublish($published, $storedNames[$index], array_slice($request->files, $index));
+                $this->sendToAgent(
+                    $request->replySignal,
+                    FilesPublishedSignalData::refused($request->acceptKey, $request->clientUploadIds, self::MESSAGE_CANNOT_KEEP),
+                );
+
+                return;
+            }
+        }
+
+        $fileIds = [];
+        foreach ($published as $file) {
+            $fileIds[] = $file->id ?? throw new LogicException('A registered file has no id');
+        }
+        $this->sendToAgent($request->replySignal, FilesPublishedSignalData::published($request, $fileIds));
+    }
+
+    /**
+     * Undoes a publication that failed on one file; a step that fails is reported and the undo
+     * goes on.
+     *
+     * @param list<File> $published Rows the request wrote before the failure, each with its kept file
+     * @param string $failedStoredName Stored name of the file that failed, kept or not
+     * @param list<FilePublishItemData> $waiting The file that failed and every file after it
+     */
+    private function undoPublish(array $published, string $failedStoredName, array $waiting): void
+    {
+        foreach ($published as $file) {
+            $storedName = $file->storedName;
+            try {
+                $file->actions->delete();
+            } catch (DatabaseException $e) {
+                $this->logAgentError("Cannot undo the row of {$storedName}: {$e->getMessage()}");
+            }
+            $this->deleteKept($storedName);
+        }
+
+        $this->deleteKept($failedStoredName);
+        foreach ($waiting as $item) {
+            try {
+                (Hilos::$fs ?? throw new DirectoryNotFoundException('FS context is not configured'))->getTmp()[$item->tmpIndex]->unlink();
+            } catch (FsException $e) {
+                $this->logAgentError("Cannot delete the temporary file {$item->tmpIndex}: {$e->getMessage()}");
+            }
+        }
+    }
+
+    /**
+     * Deletes a kept file while undoing a publication; a file that stays is reported.
+     *
+     * @param string $storedName Stored name of the file
+     */
+    private function deleteKept(string $storedName): void
+    {
+        try {
+            $this->storage()->delete($storedName);
+        } catch (FsException $e) {
+            $this->logAgentError("Cannot undo the file {$storedName}: {$e->getMessage()}");
         }
     }
 
@@ -194,7 +339,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             $removed++;
 
             try {
-                Hilos::$fs->files[$storedName]->unlink();
+                $this->storage()->delete($storedName);
             } catch (FileDeleteException $e) {
                 $this->logAgentError("Orphan file {$storedName} left on disk: " . $e->getMessage());
             }
@@ -206,5 +351,14 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
         if ($done > 0) {
             $this->logAgentInfo("Files sweep: removed {$removed} unbound, marked {$marked} referenced");
         }
+    }
+
+    /**
+     * @return FilesStorageInterface Storage the registry keeps its files in
+     * @throws LogicException When the facade holds no files door, which a started daemon always has
+     */
+    private function storage(): FilesStorageInterface
+    {
+        return (Hilos::$files ?? throw new LogicException('The files door is not created'))->storage;
     }
 }

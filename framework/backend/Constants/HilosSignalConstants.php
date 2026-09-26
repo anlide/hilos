@@ -49,9 +49,12 @@ use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
+use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
@@ -1275,6 +1278,17 @@ final class HilosSignalConstants
      */
     public const string HILOS_UPLOAD_STATE = 'hilos_upload_state';
 
+    /**
+     * Project → uploads agent: hand these complete uploads of one connection over to the files
+     * registry; the answer comes under the name the frame carries (HIL-136).
+     *
+     * Sent by {@see HilosFiles::publishUploads()}. The agent checks every named upload before it
+     * touches any; a refusal is answered at once, and uploads that pass leave their rows - their
+     * files go on to the files library in one {@see self::HILOS_FILE_PUBLISH}. Carried by
+     * {@see UploadPublishSignalData}; the answer is a {@see FilesPublishedSignalData}.
+     */
+    public const string HILOS_UPLOAD_PUBLISH = 'hilos_upload_publish';
+
     // ── Hilos auth throttle: worker ⇄ throttle agent (agent signals) ─────────
     /**
      * Worker dispatching a throttled action → the throttle agent: judge this attempt.
@@ -1430,6 +1444,17 @@ final class HilosSignalConstants
      * refusal as the same fact. Carried by {@see FileBindSignalData}.
      */
     public const string HILOS_FILE_BIND = 'hilos_file_bind';
+
+    /**
+     * Uploads agent → files library: keep these handed-over temporary files and register them
+     * unbound; answer the asker under its name (HIL-136).
+     *
+     * All or nothing: a failure on one file undoes what the request did so far and deletes the
+     * temporary files still left. Carried by {@see FilePublishSignalData}; the answer is a
+     * {@see FilesPublishedSignalData} under the name the project gave
+     * {@see self::HILOS_UPLOAD_PUBLISH}.
+     */
+    public const string HILOS_FILE_PUBLISH = 'hilos_file_publish';
 
     // ── Hilos notification seam: any worker → the notifications library (agent signal) ──
     /**

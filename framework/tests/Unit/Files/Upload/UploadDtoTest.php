@@ -106,6 +106,7 @@ final class UploadDtoTest extends TestCase
             StateHilosUpload::tmpIndex => null,
             StateHilosUpload::phase => UploadPhase::FAILED->value,
             StateHilosUpload::detectedMimeType => null,
+            StateHilosUpload::contentHash => null,
             StateHilosUpload::errorCode => UploadFailureCode::SIZE_OVERFLOW,
             StateHilosUpload::errorMessage => 'Uploaded data exceeds declared size',
             StateHilosUpload::updatedAt => 1,

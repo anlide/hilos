@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Files\ContentHash;
 use Hilos\Files\Upload\UploadFrame;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Files\Upload\UploadsAgent;
@@ -43,6 +44,7 @@ final class HilosUpload extends RtState
     public const string tmpIndex = 'tmpIndex';
     public const string phase = 'phase';
     public const string detectedMimeType = 'detectedMimeType';
+    public const string contentHash = 'contentHash';
     public const string errorCode = 'errorCode';
     public const string errorMessage = 'errorMessage';
     public const string updatedAt = 'updatedAt';
@@ -79,6 +81,9 @@ final class HilosUpload extends RtState
 
     /** Type read from the content of the whole file, only for a target that sniffs. */
     private(set) ?string $detectedMimeType = null;
+
+    /** Fingerprint of the whole file ({@see ContentHash}), or null until every byte has arrived. */
+    private(set) ?string $contentHash = null;
 
     /** Code of the failure, on the failed phase alone. */
     private(set) ?string $errorCode = null;
@@ -161,6 +166,7 @@ final class HilosUpload extends RtState
         $instance->tmpIndex = self::optionalString($row, self::tmpIndex);
         $instance->phase = self::readPhase(self::requireString($row, self::phase));
         $instance->detectedMimeType = self::optionalString($row, self::detectedMimeType);
+        $instance->contentHash = self::optionalString($row, self::contentHash);
         $instance->errorCode = self::optionalString($row, self::errorCode);
         $instance->errorMessage = self::optionalString($row, self::errorMessage);
         $instance->updatedAt = self::requireInt($row, self::updatedAt);
@@ -185,6 +191,7 @@ final class HilosUpload extends RtState
         $this->tmpIndex = self::patchOptionalString($diff, self::tmpIndex, $this->tmpIndex);
         $this->phase = self::readPhase(self::patchString($diff, self::phase, $this->phase));
         $this->detectedMimeType = self::patchOptionalString($diff, self::detectedMimeType, $this->detectedMimeType);
+        $this->contentHash = self::patchOptionalString($diff, self::contentHash, $this->contentHash);
         $this->errorCode = self::patchOptionalString($diff, self::errorCode, $this->errorCode);
         $this->errorMessage = self::patchOptionalString($diff, self::errorMessage, $this->errorMessage);
         $this->updatedAt = self::patchInt($diff, self::updatedAt, $this->updatedAt);
@@ -223,6 +230,7 @@ final class HilosUpload extends RtState
             self::tmpIndex => $this->tmpIndex,
             self::phase => $this->phase,
             self::detectedMimeType => $this->detectedMimeType,
+            self::contentHash => $this->contentHash,
             self::errorCode => $this->errorCode,
             self::errorMessage => $this->errorMessage,
             self::updatedAt => $this->updatedAt,
