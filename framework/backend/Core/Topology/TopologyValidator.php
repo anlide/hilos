@@ -7,6 +7,7 @@ namespace Hilos\Core\Topology;
 use Closure;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
@@ -116,6 +117,13 @@ final class TopologyValidator
     private const array CLAIM_WIDTHS = [self::CLAIM_ROWS, self::CLAIM_SET, self::CLAIM_WHOLE];
 
     /**
+     * @var string Shape of the path of an agent's HTTP address: '/' and then unreserved URL characters
+     *     only. No query string and no placeholder, and nothing the route registry would read as a
+     *     pattern: it compiles every path into a regex without escaping it.
+     */
+    private const string AGENT_HTTP_PATH_PATTERN = '#^/[A-Za-z0-9._~/-]*$#';
+
+    /**
      * Validates topology constants declared by a Hilos facade subclass.
      *
      * @param class-string<Hilos> $hilosClass Project facade class
@@ -179,6 +187,7 @@ final class TopologyValidator
         );
         $this->validateAgentSignalDtoRoutes($agents, $hilosClass::getAgentSignalDtoRoutes(), $errors);
         $this->validateAgentCommandRoutes($agents, $hilosClass::getCommandAgentRoutes(), $errors);
+        $this->validateAgentHttpRoutes($agents, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageTables, self::SECTION_PAGE_TABLES, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageLists, self::SECTION_PAGE_LISTS, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageData, self::SECTION_PAGE_DATA, $errors);
@@ -2701,6 +2710,67 @@ final class TopologyValidator
         foreach ($declaredRoutes as $command => $agentType) {
             if (($commandAgentRoutes[$command] ?? null) !== $agentType) {
                 $errors[] = "Agent command route {$command} is missing from computed command routes";
+            }
+        }
+    }
+
+    /**
+     * Validates the HTTP addresses agents declare to answer.
+     *
+     * AGENT_HTTP_ROUTES is a map of method to a list of exact paths. A method is one the HTTP
+     * server routes; a path starts with '/' and is made of unreserved URL characters, so it carries
+     * neither a query string nor a '{' placeholder - the router matches an agent's address exactly,
+     * and a placeholder would reach the agent without a name - nor a character the route registry
+     * would compile into its pattern. One method and path is answered by exactly one agent: a
+     * second declaration would silently win or lose the address, which is a download answered by
+     * somebody nobody expected, so it refuses the start and names both.
+     *
+     * @param array $agents Agent registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateAgentHttpRoutes(array $agents, array &$errors): void
+    {
+        $methods = [
+            HttpConstants::METHOD_GET,
+            HttpConstants::METHOD_POST,
+            HttpConstants::METHOD_PUT,
+            HttpConstants::METHOD_DELETE,
+        ];
+        /** @var array<string, array<string, string>> $declaredRoutes Declaring agent type by method, then by path */
+        $declaredRoutes = [];
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_HTTP_ROUTES as $method => $paths) {
+                $declaration = "AGENTS[{$agentType}] class {$agentClass} AGENT_HTTP_ROUTES[{$method}]";
+                if (!in_array($method, $methods, true)) {
+                    $errors[] = "{$declaration} must be keyed by one of " . implode(', ', $methods);
+                    continue;
+                }
+
+                if (!is_array($paths) || !array_is_list($paths)) {
+                    $errors[] = "{$declaration} must be a list of paths";
+                    continue;
+                }
+
+                foreach ($paths as $path) {
+                    if (!is_string($path) || preg_match(self::AGENT_HTTP_PATH_PATTERN, $path) !== 1) {
+                        $errors[] = "{$declaration} must contain only paths that start with '/'"
+                            . " and are made of letters, digits, '-', '.', '_', '~' and '/'";
+                        continue;
+                    }
+
+                    $owner = $declaredRoutes[$method][$path] ?? null;
+                    if ($owner !== null && $owner !== $agentType) {
+                        $errors[] = "{$declaration} path {$path} is already declared by {$owner}";
+                        continue;
+                    }
+
+                    $declaredRoutes[$method][$path] = $agentType;
+                }
             }
         }
     }

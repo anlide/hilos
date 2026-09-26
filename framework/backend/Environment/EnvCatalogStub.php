@@ -232,6 +232,8 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 730 * 24 * 60 * 60,
                 emptyIsMissing: true,
             ),
+            // No emptyIsMissing: the empty value is the choice of the daemon sending the bytes itself.
+            EnvConstants::HILOS_FILES_XACCEL_LOCATION->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::HILOS_PENDING_REGISTRATION_SWEEP_CRON->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 '*/5 * * * *',

@@ -23,9 +23,11 @@ use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
+use Hilos\Core\Router\Destination\HttpReplyDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\RemoteClientDestination;
+use Hilos\Core\Router\Destination\RemoteHttpReplyDestination;
 use Hilos\Core\Router\Destination\RemoteFanoutDestination;
 use Hilos\Core\Router\Destination\SessionClientsDestination;
 use Hilos\Core\Router\Destination\UnknownAgentDestination;
@@ -41,6 +43,8 @@ use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
@@ -110,6 +114,7 @@ class SignalRouter
         SignalTypeConstants::AGENT_SIGNAL,
         SignalTypeConstants::ACTION,
         SignalTypeConstants::COMMAND_REQUEST,
+        SignalTypeConstants::HTTP_REQUEST,
     ];
 
     /**
@@ -973,6 +978,7 @@ class SignalRouter
             ...$this->getGroupSubscriptionDestinations($signal),
             ...$this->getActionDestinations($signal),
             ...$this->getCommandDestinations($signal),
+            ...$this->getHttpDestinations($signal),
             ...$this->getAgentDestinations($signal),
             ...$this->getPageOwnedSignalDestinations($signal),
             ...$this->additionalDestinations($signal),
@@ -1354,6 +1360,49 @@ class SignalRouter
             }
 
             return [new CommandReplyDestination($signalData->correlationId)];
+        }
+
+        return [];
+    }
+
+    /**
+     * Get destinations for the signals of an agent-answered HTTP address.
+     *
+     * HTTP_REQUEST routes to the agent that declares the method and path, through the project
+     * getHttpAgentRoutes() map; placement moves it to the node the agent runs on. HTTP_REPLY
+     * routes back to the parked connection: here when the request came from this node or from
+     * a node outside any cluster, over the peer channel to the node named by its origin
+     * otherwise - that node holds the connection, and nobody else can write to it.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<Destination> HTTP destinations, or empty when unrouted
+     * @throws EnvException When a reply reads whether the cluster is on and the flag is invalid
+     * @throws ClusterConfigurationException When a reply reads this node's id and its config is invalid
+     */
+    private function getHttpDestinations(SignalDTO $signal): array
+    {
+        $signalType = $signal->signalType->getType();
+        $signalData = $signal->data;
+
+        if ($signalType === SignalTypeConstants::HTTP_REQUEST && $signalData instanceof HttpRequestDTO) {
+            $agentType = $this->hilosClass()::getHttpAgentRoutes()[$signalData->method][$signalData->path] ?? null;
+            if ($agentType === null) {
+                return [];
+            }
+
+            return [new AgentDestination($agentType)];
+        }
+
+        if ($signalType === SignalTypeConstants::HTTP_REPLY && $signalData instanceof HttpReplyDTO) {
+            if ($signalData->correlationId === '') {
+                return [];
+            }
+
+            if ($signalData->originNodeId === null || $this->isLocalNode($signalData->originNodeId)) {
+                return [new HttpReplyDestination($signalData->correlationId)];
+            }
+
+            return [new RemoteHttpReplyDestination($signalData->originNodeId, $signalData->correlationId)];
         }
 
         return [];

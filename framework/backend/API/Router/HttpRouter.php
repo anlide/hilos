@@ -6,14 +6,20 @@ namespace Hilos\API\Router;
 
 use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
+use Hilos\Utils\Helpers\RandomHelper;
 use Throwable;
 
 /**
@@ -21,11 +27,27 @@ use Throwable;
  *
  * Main router for HTTP requests. Uses RouteRegistry to find matching routes
  * and RouteResolver to execute handlers.
+ *
+ * An address an agent declares ({@see AbstractAgent::AGENT_HTTP_ROUTES}) has no handler to
+ * execute: its answer needs the database or the files, which the master process this router runs
+ * in may not touch. The router answers it with a {@see ParkedHttpRequest} instead of a response,
+ * and the connection parks until the agent's reply arrives
+ * (docs/agents/architecture/agent-http-routes.md).
  */
 class HttpRouter
 {
+    /**
+     * @var int Random bytes in the correlation id a parked request is held under. Drawn from the
+     *     tolerant axis of RandomHelper: the id never leaves the daemon and only has to not collide
+     *     with another parked request (docs/agents/code-style/random-source.md).
+     */
+    private const int CORRELATION_ID_BYTES = 16;
+
     /** @var RouteRegistry Route registry */
     private RouteRegistry $registry;
+
+    /** @var array<string, array<string, string>> Agent type answering each agent-declared address, by method and path */
+    private array $agentRoutes = [];
 
     /** @var RouteResolver Route resolver */
     private RouteResolver $resolver;
@@ -52,6 +74,10 @@ class HttpRouter
     /**
      * Registers HTTP route with method, path and handler.
      *
+     * A route on the method and path of an agent-declared address replaces it, the way any later
+     * route replaces an earlier one on the same address: the handler answers from now on, not the
+     * agent.
+     *
      * @param string $method HTTP method (GET, POST, etc.)
      * @param string $path URL path
      * @param callable $handler Handler function
@@ -59,16 +85,41 @@ class HttpRouter
     public function addRoute(string $method, string $path, callable $handler): void
     {
         $this->registry->register($method, $path, $handler);
+        unset($this->agentRoutes[strtoupper($method)][$path]);
     }
 
     /**
-     * Routes HTTP request to matching handler.
+     * Registers an address the given agent answers instead of a handler.
+     *
+     * The registry gets a marker in place of a handler, so the address matches like any other
+     * route and a later {@see addRoute()} on it still replaces it; {@see route()} never runs the
+     * marker, it parks the request for the agent.
+     *
+     * @param string $method HTTP method
+     * @param string $path Exact URL path, without placeholders
+     * @param string $agentType Agent type that declares the address
+     */
+    public function addAgentRoute(string $method, string $path, string $agentType): void
+    {
+        $this->registry->register($method, $path, self::agentRouteMarker(...));
+        $this->agentRoutes[strtoupper($method)][$path] = $agentType;
+    }
+
+    /**
+     * Routes HTTP request to matching handler, or parks it for the agent that answers its address.
+     *
+     * A parked request starts its analytics row here, the way a handled one does; the row is
+     * finished by whoever writes the agent's reply.
      *
      * @param array<string, mixed> $request Request data (method, path, etc.)
-     * @return array{status: int, headers: array<string, string>, body: string} HTTP response payload
+     * @return array{status: int, headers: array<string, string>, body: string}|ParkedHttpRequest HTTP
+     *     response payload, or the request to hand to the agent that declares the address
      * @throws InvalidFormatException When the request carries a query-string map it cannot read
+     * @throws EnvException When a parked request reads whether the cluster is on and the flag is invalid
+     * @throws ClusterConfigurationException When a parked request reads this node's id and its config is invalid
+     * @throws ClusterDisabledException When the cluster reports itself on and then refuses its identity
      */
-    public function route(array $request): array
+    public function route(array $request): array|ParkedHttpRequest
     {
         $method = $request[HttpConstants::REQUEST_KEY_METHOD] ?? HttpConstants::METHOD_GET;
         $path = $request[HttpConstants::REQUEST_KEY_PATH] ?? HttpConstants::PATH_ROOT;
@@ -102,6 +153,23 @@ class HttpRouter
             return $response;
         }
 
+        if (isset($this->agentRoutes[$route['method']][$route['path']])) {
+            $cluster = Hilos::$cluster;
+
+            return new ParkedHttpRequest(
+                new HttpRequestDTO(
+                    correlationId: RandomHelper::hex(self::CORRELATION_ID_BYTES),
+                    method: $route['method'],
+                    path: $route['path'],
+                    query: $queryParams->toArray(),
+                    sessionToken: $sessionToken,
+                    originNodeId: $cluster !== null && $cluster->isEnabled() ? $cluster->identity()->nodeId : null,
+                ),
+                $apiRequestId,
+                hrtime(true),
+            );
+        }
+
         // Resolve and execute handler
         $startedAt = hrtime(true);
         try {
@@ -121,6 +189,21 @@ class HttpRouter
                 HttpConstants::RESPONSE_KEY_BODY => json_encode(['error' => 'Internal Server Error', 'message' => $e->getMessage()]),
             ];
         }
+    }
+
+    /**
+     * Stands in the registry for the handler of an agent-declared address, and is never meant to run.
+     *
+     * {@see route()} parks such a request before any handler is resolved, so reaching this means
+     * something resolved the registry entry on its own - which is a bug of that caller, not a
+     * request to answer.
+     *
+     * @return never
+     * @throws LogicException Always
+     */
+    private static function agentRouteMarker(): never
+    {
+        throw new LogicException('An agent-declared HTTP address is answered by its agent, not by a handler');
     }
 
     /**

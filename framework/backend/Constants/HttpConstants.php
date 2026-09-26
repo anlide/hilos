@@ -159,6 +159,18 @@ final class HttpConstants
     /** @var string HTTP header Cache-Control */
     public const string HEADER_CACHE_CONTROL = 'Cache-Control';
 
+    /** @var string Cache-Control value forbidding any cache to keep the response */
+    public const string CACHE_CONTROL_NO_STORE = 'no-store';
+
+    /** @var string HTTP header X-Accel-Redirect, which hands the body of the response to nginx */
+    public const string HEADER_X_ACCEL_REDIRECT = 'X-Accel-Redirect';
+
+    /** @var string HTTP header X-Content-Type-Options */
+    public const string HEADER_X_CONTENT_TYPE_OPTIONS = 'X-Content-Type-Options';
+
+    /** @var string X-Content-Type-Options value forbidding the browser to guess a type the response did not declare */
+    public const string X_CONTENT_TYPE_OPTIONS_NOSNIFF = 'nosniff';
+
     /** @var string HTTP header Sec-WebSocket-Key */
     public const string HEADER_SEC_WEBSOCKET_KEY = 'Sec-WebSocket-Key';
 

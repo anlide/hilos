@@ -27,6 +27,8 @@ in a demo teaches the wrong pattern.
 - The WebSocket 101 upgrade and the handshake-welcome frame.
 - Signal routing in the master before it hands a signal to a worker.
 - Any code reachable per-connection or per-signal after `$daemon->run()`.
+- The handlers of `httpRoutes()`: the HTTP server lives in the master, so a
+  route handler is master-loop code for every request it answers.
 
 ## Anti-Patterns
 
@@ -78,6 +80,12 @@ that needs no I/O — a random token — and let the worker persist and verify i
   above — a line or a counter, and `MasterSignalSender` for anything more. It is called
   once per contained failure, so in a storm it is called in a storm. See
   [daemon-lifecycle.md](../architecture/daemon-lifecycle.md#answering-a-contained-failure-hil-619).
+- **An HTTP address whose answer needs the database or the files is declared by
+  an agent** (`AGENT_HTTP_ROUTES`, HIL-138): the master parks the connection,
+  the agent decides in its worker and replies, and the master only writes the
+  bytes back — see [agent-http-routes.md](../architecture/agent-http-routes.md).
+  A handler in `httpRoutes()` that looks up a session or reads a file is the
+  ❌ above with a URL in front of it.
 - Routing is still the ordinary way to move a signal: `SignalRouter::queueSignal()`
   routes by sender, and the facade is for the case where the addressee is known by
   name and there is no route to declare. See

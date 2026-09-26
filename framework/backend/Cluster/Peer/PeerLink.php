@@ -16,6 +16,7 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
@@ -372,6 +373,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerRtReplicaOfferDTO => $this->onRtReplicaOffer($frame),
             $frame instanceof PeerClientSignalDTO => $this->onClientSignal($frame),
             $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
+            $frame instanceof PeerHttpReplyDTO => $this->onHttpReply($frame),
             $frame instanceof PeerConnectionsSnapshotDTO => $this->onConnectionsSnapshot($frame),
             $frame instanceof PeerConnectionsDeltaDTO => $this->onConnectionsDelta($frame),
             $frame instanceof PeerProtectedModeEnableDTO => $this->onProtectedModeEnable($frame),
@@ -745,6 +747,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('client signal');
         $this->server->onClientSignalReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received HTTP reply to the server for the connection this node parked.
+     *
+     * @param PeerHttpReplyDTO $frame Incoming HTTP reply-forward frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onHttpReply(PeerHttpReplyDTO $frame): void
+    {
+        $this->requireHandshaked('HTTP reply');
+        $this->server->onHttpReplyReceived($this, $frame);
     }
 
     /**

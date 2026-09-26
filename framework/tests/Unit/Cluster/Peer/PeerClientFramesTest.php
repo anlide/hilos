@@ -10,12 +10,17 @@ use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
+use Hilos\Constants\HttpConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -261,6 +266,55 @@ final class PeerClientFramesTest extends TestCase
         PeerDTO::fromWire(json_encode([
             PeerDTO::TYPE => PeerClientFanoutDTO::MESSAGE_TYPE,
             PeerClientFanoutDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+        ]));
+    }
+
+    /**
+     * The HTTP reply rides inside verbatim, body and all: the node holding the connection writes
+     * exactly what the agent answered on the other node.
+     */
+    public function testAnHttpReplyRoundTripsWithItsReplyIntact(): void
+    {
+        $request = new HttpRequestDTO('corr-1', HttpConstants::METHOD_GET, '/_test/file', [], null, 'node-B');
+        $reply = HttpReplyDTO::response($request, HttpConstants::HTTP_OK, [
+            HttpConstants::HEADER_CONTENT_TYPE => 'image/png',
+        ], "\x89PNG\x00\xff");
+        $frame = new PeerHttpReplyDTO('node-A', 'node-B', new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::HTTP_REPLY),
+            new SignalName('corr-1'),
+            $reply,
+        ));
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerHttpReplyDTO::class, $parsed);
+        $this->assertSame('node-A', $parsed->originNodeId);
+        $this->assertSame('node-B', $parsed->targetNodeId);
+        $this->assertEquals($reply, $parsed->signal->data);
+    }
+
+    public function testAnHttpReplyRejectsAMissingTargetNodeId(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer HTTP reply is missing the target node id');
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerHttpReplyDTO::MESSAGE_TYPE,
+            PeerHttpReplyDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerHttpReplyDTO::FIELD_SIGNAL => $this->innerSignal()->toArray(),
+        ]));
+    }
+
+    public function testAnHttpReplyRejectsAMissingInnerSignal(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer HTTP reply is missing the inner signal payload');
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerHttpReplyDTO::MESSAGE_TYPE,
+            PeerHttpReplyDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerHttpReplyDTO::FIELD_TARGET_NODE_ID => 'node-B',
         ]));
     }
 

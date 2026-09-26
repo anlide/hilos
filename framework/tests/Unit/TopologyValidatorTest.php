@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
@@ -357,6 +358,42 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('unknown config keys: testOnly');
 
         TopologyUnknownCommandConfigKeyHilos::validateTopology();
+    }
+
+    public function testAgentHttpRoutesMustBeKeyedByAMethodTheServerRoutes(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('AGENTS[invalid_agent_http_route_agent] class');
+        $this->expectExceptionMessage('AGENT_HTTP_ROUTES[FETCH] must be keyed by one of GET, POST, PUT, DELETE');
+
+        TopologyInvalidAgentHttpRouteHilos::validateTopology();
+    }
+
+    /**
+     * Each of the four paths is refused on its own: a relative one, one carrying a query string,
+     * one carrying a placeholder the router would hand the agent without a name, and one carrying
+     * characters the route registry would compile into its pattern.
+     */
+    public function testAgentHttpRoutePathMustBeAnExactAbsolutePath(): void
+    {
+        try {
+            TopologyInvalidAgentHttpPathHilos::validateTopology();
+            $this->fail('A malformed agent HTTP path must refuse the topology');
+        } catch (InvalidTopologyException $e) {
+            $this->assertSame(4, substr_count(
+                $e->getMessage(),
+                'AGENT_HTTP_ROUTES[GET] must contain only paths that start with',
+            ));
+        }
+    }
+
+    public function testAgentHttpRouteMustHaveSingleOwner(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('AGENTS[second_agent_http_route_agent] class');
+        $this->expectExceptionMessage('AGENT_HTTP_ROUTES[GET] path /_test/file is already declared by first_agent_http_route_agent');
+
+        TopologyDuplicateAgentHttpRouteHilos::validateTopology();
     }
 
     public function testIndexedAgentSignalPassesValidation(): void
@@ -1770,6 +1807,42 @@ final class TopologyUnknownCommandConfigKeyAgent extends TopologyTestAgent
     ];
 }
 
+final class TopologyInvalidAgentHttpRouteAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'invalid_agent_http_route_agent';
+
+    public const array AGENT_HTTP_ROUTES = [
+        'FETCH' => ['/_test/file'],
+    ];
+}
+
+final class TopologyInvalidAgentHttpPathAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'invalid_agent_http_path_agent';
+
+    public const array AGENT_HTTP_ROUTES = [
+        HttpConstants::METHOD_GET => ['_test/file', '/_test/file?id=1', '/_test/file/{id}', '/_test/(file)#'],
+    ];
+}
+
+final class TopologyFirstAgentHttpRouteAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'first_agent_http_route_agent';
+
+    public const array AGENT_HTTP_ROUTES = [
+        HttpConstants::METHOD_GET => ['/_test/file'],
+    ];
+}
+
+final class TopologySecondAgentHttpRouteAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'second_agent_http_route_agent';
+
+    public const array AGENT_HTTP_ROUTES = [
+        HttpConstants::METHOD_GET => ['/_test/file'],
+    ];
+}
+
 final class TopologyValidTable extends TableDefinition
 {
     /**
@@ -2277,6 +2350,70 @@ final class TopologyInvalidAgentCommandHilos extends HilosFacade
         TopologyInvalidAgentCommandAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyInvalidAgentCommandAgent::class,
             AgentRegistryKey::DAEMON => TopologyInvalidAgentCommandAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidAgentHttpRouteHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyInvalidAgentHttpRouteAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyInvalidAgentHttpRouteAgent::class,
+            AgentRegistryKey::DAEMON => TopologyInvalidAgentHttpRouteAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidAgentHttpPathHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyInvalidAgentHttpPathAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyInvalidAgentHttpPathAgent::class,
+            AgentRegistryKey::DAEMON => TopologyInvalidAgentHttpPathAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyDuplicateAgentHttpRouteHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFirstAgentHttpRouteAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFirstAgentHttpRouteAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFirstAgentHttpRouteAgentDaemon::class,
+        ],
+        TopologySecondAgentHttpRouteAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySecondAgentHttpRouteAgent::class,
+            AgentRegistryKey::DAEMON => TopologySecondAgentHttpRouteAgentDaemon::class,
         ],
     ];
 

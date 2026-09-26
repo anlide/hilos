@@ -167,6 +167,12 @@ final class SignalTypeConstants
     /** @var string CLI command reply signal type (agent -> master, addressed to the held CLI connection) */
     public const string COMMAND_REPLY = 'command_reply';
 
+    /** @var string HTTP request routed to the agent that declares its address (master -> agent) */
+    public const string HTTP_REQUEST = 'http_request';
+
+    /** @var string HTTP reply signal type (agent -> master, addressed to the held HTTP connection) */
+    public const string HTTP_REPLY = 'http_reply';
+
     /** @var string Binary frame signal type */
     public const string FRAME_BINARY = 'frame_binary';
 

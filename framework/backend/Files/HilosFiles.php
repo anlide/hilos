@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Files;
 
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -30,12 +31,33 @@ use Hilos\Hilos;
  */
 class HilosFiles
 {
+    /** @var string Address a registry file is served at, by the files library (HIL-138) */
+    public const string DOWNLOAD_PATH = '/_hilos/file';
+
+    /** @var string Query key carrying the id of the file served at {@see self::DOWNLOAD_PATH} */
+    public const string DOWNLOAD_ID_KEY = 'id';
+
     /**
      * @param FilesStorageInterface $storage Where the registry's files are kept. It lives on the door so that
      *     every process reaching the registry sees the same storage; only {@see AbstractFilesLibraryAgent} writes it.
      */
     public function __construct(public readonly FilesStorageInterface $storage)
     {
+    }
+
+    /**
+     * Builds the address a registry file is served at.
+     *
+     * Relative to the site, and the one place it is spelled: a project that hands a file's
+     * address to the browser in its own frame builds it here rather than writing the path out.
+     * Whether the browser gets the file is decided when it asks, by the row's visibility.
+     *
+     * @param int $fileId Id of the registry row
+     * @return string Address of the file, with its id in the query
+     */
+    public static function downloadPath(int $fileId): string
+    {
+        return self::DOWNLOAD_PATH . HttpConstants::QUERY_STRING_SEPARATOR . http_build_query([self::DOWNLOAD_ID_KEY => $fileId]);
     }
 
     /**

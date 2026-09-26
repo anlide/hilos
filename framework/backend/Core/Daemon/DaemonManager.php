@@ -53,6 +53,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\AgentRegistry;
@@ -88,8 +89,10 @@ use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\SessionClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
+use Hilos\Core\Router\Destination\HttpReplyDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\RemoteClientDestination;
+use Hilos\Core\Router\Destination\RemoteHttpReplyDestination;
 use Hilos\Core\Router\Destination\UnknownAgentDestination;
 use Hilos\Core\Router\Destination\RemoteFanoutDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
@@ -152,7 +155,10 @@ use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Server\CommandServer;
+use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
@@ -539,8 +545,10 @@ abstract class DaemonManager extends BaseManager implements
      *
      * Called once by {@see DaemonApplication} after the facade is initialized: it
      * registers the servers from {@see createServers()}, builds the HTTP router with a
-     * default GET / hint ({@see RootInfoHandler}) plus the routes from {@see httpRoutes()}
-     * (a demo route on / overrides the hint), and registers each active module from
+     * default GET / hint ({@see RootInfoHandler}), the addresses registered agents declare to
+     * answer ({@see AbstractAgent::AGENT_HTTP_ROUTES}) plus the routes from {@see httpRoutes()}
+     * (a demo route on / overrides the hint, and one on an agent's address overrides the agent),
+     * and registers each active module from
      * {@see modules()}. The
      * order is fixed — core servers, then router, then opt-in modules — so a module can
      * rely on the core servers already being present. Finally it registers the
@@ -580,6 +588,14 @@ abstract class DaemonManager extends BaseManager implements
         // daemon, so a project that forgot to declare the route used to break that promise. Ahead
         // of the project's own routes, so a daemon that wants its own /status still overrides this.
         $router->addRoute(HttpConstants::METHOD_GET, ApiEndpoint::STATUS->value, new StatusHandler($this));
+        // The addresses agents answer, from what the registered agents declare: after /status and
+        // ahead of the project's own routes, so a project route on the same address replaces the
+        // agent's the way it replaces /status (docs/agents/architecture/agent-http-routes.md).
+        foreach (Hilos::appClass()::getHttpAgentRoutes() as $method => $paths) {
+            foreach ($paths as $path => $agentType) {
+                $router->addAgentRoute($method, $path, $agentType);
+            }
+        }
         foreach ($this->httpRoutes($context) as [$method, $path, $handler]) {
             $router->addRoute($method, $path, $handler);
         }
@@ -1063,6 +1079,13 @@ abstract class DaemonManager extends BaseManager implements
             // master's own, so the command branch reads them here instead of asking an agent
             // that in a cluster may be answering from another node entirely.
             $server->setDaemonStatusSource($this);
+        }
+
+        // The HTTP server parks a request for an agent the way the command channel parks a
+        // command, and a browser that leaves has to reach a frame held for a starting agent
+        // through the same seam (HIL-1040).
+        if ($server instanceof HttpServer) {
+            $server->setAbandonedCommandSink($this);
         }
 
         // The same seam, for the same reason, one layer down: a handshake that trades a
@@ -2279,6 +2302,9 @@ abstract class DaemonManager extends BaseManager implements
             }
         }
 
+        // Find HTTP server once (for HTTP reply destinations)
+        $httpServer = $this->findHttpServer();
+
         // Find Peer server once (for cross-node agent destinations)
         $peerServer = null;
         foreach ($this->servers as $server) {
@@ -2589,6 +2615,30 @@ abstract class DaemonManager extends BaseManager implements
                     $reply = $signal->data;
                     if ($reply instanceof CommandReplyDTO) {
                         $commandServer->deliver($destination->correlationId, $reply);
+                    }
+                } elseif ($destination instanceof RemoteHttpReplyDestination) {
+                    // Carry the agent reply to the node that parked the connection. Same
+                    // best-effort contract as the client forward above: no live link drops and
+                    // logs, and the browser is left to its own timeout.
+                    if ($peerServer === null) {
+                        Logger::error("Peer HTTP reply dropped: {$signalType}/{$signalName}"
+                            . " -> node {$destination->nodeId} - no peer server");
+                        continue;
+                    }
+
+                    if (!$peerServer->sendHttpReplyToNode($destination->nodeId, $signal)) {
+                        Logger::warning("Peer HTTP reply dropped: {$signalType}/{$signalName}"
+                            . " -> node {$destination->nodeId} - no live link");
+                    }
+                } elseif ($destination instanceof HttpReplyDestination) {
+                    // Write the agent reply to the connection this node parked for it
+                    if ($httpServer === null) {
+                        continue;
+                    }
+
+                    $reply = $signal->data;
+                    if ($reply instanceof HttpReplyDTO) {
+                        $httpServer->deliver($destination->correlationId, $reply);
                     }
                 } else {
                     // Unknown destination type, skip
@@ -4050,6 +4100,33 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Writes an agent's HTTP reply, forwarded from the node the agent answered on, to the
+     * connection this node parked for it.
+     *
+     * Implements {@see ClientSignalSink}. The reply is already addressed by its correlation id,
+     * so this end writes it the way a reply resolved here is written - through the HTTP server's
+     * own delivery, which also writes down a reply whose connection has gone.
+     *
+     * @param SignalDTO $signal HTTP_REPLY signal to write
+     */
+    public function deliverHttpReply(SignalDTO $signal): void
+    {
+        $reply = $signal->data;
+        if (!$reply instanceof HttpReplyDTO) {
+            Logger::warning('Forwarded HTTP reply dropped: the frame carries ' . get_debug_type($reply) . ', not a reply');
+            return;
+        }
+
+        $httpServer = $this->findHttpServer();
+        if ($httpServer === null) {
+            Logger::warning("Forwarded HTTP reply to #{$reply->correlationId} dropped: this node serves no HTTP");
+            return;
+        }
+
+        $httpServer->deliver($reply->correlationId, $reply);
+    }
+
+    /**
      * Asks the cluster to place an agent nobody could address, when the agent is one that starts
      * by being addressed (HIL-628).
      *
@@ -4307,7 +4384,8 @@ abstract class DaemonManager extends BaseManager implements
      *
      * A request carrying no correlation id is left alone rather than answered: nothing is held
      * for it, so the reply would address nobody - the same clause the group refusal carries about
-     * a join with no accept key.
+     * a join with no accept key. A parked HTTP request is answered here too, with the status
+     * {@see refuseParkedHttpRequest()} writes.
      *
      * @param SignalDTO $signal Signal that resolved to no destination, a command request or not
      * @throws InvalidArgumentException When the reply signal cannot be named
@@ -4315,6 +4393,12 @@ abstract class DaemonManager extends BaseManager implements
     private function refuseUnownedCommand(SignalDTO $signal): void
     {
         $data = $signal->data;
+        if ($data instanceof HttpRequestDTO) {
+            $this->refuseParkedHttpRequest($data, 'no agent of this installation answers it');
+
+            return;
+        }
+
         if (!$data instanceof CommandRequestDTO || $data->correlationId === '') {
             return;
         }
@@ -4344,7 +4428,8 @@ abstract class DaemonManager extends BaseManager implements
      * which one it is knows where to look. The road back is the same for both, which is why they
      * share the method rather than the sentence.
      *
-     * A request carrying no correlation id is left alone, as in {@see refuseUnownedCommand()}.
+     * A request carrying no correlation id is left alone, as in {@see refuseUnownedCommand()}, and
+     * a parked HTTP request is answered here too ({@see refuseParkedHttpRequest()}).
      *
      * @param SignalDTO $signal Signal that could not be delivered, a command request or not
      * @param string $message Refusal format taking the command name, one of the COMMAND_* messages
@@ -4353,6 +4438,12 @@ abstract class DaemonManager extends BaseManager implements
     private function refuseUndeliveredCommand(SignalDTO $signal, string $message): void
     {
         $data = $signal->data;
+        if ($data instanceof HttpRequestDTO) {
+            $this->refuseParkedHttpRequest($data, 'the agent that answers it could not be reached');
+
+            return;
+        }
+
         if (!$data instanceof CommandRequestDTO || $data->correlationId === '') {
             return;
         }
@@ -4364,6 +4455,35 @@ abstract class DaemonManager extends BaseManager implements
             signalType: new SignalType(SignalTypeConstants::COMMAND_REPLY),
             signalName: new SignalName($data->correlationId),
             signalData: CommandReplyDTO::error($data->correlationId, sprintf($message, $data->command)),
+        );
+    }
+
+    /**
+     * Answers a parked HTTP request the master could not hand to its agent with 503.
+     *
+     * The HTTP half of the two command refusals above, and called from inside them, so every place
+     * a command is refused for want of its agent refuses a parked request as well - and a place
+     * added later does not have to remember HTTP. A browser has no reason to read, only a status,
+     * so the reason goes to the log alone. A request with no correlation id is left alone, as a
+     * command is: nothing is held for it.
+     *
+     * @param HttpRequestDTO $request Request that will not reach its agent
+     * @param string $reason Why, for the log line
+     * @throws InvalidArgumentException When the reply signal cannot be named
+     */
+    private function refuseParkedHttpRequest(HttpRequestDTO $request, string $reason): void
+    {
+        if ($request->correlationId === '') {
+            return;
+        }
+
+        Logger::warning("HTTP {$request->method} {$request->path} refused: {$reason}");
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DAEMON),
+            signalType: new SignalType(SignalTypeConstants::HTTP_REPLY),
+            signalName: new SignalName($request->correlationId),
+            signalData: HttpReplyDTO::refusal($request, HttpConstants::HTTP_SERVICE_UNAVAILABLE),
         );
     }
 
@@ -4658,6 +4778,14 @@ abstract class DaemonManager extends BaseManager implements
     private function findWebSocketServer(): ?WebSocketServer
     {
         return array_find($this->servers, fn($server) => $server instanceof WebSocketServer);
+    }
+
+    /**
+     * @return ?HttpServer Registered HTTP server, or null when this daemon serves no HTTP
+     */
+    private function findHttpServer(): ?HttpServer
+    {
+        return array_find($this->servers, fn($server) => $server instanceof HttpServer);
     }
 
     /**
@@ -5517,7 +5645,7 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Forgets the frames held for an agent on behalf of a command request nobody waits on.
+     * Forgets the frames held for an agent on behalf of a command or HTTP request nobody waits on.
      *
      * Silently, unlike every other way a hold ends: the refusal the other endings write is
      * addressed to the caller, and here the caller is precisely what has gone. A page's held
@@ -5532,8 +5660,12 @@ abstract class DaemonManager extends BaseManager implements
             $this->parkedAgentSignals,
             static function (ParkedAgentSignal $parked) use ($correlationId): bool {
                 $data = $parked->signal->data;
+                $parkedCorrelationId = match (true) {
+                    $data instanceof CommandRequestDTO, $data instanceof HttpRequestDTO => $data->correlationId,
+                    default => null,
+                };
 
-                return !$data instanceof CommandRequestDTO || $data->correlationId !== $correlationId;
+                return $parkedCorrelationId !== $correlationId;
             },
         ));
     }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -23,7 +24,10 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Server\CommandServer;
+use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use PHPUnit\Framework\TestCase;
@@ -153,6 +157,85 @@ final class DaemonManagerCommandRefusalTest extends TestCase
     }
 
     /**
+     * A parked HTTP request dies inside the master in the same three places a command does, and
+     * gets the same answer from the same two methods: a 503, because nobody is there to decide.
+     */
+    public function testAnHttpRequestNoAgentAnswersIsRefusedWith503(): void
+    {
+        $manager = new DaemonManagerCommandRefusalTestManager();
+        $this->queueHttpRequest(DaemonManagerCommandRefusalTestRouter::UNOWNED_PATH);
+
+        $manager->drainQueue();
+
+        $this->assertServiceUnavailable($manager);
+    }
+
+    public function testAnHttpRequestWhoseNodeHasNoLiveLinkIsRefusedWith503(): void
+    {
+        $manager = new DaemonManagerCommandRefusalTestManager();
+        $this->queueHttpRequest(DaemonManagerCommandRefusalTestRouter::REMOTE_PATH);
+
+        $manager->drainQueue();
+
+        $this->assertServiceUnavailable($manager);
+    }
+
+    public function testAnHttpRequestWhoseAgentNothingPlacedIsRefusedWith503WhenTheVerdictComes(): void
+    {
+        $manager = new DaemonManagerCommandRefusalTestManager();
+        $this->queueHttpRequest(DaemonManagerCommandRefusalTestRouter::UNPLACED_PATH);
+
+        $manager->drainQueue();
+        $this->assertSame([], $manager->httpReplies());
+
+        $manager->reportNotPlaced(DaemonManagerCommandRefusalTestRouter::AGENT_TYPE);
+        $manager->drainQueue();
+
+        $this->assertServiceUnavailable($manager);
+    }
+
+    public function testAnHttpRequestThatReachesItsAgentIsNotRefused(): void
+    {
+        $manager = new DaemonManagerCommandRefusalTestManager();
+        $this->queueHttpRequest(DaemonManagerCommandRefusalTestRouter::OWNED_PATH);
+
+        $manager->drainQueue();
+
+        $this->assertSame([DaemonManagerCommandRefusalTestRouter::AGENT_TYPE], $manager->deliveredTo());
+        $this->assertSame([], $manager->httpReplies());
+    }
+
+    /**
+     * Asserts the one reply the drain wrote to the parked connection is the master's 503.
+     *
+     * @param DaemonManagerCommandRefusalTestManager $manager Manager whose drain ran
+     */
+    private function assertServiceUnavailable(DaemonManagerCommandRefusalTestManager $manager): void
+    {
+        $replies = $manager->httpReplies();
+        $this->assertCount(1, $replies);
+        $this->assertSame(self::CORRELATION_ID, $replies[0]->correlationId);
+        $this->assertSame(HttpConstants::HTTP_SERVICE_UNAVAILABLE, $replies[0]->status);
+        $this->assertSame('{"error":"Service Unavailable"}', $replies[0]->body);
+        $this->assertSame([], $manager->deliveredCorrelationIds(), 'an HTTP refusal is not written to the command channel');
+    }
+
+    /**
+     * Queues one parked HTTP request for the given path, as the master's HTTP client does.
+     *
+     * @param string $path Requested path
+     */
+    private function queueHttpRequest(string $path): void
+    {
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::HTTP_REQUEST),
+            new SignalName(HttpConstants::METHOD_GET . ' ' . $path),
+            new HttpRequestDTO(self::CORRELATION_ID, HttpConstants::METHOD_GET, $path, [], null, null),
+        );
+    }
+
+    /**
      * Queues one command request, the shape every case here shares apart from its name.
      *
      * @param string $command Command name the request asks for
@@ -182,6 +265,9 @@ final class DaemonManagerCommandRefusalTestManager extends DaemonManager
     /** The stand-in command server the refusals are written to */
     private DaemonManagerCommandRefusalTestCommandServer $commandServer;
 
+    /** The stand-in HTTP server the refusals of a parked request are written to */
+    private DaemonManagerCommandRefusalTestHttpServer $httpServer;
+
     public function __construct()
     {
         parent::__construct();
@@ -191,6 +277,17 @@ final class DaemonManagerCommandRefusalTestManager extends DaemonManager
 
         $this->commandServer = new DaemonManagerCommandRefusalTestCommandServer();
         $this->registerServer($this->commandServer);
+
+        $this->httpServer = new DaemonManagerCommandRefusalTestHttpServer();
+        $this->registerServer($this->httpServer);
+    }
+
+    /**
+     * @return list<HttpReplyDTO> Replies the drain wrote to parked HTTP connections, in order
+     */
+    public function httpReplies(): array
+    {
+        return $this->httpServer->replies;
     }
 
     /**
@@ -276,6 +373,14 @@ final class DaemonManagerCommandRefusalTestRouter extends SignalRouter
 
     public const string OWNED_COMMAND = 'ping';
 
+    public const string UNOWNED_PATH = '/_test/unowned';
+
+    public const string UNPLACED_PATH = '/_test/unplaced';
+
+    public const string REMOTE_PATH = '/_test/remote';
+
+    public const string OWNED_PATH = '/_test/owned';
+
     public const string AGENT_TYPE = 'command_refusal_test_agent';
 
     /** Node the remote destination names, which no peer server of this test can reach */
@@ -288,9 +393,12 @@ final class DaemonManagerCommandRefusalTestRouter extends SignalRouter
     protected function additionalDestinations(SignalDTO $signal): array
     {
         return match ($signal->signalName->getName()) {
-            self::UNPLACED_COMMAND => [new UnknownAgentDestination(self::AGENT_TYPE)],
-            self::REMOTE_COMMAND => [new RemoteAgentDestination(self::ABSENT_NODE_ID, self::AGENT_TYPE)],
-            self::OWNED_COMMAND => [new AgentDestination(self::AGENT_TYPE)],
+            self::UNPLACED_COMMAND, HttpConstants::METHOD_GET . ' ' . self::UNPLACED_PATH
+                => [new UnknownAgentDestination(self::AGENT_TYPE)],
+            self::REMOTE_COMMAND, HttpConstants::METHOD_GET . ' ' . self::REMOTE_PATH
+                => [new RemoteAgentDestination(self::ABSENT_NODE_ID, self::AGENT_TYPE)],
+            self::OWNED_COMMAND, HttpConstants::METHOD_GET . ' ' . self::OWNED_PATH
+                => [new AgentDestination(self::AGENT_TYPE)],
             default => [],
         };
     }
@@ -339,6 +447,32 @@ final class DaemonManagerCommandRefusalTestCommandServer extends CommandServer
     public function deliver(string $correlationId, CommandReplyDTO $reply): void
     {
         $this->deliveredCorrelationIds[] = $correlationId;
+        $this->replies[] = $reply;
+    }
+
+    protected function onStart(): void
+    {
+    }
+}
+
+/**
+ * An HTTP server that records what the drain hands it instead of writing to a parked connection.
+ */
+final class DaemonManagerCommandRefusalTestHttpServer extends HttpServer
+{
+    /** @var list<HttpReplyDTO> Replies the drain delivered, in order */
+    public array $replies = [];
+
+    public function __construct()
+    {
+    }
+
+    /**
+     * @param string $correlationId Correlation id of the parked request
+     * @param HttpReplyDTO $reply Reply the drain wrote back
+     */
+    public function deliver(string $correlationId, HttpReplyDTO $reply): void
+    {
         $this->replies[] = $reply;
     }
 

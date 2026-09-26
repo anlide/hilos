@@ -281,6 +281,15 @@ enum EnvConstants
     case HILOS_SESSION_COOKIE_MAX_AGE;
 
     /**
+     * Internal nginx location the files directory is served from (HIL-138). Set,
+     * a file served by id answers with an empty body and X-Accel-Redirect to
+     * this location plus the stored name, and nginx sends the bytes. Empty, the
+     * daemon sends the bytes itself, up to 4 MiB - the transport of a dev stack
+     * with no web server in front.
+     */
+    case HILOS_FILES_XACCEL_LOCATION;
+
+    /**
      * Cron schedule of the sweep that clears abandoned registrations off session
      * rows (HIL-612). Five fields; default every five minutes. An EMPTY value
      * builds no rule at all, which is how a project that never registers anybody

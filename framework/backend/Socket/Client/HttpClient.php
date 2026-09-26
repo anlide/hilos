@@ -5,17 +5,27 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\API\Router\HttpRouter;
+use Hilos\API\Router\ParkedHttpRequest;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Transport\SocketTransportInterface;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
+use Hilos\Utils\Logger;
 
 /**
  * HttpClient - Represents a single HTTP client connection.
@@ -30,6 +40,11 @@ use Hilos\Utils\Helpers\HttpHeaderHelper;
  * A request body is read by its declared Content-Length and handed to the route as a raw string;
  * the client decodes neither a form nor JSON. A chunked body and a body above
  * {@see self::MAX_REQUEST_BODY_BYTES} are refused before any route is chosen.
+ *
+ * A request to an address an agent answers is parked rather than answered: the client holds
+ * itself in its {@see HttpServer} under the request's correlation id, hands the request to the
+ * agent as an HTTP_REQUEST signal and reads no further request of the connection until
+ * {@see writeReply()} writes the agent's answer (docs/agents/architecture/agent-http-routes.md).
  */
 class HttpClient extends AbstractClient implements HttpClientInterface
 {
@@ -50,18 +65,29 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     /** @var bool Server policy: allow HTTP keep-alive when the client also allows it */
     private bool $serverAllowsPersistentConnections = true;
 
+    /** @var ?HttpServer Owning server holding the parked-request registry, null for a client no server holds */
+    private ?HttpServer $server;
+
+    /** @var ?ParkedHttpRequest Request parked awaiting its agent's reply, or null when nothing is parked */
+    private ?ParkedHttpRequest $parked = null;
+
+    /** @var bool Whether the parked request's response may keep the connection open */
+    private bool $parkedPersistent = false;
+
     /**
      * Create HTTP client with socket and load keep-alive policy from env.
      *
      * @param resource|object $socket Client socket resource or Socket object
      * @param ?SocketTransportInterface $transport Transport over that socket, the bare one when null
+     * @param ?HttpServer $server Owning server that holds a parked request, null when none does
      * @throws EnvException When socket buffer or keep-alive env values are missing or invalid
      */
-    public function __construct($socket, ?SocketTransportInterface $transport = null)
+    public function __construct($socket, ?SocketTransportInterface $transport = null, ?HttpServer $server = null)
     {
         parent::__construct($socket, $transport);
 
         $this->serverAllowsPersistentConnections = Hilos::$env[EnvConstants::HTTP_STATUS_KEEP_ALIVE]->bool();
+        $this->server = $server;
     }
 
     /**
@@ -77,13 +103,17 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     /**
      * Parse complete HTTP request(s) from the read buffer when outbound data is fully sent.
      *
+     * Nothing is parsed while a request is parked: its answer has to leave first, and a request
+     * behind it waits in the buffer the way it waits behind a response not yet sent.
+     *
      * @throws SocketException When outbound write fails during request handling
      * @throws InvalidFormatException When the request query string carries a non-string value
+     * @throws InvalidArgumentException When a parked request's signal cannot be named
      * @throws HilosException When a pipelined follow-up request refuses to become a response
      */
     protected function processReadBuffer(): void
     {
-        if ($this->writeBuffer !== '') {
+        if ($this->writeBuffer !== '' || $this->parked !== null) {
             return;
         }
 
@@ -125,18 +155,19 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             $body = substr($this->readBuffer, $end, $bodyLength);
             $this->readBuffer = substr($this->readBuffer, $end + $bodyLength);
             $this->processSingleHttpRequest($rawHeaders, $body);
-            if ($this->writeBuffer !== '') {
+            if ($this->writeBuffer !== '' || $this->parked !== null) {
                 break;
             }
         }
     }
 
     /**
-     * Route one complete HTTP request and queue its response.
+     * Route one complete HTTP request and queue its response, or park it for the agent that answers it.
      *
      * @param string $rawHeaders Raw request line and headers including the header/body delimiter
      * @param string $body Request body, exactly as many bytes as the request declared
      * @throws SocketException When outbound write fails while sending the response
+     * @throws InvalidArgumentException When a parked request's signal cannot be named
      * @throws HilosException When a pipelined follow-up request refuses to become a response
      */
     private function processSingleHttpRequest(string $rawHeaders, string $body): void
@@ -149,6 +180,11 @@ class HttpClient extends AbstractClient implements HttpClientInterface
 
         if ($this->router !== null) {
             $response = $this->router->route($request);
+            if ($response instanceof ParkedHttpRequest) {
+                $this->park($response, $persistent);
+
+                return;
+            }
         } else {
             $response = [
                 HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
@@ -157,6 +193,70 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             ];
         }
 
+        $this->queueResponse($response, $persistent);
+        $this->write();
+    }
+
+    /**
+     * Holds the connection for the agent that answers the request, and hands the request to it.
+     *
+     * Held in the server first and signalled second, so a reply can never arrive for a request
+     * nobody holds yet.
+     *
+     * @param ParkedHttpRequest $parked Request the router parked
+     * @param bool $persistent Whether the eventual response may keep the connection open
+     * @throws InvalidArgumentException When the request's signal cannot be named
+     */
+    private function park(ParkedHttpRequest $parked, bool $persistent): void
+    {
+        $request = $parked->request;
+        $this->parked = $parked;
+        $this->parkedPersistent = $persistent;
+        $this->server?->hold($request->correlationId, $this);
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DAEMON),
+            signalType: new SignalType(SignalTypeConstants::HTTP_REQUEST),
+            signalName: new SignalName("{$request->method} {$request->path}"),
+            signalData: $request,
+        );
+    }
+
+    /**
+     * Writes an agent's answer to the parked request and lets the connection read on.
+     *
+     * The response leaves on the server's next write, like every other one, and a request that
+     * waited behind the parked one is parsed once it has drained. The analytics row the router
+     * started is finished here, with the reply's status and the time since the request parked.
+     *
+     * A reply with nothing parked is dropped: the server delivers only to a client it holds, so
+     * this is a reply that lost a race to the connection's own close.
+     *
+     * @param HttpReplyDTO $reply Agent reply to write
+     */
+    public function writeReply(HttpReplyDTO $reply): void
+    {
+        $parked = $this->parked;
+        if ($parked === null) {
+            return;
+        }
+
+        $this->parked = null;
+        Hilos::$ac?->finishApiRequest($parked->apiRequestId, $reply->status, self::millisecondsSince($parked->startedAtNs));
+        $this->queueResponse([
+            HttpConstants::RESPONSE_KEY_STATUS => $reply->status,
+            HttpConstants::RESPONSE_KEY_HEADERS => $reply->headers,
+            HttpConstants::RESPONSE_KEY_BODY => $reply->body,
+        ], $this->parkedPersistent);
+    }
+
+    /**
+     * Puts a response in the outbound buffer with the Connection header the connection is owed.
+     *
+     * @param array<string, mixed> $response Response payload keyed by HttpConstants::RESPONSE_KEY_*
+     * @param bool $persistent Whether the connection stays open after the response
+     */
+    private function queueResponse(array $response, bool $persistent): void
+    {
         $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS] ?? [];
         if (!is_array($headers)) {
             $headers = [];
@@ -168,7 +268,6 @@ class HttpClient extends AbstractClient implements HttpClientInterface
 
         $this->writeBuffer = $this->buildResponse($response);
         $this->closeWhenOutputDrained = !$persistent;
-        $this->write();
     }
 
     /**
@@ -317,10 +416,35 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Connection close hook; no HTTP-specific cleanup is required.
+     * Connection close hook: a request still parked is given up on.
+     *
+     * The browser left before the agent answered - its own timeout, or a closed tab. The server
+     * drops the hold and tells the master, which drops a frame it keeps for a starting agent on
+     * this request's behalf (HIL-1040); the reply, whenever it comes, finds nobody. The analytics
+     * row the router started is finished without a status: no response was ever written.
      */
     protected function onClose(): void
     {
-        // HTTP client cleanup if needed
+        $parked = $this->parked;
+        if ($parked === null) {
+            return;
+        }
+
+        $request = $parked->request;
+        Logger::warning("HTTP: the browser left while {$request->method} {$request->path} #{$request->correlationId} was parked");
+        $this->parked = null;
+        Hilos::$ac?->finishApiRequest($parked->apiRequestId, null, self::millisecondsSince($parked->startedAtNs));
+        $this->server?->abandon($request->correlationId);
+    }
+
+    /**
+     * Milliseconds since a moment read from hrtime(true).
+     *
+     * @param int $startedAtNs The moment, in nanoseconds
+     * @return int Whole milliseconds since then
+     */
+    private static function millisecondsSince(int $startedAtNs): int
+    {
+        return (int)round((hrtime(true) - $startedAtNs) / TimeConstants::NS_PER_MILLISECOND);
     }
 }

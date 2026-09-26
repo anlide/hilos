@@ -10,6 +10,7 @@ use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
+use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsPath;
@@ -59,6 +60,42 @@ final class LocalFilesStorage implements FilesStorageInterface
     public function delete(string $storedName): void
     {
         $this->directory()[$storedName]->unlink();
+    }
+
+    /**
+     * Tells the size of the file of the stored name in the files directory.
+     *
+     * @param string $storedName Name the file is kept under
+     * @return ?int Size in bytes, or null when the directory holds no such file
+     * @throws DirectoryNotFoundException When the FS context or its files directory is not configured
+     */
+    public function size(string $storedName): ?int
+    {
+        $file = $this->directory()[$storedName];
+        if (!$file->exists()) {
+            return null;
+        }
+
+        try {
+            return $file->size();
+        } catch (FileNotFoundException) {
+            // Gone between the two calls: a janitor sweep, or an operator's hand.
+            return null;
+        }
+    }
+
+    /**
+     * Reads the file of the stored name from the files directory.
+     *
+     * @param string $storedName Name the file is kept under
+     * @return string The file's bytes
+     * @throws DirectoryNotFoundException When the FS context or its files directory is not configured
+     * @throws FileNotFoundException When the directory holds no such file
+     * @throws FileReadException When the file is there and cannot be read
+     */
+    public function read(string $storedName): string
+    {
+        return $this->directory()[$storedName]->read();
     }
 
     /**

@@ -45,6 +45,18 @@ interface ClientSignalSink
     public function deliverFanoutToClients(string $originNodeId, SignalDTO $signal): void;
 
     /**
+     * Writes an agent's HTTP reply, forwarded from the node the agent answered on, to the
+     * connection this node parked for it.
+     *
+     * The reply is already addressed - its correlation id names the parked connection - so this
+     * end only writes, as {@see deliverSignalToClient()} does. An HTTP connection is a browser's
+     * too, which is why its reply ends here and not at an agent.
+     *
+     * @param SignalDTO $signal HTTP_REPLY signal to write
+     */
+    public function deliverHttpReply(SignalDTO $signal): void;
+
+    /**
      * Hands the whole set of browser connections this node holds to a node the mesh has just
      * linked to.
      *

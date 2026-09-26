@@ -26,6 +26,7 @@ use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
+use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
@@ -2444,6 +2445,57 @@ final class PeerServer extends AbstractTlsServer implements
             $sink->deliverSignalToClient($frame->acceptKey, $frame->signal);
         } catch (Throwable $e) {
             Logger::warning("Failed to deliver peer client signal to '{$frame->acceptKey}': {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Carries an agent's HTTP reply to the node holding the parked connection.
+     *
+     * The HTTP twin of {@see sendSignalToClientNode()}, and best-effort in the same sense: a
+     * false return (no handshaked link to the node) is the caller's cue to drop and log. The
+     * browser behind the connection is then left to its own timeout, which is what a node that
+     * cannot be reached costs every frame addressed to it.
+     *
+     * @param string $nodeId Id of the node holding the parked connection
+     * @param SignalDTO $signal HTTP_REPLY signal to write on that node
+     * @return bool True when a live link carried the frame, false when the node is unlinked
+     */
+    public function sendHttpReplyToNode(string $nodeId, SignalDTO $signal): bool
+    {
+        return $this->sendToNode($nodeId, new PeerHttpReplyDTO($this->localIdentity->nodeId, $nodeId, $signal));
+    }
+
+    /**
+     * Writes a received cross-node HTTP reply to the connection this node parked for it.
+     *
+     * Verifies the frame is addressed to this node, then hands the reply straight to the local
+     * sink - no re-routing, as for a client signal. A mismatched target, an unregistered sink,
+     * or a failing write is dropped and logged, keeping a bad forward from tearing down the
+     * daemon loop.
+     *
+     * @param PeerLink $link Link the reply arrived on
+     * @param PeerHttpReplyDTO $frame Received HTTP reply-forward frame
+     */
+    public function onHttpReplyReceived(PeerLink $link, PeerHttpReplyDTO $frame): void
+    {
+        if ($frame->targetNodeId !== $this->localIdentity->nodeId) {
+            Logger::warning(
+                "Dropping peer HTTP reply addressed to node '{$frame->targetNodeId}'"
+                . " received on node '{$this->localIdentity->nodeId}'",
+            );
+            return;
+        }
+
+        $sink = Hilos::$cluster?->clientSignalSink();
+        if ($sink === null) {
+            Logger::warning("Dropping peer HTTP reply from node '{$frame->originNodeId}': no local client signal sink registered");
+            return;
+        }
+
+        try {
+            $sink->deliverHttpReply($frame->signal);
+        } catch (Throwable $e) {
+            Logger::warning("Failed to deliver peer HTTP reply from node '{$frame->originNodeId}': {$e->getMessage()}");
         }
     }
 

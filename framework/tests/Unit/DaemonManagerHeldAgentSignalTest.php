@@ -10,6 +10,7 @@ use Hilos\Cluster\Placement\AgentLocation;
 use Hilos\Cluster\WorkerPlacement;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -46,6 +47,8 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -671,6 +674,49 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
+     * A parked HTTP request held for a starting agent is dropped the same way when the browser
+     * leaves: the HTTP server reports it through the command channel's seam (HIL-1040).
+     */
+    public function testAnHttpRequestWhoseBrowserLeftIsDroppedWithoutAnAnswer(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueHttpRequest(HeldAgentSignalTestRouter::COLD_HTTP_PATH);
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->heldFrames());
+
+        $manager->onCommandAbandoned(self::CORRELATION_ID);
+
+        $this->assertSame([], $manager->heldFrames());
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+        $this->assertSame([], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * A start that failed answers a parked HTTP request at once with 503, as it answers a command:
+     * the browser would otherwise wait for its own timeout on an agent that will not come up.
+     */
+    public function testAReportedStartFailureAnswersAParkedHttpRequestWith503(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueHttpRequest(HeldAgentSignalTestRouter::COLD_HTTP_PATH);
+        $manager->drainQueue();
+
+        $manager->reportStartFailed(HeldAgentSignalTestRouter::COLD_AGENT);
+
+        $replies = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof HttpReplyDTO) {
+                $replies[] = $signal->data;
+            }
+        }
+        $this->assertCount(1, $replies);
+        $this->assertSame(self::CORRELATION_ID, $replies[0]->correlationId);
+        $this->assertSame(HttpConstants::HTTP_SERVICE_UNAVAILABLE, $replies[0]->status);
+        $this->assertSame([], $manager->heldFrames());
+    }
+
+    /**
      * The master's own facade used to place the agent and write into a worker with code of its
      * own, which put its signal behind a start that could still fail. It goes through the same
      * door as everything else now, so the signal waits for the start like a routed frame.
@@ -933,6 +979,19 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
+     * @param string $path Path the router answers with its case's agent
+     */
+    private function queueHttpRequest(string $path): void
+    {
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::HTTP_REQUEST),
+            new SignalName(HttpConstants::METHOD_GET . ' ' . $path),
+            new HttpRequestDTO(self::CORRELATION_ID, HttpConstants::METHOD_GET, $path, [], null, null),
+        );
+    }
+
+    /**
      * @param string $name Signal name the router answers with its case's destinations
      */
     private function queuePush(string $name): void
@@ -1176,6 +1235,8 @@ final class HeldAgentSignalTestRouter extends SignalRouter
 
     public const string COLD_COMMAND = 'cold:command';
 
+    public const string COLD_HTTP_PATH = '/_test/cold';
+
     public const string COLD_PAGE = 'cold_room';
 
     public const string UNPLACED_PAGE = 'unplaced_room';
@@ -1213,7 +1274,8 @@ final class HeldAgentSignalTestRouter extends SignalRouter
     {
         return match ($signal->signalName->getName()) {
             self::COLD_PUSH, self::COLD_FOLLOW_UP, self::COLD_PAGE,
-            self::COLD_COMMAND => [new AgentDestination(self::COLD_AGENT)],
+            self::COLD_COMMAND, HttpConstants::METHOD_GET . ' ' . self::COLD_HTTP_PATH
+                => [new AgentDestination(self::COLD_AGENT)],
             self::SHARED_PUSH => [new AgentDestination(self::UP_AGENT), new AgentDestination(self::COLD_AGENT)],
             self::UP_PUSH => [new AgentDestination(self::UP_AGENT)],
             self::FROZEN_PUSH => [new AgentDestination(self::FROZEN_AGENT)],

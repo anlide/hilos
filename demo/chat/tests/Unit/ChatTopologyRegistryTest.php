@@ -26,6 +26,7 @@ use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStartActionDTO;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
+use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
@@ -170,6 +171,7 @@ use Hilos\Push\DTO\PushSubscribeActionDTO;
 use Hilos\Push\DTO\PushRemoveActionDTO;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\HilosFiles;
 use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
@@ -604,6 +606,18 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::THROTTLE_TEST_RESET => AgentType::HILOS_AUTH_THROTTLE,
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([], Hilos::getCommandDtoRoutes());
+    }
+
+    /**
+     * The HTTP addresses agents answer, beside the commands: the files library declares its
+     * download address on the abstract class, so it is here because chat declares FILES, and a
+     * second address an agent starts to answer has to land here too (HIL-138).
+     */
+    public function testComputedHttpRoutesMatchChatAgentOwnership(): void
+    {
+        $this->assertSame([
+            HttpConstants::METHOD_GET => [HilosFiles::DOWNLOAD_PATH => HilosAgentType::HILOS_FILES_LIBRARY],
+        ], Hilos::getHttpAgentRoutes());
     }
 
     public function testComputedAgentSignalIndexFieldsMatchBotAgentDeclaration(): void

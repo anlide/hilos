@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Files\Library;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -21,10 +23,14 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\Database\View\Item\File;
+use Hilos\Database\View\Item\Session;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishItemData;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
+use Hilos\Files\Download\FileAccess;
+use Hilos\Files\Download\FileDownloadOutcome;
+use Hilos\Files\Download\FileDownloadResponse;
 use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
@@ -36,7 +42,10 @@ use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 
 /**
@@ -61,8 +70,14 @@ use Random\RandomException;
  * The janitor never walks the storage: files without a row are not its own, and in the chat
  * demo the files directory also holds the attachments published before the registry existed.
  *
- * Abstract by convention, as the notifications library is: the files registry has no project
- * half, and a project subclass adds nothing but its name.
+ * And it serves the files: GET {@see HilosFiles::DOWNLOAD_PATH}?id=N is an address this agent
+ * declares ({@see self::AGENT_HTTP_ROUTES}), so it is mounted on every project that declares
+ * HilosFeature::FILES and answered here rather than in the master, which may not read the row or
+ * the session (HIL-138). The row's visibility decides ({@see FileAccess}), the project's
+ * {@see self::grantsRead()} may widen it, and {@see FileDownloadResponse} builds the answer.
+ *
+ * Abstract by convention, as the notifications library is. A project subclass adds its name, and
+ * may override {@see self::grantsRead()} to let more viewers see a file than its visibility does.
  */
 abstract class AbstractFilesLibraryAgent extends AbstractAgent
 {
@@ -84,6 +99,11 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
         HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
+    ];
+
+    /** The address a file is served at, answered here and not in the master (HIL-138). */
+    public const array AGENT_HTTP_ROUTES = [
+        HttpConstants::METHOD_GET => [HilosFiles::DOWNLOAD_PATH],
     ];
 
     /** Name of the cron rule that removes files nobody linked. */
@@ -175,6 +195,104 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Serves a registry file by id to the browser that asked, or refuses it.
+     *
+     * @param HttpRequestDTO $data Request the master parked for this address
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name, the method and the path (unused)
+     * @throws HilosException When the row, the session or the environment cannot be read
+     * @throws InvalidArgumentException When the reply cannot be named
+     */
+    public function onSignalHttpRequest(HttpRequestDTO $data, string $source, string $name): void
+    {
+        $this->replyToHttpRequest($this->serveFile($data));
+    }
+
+    /**
+     * Widens who may see a file beyond what its visibility allows; the project's extension point.
+     *
+     * Asked only when the visibility refused, so it can only let a viewer in, never shut one out.
+     * The default lets nobody in: an extension a project forgot leaves a file to its owner rather
+     * than opening it to everyone signed in. Override it in the project's subclass of this
+     * library to let in a group, a role, the members of a room - or a guest.
+     *
+     * @param File $file Registry row of the file asked for
+     * @param ?Session $session Session the request presented - a guest's, one signed in or one
+     *     expired - or null when it presented none
+     * @return bool True to serve the file although its visibility refused it
+     * @throws HilosException Whatever the project's check raises while reading its own records
+     */
+    protected function grantsRead(File $file, ?Session $session): bool
+    {
+        return false;
+    }
+
+    /**
+     * Decides what a request for a file is answered, and says in the journal what went wrong.
+     *
+     * No broad catch stands over the reads of the database (docs/agents/code-style/wiring-refusals.md):
+     * a registry this agent cannot read is a wiring defect, not a 404.
+     *
+     * @param HttpRequestDTO $request Request for a file
+     * @return HttpReplyDTO The file, or the refusal
+     * @throws HilosException When the row, the session or the environment cannot be read
+     */
+    private function serveFile(HttpRequestDTO $request): HttpReplyDTO
+    {
+        $rawId = $request->query[HilosFiles::DOWNLOAD_ID_KEY] ?? null;
+        if ($rawId === null || !ctype_digit($rawId) || (int)$rawId <= 0) {
+            return HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND);
+        }
+
+        $fileId = (int)$rawId;
+        $file = Hilos::$db->files[$fileId] ?? null;
+        if ($file === null) {
+            return HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND);
+        }
+
+        $session = $request->sessionToken !== null ? Hilos::$db->sessions->findByToken($request->sessionToken) : null;
+        $access = FileAccess::judge(
+            $file->visibility,
+            $file->ownerUserId,
+            FileAccess::signedInUserId($session, TimeHelper::getSqlDateTime()),
+        );
+        if ($access !== FileAccess::ALLOW && $this->grantsRead($file, $session)) {
+            $access = FileAccess::ALLOW;
+        }
+        if ($access === FileAccess::SIGN_IN) {
+            return HttpReplyDTO::refusal($request, HttpConstants::HTTP_UNAUTHORIZED);
+        }
+        if ($access === FileAccess::FORBIDDEN) {
+            return HttpReplyDTO::refusal($request, HttpConstants::HTTP_FORBIDDEN);
+        }
+
+        try {
+            $response = FileDownloadResponse::forFile(
+                $request,
+                $file,
+                $this->storage(),
+                Hilos::$env[EnvConstants::HILOS_FILES_XACCEL_LOCATION]->string(),
+            );
+        } catch (FsException $e) {
+            $this->logAgentError("File {$fileId} cannot be served: the storage is not reachable - {$e->getMessage()}");
+
+            return HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR);
+        }
+
+        match ($response->outcome) {
+            FileDownloadOutcome::SERVED => null,
+            FileDownloadOutcome::MISSING_ON_DISK => $this->logAgentWarning("File {$fileId} has a row but no file on disk"),
+            FileDownloadOutcome::TOO_LARGE_TO_SEND_DIRECTLY => $this->logAgentError(
+                "File {$fileId} is {$response->size} bytes, above the " . FileDownloadResponse::DIRECT_MAX_BYTES
+                . ' the daemon serves itself; set ' . EnvConstants::HILOS_FILES_XACCEL_LOCATION->name,
+            ),
+            FileDownloadOutcome::UNREADABLE => $this->logAgentError("File {$fileId} is on disk and could not be read"),
+        };
+
+        return $response->reply;
     }
 
     /**

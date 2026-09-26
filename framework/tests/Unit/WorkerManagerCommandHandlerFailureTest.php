@@ -6,12 +6,14 @@ namespace Hilos\Tests\Unit;
 
 use Closure;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
@@ -20,6 +22,8 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -98,11 +102,79 @@ final class WorkerManagerCommandHandlerFailureTest extends TestCase
     }
 
     /**
+     * A browser parked on an agent's address has no server-side window to fall back on, so a
+     * handler that threw is answered by the worker with 500 rather than left to the browser's
+     * own timeout.
+     */
+    public function testAnHttpHandlerThatThrewIsAnsweredWith500(): void
+    {
+        $manager = new WorkerManagerCommandFailureTestManager();
+
+        $this->handleHttpRequest($manager);
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::HTTP_REPLY, $signal->signalType->getType());
+        $this->assertSame(self::CORRELATION_ID, $signal->signalName->getName());
+        $this->assertInstanceOf(HttpReplyDTO::class, $signal->data);
+        $this->assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $signal->data->status);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * An agent that declares an address and never overrides the handler answers 500 too: the
+     * default refuses rather than leaving the browser parked.
+     */
+    public function testAnAgentThatDoesNotAnswerItsOwnAddressRefusesWith500(): void
+    {
+        $manager = new WorkerManagerCommandFailureTestManager();
+        WorkerManagerCommandFailureTestAgent::$httpUsesDefault = true;
+
+        $this->handleHttpRequest($manager);
+
+        $reply = Hilos::$sr->getNextQueuedSignal()?->data;
+        $this->assertInstanceOf(HttpReplyDTO::class, $reply);
+        $this->assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $reply->status);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * Delivers one parked HTTP request to the manager under test, the way the master does.
+     *
+     * @param WorkerManager $manager Manager under test
+     */
+    private function handleHttpRequest(WorkerManager $manager): void
+    {
+        $this->deliver($manager, new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::HTTP_REQUEST),
+            new SignalName(HttpConstants::METHOD_GET . ' /_test/file'),
+            new HttpRequestDTO(self::CORRELATION_ID, HttpConstants::METHOD_GET, '/_test/file', [], null, null),
+        ));
+    }
+
+    /**
      * Delivers one command request to the manager under test, the way the master does.
      *
      * @param WorkerManager $manager Manager under test
      */
     private function handleCommand(WorkerManager $manager): void
+    {
+        $this->deliver($manager, new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName(self::COMMAND),
+            new CommandRequestDTO(self::CORRELATION_ID, self::COMMAND),
+        ));
+    }
+
+    /**
+     * Hands one signal to the fixture agent the way the master's message reaches a worker.
+     *
+     * @param WorkerManager $manager Manager under test
+     * @param SignalDTO $signal Signal to deliver
+     */
+    private function deliver(WorkerManager $manager, SignalDTO $signal): void
     {
         $handle = Closure::bind(
             static function (WorkerManager $manager, SignalDTO $signal): void {
@@ -115,12 +187,7 @@ final class WorkerManagerCommandHandlerFailureTest extends TestCase
             WorkerManager::class,
         );
 
-        $handle($manager, new SignalDTO(
-            new SignalSource(SignalSource::DAEMON),
-            new SignalType(SignalTypeConstants::COMMAND_REQUEST),
-            new SignalName(self::COMMAND),
-            new CommandRequestDTO(self::CORRELATION_ID, self::COMMAND),
-        ));
+        $handle($manager, $signal);
     }
 
     /**
@@ -144,6 +211,7 @@ final class WorkerManagerCommandFailureTestManager extends WorkerManager
     {
         parent::__construct(1);
         WorkerManagerCommandFailureTestAgent::$throwOnCommand = true;
+        WorkerManagerCommandFailureTestAgent::$httpUsesDefault = false;
         $this->agentManager->addAgent(self::AGENT_ID, new WorkerManagerCommandFailureTestAgent());
     }
 
@@ -187,6 +255,9 @@ final class WorkerManagerCommandFailureTestAgent extends AbstractAgent
     /** @var bool Whether the handler throws instead of answering, set by the case under test */
     public static bool $throwOnCommand = true;
 
+    /** @var bool Whether the HTTP handler falls back to the default instead of throwing */
+    public static bool $httpUsesDefault = false;
+
     /**
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source
@@ -200,6 +271,24 @@ final class WorkerManagerCommandFailureTestAgent extends AbstractAgent
         }
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId));
+    }
+
+    /**
+     * @param HttpRequestDTO $data Parked HTTP request
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @throws AgentException When the case under test asks the handler to fail
+     * @throws InvalidArgumentException When the default cannot name its refusal
+     */
+    public function onSignalHttpRequest(HttpRequestDTO $data, string $source, string $name): void
+    {
+        if (self::$httpUsesDefault) {
+            parent::onSignalHttpRequest($data, $source, $name);
+
+            return;
+        }
+
+        throw new AgentException('the file row could not be read');
     }
 
     public function onStop(): void

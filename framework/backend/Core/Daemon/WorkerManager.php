@@ -70,6 +70,8 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -1828,6 +1830,24 @@ abstract class WorkerManager extends BaseManager
                     }
                 } else {
                     Logger::error("onSignalCommand - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::HTTP_REQUEST:
+                if ($signalData instanceof HttpRequestDTO) {
+                    // The hop the master cannot see, as for a command: whether a request that
+                    // looked mute from the browser was late getting here or late being answered.
+                    Logger::logAgentInfo($agentId, "HTTP: took {$name} #{$signalData->correlationId}");
+                    try {
+                        $agent->onSignalHttpRequest($signalData, $source, $name);
+                    } catch (AgentException $e) {
+                        // A parked browser has no window of its own on the server side: left
+                        // unanswered, it waits for its own timeout. The worker answers instead.
+                        Logger::logAgentError($agent->getId(), "HTTP handler failed: {$e->getMessage()}");
+                        $agent->replyToHttpRequest(HttpReplyDTO::refusal($signalData, HttpConstants::HTTP_INTERNAL_ERROR));
+                    }
+                } else {
+                    Logger::error("onSignalHttpRequest - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 

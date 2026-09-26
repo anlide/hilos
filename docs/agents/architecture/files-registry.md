@@ -1,8 +1,8 @@
-# Files Registry: Publishing, Storing, Binding And Sweeping A File
+# Files Registry: Publishing, Storing, Binding, Serving And Sweeping A File
 
 Read this before publishing a received upload, keeping a published file in a
-project, linking a project record to one, changing where the files are kept, or
-changing how files nobody linked are cleaned up. The machinery is
+project, linking a project record to one, changing where the files are kept,
+serving a file to a browser, or changing how files nobody linked are cleaned up. The machinery is
 `framework/backend/Files/` (the library under `Library/`, the storage under
 `Storage/`); the rows are the framework table `hilos_file`, the collection
 `Hilos::$db->files`.
@@ -120,7 +120,8 @@ same one. It has two actions: `storeFromTmp($storedName, $tmpIndex)` — once it
 returns the temporary file is gone and the storage holds the file under the
 name — and `delete($storedName)`, for which a name nothing is kept under is not
 an error. Only the library calls them: publication puts files in, the janitor
-takes them out.
+takes them out. Two reads serve a file (below): `size($storedName)`, null when
+nothing is kept under the name, and `read($storedName)`, the whole file.
 
 The framework ships `LocalFilesStorage`: the file of the stored name in the
 files directory, asked for on every call, because the facade creates the door
@@ -172,11 +173,62 @@ The janitor never walks the storage. A file without a row is not its own — in
 the chat, the files directory also holds attachments published before the
 registry existed.
 
+## Serving A File
+
+A file is served at `GET /_hilos/file?id=N` (`HilosFiles::DOWNLOAD_PATH`; build
+the address with `HilosFiles::downloadPath($fileId)`). The library declares the
+address itself (`AGENT_HTTP_ROUTES`), so it exists on every project that
+declares `HilosFeature::FILES` and nowhere else, and it is answered by the
+library rather than by the master, which may read neither the row nor the
+session — the mechanism is [agent-http-routes.md](agent-http-routes.md). The
+browser's cookie rides along by itself, so the address is same-origin.
+
+Who gets the file is the row's `visibility` (`FileAccess`):
+
+| visibility | served to | otherwise |
+|---|---|---|
+| `public` | anyone, no cookie needed | — |
+| `authenticated` | a session with a user and an expiry still ahead | 401 |
+| `owner` | that session, when its user is `owner_user_id` | 401 unsigned, 403 signed in |
+
+A guest session is not signed in, and neither is an expired one whose row still
+names its user — the handshake's rule; the download reads the session and never
+downgrades it. Under impersonation the owner check sees the impersonated user.
+A missing or malformed id, a row that is not there and a file the storage does
+not hold are all 404. Every refusal is JSON with `Cache-Control: no-store`, so
+signing in opens the file on the next request.
+
+**The project widens it, never narrows it.** When the visibility refused, the
+library asks its own `grantsRead(File $file, ?Session $session): bool`, false by
+default; a project overrides it in its subclass of the library to let in a
+group, a role, the members of a room — or a guest, since it gets the session
+whole. Forgetting it leaves a file to its owner rather than opening it.
+
+The response: `Content-Type` is the row's type; images are `inline` and
+everything else — SVG included, which would run its script on the site's origin
+— is `attachment`, named twice, an ASCII fallback beside
+`filename*=UTF-8''…`; `X-Content-Type-Options: nosniff`; a year of cache,
+`public` for a public file and `private` otherwise, because a file never changes
+under its id.
+
+**Two transports.** With `HILOS_FILES_XACCEL_LOCATION` set, the body is empty and
+`X-Accel-Redirect` names the stored file under that internal location; nginx
+sends the bytes, and `Range` with them. Empty — the dev stack with no web server
+in front — the daemon sends the bytes in the reply itself, up to 4 MiB
+(`FileDownloadResponse::DIRECT_MAX_BYTES`, set by the 8 MiB queue of the peer
+link and base64's 4/3); a larger file is a 500 whose line names the env. The
+nginx side, beside the location proxying the daemon:
+
+```nginx
+location = /_hilos/file { proxy_pass http://daemon; }
+location ^~ /_files_internal/ { internal; alias /path/to/files/; }
+```
+
 ## What Is Not Here
 
-- Serving a file and checking its `visibility` (`FileVisibility`) — HIL-138,
-  which adds reading to the storage seam.
-- Unbinding, and moving chat attachments onto the registry — HIL-144.
+- Unbinding, and moving chat attachments onto the registry, its nginx location
+  and whether chat guests see its files — HIL-144.
+- `Range` and streaming when the daemon sends the bytes itself.
 - One copy shared by several links, and a quota per person.
 - Placing the uploads agent and the library on one node: the temporary
   directory is local, so on two nodes the library does not find the file and

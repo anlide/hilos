@@ -117,6 +117,26 @@ final class TopologySecondAgentCommandAgentDaemon extends TopologyTestAgentDaemo
     public const string AGENT_TYPE = 'second_agent_command_agent';
 }
 
+final class TopologyInvalidAgentHttpRouteAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'invalid_agent_http_route_agent';
+}
+
+final class TopologyInvalidAgentHttpPathAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'invalid_agent_http_path_agent';
+}
+
+final class TopologyFirstAgentHttpRouteAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'first_agent_http_route_agent';
+}
+
+final class TopologySecondAgentHttpRouteAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'second_agent_http_route_agent';
+}
+
 final class TopologyBadCommandDtoAgentDaemon extends TopologyTestAgentDaemon
 {
     public const string AGENT_TYPE = 'bad_command_dto_agent';

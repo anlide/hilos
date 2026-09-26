@@ -10,6 +10,7 @@ use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Action\ActionReply;
@@ -64,6 +65,8 @@ use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Http\DTO\HttpReplyDTO;
+use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -213,6 +216,15 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
     /** @var list<string> CLI command names owned directly by this agent. */
     public const array AGENT_COMMANDS = [];
+
+    /**
+     * @var array<string, list<string>> HTTP addresses this agent answers, as exact paths keyed by
+     *     method. The daemon mounts each of them on its HTTP server; a request to one is parked in
+     *     the master and reaches {@see self::onSignalHttpRequest()}, which answers it through
+     *     {@see self::replyToHttpRequest()} (docs/agents/architecture/agent-http-routes.md). The
+     *     HTTP twin of {@see self::AGENT_COMMANDS}: one method and path, one agent.
+     */
+    public const array AGENT_HTTP_ROUTES = [];
 
     /**
      * @var array<string, class-string<ActionPayloadDTO>> Client-action payload DTOs owned directly by this
@@ -571,6 +583,28 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
         Hilos::$sr->queueSignal(
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::COMMAND_REPLY),
+            signalName: new SignalName($reply->correlationId),
+            signalData: $reply,
+        );
+    }
+
+    /**
+     * Reply to an HTTP request routed to this agent.
+     *
+     * Queues an HTTP_REPLY signal carrying the reply; the master holding the connection writes
+     * it out as the response, whichever node that is. Said in this agent's journal beside the
+     * line the request arrived under, so a request that looked mute from the browser reads as
+     * late or as never answered.
+     *
+     * @param HttpReplyDTO $reply HTTP reply (use HttpReplyDTO::response() / refusal())
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    public function replyToHttpRequest(HttpReplyDTO $reply): void
+    {
+        $this->logAgentInfo("HTTP: answered #{$reply->correlationId} {$reply->status}");
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::HTTP_REPLY),
             signalName: new SignalName($reply->correlationId),
             signalData: $reply,
         );
@@ -1494,6 +1528,26 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
         // Default: do nothing
+    }
+
+    /**
+     * Answers an HTTP request to an address this agent declares in {@see self::AGENT_HTTP_ROUTES}.
+     *
+     * The default refuses with 500 and says why in the journal: an address the agent declared
+     * and does not answer would otherwise hold the browser until its own timeout. An agent that
+     * declares an address overrides this and answers every request with
+     * {@see self::replyToHttpRequest()}, on every path.
+     *
+     * @param HttpRequestDTO $data Request the master parked
+     * @param string $source Signal source
+     * @param string $name Signal name, the method and the path
+     * @throws HilosException Whatever the concrete agent's HTTP handler raises
+     * @throws InvalidArgumentException When the handler cannot name its reply to the request
+     */
+    public function onSignalHttpRequest(HttpRequestDTO $data, string $source, string $name): void
+    {
+        $this->logAgentError("Agent declares HTTP route {$name} and does not answer it");
+        $this->replyToHttpRequest(HttpReplyDTO::refusal($data, HttpConstants::HTTP_INTERNAL_ERROR));
     }
 
     /**

@@ -39,6 +39,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\Topology\AgentActionRouteRegistry;
 use Hilos\Core\Topology\AgentCommandRouteRegistry;
+use Hilos\Core\Topology\AgentHttpRouteRegistry;
 use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\PageAgentIndexRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
@@ -852,6 +853,20 @@ abstract class Hilos implements TruthSourceOwner
     public static function getCommandAgentRoutes(): array
     {
         return AgentCommandRouteRegistry::routes(static::AGENTS);
+    }
+
+    /**
+     * Returns the agent answering each agent-declared HTTP address, by method and path.
+     *
+     * Aggregated from AGENT_HTTP_ROUTES declared by registered agent classes: a request to one of
+     * these addresses is parked by the master and routed to the agent that declares it
+     * (docs/agents/architecture/agent-http-routes.md).
+     *
+     * @return array<string, array<string, string>> Agent type keyed by method, then by path
+     */
+    public static function getHttpAgentRoutes(): array
+    {
+        return AgentHttpRouteRegistry::routes(static::AGENTS);
     }
 
     /**

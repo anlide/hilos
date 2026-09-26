@@ -396,6 +396,31 @@ abstract class BaseDTO
     }
 
     /**
+     * Reads a map of strings the DTO cannot be built without.
+     *
+     * An entry whose value is not a string refuses the whole map, as in
+     * {@see optionalStringList()}. The keys are not judged: an array key is a string or an
+     * integer and nothing else, and the integer is only how PHP stores a key that reads as a
+     * number - `?1=a` and `{"1": "a"}` both arrive that way.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return array<string, string> Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds anything but a map of strings
+     */
+    protected static function requireStringMap(array $data, string $key): array
+    {
+        $value = self::requireArray($data, $key);
+        foreach ($value as $item) {
+            if (!is_string($item)) {
+                throw new InvalidFormatException('Payload carries no map of strings under key ' . $key);
+            }
+        }
+
+        return $value;
+    }
+
+    /**
      * Reads a list of strings that is allowed to be absent.
      *
      * An entry that is not a string refuses the whole list rather than dropping out of it: the

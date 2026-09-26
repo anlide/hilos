@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -189,6 +190,35 @@ final class PeerServerClientDeliveryTest extends TestCase
     }
 
     /**
+     * An HTTP reply forwarded from the node the agent answered on is written here, to the
+     * connection this node parked - handed to the sink as it arrived, not routed again.
+     */
+    public function testAForwardedHttpReplyIsHandedToTheLocalConnection(): void
+    {
+        $sink = $this->registerSink();
+        $server = $this->makeServer();
+
+        $server->onHttpReplyReceived($this->makeLink($server), new PeerHttpReplyDTO('node-b', 'node-a', $this->innerSignal()));
+
+        $this->assertSame(['room_renamed'], $sink->httpReplies);
+        $this->assertSame([], $sink->delivered);
+    }
+
+    /**
+     * A reply addressed to another node names a connection parked in that node's HTTP server;
+     * a correlation id here that happened to match it would be somebody else's download.
+     */
+    public function testAnHttpReplyAddressedToAnotherNodeIsDropped(): void
+    {
+        $sink = $this->registerSink();
+        $server = $this->makeServer();
+
+        $server->onHttpReplyReceived($this->makeLink($server), new PeerHttpReplyDTO('node-b', 'node-c', $this->innerSignal()));
+
+        $this->assertSame([], $sink->httpReplies);
+    }
+
+    /**
      * A fan-out arrives undecided on purpose — the sending node could not know who here is
      * subscribed — so the receiving side is where it is expanded, against this node's own
      * registry and its own sockets.
@@ -256,6 +286,9 @@ final class PeerServerClientDeliveryTest extends TestCase
             /** @var list<array{0: string, 1: string}> Origin node and signal name of each fan-out, in order */
             public array $fannedOut = [];
 
+            /** @var list<string> Signal name of each HTTP reply written here, in order */
+            public array $httpReplies = [];
+
             /**
              * @param string $acceptKey Accept key of the connection to deliver to
              * @param SignalDTO $signal Signal to write to that connection
@@ -272,6 +305,14 @@ final class PeerServerClientDeliveryTest extends TestCase
             public function deliverFanoutToClients(string $originNodeId, SignalDTO $signal): void
             {
                 $this->fannedOut[] = [$originNodeId, $signal->signalName->getName()];
+            }
+
+            /**
+             * @param SignalDTO $signal HTTP_REPLY signal to write
+             */
+            public function deliverHttpReply(SignalDTO $signal): void
+            {
+                $this->httpReplies[] = $signal->signalName->getName();
             }
 
             /**
