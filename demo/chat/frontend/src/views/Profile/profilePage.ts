@@ -5,39 +5,15 @@
 // current user — is what lets the edit modal detect a rename landing (success)
 // and a concurrent rename from another tab (conflict). The view reads these
 // signals and never touches a raw store.
-import {
-  computedSignal,
-  oauthProviderOptionsFor,
-  readString,
-  sessionAuthMethods,
-  type EntityRef,
-  type ReadonlySignal,
-} from '@hilos/core'
+import { computedSignal, readString, type ReadonlySignal } from '@hilos/core'
 
-import { scopes } from '../../bootstrap/session'
-import { Identities, PasskeyCredentials } from '../../types'
-import { type IdentityItem } from './types/lists/IdentityItem'
-import { type PasswordSection } from './types/PasswordSection'
-import { type ProfileDetail } from './types/ProfileDetail'
-
-// The identity `type` values (backend `IdentityType`) the password section reasons
-// about: a password identity means the Change form, and an email-bearing identity
-// (password or magic_link) is a candidate proven email for the Add form.
-const PASSWORD_IDENTITY_TYPE = 'password'
-const MAGIC_LINK_IDENTITY_TYPE = 'magic_link'
+import { scopes } from '../../bootstrap/session.js'
+import { type ProfileDetail } from './types/ProfileDetail.js'
 
 // The single-row data slot carrying this connection's own state
 // (backend ChatBrowserTable::SELF_CONNECTION), including the DB user name.
 const SELF_CONNECTION_DATA = 'selfConnection'
 const NAME_FIELD = 'name'
-// The profile's linked-identities list and the DB-source slot carrying its
-// identity references (backend ProfileIdentitiesBrowserList).
-const PROFILE_IDENTITIES_LIST = 'profileIdentities'
-const IDENTITIES_SLOT = 'identities'
-// The second DB-source slot of the same list: the passkey credential sidecars of
-// the same owner, joined back to their identity row by `identityId` (HIL-418).
-const PASSKEY_CREDENTIALS_SLOT = 'passkeyCredentials'
-
 /** Read a page data slot as an inline record, or undefined. */
 function recordSlot(slot: unknown): Record<string, unknown> | undefined {
   return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
@@ -64,117 +40,4 @@ export const profileDetail: ReadonlySignal<ProfileDetail | undefined> =
     const name = committedName.get()
 
     return name === '' ? undefined : { name }
-  })
-
-const profileIdentityItems = scopes.pageListSignal(PROFILE_IDENTITIES_LIST)
-
-/**
- * The current user's linked login identities, resolved reactively by reference.
- * The scoped list carries a single anchor item (the self-connection) whose
- * `identities` slot references the owner's identities; a new identity (register
- * or oauth-link) appears live, an unlink removes its row, a verified flip lands
- * on the next subscription. `canUnlink` is false for the sole remaining identity
- * so the view can disable its unlink control (the server re-enforces the guard).
- * A passkey row additionally carries the device it was enrolled on and when,
- * joined in from the same anchor's credential slot (HIL-418).
- */
-export const profileIdentities: ReadonlySignal<readonly IdentityItem[]> =
-  computedSignal(() => {
-    const refs = profileIdentityItems.get().flatMap((item) => {
-      const slot = item.slots[IDENTITIES_SLOT]
-
-      return Array.isArray(slot) ? (slot as EntityRef[]) : []
-    })
-    const canUnlink = refs.length > 1
-    // A passkey's readable half lives in its credential sidecar, so the two are
-    // matched by the identity id the sidecar carries. Any other method resolves
-    // to nothing here and keeps both fields null.
-    const credentials = profileIdentityItems.get().flatMap((item) => {
-      const slot = item.slots[PASSKEY_CREDENTIALS_SLOT]
-
-      return Array.isArray(slot) ? (slot as EntityRef[]) : []
-    })
-
-    return refs.map((identityRef) => {
-      const identity = Identities.signal(identityRef).get()
-      const identityId = identity?.id ?? Number(identityRef.id)
-      const credential = credentials
-        .map((credentialRef) => PasskeyCredentials.signal(credentialRef).get())
-        .find((entry) => entry?.identityId === identityId)
-
-      return {
-        key: String(identity?.id ?? identityRef.id),
-        type: identity?.type ?? '',
-        provider: identity?.provider ?? null,
-        identifier: identity?.identifier ?? '',
-        verified: identity?.verified ?? false,
-        deviceName: credential?.label ?? null,
-        addedAt: credential?.createdAt ?? null,
-        canUnlink,
-      }
-    })
-  })
-
-/**
- * The password section's form mode, derived reactively from the linked identities
- * (HIL-402). `hasPassword` selects the Change form; with no password, a non-null
- * `verifiedEmail` (the first verified email-bearing identity) selects the Add form,
- * and null disables the section (confirm an email first → HIL-406). Both update
- * live as identities land, so adding a password flips the section to Change the
- * moment its new row arrives.
- */
-export const passwordSection: ReadonlySignal<PasswordSection> = computedSignal(
-  () => {
-    const list = profileIdentities.get()
-    const verified = list.find(
-      (identity) =>
-        identity.verified &&
-        (identity.type === PASSWORD_IDENTITY_TYPE ||
-          identity.type === MAGIC_LINK_IDENTITY_TYPE),
-    )
-
-    return {
-      hasPassword: list.some(
-        (identity) => identity.type === PASSWORD_IDENTITY_TYPE,
-      ),
-      verifiedEmail: verified?.identifier ?? null,
-    }
-  },
-)
-
-/** A provider that can still be linked to the current account: its key and button label. */
-export interface AvailableProvider {
-  readonly key: string
-  readonly label: string
-}
-
-/** The sign-in methods the installation offers — enabled and ready — live (HIL-427, HIL-1080). */
-const enabledMethods = sessionAuthMethods(scopes)
-
-/**
- * The enabled OAuth providers not yet linked to the current account, resolved
- * reactively (HIL-401). A provider drops off the moment its identity appears in
- * {@link profileIdentities} (a link landing), so the Profile "Link an account"
- * buttons reflect the live identity list without a bespoke ack.
- *
- * The set is the installation's offered providers, live from the session scope
- * (HIL-427) — the same set the sign-in icons are drawn from, so a provider an
- * administrator switched off, or one without its client pair (HIL-1080), leaves
- * this row too, and its link action would be refused on the server anyway.
- */
-export const availableProviders: ReadonlySignal<readonly AvailableProvider[]> =
-  computedSignal(() => {
-    const linked = new Set(
-      profileIdentities
-        .get()
-        .map((identity) => identity.provider)
-        .filter(
-          (provider): provider is string =>
-            provider !== null && provider !== '',
-        ),
-    )
-
-    return oauthProviderOptionsFor(enabledMethods.get())
-      .filter((provider) => !linked.has(provider.key))
-      .map((provider) => ({ key: provider.key, label: provider.label }))
   })

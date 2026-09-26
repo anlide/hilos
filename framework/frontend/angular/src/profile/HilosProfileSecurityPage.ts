@@ -40,6 +40,7 @@ import type {
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosPageHeading } from '../HilosPageHeading.js'
 import { HilosQrCode } from '../HilosQrCode.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
@@ -87,6 +88,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
     HilosActionError,
     HilosBackupCodes,
     HilosModal,
+    HilosPageHeading,
     HilosQrCode,
     LoadingButton,
     NgTemplateOutlet,
@@ -118,7 +120,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
     </ng-template>
 
     <section data-id="profile-security" class="mx-auto py-3">
-      <h1 class="h4 mb-4">Security</h1>
+      <hilos-page-heading />
 
       @if (state(); as section) {
         <h2 class="h6 text-uppercase text-body-secondary mb-2">

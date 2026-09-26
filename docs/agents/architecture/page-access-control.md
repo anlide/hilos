@@ -29,7 +29,7 @@ Every page class declares (or inherits) `ACCESS_LEVEL`, a `PageAccessLevel`:
 
 The framework relaxations are pinned by an exact-composition unit test
 (`PageAccessLevelRegistryTest`): `PUBLIC` = About/Terms/Privacy/License,
-`AUTHENTICATED` = Profile/Notifications, everything else `ADMIN`. Note
+`AUTHENTICATED` = the profile and its sections, everything else `ADMIN`. Note
 `AbstractHilosProfilePage` extends `AbstractPage` directly (it is served by the
 project agent, not the admin agent), so its `AUTHENTICATED` declaration is
 mandatory — silence would open the profile to guests.

@@ -8,6 +8,7 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
 use Demo\Chat\Pages\Hilos\ProfilePage;
+use Demo\Chat\Pages\Hilos\ProfileSignInPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -52,19 +53,19 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
             // What a worker the rows never passed through holds, which is what the profile met.
             Hilos::$db->getObjectCollection(ChatDbContext::identities)?->clearInMemory();
 
-            Hilos::$browser?->subscribeSnapshot(
-                ProfilePage::PAGE,
-                self::ACCEPT_KEY,
-                new PageRouteParams([]),
-            );
+            foreach ([ProfilePage::PAGE, ProfileSignInPage::PAGE] as $page) {
+                Hilos::$db->getObjectCollection(ChatDbContext::identities)?->clearInMemory();
+                Hilos::$browser?->subscribeSnapshot($page, self::ACCEPT_KEY, new PageRouteParams([]));
 
-            $this->assertSame(
-                [(int) $oauth->id, (int) $sms->id],
-                array_map(
-                    static fn (array $identity): int => (int) $identity[Identity::id],
-                    $this->identitiesOfSnapshotItem(),
-                ),
-            );
+                $this->assertSame(
+                    [(int) $oauth->id, (int) $sms->id],
+                    array_map(
+                        static fn (array $identity): int => (int) $identity[Identity::id],
+                        $this->identitiesOfSnapshotItem(),
+                    ),
+                    $page,
+                );
+            }
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$sr = null;

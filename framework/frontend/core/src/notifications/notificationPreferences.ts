@@ -1,17 +1,12 @@
-// Notification-preferences core: the framework-owned reactive store for the
-// profile "Notifications" section (HIL-485 frontend; HIL-485 backend fans the
-// signal and computes the section). Unlike the notification center, this section
-// owns no page subscription and no per-user group of its own — it rides the
-// existing profile page subscription. The section snapshot arrives as page data
-// in that subscription's payload (backend `AbstractHilosProfilePage::NOTIFICATION_SECTION`),
-// and live multi-device updates arrive as the `notification_preferences_changed`
-// project signal fanned to the user's connections after any toggle. The store
-// here is the reactive half an SDK section view renders; the SDK/demo layer feeds
-// it (the section from the profile page data, the changed map from the signal) and
-// dispatches the toggle action, because the profile page is a project surface.
+// Notification channel preferences for the profile section and its summaries.
+// Initial state rides in page_response; updates arrive on the user's existing
+// notification group. The shared store never makes an optimistic toggle.
 import { z } from 'zod'
+import { type HilosConnection } from '../connection/HilosConnection.js'
+import { type ScopeManager } from '../state/ScopeManager.js'
 import {
   createSignal,
+  subscribeSignal,
   type ReadonlySignal,
   type WritableSignal,
 } from '../state/signal.js'
@@ -26,8 +21,8 @@ export const NOTIFICATION_SIGNAL_PREFERENCES_CHANGED =
   'notification_preferences_changed'
 
 /**
- * Client→server action toggling one channel's opt in/out, mounted on the profile
- * page (PHP `NotificationPreferenceAction::CHANNEL_SET`). Payload is the channel
+ * Client→server action toggling one channel's opt in/out, owned by the notifications
+ * library (PHP `NotificationPreferenceAction::CHANNEL_SET`). Payload is the channel
  * name and desired state; the acting user is resolved server-side from the
  * connection, never carried.
  */
@@ -212,3 +207,70 @@ export function createHilosNotificationPreferencesStore(): HilosNotificationPref
  */
 export const hilosNotificationPreferences: HilosNotificationPreferencesStore =
   createHilosNotificationPreferencesStore()
+
+/** Page-data key carrying the notification preference section. */
+export const PROFILE_NOTIFICATION_PREFERENCES_SECTION =
+  'notificationPreferences'
+
+/** The stores and connection of a page carrying notification preferences. */
+export interface HilosProfileNotificationsContext {
+  readonly connection: HilosConnection
+  readonly scopes: ScopeManager
+}
+
+/**
+ * Feed the preference store from one page's initial answer and live changes.
+ *
+ * @param context The page's connection and scope manager.
+ * @param store The store to feed, defaulting to the shared preferences store.
+ * @returns Teardown that removes the listeners and clears the page's state.
+ */
+export function startHilosNotificationPreferences(
+  context: HilosProfileNotificationsContext,
+  store: HilosNotificationPreferencesStore = hilosNotificationPreferences,
+): () => void {
+  const section = context.scopes.pageDataSignal(
+    PROFILE_NOTIFICATION_PREFERENCES_SECTION,
+  )
+  function applySection(raw: unknown): void {
+    const parsed = notificationPreferencesSectionSchema.safeParse(raw)
+    if (parsed.success) store.applySection(parsed.data)
+  }
+  applySection(section.get())
+  const stopSection = subscribeSignal(section, applySection)
+  const stopChanged = context.connection.on('projectSignal', (signal) => {
+    if (signal.type === NOTIFICATION_SIGNAL_PREFERENCES_CHANGED) {
+      store.applyChangedMap(
+        (signal.data as HilosNotificationPreferencesChanged).channels,
+      )
+    }
+  })
+  return () => {
+    stopSection()
+    stopChanged()
+    store.clear()
+  }
+}
+
+/**
+ * Describe the enabled channels that can currently reach the account.
+ *
+ * @param channels The projected channel rows in catalog order.
+ */
+export function describeHilosNotificationChannels(
+  channels: readonly HilosNotificationChannelState[],
+): string {
+  const names = channels
+    .filter((row) => row.allowed && row.hasAddress)
+    .map((row) =>
+      row.label === row.label.toUpperCase()
+        ? row.label
+        : row.label.toLowerCase(),
+    )
+  if (names.length === 0) return 'All channels are off'
+  const list =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${names.length === 1 ? 'is' : 'are'} on`
+}

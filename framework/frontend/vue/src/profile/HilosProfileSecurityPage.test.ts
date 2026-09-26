@@ -86,6 +86,7 @@ function pageWorld(): { dispatched: string[]; wrapper: VueWrapper } {
 
   const wrapper = mount(HilosProfileSecurityPage, {
     attachTo: document.body,
+    global: { stubs: { HilosPageHeading: true } },
     props: { context: { connection, scopes: new ScopeManager(), actions } },
   })
   for (const listener of listeners) {

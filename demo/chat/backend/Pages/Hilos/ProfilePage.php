@@ -7,35 +7,34 @@ namespace Demo\Chat\Pages\Hilos;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
-use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Hilos;
 use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
 use Hilos\Auth\AccountDeletion\AccountDeletionStateProjector;
-use Hilos\Auth\OAuth\OAuthService;
+use Hilos\Auth\SecondFactor\SecondFactorGroup;
+use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
+use Hilos\Pages\AbstractHilosProfileNotificationsPage;
 use Hilos\Pages\AbstractHilosProfilePage;
+use Hilos\Pages\AbstractHilosProfileSecurityPage;
 
 /**
  * Chat demo implementation of the framework current-user profile page.
  *
  * The framework owns the page identity (key, route, subscription signal); this concrete binds
- * the chat agent, the self-connection browser data, and the notification section the
- * subscription carries.
+ * the chat agent and the self-connection browser data. The subscription carries notifications,
+ * second-factor state and account deletion state beside the section summaries' browser lists.
  *
  * It is a READING surface (HIL-771). Every submit that writes a person lives where those tables
  * are owned: the rename on {@see UsersLibraryAgent}, the ways in and the email change on the
- * framework's users library (HIL-1137). The one submit the page hosts, starting a provider link,
- * is the framework base's; the chat hands it the provider wiring through {@see oauthService()},
- * the same service its users library builds. It is still served by the chat agent, because that
- * is the agent its browser data belongs to.
+ * framework's users library (HIL-1137). Starting a provider link belongs to ProfileSignInPage.
+ * This page is still served by the chat agent, whose browser data it reads.
  *
- * The chat's profile is one page, so the account deletion's danger zone is drawn here, under the
- * sections (HIL-302): the page carries the person's deletion state and puts the connection on
- * the person's {@see AccountDeletionGroup}, as the framework's security page does elsewhere.
+ * After answering, it joins AccountDeletionGroup and SecondFactorGroup so the person's state
+ * remains live across tabs, as on the framework's security page.
  *
  * @property ChatAgent $agent
  */
@@ -44,7 +43,7 @@ final class ProfilePage extends AbstractHilosProfilePage
     /**
      * @var list<string> What is left to read once the writing submits have gone (HIL-771): the
      *     notification section the subscription carries, the two stores a channel resolves
-     *     a person's address in, and the account deletion requests the danger zone is (HIL-302).
+     *     a person's address in, account deletion requests, and the second-factor section.
      */
     public const array READS_DB = [
         ChatDbContext::identities,
@@ -52,13 +51,17 @@ final class ProfilePage extends AbstractHilosProfilePage
         ChatDbContext::pushSubscriptions,
         ChatDbContext::sessions,
         ChatDbContext::accountDeletions,
+        ChatDbContext::secondFactors,
+        ChatDbContext::secondFactorBackupCodes,
+        ChatDbContext::secondFactorResets,
+        ChatDbContext::secondFactorSettings,
     ];
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     /**
      * Contributes the signed-in user's notification preferences as the profile's
-     * page-data section (HIL-485), and the person's account deletion state beside it (HIL-302).
+     * page-data section, plus account deletion and second-factor state for the profile root.
      *
      * The profile is a self-only surface with no route params: the recipient is the
      * session user, read from the self-connection (never a client value), so an
@@ -70,8 +73,8 @@ final class ProfilePage extends AbstractHilosProfilePage
      *
      * @param string $acceptKey WebSocket accept key of the subscribing connection (unused; this page reads its subscriber off the self-connection)
      * @param PageRouteParams $params Route params for the profile subscription (unused; profile has none)
-     * @return ?PagePayload Notification section and deletion state, or null outside a signed-in session
-     * @throws HilosException When a preference, address or deletion lookup fails
+     * @return ?PagePayload Notification, deletion and second-factor state, or null outside a signed-in session
+     * @throws HilosException When a preference, address, deletion or second-factor lookup fails
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
@@ -80,17 +83,20 @@ final class ProfilePage extends AbstractHilosProfilePage
         }
 
         return new PagePayload(data: [
-            self::NOTIFICATION_SECTION => new NotificationChannelPreferenceProjector()
+            AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION => new NotificationChannelPreferenceProjector()
                 ->sectionData(Hilos::$rt->selfConnection->userId)
                 ->toArray(),
             AccountDeletionStateProjector::SECTION => AccountDeletionStateProjector::stateFor(
+                Hilos::$rt->selfConnection->userId,
+            )->toArray(),
+            AbstractHilosProfileSecurityPage::SECOND_FACTOR_SECTION => SecondFactorStateProjector::stateFor(
                 Hilos::$rt->selfConnection->userId,
             )->toArray(),
         ]);
     }
 
     /**
-     * Puts the connection on the person's account deletion group once the subscription is answered (HIL-302).
+     * Joins the person's account deletion and second-factor groups after answering the subscription.
      *
      * @param string $acceptKey WebSocket accept key of the subscribing connection
      * @param PageRouteParams $params Route params (unused; profile has none)
@@ -104,19 +110,6 @@ final class ProfilePage extends AbstractHilosProfilePage
         }
 
         AccountDeletionGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
-    }
-
-    /**
-     * Hands the profile's provider-link start the chat's provider wiring (HIL-1137).
-     *
-     * The same service {@see UsersLibraryAgent} builds: the state signed on the start is
-     * verified by the library on the return.
-     *
-     * @return OAuthService Service over the demo's provider credentials
-     * @throws HilosException Whatever reading the OAuth providers' configuration raises
-     */
-    protected function oauthService(): ?OAuthService
-    {
-        return ChatOAuthConfig::buildService();
+        SecondFactorGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
     }
 }

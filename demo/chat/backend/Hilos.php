@@ -127,6 +127,8 @@ use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
 use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
 use Demo\Chat\Pages\Hilos\PrivacyPage;
 use Demo\Chat\Pages\Hilos\ProfilePage;
+use Demo\Chat\Pages\Hilos\ProfileSignInPage;
+use Demo\Chat\Pages\Hilos\ProfileNotificationsPage;
 use Demo\Chat\Pages\Hilos\ProfileDevicesPage;
 use Demo\Chat\Pages\Hilos\ProfileSessionsPage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
@@ -282,6 +284,8 @@ final class Hilos extends HilosFacade
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         ProfilePage::PAGE => ProfilePage::class,
+        ProfileSignInPage::PAGE => ProfileSignInPage::class,
+        ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         ProfileSessionsPage::PAGE => ProfileSessionsPage::class,
         ProfileDevicesPage::PAGE => ProfileDevicesPage::class,
         ChatUserPage::PAGE => ChatUserPage::class,
@@ -592,6 +596,13 @@ final class Hilos extends HilosFacade
                 ],
             ],
             ProfileDevicesBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ProfileSignInPage::PAGE => [
+            ProfileIdentitiesBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],

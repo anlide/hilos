@@ -35,6 +35,7 @@ import {
 import HilosActionError from '../HilosActionError.vue'
 import HilosBackupCodes from '../HilosBackupCodes.vue'
 import HilosModal from '../HilosModal.vue'
+import HilosPageHeading from '../HilosPageHeading.vue'
 import HilosQrCode from '../HilosQrCode.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
@@ -388,7 +389,7 @@ function cancelReset(): void {
 
 <template>
   <section data-id="profile-security" class="mx-auto py-3">
-    <h1 class="h4 mb-4">Security</h1>
+    <HilosPageHeading />
 
     <div v-if="state === null" class="text-body-secondary" role="status">
       Loading…

@@ -46,7 +46,7 @@ let preferencesSeq = 0
       [attr.aria-labelledby]="baseId + '-heading'"
       data-id="hilos-notification-preferences"
     >
-      <h2 [id]="baseId + '-heading'" class="h5">Notifications</h2>
+      <h2 [id]="baseId + '-heading'" class="h5">Delivery channels</h2>
       @if (channels().length === 0) {
         <p
           class="text-body-secondary mb-0"

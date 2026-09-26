@@ -41,11 +41,17 @@ export const SESSION_COOKIE_PREFIX = 'hilos_session_token_'
 export const ROTATE_COOKIE_SUFFIX = '_rotate'
 
 export function isSessionCookie(name: string): boolean {
-  return name.startsWith(SESSION_COOKIE_PREFIX) && !name.endsWith(ROTATE_COOKIE_SUFFIX)
+  return (
+    name.startsWith(SESSION_COOKIE_PREFIX) &&
+    !name.endsWith(ROTATE_COOKIE_SUFFIX)
+  )
 }
 
 export function isRotateCookie(name: string): boolean {
-  return name.startsWith(SESSION_COOKIE_PREFIX) && name.endsWith(ROTATE_COOKIE_SUFFIX)
+  return (
+    name.startsWith(SESSION_COOKIE_PREFIX) &&
+    name.endsWith(ROTATE_COOKIE_SUFFIX)
+  )
 }
 
 /**
@@ -481,7 +487,7 @@ const EMAIL_ADD_SUBJECT = 'Confirm your email address'
  * test-only backdoor: the flow under the account is the product's own, so a
  * change that breaks it for a user breaks it here too.
  *
- * @param page Page starting from any location (it navigates to '/' and '/profile').
+ * @param page Page starting from any location (it navigates to '/' and '/profile/sign-in').
  * @returns The account's proven email, its display name (the phone the user was
  *          minted from), and its durable user id.
  */
@@ -502,14 +508,15 @@ export async function signUpWithVerifiedEmail(
   // neither a password nor a verified email — which is exactly what an SMS-minted
   // account is.
   const email = uniqueEmail()
-  await gotoPage(page, '/profile')
+  await gotoPage(page, '/profile/sign-in')
+  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await clickSubmit(page.getByTestId('profile-sign-in-choose-password'))
   await typeInto(page.getByTestId('profile-add-password-email'), email)
   await clickSubmit(page.getByTestId('profile-add-password-request'))
 
   // Step 2: prove it with the mailed code and set a password on it. The section
   // flips to change-mode when the server fans profile_password_updated back, so
-  // the current-password field appearing is proof the identity was written
-  // verified.
+  // the Change control appearing confirms the identity arrived verified.
   await expect(page.getByTestId('profile-add-password-code')).toBeVisible()
   await typeInto(
     page.getByTestId('profile-add-password-code'),
@@ -518,7 +525,8 @@ export async function signUpWithVerifiedEmail(
   await typeInto(page.getByTestId('profile-add-password-new'), PASSWORD)
   await typeInto(page.getByTestId('profile-add-password-confirm'), PASSWORD)
   await clickSubmit(page.getByTestId('profile-add-password-save'))
-  await expect(page.getByTestId('profile-password-current')).toBeVisible()
+  await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+  await expect(page.getByTestId('profile-password-change')).toBeVisible()
 
   return { email, name: phone, userId }
 }

@@ -27,6 +27,7 @@ import type {
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosPageHeading } from '../HilosPageHeading.js'
 import { HilosQrCode } from '../HilosQrCode.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
@@ -369,7 +370,7 @@ export function HilosProfileSecurityPage({
 
   return (
     <section data-id="profile-security" className="mx-auto py-3">
-      <h1 className="h4 mb-4">Security</h1>
+      <HilosPageHeading />
 
       {state === null ? (
         <div className="text-body-secondary" role="status">

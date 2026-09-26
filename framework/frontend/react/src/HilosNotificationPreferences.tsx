@@ -79,7 +79,7 @@ export function HilosNotificationPreferences({
       data-id="hilos-notification-preferences"
     >
       <h2 id={`${baseId}-heading`} className="h5">
-        Notifications
+        Delivery channels
       </h2>
       {channels.length === 0 && (
         <p

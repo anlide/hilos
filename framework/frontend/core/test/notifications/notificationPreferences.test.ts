@@ -1,6 +1,11 @@
+import { type HilosConnection } from '../../src/connection/HilosConnection.js'
+import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { describe, expect, it } from 'vitest'
 import {
   createHilosNotificationPreferencesStore,
+  startHilosNotificationPreferences,
+  describeHilosNotificationChannels,
   notificationPreferencesSectionSchema,
   type HilosNotificationPreferencesSection,
 } from '../../src/notifications/notificationPreferences.js'
@@ -135,5 +140,54 @@ describe('notification preferences store', () => {
     })
 
     expect(parsed.channels[0].config).toEqual({ vapid_public: 'BPk...' })
+  })
+})
+
+describe('notification preferences page binding', () => {
+  it('takes the initial section, follows changes and stops cleanly', () => {
+    const listeners = new Set<(signal: ProjectSignal) => void>()
+    const scopes = new ScopeManager()
+    const page = scopes.openPage('hilos_profile_notifications')
+    page.data.set('notificationPreferences', sampleSection())
+    const store = createHilosNotificationPreferencesStore()
+    const stop = startHilosNotificationPreferences(
+      {
+        scopes,
+        connection: {
+          on: (_: string, handler: (signal: ProjectSignal) => void) => {
+            listeners.add(handler)
+            return () => listeners.delete(handler)
+          },
+        } as unknown as HilosConnection,
+      },
+      store,
+    )
+    expect(describeHilosNotificationChannels(store.channels.get())).toBe(
+      'Email is on',
+    )
+    for (const handler of listeners)
+      handler({
+        kind: 'project',
+        type: 'notification_preferences_changed',
+        data: { channels: { email: false } },
+      } as ProjectSignal)
+    expect(describeHilosNotificationChannels(store.channels.get())).toBe(
+      'All channels are off',
+    )
+    page.data.set('notificationPreferences', sampleSection())
+    expect(store.channels.get()[0].allowed).toBe(true)
+    stop()
+    expect(listeners.size).toBe(0)
+    expect(store.channels.get()).toEqual([])
+    page.data.set('notificationPreferences', sampleSection())
+    expect(store.channels.get()).toEqual([])
+  })
+  it('joins the enabled channel labels and excludes channels with no address', () => {
+    expect(
+      describeHilosNotificationChannels([
+        ...sampleSection().channels,
+        { channel: 'push', label: 'Push', allowed: true, hasAddress: true },
+      ]),
+    ).toBe('Email and push are on')
   })
 })

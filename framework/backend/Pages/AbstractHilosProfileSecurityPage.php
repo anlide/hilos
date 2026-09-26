@@ -10,21 +10,16 @@ use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Group\DTO\GroupJoinSignalData;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 
 /**
  * AbstractHilosProfileSecurityPage - the profile's security page: the second factor (HIL-494)
@@ -114,18 +109,7 @@ abstract class AbstractHilosProfileSecurityPage extends AbstractPage
             return;
         }
 
-        $group = SecondFactorGroup::forUser($userId);
-        Hilos::$sr?->subscribeToGroup($group, new WebSocketGroupSubscribeSignalDTO(
-            acceptKey: $acceptKey,
-            group: $group,
-            params: [],
-        ));
-        Hilos::$sr?->queueSignal(
-            signalSource: $this->agent->getAgentSignalSource(),
-            signalType: new SignalType(SignalTypeConstants::GROUP_JOIN),
-            signalName: new SignalName(SignalTypeConstants::GROUP_JOIN),
-            signalData: new GroupJoinSignalData($group, $acceptKey, []),
-        );
+        SecondFactorGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
         AccountDeletionGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
     }
 }

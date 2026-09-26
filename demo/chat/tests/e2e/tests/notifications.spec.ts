@@ -292,7 +292,7 @@ test('muting the email channel keeps the next emit off it', async ({
   const { userId } = await signInAddressableAdmin(page)
   await enableEmailChannel(page)
 
-  await gotoPage(page, '/profile')
+  await gotoPage(page, '/profile/notifications')
   const toggle = emailPreference(page)
   // A channel with no address for it is shown disabled, so the switch being
   // usable at all is the proof this account carries a verified email — and an
@@ -312,14 +312,14 @@ test('muting the email channel keeps the next emit off it', async ({
   // of the user, so tab B flipping IS the write landing. Without that wait the
   // emit below would be racing it.
   const tabB = await page.context().newPage()
-  await gotoPage(tabB, '/profile')
+  await gotoPage(tabB, '/profile/notifications')
   await expect(emailPreference(tabB)).toBeChecked()
 
   await toggle.click()
   await expect(emailPreference(tabB)).not.toBeChecked()
 
   // Durable, not merely live: a cold load reads the preference back from the DB.
-  await gotoPage(page, '/profile')
+  await gotoPage(page, '/profile/notifications')
   await expect(emailPreference(page)).not.toBeChecked()
 
   const muted = await emitNotification(userId, {

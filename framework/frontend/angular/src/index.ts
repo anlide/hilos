@@ -104,3 +104,7 @@ export {
 } from './HilosDropdown.js'
 export type { HilosDropdownOption } from './hilosDropdownOption.js'
 export type { HilosTableColumn } from '@hilos/core'
+
+export { HilosPageHeading } from './HilosPageHeading.js'
+export { HilosProfileSignInPage } from './profile/HilosProfileSignInPage.js'
+export { HilosProfileNotificationsPage } from './profile/HilosProfileNotificationsPage.js'

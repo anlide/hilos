@@ -5,12 +5,17 @@ import {
   PASSWORD,
   clickSubmit,
   login,
+  register,
   signUp,
   uniqueEmail,
 } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { signInAs } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  addVirtualAuthenticator,
+  sidewaysOverflow,
+  signInAs,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 
@@ -54,8 +59,33 @@ test('the navbar links the current user to the profile page', async ({
   // Reached over the live socket with no document reload.
   expect(new URL(page.url()).pathname).toBe('/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
-  await expect(page.getByTestId('profile-sessions-open')).toBeVisible()
-  await expect(page.getByTestId('profile-devices-open')).toBeVisible()
+  const sections = [
+    'sign-in',
+    'notifications',
+    'sessions',
+    'devices',
+    'security',
+  ]
+  await expect(page.getByTestId('profile-section')).toHaveCount(sections.length)
+  expect(
+    await page
+      .getByTestId(
+        /^profile-(sign-in|notifications|sessions|devices|security)-open$/,
+      )
+      .evaluateAll((links) =>
+        links.map((link) => link.getAttribute('data-id')),
+      ),
+  ).toEqual(sections.map((section) => `profile-${section}-open`))
+  for (const section of sections) {
+    await clickSubmit(page.getByTestId(`profile-${section}-open`))
+    expect(new URL(page.url()).pathname).toBe(`/profile/${section}`)
+    await expect(
+      page.getByTestId('hilos-breadcrumb-hilos_profile'),
+    ).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await clickSubmit(page.getByTestId('hilos-breadcrumb-hilos_profile'))
+    await expect(page.getByTestId('profile-name')).toBeVisible()
+  }
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   expect(fullLoads).toBe(loadsAfterColdLoad)
 })
@@ -108,16 +138,17 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
   })
 
   await signUp(page)
-  await gotoPage(page, '/profile')
+  await gotoPage(page, '/profile/sign-in')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('profile-identities-list')).toBeVisible()
+  await clickSubmit(page.getByTestId('profile-sign-in-add'))
   const loadsBeforeLink = fullLoads
 
   // A fresh password account offers GitHub to link and has no oauth identity yet.
   const linkButton = page.getByTestId('profile-oauth-link-oauth:github')
   await expect(linkButton).toBeVisible()
   await expect(page.getByTestId('profile-identities-list')).not.toContainText(
-    'oauth:github',
+    'GitHub',
   )
 
   // The wait for the provider's window starts before the click, which opens it
@@ -130,7 +161,7 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
   // so the identities projection re-emits into the list that is already on screen
   // and GitHub stops being offered.
   await expect(page.getByTestId('profile-identities-list')).toContainText(
-    'oauth:github',
+    'GitHub',
     { timeout: 30000 },
   )
   await expect(page.getByTestId('profile-oauth-link-oauth:github')).toHaveCount(
@@ -138,9 +169,9 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
   )
   await expect(page.getByTestId('auth-oauth-wait')).toHaveCount(0)
 
-  // The whole trip happened beside this page, not through it: still /profile, and
+  // The whole trip happened beside this page, not through it: still /profile/sign-in, and
   // not one document load since the profile opened.
-  expect(new URL(page.url()).pathname).toBe('/profile')
+  expect(new URL(page.url()).pathname).toBe('/profile/sign-in')
   expect(fullLoads).toBe(loadsBeforeLink)
 })
 
@@ -190,7 +221,8 @@ test('changes the current user password from the profile (HIL-402)', async ({
   // A registered account already has a password, so the profile shows the Change
   // form (current + new). The change re-auths the current password server-side.
   await signUp(page)
-  await gotoPage(page, '/profile')
+  await gotoPage(page, '/profile/sign-in')
+  await clickSubmit(page.getByTestId('profile-password-change'))
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-password-current')).toBeVisible()
 
@@ -203,21 +235,21 @@ test('changes the current user password from the profile (HIL-402)', async ({
   )
   await typeInto(page.getByTestId('profile-password-new'), newPassword)
   await typeInto(page.getByTestId('profile-password-confirm'), newPassword)
-  await page.getByTestId('profile-password-save').click()
+  await clickSubmit(page.getByTestId('profile-password-save'))
   await expect(page.getByTestId('profile-set-password-error')).toBeVisible()
   await expect(
     page.getByTestId('hilos-toasts').getByText('Password changed.'),
   ).toHaveCount(0)
 
   // The correct current password updates it: the success toast lands (over the
-  // password_updated signal, not a projection change) and the fields clear.
+  // password_updated signal, not a projection change) and the dialog closes.
   await typeInto(page.getByTestId('profile-password-current'), PASSWORD)
-  await page.getByTestId('profile-password-save').click()
+  await clickSubmit(page.getByTestId('profile-password-save'))
   await expect(
     page.getByTestId('hilos-toasts').getByText('Password changed.'),
   ).toBeVisible()
   await expect(page.getByTestId('profile-set-password-error')).toHaveCount(0)
-  await expect(page.getByTestId('profile-password-new')).toHaveValue('')
+  await expect(page.getByTestId('profile-password-modal')).toHaveCount(0)
 })
 
 test('changes the account email in five steps (HIL-299)', async ({ page }) => {
@@ -322,4 +354,45 @@ test('opens the push devices page', async ({ page }) => {
   await expect(page.getByTestId('profile-devices-heading')).toHaveText(
     'Devices',
   )
+})
+
+test('updates the sign-in summary when another tab adds a device key', async ({
+  page,
+  context,
+}) => {
+  await signUp(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('profile-sign-in-summary')).toHaveText(
+    'Password',
+  )
+  let reloads = 0
+  page.on('load', () => {
+    reloads += 1
+  })
+  const other = await context.newPage()
+  await addVirtualAuthenticator(other)
+  await gotoPage(other, '/profile/sign-in')
+  await clickSubmit(other.getByTestId('profile-sign-in-add'))
+  await clickSubmit(other.getByTestId('profile-passkey-add'))
+  await expect(other.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+  await expect(other.getByTestId('identity-passkey-added')).toHaveCount(1)
+  await expect(page.getByTestId('profile-sign-in-summary')).toHaveText(
+    'Password, 1 passkey',
+  )
+  expect(reloads).toBe(0)
+  await other.close()
+})
+
+test('keeps long profile addresses inside a narrow screen', async ({
+  page,
+}) => {
+  const email = `wide${Date.now()}@${'x'.repeat(50)}.example.test`
+  await gotoPage(page, '/profile')
+  await register(page, email)
+  await expect(page.getByTestId('profile-email')).toContainText(email)
+  await page.setViewportSize({ width: 375, height: 812 })
+  expect(await sidewaysOverflow(page)).toEqual([0, 0])
+  await clickSubmit(page.getByTestId('profile-sign-in-open'))
+  await expect(page.getByTestId('identity-identifier')).toHaveText(email)
+  expect(await sidewaysOverflow(page)).toEqual([0, 0])
 })

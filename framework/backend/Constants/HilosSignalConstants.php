@@ -111,6 +111,12 @@ final class HilosSignalConstants
     /** Subscription signal for the profile's security page - the second factor (HIL-494). */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_SECURITY = 'subscription_page_hilos_profile_security';
 
+    /** Subscription signal for the profile's ways to sign in. */
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_SIGN_IN = 'subscription_page_hilos_profile_sign_in';
+
+    /** Subscription signal for the profile's notification channels. */
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_NOTIFICATIONS = 'subscription_page_hilos_profile_notifications';
+
     /** Subscription signal for Hilos settings page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
 

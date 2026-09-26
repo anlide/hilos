@@ -346,6 +346,10 @@ export {
 } from './notifications/notificationCenter.js'
 export {
   createHilosNotificationPreferencesStore,
+  startHilosNotificationPreferences,
+  describeHilosNotificationChannels,
+  PROFILE_NOTIFICATION_PREFERENCES_SECTION,
+  type HilosProfileNotificationsContext,
   hilosNotificationPreferences,
   notificationPreferencesSectionSchema,
   NOTIFICATION_ACTION_CHANNEL_SET,
@@ -439,6 +443,24 @@ export {
   type HilosProfileDeviceActions,
   type HilosProfilePushChannel,
 } from './profile/profileDevices.js'
+export {
+  resolveHilosProfileSignInMethods,
+  hilosProfilePasswordState,
+  hilosProfileLinkableProviders,
+  hilosProfileSignInTitle,
+  hilosProfileSignInSubtitle,
+  describeHilosProfileSignInMethods,
+  watchHilosProfilePasswordUpdated,
+  type HilosProfileSignInMethod,
+  type HilosProfileSignInIdentitySource,
+  type HilosProfileSignInPasskeySource,
+} from './profile/profileSignInMethods.js'
+export {
+  createHilosProfileAddSignInFlow,
+  HILOS_PROFILE_SIGN_IN_COPY,
+  type HilosProfileAddSignInFlow,
+  type HilosProfileAddSignInStep,
+} from './profile/addSignInMethodFlow.js'
 export {
   createHilosProfileSignInActions,
   PROFILE_ADD_PASSWORD_CONFIRM_ACTION,

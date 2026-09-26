@@ -22,7 +22,8 @@ final class HilosPageCatalogTest extends TestCase
 {
     /**
      * Number of entries in the catalog. Sixty of them came over from the frontend when the
-     * identity moved to the backend (HIL-624); the profile tree joined in HIL-288, while six
+     * identity moved to the backend (HIL-624); the profile tree joined in HIL-288 and gained
+     * sign-in, notification and security sections in HIL-493, while six
      * routed keys still carry no entry on purpose - four public footer pages and the guardian pair - and
      * every page declared since is one more, the logging modes of HIL-762 being the first.
      *
@@ -30,7 +31,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 66;
+    private const int CATALOG_ENTRIES = 69;
 
     /** Number of dashboard sections carried over in the same transfer. */
     private const int TRANSFERRED_SECTIONS = 5;

@@ -13,7 +13,7 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Database\DatabaseException;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Pages\AbstractHilosProfileDevicesPage;
-use Hilos\Pages\AbstractHilosProfilePage;
+use Hilos\Pages\AbstractHilosProfileNotificationsPage;
 
 /**
  * Chat binding of the framework current-user push devices page.
@@ -44,7 +44,7 @@ final class ProfileDevicesPage extends AbstractHilosProfileDevicesPage
         }
 
         return new PagePayload(data: [
-            AbstractHilosProfilePage::NOTIFICATION_SECTION => new NotificationChannelPreferenceProjector()
+            AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION => new NotificationChannelPreferenceProjector()
                 ->sectionData(Hilos::$rt->selfConnection->userId)
                 ->toArray(),
         ]);

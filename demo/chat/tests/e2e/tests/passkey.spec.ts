@@ -25,7 +25,7 @@ import { gotoPage } from '../helpers/page'
 // standing in for a real platform authenticator. It exercises the two ceremonies
 // that remain after HIL-418 retired the username-first login:
 //   - REGISTER (attestation): a signed-in user enrolls a passkey from the profile
-//     ("Add a passkey"); the server issues creation options + a stateless
+//     ("Ways to sign in → Add a way to sign in → Passkey"); the server issues creation options + a stateless
 //     challenge, the authenticator creates a resident credential, and confirm
 //     verifies the attestation and stores it on a passkey identity;
 //   - DISCOVERABLE LOGIN (assertion): an anonymous visitor names no account at
@@ -76,9 +76,10 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   await addVirtualAuthenticator(page)
   await watchPasskeyCreation(page)
   await signUp(page)
-  await gotoPage(page, '/profile')
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await page.getByTestId('profile-passkey-add').click()
+  await gotoPage(page, '/profile/sign-in')
+  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await clickSubmit(page.getByTestId('profile-passkey-add'))
+  await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-toasts').getByText('Passkey added.'),
   ).toBeVisible()
@@ -143,6 +144,8 @@ test('creates an account on a passkey from the password screen and signs back in
   expect(creations).toHaveLength(1)
   expect(platformsLeftOut(creations[0])).toEqual([])
 
+  await gotoPage(page, '/profile/sign-in')
+
   // The account signs in with the key the device just made: the profile lists it
   // by device, beside the confirmed address it was registered on.
   const passkeyRow = page
@@ -168,9 +171,10 @@ test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {
   await addVirtualAuthenticator(page)
   const user = await signUp(page)
 
-  await gotoPage(page, '/profile')
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await page.getByTestId('profile-passkey-add').click()
+  await gotoPage(page, '/profile/sign-in')
+  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await clickSubmit(page.getByTestId('profile-passkey-add'))
+  await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-toasts').getByText('Passkey added.'),
   ).toBeVisible()
@@ -186,7 +190,8 @@ test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {
   const unlink = passkeyRow.getByTestId('identity-unlink')
   await expect(unlink).toBeEnabled()
   await unlink.click()
-  await clickSubmit(passkeyRow.getByTestId('identity-unlink-yes'))
+  await clickSubmit(page.getByTestId('identity-unlink-yes'))
+  await expect(page.getByTestId('profile-unlink-modal')).toHaveCount(0)
 
   // Success is state-driven: the delete broadcast re-emits the projection, so the
   // passkey row leaves on its own and the email row stays.

@@ -8,6 +8,7 @@ use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\ProfilePage;
+use Demo\Chat\Pages\Hilos\ProfileSignInPage;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use PHPUnit\Framework\TestCase;
@@ -58,16 +59,15 @@ final class ProfileSubmitOwnershipTest extends TestCase
     }
 
     /**
-     * The page kept exactly one action, and it is the one that writes nothing: starting an OAuth
-     * link mints a URL. It is the framework base's now (HIL-1137), inherited rather than declared.
-     * Pinned as a list rather than as an absence, so a submit added back to the page has to be
-     * argued for here.
+     * The profile root hosts no actions. Its sign-in section hosts only the link start, which
+     * writes nothing: the inherited framework action mints a URL (HIL-493).
      */
-    public function testTheProfilePageHostsOnlyTheLinkStart(): void
+    public function testOnlyTheSignInSectionHostsTheLinkStart(): void
     {
+        self::assertSame([], ProfilePage::ACTIONS);
         self::assertSame(
             [HilosSignalConstants::HILOS_LINK_OAUTH_START],
-            array_keys(ProfilePage::ACTIONS),
+            array_keys(ProfileSignInPage::ACTIONS),
         );
     }
 }

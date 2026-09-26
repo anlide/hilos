@@ -18,6 +18,12 @@ final class HilosPageConstants
     /** @var string Hilos current-user profile page */
     public const string HILOS_PROFILE = 'hilos_profile';
 
+    /** @var string Current-user ways to sign in (HIL-493) */
+    public const string HILOS_PROFILE_SIGN_IN = 'hilos_profile_sign_in';
+
+    /** @var string Current-user notification channels (HIL-493) */
+    public const string HILOS_PROFILE_NOTIFICATIONS = 'hilos_profile_notifications';
+
     /** @var string Current-user browser sessions */
     public const string HILOS_PROFILE_SESSIONS = 'hilos_profile_sessions';
 

@@ -1,7 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
-import { signUp } from '../helpers/session'
+import {
+  clickSubmit,
+  signUp,
+  signUpWithVerifiedEmail,
+} from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
@@ -125,24 +129,22 @@ test('the home page exposes a heading and presence as text', async ({
   ).toContainText('online')
 })
 
-test('the profile page carries its refusal voice before any refusal', async ({
+test('profile dialogs carry their refusal voice before any refusal', async ({
   page,
 }) => {
-  // The refusals of this page are announced from one permanent region rather
-  // than from the blocks that show them: a role that arrives together with its
-  // own text is not announced at all (HIL-647).
-  await signUp(page)
-  await gotoPage(page, '/profile')
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-
-  const live = page.getByTestId('profile-live-assertive')
-  await expect(live).toHaveAttribute('role', 'alert')
+  await signUpWithVerifiedEmail(page)
+  await gotoPage(page, '/profile/sign-in')
+  const passwordRow = page
+    .getByTestId('profile-identity-item')
+    .filter({ has: page.getByTestId('profile-password-change') })
+  await clickSubmit(passwordRow.getByTestId('identity-unlink'))
+  const live = page.getByTestId('profile-unlink-modal').getByRole('alert')
   await expect(live).toHaveAttribute('aria-live', 'assertive')
   await expect(live).toHaveText('')
+  await clickSubmit(page.getByTestId('identity-unlink-cancel'))
+  await expect(page.getByTestId('profile-unlink-modal')).toHaveCount(0)
 
-  // The rename dialog does not borrow that region: HilosModal is aria-modal, so
-  // from inside the dialog the page under it is not there to be read, and the
-  // dialog carries a permanent region of its own.
+  await gotoPage(page, '/profile')
   await page.getByTestId('profile-edit').click()
   const dialogLive = page.getByTestId('profile-rename-live-assertive')
   await expect(dialogLive).toHaveAttribute('role', 'alert')

@@ -87,8 +87,8 @@ for the phone"** for those items rather than silently skipping them.
 
 Keep these numbers stable: hand-overs refer to them.
 
-1. Windows + Windows Hello, Chrome — Profile → "Add a passkey": the Windows window offers this computer; the key enrolls; "Passkey added." shows.
-2. Same machine — "Add a passkey" again, press Cancel in the Windows window: the page shows the cancellation text and the form does not move.
+1. Windows + Windows Hello, Chrome — Profile → Ways to sign in → Add a way to sign in → Passkey: the Windows window offers this computer; the key enrolls; "Passkey added." shows.
+2. Same machine — Profile → Ways to sign in → Add a way to sign in → Passkey again, press Cancel in the Windows window: the dialog shows the cancellation in its refusal row and stays open.
 3. Same machine — sign out, then "Sign in with a passkey" on an empty field: the Windows window offers the key; the sign-in completes.
 4. iPhone, Safari — items 1 and 3; the key is saved to iCloud Keychain.
 5. Mac, Safari — "Sign in with a passkey" with the key enrolled on the iPhone: the sign-in completes without enrolling a new key.

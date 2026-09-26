@@ -33,6 +33,9 @@ export {
   type HilosTableSelectionEdge,
 } from './hilosTableSelectionEdge.js'
 export { default as HilosAdminPage } from './HilosAdminPage.vue'
+export { default as HilosPageHeading } from './HilosPageHeading.vue'
+export { default as HilosProfileSignInPage } from './profile/HilosProfileSignInPage.vue'
+export { default as HilosProfileNotificationsPage } from './profile/HilosProfileNotificationsPage.vue'
 export { default as HilosBreadcrumb } from './HilosBreadcrumb.vue'
 export { default as HilosLayout } from './HilosLayout.vue'
 export { default as HilosLink } from './HilosLink.vue'

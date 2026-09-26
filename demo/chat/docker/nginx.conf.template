@@ -100,6 +100,12 @@ http {
         location = /profile/security {
             try_files /index.html =404;
         }
+        location = /profile/sign-in {
+            try_files /index.html =404;
+        }
+        location = /profile/notifications {
+            try_files /index.html =404;
+        }
         location ~ ^/(user|bot)/[0-9]+$ {
             try_files /index.html =404;
         }

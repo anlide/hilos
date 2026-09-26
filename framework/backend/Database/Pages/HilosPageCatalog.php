@@ -44,7 +44,17 @@ final class HilosPageCatalog
 
         HilosPageConstants::HILOS_PROFILE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Profile',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Your account, sessions, devices, and sign-in methods.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Your account and everything that belongs to it.',
+        ],
+        HilosPageConstants::HILOS_PROFILE_SIGN_IN => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Ways to sign in',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Password, phone, providers and device keys — every way into this account.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+        ],
+        HilosPageConstants::HILOS_PROFILE_NOTIFICATIONS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Notifications',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Which channels reach you.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
         HilosPageConstants::HILOS_PROFILE_SESSIONS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Sessions',
@@ -54,6 +64,11 @@ final class HilosPageCatalog
         HilosPageConstants::HILOS_PROFILE_DEVICES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Devices',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Where push notifications are delivered. Not the same as sessions.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+        ],
+        HilosPageConstants::HILOS_PROFILE_SECURITY => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Security',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Two-step verification, and what happens if you lose it.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
 

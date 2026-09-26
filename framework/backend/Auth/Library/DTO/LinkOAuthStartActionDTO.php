@@ -7,12 +7,12 @@ namespace Hilos\Auth\Library\DTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Pages\AbstractHilosProfilePage;
+use Hilos\Pages\AbstractHilosProfileSignInPage;
 
 /**
  * LinkOAuthStartActionDTO - DTO for the profile OAuth link-start action payload (HIL-401, HIL-1137).
  *
- * Authenticated profile submit, hosted by {@see AbstractHilosProfilePage}: the signed-in
+ * Authenticated profile submit, hosted by {@see AbstractHilosProfileSignInPage}: the signed-in
  * client names the provider it wants to link to its current account; the handler mints a
  * link-mode authorize URL (the initiator's user id is bound server-side into the signed
  * state, never taken from this payload) and returns it on the OAUTH_AUTHORIZE signal for

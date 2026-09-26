@@ -43,7 +43,8 @@ test('merges another account into the user on the admin card', async ({
 
     // Give the survivor a secret distinct from the loser's. The post-merge
     // login through the loser's address can then prove which password survived.
-    await gotoPage(survivorPage, '/profile')
+    await gotoPage(survivorPage, '/profile/sign-in')
+    await clickSubmit(survivorPage.getByTestId('profile-password-change'))
     await typeInto(
       survivorPage.getByTestId('profile-password-current'),
       PASSWORD,
@@ -57,12 +58,12 @@ test('merges another account into the user on the admin card', async ({
       SURVIVOR_PASSWORD,
     )
     await clickSubmit(survivorPage.getByTestId('profile-password-save'))
+    await expect(survivorPage.getByTestId('hilos-toast-success')).toContainText(
+      'Password changed.',
+    )
     await expect(
-      survivorPage.getByTestId('hilos-toast-success'),
-    ).toContainText('Password changed.')
-    await expect(
-      survivorPage.getByTestId('profile-password-new'),
-    ).toHaveValue('')
+      survivorPage.getByTestId('profile-password-modal'),
+    ).toHaveCount(0)
 
     const loser = await signUp(loserPage)
     const key = modelKey()
@@ -85,9 +86,7 @@ test('merges another account into the user on the admin card', async ({
     await loserChoice.check()
     await clickSubmit(page.getByTestId('hilos-user-merge-next'))
 
-    const survivorFate = page.getByTestId(
-      'hilos-user-merge-fate-survivor',
-    )
+    const survivorFate = page.getByTestId('hilos-user-merge-fate-survivor')
     const confirm = page.getByTestId('hilos-user-merge-confirm')
     await expect(survivorFate).toBeVisible()
     await expect(confirm).toBeDisabled()

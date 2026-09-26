@@ -11,8 +11,12 @@ use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\ProfileDevicesPage;
+use Demo\Chat\Pages\Hilos\ProfileNotificationsPage;
+use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\ProfileSessionsPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\SecondFactor\SecondFactorGroup;
+use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -25,7 +29,8 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Object\Item\Session;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
-use Hilos\Pages\AbstractHilosProfilePage;
+use Hilos\Pages\AbstractHilosProfileNotificationsPage;
+use Hilos\Pages\AbstractHilosProfileSecurityPage;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -146,11 +151,59 @@ final class ProfileSessionsListTest extends IntegrationTestCase
 
         $payload = $this->nextPagePayloadWithData(
             ProfileDevicesPage::PAGE,
-            AbstractHilosProfilePage::NOTIFICATION_SECTION,
+            AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION,
         );
         self::assertSame(
             new NotificationChannelPreferenceProjector()->sectionData($userId)->toArray(),
-            $payload[PagePayload::data][AbstractHilosProfilePage::NOTIFICATION_SECTION],
+            $payload[PagePayload::data][AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION],
+        );
+    }
+
+    public function testNotificationsPageCarriesNotificationPreferencesOnFirstResponse(): void
+    {
+        [$userId] = $this->createUserWithTwoSessions();
+        Hilos::$sr = new SignalRouter();
+
+        ExecutionContext::run(
+            new ExecutionFrame(acceptKey: self::ACCEPT_KEY),
+            static function (): void {
+                new ProfileNotificationsPage(new ChatAgent())->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+            },
+        );
+
+        $payload = $this->nextPagePayloadWithData(
+            ProfileNotificationsPage::PAGE,
+            AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION,
+        );
+        self::assertSame(
+            new NotificationChannelPreferenceProjector()->sectionData($userId)->toArray(),
+            $payload[PagePayload::data][AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION],
+        );
+    }
+
+    public function testProfilePageCarriesTheSecondFactorSection(): void
+    {
+        [$userId] = $this->createUserWithTwoSessions();
+        Hilos::$sr = new SignalRouter();
+
+        ExecutionContext::run(
+            new ExecutionFrame(acceptKey: self::ACCEPT_KEY),
+            static function (): void {
+                new ProfilePage(new ChatAgent())->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+            },
+        );
+
+        $payload = $this->nextPagePayloadWithData(
+            ProfilePage::PAGE,
+            AbstractHilosProfileSecurityPage::SECOND_FACTOR_SECTION,
+        );
+        self::assertSame(
+            SecondFactorStateProjector::stateFor($userId)->toArray(),
+            $payload[PagePayload::data][AbstractHilosProfileSecurityPage::SECOND_FACTOR_SECTION],
+        );
+        self::assertSame(
+            SecondFactorGroup::forUser($userId),
+            Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, SecondFactorGroup::forUser($userId)),
         );
     }
 

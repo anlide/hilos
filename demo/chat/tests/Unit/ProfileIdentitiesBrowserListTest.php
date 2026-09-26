@@ -9,6 +9,7 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\ProfilePage;
+use Demo\Chat\Pages\Hilos\ProfileSignInPage;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Core\Browser\Config\BrowserListFieldKey;
@@ -126,17 +127,19 @@ final class ProfileIdentitiesBrowserListTest extends TestCase
         $this->assertTrue($param[BrowserParamKey::REQUIRED]);
     }
 
-    public function testListIsRegisteredAndBoundToTheProfilePage(): void
+    public function testListIsRegisteredAndBoundToTheProfileRootAndSignInSection(): void
     {
         $this->assertSame(
             ProfileIdentitiesBrowserList::class,
             Hilos::BROWSER_LISTS[ProfileIdentitiesBrowserList::LIST],
         );
 
-        $binding = Hilos::PAGE_LISTS[ProfilePage::PAGE][ProfileIdentitiesBrowserList::LIST];
-        $this->assertSame(
-            ChatBrowserRef::ACCEPT_KEY,
-            $binding[BrowserParamKey::PARAMS][BrowserRuntimeParam::ACCEPT_KEY],
-        );
+        foreach ([ProfilePage::PAGE, ProfileSignInPage::PAGE] as $page) {
+            $binding = Hilos::PAGE_LISTS[$page][ProfileIdentitiesBrowserList::LIST];
+            $this->assertSame(
+                ChatBrowserRef::ACCEPT_KEY,
+                $binding[BrowserParamKey::PARAMS][BrowserRuntimeParam::ACCEPT_KEY],
+            );
+        }
     }
 }
