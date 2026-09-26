@@ -39,6 +39,7 @@ final class MailTemplateRegistryTest extends TestCase
             MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
             MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
             MailTemplateCatalogConstants::AUTH_STEP_UP,
+            MailTemplateCatalogConstants::AUTH_ACCOUNT_DELETION,
         ] as $key) {
             $content = $registry->render($key, $params, null);
 
@@ -110,6 +111,7 @@ final class MailTemplateRegistryTest extends TestCase
                 MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
                 MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
                 MailTemplateCatalogConstants::AUTH_STEP_UP,
+                MailTemplateCatalogConstants::AUTH_ACCOUNT_DELETION,
                 MailTemplateCatalogConstants::NOTIFICATION_GENERIC,
                 MailTemplateCatalogConstants::PROTECTED_MODE_STUCK,
                 MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED,
@@ -128,6 +130,20 @@ final class MailTemplateRegistryTest extends TestCase
         self::assertSame('auth.email_add', MailTemplateCatalogConstants::AUTH_EMAIL_ADD);
         self::assertSame('auth.email_change_current', MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT);
         self::assertSame('auth.step_up', MailTemplateCatalogConstants::AUTH_STEP_UP);
+        self::assertSame('auth.account_deletion', MailTemplateCatalogConstants::AUTH_ACCOUNT_DELETION);
+    }
+
+    public function testAccountDeletionLetterSaysWhatIsAsked(): void
+    {
+        $content = new MailTemplateRegistry()->render(
+            MailTemplateCatalogConstants::AUTH_ACCOUNT_DELETION,
+            [AbstractVerificationCodeMailTemplate::PARAM_CODE => '246810'],
+            null,
+        );
+
+        self::assertSame('Confirm deleting your account', $content->subject);
+        self::assertStringContainsString('asked to delete your account', $content->text);
+        self::assertStringContainsString('246810', $content->text);
     }
 
     public function testUnknownKeyThrowsDomainException(): void

@@ -107,8 +107,10 @@ use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\Verification\VerificationType;
+use Hilos\Database\View\Item\AccountDeletion;
 use Hilos\Database\View\Item\Session;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
@@ -124,6 +126,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Users\AccountErasure;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AdminCommandConstants;
@@ -181,24 +184,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         'Both accounts have a password: choose which one stays';
 
     /**
-     * @var list<string> The live code behind the step a session stands on, asked about on every
-     *     handshake ({@see pendingAuthStepFor()}) and again when the recovery is finished
-     *     ({@see RecoveryCommands}). Read rather than claimed: the challenge is the users
-     *     library's row, and this library only wants to know whether it is still alive.
-     *     Unconditional because the collection is, and because a class constant cannot ask
-     *     {@see hasSignInSurface()} - a project carrying sessions with no login mounts the
-     *     collection all the same and simply never reaches it. Beside it, two tables of the
-     *     second factor (HIL-494), read for the same kind of reason: whether a person has a
-     *     confirmed authenticator decides whether a proven sign-in is let through, and whether a
-     *     removal of it is asked for goes onto the code step. Both are the users library's rows.
-     */
-    public const array READS_DB = [
-        HilosDbContext::verifications,
-        HilosDbContext::secondFactors,
-        HilosDbContext::secondFactorResets,
-    ];
-
-    /**
      * The session set, plus the identity rows an account merge moves.
      *
      * The session set is claimed OUTRIGHT: a session belongs to this library whole. Nothing may
@@ -223,6 +208,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * let through, and it is dropped when the second factor it skipped is switched off - all of
      * it here, because what a browser is let into is decided here.
      *
+     * The rest are borrowed for the account erasure (HIL-302), which runs here for the reason the
+     * merge does: signing the person out of every session is this library's, and it happens in
+     * the same process right after the commit. The request is marked carried out - an edit - and
+     * the users library's rows of the person are removed; nothing more. Three of them were read
+     * here before, and still are: the live code behind a session's step is asked about on every
+     * handshake ({@see pendingAuthStepFor()}), and a person's confirmed authenticator and a
+     * removal of it decide what a proven sign-in is let into. A claim is the interest of its
+     * owner (docs/agents/architecture/truth-source.md), so they are no longer listed as reads.
+     * Unconditional because the collections are, and because a class constant cannot ask
+     * {@see hasSignInSurface()} - a project carrying sessions with no login mounts them all the
+     * same and simply never reaches them.
+     *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
@@ -230,6 +227,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
         // TODO(HIL-630): borrowed claim - the identity table belongs to the users library.
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library owns it; carried out with the account here (HIL-302).
+        HilosDbContext::accountDeletions => [TruthSourceOperation::Update],
+        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        HilosDbContext::passkeyCredentials => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        HilosDbContext::verifications => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        HilosDbContext::secondFactors => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        HilosDbContext::secondFactorResets => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        HilosDbContext::secondFactorSettings => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        HilosDbContext::stepUps => [TruthSourceOperation::Remove],
     ];
 
     /**
@@ -472,6 +485,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private const string RESERVATION_SWEEP_CRON = '* * * * *';
 
+    /** Name of the cron rule that erases the accounts whose deletion fell due (HIL-302). */
+    private const string ACCOUNT_DELETION_SWEEP_RULE = 'hilos_account_deletion_sweep';
+
+    /**
+     * Once a minute: an account is erased within a minute of its moment, and an erasure that
+     * failed and rolled back is tried again a minute later.
+     */
+    private const string ACCOUNT_DELETION_SWEEP_CRON = '* * * * *';
+
     /** @var string What a browser is told when its connection carries no session to act on */
     private const string SESSION_NOT_ON_CONNECTION_MESSAGE
         = 'The session behind this tab could not be found; reload the page and try again';
@@ -484,6 +506,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** @var ?CronRule Schedule that removes ended session rows */
     private ?CronRule $sessionSweepRule = null;
+
+    /** @var ?CronRule Schedule of the account erasure, or null when this project has no sign-in (HIL-302) */
+    private ?CronRule $accountDeletionSweepRule = null;
 
     /** Whether a full sweep batch with removals asks the next tick to continue immediately */
     private bool $sessionSweepBacklog = false;
@@ -510,6 +535,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->armPendingRegistrationSweep();
         $this->armReservationSweep();
         $this->armSessionSweep();
+        $this->armAccountDeletionSweep();
         if ($this->hasSignInSurface()) {
             $this->endOpenSignIns(null);
         }
@@ -621,6 +647,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepRecoveryWaiters();
         $this->sweepCodeSendAttempts();
         $this->sweepOAuthTrips();
+        $this->sweepAccountDeletions();
     }
 
     /**
@@ -3999,12 +4026,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Signs out every live session of a merged loser (HIL-378).
+     * Signs out every live session of a merged loser (HIL-378) or of an erased account (HIL-302).
      *
      * A tombstoned loser must not keep acting through an open tab. Each of its sessions is
      * reverted to anonymous through {@see self::rebindSession()}, called rather than
      * signalled, because since HIL-729 the merge already runs in the process that owns them.
      * The loser is deactivated by the tombstone, so re-authentication is impossible.
+     *
+     * Every session the person stands in goes (HIL-302), not only the ones signed in as them:
+     * the one where they take over somebody else's account is signed out the same way, and a
+     * sign-in waiting there on their second factor is released and sent back to the address
+     * field ({@see self::releaseSecondFactorWait()}) - signing out an anonymous session would
+     * leave that wait naming them.
      *
      * The marker is not named - the sign-out lowers it with the person (HIL-1061). It used
      * to be carried through as "signed out, not un-impersonated", which left the
@@ -4013,18 +4046,23 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Runs outside the merge transaction: the transfer is already durable, and nothing here
      * may participate in the rollback path.
      *
-     * @param int $loserId Merged loser user id whose sessions are closed
+     * @param int $loserId Merged loser or erased user id whose sessions are closed
      * @throws InvalidArgumentException When a state frame cannot be named
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
-     * @throws HilosException When reading or reverting the loser's sessions fails
+     * @throws HilosException When reading or reverting the person's sessions fails
      */
     private function killUserSessions(int $loserId): void
     {
-        foreach (Hilos::$db->sessions->findByUserId($loserId) as $session) {
-            $this->rebindSession(new SessionRebindSignalData(
-                sessionToken: $session->token,
-                userId: null,
-            ));
+        foreach (Hilos::$db->sessions->findTouchingUser($loserId) as $session) {
+            if ($session->pendingSecondFactorUserId === $loserId) {
+                $this->releaseSecondFactorWait($session, null, null, null, null, null);
+            }
+            if ($session->userId === $loserId || $session->impersonatorUserId === $loserId) {
+                $this->rebindSession(new SessionRebindSignalData(
+                    sessionToken: $session->token,
+                    userId: null,
+                ));
+            }
         }
     }
 
@@ -4072,6 +4110,171 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     protected function applyAccountMerge(int $survivorUserId, int $loserUserId): array
     {
         throw new NotImplementedException('Account merge is not wired in this project');
+    }
+
+    /**
+     * Arms the schedule of the account erasure (HIL-302).
+     *
+     * Only where a sign-in surface exists: an account deletion is asked for from a signed-in
+     * profile, and a project without one has no request table to read. Never run rather than
+     * just run, as the hold sweep is armed and for its reason: the first tick of a restarted
+     * holder catches up with what fell due while nobody held it.
+     */
+    private function armAccountDeletionSweep(): void
+    {
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+
+        $rule = new CronRule(self::ACCOUNT_DELETION_SWEEP_RULE, self::ACCOUNT_DELETION_SWEEP_CRON);
+        $rule->lastRun = 0.0;
+        $this->accountDeletionSweepRule = $rule;
+    }
+
+    /**
+     * Erases every account whose deletion fell due (HIL-302).
+     *
+     * One account at a time and each on its own: an erasure that fails is logged, rolls back
+     * whole and leaves its request standing and due, so the next minute tries it again, and it
+     * does not hold up the others. Only the refusals of the erasure itself are caught; the read
+     * of what fell due leaves the tick, as the other sweeps' failures do.
+     *
+     * @throws HilosException When the due requests cannot be read
+     */
+    private function sweepAccountDeletions(): void
+    {
+        if ($this->accountDeletionSweepRule?->shouldRun() !== true) {
+            return;
+        }
+
+        foreach (Hilos::$db->accountDeletions->dueBy(TimeHelper::getSqlDateTime()) as $deletion) {
+            try {
+                $this->eraseAccount($deletion);
+            } catch (HilosException $e) {
+                $this->logAgentError("Account erasure of user {$deletion->userId} failed, retried next minute: {$e->getMessage()}");
+            }
+        }
+    }
+
+    /**
+     * Erases one account whose deletion fell due - irreversibly and whole (HIL-302).
+     *
+     * One transaction, so half an erased account never exists: the request is marked carried
+     * out first, under the condition that it still stands - a "Keep my account" that won the
+     * race leaves everything untouched - then the framework's rows of the person go, children
+     * before their parents, then the project erases its own ({@see self::applyAccountErasure()}).
+     * Any failure rolls all of it back, the request included.
+     *
+     * After the commit, outside the transaction because none of it can be rolled back: every
+     * session the person stands in is signed out, the files the project's rows pointed at are
+     * removed, and the notifications library is asked to forget the person - its tables are not
+     * claimed here, because the feature is not mounted everywhere. The request row stays behind,
+     * carried out: the number of an account that no longer exists and three dates. A failure
+     * there is logged and not retried - the request is carried out, and no sweep returns to it.
+     *
+     * @param AccountDeletion $deletion Standing request whose moment has come
+     * @throws NotImplementedException When the project has not wired the erasure seam
+     * @throws HilosException On database or truth-source failure (transaction rolled back)
+     */
+    private function eraseAccount(AccountDeletion $deletion): void
+    {
+        $userId = $deletion->userId;
+
+        Database::transactionStart();
+        try {
+            if (!$deletion->actions->complete()) {
+                Database::transactionRollback();
+
+                return;
+            }
+
+            // The device keys before the ways in: a credential restricts the delete of its anchor.
+            Hilos::$db->passkeyCredentials->deleteForUser($userId);
+            Hilos::$db->identities->deleteForUser($userId);
+            Hilos::$db->verifications->deleteForUser($userId);
+            Hilos::$db->secondFactors->actions->deleteForUser($userId);
+            Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($userId);
+            Hilos::$db->secondFactorResets->actions->deleteForUser($userId);
+            Hilos::$db->secondFactorSettings->actions->deleteForUser($userId);
+            Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
+            Hilos::$db->stepUps->actions->deleteForUser($userId);
+            $erasure = $this->applyAccountErasure($userId);
+            Database::transactionCommit();
+        } catch (HilosException $e) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // A failing rollback would replace the error that made the erasure fail
+            }
+
+            throw $e;
+        }
+
+        $this->logAgentInfo('account_erased ' . json_encode([
+            'event' => 'account_erased',
+            'user' => $userId,
+            'requestedAt' => $deletion->requestedAt,
+            'rows' => $erasure->rowsErased,
+        ]));
+
+        try {
+            $this->killUserSessions($userId);
+            $this->removeErasedFiles($erasure->publishedFiles);
+            Hilos::$notify?->forgetUser($userId);
+        } catch (HilosException | RandomException $e) {
+            // The account is gone and the request carried out, so no sweep comes back for it.
+            $this->logAgentError("Account of user {$userId} erased, but what follows the commit failed: {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Deletes everything this project keeps of a person whose account is being erased (HIL-302).
+     *
+     * Called INSIDE the erasure's transaction, after the framework's rows of the person are
+     * gone, so whatever it writes rolls back with the rest. The project deletes EVERY row of
+     * its own that belongs to the person - the person's row itself last, since the others
+     * point at it - because that is what a published privacy text promises; where the person
+     * is only mentioned in somebody else's row, the mention goes and the row stays.
+     *
+     * A refusing default, as the merge's seams have: a project that forgot to erase its rows
+     * hears it the first time an account falls due, rather than keeping them in silence.
+     *
+     * Files are named, not removed: a file deleted from disk cannot come back if the transaction
+     * rolls back, so the holder removes the named ones after the commit.
+     *
+     * @param int $userId Person whose account is being erased
+     * @return AccountErasure Rows deleted per family this project names, and the files they pointed at
+     * @throws NotImplementedException When the project has not wired the erasure seam
+     * @throws HilosException Whatever the project's implementation raises while deleting its rows
+     */
+    protected function applyAccountErasure(int $userId): AccountErasure
+    {
+        throw new NotImplementedException('Account erasure is not wired in this project');
+    }
+
+    /**
+     * Removes from the files directory what an erased account's rows pointed at (HIL-302).
+     *
+     * After the commit, so a file never goes while its row may still come back. A file that
+     * will not go is logged as an orphan and not tried again, as the files janitor does: a
+     * spare file on disk is cheaper than an erasure that is never finished.
+     *
+     * @param list<string> $storedNames Names in the files directory
+     */
+    private function removeErasedFiles(array $storedNames): void
+    {
+        $fs = Hilos::$fs;
+        foreach ($storedNames as $storedName) {
+            if ($fs === null) {
+                $this->logAgentWarning("Orphan file {$storedName} of an erased account left on disk: no file system here");
+                continue;
+            }
+            try {
+                $fs->files[$storedName]->unlink();
+            } catch (FileDeleteException $e) {
+                $this->logAgentWarning("Orphan file {$storedName} of an erased account left on disk: " . $e->getMessage());
+            }
+        }
     }
 
     /**

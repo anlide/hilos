@@ -22,6 +22,24 @@ final class StepUpGate
     public const string VERDICT_IMPERSONATED = 'impersonated';
 
     /**
+     * Whether an administrator works in someone else's account through this session.
+     *
+     * The verdict asks it first; an account command that stands outside the gate on purpose -
+     * calling off one's own account deletion needs no fresh proof (HIL-302) - asks it alone,
+     * because what a person does to their own account is never done with someone else's hands.
+     *
+     * @param string $sessionToken Browser session token
+     * @return bool True when the session row names an impersonator
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws DatabaseException When the token lookup or lazy session load fails
+     */
+    public static function isImpersonated(string $sessionToken): bool
+    {
+        return Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId !== null;
+    }
+
+    /**
      * @param string $sessionToken Browser session token
      * @param int $userId Acting person
      * @param string $operation Declared operation key
@@ -35,9 +53,8 @@ final class StepUpGate
     {
         $directory = Hilos::stepUpOperationDirectoryClass();
         $declaredOperation = $directory::get($operation);
-        $session = Hilos::$db->sessions->findByToken($sessionToken);
 
-        if ($session?->impersonatorUserId !== null) {
+        if (self::isImpersonated($sessionToken)) {
             return self::VERDICT_IMPERSONATED;
         }
 

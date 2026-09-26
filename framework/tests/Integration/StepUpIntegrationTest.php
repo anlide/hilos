@@ -171,6 +171,36 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
+     * The address a code goes to is found past the stronger proofs, which keep their order, and
+     * a passkey is no address (HIL-302).
+     *
+     * @throws HilosException When an identity or a credential row cannot be written or read
+     */
+    public function testAddressIsFoundPastStrongerProofsAndKeepsTheOrder(): void
+    {
+        $identity = Hilos::$db->identities->createPasskeyIdentity(self::USER_ID, 'credential-302');
+        Database::sqlRun(
+            'INSERT INTO `hilos_passkey_credential` '
+            . '(`identity_id`, `user_id`, `credential_id`, `public_key`, `algorithm`, `user_handle`) '
+            . 'VALUES (?, ?, ?, ?, ?, ?)',
+            [(int)$identity->id, self::USER_ID, 'credential-302', 'unused-public-key', -7, 'handle-302'],
+        );
+        self::assertNull(new StepUpMethodResolver()->resolveAddress(self::USER_ID));
+
+        Hilos::$db->identities->createSmsIdentity(self::USER_ID, self::PHONE);
+        $phone = new StepUpMethodResolver()->resolveAddress(self::USER_ID);
+        self::assertSame(StepUpMethod::SMS_CODE, $phone?->method);
+        self::assertSame(self::PHONE, $phone?->destination);
+
+        $this->addPassword();
+        $email = new StepUpMethodResolver()->resolveAddress(self::USER_ID);
+        self::assertSame(StepUpMethod::EMAIL_CODE, $email?->method);
+        self::assertSame(self::EMAIL, $email?->destination);
+
+        self::assertSame(StepUpMethod::PASSWORD, new StepUpMethodResolver()->resolve(self::USER_ID)?->method);
+    }
+
+    /**
      * A passkey is the final available proof, and an account with none is refused.
      *
      * @throws HilosException When a credential row cannot be written or read

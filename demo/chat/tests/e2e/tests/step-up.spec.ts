@@ -14,10 +14,9 @@ import { connectFirstApp } from '../helpers/secondFactor'
 import {
   PASSWORD,
   clickSubmit,
-  registerWithoutPassword,
+  registerEmailOnly,
   signUp,
   typeInto,
-  uniqueEmail,
 } from '../helpers/session'
 import { nextTotpCode } from '../helpers/totp'
 
@@ -31,17 +30,6 @@ async function rename(page: Page): Promise<string> {
   await expect(page.getByTestId('profile-name')).toHaveText(name)
 
   return name
-}
-
-/** Register a verified-email account that deliberately has no password. */
-async function registerEmailOnly(page: Page): Promise<string> {
-  const email = uniqueEmail()
-  await gotoPage(page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await registerWithoutPassword(page, email)
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-
-  return email
 }
 
 test('confirms a name change with the account password', async ({ page }) => {

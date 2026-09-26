@@ -492,6 +492,23 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Deletes every way in of a person - the account is being erased (HIL-302).
+     *
+     * Bridged to the object collection, as this collection's other writes are; the object
+     * carries each row out with its delete announcement.
+     *
+     * @param int $userId Person whose rows to delete
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForUser(int $userId): void
+    {
+        $this->objectCollection->deleteForUser($userId);
+    }
+
+    /**
      * Moves an account's email sign-in rows from one address to another (HIL-299).
      *
      * Profile change-email write path: delegates to the object collection's

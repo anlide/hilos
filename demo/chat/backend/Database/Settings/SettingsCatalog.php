@@ -7,6 +7,7 @@ namespace Demo\Chat\Database\Settings;
 use Demo\Chat\Constants\ChatAttachmentDefaults;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
+use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
@@ -137,6 +138,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             AuthMethodSettingsCatalog::getCatalog(),
             SecondFactorSettingsCatalog::getCatalog(),
             StepUpSettingsCatalog::getCatalog(),
+            AccountDeletionSettingsCatalog::getCatalog(),
         );
     }
 }

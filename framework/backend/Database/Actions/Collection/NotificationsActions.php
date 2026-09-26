@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Collection;
 
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
 use Hilos\Database\View\Item\Notification;
@@ -33,5 +35,19 @@ final class NotificationsActions extends DbActions
     public function markAllReadForUser(int $userId): int
     {
         return $this->objectCollection->markAllReadForUser($userId);
+    }
+
+    /**
+     * Deletes every notification of a recipient - the account is being erased (HIL-302).
+     *
+     * @param int $userId Recipient user id
+     * @throws WriteNotAllowedException When the truth source rejects the delete
+     * @throws HilosException On database error
+     */
+    public function deleteForUser(int $userId): void
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
+
+        $this->objectCollection->deleteForUser($userId);
     }
 }

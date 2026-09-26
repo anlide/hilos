@@ -81,6 +81,7 @@ final class SmsVerificationDeliverer implements VerificationDeliverer
             VerificationType::SMS_LOGIN => SmsTemplateCatalogConstants::AUTH_SMS_LOGIN,
             VerificationType::SMS_ADD => SmsTemplateCatalogConstants::AUTH_SMS_ADD,
             VerificationType::STEP_UP_SMS => SmsTemplateCatalogConstants::AUTH_SMS_STEP_UP,
+            VerificationType::ACCOUNT_DELETION_SMS => SmsTemplateCatalogConstants::AUTH_SMS_ACCOUNT_DELETION,
             default => null,
         };
     }

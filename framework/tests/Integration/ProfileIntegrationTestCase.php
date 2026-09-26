@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
@@ -264,7 +265,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
 }
 
 /**
- * Settings fragments the confirmation gate and its proof resolver read.
+ * Settings fragments the confirmation gate, its proof resolver and the account deletion read.
  */
 final class ProfileIntegrationSettingsCatalog implements CatalogProviderInterface
 {
@@ -273,7 +274,11 @@ final class ProfileIntegrationSettingsCatalog implements CatalogProviderInterfac
      */
     public static function getCatalog(): array
     {
-        return array_replace(StepUpSettingsCatalog::getCatalog(), SecondFactorSettingsCatalog::getCatalog());
+        return array_replace(
+            StepUpSettingsCatalog::getCatalog(),
+            SecondFactorSettingsCatalog::getCatalog(),
+            AccountDeletionSettingsCatalog::getCatalog(),
+        );
     }
 }
 

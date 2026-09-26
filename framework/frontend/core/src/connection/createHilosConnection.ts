@@ -12,6 +12,7 @@ import { LOGS_WORKERS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogWorkers.js'
 import { browserValue } from '../browser/browserValue.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
+import { ACCOUNT_DELETION_SIGNAL_SCHEMAS } from '../profile/accountDeletion.js'
 import { SECOND_FACTOR_SIGNAL_SCHEMAS } from '../profile/secondFactor.js'
 import { PROFILE_PASSWORD_SIGNAL_SCHEMAS } from '../profile/signInMethods.js'
 import { SESSION_ROTATE_COOKIE_SUFFIX } from '../protocol/constants.js'
@@ -166,6 +167,7 @@ export function createHilosConnection(
       ...NOTIFICATION_SIGNAL_SCHEMAS,
       ...NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,
       ...SECOND_FACTOR_SIGNAL_SCHEMAS,
+      ...ACCOUNT_DELETION_SIGNAL_SCHEMAS,
       ...PROFILE_PASSWORD_SIGNAL_SCHEMAS,
       ...options.projectSchemas,
     },

@@ -17,18 +17,19 @@ use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
+use Hilos\Users\AccountErasure;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
- * The chat demo's sessions library - four seams wide, and every one of them a chat column
- * the framework cannot see (HIL-710, HIL-729).
+ * The chat demo's sessions library - five seams wide, and every one of them a chat column
+ * the framework cannot see (HIL-710, HIL-729, HIL-302).
  *
  * Everything a session is went into {@see AbstractSessionsLibraryAgent} whole: resolving a
- * handshake cookie, rotating a token, raising a session to a person and reverting it. Five
- * seams a project can be asked to answer stand on it, and this demo answers four.
+ * handshake cookie, rotating a token, raising a session to a person and reverting it. Six
+ * seams a project can be asked to answer stand on it, and this demo answers five.
  *
  * {@see CliCommands::ADMIN_CREATE} is the one it does not - the mount stands on the abstract
  * class, so every subclass inherits it - and an operator who types it at this installation
@@ -49,6 +50,11 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
  * moves the ways in and signs the loser out, and asks this demo the two things only it knows
  * - whether these two accounts may be merged at all, and what a chat keeps for a person.
  *
+ * The erasure is the merge's opposite and asks the same second question the other way round
+ * (HIL-302): when a person's account deletion falls due, the framework erases the ways in and
+ * signs them out, and this demo deletes what a chat keeps for them - their messages with the
+ * attachments, the events about them, their row - and names the files to remove.
+ *
  * What stayed in {@see ChatAgent} is the other half of the seam: who is on the wire, what
  * that person is called, and the tab that has to be told. The library says what a session
  * became and what a merge did; the chat agent says both out loud.
@@ -59,7 +65,7 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
     /**
-     * The two chat tables this library writes on its way through a person, and the holds a
+     * The chat tables this library writes on its way through a person, and the holds a
      * registration parks on.
      *
      * The chat pair is borrowed and narrow, and the reason the rights have to be said out loud at
@@ -78,11 +84,24 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      */
     public const array OWNS_DB = [
         // TODO(HIL-630): borrowed claim - the users library owns the account set. What this
-        // library does to a chat user is set the admin flag and tombstone the loser of a merge.
-        ChatDbContext::users => [TruthSourceOperation::Update],
+        // library does to a chat user is set the admin flag, tombstone the loser of a merge and
+        // delete the row of an erased account (HIL-302).
+        ChatDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // TODO(HIL-626): borrowed claim - the chat agent owns the message rows. A merge
-        // re-points the loser's messages onto the survivor, which edits them and nothing more.
-        ChatDbContext::eventMessages => [TruthSourceOperation::Update],
+        // re-points the loser's messages onto the survivor; an erasure deletes the person's.
+        ChatDbContext::eventMessages => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        // TODO(HIL-626): borrowed claim - the chat agent owns the attachment rows; an erasure
+        // deletes those of the person's messages (HIL-302).
+        ChatDbContext::eventAttachments => [TruthSourceOperation::Remove],
+        // TODO(HIL-626): borrowed claim - the chat agent owns the events; an erasure deletes
+        // the person's messages and the events about them (HIL-302).
+        ChatDbContext::events => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library writes the registration events; an
+        // erasure deletes the person's (HIL-302).
+        ChatDbContext::eventUserRegistrations => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library writes the rename events; an erasure
+        // deletes the person's and takes them off the renames of others they made (HIL-302).
+        ChatDbContext::eventUserRenames => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns the reservation table. The hold
         // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
         // sessions library's row; the sweep itself belongs with the table.
@@ -220,5 +239,43 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         $loser->actions->tombstone($survivorUserId);
 
         return [ChatCommandConstants::ROWS_MOVED_MESSAGES => $messagesMoved];
+    }
+
+    /**
+     * Deletes everything a chat keeps of a person whose account is being erased (HIL-302).
+     *
+     * Children before their parents, because the registration and rename events restrict the
+     * delete of the user row: the attachments of the person's messages, the messages, the
+     * registration and rename events about the person, then those events themselves. Where the
+     * person only renamed somebody else, the rename stays and loses its actor. The person's row
+     * goes last. The attachment files are named for the framework to remove after the commit.
+     *
+     * Runs inside the framework's erasure transaction, so a failure of any write rolls back
+     * every one before it and the ways in that went first.
+     *
+     * @param int $userId Person whose account is being erased
+     * @return AccountErasure Rows deleted under chat's own family names, and the attachment files
+     * @throws ItemNotFoundForUpdateException When the user row cannot be deleted (id is null)
+     * @throws HilosException On database or truth-source failure while deleting the rows
+     */
+    protected function applyAccountErasure(int $userId): AccountErasure
+    {
+        $messageIds = Hilos::$db->eventMessages->eventIdsByAuthor($userId);
+        $files = Hilos::$db->eventAttachments->actions->deleteForMessages($messageIds);
+        $messages = Hilos::$db->eventMessages->actions->deleteByAuthor($userId);
+        $registrationIds = Hilos::$db->eventUserRegistrations->actions->deleteByTarget($userId);
+        $renameIds = Hilos::$db->eventUserRenames->actions->deleteByTarget($userId);
+        Hilos::$db->eventUserRenames->actions->clearActor($userId);
+        $events = Hilos::$db->events->actions->deleteByIds([...$messageIds, ...$registrationIds, ...$renameIds]);
+        Hilos::$db->users[$userId]?->actions->delete();
+
+        return new AccountErasure(
+            [
+                ChatCommandConstants::ROWS_ERASED_MESSAGES => $messages,
+                ChatCommandConstants::ROWS_ERASED_ATTACHMENTS => count($files),
+                ChatCommandConstants::ROWS_ERASED_EVENTS => $events,
+            ],
+            $files,
+        );
     }
 }

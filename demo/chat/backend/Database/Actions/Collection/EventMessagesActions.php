@@ -130,4 +130,32 @@ final class EventMessagesActions extends DbActions
 
         $this->deleteAllObjects();
     }
+
+    /**
+     * Deletes every message a person wrote - the account is being erased (HIL-302).
+     *
+     * Each message leaves through its object, so every reader hears the delete, as the merge's
+     * re-point is heard. The attachments of these messages are the caller's to delete first
+     * ({@see EventAttachmentsActions::deleteForMessages()}), and the events they belong to
+     * after. Runs inside the erasure transaction under the session holder's borrowed claim.
+     *
+     * @param int $userId Author user id
+     * @return int Number of messages deleted
+     * @throws HilosException On database or truth-source failure
+     */
+    public function deleteByAuthor(int $userId): int
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        $deleted = 0;
+        foreach (EventMessage::get([EventMessage::author_user_id => $userId]) as $entityMessage) {
+            $eventId = $entityMessage->event_id;
+            $message = $this->objectCollection[$eventId] ?? ObjectEventMessage::fromEntity($entityMessage);
+            $message->delete();
+            unset($this->objectCollection[$eventId]);
+            $deleted++;
+        }
+
+        return $deleted;
+    }
 }

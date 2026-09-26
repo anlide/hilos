@@ -165,6 +165,10 @@ export {
   type HilosBackupCodesProps,
 } from './HilosBackupCodes.js'
 export {
+  HilosAccountDeletion,
+  type HilosAccountDeletionProps,
+} from './profile/HilosAccountDeletion.js'
+export {
   HilosProfileSecurityPage,
   type HilosProfileSecurityPageProps,
 } from './profile/HilosProfileSecurityPage.js'

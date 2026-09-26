@@ -63,10 +63,11 @@ final class DeliveryRetryTwoStepTest extends TestCase
     /**
      * Pinned as the whole public surface rather than as the absence of one name: the facade is a
      * door to the library now, and a second writer added back to it would be a write from
-     * whichever worker called it - the very defect this leaf closes.
+     * whichever worker called it - the very defect this leaf closes. The erasure's door
+     * (HIL-302) is a frame to the library as well, so it stands beside the emit door.
      */
     public function testTheFacadeOffersNothingButTheEmitDoor(): void
     {
-        self::assertSame(['emit'], get_class_methods(HilosNotifier::class));
+        self::assertSame(['emit', 'forgetUser'], get_class_methods(HilosNotifier::class));
     }
 }

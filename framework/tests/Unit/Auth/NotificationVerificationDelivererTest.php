@@ -28,8 +28,17 @@ final class NotificationVerificationDelivererTest extends TestCase
         $router->deliver('+15551234567', VerificationType::SMS_LOGIN, VerificationDeliverable::code('111'));
         $router->deliver('+15551234567', VerificationType::SMS_ADD, VerificationDeliverable::code('222'));
         $router->deliver('+15551234567', VerificationType::STEP_UP_SMS, VerificationDeliverable::code('333'));
+        $router->deliver('+15551234567', VerificationType::ACCOUNT_DELETION_SMS, VerificationDeliverable::code('444'));
 
-        self::assertSame([VerificationType::SMS_LOGIN, VerificationType::SMS_ADD, VerificationType::STEP_UP_SMS], $sms->types);
+        self::assertSame(
+            [
+                VerificationType::SMS_LOGIN,
+                VerificationType::SMS_ADD,
+                VerificationType::STEP_UP_SMS,
+                VerificationType::ACCOUNT_DELETION_SMS,
+            ],
+            $sms->types,
+        );
         self::assertSame([], $mail->types);
     }
 
@@ -46,8 +55,17 @@ final class NotificationVerificationDelivererTest extends TestCase
             VerificationDeliverable::magicLink('https://app.example/auth/magic?t=token', '135790'),
         );
         $router->deliver('user@example.com', VerificationType::STEP_UP, VerificationDeliverable::code('444'));
+        $router->deliver('user@example.com', VerificationType::ACCOUNT_DELETION, VerificationDeliverable::code('555'));
 
-        self::assertSame([VerificationType::REGISTER_CONFIRM, VerificationType::MAGIC_LINK, VerificationType::STEP_UP], $mail->types);
+        self::assertSame(
+            [
+                VerificationType::REGISTER_CONFIRM,
+                VerificationType::MAGIC_LINK,
+                VerificationType::STEP_UP,
+                VerificationType::ACCOUNT_DELETION,
+            ],
+            $mail->types,
+        );
         self::assertSame([], $sms->types);
     }
 }

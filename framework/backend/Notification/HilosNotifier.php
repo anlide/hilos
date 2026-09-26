@@ -13,6 +13,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\DTO\NotificationForgetUserSignalData;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 
 /**
@@ -30,9 +31,10 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
  * no longer answers, because the row is written in another process and no product path read
  * the value anyway.
  *
- * Nothing is left beside {@see emit()}. The admin retry was the last writer here and it went
- * the same way: the ADMIN page that submits it now forwards the row to the library too, so the
- * dispatcher has no caller outside the process that owns the journal.
+ * Nothing is left beside {@see emit()} but its erasing twin, {@see forgetUser()} (HIL-302).
+ * The admin retry was the last writer here and it went the same way: the ADMIN page that
+ * submits it now forwards the row to the library too, so the dispatcher has no caller outside
+ * the process that owns the journal.
  */
 class HilosNotifier
 {
@@ -55,6 +57,28 @@ class HilosNotifier
             signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             signalName: new SignalName(HilosSignalConstants::HILOS_NOTIFICATION_EMIT),
             signalData: new AgentSignalData(data: NotificationEmitSignalData::fromDraft($draft)),
+        );
+    }
+
+    /**
+     * Asks the notifications library to forget a person whose account was erased (HIL-302).
+     *
+     * A frame and not a write for the reason {@see emit()} is one: the tables are the library's,
+     * and the notification feature is not mounted in every project - the session holder that
+     * erases an account cannot claim them. Best-effort in the same one way: with no router in
+     * the process the frame reaches nobody, and what it would have deleted stays as rows of
+     * nobody.
+     *
+     * @param int $userId Person whose account was erased
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function forgetUser(int $userId): void
+    {
+        Hilos::$sr?->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            signalName: new SignalName(HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER),
+            signalData: new AgentSignalData(data: new NotificationForgetUserSignalData($userId)),
         );
     }
 }

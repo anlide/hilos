@@ -36,6 +36,34 @@ final class StepUpMethodResolver
             return new StepUpTarget(StepUpMethod::PASSWORD);
         }
 
+        $address = $this->resolveAddress($userId);
+        if ($address !== null) {
+            return $address;
+        }
+
+        if (Hilos::$db->passkeyCredentials->listByUser($userId) !== []) {
+            return new StepUpTarget(StepUpMethod::PASSKEY);
+        }
+
+        return null;
+    }
+
+    /**
+     * Chooses the address a one-time code for this person goes to.
+     *
+     * The confirmed email when this installation can send letters, otherwise the confirmed
+     * phone when it can send texts. The step-up asks it in its own place of the order, and an
+     * operation that confirms itself with a code of its own - deleting the account (HIL-302) -
+     * asks it directly, so "where does the code go" is decided in one place.
+     *
+     * @param int $userId Person whose addresses are inspected
+     * @return ?StepUpTarget EMAIL_CODE or SMS_CODE with the full address, or null when no code can reach the person
+     * @throws DatabaseException When an identity lookup fails
+     * @throws InvalidArgumentException When a collection query or loaded object is invalid
+     * @throws LogicException When collection metadata is incomplete
+     */
+    public function resolveAddress(int $userId): ?StepUpTarget
+    {
         $email = Hilos::$db->identities->findVerifiedEmailByUser($userId);
         if ($email !== null && new CodeDeliveryAvailability()->canDeliverTo(IdentifierDetection::KIND_EMAIL)) {
             return new StepUpTarget(StepUpMethod::EMAIL_CODE, $email);
@@ -44,10 +72,6 @@ final class StepUpMethodResolver
         $phone = Hilos::$db->identities->findVerifiedSmsByUser($userId);
         if ($phone !== null && new CodeDeliveryAvailability()->canDeliverTo(IdentifierDetection::KIND_PHONE)) {
             return new StepUpTarget(StepUpMethod::SMS_CODE, $phone);
-        }
-
-        if (Hilos::$db->passkeyCredentials->listByUser($userId) !== []) {
-            return new StepUpTarget(StepUpMethod::PASSKEY);
         }
 
         return null;

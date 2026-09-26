@@ -10,6 +10,7 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Exception\ValueTooShortException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -93,5 +94,25 @@ final class UserActions extends DbActions
 
         $this->object->admin = $admin;
         $this->object->sync();
+    }
+
+    /**
+     * Deletes this user's row - the account is being erased (HIL-302).
+     *
+     * The last write of the demo's half of the erasure: the rename rows pointing at this one are
+     * gone by then. Written inside the transaction the framework opened.
+     *
+     * @throws ItemNotFoundForUpdateException When the user is not persisted (id is null)
+     * @throws HilosException On database error or other failure
+     */
+    public function delete(): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for delete (id is null)');
+        }
+
+        $this->object->delete();
     }
 }

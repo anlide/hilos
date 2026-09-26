@@ -72,4 +72,38 @@ final class EventAttachmentsActions extends DbActions
 
         $this->deleteAllObjects();
     }
+
+    /**
+     * Deletes the attachments of the given messages and names their files (HIL-302).
+     *
+     * The account is being erased: the rows go here, inside its transaction, and the files are
+     * only named - the session holder removes them from disk once the rows are committed.
+     *
+     * @param list<int> $eventIds Event ids of the messages whose attachments go
+     * @return list<string> Stored names of the deleted attachments, in the files directory
+     * @throws HilosException On database or truth-source failure
+     */
+    public function deleteForMessages(array $eventIds): array
+    {
+        if ($eventIds === []) {
+            return [];
+        }
+
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        $where = '`' . EventAttachment::event_id . '` IN (' . implode(', ', array_fill(0, count($eventIds), '?')) . ')';
+        $storedNames = [];
+        foreach (EventAttachment::get($where, $eventIds) as $entityAttachment) {
+            $id = $entityAttachment->id;
+            if ($id === null) {
+                continue;
+            }
+            $attachment = $this->objectCollection[$id] ?? ObjectEventAttachment::fromEntity($entityAttachment);
+            $storedNames[] = $attachment->storedName;
+            $attachment->delete();
+            unset($this->objectCollection[$id]);
+        }
+
+        return $storedNames;
+    }
 }

@@ -20,10 +20,12 @@ import {
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
   threeWayMerge,
+  type HilosSecondFactorContext,
 } from '@hilos/core'
 import {
   ConflictActions,
   ConflictHeader,
+  HilosAccountDeletion,
   HilosFormError,
   HilosLink,
   HilosModal,
@@ -34,8 +36,8 @@ import {
 } from '@hilos/vue'
 
 import { hilosAuthContext } from '../../auth/hilosAuthContext'
-import { connection } from '../../bootstrap/connection'
-import { currentUserId } from '../../bootstrap/session'
+import { actions, connection } from '../../bootstrap/connection'
+import { currentUserId, scopes } from '../../bootstrap/session'
 import { bindNotificationPreferences } from '../../profile/notificationPreferences.js'
 import {
   profileDeviceCount,
@@ -68,6 +70,9 @@ import { type IdentityItem } from './types/lists/IdentityItem'
 import { useEmailChange } from './useEmailChange'
 
 const sessionsCount = useSignal(profileSessionCount)
+// The danger zone's context (HIL-302): the framework component reads the
+// deletion state this page's subscription carries and dispatches its own actions.
+const deletionContext: HilosSecondFactorContext = { connection, scopes, actions }
 const devicesCount = useSignal(profileDeviceCount)
 
 defineOptions({ name: 'ProfilePage' })
@@ -1095,6 +1100,10 @@ function mergeBoth(): void {
         </div>
       </div>
     </section>
+
+    <!-- Account deletion (HIL-302): the danger zone under the sections - the
+    chat's profile is one page - and its window, both the framework's. -->
+    <HilosAccountDeletion :context="deletionContext" />
 
     <HilosModal
       v-model="editing"

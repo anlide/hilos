@@ -332,6 +332,23 @@ export async function registerWithoutPassword(
 }
 
 /**
+ * Register a verified-email account that deliberately has no password, from the
+ * profile's own sign-in surface, and land on the profile signed in.
+ *
+ * @param page Page starting from any location (it navigates to '/profile').
+ * @returns The account's confirmed address.
+ */
+export async function registerEmailOnly(page: Page): Promise<string> {
+  const email = uniqueEmail()
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await registerWithoutPassword(page, email)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+
+  return email
+}
+
+/**
  * Sign in on the currently mounted surface: type the address, wait for the lookup
  * to reveal the password, submit.
  *

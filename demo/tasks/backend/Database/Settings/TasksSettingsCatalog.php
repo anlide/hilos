@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Database\Settings;
 
+use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
@@ -54,6 +55,7 @@ final class TasksSettingsCatalog implements CatalogProviderInterface
             AuthMethodSettingsCatalog::getCatalog(),
             SecondFactorSettingsCatalog::getCatalog(),
             StepUpSettingsCatalog::getCatalog(),
+            AccountDeletionSettingsCatalog::getCatalog(),
         );
     }
 }

@@ -108,6 +108,33 @@ final class StepUps extends Objects
     }
 
     /**
+     * Deletes every operation confirmation of a person - the account is being erased (HIL-302).
+     *
+     * Each row leaves through its object so a delete announcement reaches every reader.
+     * A person with none is not an error.
+     *
+     * @param int $userId Person whose rows to delete
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForUser(int $userId): void
+    {
+        foreach (EntityStepUp::get([EntityStepUp::user_id => $userId]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, ObjectStepUp::fromEntity($entity));
+            }
+            $this->objects[$id]->delete();
+            unset($this[$id]);
+        }
+    }
+
+    /**
      * @param string $tokenHash Hash of the browser session token
      * @param int $userId Person
      * @param string $operation Declared operation key

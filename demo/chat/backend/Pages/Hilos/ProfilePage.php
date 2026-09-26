@@ -10,10 +10,11 @@ use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Hilos;
+use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
+use Hilos\Auth\AccountDeletion\AccountDeletionStateProjector;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Pages\AbstractHilosProfilePage;
@@ -32,27 +33,32 @@ use Hilos\Pages\AbstractHilosProfilePage;
  * the same service its users library builds. It is still served by the chat agent, because that
  * is the agent its browser data belongs to.
  *
+ * The chat's profile is one page, so the account deletion's danger zone is drawn here, under the
+ * sections (HIL-302): the page carries the person's deletion state and puts the connection on
+ * the person's {@see AccountDeletionGroup}, as the framework's security page does elsewhere.
+ *
  * @property ChatAgent $agent
  */
 final class ProfilePage extends AbstractHilosProfilePage
 {
     /**
      * @var list<string> What is left to read once the writing submits have gone (HIL-771): the
-     *     notification section the subscription carries, and the two stores a channel resolves
-     *     a person's address in.
+     *     notification section the subscription carries, the two stores a channel resolves
+     *     a person's address in, and the account deletion requests the danger zone is (HIL-302).
      */
     public const array READS_DB = [
         ChatDbContext::identities,
         ChatDbContext::notificationPreferences,
         ChatDbContext::pushSubscriptions,
         ChatDbContext::sessions,
+        ChatDbContext::accountDeletions,
     ];
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     /**
      * Contributes the signed-in user's notification preferences as the profile's
-     * page-data section (HIL-485).
+     * page-data section (HIL-485), and the person's account deletion state beside it (HIL-302).
      *
      * The profile is a self-only surface with no route params: the recipient is the
      * session user, read from the self-connection (never a client value), so an
@@ -64,8 +70,8 @@ final class ProfilePage extends AbstractHilosProfilePage
      *
      * @param string $acceptKey WebSocket accept key of the subscribing connection (unused; this page reads its subscriber off the self-connection)
      * @param PageRouteParams $params Route params for the profile subscription (unused; profile has none)
-     * @return ?PagePayload Notification-section payload, or null outside a signed-in session
-     * @throws DatabaseException When a preference or address lookup query fails
+     * @return ?PagePayload Notification section and deletion state, or null outside a signed-in session
+     * @throws HilosException When a preference, address or deletion lookup fails
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
@@ -77,7 +83,27 @@ final class ProfilePage extends AbstractHilosProfilePage
             self::NOTIFICATION_SECTION => new NotificationChannelPreferenceProjector()
                 ->sectionData(Hilos::$rt->selfConnection->userId)
                 ->toArray(),
+            AccountDeletionStateProjector::SECTION => AccountDeletionStateProjector::stateFor(
+                Hilos::$rt->selfConnection->userId,
+            )->toArray(),
         ]);
+    }
+
+    /**
+     * Puts the connection on the person's account deletion group once the subscription is answered (HIL-302).
+     *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection
+     * @param PageRouteParams $params Route params (unused; profile has none)
+     * @throws HilosException When the join announcement cannot be named
+     */
+    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        $userId = Hilos::$rt->selfConnection?->userId;
+        if ($userId === null) {
+            return;
+        }
+
+        AccountDeletionGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
     }
 
     /**

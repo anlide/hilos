@@ -218,6 +218,37 @@ final class Notifications extends Objects
     }
 
     /**
+     * Deletes every notification of a recipient - the account is being erased (HIL-302).
+     *
+     * Each row leaves through its object so a delete announcement reaches every reader. The
+     * delivery journal of these rows goes first, through
+     * {@see NotificationDeliveries::deleteForRecipient()}. A recipient with none is not an error.
+     *
+     * @param int $userId Recipient user id
+     * @throws TableNotActivatedException When the project has not activated the notification table
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForUser(int $userId): void
+    {
+        $this->requireActivatedTable();
+
+        foreach (EntityNotification::get([EntityNotification::user_id => $userId]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, ObjectNotification::fromEntity($entity));
+            }
+            $this->objects[$id]->delete();
+            unset($this[$id]);
+        }
+    }
+
+    /**
      * Asserts once per collection that the project activated the notification table.
      *
      * The schema is loaded once per process, so a confirmed activation cannot become

@@ -249,10 +249,13 @@ final class FrameworkReadDeclarationTest extends TestCase
      *
      * Unconditional on purpose: a class constant cannot ask whether the project has a sign-in
      * surface, and the collection is mounted by every context whether or not anything reads it.
+     *
+     * Declared by a claim since HIL-302: the library removes an erased person's codes, and a
+     * claim is the interest of its owner, so the read went into it.
      */
     public function testTheSessionsLibraryDeclaresTheCodeItAsksAboutOnEveryHandshake(): void
     {
-        $this->assertContains(HilosDbContext::verifications, AbstractSessionsLibraryAgent::READS_DB);
+        $this->assertArrayHasKey(HilosDbContext::verifications, AbstractSessionsLibraryAgent::OWNS_DB);
     }
 
     /**

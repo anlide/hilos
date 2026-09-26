@@ -7,6 +7,7 @@ namespace Hilos\Database\Context;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
+use Hilos\Database\Object\Collection\AccountDeletions as ObjectAccountDeletions;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\Files as ObjectFiles;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
@@ -28,6 +29,7 @@ use Hilos\Database\Object\Collection\StepUps as ObjectStepUps;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
@@ -48,6 +50,7 @@ use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
+use Hilos\Database\Actions\Collection\AccountDeletionsActions;
 use Hilos\Database\Actions\Collection\FilesActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
@@ -62,6 +65,7 @@ use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
+use Hilos\Database\Actions\Item\AccountDeletionActions;
 use Hilos\Database\Actions\Item\FileActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
@@ -99,6 +103,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionSecondFactorResets $secondFactorResets
  * @property-read DbCollectionSecondFactorSettings $secondFactorSettings
  * @property-read DbCollectionStepUps $stepUps
+ * @property-read DbCollectionAccountDeletions $accountDeletions
  * @property-read DbCollectionFiles $files
  */
 abstract class HilosDbContext extends DbContext
@@ -140,6 +145,8 @@ abstract class HilosDbContext extends DbContext
     public const string secondFactorSetting = 'secondFactorSetting';
     public const string stepUps = 'stepUps';
     public const string stepUp = 'stepUp';
+    public const string accountDeletions = 'accountDeletions';
+    public const string accountDeletion = 'accountDeletion';
     public const string files = 'files';
     public const string file = 'file';
 
@@ -147,8 +154,8 @@ abstract class HilosDbContext extends DbContext
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
      * notification preferences, push subscriptions, the verifier circle, auth blocks,
-     * OAuth providers, the five tables of the second factor, operation confirmations, and the
-     * files registry).
+     * OAuth providers, the five tables of the second factor, operation confirmations, account
+     * deletion requests, and the files registry).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
      * notification deliveries, notification preferences, push subscriptions and auth
@@ -165,6 +172,8 @@ abstract class HilosDbContext extends DbContext
      * too, and stay inert for the same reason where nobody signs in.
      * Operation confirmations (HIL-495) load by their browser/person/operation tuple and
      * stay inert until a protected account command asks for one.
+     * Account deletion requests (HIL-302) load by person and by the erasure sweep's due
+     * moment, and stay inert where nobody signs in.
      *
      * OAuth providers are read whole on the first lookup of a provider in the process
      * (HIL-1080) - a row per declared provider, asked on every handshake - and stay inert
@@ -270,6 +279,14 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::stepUps] = ObjectStepUps::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::stepUps, DbCollectionStepUps::class, StepUpsActions::class);
+
+        $this->_objectCollections[self::accountDeletions] = ObjectAccountDeletions::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(
+            self::accountDeletions,
+            DbCollectionAccountDeletions::class,
+            AccountDeletionsActions::class,
+            AccountDeletionActions::class,
+        );
 
         $this->_objectCollections[self::files] = ObjectFiles::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::files, DbCollectionFiles::class, FilesActions::class, FileActions::class);

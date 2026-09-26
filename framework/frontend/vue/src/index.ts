@@ -52,6 +52,7 @@ export { default as HilosNotificationPreferences } from './HilosNotificationPref
 export { default as HilosPushDeviceToggle } from './HilosPushDeviceToggle.vue'
 export { default as HilosQrCode } from './HilosQrCode.vue'
 export { default as HilosBackupCodes } from './HilosBackupCodes.vue'
+export { default as HilosAccountDeletion } from './profile/HilosAccountDeletion.vue'
 export { default as HilosProfileSecurityPage } from './profile/HilosProfileSecurityPage.vue'
 export { default as HilosProfileSessions } from './profile/HilosProfileSessions.vue'
 export { default as HilosProfileDevices } from './profile/HilosProfileDevices.vue'

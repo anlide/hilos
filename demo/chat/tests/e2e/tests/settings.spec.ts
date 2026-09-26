@@ -173,12 +173,14 @@ test('a narrow window draws the settings as cards and never scrolls sideways', a
   await page.setViewportSize({ width: 375, height: desktop.height })
   await openSettings(page)
 
-  // The first page opens on the chat_* keys, so this record is on screen in one
-  // branch or the other; which branch is the whole question.
+  // The record is isolated with the search box, so it is on screen in one branch
+  // or the other whatever keys fill the first page - a framework fragment adding a
+  // key sorts it in ahead (HIL-302). Which branch it is in is the whole question.
   const key = 'chat_attachment_max_file_bytes'
   const cards = page.getByTestId('hilos-table-cards')
   const card = cards.getByTestId(`hilos-table-card-${key}`)
   const row = page.getByTestId(`hilos-table-row-${key}`)
+  await page.getByTestId('hilos-table-search').fill(key)
 
   await expect(card).toBeVisible()
   await expect(row).toBeHidden()

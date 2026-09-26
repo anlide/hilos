@@ -30,7 +30,9 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *     story since HIL-833: what the handshake answers depends on whether a hold stands
      *     behind that wait, so the table has to be there to be empty. The second factor's
      *     tables join for the same kind of reason (HIL-494): every sign-in the holder grants
-     *     asks first whether the person has a factor to show.
+     *     asks first whether the person has a factor to show. The account deletion requests
+     *     join because the holder is the one that erases an account when its request falls due
+     *     (HIL-302).
      */
     private const array TABLES = [
         'hilos_session',
@@ -43,6 +45,7 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
         'hilos_second_factor_reset',
         'hilos_second_factor_setting',
         'hilos_step_up',
+        'hilos_account_deletion',
     ];
 
     /** @var ?DbContext Database context to restore after the test */

@@ -60,4 +60,33 @@ final class UserRenamesActions extends DbActions
 
         return $this->createDbItemFromObject($audit);
     }
+
+    /**
+     * Deletes every rename audit row of a person - the account is being erased (HIL-302).
+     *
+     * Each row leaves through its object, so every reader hears the delete. The rows restrict
+     * the delete of the user row, so they go first.
+     *
+     * @param int $userId Renamed user id
+     * @return int Number of audit rows deleted
+     * @throws HilosException On database or truth-source failure
+     */
+    public function deleteByTarget(int $userId): int
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
+
+        $deleted = 0;
+        foreach (EntityUserRename::get([EntityUserRename::target_user_id => $userId]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            $audit = $this->objectCollection[$id] ?? ObjectUserRename::fromEntity($entity);
+            $audit->delete();
+            unset($this->objectCollection[$id]);
+            $deleted++;
+        }
+
+        return $deleted;
+    }
 }

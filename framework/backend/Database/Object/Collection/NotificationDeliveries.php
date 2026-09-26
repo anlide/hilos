@@ -12,6 +12,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\NotificationDeliveries as EntityNotificationDeliveries;
+use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
@@ -250,6 +251,40 @@ final class NotificationDeliveries extends Objects
         }
         $delivery->updatedAt = TimeHelper::getSqlDateTime();
         $delivery->sync();
+    }
+
+    /**
+     * Deletes the delivery journal of every notification of a recipient (HIL-302).
+     *
+     * The account is being erased, and its notifications go right after this. The journal
+     * carries no recipient of its own, so the rows are found through the notification each
+     * belongs to. Each row leaves through its object so a delete announcement reaches every
+     * reader - the administrator's journal among them.
+     *
+     * @param int $userId Recipient user id
+     * @throws TableNotActivatedException When the project has not activated the delivery table
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForRecipient(int $userId): void
+    {
+        $this->requireActivatedTable();
+
+        $where = '`' . EntityNotificationDelivery::notification_id . '` IN (SELECT `' . EntityNotification::id
+            . '` FROM `' . EntityNotification::_table . '` WHERE `' . EntityNotification::user_id . '` = ?)';
+        foreach (EntityNotificationDelivery::get($where, [$userId]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, ObjectNotificationDelivery::fromEntity($entity));
+            }
+            $this->objects[$id]->delete();
+            unset($this[$id]);
+        }
     }
 
     /**

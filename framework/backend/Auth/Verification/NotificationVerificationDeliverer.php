@@ -60,7 +60,10 @@ final class NotificationVerificationDeliverer implements VerificationDeliverer
     private function delivererFor(string $type): VerificationDeliverer
     {
         return match ($type) {
-            VerificationType::SMS_LOGIN, VerificationType::SMS_ADD, VerificationType::STEP_UP_SMS => $this->sms,
+            VerificationType::SMS_LOGIN,
+            VerificationType::SMS_ADD,
+            VerificationType::STEP_UP_SMS,
+            VerificationType::ACCOUNT_DELETION_SMS => $this->sms,
             default => $this->mail,
         };
     }

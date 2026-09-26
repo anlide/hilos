@@ -68,4 +68,27 @@ final class EventUserRegistrationsActions extends DbActions
 
         $this->deleteAllObjects();
     }
+
+    /**
+     * Deletes the registration event details of a person - the account is being erased (HIL-302).
+     *
+     * @param int $userId Registered user id
+     * @return list<int> Event ids whose details went; the events themselves are the caller's to delete
+     * @throws HilosException On database or truth-source failure
+     */
+    public function deleteByTarget(int $userId): array
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        $eventIds = [];
+        foreach (EventUserRegistration::get([EventUserRegistration::target_user_id => $userId]) as $entity) {
+            $eventId = $entity->event_id;
+            $registration = $this->objectCollection[$eventId] ?? ObjectEventUserRegistration::fromEntity($entity);
+            $registration->delete();
+            unset($this->objectCollection[$eventId]);
+            $eventIds[] = $eventId;
+        }
+
+        return $eventIds;
+    }
 }

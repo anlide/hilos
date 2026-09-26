@@ -700,6 +700,33 @@ final class Identities extends Objects
     }
 
     /**
+     * Deletes every way in of a person, the passkey anchors among them - the account is being erased (HIL-302).
+     *
+     * Each row leaves through its object so a delete announcement reaches every reader.
+     * A person with none is not an error.
+     *
+     * @param int $userId Person whose rows to delete
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForUser(int $userId): void
+    {
+        foreach (EntityIdentity::get([EntityIdentity::user_id => $userId]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, ObjectIdentity::fromEntity($entity));
+            }
+            $this->objects[$id]->delete();
+            unset($this[$id]);
+        }
+    }
+
+    /**
      * Applies the named fate to the two accounts' passwords, before any identity moves.
      *
      * One reading of the name for all three cases, and no refusals of its own: the value

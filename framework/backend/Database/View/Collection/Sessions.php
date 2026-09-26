@@ -82,6 +82,31 @@ final class Sessions extends DbCollection
     }
 
     /**
+     * Lists every session a person stands in - signed in, taking over, or waiting on a second factor (HIL-302).
+     *
+     * The read half of the erasure's sign-out; see the object collection for the three places.
+     *
+     * @param int $userId Person
+     * @return list<Session> Session Db items naming the person (empty when none)
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws DatabaseException When the lookup or lazy session load fails
+     */
+    public function findTouchingUser(int $userId): array
+    {
+        $result = [];
+        foreach ($this->objectCollection->findTouchingUser($userId) as $objectSession) {
+            $item = $objectSession->id !== null ? $this->getItemForKey($objectSession->id) : null;
+            if ($item === null) {
+                continue;
+            }
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
      * Lists the sessions waiting on one address's registration code (HIL-612).
      *
      * The reverse read of the pending-registration memory: who has to be told when an

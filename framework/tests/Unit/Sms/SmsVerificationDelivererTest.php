@@ -119,6 +119,24 @@ final class SmsVerificationDelivererTest extends TestCase
         );
     }
 
+    public function testAccountDeletionSmsTypeMapsToItsTemplateKey(): void
+    {
+        $router = new SmsVerificationDelivererTestSignalRouter();
+        Hilos::$sr = $router;
+
+        new SmsVerificationDeliverer()->deliver(
+            '+15551234567',
+            VerificationType::ACCOUNT_DELETION_SMS,
+            VerificationDeliverable::code('555666'),
+        );
+
+        self::assertCount(1, $router->captured);
+        self::assertSame(
+            SmsTemplateCatalogConstants::AUTH_SMS_ACCOUNT_DELETION,
+            $router->captured[0]['data']->data->templateKey,
+        );
+    }
+
     public function testEmailTypeIsNoOp(): void
     {
         $router = new SmsVerificationDelivererTestSignalRouter();

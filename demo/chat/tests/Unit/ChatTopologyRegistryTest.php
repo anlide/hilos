@@ -19,6 +19,10 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStartActionDTO;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
@@ -110,6 +114,7 @@ use Hilos\Log\DTO\LogsReadLinesSignalData;
 use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
+use Hilos\Notification\DTO\NotificationForgetUserSignalData;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
@@ -526,6 +531,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
@@ -669,6 +675,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
+            HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => NotificationForgetUserSignalData::class,
             HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
             HilosSignalConstants::HILOS_SETTING_WRITE => SettingWriteSignalData::class,
             HilosSignalConstants::HILOS_SETTING_RESET => SettingResetSignalData::class,
@@ -756,6 +763,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_END => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -839,6 +850,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN => AccountDeletionOpenActionDTO::class,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => AccountDeletionCodeActionDTO::class,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => AccountDeletionStartActionDTO::class,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL => AccountDeletionCancelActionDTO::class,
             ChatSignalConstants::RENAME => RenameActionDTO::class,
             HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
             HilosSignalConstants::HILOS_SESSION_END => SessionEndActionDTO::class,

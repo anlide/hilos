@@ -10,6 +10,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Entity\Item\AccountDeletion;
 use Hilos\Database\Entity\Item\Identity;
 use Hilos\Database\Entity\Item\PasskeyCredential;
 use Hilos\Database\Entity\Item\RegistrationReservation;
@@ -98,6 +99,7 @@ final class AuthFeature extends FeatureDefinition
                 SecondFactorReset::_table,
                 SecondFactorSetting::_table,
                 StepUp::_table,
+                AccountDeletion::_table,
             ],
         );
     }

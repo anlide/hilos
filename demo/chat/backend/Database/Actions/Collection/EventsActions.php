@@ -230,4 +230,38 @@ final class EventsActions extends DbActions
 
         $this->deleteAllObjects();
     }
+
+    /**
+     * Deletes the given events - the account they were about is being erased (HIL-302).
+     *
+     * Their detail rows go first, by the caller: a detail restricts nothing here, but deleting
+     * it through its own collection is what lets the readers of that collection hear it.
+     *
+     * @param list<int> $eventIds Event ids to delete
+     * @return int Number of events deleted
+     * @throws HilosException On database or truth-source failure
+     */
+    public function deleteByIds(array $eventIds): int
+    {
+        if ($eventIds === []) {
+            return 0;
+        }
+
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        $where = '`' . Event::id . '` IN (' . implode(', ', array_fill(0, count($eventIds), '?')) . ')';
+        $deleted = 0;
+        foreach (Event::get($where, $eventIds) as $entityEvent) {
+            $id = $entityEvent->id;
+            if ($id === null) {
+                continue;
+            }
+            $event = $this->objectCollection[$id] ?? ObjectEvent::fromEntity($entityEvent);
+            $event->delete();
+            unset($this->objectCollection[$id]);
+            $deleted++;
+        }
+
+        return $deleted;
+    }
 }

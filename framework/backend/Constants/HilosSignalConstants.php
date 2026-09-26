@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpeningReplyDTO;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStateSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
@@ -69,6 +72,7 @@ use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\DTO\NotificationForgetUserSignalData;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
@@ -914,6 +918,29 @@ final class HilosSignalConstants
     /** Client → server: submit the proof selected while opening a protected operation. */
     public const string HILOS_STEP_UP_CONFIRM = 'hilos_step_up_confirm';
 
+    // ── Hilos account deletion (client → server, signed in, HIL-302) ──
+    /**
+     * Client → server: open the deletion window - the grace period and where the code goes.
+     *
+     * Payload {}; the answer is {graceDays, channel: 'email'|'phone'|null, destination: string|null},
+     * carried by {@see AccountDeletionOpeningReplyDTO}. Refused while a deletion is scheduled.
+     */
+    public const string HILOS_ACCOUNT_DELETION_OPEN = 'hilos_account_deletion_open';
+
+    /** Client → server: send the code that confirms the deletion to the account's address. Payload {}. */
+    public const string HILOS_ACCOUNT_DELETION_CODE = 'hilos_account_deletion_code';
+
+    /** Client → server: start the deletion with the code the address received (throttled). Payload {code}. */
+    public const string HILOS_ACCOUNT_DELETION_START = 'hilos_account_deletion_start';
+
+    /**
+     * Client → server: call off the scheduled deletion. Payload {}.
+     *
+     * Needs no fresh proof and stands outside the product's guard, so a frozen account can
+     * call it off too; an impersonated session is refused.
+     */
+    public const string HILOS_ACCOUNT_DELETION_CANCEL = 'hilos_account_deletion_cancel';
+
     // ── Hilos profile: OAuth account linking (client → server) ──
     /** Client → server: begin linking an OAuth provider to the signed-in account (authenticated, HIL-401). */
     public const string HILOS_LINK_OAUTH_START = 'hilos_link_oauth_start';
@@ -1175,6 +1202,15 @@ final class HilosSignalConstants
      * from whichever process made it. Carried by {@see SecondFactorStateSignalData}.
      */
     public const string HILOS_SECOND_FACTOR_STATE = 'hilos_second_factor_state';
+
+    /**
+     * Server → client (WS_GROUP): one person's account deletion state, whole (HIL-302).
+     *
+     * Fanned to the person's {@see AccountDeletionGroup} after every start and cancel, so every
+     * open tab turns the danger zone into the warning and back without a reload. Payload
+     * {deletion: {requestedAt, effectiveAt} | null}, carried by {@see AccountDeletionStateSignalData}.
+     */
+    public const string HILOS_ACCOUNT_DELETION_STATE = 'hilos_account_deletion_state';
 
     /**
      * Server → client (all connected): the administrator's second-factor settings changed (HIL-494).
@@ -1716,6 +1752,15 @@ final class HilosSignalConstants
 
     /** Push delivery agent → notifications library: endpoints reported gone by the service. */
     public const string HILOS_PUSH_SUBSCRIPTIONS_GONE = 'hilos_push_subscriptions_gone';
+
+    /**
+     * Session holder → notifications library: an account was erased, forget its person (HIL-302).
+     *
+     * Sent once the erasure is committed; the library deletes the person's notifications with
+     * their journal, their channel preferences and their push subscriptions. Best-effort: a lost
+     * frame leaves rows of nobody, with no retry. Carried by {@see NotificationForgetUserSignalData}.
+     */
+    public const string HILOS_NOTIFICATION_FORGET_USER = 'hilos_notification_forget_user';
 
     // ── Hilos logs admin: the node that owns the files → the cluster log aggregator (agent signal) ──
     /**

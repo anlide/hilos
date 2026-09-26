@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
+use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStartActionDTO;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
+use Hilos\Auth\Library\Command\AccountDeletionCommands;
 use Hilos\Auth\Library\Command\ActingSession;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\Command\DetectionCommands;
@@ -174,6 +179,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * checks and records it while executing the protected account command. Its browser key is
      * a token hash, but its set is the person whose operation it opens.
      *
+     * A person's own request to delete their account is here too (HIL-302): this library's
+     * commands start it and call it off. The session holder carries it out, and marks it done
+     * under a borrowed right of its own - it is the one that erases the account.
+     *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
@@ -186,6 +195,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactorResets => TruthSourceOperation::ALL,
         HilosDbContext::secondFactorSettings => TruthSourceOperation::ALL,
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
+        HilosDbContext::accountDeletions => TruthSourceOperation::ALL,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
@@ -263,6 +273,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN => AccountDeletionOpenActionDTO::class,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => AccountDeletionCodeActionDTO::class,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => AccountDeletionStartActionDTO::class,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL => AccountDeletionCancelActionDTO::class,
     ];
 
     /**
@@ -288,6 +302,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * a phone and of a password by mail, which guess a code; and the three email-change steps
      * that carry the current address's code. The submits that only send a code are absent -
      * the code carries its own send cap - and so are the unlink and the provider link start.
+     *
+     * Account deletion adds its start by the same rule (HIL-302): it guesses the code the
+     * address received. Opening the window, sending the code and calling it off guess nothing.
      */
     public const array THROTTLED_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
@@ -321,6 +338,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_START,
     ];
 
     /**
@@ -330,7 +348,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * session belongs to and on nobody else. The two step-up actions are authenticated for
      * the same reason: they prove and open an operation of the signed-in person. So are the
      * profile's own ways in and the email change, whole (HIL-1137): each reads its person
-     * from the acting session, which an anonymous one has none of.
+     * from the acting session, which an anonymous one has none of. So are the four submits of
+     * account deletion (HIL-302), for the same reason.
      */
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
@@ -356,6 +375,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_START,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
     ];
 
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
@@ -406,6 +429,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     /** Operation-level confirmation commands, built on first use. */
     private ?StepUpCommands $stepUpCommands = null;
+
+    /** A person's own account deletion, built on first use. */
+    private ?AccountDeletionCommands $accountDeletionCommands = null;
 
     /** Schedule of the second-factor removal sweep, armed on start (HIL-494). */
     private ?CronRule $secondFactorResetSweepRule = null;
@@ -1252,7 +1278,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Null for every profile submit, or what the second factor's command answered
+     * @return ?ActionReplyDTO Null for every profile submit, or what the account deletion or second factor command answered
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
      * @throws ValidationException When the command refuses what was submitted
@@ -1342,6 +1368,61 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, ProfileEmailChangeNewConfirmActionDTO::class, $dto);
                 }
                 $this->emailChangeCommands()->confirmNewCode($acceptKey, $dto);
+
+                return null;
+
+            default:
+                return $this->runAccountDeletionAction($acceptKey, $action, $dto);
+        }
+    }
+
+    /**
+     * Runs one of the four submits of a person's own account deletion, or hands the name on (HIL-302).
+     *
+     * Opening the window answers with a reply; the other three write, and every tab learns of
+     * a start or a cancel from the state fanned to the person's group.
+     *
+     * @param string $acceptKey Accept key of the connection that submitted
+     * @param string $action Owned action name from {@see AGENT_ACTIONS}
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO The opening reply, null for the other three, or what the second factor's command answered
+     * @throws AgentUnknownActionException When the action is not one this library owns
+     * @throws InvalidActionPayloadException When the payload does not match the action name
+     * @throws ValidationException When the command refuses what was submitted
+     * @throws RandomException When a code, a secret, a backup code or a token cannot be drawn
+     * @throws HilosException When a command exposes database, runtime, env, or settings failure
+     */
+    private function runAccountDeletionAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN:
+                if (!$dto instanceof AccountDeletionOpenActionDTO) {
+                    throw new InvalidActionPayloadException($action, AccountDeletionOpenActionDTO::class, $dto);
+                }
+
+                return $this->accountDeletionCommands()->open($acceptKey);
+
+            case HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE:
+                if (!$dto instanceof AccountDeletionCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, AccountDeletionCodeActionDTO::class, $dto);
+                }
+                $this->accountDeletionCommands()->sendCode($acceptKey);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_ACCOUNT_DELETION_START:
+                if (!$dto instanceof AccountDeletionStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, AccountDeletionStartActionDTO::class, $dto);
+                }
+                $this->accountDeletionCommands()->start($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL:
+                if (!$dto instanceof AccountDeletionCancelActionDTO) {
+                    throw new InvalidActionPayloadException($action, AccountDeletionCancelActionDTO::class, $dto);
+                }
+                $this->accountDeletionCommands()->cancel($acceptKey);
 
                 return null;
 
@@ -1521,6 +1602,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private function emailChangeCommands(): EmailChangeCommands
     {
         return $this->emailChangeCommands ??= new EmailChangeCommands($this, $this->stepUpCommands());
+    }
+
+    /**
+     * @return AccountDeletionCommands A person's own account deletion, built once per process
+     */
+    private function accountDeletionCommands(): AccountDeletionCommands
+    {
+        return $this->accountDeletionCommands ??= new AccountDeletionCommands($this, $this->stepUpCommands());
     }
 
     /**

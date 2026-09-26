@@ -28,6 +28,8 @@ final class VerificationTypeTest extends TestCase
         self::assertSame('email_change_current', VerificationType::EMAIL_CHANGE_CURRENT);
         self::assertSame('step_up', VerificationType::STEP_UP);
         self::assertSame('step_up_sms', VerificationType::STEP_UP_SMS);
+        self::assertSame('account_deletion', VerificationType::ACCOUNT_DELETION);
+        self::assertSame('account_deletion_sms', VerificationType::ACCOUNT_DELETION_SMS);
     }
 
     public function testValuesAreDistinct(): void
@@ -44,6 +46,8 @@ final class VerificationTypeTest extends TestCase
             VerificationType::EMAIL_CHANGE_CURRENT,
             VerificationType::STEP_UP,
             VerificationType::STEP_UP_SMS,
+            VerificationType::ACCOUNT_DELETION,
+            VerificationType::ACCOUNT_DELETION_SMS,
         ];
 
         self::assertSame($values, array_values(array_unique($values)));
@@ -64,6 +68,8 @@ final class VerificationTypeTest extends TestCase
                 VerificationType::EMAIL_CHANGE_CURRENT,
                 VerificationType::STEP_UP,
                 VerificationType::STEP_UP_SMS,
+                VerificationType::ACCOUNT_DELETION,
+                VerificationType::ACCOUNT_DELETION_SMS,
             ],
             VerificationType::values(),
         );
@@ -88,6 +94,7 @@ final class VerificationTypeTest extends TestCase
         self::assertTrue(VerificationType::isSms(VerificationType::SMS_LOGIN));
         self::assertTrue(VerificationType::isSms(VerificationType::SMS_ADD));
         self::assertTrue(VerificationType::isSms(VerificationType::STEP_UP_SMS));
+        self::assertTrue(VerificationType::isSms(VerificationType::ACCOUNT_DELETION_SMS));
     }
 
     public function testIsSmsRejectsEveryOtherKnownType(): void
@@ -100,6 +107,7 @@ final class VerificationTypeTest extends TestCase
         self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_ADD));
         self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_CHANGE_CURRENT));
         self::assertFalse(VerificationType::isSms(VerificationType::STEP_UP));
+        self::assertFalse(VerificationType::isSms(VerificationType::ACCOUNT_DELETION));
     }
 
     public function testIsSmsRejectsUnknownAndEmptyType(): void

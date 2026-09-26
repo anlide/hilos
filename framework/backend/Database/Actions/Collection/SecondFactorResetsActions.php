@@ -8,6 +8,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
@@ -51,5 +53,23 @@ final class SecondFactorResetsActions extends DbActions
         return $this->createDbItemFromObject(
             $this->objectCollection->request($userId, $effectiveAt, $cancelTokenHash),
         );
+    }
+
+    /**
+     * Deletes every delayed removal of a person - the account is being erased (HIL-302).
+     *
+     * @param int $userId Person
+     * @throws WriteNotAllowedException When the truth source rejects the delete
+     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForUser(int $userId): void
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
+
+        $this->objectCollection->deleteForUser($userId);
     }
 }

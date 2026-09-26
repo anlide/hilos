@@ -30,6 +30,9 @@ final class SmsTemplateCatalogConstants
     /** Template key: confirm identity by phone before a protected operation. */
     public const string AUTH_SMS_STEP_UP = 'auth.' . VerificationType::STEP_UP_SMS;
 
+    /** Template key: confirm by phone a person's own request to delete their account. */
+    public const string AUTH_SMS_ACCOUNT_DELETION = 'auth.' . VerificationType::ACCOUNT_DELETION_SMS;
+
     /** Template key: a durable notification delivered by SMS. */
     public const string NOTIFICATION_GENERIC = 'notification.generic';
 }

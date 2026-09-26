@@ -19,22 +19,28 @@ use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
+use Hilos\Users\AccountErasure;
 
 /**
- * The tasks demo's sessions library - and the two seams a project can be asked to answer.
+ * The tasks demo's sessions library - and the three seams a project can be asked to answer.
  *
  * Everything a session is lives in {@see AbstractSessionsLibraryAgent} (HIL-710). What this
  * demo has to say for itself is the end of the two operator paths to an administrator:
  * {@see CliCommands::ADMIN_CREATE}, which has to be able to mint the first account because
  * this demo has no login of its own, and {@see CliCommands::ADMIN_GRANT}, which names a user
  * that already exists. The framework resolves the session, binds it and tells the tabs; the
- * rows are this demo's.
+ * rows are this demo's. The third is the erasure of an account whose deletion fell due
+ * (HIL-302): the framework erases the ways in and signs the person out, and the rename audit
+ * and the user row are this demo's to delete.
  *
  * Registered under {@see HilosAgentType::HILOS_SESSIONS_LIBRARY} by this demo's own topology,
  * which is also what makes the handshake arrive here rather than in {@see TasksAgent}.
  */
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
+    /** Row family this demo reports in an account erasure: the person's rename audit rows (HIL-302). */
+    private const string ROWS_ERASED_RENAMES = 'renames';
+
     /**
      * The users table this library mints into, and the holds a registration parks on.
      *
@@ -53,6 +59,9 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      */
     public const array OWNS_DB = [
         TasksDbContext::users => TruthSourceOperation::BY_KIND,
+        // TODO(HIL-630): borrowed claim - the users library writes the rename audit; an erasure
+        // deletes the person's rows before their user row (HIL-302).
+        TasksDbContext::userRenames => [TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns the reservation table. The hold
         // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
         // sessions library's row; the sweep itself belongs with the table.
@@ -132,5 +141,25 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         }
 
         $user->actions->setAdmin($admin);
+    }
+
+    /**
+     * Deletes everything this demo keeps of a person whose account is being erased (HIL-302).
+     *
+     * The rename audit rows first, because they restrict the delete of the user row, then the
+     * row itself. Nothing here points at a file. Runs inside the framework's erasure
+     * transaction, so a failure rolls back the ways in that went before it.
+     *
+     * @param int $userId Person whose account is being erased
+     * @return AccountErasure The audit rows deleted, and no files
+     * @throws ItemNotFoundForUpdateException When the user row cannot be deleted (id is null)
+     * @throws HilosException On database or truth-source failure while deleting the rows
+     */
+    protected function applyAccountErasure(int $userId): AccountErasure
+    {
+        $renames = Hilos::$db->userRenames->actions->deleteByTarget($userId);
+        Hilos::$db->users[$userId]?->actions->delete();
+
+        return new AccountErasure([self::ROWS_ERASED_RENAMES => $renames], []);
     }
 }

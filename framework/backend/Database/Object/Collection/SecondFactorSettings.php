@@ -70,4 +70,28 @@ final class SecondFactorSettings extends Objects
             $this[$userId] = $setting;
         }
     }
+
+    /**
+     * Deletes a person's own removal wait - the account is being erased (HIL-302).
+     *
+     * The row leaves through its object so a delete announcement reaches every reader. A
+     * person who never chose a wait has no row, which is not an error.
+     *
+     * @param int $userId Person whose row to delete
+     * @throws DatabaseException When the lookup or the delete fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the collection class constants are not configured
+     */
+    public function deleteForUser(int $userId): void
+    {
+        $setting = $this->offsetGet($userId);
+        if ($setting === null) {
+            return;
+        }
+
+        $setting->delete();
+        unset($this[$userId]);
+    }
 }

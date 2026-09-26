@@ -72,6 +72,28 @@ final class Sessions extends Objects
     }
 
     /**
+     * Lists every session a person stands in, in any of the three places a session names one (HIL-302).
+     *
+     * The erasure's sign-out read path: the person signed in on it, the administrator behind
+     * a takeover on it, or the person whose proven sign-in waits there on a second factor. An
+     * account that no longer exists must not stay in any of the three.
+     *
+     * @param int $userId Person
+     * @return list<ObjectSession> Session objects naming the person (empty when none)
+     * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findTouchingUser(int $userId): array
+    {
+        return $this->hydrateAll(EntitySession::get(
+            '`' . EntitySession::user_id . '` = ? OR `' . EntitySession::impersonator_user_id . '` = ? OR `'
+                . EntitySession::pending_second_factor_user_id . '` = ?',
+            [$userId, $userId, $userId],
+            [EntitySession::id => SqlSortDirection::ASC],
+        ));
+    }
+
+    /**
      * Lists the sessions waiting on one address's registration code (HIL-612).
      *
      * The reverse read of the pending-registration memory, and the reason the column

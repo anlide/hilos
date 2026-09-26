@@ -57,6 +57,7 @@ use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
 use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\DTO\NotificationForgetUserSignalData;
 use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
 use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
 use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
@@ -137,7 +138,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY;
 
     /**
-     * The three frames this library is addressed by.
+     * The frames this library is addressed by.
      *
      * Routing takes the destination from whoever declares a name here, so the first line IS
      * the move: an emit that used to be a write in the calling worker is now a frame that
@@ -155,12 +156,15 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * library sends back, and the backup agent declares it.
      * The fourth comes from a push delivery shard: it reports endpoints the transport found
      * gone, and this library marks the rows because it owns the subscription table.
+     * The fifth comes from the session holder once it has erased an account (HIL-302): the
+     * person's rows here are this library's to delete, for the same reason.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
         HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
         HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
         HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
+        HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => NotificationForgetUserSignalData::class,
     ];
 
     /**
@@ -349,6 +353,18 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER:
+                if (!$data->data instanceof NotificationForgetUserSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        NotificationForgetUserSignalData::class,
+                        $data->data,
+                    );
+                }
+                $this->forgetUser($data->data->userId);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -407,6 +423,25 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         }
 
         return null;
+    }
+
+    /**
+     * Deletes everything this library keeps of a person whose account was erased (HIL-302).
+     *
+     * The delivery journal of the person's notifications first, then the notifications, then
+     * the channel preferences and the push subscriptions. The rows of this library are not in
+     * the erasure's transaction - it runs in another process and after the commit - so a
+     * failure here leaves rows of nobody, which is what the erasure's frame already promises.
+     *
+     * @param int $userId Person whose account was erased
+     * @throws HilosException When a lookup or a delete fails
+     */
+    private function forgetUser(int $userId): void
+    {
+        $this->deliveries()->deleteForRecipient($userId);
+        Hilos::$db->notifications->actions->deleteForUser($userId);
+        Hilos::$db->notificationPreferences->actions->deleteForUser($userId);
+        Hilos::$db->pushSubscriptions->actions->deleteForUser($userId);
     }
 
     /**

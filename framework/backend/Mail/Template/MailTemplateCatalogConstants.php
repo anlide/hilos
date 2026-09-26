@@ -42,6 +42,9 @@ final class MailTemplateCatalogConstants
     /** Template key: confirm identity before a protected operation. */
     public const string AUTH_STEP_UP = 'auth.' . VerificationType::STEP_UP;
 
+    /** Template key: confirm a person's own request to delete their account. */
+    public const string AUTH_ACCOUNT_DELETION = 'auth.' . VerificationType::ACCOUNT_DELETION;
+
     /** Template key: a durable notification delivered by email. */
     public const string NOTIFICATION_GENERIC = 'notification.generic';
 

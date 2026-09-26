@@ -153,6 +153,33 @@ final class SecondFactorResets extends Objects
     }
 
     /**
+     * Deletes every delayed removal of a person, ended ones too - the account is being erased (HIL-302).
+     *
+     * Each row leaves through its object so a delete announcement reaches every reader.
+     * A person with none is not an error.
+     *
+     * @param int $userId Person whose rows to delete
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForUser(int $userId): void
+    {
+        foreach (EntitySecondFactorReset::get([EntitySecondFactorReset::user_id => $userId]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, ObjectSecondFactorReset::fromEntity($entity));
+            }
+            $this->objects[$id]->delete();
+            unset($this[$id]);
+        }
+    }
+
+    /**
      * Puts every row of an entity answer into this collection and answers the objects.
      *
      * @param EntityCollection<EntitySecondFactorReset> $entities Rows the database answered with

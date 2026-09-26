@@ -80,4 +80,53 @@ final class EventUserRenamesActions extends DbActions
 
         $this->deleteAllObjects();
     }
+
+    /**
+     * Deletes the rename event details of a person - the account is being erased (HIL-302).
+     *
+     * @param int $userId Renamed user id
+     * @return list<int> Event ids whose details went; the events themselves are the caller's to delete
+     * @throws HilosException On database or truth-source failure
+     */
+    public function deleteByTarget(int $userId): array
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        $eventIds = [];
+        foreach (EventUserRename::get([EventUserRename::target_user_id => $userId]) as $entity) {
+            $eventId = $entity->event_id;
+            $rename = $this->objectCollection[$eventId] ?? ObjectEventUserRename::fromEntity($entity);
+            $rename->delete();
+            unset($this->objectCollection[$eventId]);
+            $eventIds[] = $eventId;
+        }
+
+        return $eventIds;
+    }
+
+    /**
+     * Takes a person off the renames of others they made - the account is being erased (HIL-302).
+     *
+     * The rename stays: it happened to somebody else, and only the mention of who did it goes.
+     *
+     * @param int $userId Actor user id
+     * @return int Number of renames that lost their actor
+     * @throws HilosException On database or truth-source failure
+     */
+    public function clearActor(int $userId): int
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Update);
+
+        $cleared = 0;
+        foreach (EventUserRename::get([EventUserRename::actor_user_id => $userId]) as $entity) {
+            $eventId = $entity->event_id;
+            $rename = $this->objectCollection[$eventId] ?? ObjectEventUserRename::fromEntity($entity);
+            $this->objectCollection[$eventId] = $rename;
+            $rename->actorUserId = null;
+            $rename->sync();
+            $cleared++;
+        }
+
+        return $cleared;
+    }
 }
