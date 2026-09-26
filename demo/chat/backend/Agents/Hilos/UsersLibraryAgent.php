@@ -10,34 +10,15 @@ use Demo\Chat\Auth\ChatStepUpOperationKey;
 use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
-use Demo\Chat\Core\Router\DTO\PasswordUpdatedSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
-use Demo\Chat\Pages\DTO\Profile\ConfirmEmailChangeCurrentCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\ConfirmEmailChangeNewCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeCurrentCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeNewCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
-use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\Connection;
-use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
-use Hilos\Auth\Library\Command\AuthMessages;
-use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\OAuth\OAuthService;
-use Hilos\Auth\PasswordPolicy;
-use Hilos\Auth\PhoneNumber;
-use Hilos\Auth\StepUp\StepUpMessages;
-use Hilos\Auth\StepUp\StepUpOperationKey;
-use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
@@ -46,13 +27,11 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\PageAccessLevel;
@@ -62,15 +41,8 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
-use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
-use Hilos\Mail\DTO\MailSendSignalData;
-use Hilos\Mail\HilosMailer;
-use Hilos\Mail\Template\EmailChangedMailTemplate;
-use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Users\DTO\AdminRenameSignalData;
@@ -85,13 +57,13 @@ use Random\RandomException;
  * is created and named, what else happens when an account is born, which methods an identifier
  * may be offered, and the provider wiring a social login runs on.
  *
- * Beside them it now holds the profile submits that WRITE a person - the rename and its whole
- * moderation round trip, the unlink, the password, and the two-step adds of a phone and of an
- * email (HIL-771). They were actions of {@see ProfilePage} until a page turned out to carry no
- * claim: a page runs in whatever worker serves the connection, and the account tables are owned
- * here. Their wire names did not change, so the frontend submits exactly what it always did and
- * the router simply hands the name to this agent instead of to that page. What is left on the
- * profile page is what does not write: reading the person, and starting an OAuth link.
+ * Beside them it holds the one profile submit that is the chat's own - the rename and its whole
+ * moderation round trip (HIL-771). It was an action of {@see ProfilePage} until a page turned out
+ * to carry no claim: a page runs in whatever worker serves the connection, and the account tables
+ * are owned here. The profile's ways in and the email change came here the same way and went on
+ * to the framework's library (HIL-1137), which every project declaring the sign-in feature
+ * inherits; what is left on the profile page is what does not write: reading the person, and
+ * starting a provider link, which the framework's profile page hosts.
  *
  * Registered under {@see HilosAgentType::HILOS_USERS_LIBRARY} by the chat's own topology, and
  * reached because the chat declares {@see HilosFeature::AUTH}: the feature is what turns the
@@ -143,49 +115,29 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     public const array OWNS_RT = [ChatRtContext::connections => [TruthSourceOperation::Update]];
 
     /**
-     * The chat's own profile submits, on top of every sign-in command the framework declares.
+     * The chat's own profile submit, on top of every sign-in command the framework declares.
      *
-     * All eleven write a person or their identities, which is what moved them off
-     * {@see ProfilePage} (HIL-771). The names are unchanged: an action's name IS its address,
-     * so declaring it here is the whole of the move, and `hilos_link_oauth_start` is absent
-     * because starting a provider link writes nothing and stayed on the page.
+     * The rename writes a person, which is what moved it off {@see ProfilePage} (HIL-771). Its
+     * name is unchanged: an action's name IS its address, so declaring it here is the whole of
+     * the move. The profile's ways in and the email change are the framework library's names
+     * now (HIL-1137), inherited with the rest of its commands.
      */
     public const array AGENT_ACTIONS = [
         ...parent::AGENT_ACTIONS,
         ChatSignalConstants::RENAME => RenameActionDTO::class,
-        ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
-        ChatSignalConstants::SET_PASSWORD => SetPasswordActionDTO::class,
-        ChatSignalConstants::ADD_SMS_REQUEST => RequestSmsAddCodeActionDTO::class,
-        ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
-        ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
-        ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
-        ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST => RequestEmailChangeCurrentCodeActionDTO::class,
-        ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM => ConfirmEmailChangeCurrentCodeActionDTO::class,
-        ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST => RequestEmailChangeNewCodeActionDTO::class,
-        ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM => ConfirmEmailChangeNewCodeActionDTO::class,
     ];
 
     /**
-     * All eleven, because all eleven act on the submitter's own account.
+     * The rename, because it acts on the submitter's own account.
      *
-     * The page they came off was closed by {@see PageAccessLevel::AUTHENTICATED}, which gated
+     * The page it came off was closed by {@see PageAccessLevel::AUTHENTICATED}, which gated
      * its actions along with the subscription. An agent action carries no page level to inherit,
-     * so without this list a guest could submit them - and each of them reads its person from
-     * the acting connection, which an anonymous one has none of.
+     * so without this list a guest could submit it - and it reads its person from the acting
+     * connection, which an anonymous one has none of.
      */
     public const array AUTH_ACTIONS = [
         ...parent::AUTH_ACTIONS,
         ChatSignalConstants::RENAME,
-        ChatSignalConstants::UNLINK_IDENTITY,
-        ChatSignalConstants::SET_PASSWORD,
-        ChatSignalConstants::ADD_SMS_REQUEST,
-        ChatSignalConstants::ADD_SMS_CONFIRM,
-        ChatSignalConstants::ADD_PASSWORD_REQUEST,
-        ChatSignalConstants::ADD_PASSWORD_CONFIRM,
-        ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST,
-        ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM,
-        ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST,
-        ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM,
     ];
 
     /**
@@ -211,31 +163,21 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     ];
 
     /**
-     * Refusal of an email-change step whose proof of the current address is gone (HIL-299).
+     * Runs the chat's own profile submit, or hands the name back to the framework.
      *
-     * The proof is the unspent code of the current address, and it dies three ways: its
-     * fifteen minutes ran out, another tab spent it, or the account's address already moved.
-     * None of them is a typo the person can fix on the spot, so the answer is to start over.
-     */
-    private const string EMAIL_CHANGE_RESTART = StepUpMessages::EXPIRED;
-
-    /**
-     * Runs one of the chat's own profile submits, or hands the name back to the framework.
-     *
-     * None of the eleven answers with a reply: each writes, and the browser learns of it from the
-     * projection that re-emits or from a signal fanned to the person's own sockets - exactly as
-     * it did while these were page actions. The refusals are the same objects thrown in the same
-     * order, so a bad payload reads the same on the client too.
+     * The rename answers with no reply: the browser learns of it from the projection that
+     * re-emits once the moderator's verdict is applied, exactly as it did while it was a page
+     * action.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Domain reply of a framework command, or null for every chat submit
+     * @return ?ActionReplyDTO Domain reply of a framework command, or null for the rename
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
      * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user
      * @throws ValidationException When a submit is refused
-     * @throws RandomException When issuing a code cannot draw from the CSPRNG
+     * @throws RandomException When a framework command cannot draw from the CSPRNG
      * @throws HilosException When a routed read or write fails
      */
     public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -246,86 +188,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
                     throw new InvalidActionPayloadException($action, RenameActionDTO::class, $dto);
                 }
                 $this->startRename($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::UNLINK_IDENTITY:
-                if (!$dto instanceof UnlinkIdentityActionDTO) {
-                    throw new InvalidActionPayloadException($action, UnlinkIdentityActionDTO::class, $dto);
-                }
-                $this->unlinkIdentity($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::SET_PASSWORD:
-                if (!$dto instanceof SetPasswordActionDTO) {
-                    throw new InvalidActionPayloadException($action, SetPasswordActionDTO::class, $dto);
-                }
-                $this->setPassword($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::ADD_SMS_REQUEST:
-                if (!$dto instanceof RequestSmsAddCodeActionDTO) {
-                    throw new InvalidActionPayloadException($action, RequestSmsAddCodeActionDTO::class, $dto);
-                }
-                $this->requestSmsAddCode($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::ADD_SMS_CONFIRM:
-                if (!$dto instanceof ConfirmSmsAddCodeActionDTO) {
-                    throw new InvalidActionPayloadException($action, ConfirmSmsAddCodeActionDTO::class, $dto);
-                }
-                $this->confirmSmsAddCode($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::ADD_PASSWORD_REQUEST:
-                if (!$dto instanceof RequestAddPasswordActionDTO) {
-                    throw new InvalidActionPayloadException($action, RequestAddPasswordActionDTO::class, $dto);
-                }
-                $this->requestAddPassword($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::ADD_PASSWORD_CONFIRM:
-                if (!$dto instanceof ConfirmAddPasswordActionDTO) {
-                    throw new InvalidActionPayloadException($action, ConfirmAddPasswordActionDTO::class, $dto);
-                }
-                $this->confirmAddPassword($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST:
-                if (!$dto instanceof RequestEmailChangeCurrentCodeActionDTO) {
-                    throw new InvalidActionPayloadException($action, RequestEmailChangeCurrentCodeActionDTO::class, $dto);
-                }
-                $this->requestEmailChangeCurrentCode($acceptKey);
-
-                return null;
-
-            case ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM:
-                if (!$dto instanceof ConfirmEmailChangeCurrentCodeActionDTO) {
-                    throw new InvalidActionPayloadException($action, ConfirmEmailChangeCurrentCodeActionDTO::class, $dto);
-                }
-                $this->confirmEmailChangeCurrentCode($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST:
-                if (!$dto instanceof RequestEmailChangeNewCodeActionDTO) {
-                    throw new InvalidActionPayloadException($action, RequestEmailChangeNewCodeActionDTO::class, $dto);
-                }
-                $this->requestEmailChangeNewCode($acceptKey, $dto);
-
-                return null;
-
-            case ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM:
-                if (!$dto instanceof ConfirmEmailChangeNewCodeActionDTO) {
-                    throw new InvalidActionPayloadException($action, ConfirmEmailChangeNewCodeActionDTO::class, $dto);
-                }
-                $this->confirmEmailChangeNewCode($acceptKey, $dto);
 
                 return null;
 
@@ -529,508 +391,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     }
 
     /**
-     * Unlinks one of the signed-in user's login identities (HIL-377, HIL-722).
-     *
-     * The thin demo half of the unlink: it delegates to the framework's unlink command
-     * ({@see IdentityCommands::unlink()}), which resolves the acting user, refuses a last
-     * sign-in method, and takes a passkey out whole — anchor and stored credential together.
-     * It calls the command rather than the identity primitive because the primitive removes
-     * the anchor alone, and the credential left behind kept signing its owner in. Success is
-     * state-driven — the deletes broadcast DB_SYNC_DELETED, re-emitting the owner's identities
-     * projection so the row disappears from every connection; a rejected unlink surfaces
-     * through the default framework action_error contract.
-     *
-     * @param string $acceptKey Accept key
-     * @param UnlinkIdentityActionDTO $dto Unlink DTO carrying the identity id
-     * @throws ValidationException When the id is missing, not owned by the user, or is their last identity
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws HilosException When an identity or credential lookup or delete fails
-     */
-    private function unlinkIdentity(string $acceptKey, UnlinkIdentityActionDTO $dto): void
-    {
-        if (!$dto->isValid()) {
-            throw new ValidationException('Identity id is required');
-        }
-
-        $this->identityCommands()->unlink($acceptKey, $dto->identityId);
-    }
-
-    /**
-     * Adds or changes the signed-in user's password from the profile (HIL-402).
-     *
-     * Server-authoritative and self-only: the user id is read from the acting connection, never
-     * the client. Two in-scope flows, chosen from the user's own identities (never from
-     * a client flag): a CHANGE (the user already has a `password` identity) re-auths the
-     * current password before rewriting the secret; an ADD (no password yet) attaches a
-     * `password` identity to the user's already-proven email — no email code, since the
-     * email is verified — and marks it verified. A user with no verified email (SMS-only
-     * or legacy OAuth) is out of scope here and refused (that path is the email+code
-     * branch, HIL-406). On success a {@see ChatSignalConstants::PASSWORD_UPDATED} signal
-     * is fanned to all the user's connections, because a change moves nothing in the
-     * identity projection that could confirm it; a refusal surfaces through the default
-     * framework action_error contract.
-     *
-     * Which password it changes is the framework's answer and no longer this project's own
-     * search (HIL-692): an account holds one, and asking for it by account is what makes
-     * "your password is changed" true even for data written before the rule.
-     *
-     * The framework's password gate is asked LAST on the change branch, after the current
-     * password has been checked, and the order is the security property (HIL-654). It can
-     * answer "that is already your password", so a form that asked it first would hand the
-     * account's password to anybody who guessed it in the NEW field, without ever having
-     * to type the current one. The cost of the right order is a smaller one: a submit with
-     * both a wrong current password and a short new one is told about the current one.
-     *
-     * @param string $acceptKey Accept key
-     * @param SetPasswordActionDTO $dto Set-password DTO (new password + optional current)
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValueTooShortException When the new password is shorter than the policy minimum
-     * @throws PasswordUnchangedException When the new password is the one the account already has
-     * @throws ValidationException When the current password is wrong or the user has no verified email
-     * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
-     * @throws HilosException When an identity read or secret write query fails
-     */
-    private function setPassword(string $acceptKey, SetPasswordActionDTO $dto): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-
-        $passwordIdentity = Hilos::$db->identities->findPasswordByUser($userId);
-        if ($passwordIdentity !== null) {
-            if ($dto->currentPassword === '' || !$passwordIdentity->verifyPassword($dto->currentPassword)) {
-                throw new ValidationException('Current password is incorrect');
-            }
-            PasswordPolicy::assertValid($dto->newPassword, $passwordIdentity->verifyPassword($dto->newPassword));
-            $passwordIdentity->setPassword($dto->newPassword);
-            $mode = PasswordUpdatedSignalData::MODE_CHANGED;
-        } else {
-            $email = Hilos::$db->identities->findVerifiedEmailByUser($userId);
-            if ($email === null) {
-                throw new ValidationException('Confirm an email address first');
-            }
-            PasswordPolicy::assertValid($dto->newPassword, false);
-            Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
-            $mode = PasswordUpdatedSignalData::MODE_ADDED;
-        }
-
-        $this->fanPasswordUpdated($userId, $mode);
-    }
-
-    /**
-     * Step 1 of adding a phone identity: issues an OTP to the submitted number (HIL-403).
-     *
-     * Server-authoritative and self-only: the owning user is read from the acting connection,
-     * never the client, and carried on the challenge so step 2 can assert the code
-     * was minted for this user. The phone is normalized to E.164 (a malformed number
-     * is refused synchronously); the code is issued through the framework
-     * VerificationService, whose send gate can drop the request silently — the resend
-     * cooldown for a repeat pressed too soon, and the per-window cap once too many
-     * codes have gone to that number (HIL-421). Either way the step answers
-     * `action_success` and the wizard advances to the code step, so a capped number
-     * reaches a code screen for a message that is not coming until the window turns
-     * over; there is no resend control here to say so. No duplicate-phone check
-     * here: enumeration is avoided by only checking uniqueness on confirm, after the
-     * code proves possession.
-     *
-     * @param string $acceptKey Accept key
-     * @param RequestSmsAddCodeActionDTO $dto Add-phone request DTO (phone)
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the phone is not a valid number
-     * @throws EmptyValueException When the normalized identifier is empty
-     * @throws RandomException When the platform CSPRNG cannot produce a code
-     * @throws HilosException When the verification query fails
-     */
-    private function requestSmsAddCode(string $acceptKey, RequestSmsAddCodeActionDTO $dto): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-
-        $phone = PhoneNumber::normalize($dto->phone);
-        if ($phone === null) {
-            throw new ValidationException('Enter a valid phone number');
-        }
-
-        // The send gate's verdict - cooldown hold, cap refusal or a real send - is
-        // deliberately dropped: the profile has no resend control to hand a countdown
-        // or a refusal to, and a repeat here is a repeated modal submit (HIL-421).
-        new VerificationService()->issue(VerificationType::SMS_ADD, $phone, $userId);
-    }
-
-    /**
-     * Step 2 of adding a phone identity: verifies the OTP and attaches the identity (HIL-403).
-     *
-     * Server-authoritative and self-only: the owning user is read from the acting connection.
-     * The submitted code is verified against the `sms_add` challenge; a
-     * missing/expired/wrong code — or a challenge minted for a different user than
-     * this session (defence in depth against a swapped phone) — is refused with the
-     * same generic message. On success a verified `sms` identity is attached to the
-     * session user; the new row reaches every connection through the identities
-     * projection re-emit (no bespoke success signal). A phone already used by any
-     * identity is refused ('phone already used') and the existing link is never
-     * moved.
-     *
-     * @param string $acceptKey Accept key
-     * @param ConfirmSmsAddCodeActionDTO $dto Add-phone confirm DTO (phone, code)
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the phone/code is invalid or the phone is already in use
-     * @throws HilosException When a verification or identity query fails
-     */
-    private function confirmSmsAddCode(string $acceptKey, ConfirmSmsAddCodeActionDTO $dto): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-
-        $phone = PhoneNumber::normalize($dto->phone);
-        $verifiedUserId = $phone === null
-            ? null
-            : new VerificationService()->verify(VerificationType::SMS_ADD, $phone, $dto->code);
-        if ($phone === null || $verifiedUserId === null || $verifiedUserId !== $userId) {
-            throw new ValidationException('Invalid or expired code');
-        }
-
-        try {
-            Hilos::$db->identities->createSmsIdentity($userId, $phone);
-        } catch (DuplicateValueException) {
-            throw new ValidationException('That phone number is already in use');
-        } catch (EmptyValueException) {
-            throw new ValidationException('Enter a valid phone number');
-        }
-    }
-
-    /**
-     * Step 1 of adding a password to a user with no verified email: issues an email code (HIL-406).
-     *
-     * Server-authoritative and self-only: the owning user is read from the acting connection,
-     * never the client, and carried on the challenge so step 2 can assert the code
-     * was minted for this user. The email is lowercased and format-checked (a
-     * malformed address is refused synchronously). Unlike the SMS-add step, uniqueness
-     * IS checked here: because the code is mailed to the entered address, an email
-     * already verified by ANOTHER account is refused without sending anything (never
-     * mail a stranger's verified address); a free email — or one already the user's
-     * own — issues a code through the framework VerificationService, whose send gate
-     * can drop the request silently: the resend cooldown for a repeat pressed too
-     * soon, and the per-window cap once too many codes have gone to that address
-     * (HIL-421). Either way the step answers `action_success` and the wizard advances
-     * to the code step, with no resend control here to report the difference.
-     *
-     * @param string $acceptKey Accept key
-     * @param RequestAddPasswordActionDTO $dto Add-password request DTO (email)
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the email is malformed or already verified by another account
-     * @throws EmptyValueException When the normalized identifier is empty
-     * @throws RandomException When the platform CSPRNG cannot produce a code
-     * @throws HilosException When a verification or identity query fails
-     */
-    private function requestAddPassword(string $acceptKey, RequestAddPasswordActionDTO $dto): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-
-        $email = strtolower($dto->email);
-        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-            throw new ValidationException('Enter a valid email address');
-        }
-
-        $ownerId = Hilos::$db->identities->findUserIdByVerifiedEmail($email);
-        if ($ownerId !== null && $ownerId !== $userId) {
-            throw new ValidationException('That email is already in use');
-        }
-
-        // Same as the phone step: no resend control on the profile, so neither the
-        // countdown nor the cap refusal has anywhere to go (HIL-421).
-        new VerificationService()->issue(VerificationType::EMAIL_ADD, $email, $userId);
-    }
-
-    /**
-     * Step 2 of adding a password: verifies the email code and writes the identity (HIL-406).
-     *
-     * Server-authoritative and self-only: the owning user is read from the acting connection.
-     * The new password is length-checked FIRST so a weak password never burns the
-     * code, and an account that already HAS a password is refused next, for the same
-     * reason and in its own words (HIL-692): this flow adds a password, an account holds
-     * one, and the answer does not depend on which address was typed - so spending the
-     * code to find that out would burn it over a question already settled. The old
-     * refusal, "that email is already in use", was about the wrong thing entirely; the
-     * address may be perfectly free. The submitted code is then verified against the
-     * `email_add` challenge; a missing/expired/wrong code — or a challenge minted for a
-     * different user than this session — is refused with the same generic message.
-     * Uniqueness is re-checked after verify (a magic_link-verified collision on the same
-     * email would slip past createPasswordIdentity's password-scoped duplicate guard)
-     * before the write. On success a verified `password`
-     * identity is attached to the session user on the now-proven email and a
-     * {@see ChatSignalConstants::PASSWORD_UPDATED} signal (MODE_ADDED, reusing the
-     * HIL-402 success signal) is fanned to all the user's connections, which clears
-     * the form and flips the section to change-mode; the new identity also arrives
-     * over the identities projection re-emit.
-     *
-     * @param string $acceptKey Accept key
-     * @param ConfirmAddPasswordActionDTO $dto Add-password confirm DTO (email, code, new password)
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValueTooShortException When the password is shorter than the policy minimum
-     * @throws ValidationException When the account already has a password, the code is
-     *     invalid/expired, or the email is already in use
-     * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
-     * @throws HilosException When a verification or identity query fails
-     */
-    private function confirmAddPassword(string $acceptKey, ConfirmAddPasswordActionDTO $dto): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-
-        // Nothing to be unchanged from: this flow only ever adds a password to an account
-        // that has none, which is what the refusal below it enforces.
-        PasswordPolicy::assertValid($dto->newPassword, false);
-
-        if (Hilos::$db->identities->findPasswordByUser($userId) !== null) {
-            throw new ValidationException('This account already has a password');
-        }
-
-        $email = strtolower($dto->email);
-        $verifiedUserId = new VerificationService()->verify(VerificationType::EMAIL_ADD, $email, $dto->code);
-        if ($verifiedUserId === null || $verifiedUserId !== $userId) {
-            throw new ValidationException('Invalid or expired code');
-        }
-
-        $ownerId = Hilos::$db->identities->findUserIdByVerifiedEmail($email);
-        if ($ownerId !== null && $ownerId !== $userId) {
-            throw new ValidationException('That email is already in use');
-        }
-
-        try {
-            Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
-        } catch (DuplicateValueException) {
-            throw new ValidationException('That email is already in use');
-        } catch (EmptyValueException) {
-            throw new ValidationException('Enter a valid email address');
-        }
-
-        $this->fanPasswordUpdated($userId, PasswordUpdatedSignalData::MODE_ADDED);
-    }
-
-    /**
-     * Step 1 of changing the account email: mails a code to the address it holds now (HIL-299).
-     *
-     * Proving the current mailbox comes first because the flow runs inside a signed-in
-     * session, and a session left open is exactly where somebody who is not the owner could
-     * start it. The address is read from the account, never from the client. The send gate's
-     * cooldown is a silent success - the code already waiting in the mailbox is the one to
-     * type - while the window cap is refused out loud, because the modal has a place for it.
-     *
-     * @param string $acceptKey Accept key
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the account has no verified email or the send cap is reached
-     * @throws EmptyValueException When the current address is empty
-     * @throws RandomException When the platform CSPRNG cannot produce a code
-     * @throws HilosException When a verification or identity query fails
-     */
-    private function requestEmailChangeCurrentCode(string $acceptKey): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-        $this->requireStepUp($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
-        $current = $this->requireCurrentEmail($userId);
-
-        if (new VerificationService()->issue(VerificationType::EMAIL_CHANGE_CURRENT, $current, $userId)->capReached) {
-            throw new ValidationException(AuthMessages::SEND_CAP);
-        }
-    }
-
-    /**
-     * Step 2 of changing the account email: checks the current address's code WITHOUT spending it (HIL-299).
-     *
-     * The server keeps nothing between the steps: the unspent code is itself the proof, the
-     * modal carries it into steps 3 and 4, and it is spent only when the address moves. A
-     * wrong code still costs an attempt, as it does everywhere, and a wrong and an expired
-     * one are answered alike.
-     *
-     * @param string $acceptKey Accept key
-     * @param ConfirmEmailChangeCurrentCodeActionDTO $dto Current-address confirm DTO (code)
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the account has no verified email or the code does not match
-     * @throws HilosException When a verification or identity query fails
-     */
-    private function confirmEmailChangeCurrentCode(string $acceptKey, ConfirmEmailChangeCurrentCodeActionDTO $dto): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-        $this->requireStepUp($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
-        $current = $this->requireCurrentEmail($userId);
-
-        if (!new VerificationService()->matchCode(VerificationType::EMAIL_CHANGE_CURRENT, $current, $dto->code)) {
-            throw new ValidationException(AuthMessages::INVALID_CODE);
-        }
-    }
-
-    /**
-     * Step 3 of changing the account email: mails a code to the new address (HIL-299).
-     *
-     * The new address is judged before anything else, and none of those refusals spends a
-     * code: a malformed address, the account's own, and one another account holds - which is
-     * never mailed at all (HIL-406: a stranger's address is not written to). The proof of the
-     * current address is checked next without spending it, and its absence asks the person to
-     * start over. Only then does the new address get the existing email-change code letter.
-     *
-     * @param string $acceptKey Accept key
-     * @param RequestEmailChangeNewCodeActionDTO $dto New-address request DTO (current code, email)
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the address is refused, the proof is gone, or the send cap is reached
-     * @throws EmptyValueException When the new address is empty
-     * @throws RandomException When the platform CSPRNG cannot produce a code
-     * @throws HilosException When a verification or identity query fails
-     */
-    private function requestEmailChangeNewCode(string $acceptKey, RequestEmailChangeNewCodeActionDTO $dto): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-        $this->requireStepUp($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
-        $current = $this->requireCurrentEmail($userId);
-        $email = $this->acceptNewEmail($userId, $current, $dto->email);
-        $this->requireCurrentEmailProof($current, $dto->currentCode);
-
-        if (new VerificationService()->issue(VerificationType::EMAIL_CHANGE, $email, $userId)->capReached) {
-            throw new ValidationException(AuthMessages::SEND_CAP);
-        }
-    }
-
-    /**
-     * Step 4 of changing the account email: proves the new address and moves the account onto it (HIL-299).
-     *
-     * The order is the contract. The address checks of step 3 run again - the address may have
-     * gone to somebody else in between - and the proof of the current address is checked, both
-     * spending nothing. The new address's code is spent next, so a typo in it leaves the proof
-     * alive to try again. The proof is spent after it, and losing that race to another tab of
-     * the same account is the start-over answer. Then one transaction moves every password and
-     * sign-in-link row of the old address, and a unique-key clash there rolls it back.
-     *
-     * After the commit a notice goes to BOTH addresses, straight to each rather than through
-     * the notification system, which resolves an address at delivery and would reach only the
-     * new one. The change has happened by then, so a notice that cannot be queued is logged
-     * rather than turned into a refusal the modal would show for a change it did make.
-     *
-     * @param string $acceptKey Accept key
-     * @param ConfirmEmailChangeNewCodeActionDTO $dto New-address confirm DTO (current code, email, code)
-     * @throws ItemNotFoundForUpdateException When the user session is missing
-     * @throws ValidationException When the address is refused, a code does not match, or the proof is gone
-     * @throws HilosException When a verification, identity, or transaction query fails
-     */
-    private function confirmEmailChangeNewCode(string $acceptKey, ConfirmEmailChangeNewCodeActionDTO $dto): void
-    {
-        $userId = $this->requireUserId($acceptKey);
-        $this->requireStepUp($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
-        $current = $this->requireCurrentEmail($userId);
-        $email = $this->acceptNewEmail($userId, $current, $dto->email);
-        $this->requireCurrentEmailProof($current, $dto->currentCode);
-
-        $verifications = new VerificationService();
-        if ($verifications->verify(VerificationType::EMAIL_CHANGE, $email, $dto->code) !== $userId) {
-            throw new ValidationException(AuthMessages::INVALID_CODE);
-        }
-
-        if (!$verifications->consumeActive(VerificationType::EMAIL_CHANGE_CURRENT, $current)) {
-            throw new ValidationException(self::EMAIL_CHANGE_RESTART);
-        }
-
-        Database::transactionStart();
-        try {
-            Hilos::$db->identities->changeEmail($userId, $current, $email);
-            Database::transactionCommit();
-        } catch (DuplicateValueException | DuplicateEntryException) {
-            $this->rollBackEmailChange();
-            throw new ValidationException('That email is already in use');
-        } catch (HilosException $failure) {
-            $this->rollBackEmailChange();
-            throw $failure;
-        }
-
-        foreach ([$current, $email] as $address) {
-            try {
-                Hilos::$mail?->send(new MailSendSignalData(
-                    to: $address,
-                    shardKey: HilosMailer::shardKeyForAddress($address),
-                    templateKey: MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED,
-                    params: [EmailChangedMailTemplate::PARAM_WAS => $current, EmailChangedMailTemplate::PARAM_NOW => $email],
-                ));
-            } catch (HilosException $failure) {
-                $this->logAgentError("Email change notice for user {$userId} could not be queued: {$failure->getMessage()}");
-            }
-        }
-    }
-
-    /**
-     * Reads the address an email change starts from, or refuses the change.
-     *
-     * The same first verified email the profile draws in its Email row; an account without
-     * one has no current mailbox to prove, and adding an address is a different flow.
-     *
-     * @param int $userId Session user id
-     * @return string Lowercased current address
-     * @throws ValidationException When the account has no verified email
-     * @throws HilosException When the identity query fails
-     */
-    private function requireCurrentEmail(int $userId): string
-    {
-        $current = Hilos::$db->identities->findVerifiedEmailByUser($userId);
-        if ($current === null) {
-            throw new ValidationException('Confirm an email address first');
-        }
-
-        return $current;
-    }
-
-    /**
-     * Normalizes the new address of an email change and refuses one it cannot move to.
-     *
-     * Nothing here spends a code: none of these answers could have been changed by one.
-     *
-     * @param int $userId Session user id
-     * @param string $current Lowercased current address
-     * @param string $submitted Submitted new address (trimmed)
-     * @return string Lowercased new address
-     * @throws ValidationException When the address is malformed, already the account's, or another account's
-     * @throws HilosException When the identity query fails
-     */
-    private function acceptNewEmail(int $userId, string $current, string $submitted): string
-    {
-        $email = strtolower($submitted);
-        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-            throw new ValidationException('Enter a valid email address');
-        }
-
-        $ownerId = Hilos::$db->identities->findAccountIdByEmail($email);
-        if ($email === $current || $ownerId === $userId) {
-            throw new ValidationException('That is already your address');
-        }
-        if ($ownerId !== null) {
-            throw new ValidationException('That email is already in use');
-        }
-
-        return $email;
-    }
-
-    /**
-     * Checks the proof of the current address a later step carries, without spending it.
-     *
-     * @param string $current Lowercased current address
-     * @param string $code Code of the current address proven on step 2
-     * @throws ValidationException When the proof is no longer alive or does not match
-     * @throws HilosException When a verification query fails
-     */
-    private function requireCurrentEmailProof(string $current, string $code): void
-    {
-        $verifications = new VerificationService();
-        if (
-            !$verifications->hasActive(VerificationType::EMAIL_CHANGE_CURRENT, $current)
-            || !$verifications->matchCode(VerificationType::EMAIL_CHANGE_CURRENT, $current, $code)
-        ) {
-            throw new ValidationException(self::EMAIL_CHANGE_RESTART);
-        }
-    }
-
-    /**
-     * Rolls back a failed email change without letting the cleanup replace the failure.
-     */
-    private function rollBackEmailChange(): void
-    {
-        try {
-            Database::transactionRollback();
-        } catch (HilosException) {
-            // Reporting the cleanup would replace the failure the caller is owed
-        }
-    }
-
-    /**
      * Applies an approved rename moderation result or tells the asker it was refused.
      *
      * Stale connection results fail the agent-signal contract and never rename a user.
@@ -1148,24 +508,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     }
 
     /**
-     * Fans the password-updated signal to every socket the person has open.
-     *
-     * @param int $userId Account whose secret changed
-     * @param string $mode Whether the password was added or changed, a {@see PasswordUpdatedSignalData} mode
-     * @throws InvalidArgumentException When the signal cannot be named or queued
-     */
-    private function fanPasswordUpdated(int $userId, string $mode): void
-    {
-        foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
-            $this->sendToUser(
-                ChatSignalConstants::PASSWORD_UPDATED,
-                $connection->acceptKey,
-                new PasswordUpdatedSignalData($mode),
-            );
-        }
-    }
-
-    /**
      * Resolves the connection that submitted, or refuses the action.
      *
      * Read off the chat's own connection rows rather than off `selfConnection`, which is what
@@ -1185,27 +527,5 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         }
 
         return $connection;
-    }
-
-    /**
-     * Resolves the acting connection's user, or refuses the action.
-     *
-     * The refusal doubles as the guard behind {@see AUTH_ACTIONS}: an anonymous session is
-     * turned away by the dispatcher before it gets here, and a connection that went anonymous
-     * in between is turned away here.
-     *
-     * @param string $acceptKey Acting connection accept key
-     * @return int Authenticated submitter user id
-     * @throws ItemNotFoundForUpdateException When no live connection carries the key, or it is anonymous
-     */
-    private function requireUserId(string $acceptKey): int
-    {
-        $userId = $this->actingConnection($acceptKey)->userId;
-        if ($userId === null) {
-            $this->logAgentError("User not found for acceptKey={$acceptKey}");
-            throw new ItemNotFoundForUpdateException('User session not found');
-        }
-
-        return $userId;
     }
 }

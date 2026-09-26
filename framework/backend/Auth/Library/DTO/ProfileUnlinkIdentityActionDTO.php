@@ -2,26 +2,26 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\Profile;
+namespace Hilos\Auth\Library\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * UnlinkIdentityActionDTO - DTO for the profile unlink-identity action payload.
+ * ProfileUnlinkIdentityActionDTO - DTO for the profile unlink-identity action payload (HIL-377, HIL-1137).
  *
- * Carries the id of the linked login identity the user asked to remove; the
- * server re-checks ownership and the last-identity guard before deleting.
+ * Carries the id of the sign-in method the person asked to remove; the server
+ * re-checks ownership and the last-method guard before deleting.
  */
-final class UnlinkIdentityActionDTO extends ChatActionPayloadDTO
+final class ProfileUnlinkIdentityActionDTO extends ActionPayloadDTO
 {
     public const string IDENTITY_ID = 'identityId';
 
     /**
      * Creates the unlink-identity action DTO.
      *
-     * @param int $identityId Id of the identity to unlink (0 when absent/invalid)
+     * @param int $identityId Id of the identity to unlink
      */
     public function __construct(
         public readonly int $identityId,
@@ -35,7 +35,7 @@ final class UnlinkIdentityActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::UNLINK_IDENTITY;
+        return HilosSignalConstants::PROFILE_UNLINK_IDENTITY;
     }
 
     /**

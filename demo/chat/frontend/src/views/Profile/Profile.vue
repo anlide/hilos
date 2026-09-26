@@ -18,6 +18,7 @@ import {
   HilosPages,
   hilosToasts,
   isPasskeySupported,
+  PROFILE_PASSWORD_MODE_ADDED,
   threeWayMerge,
 } from '@hilos/core'
 import {
@@ -65,7 +66,6 @@ import {
 } from './profilePage'
 import { type IdentityItem } from './types/lists/IdentityItem'
 import { useEmailChange } from './useEmailChange'
-import { PASSWORD_MODE_ADDED } from '../../auth/passwordSignals'
 
 const sessionsCount = useSignal(profileSessionCount)
 const devicesCount = useSignal(profileDeviceCount)
@@ -203,11 +203,13 @@ function confirmUnlink(key: string): void {
   if (unlinkLoadingKey.value !== null) {
     return
   }
-  unlinkLoadingKey.value = sendUnlinkIdentity(Number(key)) ? key : null
+  unlinkLoadingKey.value = key
+  sendUnlinkIdentity(Number(key))
 }
 
-// A rejected unlink arrives as a framework action_error: release the row spinner
-// and keep the confirm open so the user can retry.
+// A rejected unlink arrives as a framework action_error, and an unlink that got
+// no verdict as the same error signal: release the row spinner and keep the
+// confirm open so the user can retry.
 watch(unlinkError, (reason) => {
   if (reason !== null) {
     unlinkLoadingKey.value = null
@@ -369,8 +371,8 @@ watch(emailStep, (step, previous) => {
 // form mode comes from the loaded identities — Change when a password exists, Add
 // when a proven email exists but no password, otherwise a disabled hint (confirm
 // an email first → HIL-406). Server-confirmed, not optimistic: a submit stays
-// loading until the password_updated signal lands (success) or an action_error
-// arrives (failure).
+// loading until the profile_password_updated signal lands (success) or an error
+// arrives (a refusal, or a submit that got no verdict).
 const PASSWORD_MIN = 8
 
 const password = useSignal(passwordSection)
@@ -396,14 +398,16 @@ function submitPassword(): void {
   if (!passwordValid.value || passwordLoading.value) {
     return
   }
-  passwordLoading.value = sendSetPassword(
+  passwordLoading.value = true
+  sendSetPassword(
     password.value.hasPassword ? currentPassword.value : null,
     newPassword.value,
   )
 }
 
-// A rejected set-password arrives as a framework action_error: release the button
-// and keep the fields so the user can correct and retry.
+// A rejected set-password arrives as a framework action_error, and a submit that
+// got no verdict as the same error signal: release the button and keep the
+// fields so the user can correct and retry.
 watch(passwordError, (reason) => {
   if (reason !== null) {
     passwordLoading.value = false
@@ -415,9 +419,9 @@ watch(passwordError, (reason) => {
 // an email (enter email → code) then sets the password on it. Server-confirmed:
 // step 1 advances only on the backend `::success` (email issued whether or not the
 // resend cooldown suppresses a duplicate); step 2 succeeds through the reused
-// password_updated signal, which resets the wizard and flips the section to Change
-// as the new identity lands. A malformed/in-use email, a wrong/expired code, or a
-// weak password stays on the step with an inline error.
+// profile_password_updated signal, which resets the wizard and flips the section
+// to Change as the new identity lands. A malformed/in-use email, a wrong/expired
+// code, or a weak password stays on the step with an inline error.
 const addPwStep = ref<1 | 2>(1)
 const addPwEmail = ref('')
 const addPwCode = ref('')
@@ -459,8 +463,8 @@ async function submitAddPasswordConfirm(): Promise<void> {
     addPwCode.value.trim(),
     addPwPassword.value,
   )
-  // Success is signalled (password_updated): the subscription resets this wizard
-  // and the section flips to Change. Only reflect a rejection here.
+  // Success is signalled (profile_password_updated): the subscription resets this
+  // wizard and the section flips to Change. Only reflect a rejection here.
   if (outcome.ok) {
     return
   }
@@ -497,7 +501,7 @@ onMounted(() => {
     addPwLoading.value = false
     addPwError.value = null
     hilosToasts.push(
-      data.mode === PASSWORD_MODE_ADDED
+      data.mode === PROFILE_PASSWORD_MODE_ADDED
         ? 'Password added.'
         : 'Password changed.',
       { severity: 'success' },
@@ -890,14 +894,14 @@ function mergeBoth(): void {
     from the loaded identities: Change when a password exists, Add when a proven
     email exists but no password, otherwise a disabled hint (confirm an email
     first → HIL-406). Server-confirmed — the form stays loading until the
-    password_updated signal lands, then clears and toasts. -->
+    profile_password_updated signal lands, then clears and toasts. -->
     <div class="mt-4" data-id="profile-password">
       <h2 class="h6 mb-2">Password</h2>
 
       <!-- No password and no verified email (HIL-406): a two-step inline wizard —
       prove an email (enter email → code), then set the password on it. Replaces the
-      old disabled hint. Server-confirmed; step 2 succeeds via password_updated,
-      which flips this section to Change. -->
+      old disabled hint. Server-confirmed; step 2 succeeds via
+      profile_password_updated, which flips this section to Change. -->
       <template v-if="!password.hasPassword && !password.verifiedEmail">
         <form v-if="addPwStep === 1" @submit.prevent="submitAddPasswordRequest">
           <p class="text-body-secondary" data-id="profile-add-password-hint">

@@ -176,4 +176,54 @@ final class AuthMessages
      * It names no account and no identifier, only the way in.
      */
     public const string METHOD_TURNED_OFF = 'This sign-in method is turned off';
+
+    /**
+     * Refusal of a password change whose current password is missing or wrong (HIL-1137).
+     *
+     * Asked BEFORE the password policy, and the order is the security property (HIL-654): the
+     * policy can answer "that is already your password", which would hand the password to
+     * whoever guessed it in the new field.
+     */
+    public const string CURRENT_PASSWORD_INCORRECT = 'Current password is incorrect';
+
+    /**
+     * Refusal of a profile flow that starts from the account's confirmed address when there is none.
+     *
+     * Adding a password without a code and changing the address both stand on a mailbox the
+     * account already proved; an account without one is sent to the flow that proves it first.
+     */
+    public const string CONFIRM_EMAIL_FIRST = 'Confirm an email address first';
+
+    /** Refusal of an address that is not one - a format error, which says nothing about any account. */
+    public const string INVALID_EMAIL = 'Enter a valid email address';
+
+    /**
+     * Refusal of an address another account holds, in a profile flow of a signed-in person.
+     *
+     * Said before anything is sent: a stranger's address is never mailed (HIL-406). The person is
+     * signed in, so naming the collision discloses no more than the flow needs to.
+     */
+    public const string EMAIL_IN_USE = 'That email is already in use';
+
+    /**
+     * Refusal of a phone another account holds, said only after the code proved the number.
+     *
+     * The first step never checks it, so a number that is not the person's does not give its
+     * owner away before possession is shown.
+     */
+    public const string PHONE_IN_USE = 'That phone number is already in use';
+
+    /**
+     * Refusal of adding a password to an account that has one (HIL-692).
+     *
+     * Asked before the code, because the answer does not depend on the address typed and a code
+     * spent to find it out would be burned over a question already settled.
+     */
+    public const string ALREADY_HAS_PASSWORD = 'This account already has a password';
+
+    /** Refusal of an email change onto the address the account already holds. */
+    public const string ALREADY_YOUR_ADDRESS = 'That is already your address';
+
+    /** Refusal of an unlink that names no sign-in method. */
+    public const string IDENTITY_ID_REQUIRED = 'Identity id is required';
 }

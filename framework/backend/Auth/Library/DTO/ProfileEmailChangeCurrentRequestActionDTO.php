@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\Profile;
+namespace Hilos\Auth\Library\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * RequestEmailChangeCurrentCodeActionDTO - DTO for step 1 of the profile email change (HIL-299).
+ * ProfileEmailChangeCurrentRequestActionDTO - DTO for step 1 of the profile email change (HIL-299, HIL-1137).
  *
  * Carries nothing, and that is the point: the code goes to the address the account holds,
- * which the handler reads from the acting connection's user. A client naming the address
+ * which the handler reads from the acting session's user. A client naming the address
  * would be naming where the proof of ownership is sent.
  */
-final class RequestEmailChangeCurrentCodeActionDTO extends ChatActionPayloadDTO
+final class ProfileEmailChangeCurrentRequestActionDTO extends ActionPayloadDTO
 {
     /**
      * Get action name.
@@ -23,7 +23,7 @@ final class RequestEmailChangeCurrentCodeActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST;
+        return HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST;
     }
 
     /**

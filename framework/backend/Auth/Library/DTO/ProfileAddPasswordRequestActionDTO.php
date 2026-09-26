@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\Profile;
+namespace Hilos\Auth\Library\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * RequestAddPasswordActionDTO - DTO for the profile add-password request payload (HIL-406).
+ * ProfileAddPasswordRequestActionDTO - DTO for the profile add-password request payload (HIL-406, HIL-1137).
  *
- * Step 1 of the add-a-password wizard, reached only when the signed-in user has no
- * verified email: an authenticated submit that asks for a one-time code to be sent
- * to the email the user wants to prove and key the new password on. The email is
+ * Step 1 of adding a password, reached only when the signed-in person has no
+ * confirmed email: an authenticated submit that asks for a one-time code to be sent
+ * to the email the person wants to prove and key the new password on. The email is
  * trimmed here and lowercased/validated by the handler before the code is issued;
  * the owning user is read from the session, never carried here.
  */
-final class RequestAddPasswordActionDTO extends ChatActionPayloadDTO
+final class ProfileAddPasswordRequestActionDTO extends ActionPayloadDTO
 {
     public const string EMAIL = 'email';
 
@@ -38,7 +38,7 @@ final class RequestAddPasswordActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::ADD_PASSWORD_REQUEST;
+        return HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST;
     }
 
     /**

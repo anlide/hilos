@@ -2,22 +2,23 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Core\Router\DTO;
+namespace Hilos\Auth\Library\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * PasswordUpdatedSignalData - the profile set-password success signal (HIL-402).
+ * ProfilePasswordUpdatedSignalData - the profile set-password success signal (HIL-402, HIL-1137).
  *
  * A change rewrites only the (never-projected) secret, so nothing in the identity
  * projection moves to confirm it; success is therefore signalled explicitly. The
- * signal is delivered WS_USER to every one of the user's connections, so the
+ * signal is delivered WS_USER to every one of the person's connections, so the
  * initiating tab clears its form and any other open tab can toast the change. The
  * {@see mode} distinguishes a first-time add from a change so the client can word
  * its confirmation.
  */
-final class PasswordUpdatedSignalData extends BaseDTO implements SignalDataInterface
+final class ProfilePasswordUpdatedSignalData extends BaseDTO implements SignalDataInterface
 {
     public const string MODE = 'mode';
     public const string MODE_ADDED = 'added';
@@ -44,11 +45,12 @@ final class PasswordUpdatedSignalData extends BaseDTO implements SignalDataInter
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names no mode
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            mode: (string)($data[self::MODE] ?? self::MODE_CHANGED),
+            mode: self::requireString($data, self::MODE),
         );
     }
 }

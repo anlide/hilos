@@ -379,6 +379,32 @@ export {
   type HilosProfileDeviceActions,
   type HilosProfilePushChannel,
 } from './profile/profileDevices.js'
+export {
+  createHilosProfileSignInActions,
+  PROFILE_ADD_PASSWORD_CONFIRM_ACTION,
+  PROFILE_ADD_PASSWORD_REQUEST_ACTION,
+  PROFILE_ADD_SMS_CONFIRM_ACTION,
+  PROFILE_ADD_SMS_REQUEST_ACTION,
+  PROFILE_PASSWORD_MODE_ADDED,
+  PROFILE_PASSWORD_MODE_CHANGED,
+  PROFILE_PASSWORD_SIGNAL_SCHEMAS,
+  PROFILE_SET_PASSWORD_ACTION,
+  PROFILE_UNLINK_IDENTITY_ACTION,
+  profilePasswordUpdatedSchema,
+  SIGNAL_PROFILE_PASSWORD_UPDATED,
+  type HilosProfilePasswordUpdated,
+  type HilosProfileSignInActionContext,
+  type HilosProfileSignInActions,
+} from './profile/signInMethods.js'
+export {
+  createHilosProfileEmailChangeActions,
+  PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM_ACTION,
+  PROFILE_CHANGE_EMAIL_CURRENT_REQUEST_ACTION,
+  PROFILE_CHANGE_EMAIL_NEW_CONFIRM_ACTION,
+  PROFILE_CHANGE_EMAIL_NEW_REQUEST_ACTION,
+  type HilosProfileEmailChangeActionContext,
+  type HilosProfileEmailChangeActions,
+} from './profile/emailChange.js'
 export { qrMatrix } from './auth/qrMatrix.js'
 export {
   createBrowserPushEnvironment,

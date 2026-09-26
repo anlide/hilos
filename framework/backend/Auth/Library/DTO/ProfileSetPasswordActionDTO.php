@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\Profile;
+namespace Hilos\Auth\Library\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * SetPasswordActionDTO - DTO for the profile set-password action payload (HIL-402).
+ * ProfileSetPasswordActionDTO - DTO for the profile set-password action payload (HIL-402, HIL-1137).
  *
- * Carries the new password and, for a change (the user already has a password),
+ * Carries the new password and, for a change (the account already has a password),
  * the current password re-auth. `currentPassword` is empty on the add flow (a
  * proven email is the authority, so there is nothing to re-verify); the server
- * decides change vs add from the user's identities, never from this flag.
+ * decides change vs add from the account's identities, never from this field.
  */
-final class SetPasswordActionDTO extends ChatActionPayloadDTO
+final class ProfileSetPasswordActionDTO extends ActionPayloadDTO
 {
     public const string CURRENT_PASSWORD = 'currentPassword';
     public const string NEW_PASSWORD = 'newPassword';
@@ -40,7 +40,7 @@ final class SetPasswordActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::SET_PASSWORD;
+        return HilosSignalConstants::PROFILE_SET_PASSWORD;
     }
 
     /**

@@ -5,17 +5,16 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration as EntityEventUserRegistration;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddPasswordRequestActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
-use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -575,14 +574,14 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             ExecutionContext::setCurrentAcceptKey('profile-ak');
             $this->usersLibrary()->onAgentAction(
                 'profile-ak',
-                ChatSignalConstants::ADD_PASSWORD_REQUEST,
-                new RequestAddPasswordActionDTO($email),
+                HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST,
+                new ProfileAddPasswordRequestActionDTO($email),
             );
             $this->seedKnownEmailAddCode($email, $userId);
             $this->usersLibrary()->onAgentAction(
                 'profile-ak',
-                ChatSignalConstants::ADD_PASSWORD_CONFIRM,
-                new ConfirmAddPasswordActionDTO($email, self::EMAIL_ADD_CODE, self::PROFILE_PASSWORD),
+                HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
+                new ProfileAddPasswordConfirmActionDTO($email, self::EMAIL_ADD_CODE, self::PROFILE_PASSWORD),
             );
 
             $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);

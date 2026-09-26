@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\Profile;
+namespace Hilos\Auth\Library\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * ConfirmEmailChangeCurrentCodeActionDTO - DTO for step 2 of the profile email change (HIL-299).
+ * ProfileEmailChangeCurrentConfirmActionDTO - DTO for step 2 of the profile email change (HIL-299, HIL-1137).
  *
  * Carries the code mailed to the current address. The handler checks it without spending
- * it: the modal keeps it and sends it again with the next two steps, and it is spent only
+ * it: the surface keeps it and sends it again with the next two steps, and it is spent only
  * when the address actually moves. The code is trimmed so surrounding whitespace never
  * fails an otherwise valid one.
  */
-final class ConfirmEmailChangeCurrentCodeActionDTO extends ChatActionPayloadDTO
+final class ProfileEmailChangeCurrentConfirmActionDTO extends ActionPayloadDTO
 {
     public const string CODE = 'code';
 
@@ -37,7 +37,7 @@ final class ConfirmEmailChangeCurrentCodeActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM;
+        return HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM;
     }
 
     /**

@@ -537,6 +537,53 @@ final class HilosSignalConstants
     /** Client → server: cancel the removal that stands. */
     public const string PROFILE_SECOND_FACTOR_RESET_CANCEL = 'profile_second_factor_reset_cancel';
 
+    // ── Hilos profile: sign-in methods and email change (client → server, signed in, HIL-1137) ──
+    /**
+     * Client → server: change the password with the current one, or add one to a confirmed address.
+     *
+     * One action, two branches, chosen from the account's own ways in and never from the payload:
+     * an account with a password proves the current one; one without adds a password to its
+     * confirmed address. Renamed from the chat's bare `set_password`, which the sign-in flow's
+     * step of the same name would have collided with.
+     */
+    public const string PROFILE_SET_PASSWORD = 'profile_set_password';
+
+    /** Client → server: take one sign-in method off the account; the last one stays. Was the chat's `unlink_identity`. */
+    public const string PROFILE_UNLINK_IDENTITY = 'profile_unlink_identity';
+
+    /** Client → server: send a code to a phone the person wants to add as a way in. */
+    public const string PROFILE_ADD_SMS_REQUEST = 'profile_add_sms_request';
+
+    /** Client → server: the code that phone received; attaches it as a confirmed way in. */
+    public const string PROFILE_ADD_SMS_CONFIRM = 'profile_add_sms_confirm';
+
+    /** Client → server: send a code to the address a password is to be added on, for an account with no confirmed one. */
+    public const string PROFILE_ADD_PASSWORD_REQUEST = 'profile_add_password_request';
+
+    /** Client → server: the code that address received and the new password; adds the password on the proven address. */
+    public const string PROFILE_ADD_PASSWORD_CONFIRM = 'profile_add_password_confirm';
+
+    /** Client → server: send a code to the address the account holds now, to start changing it (HIL-299). */
+    public const string PROFILE_CHANGE_EMAIL_CURRENT_REQUEST = 'profile_change_email_current_request';
+
+    /** Client → server: check the current address's code without spending it. */
+    public const string PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM = 'profile_change_email_current_confirm';
+
+    /** Client → server: send a code to the new address, carrying the current address's code. */
+    public const string PROFILE_CHANGE_EMAIL_NEW_REQUEST = 'profile_change_email_new_request';
+
+    /** Client → server: prove the new address and move the account onto it. */
+    public const string PROFILE_CHANGE_EMAIL_NEW_CONFIRM = 'profile_change_email_new_confirm';
+
+    // ── Hilos profile: sign-in methods (server → client, WS_USER, HIL-1137) ──
+    /**
+     * Server → client: the person's password was added or changed; sent to every tab they have open.
+     *
+     * A change rewrites only a secret nothing projects, so without it no tab would learn the save
+     * landed. Was the chat's `password_updated`.
+     */
+    public const string PROFILE_PASSWORD_UPDATED = 'profile_password_updated';
+
     // ── Hilos logs admin: viewer page actions (client → server) ──
     /**
      * Client → server: read one page of lines from one log file (HIL-757).

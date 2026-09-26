@@ -13,6 +13,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
+use Hilos\Pages\AbstractHilosProfilePage;
 
 /**
  * AuthMethodGate - the server-side lock on a switched-off sign-in method (HIL-427).
@@ -30,7 +31,8 @@ use Hilos\Hilos;
  *
  * A provider login is not in the map, because its action names no method: which provider it
  * is rides in the payload, or in a signed token. {@see OAuthCommands} asks
- * {@see assertProviderOpen()} where the provider is known.
+ * {@see assertProviderOpen()} where the provider is known, and so does the start of linking a
+ * provider from the profile ({@see AbstractHilosProfilePage}, HIL-1137).
  *
  * The lock closes what an administrator switched off, and only that. An action none of whose
  * methods the project wired is left to answer as it did before the set existed - a project

@@ -475,8 +475,9 @@ export async function signUpWithVerifiedEmail(
   await clickSubmit(page.getByTestId('profile-add-password-request'))
 
   // Step 2: prove it with the mailed code and set a password on it. The section
-  // flips to change-mode when the server fans password_updated back, so the
-  // current-password field appearing is proof the identity was written verified.
+  // flips to change-mode when the server fans profile_password_updated back, so
+  // the current-password field appearing is proof the identity was written
+  // verified.
   await expect(page.getByTestId('profile-add-password-code')).toBeVisible()
   await typeInto(
     page.getByTestId('profile-add-password-code'),

@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\Profile;
+namespace Hilos\Auth\Library\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * RequestSmsAddCodeActionDTO - DTO for the profile add-phone request payload (HIL-403).
+ * ProfileAddSmsRequestActionDTO - DTO for the profile add-phone request payload (HIL-403, HIL-1137).
  *
- * Step 1 of the add-an-SMS-identity wizard: an authenticated submit that asks for
- * a one-time code to be sent to a phone the signed-in user wants to attach. The
+ * Step 1 of adding a phone as a way in: an authenticated submit that asks for a
+ * one-time code to be sent to a phone the signed-in person wants to attach. The
  * phone is trimmed here and normalized to E.164 by the handler before the code is
  * issued; the owning user is read from the session, never carried here.
  */
-final class RequestSmsAddCodeActionDTO extends ChatActionPayloadDTO
+final class ProfileAddSmsRequestActionDTO extends ActionPayloadDTO
 {
     public const string PHONE = 'phone';
 
@@ -37,7 +37,7 @@ final class RequestSmsAddCodeActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::ADD_SMS_REQUEST;
+        return HilosSignalConstants::PROFILE_ADD_SMS_REQUEST;
     }
 
     /**

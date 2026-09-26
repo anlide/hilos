@@ -18,19 +18,17 @@ import {
   PASSKEY_SIGNAL_SCHEMAS,
 } from '@hilos/core'
 
-import { PASSWORD_SIGNAL_SCHEMAS } from '../auth/passwordSignals'
-
 export const { connection, actionErrors, actions } = createHilosConnection({
   url: import.meta.env.VITE_WS_URL,
   // The inbound signals this project mounts: the four auth ones the framework
   // owns and declares — the OAuth login start-reply and failure/timeout
   // (HIL-281), the passkey ceremony options (HIL-284), the phone code-request
-  // outcome (HIL-492), the auth-converge step change (HIL-415) — plus the
-  // project's own profile set-password success (HIL-402). All arrive WS_USER.
+  // outcome (HIL-492), the auth-converge step change (HIL-415). All arrive
+  // WS_USER. The profile's password-updated signal is the framework's and is
+  // merged by createHilosConnection itself (HIL-1137).
   projectSchemas: {
     ...AUTH_CONVERGE_SIGNAL_SCHEMAS,
     ...OAUTH_SIGNAL_SCHEMAS,
     ...PASSKEY_SIGNAL_SCHEMAS,
-    ...PASSWORD_SIGNAL_SCHEMAS,
   },
 })

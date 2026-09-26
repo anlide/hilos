@@ -8,7 +8,9 @@ use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Auth\Library\Command\ActingSession;
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\Command\DetectionCommands;
+use Hilos\Auth\Library\Command\EmailChangeCommands;
 use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\Library\Command\MagicLinkCommands;
 use Hilos\Auth\Library\Command\OAuthCommands;
@@ -51,6 +53,16 @@ use Hilos\Auth\Library\DTO\PasskeyDiscoverableLoginOptionsActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyLoginConfirmActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterConfirmActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterOptionsActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddPasswordRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddSmsConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddSmsRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
+use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
@@ -241,6 +253,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => ProfileSecondFactorResetCancelActionDTO::class,
         HilosSignalConstants::HILOS_STEP_UP_START => StepUpStartActionDTO::class,
         HilosSignalConstants::HILOS_STEP_UP_CONFIRM => StepUpConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_SET_PASSWORD => ProfileSetPasswordActionDTO::class,
+        HilosSignalConstants::PROFILE_UNLINK_IDENTITY => ProfileUnlinkIdentityActionDTO::class,
+        HilosSignalConstants::PROFILE_ADD_SMS_REQUEST => ProfileAddSmsRequestActionDTO::class,
+        HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM => ProfileAddSmsConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST => ProfileAddPasswordRequestActionDTO::class,
+        HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM => ProfileAddPasswordConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST => ProfileEmailChangeCurrentRequestActionDTO::class,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
     ];
 
     /**
@@ -260,6 +282,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      *
      * Operation step-up adds its confirm submit: it guesses a password, authenticator,
      * delivered code, or device-key assertion, so it passes the same throttle before work.
+     *
+     * The profile's own ways in and the email change add theirs by the same rule (HIL-1137):
+     * the password submit, which guesses the current password on a change; the second step of
+     * a phone and of a password by mail, which guess a code; and the three email-change steps
+     * that carry the current address's code. The submits that only send a code are absent -
+     * the code carries its own send cap - and so are the unlink and the provider link start.
      */
     public const array THROTTLED_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
@@ -287,6 +315,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
         HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
+        HilosSignalConstants::PROFILE_SET_PASSWORD,
+        HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM,
+        HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
     ];
 
     /**
@@ -294,7 +328,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * session. Everything else here is a guest's way in and must stay open to one. The
      * profile's second-factor commands are here whole (HIL-494): they act on the person the
      * session belongs to and on nobody else. The two step-up actions are authenticated for
-     * the same reason: they prove and open an operation of the signed-in person.
+     * the same reason: they prove and open an operation of the signed-in person. So are the
+     * profile's own ways in and the email change, whole (HIL-1137): each reads its person
+     * from the acting session, which an anonymous one has none of.
      */
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
@@ -310,6 +346,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL,
         HilosSignalConstants::HILOS_STEP_UP_START,
         HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
+        HilosSignalConstants::PROFILE_SET_PASSWORD,
+        HilosSignalConstants::PROFILE_UNLINK_IDENTITY,
+        HilosSignalConstants::PROFILE_ADD_SMS_REQUEST,
+        HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM,
+        HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST,
+        HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
+        HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
     ];
 
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
@@ -349,8 +395,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** The three submits of a password recovery, built on first use. */
     private ?RecoveryCommands $recoveryCommands = null;
 
-    /** Taking a sign-in method off an account, built on first use. */
+    /** The person's own ways in, added and taken off, built on first use. */
     private ?IdentityCommands $identityCommands = null;
+
+    /** The four steps of changing the account's email, built on first use. */
+    private ?EmailChangeCommands $emailChangeCommands = null;
 
     /** The second factor's commands, built on first use. */
     private ?SecondFactorCommands $secondFactorCommands = null;
@@ -948,20 +997,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         return null;
     }
 
-    /**
-     * Builds the group that takes a sign-in method off an account.
-     *
-     * Protected where the seven command factories below are private, because its caller is
-     * one floor down: unlink is a project's own action rather than one of the library's
-     * AUTH_ACTIONS, so the demo handler that used to call the identity primitive itself
-     * calls this group instead.
-     *
-     * @return IdentityCommands Taking a sign-in method off an account, built once per process
-     */
-    protected function identityCommands(): IdentityCommands
-    {
-        return $this->identityCommands ??= new IdentityCommands($this);
-    }
 
     /**
      * Runs the group that owns one action name and returns what it answered.
@@ -1172,7 +1207,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs operation-level confirmation actions, then delegates older names to the second factor.
+     * Runs operation-level confirmation actions, then delegates the other names to the profile's.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
@@ -1199,6 +1234,114 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, StepUpConfirmActionDTO::class, $dto);
                 }
                 $this->stepUpCommands()->confirm($acceptKey, $dto);
+
+                return null;
+
+            default:
+                return $this->runProfileAction($acceptKey, $action, $dto);
+        }
+    }
+
+    /**
+     * Runs one of the profile's sign-in-method or email-change submits, or hands the name on (HIL-1137).
+     *
+     * None of them answers with a reply: each writes, and the browser learns of it from the
+     * identities projection that re-emits, or from the password-updated signal fanned to the
+     * person's own sockets. A bad payload is refused the way every other one here is.
+     *
+     * @param string $acceptKey Accept key of the connection that submitted
+     * @param string $action Owned action name from {@see AGENT_ACTIONS}
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO Null for every profile submit, or what the second factor's command answered
+     * @throws AgentUnknownActionException When the action is not one this library owns
+     * @throws InvalidActionPayloadException When the payload does not match the action name
+     * @throws ValidationException When the command refuses what was submitted
+     * @throws RandomException When a code, a secret, a backup code or a token cannot be drawn
+     * @throws HilosException When a command exposes database, runtime, env, or settings failure
+     */
+    private function runProfileAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case HilosSignalConstants::PROFILE_SET_PASSWORD:
+                if (!$dto instanceof ProfileSetPasswordActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSetPasswordActionDTO::class, $dto);
+                }
+                $this->identityCommands()->setPassword($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_UNLINK_IDENTITY:
+                if (!$dto instanceof ProfileUnlinkIdentityActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileUnlinkIdentityActionDTO::class, $dto);
+                }
+                if (!$dto->isValid()) {
+                    throw new ValidationException(AuthMessages::IDENTITY_ID_REQUIRED);
+                }
+                $this->identityCommands()->unlink($acceptKey, $dto->identityId);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_ADD_SMS_REQUEST:
+                if (!$dto instanceof ProfileAddSmsRequestActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileAddSmsRequestActionDTO::class, $dto);
+                }
+                $this->identityCommands()->requestSmsAdd($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM:
+                if (!$dto instanceof ProfileAddSmsConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileAddSmsConfirmActionDTO::class, $dto);
+                }
+                $this->identityCommands()->confirmSmsAdd($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST:
+                if (!$dto instanceof ProfileAddPasswordRequestActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileAddPasswordRequestActionDTO::class, $dto);
+                }
+                $this->identityCommands()->requestPasswordAdd($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM:
+                if (!$dto instanceof ProfileAddPasswordConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileAddPasswordConfirmActionDTO::class, $dto);
+                }
+                $this->identityCommands()->confirmPasswordAdd($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST:
+                if (!$dto instanceof ProfileEmailChangeCurrentRequestActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileEmailChangeCurrentRequestActionDTO::class, $dto);
+                }
+                $this->emailChangeCommands()->requestCurrentCode($acceptKey);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM:
+                if (!$dto instanceof ProfileEmailChangeCurrentConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileEmailChangeCurrentConfirmActionDTO::class, $dto);
+                }
+                $this->emailChangeCommands()->confirmCurrentCode($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST:
+                if (!$dto instanceof ProfileEmailChangeNewRequestActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileEmailChangeNewRequestActionDTO::class, $dto);
+                }
+                $this->emailChangeCommands()->requestNewCode($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM:
+                if (!$dto instanceof ProfileEmailChangeNewConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileEmailChangeNewConfirmActionDTO::class, $dto);
+                }
+                $this->emailChangeCommands()->confirmNewCode($acceptKey, $dto);
 
                 return null;
 
@@ -1362,6 +1505,22 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             $this->secondFactorCommands(),
             $this->passkeyCommands(),
         );
+    }
+
+    /**
+     * @return IdentityCommands The person's own ways in, added and taken off, built once per process
+     */
+    private function identityCommands(): IdentityCommands
+    {
+        return $this->identityCommands ??= new IdentityCommands($this);
+    }
+
+    /**
+     * @return EmailChangeCommands The four steps of changing the account's email, built once per process
+     */
+    private function emailChangeCommands(): EmailChangeCommands
+    {
+        return $this->emailChangeCommands ??= new EmailChangeCommands($this, $this->stepUpCommands());
     }
 
     /**

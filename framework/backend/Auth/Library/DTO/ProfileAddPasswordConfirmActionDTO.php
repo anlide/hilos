@@ -2,23 +2,23 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\Profile;
+namespace Hilos\Auth\Library\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * ConfirmAddPasswordActionDTO - DTO for the profile add-password confirm payload (HIL-406).
+ * ProfileAddPasswordConfirmActionDTO - DTO for the profile add-password confirm payload (HIL-406, HIL-1137).
  *
- * Step 2 of the add-a-password wizard: an authenticated submit that carries the
- * email, the delivered code, and the new password. The email is trimmed here and
- * re-lowercased by the handler so it matches the issued challenge identifier; the
- * code is trimmed so surrounding whitespace never fails an otherwise valid code.
- * The new password is not trimmed (leading/trailing whitespace is significant). The
- * owning user is read from the session, never carried here.
+ * Step 2 of adding a password: an authenticated submit that carries the email, the
+ * delivered code, and the new password. The email is trimmed here and re-lowercased
+ * by the handler so it matches the issued challenge identifier; the code is trimmed
+ * so surrounding whitespace never fails an otherwise valid code. The new password is
+ * not trimmed (leading/trailing whitespace is significant). The owning user is read
+ * from the session, never carried here.
  */
-final class ConfirmAddPasswordActionDTO extends ChatActionPayloadDTO
+final class ProfileAddPasswordConfirmActionDTO extends ActionPayloadDTO
 {
     public const string EMAIL = 'email';
     public const string CODE = 'code';
@@ -45,7 +45,7 @@ final class ConfirmAddPasswordActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::ADD_PASSWORD_CONFIRM;
+        return HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM;
     }
 
     /**
@@ -79,7 +79,7 @@ final class ConfirmAddPasswordActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Check if the payload is valid (a non-empty email, code, and new password).
+     * Check if the payload is valid (a non-empty email, code, and password).
      *
      * @return bool True if valid
      */

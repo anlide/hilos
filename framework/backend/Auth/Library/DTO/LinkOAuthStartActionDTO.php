@@ -2,25 +2,26 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages\DTO\Profile;
+namespace Hilos\Auth\Library\DTO;
 
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Pages\AbstractHilosProfilePage;
 
 /**
- * LinkOAuthStartActionDTO - DTO for the profile OAuth link-start action payload (HIL-401).
+ * LinkOAuthStartActionDTO - DTO for the profile OAuth link-start action payload (HIL-401, HIL-1137).
  *
- * Authenticated profile submit: the signed-in client names the provider it wants to
- * link to its current account; the handler mints a link-mode authorize URL (the
- * initiator's user id is bound server-side into the signed state, never taken from
- * this payload) and returns it on the OAUTH_AUTHORIZE signal for the browser to
- * navigate to.
+ * Authenticated profile submit, hosted by {@see AbstractHilosProfilePage}: the signed-in
+ * client names the provider it wants to link to its current account; the handler mints a
+ * link-mode authorize URL (the initiator's user id is bound server-side into the signed
+ * state, never taken from this payload) and returns it on the OAUTH_AUTHORIZE signal for
+ * the browser to navigate to.
  *
  * The client also names the trip the start belongs to (HIL-707); the handler echoes
  * it back on that signal so the browser can drop an answer to a trip it abandoned.
  */
-final class LinkOAuthStartActionDTO extends ChatActionPayloadDTO
+final class LinkOAuthStartActionDTO extends ActionPayloadDTO
 {
     /**
      * Creates OAuth link-start action DTO.

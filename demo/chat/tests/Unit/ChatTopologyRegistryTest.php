@@ -16,17 +16,7 @@ use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\CLI\ChatCliManager;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
-use Demo\Chat\Pages\DTO\Profile\ConfirmEmailChangeCurrentCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\ConfirmEmailChangeNewCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeCurrentCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeNewCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
-use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
-use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
@@ -59,6 +49,16 @@ use Hilos\Auth\Library\DTO\PasskeyDiscoverableLoginOptionsActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyLoginConfirmActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterConfirmActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterOptionsActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddPasswordRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddSmsConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileAddSmsRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
+use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
@@ -746,17 +746,17 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_STEP_UP_START => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_STEP_UP_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SET_PASSWORD => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_UNLINK_IDENTITY => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_ADD_SMS_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::UNLINK_IDENTITY => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::SET_PASSWORD => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::ADD_SMS_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::ADD_SMS_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::ADD_PASSWORD_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::ADD_PASSWORD_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
-            ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_END => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSIONS_END_OTHERS => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -829,17 +829,17 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => ProfileSecondFactorResetCancelActionDTO::class,
             HilosSignalConstants::HILOS_STEP_UP_START => StepUpStartActionDTO::class,
             HilosSignalConstants::HILOS_STEP_UP_CONFIRM => StepUpConfirmActionDTO::class,
+            HilosSignalConstants::PROFILE_SET_PASSWORD => ProfileSetPasswordActionDTO::class,
+            HilosSignalConstants::PROFILE_UNLINK_IDENTITY => ProfileUnlinkIdentityActionDTO::class,
+            HilosSignalConstants::PROFILE_ADD_SMS_REQUEST => ProfileAddSmsRequestActionDTO::class,
+            HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM => ProfileAddSmsConfirmActionDTO::class,
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST => ProfileAddPasswordRequestActionDTO::class,
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM => ProfileAddPasswordConfirmActionDTO::class,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST => ProfileEmailChangeCurrentRequestActionDTO::class,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
             ChatSignalConstants::RENAME => RenameActionDTO::class,
-            ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
-            ChatSignalConstants::SET_PASSWORD => SetPasswordActionDTO::class,
-            ChatSignalConstants::ADD_SMS_REQUEST => RequestSmsAddCodeActionDTO::class,
-            ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
-            ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
-            ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
-            ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST => RequestEmailChangeCurrentCodeActionDTO::class,
-            ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM => ConfirmEmailChangeCurrentCodeActionDTO::class,
-            ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST => RequestEmailChangeNewCodeActionDTO::class,
-            ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM => ConfirmEmailChangeNewCodeActionDTO::class,
             HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
             HilosSignalConstants::HILOS_SESSION_END => SessionEndActionDTO::class,
             HilosSignalConstants::HILOS_SESSIONS_END_OTHERS => SessionsEndOthersActionDTO::class,
