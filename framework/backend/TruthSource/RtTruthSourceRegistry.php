@@ -162,10 +162,10 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
      * does in the grant itself.
      *
      * A claim over a set is here with an empty list of keys, and on purpose: the node-level map
-     * reads it as a claim that speaks for no row of its collection - no snapshot of the set is
-     * handed over, and no foreign frame is refused. Left out, it would read as a claim over the
-     * whole collection, and the snapshot that follows would wipe the other nodes' sets. Handing a
-     * set over by snapshot is HIL-1116.
+     * judges frames by it as a claim that speaks for no row of its collection, and no foreign
+     * frame is refused. Left out, it would read as a claim over the whole collection, and the
+     * snapshot that follows would wipe the other nodes' sets. Which set it is rides beside it -
+     * {@see self::setKeyByCollectionOf()} - and by that the node hands over the rows of its set.
      *
      * @param string $agentId Agent to ask about
      * @return array<string, list<string>> Collections it claimed by key, and the keys of each
@@ -183,6 +183,32 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         return $keysByCollection;
+    }
+
+    /**
+     * Lists the set one agent claimed, collection by collection.
+     *
+     * The set axis of the same registration {@see keysByCollectionOf()} names, and asked for the
+     * node-level map to HAND OVER the rows of the set, not to judge frames by it: judging, the map
+     * still reads a claim over a set as one that speaks for no row ({@see keysByCollectionOf()}),
+     * because set keys are not compared at runtime (owner's decision, HIL-1114).
+     *
+     * @param string $agentId Agent to ask about
+     * @return array<string, string> Collections it claimed by a set, and the set key of each
+     */
+    public static function setKeyByCollectionOf(string $agentId): array
+    {
+        $setKeyByCollection = [];
+        $sources = &self::getSources();
+        foreach ($sources as $collection => $agents) {
+            $grant = $agents[$agentId] ?? null;
+            if ($grant === null || !$grant->keys->coversSet()) {
+                continue;
+            }
+            $setKeyByCollection[(string)$collection] = $grant->keys->setKey();
+        }
+
+        return $setKeyByCollection;
     }
 
     /**

@@ -55,6 +55,9 @@ Plus scenarios beyond that matrix:
  19 worker death on a live     one worker of a slave is SIGKILLed: the node names the loss,
     node                       the leader re-places exactly those members, and the rest of the
                                node runs on (HIL-440)
+ 20 rt set width across nodes  every node owns its set of one collection: a node writes its own
+                               set, is refused another's, and a node cut off while a set was
+                               written gets the row by the hand-over of that set (HIL-1116)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -103,6 +106,17 @@ DB_PROBE_KEY = "cluster_probe_value"
 # mirrors ClusterTestDbReadCommand::NO_ROW. Said in a word so that "no row" and "an empty row"
 # stay different answers.
 DB_PROBE_NO_ROW = "(none)"
+
+# The RT collection the per-node set probe writes, cut into sets by the node a note belongs to;
+# mirrors ClusterRtContext::probeNotes. Each node's probe owns the set named by its own node id.
+PROBE_NOTES = "probeNotes"
+# The notes scenario 20 writes. Prefixes, not ids: a retried attempt suffixes them afresh, because
+# the node the first attempt cut off is recreated holding every note written by then, and a note
+# it already holds could not show what the hand-over brings.
+NOTE_OWN = "set-note-own"
+NOTE_FOREIGN = "set-note-foreign"
+NOTE_PEER = "set-note-peer"
+NOTE_LATE = "set-note-late"
 
 # The demo agent that claims the WHOLE of the collection the fleet owns row by row, so the
 # cluster-wide guard has two whole rights to judge; mirrors Demo\Cluster\Constants\AgentType.
@@ -231,6 +245,14 @@ def client_out(node, *args):
     when the CLI reported failure."""
     proc = subprocess.run([CLUSTER, "client", node, *args], capture_output=True, text=True)
     return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def client_refusal(node, *args):
+    """Run a test-only client command on one node for its REFUSAL: stderr stripped when the CLI
+    reported failure, or None when it succeeded. A refusal is printed on stderr and a result on
+    stdout (CommandChannelClientTrait::printRefusal()), so client_out() has nothing to show here."""
+    proc = subprocess.run([CLUSTER, "client", node, *args], capture_output=True, text=True)
+    return proc.stderr.strip() if proc.returncode != 0 else None
 
 
 def db_read(node, key):
@@ -1514,7 +1536,7 @@ def scenario_17_foreign_certificate_refused():
             f"lists it; the five still converge")
 
 
-# Numbered by when they were written, ORDERED by what they need. The three RT scenarios and
+# Numbered by when they were written, ORDERED by what they need. The RT scenarios and
 # scenario 19 run right after placement, while the fleet the leader just placed is still alive
 # and spread over both slaves: they need running agents rather than a converged topology. That order was once
 # forced on them - a recreated data-plane container came back without its agents and the leader
@@ -1527,7 +1549,8 @@ def scenario_17_foreign_certificate_refused():
 #
 # 14 also has to come after 12 rather than before it: it deliberately makes a second owner of the
 # collection, and while that stands the nodes refuse each other's frames - which is exactly the
-# count 12 asserts is zero.
+# count 12 asserts is zero. 20 stands between 12 and 14 for the same reason: it asserts that no
+# counter of refusals moved.
 def scenario_18_capacity_is_consumed():
     """Placement spends what a node declares, and stops when it is spent (HIL-448).
 
@@ -1656,11 +1679,137 @@ def scenario_19_worker_death_on_live_node():
             "other workers ran on untouched")
 
 
+def scenario_20_rt_set_width_across_nodes():
+    """Every node owns its own set of one RT collection, and the width holds across nodes (HIL-1116).
+
+    The claim over a set is laid in the worker running the agent, and a write past the owner is
+    refused by construction inside that one process. Here the owners of the sets of one collection
+    sit on five nodes: each node's set probe owns the probe notes of its own node, and every write
+    is driven through the ordinary runtime actions, so the door that judges it is the one every
+    application write passes.
+
+    (1) All five come up claiming a set of the same collection - owning it, and not whole - so no
+        node's start is refused for its neighbours' declarations.
+    (2) A note written by s1 into its own set reaches every node.
+    (3) The same writes from s2 - an edit of that note, and a note created in set s1 - are refused
+        in the words of the door, and neither goes anywhere. Proven by a fact, not by a pause:
+        s2 then writes its own set, and since one node's frames arrive in order, a refused write
+        that had gone out would be visible by the time that one is.
+    (4) A master cut off from the network while s1 writes its set gets the new note after it is
+        back - and only the hand-over of the set can bring it. The victim holds notes of the
+        collection, so it asks nobody for what it is missing (HIL-823), and nobody but s1 hands
+        set s1 over. Before this leaf that step was red: a set was handed over by no one.
+    (5) No counter of refused frames or claims moved on any node.
+
+    The victim is a master that does not lead, for the reason scenario 13 gives: a master holds no
+    fleet, so cutting it off moves no placement. It is recreated afterwards, as scenarios 8 and 13
+    do, because a healed interface leaves half-open links behind.
+    """
+    run = format(int(time.time() * 1000), "x")
+    own, foreign, peer, late = (f"{prefix}-{run}" for prefix in (NOTE_OWN, NOTE_FOREIGN, NOTE_PEER, NOTE_LATE))
+
+    # (0) The counters are read off a converged mesh, before anything is written.
+    views = wait_converge(ALL_NODES)
+    refused_before = {n: rt_refused(views, n) for n in ALL_NODES}
+    claim_refusals_before = {n: rt_claim_refusals(views, n) for n in ALL_NODES}
+    leader = leaders(views)[0]
+    conflicts_before = rt_claim_conflicts(views, leader)
+    victim = sorted(m for m in MASTERS if m not in leaders(views))[-1]
+
+    # (1)
+    def every_node_claims_a_set(v):
+        return all(rt_collection(v, n, PROBE_NOTES).get("owned") is True
+                   and rt_collection(v, n, PROBE_NOTES).get("fullyOwned") is False
+                   for n in ALL_NODES)
+
+    wait_until(every_node_claims_a_set, CONVERGE_TIMEOUT,
+               f"every node's set probe owns its set of '{PROBE_NOTES}', and no node owns it whole")
+
+    def note_on(note_id, node_id, text, nodes=ALL_NODES):
+        expected = {"noteId": note_id, "nodeId": node_id, "text": text}
+        return lambda v: all(rt_rows(v, n, PROBE_NOTES).get(note_id) == expected for n in nodes)
+
+    # (2)
+    refusal = client_refusal("s1", "test:cluster:rt:write", "s1", own, "v1")
+    assert refusal is None, f"s1 was refused a write into its own set: {refusal}"
+    wait_until(note_on(own, "s1", "v1"), CONVERGE_TIMEOUT, "the note s1 wrote into its set reaches every node")
+
+    # (3)
+    for args, what in ((("s1", own, "v2"), "an edit of a note of set s1"),
+                       (("s1", foreign, "x"), "a note created in set s1")):
+        refusal = client_refusal("s2", "test:cluster:rt:write", *args)
+        assert refusal is not None, f"s2 was let make {what}"
+        assert "it holds set 's2'" in refusal and "[s1]" in refusal, \
+            f"s2 was refused {what}, but not in the words of the set door: {refusal}"
+
+    refusal = client_refusal("s2", "test:cluster:rt:write", "s2", peer, "p1")
+    assert refusal is None, f"s2 was refused a write into its own set: {refusal}"
+    views = wait_until(note_on(peer, "s2", "p1"), CONVERGE_TIMEOUT,
+                       "the note s2 wrote into its own set reaches every node")
+    for n in ALL_NODES:
+        rows = rt_rows(views, n, PROBE_NOTES)
+        assert foreign not in rows, f"{n} holds the note s2 was refused to create in set s1"
+        assert rows.get(own, {}).get("text") == "v1", \
+            f"{n} holds the note of set s1 as {rows.get(own)}, after s2 was refused its edit"
+
+    # (4)
+    others = [n for n in ALL_NODES if n != victim]
+    print(f"    partitioning {victim} off the network while s1 writes its set")
+    ctl("partition", victim)
+    try:
+        # The mark is raised when the link closes, and a partitioned interface takes a keepalive
+        # to notice - so the write below waits for the victim to say it is cut off.
+        wait_until(lambda v: own in rt_stale_rows(v, victim, PROBE_NOTES), CONVERGE_TIMEOUT,
+                   f"{victim} marks the note of set s1 frozen once it can no longer reach s1",
+                   nodes=[victim], local=True)
+
+        refusal = client_refusal("s1", "test:cluster:rt:write", "s1", late, "late")
+        assert refusal is None, f"s1 was refused a write into its own set: {refusal}"
+        wait_until(note_on(late, "s1", "late", others), CONVERGE_TIMEOUT,
+                   f"the note s1 wrote during the split reaches every node but {victim}", nodes=others)
+        cut_off = rt_rows({victim: inspect_local(victim)}, victim, PROBE_NOTES)
+        assert late not in cut_off, f"{victim} got the note written while it was cut off, before the heal"
+
+        print(f"    healing {victim} back into the mesh")
+        ctl("heal", victim)
+        # Twice the usual cap, for the reason scenario 13 gives: both sides hold half-open TCP to
+        # the node that was cut off, and the links time out on the keepalive before anyone re-dials.
+        wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
+
+        def caught_up(v):
+            return (note_on(late, "s1", "late", [victim])(v)
+                    and note_on(own, "s1", "v1", [victim])(v)
+                    and note_on(peer, "s2", "p1", [victim])(v)
+                    and rt_stale_rows(v, victim, PROBE_NOTES) == {})
+
+        wait_until(caught_up, CONVERGE_TIMEOUT,
+                   f"{victim} gets the note written while it was cut off, and nothing stays frozen",
+                   nodes=[victim])
+
+        # (5) Read on the healed victim, before the recreate below resets its counters.
+        views = inspect_all()
+        for n in ALL_NODES:
+            refused, claims_refused = rt_refused(views, n), rt_claim_refusals(views, n)
+            assert refused == refused_before[n], \
+                f"{n} refused RT frames as a split: {refused_before[n]} before, {refused} after"
+            assert claims_refused == claim_refusals_before[n], \
+                f"the leader refused claims of {n}: {claim_refusals_before[n]} before, {claims_refused} after"
+        assert rt_claim_conflicts(views, leader) == conflicts_before, \
+            f"the leader {leader} named an RT ownership clash over the sets"
+
+        return (f"five nodes own their sets of '{PROBE_NOTES}'; s1 wrote its set, s2 was refused it "
+                f"in the door's words, and {victim}, cut off, got the new note by the hand-over of set s1")
+    finally:
+        ctl("recreate", victim)
+        wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
+
+
 SCENARIOS = [
     ("1 master-slave mesh", scenario_1_master_slave_mesh),
     ("2 master-master", scenario_2_master_master),
     ("3 placement", scenario_3_placement),
     ("12 rt replication", scenario_12_rt_replication),
+    ("20 rt set width across nodes", scenario_20_rt_set_width_across_nodes),
     ("14 rt claim refused", scenario_14_rt_claim_refused),
     ("13 rt partition converges", scenario_13_rt_partition_converges),
     ("19 worker death on a live node", scenario_19_worker_death_on_live_node),

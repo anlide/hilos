@@ -920,6 +920,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
             $dto->collectionKeys,
             $dto->partialCollectionKeys,
             $dto->keysByCollection,
+            $dto->setKeyByCollection,
         );
     }
 

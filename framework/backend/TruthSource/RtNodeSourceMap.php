@@ -35,12 +35,11 @@ use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
  * can be the defect.
  *
  * A claim over a set arrives here with an empty list of keys
- * ({@see RtTruthSourceRegistry::keysByCollectionOf()}), and the node speaks for no row of it:
- * {@see self::owns()} of a row and {@see self::ownsFully()} answer no, and
- * {@see self::keyScopedCollections()} gives an empty scope, which the snapshot sending skips
- * ({@see DaemonManager}). The rows of the set travel as deltas of a partial owner, and a node
- * that missed the creation of one does not learn it until a set is handed over by snapshot -
- * HIL-1116.
+ * ({@see RtTruthSourceRegistry::keysByCollectionOf()}), and judging frames the node speaks for
+ * no row of it: {@see self::owns()} of a row and {@see self::ownsFully()} answer no, because set
+ * keys are not compared at runtime (owner's decision, HIL-1114). The set key lies beside it, and
+ * by it the node HANDS OVER the rows of its set ({@see self::setScopedCollections()}) and answers
+ * a query with them ({@see self::claimedSetKeys()}), both in {@see DaemonManager}.
  */
 final class RtNodeSourceMap
 {
@@ -53,6 +52,9 @@ final class RtNodeSourceMap
     /** @var array<string, array<string, list<string>>> Of those, the ones claimed by key, keyed by the same agent */
     private array $keysByAgent = [];
 
+    /** @var array<string, array<string, string>> Of those, the ones claimed by a set, and the set key, keyed by the same agent */
+    private array $setKeyByAgent = [];
+
     /**
      * Records what one agent of this node owns, replacing whatever it owned before.
      *
@@ -60,12 +62,14 @@ final class RtNodeSourceMap
      * @param list<string> $collectionKeys RT collections it owns
      * @param list<string> $partialCollectionKeys Those of them it owns with only part of the operations
      * @param array<string, list<string>> $keysByCollection Those of them it claimed by key, and the keys
+     * @param array<string, string> $setKeyByCollection Those of them it claimed by a set, and the set key of each
      */
     public function note(
         string $agentId,
         array $collectionKeys,
         array $partialCollectionKeys = [],
         array $keysByCollection = [],
+        array $setKeyByCollection = [],
     ): void {
         if ($collectionKeys === []) {
             $this->release($agentId);
@@ -76,6 +80,7 @@ final class RtNodeSourceMap
         $this->byAgent[$agentId] = $collectionKeys;
         $this->partialByAgent[$agentId] = $partialCollectionKeys;
         $this->keysByAgent[$agentId] = $keysByCollection;
+        $this->setKeyByAgent[$agentId] = $setKeyByCollection;
     }
 
     /**
@@ -85,7 +90,12 @@ final class RtNodeSourceMap
      */
     public function release(string $agentId): void
     {
-        unset($this->byAgent[$agentId], $this->partialByAgent[$agentId], $this->keysByAgent[$agentId]);
+        unset(
+            $this->byAgent[$agentId],
+            $this->partialByAgent[$agentId],
+            $this->keysByAgent[$agentId],
+            $this->setKeyByAgent[$agentId],
+        );
     }
 
     /**
@@ -238,6 +248,10 @@ final class RtNodeSourceMap
      * A claim short of an operation is left out on both lists alike: the rows it names are
      * written by another node too, so even about those this node's copy is not the whole truth.
      *
+     * A claim over a set is not here either: it has a list of its own
+     * ({@see self::setScopedCollections()}), and one collection on two lists would be handed over
+     * under two scopes.
+     *
      * @return array<string, list<string>> RT collections owned by key, with every key claimed here
      */
     public function keyScopedCollections(): array
@@ -248,6 +262,7 @@ final class RtNodeSourceMap
                 if (
                     !in_array($collectionKey, $this->byAgent[$agentId] ?? [], true)
                     || in_array($collectionKey, $this->partialByAgent[$agentId] ?? [], true)
+                    || isset($this->setKeyByAgent[$agentId][$collectionKey])
                     || $this->ownsFully($collectionKey)
                 ) {
                     continue;
@@ -263,5 +278,67 @@ final class RtNodeSourceMap
         }
 
         return $keysByCollection;
+    }
+
+    /**
+     * Every set of a collection an agent of this node claimed, each named once.
+     *
+     * Claims short of an operation count too: this is asked where "its own" means what
+     * {@see self::owns()} of a row means, with no axis of operations - answering a query for the
+     * missing rows with the rows of its own set, and skipping them in an offer of copies
+     * ({@see DaemonManager}), since this node is where they come from.
+     *
+     * @param string $collectionKey RT collection to ask about
+     * @return list<string> Set keys claimed here over that collection
+     */
+    public function claimedSetKeys(string $collectionKey): array
+    {
+        $setKeys = [];
+        foreach ($this->setKeyByAgent as $agentId => $setKeyByCollection) {
+            $setKey = $setKeyByCollection[$collectionKey] ?? null;
+            if (
+                $setKey !== null
+                && in_array($collectionKey, $this->byAgent[$agentId] ?? [], true)
+                && !in_array($setKey, $setKeys, true)
+            ) {
+                $setKeys[] = $setKey;
+            }
+        }
+
+        return $setKeys;
+    }
+
+    /**
+     * Collections this node may hand over set by set, and which sets those are.
+     *
+     * The twin of {@see self::keyScopedCollections()}, left out by the same three tests. A claim
+     * over a set holding every operation is the whole truth about the rows of that set; one short
+     * of an operation is not, because another node writes those rows too. And a collection some
+     * agent here owns whole is handed over whole - offering its sets besides would offer the same
+     * rows under a second scope.
+     *
+     * @return array<string, list<string>> RT collections owned by a set, with every set key claimed here
+     */
+    public function setScopedCollections(): array
+    {
+        $setKeysByCollection = [];
+        foreach ($this->setKeyByAgent as $agentId => $setKeyByCollection) {
+            foreach ($setKeyByCollection as $collectionKey => $setKey) {
+                if (
+                    !in_array($collectionKey, $this->byAgent[$agentId] ?? [], true)
+                    || in_array($collectionKey, $this->partialByAgent[$agentId] ?? [], true)
+                    || $this->ownsFully($collectionKey)
+                ) {
+                    continue;
+                }
+                $collected = $setKeysByCollection[$collectionKey] ?? [];
+                if (!in_array($setKey, $collected, true)) {
+                    $collected[] = $setKey;
+                }
+                $setKeysByCollection[$collectionKey] = $collected;
+            }
+        }
+
+        return $setKeysByCollection;
     }
 }

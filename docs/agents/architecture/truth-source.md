@@ -372,12 +372,18 @@ runtime door hands them to `RtTruthSourceRegistry::checkCanWriteState()` as a
 list; a row is born through the row door with `Add`, so a set claim brings into
 being rows of its own set alone. There is no statement over many runtime rows: a
 mass edit walks the rows, and each passes the row door. On a cluster a node
-holding a set speaks for no row of it: the claim reaches the node map with no
-key, the rows of the set travel as deltas of a partial owner, no snapshot of the
-set is handed over and no foreign frame is refused. The limit is known and
-accepted: a node that missed the creation of a row of the set does not learn it
-until a set is handed over by snapshot, which is HIL-1116's (owner's decision,
-2026-09-25).
+holding a set still speaks for no row of it when it judges frames: the claim
+reaches the node map with no key, the rows of the set travel as deltas of a
+partial owner, and no foreign frame is refused — set keys are not compared at
+runtime (owner's decision, HIL-1114). The set key rides beside the claim in the
+worker's report to its master, and by it the node hands over the rows of its set
+it holds right now, under their own keys as the scope, at the moments named rows
+are handed over: the handshake, a neighbour's new reader interest, a change of
+ownership here. A query for missing rows it answers with them under its own
+name. Two limits are known and accepted: a row of the set deleted while a
+neighbour was cut off is not swept off that neighbour, and the birth of a row of
+the set hands nothing over out of turn — its delta carries it, and every moment
+a neighbour could miss it is a hand-over of its own.
 
 | Piece | Lands with |
 |---|---|
@@ -762,7 +768,10 @@ sets and a whole owner beside a set owner with and without shared-owner
 receipts, the runtime set on a collection cut by no field and two classes holding
 runtime sets, and the reads that repeat a claim (`TopologyValidatorTest`), the
 grants a stop takes back
-(`WorkerManagerStopCleanupTest`), the node-level map of runtime owners and the
-set claim that speaks for no row there (`RtNodeSourceMapTest`), and the markdown rules that keep this file's links
+(`WorkerManagerStopCleanupTest`), the node-level map of runtime owners, the
+set claim that speaks for no row there and the set it hands over
+(`RtNodeSourceMapTest`), the hand-over of a set, the answer to a query with its
+rows and the offer that skips them (`DaemonManagerRtSyncPeerTest`), the rows of
+a set read off the collection (`RtSnapshotTest`), and the markdown rules that keep this file's links
 intact (`AgentDocGuardTest`, `DOC-LINK`). The guard that refuses the call itself
 is `TRUTH-SOURCE-CLAIM`, and is described in *The Form That Is Gone*.

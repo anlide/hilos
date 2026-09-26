@@ -18,6 +18,9 @@ namespace Demo\Cluster\Constants;
  * The fourth, {@see BALLAST}, is placeable like the first two and exists only to hold capacity:
  * it costs the node ram, so a scenario can show the leader filling the slaves in proportion to
  * what they declare (HIL-448). Nothing starts it unless a scenario asks for it.
+ *
+ * The fifth, {@see RT_SET_PROBE}, is a node replica like {@see DB_PROBE}: one on every node,
+ * owning the set of the probe notes that belongs to its node (HIL-1116).
  */
 final class AgentType
 {
@@ -32,4 +35,7 @@ final class AgentType
 
     /** @var string Placeable agent that does nothing but hold a slice of its node's declared ram */
     public const string BALLAST = 'ballast';
+
+    /** @var string Per-node replica that owns this node's set of the probe notes */
+    public const string RT_SET_PROBE = 'rt_set_probe';
 }

@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\Cluster\Runtime\View\Context;
 
+use Demo\Cluster\Runtime\State\Collection\ProbeNotes as StateProbeNotes;
 use Demo\Cluster\Runtime\State\Collection\WorkerStatuses as StateWorkerStatuses;
+use Demo\Cluster\Runtime\View\Actions\Collection\ProbeNotesActions;
 use Demo\Cluster\Runtime\View\Actions\Collection\WorkerStatusesActions;
+use Demo\Cluster\Runtime\View\Actions\Item\ProbeNoteActions;
 use Demo\Cluster\Runtime\View\Actions\Item\WorkerStatusActions;
+use Demo\Cluster\Runtime\View\Collection\ProbeNotes;
 use Demo\Cluster\Runtime\View\Collection\WorkerStatuses;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -32,7 +36,13 @@ use Hilos\Runtime\View\Context\RtContext;
  * arrangement key-scoped ownership exists for, and the one an acceptance run can watch converge
  * after a link goes down and comes back.
  *
+ * The probe notes are the stand of the set width (HIL-1116): cut into sets by the node a note
+ * belongs to, each set owned by the set probe of that node. They show a claim over a set holding
+ * across nodes - a node writes its own set, is refused another's, and a node cut off while a set
+ * was written gets the row when that set is handed over.
+ *
  * @property-read WorkerStatuses $workerStatuses Fleet worker statuses, one row per member
+ * @property-read ProbeNotes $probeNotes Notes of the set probe, cut into sets by node
  */
 final class ClusterRtContext extends RtContext
 {
@@ -40,8 +50,12 @@ final class ClusterRtContext extends RtContext
 
     public const string workerStatus = 'workerStatus';
 
+    public const string probeNotes = 'probeNotes';
+
+    public const string probeNote = 'probeNote';
+
     /**
-     * Registers the fleet worker statuses and their view representation.
+     * Registers the fleet worker statuses, the probe notes and their view representation.
      *
      * @throws StateCollectionNotFoundException When a represented collection key is not registered
      */
@@ -54,6 +68,15 @@ final class ClusterRtContext extends RtContext
             WorkerStatuses::class,
             WorkerStatusesActions::class,
             WorkerStatusActions::class,
+        );
+
+        $this->_stateCollections[self::probeNotes] = StateProbeNotes::init();
+
+        $this->setRepresent(
+            self::probeNotes,
+            ProbeNotes::class,
+            ProbeNotesActions::class,
+            ProbeNoteActions::class,
         );
     }
 }

@@ -88,9 +88,14 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 19. worker death on a live node — one worker process of a slave is SIGKILLed:
    the node names the agents it lost, the leader places exactly those again, and
    the members on its other workers run on untouched (HIL-440)
+20. rt set width across nodes — every node's set probe owns the set of one runtime
+   collection named by its node: a note written into its own set reaches every
+   node, the same write from another node is refused by the truth-source door, and
+   a node cut off while a set was written gets the note after it is back, by the
+   hand-over of that set (HIL-1116)
 
 They run in the order the driver lists them, which is not the order they are
-numbered: the three RT scenarios and scenario 19 go right after placement, while
+numbered: the RT scenarios and scenario 19 go right after placement, while
 the fleet the leader just placed is still spread over both slaves. Scenario 19
 therefore keeps members on workers of its victim that survive. That order was
 forced by a defect — the matrix

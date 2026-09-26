@@ -68,6 +68,9 @@ final class CliCommands
     /** @var string Command: Read a settings row as one node holds it (test-only) */
     public const string CLUSTER_TEST_DB_READ = 'test:cluster:db:read';
 
+    /** @var string Command: Write a row of a runtime set on one node, through its truth-source door (test-only) */
+    public const string CLUSTER_TEST_RT_WRITE = 'test:cluster:rt:write';
+
     /** @var string Command: Ask the leader to place an agent, as addressing one does (test-only) */
     public const string CLUSTER_TEST_AGENT_PLACE = 'test:cluster:agent:place';
 

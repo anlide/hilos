@@ -74,6 +74,49 @@ final class RtSnapshot
     }
 
     /**
+     * Reads the rows of some sets of an RT collection, keyed by state id.
+     *
+     * What a node owning a set hands over (HIL-1116): not the collection but the rows of its set
+     * it holds right now. The field a row is cut by is named by the row class
+     * ({@see RtState::SET_VIA}), and a row belongs to a set when that field, read as a string,
+     * is the set's key. Here and not in the daemon for the reason the whole class exists.
+     *
+     * @param string $collectionKey RT collection to read
+     * @param list<string> $setKeys Set keys whose rows to read
+     * @return array<string, array<string, mixed>> Rows by state id whose set key is one of those, empty when the
+     *     collection is cut by no field
+     */
+    public static function setRows(string $collectionKey, array $setKeys): array
+    {
+        $field = self::setFieldOf($collectionKey);
+        if ($field === null || $setKeys === []) {
+            return [];
+        }
+
+        return array_filter(
+            self::rows($collectionKey),
+            static fn (array $row): bool => in_array(self::setKeyIn($row, $field), $setKeys, true),
+        );
+    }
+
+    /**
+     * Names the set one row of an RT collection is in.
+     *
+     * Asked of a row that came over the wire as an array, where no row object stands to ask
+     * {@see RtState::touchedSetKeys()}; the value is read the way that method reads it.
+     *
+     * @param string $collectionKey RT collection the row belongs to
+     * @param array<string, mixed> $row Row as the wire carries it
+     * @return ?string Set key of the row, null when the row is in nobody's set or the collection is cut by no field
+     */
+    public static function setKeyOfRow(string $collectionKey, array $row): ?string
+    {
+        $field = self::setFieldOf($collectionKey);
+
+        return $field === null ? null : self::setKeyIn($row, $field);
+    }
+
+    /**
      * Replaces a whole RT collection with the rows another node handed over.
      *
      * A row the receiving side refuses costs exactly that row, for the reason
@@ -239,5 +282,36 @@ final class RtSnapshot
         }
 
         $state->markRtSyncBaseline();
+    }
+
+    /**
+     * Names the field the rows of a mounted state collection are cut into sets by.
+     *
+     * @param string $collectionKey RT collection to ask about
+     * @return ?string Field its row class names as {@see RtState::SET_VIA}, null when no state collection is
+     *     mounted under the key or its row class names no field
+     */
+    private static function setFieldOf(string $collectionKey): ?string
+    {
+        $stateClass = Hilos::$rt?->stateClassOf($collectionKey);
+        if ($stateClass === null || !is_subclass_of($stateClass, RtState::class) || $stateClass::SET_VIA === '') {
+            return null;
+        }
+
+        return $stateClass::SET_VIA;
+    }
+
+    /**
+     * Reads the set key of one row, as {@see RtState::touchedSetKeys()} reads it: a scalar as a string.
+     *
+     * @param array<string, mixed> $row Row to read
+     * @param string $field Field the rows are cut by
+     * @return ?string Set key of the row, null when the field is absent, null or not a scalar
+     */
+    private static function setKeyIn(array $row, string $field): ?string
+    {
+        $value = $row[$field] ?? null;
+
+        return is_scalar($value) ? (string)$value : null;
     }
 }

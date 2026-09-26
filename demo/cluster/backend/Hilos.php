@@ -7,10 +7,12 @@ namespace Demo\Cluster;
 use Demo\Cluster\Agents\BallastAgent;
 use Demo\Cluster\Agents\ClaimerAgent;
 use Demo\Cluster\Agents\DbProbeAgent;
+use Demo\Cluster\Agents\RtSetProbeAgent;
 use Demo\Cluster\Agents\WorkerAgent;
 use Demo\Cluster\Core\Agent\Daemon\BallastAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\DbProbeAgentDaemon;
+use Demo\Cluster\Core\Agent\Daemon\RtSetProbeAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Database\ClusterDbContext;
 use Demo\Cluster\Environment\ClusterEnvCatalog;
@@ -30,10 +32,12 @@ use Hilos\Runtime\View\Context\RtContext;
  * A deliberately minimal, headless project: no pages, no WebSocket, no browser
  * context — just the placeable no-op fleet the multi-node cluster harness (HIL-185)
  * observes, the claimer it stages a two-owner split with, and the per-node probe that
- * writes and reads a row of the one database the stand shares (HIL-712). Its only
- * runtime state is the fleet's status collection alongside the framework-owned
- * protected mode singleton, mounted per node so the daemon truth source has a local
- * writer seam; the probe adds none, because the row it is about is in the database.
+ * writes and reads a row of the one database the stand shares (HIL-712). Its runtime
+ * state is the fleet's status collection and the probe notes cut into sets by node,
+ * whose per-node owner shows the set width holding across nodes (HIL-1116), alongside
+ * the framework-owned protected mode singleton, mounted per node so the daemon truth
+ * source has a local writer seam; the database probe adds none, because the row it is
+ * about is in the database.
  * The whole CLUSTER_* configuration is inherited from the framework env catalog, so
  * the facade only names the env catalog, the agent registry, the database context,
  * and this minimal runtime context.
@@ -83,6 +87,14 @@ final class Hilos extends HilosFacade
             // rather than wherever a placement happened to land. Neither INDEXED nor
             // PLACEMENT may stand beside it - a node replica has no index and no node to
             // pick - and topology validation refuses both.
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        RtSetProbeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => RtSetProbeAgent::class,
+            AgentRegistryKey::DAEMON => RtSetProbeAgentDaemon::class,
+            // A replica on every node for the reason the database probe is one: each owns the
+            // set of the probe notes named by its own node, so "s1 writes its set and s2 may
+            // not" names two particular nodes (HIL-1116).
             AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
     ];

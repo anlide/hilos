@@ -2891,6 +2891,12 @@ abstract class DaemonManager extends BaseManager implements
      * ever handed over, delivery is best-effort with no retries (HIL-183), and so everything
      * written during a broken link was lost for good.
      *
+     * An owner of a set offers the rows of its set it holds right now, under their own scope
+     * (HIL-1116). The frame is the one named rows travel in, and the receiver does not tell the
+     * two apart. A row of the set deleted while the link was broken is not swept off the
+     * neighbour: the scope is built from the rows being sent, and sweeping by the set instead
+     * would erase a live row a co-owner with a receipt wrote, or one written a moment ago.
+     *
      * Protected for the reason {@see broadcastRtSyncToPeers()} is: it is how a subclass sees
      * what this node hands over.
      *
@@ -2933,6 +2939,27 @@ abstract class DaemonManager extends BaseManager implements
             // window in which the row does not exist here yet. Answering for it in that window
             // tells the receiver to delete a row that is alive - and it never comes back, because
             // every write after the first is an UPDATE and a node without the row drops it.
+            $mesh->sendRtSnapshotToNode(
+                $nodeId,
+                $collectionKey,
+                $rows,
+                array_map(strval(...), array_keys($rows)),
+            );
+        }
+
+        foreach ($map->setScopedCollections() as $collectionKey => $setKeys) {
+            if (!self::isHandedOverInSnapshot($collectionKey)) {
+                continue;
+            }
+
+            $rows = RtSnapshot::setRows($collectionKey, $setKeys);
+            // A set holding no row here yet is said nothing about, for the reason above: an
+            // empty scope would erase the neighbour's whole copy, the other nodes' sets with it.
+            if ($rows === []) {
+                continue;
+            }
+
+            // Scoped by the rows being sent and not by the set, for the reason the named rows are.
             $mesh->sendRtSnapshotToNode(
                 $nodeId,
                 $collectionKey,
@@ -3324,7 +3351,8 @@ abstract class DaemonManager extends BaseManager implements
      *
      * Rows an agent of this node has CLAIMED are passed over too, written or not: this node is
      * their source of truth, and a copy of how they looked elsewhere is not an improvement on
-     * having none yet.
+     * having none yet. The rows of a set claimed here are passed over the same way - this node
+     * is where they come from (HIL-1116).
      *
      * The whole frame is never refused, and that is the second difference. A snapshot overlapping
      * this node's own claim is the symptom of a truth source that has split in two; an offer
@@ -3344,9 +3372,14 @@ abstract class DaemonManager extends BaseManager implements
     {
         $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
         $held = RtSnapshot::heldKeys($collectionKey, array_map(strval(...), array_keys($rows)));
+        $ownSetKeys = $sourceMap->claimedSetKeys($collectionKey);
         $missing = [];
         foreach ($rows as $stateId => $row) {
-            if (in_array((string)$stateId, $held, true) || $sourceMap->owns($collectionKey, (string)$stateId)) {
+            if (
+                in_array((string)$stateId, $held, true)
+                || $sourceMap->owns($collectionKey, (string)$stateId)
+                || in_array(RtSnapshot::setKeyOfRow($collectionKey, $row), $ownSetKeys, true)
+            ) {
                 continue;
             }
 
@@ -3399,7 +3432,8 @@ abstract class DaemonManager extends BaseManager implements
      *
      * The signature is what this node owns, not the rows: an offer per write would be a snapshot
      * per delta. So the check costs one walk over a handful of claims per loop pass, and the
-     * hand-over itself happens on the rare pass where an agent started, stopped or moved.
+     * hand-over itself happens on the rare pass where an agent started, stopped or moved - an
+     * agent over a set included, since the sets claimed here are part of the signature.
      *
      * Protected for the reason {@see sendRtSnapshotsToNode()} is: it is how a subclass sees what
      * this node hands over.
@@ -3420,12 +3454,16 @@ abstract class DaemonManager extends BaseManager implements
         // alone, so this is still not a snapshot per delta. The walk is over the claims, not the
         // rows, and asks the collection rather than building one: the master pays for a handful
         // of isset() per pass, not for serializing every row it holds.
+        // The rows of a set are left out of presence, and on purpose (HIL-1116): a row of a set
+        // is born by ordinary work, and moving the signature on each birth would be a snapshot of
+        // the set per write. Every moment a neighbour could have missed a birth - the handshake,
+        // a new reader's interest, a change of ownership - hands the set over on its own.
         $held = [];
         foreach ($scoped as $collectionKey => $scopeKeys) {
             $held[$collectionKey] = RtSnapshot::heldKeys($collectionKey, $scopeKeys);
         }
 
-        $signature = json_encode([$map->fullyOwnedCollections(), $scoped, $held]);
+        $signature = json_encode([$map->fullyOwnedCollections(), $scoped, $held, $map->setScopedCollections()]);
         if ($signature === $this->rtOwnershipSignature) {
             return;
         }
@@ -3890,7 +3928,10 @@ abstract class DaemonManager extends BaseManager implements
      * Staleness is marked per origin ({@see noteNodeUnreachable()}), so an answer signed by the
      * holder would freeze rows whose owner is up and leave a dead owner's rows looking current.
      * A row whose origin this node cannot name travels in no frame at all: there is nothing to
-     * sign it with, and a row with no source is one the receiver could never freeze.
+     * sign it with, and a row with no source is one the receiver could never freeze. The rows of
+     * a set claimed here are this node's own, as the rows of {@see RtNodeSourceMap::owns()} are
+     * (HIL-1116): a row written here has no origin to name, and without that the owner of a set
+     * would not answer with its rows at all.
      *
      * A collection nobody hands over is passed over exactly as it is in a hand-over, and so is
      * one this node holds no rows of: silence rather than a frame saying nothing.
@@ -3917,8 +3958,9 @@ abstract class DaemonManager extends BaseManager implements
 
             $ownRows = [];
             $replicaRows = [];
+            $ownSetRows = RtSnapshot::setRows($collectionKey, $sourceMap->claimedSetKeys($collectionKey));
             foreach (RtSnapshot::rows($collectionKey) as $stateId => $row) {
-                if ($sourceMap->owns($collectionKey, (string)$stateId)) {
+                if ($sourceMap->owns($collectionKey, (string)$stateId) || isset($ownSetRows[(string)$stateId])) {
                     $ownRows[(string)$stateId] = $row;
                     continue;
                 }

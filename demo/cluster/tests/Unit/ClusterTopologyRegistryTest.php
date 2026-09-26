@@ -7,6 +7,7 @@ namespace Demo\Cluster\Tests\Unit;
 use Demo\Cluster\Agents\BallastAgent;
 use Demo\Cluster\Agents\ClaimerAgent;
 use Demo\Cluster\Agents\DbProbeAgent;
+use Demo\Cluster\Agents\RtSetProbeAgent;
 use Demo\Cluster\Agents\WorkerAgent;
 use Demo\Cluster\Constants\AgentType;
 use Demo\Cluster\Constants\ClusterCapability;
@@ -14,10 +15,12 @@ use Demo\Cluster\Constants\ClusterResource;
 use Demo\Cluster\Core\Agent\Daemon\BallastAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\DbProbeAgentDaemon;
+use Demo\Cluster\Core\Agent\Daemon\RtSetProbeAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Core\Router\ClusterSignalRouter;
 use Demo\Cluster\Database\ClusterDbContext;
 use Demo\Cluster\Hilos;
+use Demo\Cluster\Runtime\State\Item\ProbeNote;
 use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AgentRegistry;
@@ -26,6 +29,7 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
@@ -58,19 +62,24 @@ final class ClusterTopologyRegistryTest extends TestCase
         // is headless, so an agent is the only thing that can carry work a scenario drives. The
         // worker agent drives the clustered protected-mode entry path - the leader's quiesce
         // round and a follower's fail-closed refusal - and the probe carries the database pair,
-        // which the master must not answer because a database read blocks.
+        // which the master must not answer because a database read blocks. The set probe carries
+        // the runtime write, which has to pass the truth-source door of the node that owns a set.
         $this->assertSame([
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::WORKER,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::WORKER,
             CliCommands::PROTECTED_MODE_TEST_OPEN => AgentType::WORKER,
             CliCommands::CLUSTER_TEST_DB_WRITE => AgentType::DB_PROBE,
             CliCommands::CLUSTER_TEST_DB_READ => AgentType::DB_PROBE,
+            CliCommands::CLUSTER_TEST_RT_WRITE => AgentType::RT_SET_PROBE,
         ], Hilos::getCommandAgentRoutes());
     }
 
     public function testAgentRegistryHasThePlaceableWorkerAndTheClaimer(): void
     {
-        $this->assertSame([AgentType::WORKER, AgentType::CLAIMER, AgentType::BALLAST, AgentType::DB_PROBE], array_keys(Hilos::AGENTS));
+        $this->assertSame(
+            [AgentType::WORKER, AgentType::CLAIMER, AgentType::BALLAST, AgentType::DB_PROBE, AgentType::RT_SET_PROBE],
+            array_keys(Hilos::AGENTS),
+        );
 
         $entry = Hilos::AGENTS[AgentType::WORKER];
         $this->assertSame(WorkerAgent::class, AgentRegistry::workerClass($entry));
@@ -155,6 +164,31 @@ final class ClusterTopologyRegistryTest extends TestCase
         $daemon = new DbProbeAgentDaemon();
         $this->assertSame([], $daemon->requiredCapabilities());
         $this->assertFalse($daemon->requiresMonopolisticProcess());
+    }
+
+    public function testTheSetProbeIsANodeReplicaThatClaimsItsNodesSet(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::RT_SET_PROBE];
+        $this->assertSame(RtSetProbeAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(RtSetProbeAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(is_subclass_of(RtSetProbeAgentDaemon::class, AbstractAgentDaemon::class));
+        $this->assertSame(AgentType::RT_SET_PROBE, RtSetProbeAgent::AGENT_TYPE);
+
+        // A replica on every node, as the database probe is: scenario 20 names the node that
+        // writes its set and the node refused it, and both have to be particular nodes.
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($entry));
+        $this->assertFalse(AgentRegistry::requiresIndex($entry));
+        $this->assertArrayNotHasKey(AgentRegistryKey::PLACEMENT, $entry);
+        $daemon = new RtSetProbeAgentDaemon();
+        $this->assertSame([], $daemon->requiredCapabilities());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
+
+        // The claim the scenario stands on: the probe notes, by the set of this node, with every
+        // operation - and the set is cut by the node a note belongs to.
+        $this->assertSame([ClusterRtContext::probeNotes => TruthSourceOperation::BY_KIND], RtSetProbeAgent::OWNS_RT_SET);
+        $this->assertSame(ProbeNote::nodeId, ProbeNote::SET_VIA);
+        // Off a cluster there is no node and so no set: the empty key refuses the start.
+        $this->assertSame('', (new RtSetProbeAgent())->ownedRtSetKey(ClusterRtContext::probeNotes));
     }
 
     public function testNoAgentIsStartedOnTheBootstrapSignal(): void

@@ -557,6 +557,33 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * A frame about a row of this node's own set is applied, even one claiming the whole right:
+     * judging frames, a claim over a set speaks for no row, since set keys are not compared at
+     * runtime (owner's decision, HIL-1114). The hand-over of the set (HIL-1116) left that alone.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testADeltaAboutARowOfThisNodesSetIsApplied(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountSetCollection();
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+
+        ob_start();
+        $daemon->receive($daemon->rtSyncCreatedInSet('a', '42', 'Grace'));
+        $logged = (string)ob_get_clean();
+
+        $this->assertTrue($collection->has('a'));
+        $this->assertStringNotContainsString('truth sources on two nodes', $logged);
+    }
+
+    /**
      * An owner of named rows announces its writes as a partial owner would, because that is what
      * it is on the row axis: the rest of the collection belongs to somebody, and the receiving
      * node must not read this fact as a claim over it.
@@ -924,6 +951,34 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $this->assertStringNotContainsString('truth sources on two nodes', $logged);
     }
 
+    /**
+     * A node owning a set takes a scoped frame of another node's set, as the owner of named rows
+     * takes one about other rows: the frames are judged as before, and the set speaks for none.
+     */
+    public function testAScopedSnapshotOfAnotherSetIsAcceptedWhereASetIsOwned(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountSetCollection();
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+
+        ob_start();
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::SET_ROWS,
+            ['b' => ['id' => 'b', 'ownerId' => '7', 'name' => 'Grace']],
+            ['b'],
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertTrue($collection->has('b'));
+        $this->assertStringNotContainsString('truth sources on two nodes', $logged);
+    }
+
     public function testASnapshotForACollectionThisNodeOwnsIsRefused(): void
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
@@ -1120,6 +1175,118 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         );
     }
 
+    /**
+     * An owner of a set hands over the rows of its set it holds, under a scope built from those
+     * rows (HIL-1116); a row of another set held here is not its to hand over. Before this nothing
+     * was handed over at all, and a node that missed the birth of a row of the set never learned
+     * it.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testAnOwnerOfASetHandsOverTheRowsOfItsSetUnderTheirScope(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->writeSetRow('a', '42', 'Ada');
+        $daemon->writeSetRow('b', '7', 'Grace');
+        $daemon->writeSetRow('c', '42', 'Hedy');
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+
+        $daemon->handshaked('node-c');
+
+        $this->assertSame(
+            [[
+                'nodeId' => 'node-c',
+                'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::SET_ROWS,
+                'rows' => [
+                    'a' => ['id' => 'a', 'ownerId' => '42', 'name' => 'Ada'],
+                    'c' => ['id' => 'c', 'ownerId' => '42', 'name' => 'Hedy'],
+                ],
+                'scopeKeys' => ['a', 'c'],
+            ]],
+            $daemon->mesh->snapshots,
+            'The row of set 7 is held here but is not this node\'s to hand over',
+        );
+    }
+
+    /**
+     * An owner of a set holding no row of it offers nothing, for the reason an owner of named rows
+     * holding none does: an empty scope reads as the collection, and would wipe the other sets.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testAnOwnerOfASetHoldingNoRowOfItOffersNothingAtAll(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->writeSetRow('b', '7', 'Grace');
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+
+        $daemon->handshaked('node-c');
+
+        $this->assertSame([], $daemon->mesh->snapshots);
+    }
+
+    /**
+     * A claim over a set short of an operation hands nothing over: another node writes the rows of
+     * the set too, so this node's copy of them is not the whole truth.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testASetClaimShortOfAnOperationHandsOverNothing(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->writeSetRow('a', '42', 'Ada');
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+
+        $daemon->handshaked('node-c');
+
+        $this->assertSame([], $daemon->mesh->snapshots);
+    }
+
+    /**
+     * A whole claim beside the set hands the collection over whole, in one frame with no scope -
+     * the set offered besides would offer the same rows under a second scope.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testASetIsNotHandedOverWhereTheWholeCollectionIsOwned(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->writeSetRow('a', '42', 'Ada');
+        $daemon->writeSetRow('b', '7', 'Grace');
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS]);
+
+        $daemon->handshaked('node-c');
+
+        $this->assertCount(1, $daemon->mesh->snapshots);
+        $this->assertSame(['a', 'b'], array_keys($daemon->mesh->snapshots[0]['rows']));
+        $this->assertSame([], $daemon->mesh->snapshots[0]['scopeKeys']);
+    }
+
     public function testANodeThatOwnsNothingOffersNothingToTheNodeItLinkedTo(): void
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
@@ -1227,6 +1394,74 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $daemon->offerOnOwnershipChange();
 
         $this->assertCount(1, $daemon->mesh->snapshots, 'The same ownership is offered once, not per pass');
+    }
+
+    /**
+     * An agent over a set that starts after the link is offered to the nodes already linked: the
+     * sets claimed here are part of the ownership signature.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testASetClaimThatArrivesAfterTheLinkIsOfferedToTheNodesAlreadyLinked(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->writeSetRow('a', '42', 'Ada');
+        $daemon->mesh->linked = ['node-c'];
+        $daemon->offerOnOwnershipChange();
+        $this->assertSame([], $daemon->mesh->snapshots, 'A node that owns nothing offers nothing');
+
+        $daemon->noteOwnAgent(
+
+            'set_agent',
+
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+
+            [],
+
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+
+        );
+        $daemon->offerOnOwnershipChange();
+
+        $this->assertSame(
+            [[
+                'nodeId' => 'node-c',
+                'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::SET_ROWS,
+                'rows' => ['a' => ['id' => 'a', 'ownerId' => '42', 'name' => 'Ada']],
+                'scopeKeys' => ['a'],
+            ]],
+            $daemon->mesh->snapshots,
+        );
+    }
+
+    /**
+     * The birth of a row of a set does not move the signature, unlike the first row under a named
+     * key: a row of a set is born by ordinary work, and an offer per birth would be a snapshot of
+     * the set per write. Every moment a neighbour could miss a birth is a hand-over of its own.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testTheBirthOfARowOfASetOffersNothing(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->writeSetRow('a', '42', 'Ada');
+        $daemon->mesh->linked = ['node-c'];
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+        $daemon->offerOnOwnershipChange();
+        $this->assertCount(1, $daemon->mesh->snapshots);
+
+        $daemon->writeSetRow('c', '42', 'Hedy');
+        $daemon->offerOnOwnershipChange();
+
+        $this->assertCount(1, $daemon->mesh->snapshots, 'A row born into the set is carried by its delta');
     }
 
     /**
@@ -1834,6 +2069,48 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * A holder answers with the rows of its own set under its own name, as with the rows it owns
+     * by name (HIL-1116): a row written here has no origin to name, so before this the owner of
+     * a set did not answer with its rows at all. A copy of another set goes under its writer.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     * @throws InvalidFormatException When the local row is not one the state can be built from
+     */
+    public function testAHolderAnswersWithTheRowsOfItsOwnSetUnderItsOwnName(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->writeSetRow('a', '42', 'Ada');
+        $daemon->receive($daemon->rtSyncCreatedInSet('b', '7', 'Grace'));
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+
+        $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS]);
+
+        $this->assertSame(
+            [
+                [
+                    'nodeId' => 'node-c',
+                    'originNodeId' => null,
+                    'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::SET_ROWS,
+                    'rows' => ['a' => ['id' => 'a', 'ownerId' => '42', 'name' => 'Ada']],
+                ],
+                [
+                    'nodeId' => 'node-c',
+                    'originNodeId' => self::REMOTE_NODE,
+                    'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::SET_ROWS,
+                    'rows' => ['b' => ['id' => 'b', 'ownerId' => '7', 'name' => 'Grace']],
+                ],
+            ],
+            $daemon->mesh->replicaOffers,
+        );
+    }
+
+    /**
      * The rotation store is not answered about either, by the same predicate that keeps it out
      * of the hand-over and out of the request.
      */
@@ -1897,6 +2174,37 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
 
         $this->assertFalse($collection->has(self::ROW_ID), 'The row is this node\'s to write, empty or not');
         $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * A row of a set claimed here is passed over in an offer, as a row claimed by name is: this
+     * node is where the rows of its set come from. A row of another set is taken as usual.
+     *
+     * @throws HilosException When the write of the missing rows fails
+     */
+    public function testAnOfferSkipsARowOfThisNodesOwnSet(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountSetCollection();
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+
+        $daemon->receiveOffer(
+            self::REMOTE_NODE,
+            [
+                'a' => ['id' => 'a', 'ownerId' => '42', 'name' => 'stale'],
+                'b' => ['id' => 'b', 'ownerId' => '7', 'name' => 'Grace'],
+            ],
+            DaemonManagerRtSyncPeerTestRtContext::SET_ROWS,
+        );
+
+        $this->assertFalse($collection->has('a'), 'The rows of its set are this node\'s to write');
+        $this->assertTrue($collection->has('b'));
     }
 
     /**
@@ -2265,6 +2573,16 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     }
 
     /**
+     * Mounts the runtime of this node and hands back the collection cut into sets by its owner.
+     *
+     * @return DaemonManagerRtSyncPeerTestSetStates Collection whose rows name the set they are in
+     */
+    public function mountSetCollection(): DaemonManagerRtSyncPeerTestSetStates
+    {
+        return $this->mountRuntime()->setRows;
+    }
+
+    /**
      * Mounts the runtime of this node and hands back the framework store a master co-writes.
      *
      * The real collection rather than a stand-in keyed like it: what the cases around it turn on
@@ -2298,6 +2616,33 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
                 [
                     DaemonManagerRtSyncPeerTestState::id => $stateId,
                     DaemonManagerRtSyncPeerTestState::name => $name,
+                ],
+            ),
+        );
+    }
+
+    /**
+     * Builds the fact the owner of a set announces about one row of the collection cut into sets.
+     *
+     * @param string $stateId Row the fact is about
+     * @param string $ownerId Set the row is in
+     * @param string $name Row label the fact carries
+     * @return SignalDTO Signal announcing that row
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function rtSyncCreatedInSet(string $stateId, string $ownerId, string $name): SignalDTO
+    {
+        return new SignalDTO(
+            new SignalSource(SignalSource::RT),
+            new SignalType(SignalTypeConstants::RT_SYNC_CREATED),
+            new SignalName(SignalConstants::RT_SYNC_CREATED),
+            new RtSyncCreatedSignalData(
+                DaemonManagerRtSyncPeerTestRtContext::SET_ROWS,
+                $stateId,
+                [
+                    DaemonManagerRtSyncPeerTestSetState::id => $stateId,
+                    DaemonManagerRtSyncPeerTestSetState::ownerId => $ownerId,
+                    DaemonManagerRtSyncPeerTestSetState::name => $name,
                 ],
             ),
         );
@@ -2420,16 +2765,22 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      * @param list<string> $collectionKeys RT collections it owns
      * @param list<string> $partialCollectionKeys Those of them it owns with only part of the operations
      * @param array<string, list<string>> $keysByCollection Those of them it claimed by key, and the keys
+     * @param array<string, string> $setKeyByCollection Those of them it claimed by a set, and the set key of each
      */
     public function noteOwnAgent(
         string $agentId,
         array $collectionKeys,
         array $partialCollectionKeys = [],
         array $keysByCollection = [],
+        array $setKeyByCollection = [],
     ): void {
-        $this->agentManagerDaemon->handleRtSourceRegistered(
-            new WorkerRtSourceRegisteredDTO($agentId, $collectionKeys, $partialCollectionKeys, $keysByCollection),
-        );
+        $this->agentManagerDaemon->handleRtSourceRegistered(new WorkerRtSourceRegisteredDTO(
+            $agentId,
+            $collectionKeys,
+            $partialCollectionKeys,
+            $keysByCollection,
+            $setKeyByCollection,
+        ));
     }
 
     /**
@@ -2545,6 +2896,23 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
         $this->mountCollection()->add(DaemonManagerRtSyncPeerTestState::fromRow([
             DaemonManagerRtSyncPeerTestState::id => $stateId,
             DaemonManagerRtSyncPeerTestState::name => $name,
+        ]));
+    }
+
+    /**
+     * Puts one row into the collection cut into sets, as an agent of THIS node would have.
+     *
+     * @param string $stateId Row to write
+     * @param string $ownerId Set the row is in
+     * @param string $name Row label to write
+     * @throws InvalidFormatException When the row is missing a field it is built from
+     */
+    public function writeSetRow(string $stateId, string $ownerId, string $name): void
+    {
+        $this->mountSetCollection()->add(DaemonManagerRtSyncPeerTestSetState::fromRow([
+            DaemonManagerRtSyncPeerTestSetState::id => $stateId,
+            DaemonManagerRtSyncPeerTestSetState::ownerId => $ownerId,
+            DaemonManagerRtSyncPeerTestSetState::name => $name,
         ]));
     }
 
@@ -3054,19 +3422,27 @@ final class DaemonManagerRtSyncPeerTestRtContext extends RtContext
 {
     public const string ROWS = 'daemonManagerRtSyncPeerTestRows';
 
+    public const string SET_ROWS = 'daemonManagerRtSyncPeerTestSetRows';
+
     /** The mounted collection, kept so a case can read it back without a lookup by key */
     public DaemonManagerRtSyncPeerTestStates $rows;
+
+    /** The mounted collection cut into sets by its owner, kept for the same reason */
+    public DaemonManagerRtSyncPeerTestSetStates $setRows;
 
     /** The framework store every master co-writes, mounted as a node carrying sessions has it */
     public HilosSessionRotations $rotations;
 
     /**
-     * Registers the collection these cases replicate and the framework store beside it.
+     * Registers the collections these cases replicate and the framework store beside them.
      */
     public function configure(): void
     {
         $this->rows = DaemonManagerRtSyncPeerTestStates::init();
         $this->_stateCollections[self::ROWS] = $this->rows;
+
+        $this->setRows = DaemonManagerRtSyncPeerTestSetStates::init();
+        $this->_stateCollections[self::SET_ROWS] = $this->setRows;
 
         $this->rotations = HilosSessionRotations::init();
         $this->_stateCollections[StateHilosSessionRotation::RT_COLLECTION] = $this->rotations;
@@ -3121,6 +3497,67 @@ final class DaemonManagerRtSyncPeerTestState extends RtState
     {
         return [
             self::id => $this->id,
+            self::name => $this->name,
+        ];
+    }
+}
+
+final class DaemonManagerRtSyncPeerTestSetStates extends RtStates
+{
+    public const string STATE_CLASS = DaemonManagerRtSyncPeerTestSetState::class;
+}
+
+/**
+ * A replicated row cut into sets by its owner: the set it is in is the value of that field.
+ */
+final class DaemonManagerRtSyncPeerTestSetState extends RtState
+{
+    public const string id = 'id';
+
+    public const string ownerId = 'ownerId';
+
+    public const string name = 'name';
+
+    public const string SET_VIA = self::ownerId;
+
+    private(set) string $id = '';
+
+    private(set) string $ownerId = '';
+
+    public string $name = '';
+
+    /**
+     * @param array<string, mixed> $row Serialized runtime row
+     * @return static Hydrated row
+     * @throws InvalidFormatException When the row is missing a field it is built from
+     */
+    public static function fromRow(array $row): static
+    {
+        $instance = new static();
+        $instance->id = self::requireString($row, self::id);
+        $instance->ownerId = self::requireString($row, self::ownerId);
+        $instance->name = self::requireString($row, self::name);
+        $instance->markRtSyncBaseline();
+
+        return $instance;
+    }
+
+    /**
+     * @return string Row key
+     */
+    public function getId(): string
+    {
+        return $this->id;
+    }
+
+    /**
+     * @return array<string, mixed> Row payload
+     */
+    public function toArray(): array
+    {
+        return [
+            self::id => $this->id,
+            self::ownerId => $this->ownerId,
             self::name => $this->name,
         ];
     }

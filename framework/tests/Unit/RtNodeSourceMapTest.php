@@ -295,13 +295,15 @@ final class RtNodeSourceMapTest extends TestCase
 
     /**
      * A claim over a set reaches the map as a claim naming no key, and so speaks for no row of its
-     * collection (HIL-1115): it refuses no neighbour's frame, and its empty scope hands nothing
-     * over. Left out of the keys instead, it would read as a claim over the whole collection.
+     * collection (HIL-1115): it refuses no neighbour's frame. Left out of the keys instead, it would
+     * read as a claim over the whole collection. What it hands over goes on a list of its own, the
+     * set's key riding beside the empty keys (HIL-1116), and not onto the list of named rows.
      */
     public function testASetClaimSpeaksForNoRowOfItsCollection(): void
     {
         RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set('42'), self::AGENT);
         $keysByCollection = RtTruthSourceRegistry::keysByCollectionOf(self::AGENT);
+        $setKeyByCollection = RtTruthSourceRegistry::setKeyByCollectionOf(self::AGENT);
         $map = new RtNodeSourceMap();
 
         $map->note(
@@ -309,14 +311,18 @@ final class RtNodeSourceMapTest extends TestCase
             RtTruthSourceRegistry::collectionsOf(self::AGENT),
             RtTruthSourceRegistry::partialCollectionsOf(self::AGENT),
             $keysByCollection,
+            $setKeyByCollection,
         );
 
         $this->assertSame([self::COLLECTION => []], $keysByCollection);
+        $this->assertSame([self::COLLECTION => '42'], $setKeyByCollection);
         $this->assertTrue($map->owns(self::COLLECTION), 'Something here does write the collection');
         $this->assertFalse($map->owns(self::COLLECTION, 'x'));
         $this->assertFalse($map->ownsFully(self::COLLECTION));
         $this->assertSame([], $map->fullyOwnedCollections());
-        $this->assertSame([self::COLLECTION => []], $map->keyScopedCollections());
+        $this->assertSame([], $map->keyScopedCollections());
+        $this->assertSame([self::COLLECTION => ['42']], $map->setScopedCollections());
+        $this->assertSame(['42'], $map->claimedSetKeys(self::COLLECTION));
     }
 
     /**
@@ -382,6 +388,66 @@ final class RtNodeSourceMapTest extends TestCase
     }
 
     /**
+     * One node, two agents, each over a set of one collection: the node hands over both sets, the
+     * collection named once.
+     */
+    public function testTheSetsOfTwoAgentsHereMakeOneList(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => []], [self::COLLECTION => '42']);
+        $map->note(self::OTHER_AGENT, [self::COLLECTION], [], [self::COLLECTION => []], [self::COLLECTION => '7']);
+
+        $this->assertSame([self::COLLECTION => ['42', '7']], $map->setScopedCollections());
+        $this->assertSame(['42', '7'], $map->claimedSetKeys(self::COLLECTION));
+    }
+
+    /**
+     * A claim over a set short of an operation hands nothing over - another node writes those rows
+     * too - and yet the rows of its set are still this node's own when a query is answered or an
+     * offer of copies arrives.
+     */
+    public function testASetClaimShortOfAnOperationIsNotHandedOverButStillItsOwn(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [self::COLLECTION], [self::COLLECTION => []], [self::COLLECTION => '42']);
+
+        $this->assertSame([], $map->setScopedCollections());
+        $this->assertSame(['42'], $map->claimedSetKeys(self::COLLECTION));
+    }
+
+    /**
+     * A whole claim beside a claim over a set leaves the collection handed over whole, and the set
+     * list silent about it, for the reason the scope list is.
+     */
+    public function testAWholeClaimHereKeepsTheSetsOffTheList(): void
+    {
+        $map = new RtNodeSourceMap();
+
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => []], [self::COLLECTION => '42']);
+        $map->note(self::OTHER_AGENT, [self::COLLECTION]);
+
+        $this->assertSame([self::COLLECTION], $map->fullyOwnedCollections());
+        $this->assertSame([], $map->setScopedCollections());
+    }
+
+    /**
+     * A stopped agent takes its set with it: a set that outlives the process holding it would go
+     * on being handed over from rows nobody here writes any more.
+     */
+    public function testAStoppedAgentTakesItsSetWithIt(): void
+    {
+        $map = new RtNodeSourceMap();
+        $map->note(self::AGENT, [self::COLLECTION], [], [self::COLLECTION => []], [self::COLLECTION => '42']);
+
+        $map->release(self::AGENT);
+
+        $this->assertSame([], $map->setScopedCollections());
+        $this->assertSame([], $map->claimedSetKeys(self::COLLECTION));
+    }
+
+    /**
      * @throws InvalidFormatException When the frame is not the object its DTO needs
      */
     public function testThePartialClaimsRoundTripToTheMaster(): void
@@ -409,6 +475,7 @@ final class RtNodeSourceMapTest extends TestCase
 
         $this->assertSame([], $parsed->partialCollectionKeys);
         $this->assertSame([], $parsed->keysByCollection, 'A build that names no rows claims none by name');
+        $this->assertSame([], $parsed->setKeyByCollection, 'A build that names no set claims none');
     }
 
     /**
@@ -422,6 +489,25 @@ final class RtNodeSourceMapTest extends TestCase
 
         $this->assertInstanceOf(WorkerRtSourceRegisteredDTO::class, $parsed);
         $this->assertSame([self::COLLECTION => ['7', '9']], $parsed->keysByCollection);
+    }
+
+    /**
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testTheClaimedSetRoundTripsToTheMaster(): void
+    {
+        $dto = new WorkerRtSourceRegisteredDTO(
+            self::AGENT,
+            [self::COLLECTION],
+            [],
+            [self::COLLECTION => []],
+            [self::COLLECTION => '42'],
+        );
+
+        $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
+
+        $this->assertInstanceOf(WorkerRtSourceRegisteredDTO::class, $parsed);
+        $this->assertSame([self::COLLECTION => '42'], $parsed->setKeyByCollection);
     }
 
     /**

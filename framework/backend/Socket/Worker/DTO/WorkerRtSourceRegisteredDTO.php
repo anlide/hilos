@@ -34,6 +34,9 @@ class WorkerRtSourceRegisteredDTO extends WorkerDTO
     /** @var string Payload key: the rows the agent claimed by name, collection by collection */
     public const string FIELD_KEYS_BY_COLLECTION = 'keysByCollection';
 
+    /** @var string Payload key: the set the agent claimed, collection by collection */
+    public const string FIELD_SET_KEY_BY_COLLECTION = 'setKeyByCollection';
+
     /**
      * Creates RT source registered DTO.
      *
@@ -44,16 +47,22 @@ class WorkerRtSourceRegisteredDTO extends WorkerDTO
      * keys it named. A claim on the whole collection names none, so the map stays silent about
      * it — silence means "all of it", as it does in the registry.
      *
+     * A claim over a set stands in that map with an empty list of keys: the node speaks for no
+     * row of it. The set key rides in the last map, and by it the master cuts the rows of the set
+     * it hands over to the other nodes.
+     *
      * @param string $agentId Agent that registered the collections
      * @param list<string> $collectionKeys RT collections it owns on this node
      * @param list<string> $partialCollectionKeys Those of them it owns with only part of the operations
      * @param array<string, list<string>> $keysByCollection Those of them it claimed by key, and the keys
+     * @param array<string, string> $setKeyByCollection Those of them it claimed by a set, and the set key of each
      */
     public function __construct(
         public readonly string $agentId,
         public readonly array $collectionKeys,
         public readonly array $partialCollectionKeys = [],
         public readonly array $keysByCollection = [],
+        public readonly array $setKeyByCollection = [],
     ) {
     }
 
@@ -80,6 +89,7 @@ class WorkerRtSourceRegisteredDTO extends WorkerDTO
             self::FIELD_COLLECTION_KEYS => $this->collectionKeys,
             self::FIELD_PARTIAL_COLLECTION_KEYS => $this->partialCollectionKeys,
             self::FIELD_KEYS_BY_COLLECTION => $this->keysByCollection,
+            self::FIELD_SET_KEY_BY_COLLECTION => $this->setKeyByCollection,
         ];
     }
 
@@ -88,9 +98,11 @@ class WorkerRtSourceRegisteredDTO extends WorkerDTO
      *
      * The partial list and the key map are both optional on the wire: a worker of an older build
      * names neither, and reading its silence as "no partial claim, no claim by key" leaves that
-     * worker judged exactly as it was before the two axes existed.
+     * worker judged exactly as it was before the two axes existed. The set map is optional the
+     * same way: silence means "no claim over a set".
      *
-     * @param array<string, mixed> $data Source data (agentId, collectionKeys, partialCollectionKeys, keysByCollection)
+     * @param array<string, mixed> $data Source data (agentId, collectionKeys, partialCollectionKeys, keysByCollection,
+     *     setKeyByCollection)
      * @return static DTO instance
      * @throws InvalidFormatException When the payload carries no agent id or no collection list
      */
@@ -130,11 +142,22 @@ class WorkerRtSourceRegisteredDTO extends WorkerDTO
             }
         }
 
+        $setKeyByCollection = [];
+        $setKeysRaw = $data[self::FIELD_SET_KEY_BY_COLLECTION] ?? [];
+        if (is_array($setKeysRaw)) {
+            foreach ($setKeysRaw as $collectionKey => $setKey) {
+                if (is_string($collectionKey) && $collectionKey !== '' && is_string($setKey) && $setKey !== '') {
+                    $setKeyByCollection[$collectionKey] = $setKey;
+                }
+            }
+        }
+
         return new static(
             agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
             collectionKeys: $collectionKeys,
             partialCollectionKeys: $partialCollectionKeys,
             keysByCollection: $keysByCollection,
+            setKeyByCollection: $setKeyByCollection,
         );
     }
 }
