@@ -255,6 +255,26 @@ final class TopologySetStandaloneClaimAgentDaemon extends TopologyTestAgentDaemo
     public const string AGENT_TYPE = 'set_standalone_claim_agent';
 }
 
+final class TopologyFullSetOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'full_set_owner_agent';
+}
+
+final class TopologySecondFullSetOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'second_full_set_owner_agent';
+}
+
+final class TopologyBorrowedSetOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'borrowed_set_owner_agent';
+}
+
+final class TopologyDbRowOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'db_row_owner_agent';
+}
+
 final class TopologySetTreeBlindAgentDaemon extends TopologyTestAgentDaemon
 {
     public const string AGENT_TYPE = 'set_tree_blind_agent';

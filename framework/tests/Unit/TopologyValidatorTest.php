@@ -1244,6 +1244,69 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    public function testTwoClassesHoldingSetsOfOneDbCollectionInFullAreRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyUnrecordedSharedSetOwnersHilos::validateTopology();
+            },
+            [
+                TopologyFullSetOwnerAgent::class . ' and ' . TopologySecondFullSetOwnerAgent::class
+                    . " both own sets of db collection 'shared_users' in full: one column cuts the table,"
+                    . ' so they meet on every instance both answer for',
+                'narrow the operations of one claim, or list the pair in SHARED_DB_OWNERS with the leaf that parts them',
+            ],
+        );
+    }
+
+    public function testAFullOwnerAndAFullSetOwnerOfOneDbCollectionAreRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyWholeAndSetOwnersHilos::validateTopology();
+            },
+            [
+                TopologyFullDbOwnerAgent::class . " owns db collection 'shared_users' in full while "
+                    . TopologyFullSetOwnerAgent::class . ' owns a set of it',
+                'narrow the operations of one claim, or list the pair in SHARED_DB_OWNERS with the leaf that parts them',
+            ],
+        );
+    }
+
+    public function testASetOwnerShortOfAnOperationBesideAFullOwnerPasses(): void
+    {
+        TopologyBorrowedSetBesideFullOwnerHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testASetOwnerAndARowOwnerOfOneDbCollectionPass(): void
+    {
+        TopologySetAndRowOwnersHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testARecordedPairOfFullSetOwnersPasses(): void
+    {
+        TopologyRecordedSharedSetOwnersHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testARecordWhoseSetOwnersNoLongerCollideIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyStaleSharedSetOwnersHilos::validateTopology();
+            },
+            [
+                "SHARED_DB_OWNERS['shared_users'] lists no pair that still conflicts;"
+                    . ' the claims were parted, so the record goes with them',
+            ],
+        );
+    }
+
     public function testAnAgentReadingItsOwnClaimIsRefused(): void
     {
         $this->assertTopologyErrors(
@@ -4385,6 +4448,42 @@ final class TopologyOwningNothingAgent extends TopologyTestAgent
     public const string AGENT_TYPE = 'owning_nothing_agent';
 }
 
+final class TopologyFullSetOwnerAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'full_set_owner_agent';
+
+    public const array OWNS_DB_SET = [
+        'shared_users' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologySecondFullSetOwnerAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'second_full_set_owner_agent';
+
+    public const array OWNS_DB_SET = [
+        'shared_users' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologyBorrowedSetOwnerAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'borrowed_set_owner_agent';
+
+    public const array OWNS_DB_SET = [
+        'shared_users' => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+    ];
+}
+
+final class TopologyDbRowOwnerAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'db_row_owner_agent';
+
+    public const array OWNS_DB_ROWS = [
+        'shared_users' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
 final class TopologyUnrecordedSharedDbOwnersHilos extends HilosFacade
 {
     public const array AGENTS = [
@@ -4528,6 +4627,164 @@ final class TopologyStaleSharedOwnersHilos extends HilosFacade
     public const array SHARED_DB_OWNERS = [
         'shared_users' => [
             SharedOwnersKey::OWNERS => [TopologyFullDbOwnerAgent::class, TopologyNarrowDbCoOwnerAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyUnrecordedSharedSetOwnersHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFullSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFullSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFullSetOwnerAgentDaemon::class,
+        ],
+        TopologySecondFullSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySecondFullSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologySecondFullSetOwnerAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyWholeAndSetOwnersHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFullDbOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFullDbOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFullDbOwnerAgentDaemon::class,
+        ],
+        TopologyFullSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFullSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFullSetOwnerAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBorrowedSetBesideFullOwnerHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFullDbOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFullDbOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFullDbOwnerAgentDaemon::class,
+        ],
+        TopologyBorrowedSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyBorrowedSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyBorrowedSetOwnerAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologySetAndRowOwnersHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFullSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFullSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFullSetOwnerAgentDaemon::class,
+        ],
+        TopologyDbRowOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyDbRowOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyDbRowOwnerAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyRecordedSharedSetOwnersHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFullSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFullSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFullSetOwnerAgentDaemon::class,
+        ],
+        TopologySecondFullSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySecondFullSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologySecondFullSetOwnerAgentDaemon::class,
+        ],
+    ];
+
+    public const array SHARED_DB_OWNERS = [
+        'shared_users' => [
+            SharedOwnersKey::OWNERS => [TopologyFullSetOwnerAgent::class, TopologySecondFullSetOwnerAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyStaleSharedSetOwnersHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFullSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFullSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFullSetOwnerAgentDaemon::class,
+        ],
+        TopologyBorrowedSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyBorrowedSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyBorrowedSetOwnerAgentDaemon::class,
+        ],
+    ];
+
+    public const array SHARED_DB_OWNERS = [
+        'shared_users' => [
+            SharedOwnersKey::OWNERS => [TopologyFullSetOwnerAgent::class, TopologyBorrowedSetOwnerAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',
         ],
     ];

@@ -104,6 +104,17 @@ final class TopologyValidator
     private const string HALF_RT = 'rt';
 
     /**
+     * Claim widths compared by the ownership-pair judge, from narrowest to widest.
+     */
+    private const string CLAIM_WHOLE = 'whole';
+
+    private const string CLAIM_SET = 'set';
+
+    private const string CLAIM_ROWS = 'rows';
+
+    private const array CLAIM_WIDTHS = [self::CLAIM_ROWS, self::CLAIM_SET, self::CLAIM_WHOLE];
+
+    /**
      * Validates topology constants declared by a Hilos facade subclass.
      *
      * @param class-string<Hilos> $hilosClass Project facade class
@@ -755,13 +766,16 @@ final class TopologyValidator
     /**
      * Refuses a topology whose declared ownership contradicts itself, before anything starts.
      *
-     * Three contradictions, all of them readable off the classes: two owners holding one
-     * collection in full, one owner holding a collection whole while another holds rows of it,
-     * and a class naming one collection in both its reads and its claims. The first two are one
-     * rule rather than two - a claim over the whole collection covers any rows - and the pair of
-     * narrow claims is left alone, because which rows an instance holds only the instance knows
-     * ({@see AbstractAgent::ownedDbRowKeys()}). What that pair does at runtime stays with the
-     * runtime guard, which judges by the claim actually laid down.
+     * Four contradictions, all of them readable off the classes: two owners holding one
+     * collection in full; one owner holding a collection whole while another holds rows or a set
+     * of it; two different classes holding sets of one table in full; and a class naming one
+     * collection in both its reads and its claims. A pair of by-row claims and a pair of set and
+     * by-row claims are left alone, because only the instance and database know which rows an
+     * instance holds and whether one of those rows belongs to the set. What those pairs do at
+     * runtime stays with the runtime guard, which judges by the claim actually laid down. Set
+     * owners are compared by class rather than by key: one column cuts the table and the two
+     * classes meet on every instance for which both are started, while instances of one class
+     * hold different sets.
      *
      * Full is the word the runtime already uses ({@see TruthSourceOperations::isComplete()}): a
      * collection has one full owner, and a co-owner short of an operation beside it is a declared
@@ -787,8 +801,11 @@ final class TopologyValidator
         $this->validateSharedOwners(
             $this->ownershipConflicts($this->completeClaims(
                 $owners,
-                OwnershipDeclaration::dbCollectionsOf(...),
-                OwnershipDeclaration::dbRowCollectionsOf(...),
+                [
+                    self::CLAIM_WHOLE => OwnershipDeclaration::dbCollectionsOf(...),
+                    self::CLAIM_SET => OwnershipDeclaration::dbSetCollectionsOf(...),
+                    self::CLAIM_ROWS => OwnershipDeclaration::dbRowCollectionsOf(...),
+                ],
             )),
             $this->constantArray($hilosClass, self::SECTION_SHARED_DB_OWNERS, $errors),
             self::SECTION_SHARED_DB_OWNERS,
@@ -800,8 +817,10 @@ final class TopologyValidator
         $this->validateSharedOwners(
             $this->ownershipConflicts($this->completeClaims(
                 $owners,
-                OwnershipDeclaration::rtCollectionsOf(...),
-                OwnershipDeclaration::rtRowCollectionsOf(...),
+                [
+                    self::CLAIM_WHOLE => OwnershipDeclaration::rtCollectionsOf(...),
+                    self::CLAIM_ROWS => OwnershipDeclaration::rtRowCollectionsOf(...),
+                ],
             )),
             $this->constantArray($hilosClass, self::SECTION_SHARED_RT_OWNERS, $errors),
             self::SECTION_SHARED_RT_OWNERS,
@@ -850,34 +869,35 @@ final class TopologyValidator
     /**
      * Reads one half of the declarations and keeps the claims that are full by operation.
      *
-     * The declarations are not parsed here: the four readers of {@see OwnershipDeclaration} fold
+     * The declarations are not parsed here: the readers of {@see OwnershipDeclaration} fold
      * the inheritance chain and expand {@see TruthSourceOperation::BY_KIND} already, and a second
      * reading of one declaration would drift away from the first silently, in the rule that
      * refuses a start.
      *
-     * A class naming one collection in both widths is read as holding it whole. That pair of
+     * A class naming one collection in more than one width is read at its widest. That group of
      * declarations is a contradiction the claim itself refuses at start
-     * ({@see OwnershipDeclaration::claimDbRows()}); until then the wider of the two is what this
-     * rule judges, so the refusal it prints is the one with the larger reach.
+     * ({@see OwnershipDeclaration::claimDbRows()}, {@see OwnershipDeclaration::claimDbSet()});
+     * until then the widest is what this rule judges, so the refusal it prints is the one with
+     * the largest reach.
      *
      * @param list<class-string<AbstractAgent>> $ownerClasses Classes to read the declarations off
-     * @param Closure(class-string<AbstractAgent>): array<string, TruthSourceOperations> $wholeOf Reads whole-collection claims
-     * @param Closure(class-string<AbstractAgent>): array<string, TruthSourceOperations> $rowsOf Reads by-row claims
-     * @return array<string, array<class-string<AbstractAgent>, bool>> Collection => owner => whether the claim covers the whole collection
+     * @param array<string, Closure(class-string<AbstractAgent>): array<string, TruthSourceOperations>> $readers
+     *     Claim width => reader of the claims of that width
+     * @return array<string, array<class-string<AbstractAgent>, string>> Collection => owner => width of its full claim
      */
-    private function completeClaims(array $ownerClasses, Closure $wholeOf, Closure $rowsOf): array
+    private function completeClaims(array $ownerClasses, array $readers): array
     {
         $claims = [];
         foreach ($ownerClasses as $ownerClass) {
-            foreach ($rowsOf($ownerClass) as $collection => $operations) {
-                if ($operations->isComplete()) {
-                    $claims[$collection][$ownerClass] = false;
+            foreach (self::CLAIM_WIDTHS as $width) {
+                if (!isset($readers[$width])) {
+                    continue;
                 }
-            }
 
-            foreach ($wholeOf($ownerClass) as $collection => $operations) {
-                if ($operations->isComplete()) {
-                    $claims[$collection][$ownerClass] = true;
+                foreach ($readers[$width]($ownerClass) as $collection => $operations) {
+                    if ($operations->isComplete()) {
+                        $claims[$collection][$ownerClass] = $width;
+                    }
                 }
             }
         }
@@ -888,13 +908,13 @@ final class TopologyValidator
     /**
      * Pairs up the claims of one half that cannot both stand.
      *
-     * A pair collides when at least one of the two covers the whole collection; two by-row claims
-     * are not judged here at all, and the pair is named with the whole-collection owner first,
-     * which is the order its refusal reads in.
+     * A pair collides when at least one claim covers the whole collection or both cover sets.
+     * Two by-row claims and a set-plus-row pair are not judged here. A whole-collection owner is
+     * named first, which is the order its refusal reads in.
      *
-     * @param array<string, array<class-string<AbstractAgent>, bool>> $claims Collection => owner => whether the claim is whole
-     * @return array<string, list<array{whole: class-string<AbstractAgent>, other: class-string<AbstractAgent>, bothWhole: bool}>>
-     *     Collection => colliding pairs
+     * @param array<string, array<class-string<AbstractAgent>, string>> $claims Collection => owner => claim width
+     * @return array<string, list<array{first: class-string<AbstractAgent>, second: class-string<AbstractAgent>,
+     *     firstWidth: string, secondWidth: string}>> Collection => colliding pairs
      */
     private function ownershipConflicts(array $claims): array
     {
@@ -906,18 +926,58 @@ final class TopologyValidator
                 for ($second = $first + 1; $second < $count; $second++) {
                     $left = $classes[$first];
                     $right = $classes[$second];
-                    if (!$owners[$left] && !$owners[$right]) {
+                    $leftWidth = $owners[$left];
+                    $rightWidth = $owners[$right];
+                    $anyWhole = $leftWidth === self::CLAIM_WHOLE || $rightWidth === self::CLAIM_WHOLE;
+                    $bothSets = $leftWidth === self::CLAIM_SET && $rightWidth === self::CLAIM_SET;
+                    if (!$anyWhole && !$bothSets) {
                         continue;
                     }
 
-                    $conflicts[$collection][] = $owners[$left]
-                        ? ['whole' => $left, 'other' => $right, 'bothWhole' => $owners[$right]]
-                        : ['whole' => $right, 'other' => $left, 'bothWhole' => false];
+                    $conflicts[$collection][] = $rightWidth === self::CLAIM_WHOLE
+                        && $leftWidth !== self::CLAIM_WHOLE
+                        ? [
+                            'first' => $right,
+                            'second' => $left,
+                            'firstWidth' => $rightWidth,
+                            'secondWidth' => $leftWidth,
+                        ]
+                        : [
+                            'first' => $left,
+                            'second' => $right,
+                            'firstWidth' => $leftWidth,
+                            'secondWidth' => $rightWidth,
+                        ];
                 }
             }
         }
 
         return $conflicts;
+    }
+
+    /**
+     * @param array{first: class-string<AbstractAgent>, second: class-string<AbstractAgent>, firstWidth: string,
+     *     secondWidth: string} $pair Colliding owner pair
+     * @param string $half Layer the message names the collection by
+     * @param string $collection Collection both agents claim
+     * @return string Collision description without the shared-owner receipt instruction
+     */
+    private function collisionMessage(array $pair, string $half, string $collection): string
+    {
+        if ($pair['firstWidth'] === self::CLAIM_WHOLE && $pair['secondWidth'] === self::CLAIM_WHOLE) {
+            return "{$pair['first']} and {$pair['second']} both own {$half} collection '{$collection}' in full";
+        }
+
+        if ($pair['firstWidth'] === self::CLAIM_WHOLE && $pair['secondWidth'] === self::CLAIM_ROWS) {
+            return "{$pair['first']} owns {$half} collection '{$collection}' in full while {$pair['second']} owns rows of it";
+        }
+
+        if ($pair['firstWidth'] === self::CLAIM_WHOLE && $pair['secondWidth'] === self::CLAIM_SET) {
+            return "{$pair['first']} owns {$half} collection '{$collection}' in full while {$pair['second']} owns a set of it";
+        }
+
+        return "{$pair['first']} and {$pair['second']} both own sets of {$half} collection '{$collection}' in full:"
+            . ' one column cuts the table, so they meet on every instance both answer for';
     }
 
     /**
@@ -933,8 +993,8 @@ final class TopologyValidator
      * a removal. Asserting the exact contents instead would paint a test red on every PARTING -
      * penalizing the one move the list exists to bring about.
      *
-     * @param array<string, list<array{whole: class-string<AbstractAgent>, other: class-string<AbstractAgent>, bothWhole: bool}>> $conflicts
-     *     Collection => colliding pairs
+     * @param array<string, list<array{first: class-string<AbstractAgent>, second: class-string<AbstractAgent>,
+     *     firstWidth: string, secondWidth: string}>> $conflicts Collection => colliding pairs
      * @param array $records Shared-owners registry of this half
      * @param string $section Registry constant name for error messages
      * @param string $half Layer the messages name the collection by
@@ -959,14 +1019,11 @@ final class TopologyValidator
         foreach ($conflicts as $collection => $pairs) {
             $names = $recorded[$collection] ?? [];
             foreach ($pairs as $pair) {
-                if (in_array($pair['whole'], $names, true) && in_array($pair['other'], $names, true)) {
+                if (in_array($pair['first'], $names, true) && in_array($pair['second'], $names, true)) {
                     continue;
                 }
 
-                $errors[] = ($pair['bothWhole']
-                    ? "{$pair['whole']} and {$pair['other']} both own {$half} collection '{$collection}' in full"
-                    : "{$pair['whole']} owns {$half} collection '{$collection}' in full while {$pair['other']}"
-                        . ' owns rows of it')
+                $errors[] = $this->collisionMessage($pair, $half, $collection)
                     . "; narrow the operations of one claim, or list the pair in {$section}"
                     . ' with the leaf that parts them';
             }
@@ -1040,14 +1097,14 @@ final class TopologyValidator
 
     /**
      * @param list<string> $names Owner classes a shared-owners row names
-     * @param list<array{whole: class-string<AbstractAgent>, other: class-string<AbstractAgent>, bothWhole: bool}> $pairs
-     *     Colliding pairs over that collection
+     * @param list<array{first: class-string<AbstractAgent>, second: class-string<AbstractAgent>, firstWidth: string,
+     *     secondWidth: string}> $pairs Colliding pairs over that collection
      * @return bool True when two of the named classes still collide
      */
     private function namesACollidingPair(array $names, array $pairs): bool
     {
         foreach ($pairs as $pair) {
-            if (in_array($pair['whole'], $names, true) && in_array($pair['other'], $names, true)) {
+            if (in_array($pair['first'], $names, true) && in_array($pair['second'], $names, true)) {
                 return true;
             }
         }
@@ -1057,14 +1114,14 @@ final class TopologyValidator
 
     /**
      * @param string $ownerClass Owner class a shared-owners row names
-     * @param list<array{whole: class-string<AbstractAgent>, other: class-string<AbstractAgent>, bothWhole: bool}> $pairs
-     *     Colliding pairs over that collection
+     * @param list<array{first: class-string<AbstractAgent>, second: class-string<AbstractAgent>, firstWidth: string,
+     *     secondWidth: string}> $pairs Colliding pairs over that collection
      * @return bool True when the class takes part in one of them
      */
     private function collidesOverCollection(string $ownerClass, array $pairs): bool
     {
         foreach ($pairs as $pair) {
-            if ($pair['whole'] === $ownerClass || $pair['other'] === $ownerClass) {
+            if ($pair['first'] === $ownerClass || $pair['second'] === $ownerClass) {
                 return true;
             }
         }

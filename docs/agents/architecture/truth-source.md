@@ -213,15 +213,17 @@ runtime, on the grant. No reader chooses the declaration, so nothing in it bends
 to a reader.
 
 **The sets of one table are a partition.** Every row reaches exactly one top of
-its set tree, so every row stands in exactly one set, and whether two claims
+its set tree, so every row stands in exactly one set, and whether two laid claims
 meet is answered by comparing two set keys — no query, no look at the rows. Two
 owners of different sets of one table are therefore lawful, and are the width
-doing its work: the agent of each instance holding the rows of its own. Two
-owners holding one set in full — every operation, the word as *What The Start
-Refuses* uses it — are the contradiction two full owners of a collection are,
-and are refused as one (not in the code yet — HIL-1114). Under the form turned
-down this would not be decidable without the database: two agents cutting one
-table by different columns hold sets that overlap.
+doing its work: the agent of each instance holding the rows of its own. Before
+instances exist, the topology validator compares classes instead: a class has no
+set key, one column cuts the table, and the keys of two classes come from the
+same space, so two different classes holding sets of one table in full are
+refused or recorded as a shared-owner debt. Instances of one class are not
+compared; those are the different sets the width exists to hold. Under the form
+turned down this would not be decidable without the database: two agents cutting
+one table by different columns hold sets that overlap.
 
 **The claim is written in two halves, like the narrow one.** WHICH collection is
 held by a set is a constant on the class, `OWNS_DB_SET`, of the form
@@ -598,25 +600,35 @@ the master on every lazy load (owner's decision, 2026-08-27, on HIL-750).
 ## What The Start Refuses
 
 The topology validator reads the declarations off the classes before a single
-process is built, and refuses three contradictions there (HIL-899).
+process is built, and refuses four contradictions there (HIL-899, HIL-1114).
 
 Two owners holding one collection in full, where full is the word the runtime
 guard already uses: every operation, over rows that overlap. A claim over the
-whole collection covers any rows, so a full owner beside a by-row owner of the
-same collection is that same refusal rather than a second rule. Two by-row
-claims are not judged at all — which rows an instance holds, only the instance
-knows.
+whole collection covers any rows, so a full owner beside a by-row or set owner
+of the same collection is that same refusal rather than a second rule, when both
+claims carry every operation. A set owner without `Add` beside the library that
+creates the rows is a declared shape and not a collision. Two by-row claims and
+a set-plus-row pair are not judged at all — which rows an instance holds, and
+whether a named row lies in the set, only the instance and database know.
 
-The width over a set brings a case that can be judged. The sets of one table are
-a partition, so two owners of different sets never meet, and two owners holding
-one set in full are this same refusal (not in the code yet — HIL-1114). Which
-moment compares the two set keys — a class does not carry its own — and what a
-receipt for such a pair looks like are HIL-1114's to name. It brings refusals
-of the topology as well, judged a moment later than the three here, in
-`TopologyValidator::validateReferences()`, once the collections are mounted: a
-set claimed in a collection whose Entity declares `Entity::SET_STANDALONE`, and
-one whose set tree climbs through a table that is not mounted or that the agent
-neither reads nor claims.
+The width over a set brings a case that can be judged: two different classes
+holding sets of one table in full are refused as potential owners of the same
+set, or covered by the same `SHARED_DB_OWNERS` receipt of classes and debt as
+other shared owners. No moment compares their set keys. The topology check runs
+before the instances that carry those keys exist, and judges the pair of classes
+because one column cuts the table and both keys come from its one space. Moving
+the decision to runtime would require new database claim frames: the database
+ownership registry is local to each process, while only runtime ownership has a
+leader-side cluster claim registry that sees every agent's grants (HIL-696). The
+price is explicit: classes whose keys are known by the project never to coincide
+still need a receipt explaining why, while two instances of one class with the
+same key are not caught, just as two by-row claims are not caught.
+
+The width brings refusals of the topology as well, judged a moment later than
+the four here, in `TopologyValidator::validateReferences()`, once the collections
+are mounted: a set claimed in a collection whose Entity declares
+`Entity::SET_STANDALONE`, and one whose set tree climbs through a table that is
+not mounted or that the agent neither reads nor claims.
 See *A Claim Over A Set*.
 
 A class that names one collection both in its reads (`READS_DB`, `READS_RT`) and
@@ -709,8 +721,10 @@ statement over one set asked at the value and the registry
 up the set tree, the short path, the parent that is gone and the statement over
 a set below the top (`SetTreeTest`), the short path and the chain of parents the
 startup gate refuses (`SetOwnershipGuardTest`), the set claimed on a table cut
-by no column, through a table the claimant cannot reach, and the reads that
-repeat a claim (`TopologyValidatorTest`), the grants a stop takes back
+by no column, through a table the claimant cannot reach, two classes holding
+sets and a whole owner beside a set owner with and without shared-owner
+receipts, and the reads that repeat a claim (`TopologyValidatorTest`), the grants
+a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
 (`RtNodeSourceMapTest`), and the markdown rules that keep this file's links
 intact (`AgentDocGuardTest`, `DOC-LINK`). The guard that refuses the call itself
