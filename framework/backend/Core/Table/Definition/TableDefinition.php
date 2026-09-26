@@ -30,6 +30,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
+use Hilos\Core\Table\TableSearchField;
 use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\DatabaseException;
@@ -273,7 +274,13 @@ abstract class TableDefinition implements ArrayAccess
      * keys they read, the text of an error. Counters, sizes, durations, dates and flags do not,
      * because nobody looks for a row by typing part of a number they never saw.
      *
-     * @return array<string, string> Searched fields mapped to their columns; empty by default
+     * A value is either the bare column, searched as a substring found anywhere in the value, or a
+     * {@see TableSearchField} carrying the column and the way it is matched: the one
+     * {@see TableSearchField::mask()} declares makes a star the reader typed a mask of the whole
+     * value. Every path that searches - the ORM, a table's own SQL, the in-memory filter - reads an
+     * entry through {@see TableSearchField::of()}, so the second form means the same on all of them.
+     *
+     * @return array<string, string|TableSearchField> Searched fields mapped to their columns; empty by default
      */
     protected function searchableFields(): array
     {

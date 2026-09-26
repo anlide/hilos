@@ -482,6 +482,14 @@ is left in that slot is a placeholder.
   the whole set is read on every window. That is deliberate and named: the
   declaration is what a future index would stand on, and until then the promise is
   the fields, not the speed. Wildcards a reader types stand for themselves.
+- **One exception: a star in a field declared as a mask.** An entry of the map
+  is the bare column or a `TableSearchField` naming the column and how it is
+  matched; `TableSearchField::mask()` makes a term carrying `*` match the whole
+  value, the star standing for any run of characters, the empty one too. A term
+  without a star is still a substring. Every path reads the entry through
+  `TableSearchField::of()` and the term through `TableSearchTerm` — a pattern in
+  memory, `LIKE` with `*` → `%` in SQL — so the star means one thing wherever the
+  rows come from. Applied to the stream name of the log keys screen (HIL-1099).
 - **A facet is a number beside a filter option**, not a filter of its own: it
   says how many rows would remain if that option were chosen, and the server
   computes it in one grouped query rather than by trying the options. On a large

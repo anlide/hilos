@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table;
 
+use Closure;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -102,32 +103,33 @@ final class InMemoryTableFilter
             return $rows;
         }
 
-        $needle = mb_strtolower($search);
-        $fields = array_keys($query->searchableFields);
+        $matchers = [];
+        foreach ($query->searchableFields as $field => $declared) {
+            $matchers[$field] = TableSearchTerm::matcher($search, TableSearchField::of($declared)->match);
+        }
 
         return array_values(array_filter(
             $rows,
-            static fn(array $row): bool => self::matchesSearch($row, $fields, $needle),
+            static fn(array $row): bool => self::matchesSearch($row, $matchers),
         ));
     }
 
     /**
      * Whether one row answers the search term in a field the table declared the search over.
      *
-     * The comparison is case-insensitive on both sides, which is what the database does with its
-     * own collation, and a field the row has no value for matches nothing rather than matching an
-     * empty string.
+     * Each field is compared the way the table declared it, so a star is a mask in one field and a
+     * character in the next, and a field the row has no value for matches nothing rather than
+     * matching an empty string.
      *
      * @param array<string, mixed> $row Row of the set being searched
-     * @param list<string> $fields Payload fields the table declared the search over
-     * @param string $needle Search term, already lowercased
+     * @param array<string, Closure(string): bool> $matchers Comparison of the term, keyed by the payload field it reads
      * @return bool Whether the row belongs to the searched set
      */
-    private static function matchesSearch(array $row, array $fields, string $needle): bool
+    private static function matchesSearch(array $row, array $matchers): bool
     {
-        foreach ($fields as $field) {
+        foreach ($matchers as $field => $matches) {
             $value = $row[$field] ?? null;
-            if ($value !== null && str_contains(mb_strtolower((string) $value), $needle)) {
+            if ($value !== null && $matches((string) $value)) {
                 return true;
             }
         }

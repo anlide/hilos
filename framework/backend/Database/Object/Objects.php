@@ -15,6 +15,7 @@ use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\TableAnchorDirection;
+use Hilos\Core\Table\TableSearchField;
 use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\TableWindowPlan;
 use Hilos\Core\Table\TableConstants;
@@ -376,6 +377,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * here as well as at the table boundary, because the alternative is a set silently wider than
      * the one the reader asked for.
      *
+     * The pattern is built per field, because the declaration says how each field is matched: a
+     * star is a mask in a field declared as one and a character everywhere else.
+     *
      * @param TableQueryDTO $query Window query carrying the search term and the fields it reads
      * @return array{0: string, 1: list<SqlParam>} Raw WHERE clause, empty when nothing is searched, and its params
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
@@ -394,15 +398,15 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             throw new TableSearchNotSupportedException($entityClass);
         }
 
-        $pattern = TableSearchTerm::likePattern($search);
         $likeParts = [];
         $filtersParam = [];
-        foreach ($query->searchableFields as $field => $column) {
-            if (!in_array($column, $entityClass::_columns, true)) {
-                throw new TableSearchFieldUnknownException($entityClass, $field, $column);
+        foreach ($query->searchableFields as $field => $declared) {
+            $searchField = TableSearchField::of($declared);
+            if (!in_array($searchField->column, $entityClass::_columns, true)) {
+                throw new TableSearchFieldUnknownException($entityClass, $field, $searchField->column);
             }
-            $likeParts[] = "`{$column}` " . TableSearchTerm::LIKE_COMPARISON;
-            $filtersParam[] = SqlParam::string($pattern);
+            $likeParts[] = "`{$searchField->column}` " . TableSearchTerm::LIKE_COMPARISON;
+            $filtersParam[] = SqlParam::string(TableSearchTerm::likePattern($search, $searchField->match));
         }
 
         return ['(' . implode(' OR ', $likeParts) . ')', $filtersParam];

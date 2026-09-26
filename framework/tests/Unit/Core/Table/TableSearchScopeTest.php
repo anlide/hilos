@@ -10,6 +10,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableSearchField;
 use Hilos\HilosException;
 use PHPUnit\Framework\TestCase;
 
@@ -118,6 +119,35 @@ final class TableSearchScopeTest extends TestCase
     /**
      * @throws HilosException When the fixture table cannot serve its window
      */
+    public function testAFieldDeclaredAsAMaskIsMatchedByTheWholeValue(): void
+    {
+        $table = new SearchScopeUnitTable([SearchScopeUnitRow::LABEL => TableSearchField::mask(SearchScopeUnitRow::LABEL)]);
+
+        self::assertSame(['first', 'second', 'third'], self::keysOf($table->getPage(new TableQueryDTO(search: '*a'))));
+        self::assertSame(['second'], self::keysOf($table->getPage(new TableQueryDTO(search: 'b*'))));
+        // `et` sits inside `beta` but does not end it: a mask holds the whole value, and a piece in
+        // the middle is found only with a star on both sides of it.
+        self::assertSame([], self::keysOf($table->getPage(new TableQueryDTO(search: '*et'))));
+        self::assertSame(['second'], self::keysOf($table->getPage(new TableQueryDTO(search: '*et*'))));
+    }
+
+    /**
+     * @throws HilosException When the fixture table cannot serve its window
+     */
+    public function testAStarInAFieldDeclaredBareIsLookedForLiterally(): void
+    {
+        $table = new SearchScopeUnitTable([SearchScopeUnitRow::LABEL => SearchScopeUnitRow::LABEL]);
+
+        $snapshot = $table->getPage(new TableQueryDTO(search: '*a'));
+
+        // Every label ends in `a`, and none carries a star: the field was declared by its bare
+        // column, so the star is one more character to look for.
+        self::assertSame([], self::keysOf($snapshot));
+    }
+
+    /**
+     * @throws HilosException When the fixture table cannot serve its window
+     */
     public function testTheEdgesOfATermAreTrimmedAndItsInnerSpaceIsNot(): void
     {
         $table = new SearchScopeUnitTable([SearchScopeUnitRow::NOTE => SearchScopeUnitRow::NOTE]);
@@ -156,11 +186,11 @@ final class SearchScopeUnitTable extends TableDefinition
     /** Query the concrete table was handed, or null while getPage() has not run. */
     public ?TableQueryDTO $received = null;
 
-    /** @var array<string, string> Searched fields this table declares */
+    /** @var array<string, string|TableSearchField> Searched fields this table declares */
     private array $declaredSearchableFields;
 
     /**
-     * @param array<string, string> $declaredSearchableFields Searched fields the table declares
+     * @param array<string, string|TableSearchField> $declaredSearchableFields Searched fields the table declares
      */
     public function __construct(array $declaredSearchableFields = [])
     {
@@ -178,7 +208,7 @@ final class SearchScopeUnitTable extends TableDefinition
     }
 
     /**
-     * @return array<string, string> Searched fields injected by the test
+     * @return array<string, string|TableSearchField> Searched fields injected by the test
      */
     protected function searchableFields(): array
     {

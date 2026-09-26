@@ -161,17 +161,17 @@ describe('hasLogKeyNodes', () => {
 describe('logKeysSearchPlaceholder', () => {
   it('offers only the key in a single-node installation, which has no node to match', () => {
     expect(logKeysSearchPlaceholder(header({ nodes: [] }))).toBe(
-      'Search by key…',
+      'Search by key (agent-*)…',
     )
   })
 
   it('offers only the key before the header arrives, so no offer is withdrawn', () => {
-    expect(logKeysSearchPlaceholder(null)).toBe('Search by key…')
+    expect(logKeysSearchPlaceholder(null)).toBe('Search by key (agent-*)…')
   })
 
-  it('offers the node once the picture names nodes', () => {
+  it('offers the node once the picture names nodes, the mask staying with the key', () => {
     expect(logKeysSearchPlaceholder(header({ nodes: ['node-1'] }))).toBe(
-      'Search by key or node…',
+      'Search by key (agent-*) or node…',
     )
   })
 })

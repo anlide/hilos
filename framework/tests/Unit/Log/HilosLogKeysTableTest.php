@@ -259,6 +259,75 @@ final class HilosLogKeysTableTest extends TestCase
     }
 
     /**
+     * A star makes the term a mask of the whole file name (HIL-1099): it finds the streams whose
+     * names have that form, and a piece of a name with no star still finds what it did.
+     */
+    public function testAStarredTermFindsTheStreamsWhoseWholeNameHasThatForm(): void
+    {
+        $this->picture($this->node('node-1', $this->mixedStreams()));
+
+        $this->assertSame(['daemon-error-raw.log', 'daemon-raw.log'], $this->keysFound('*-raw.log'));
+        $this->assertSame(['agent-hilos_logs.log', 'agent-hilos_users.log'], $this->keysFound('agent-*.log'));
+        $this->assertSame(['daemon-error-raw.log', 'daemon-raw.log'], $this->keysFound('raw'));
+        // The mask holds the end of the name as well as its start: `raw` sits inside both raw
+        // stream names and ends neither of them.
+        $this->assertSame([], $this->keysFound('*raw'));
+    }
+
+    /**
+     * The node is searched as a piece of its name whatever the term: only the stream name is a mask.
+     */
+    public function testAStarredTermIsNoMaskOfTheNode(): void
+    {
+        $this->picture(
+            $this->node('node-1', [$this->summary('worker-0.log')]),
+            $this->node('node-2', [$this->summary('worker-0.log')]),
+        );
+
+        $this->assertSame([], $this->keysFound('node-*'));
+    }
+
+    /**
+     * The counts beside the options and the answer about one row come out of the same masked search
+     * the window runs, so they agree with it.
+     */
+    public function testTheCountsAndTheRowQuestionFollowTheMask(): void
+    {
+        $this->picture(
+            $this->node('node-1', $this->mixedStreams()),
+            $this->node('node-2', [$this->summary('daemon-raw.log', class: LogKeySummary::CLASS_DAEMON)]),
+        );
+        $table = new HilosLogKeysTable();
+        $search = '*-raw.log';
+
+        $facets = $table->facetCounts(
+            $table->scopeSearch(new TableQueryDTO(search: $search)),
+            [
+                HilosLogKeysTable::FILTER_NODE => ['node-1', 'node-2'],
+                HilosLogKeysTable::FILTER_CLASS => [LogKeySummary::CLASS_DAEMON, LogKeySummary::CLASS_AGENT],
+            ],
+        );
+
+        $node = $facets[HilosLogKeysTable::FILTER_NODE];
+        $this->assertSame($this->totalOf($search), $node[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(
+            $this->totalOf($search, [HilosLogKeysTable::FILTER_NODE => 'node-1']),
+            $node[TableConstants::FACET_KEY_OPTIONS]['node-1']->count,
+        );
+        $this->assertSame(
+            $this->totalOf($search, [HilosLogKeysTable::FILTER_NODE => 'node-2']),
+            $node[TableConstants::FACET_KEY_OPTIONS]['node-2']->count,
+        );
+        $class = $facets[HilosLogKeysTable::FILTER_CLASS];
+        $this->assertSame(3, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_DAEMON]->count);
+        $this->assertSame(0, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_AGENT]->count);
+
+        $query = $table->scopeSearch(new TableQueryDTO(search: $search));
+        $this->assertTrue($table->containsRow('node-2:daemon-raw.log', $query));
+        $this->assertFalse($table->containsRow('node-1:daemon.log', $query));
+    }
+
+    /**
      * The number beside an option is the total its window would show once picked: the node counts are
      * taken under the chosen class, and the class counts on every class the search left.
      */
@@ -301,6 +370,48 @@ final class HilosLogKeysTableTest extends TestCase
         $this->assertSame(1, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_DAEMON]->count);
         $this->assertSame(1, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_AGENT]->count);
         $this->assertSame(1, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_WORKER]->count);
+    }
+
+    /**
+     * The streams of one node of every class, the daemon's raw ones among them.
+     *
+     * @return list<LogKeySummary> Summaries the node reports
+     */
+    private function mixedStreams(): array
+    {
+        return [
+            $this->summary('daemon.log', class: LogKeySummary::CLASS_DAEMON),
+            $this->summary('daemon-raw.log', class: LogKeySummary::CLASS_DAEMON),
+            $this->summary('daemon-error.log', class: LogKeySummary::CLASS_DAEMON),
+            $this->summary('daemon-error-raw.log', class: LogKeySummary::CLASS_DAEMON),
+            $this->summary('agent-hilos_logs.log'),
+            $this->summary('agent-hilos_users.log'),
+            $this->summary('worker-0.log', class: LogKeySummary::CLASS_WORKER),
+            $this->summary('worker-monopolistic-chat.log', class: LogKeySummary::CLASS_WORKER),
+        ];
+    }
+
+    /**
+     * Searches the whole list by one term and reads the stream names the window holds.
+     *
+     * @param string $search Term the window carries
+     * @return list<string> Stream names found, in the window's order
+     */
+    private function keysFound(string $search): array
+    {
+        return array_map(static fn($row): string => $row->key, $this->rows(new TableQueryDTO(search: $search)));
+    }
+
+    /**
+     * Reads the total a window searched by one term and narrowed by filters would show.
+     *
+     * @param string $search Term the window carries
+     * @param array<string, mixed> $filter Filters the window is narrowed by
+     * @return int Total count of that window
+     */
+    private function totalOf(string $search, array $filter = []): int
+    {
+        return new HilosLogKeysTable()->getPage(new TableQueryDTO(search: $search, filter: $filter))->totalCount;
     }
 
     /**

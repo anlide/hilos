@@ -19,6 +19,7 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableSearchField;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -189,15 +190,20 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      * Declares what a stream row is searched by: the key that is the file's name, the node it
      * runs on, and the class of process behind it.
      *
+     * The key is a mask: a term carrying a star is matched against the whole file name, the way
+     * an operator would list the files - `*-raw.log` finds both raw streams of the daemon,
+     * `agent-*.log` every agent's. A term with no star is still a piece of the name. The node and
+     * the class are searched as pieces whatever the term: a star is never part of either value.
+     *
      * The weight, the batch count and the growth are numbers an operator reads and nobody types
      * part of, so they stay out: a short term matching them would match nearly every row.
      *
-     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     * @return array<string, string|TableSearchField> Searched fields mapped to themselves, these rows being searched in memory
      */
     protected function searchableFields(): array
     {
         return [
-            HilosLogKeysTableRow::key => HilosLogKeysTableRow::key,
+            HilosLogKeysTableRow::key => TableSearchField::mask(HilosLogKeysTableRow::key),
             HilosLogKeysTableRow::node => HilosLogKeysTableRow::node,
             HilosLogKeysTableRow::streamClass => HilosLogKeysTableRow::streamClass,
         ];

@@ -6,6 +6,7 @@ namespace Hilos\Core\Table\DTO;
 
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableSearchField;
 
 /**
  * Internal query parameters used while building a table snapshot.
@@ -31,8 +32,9 @@ readonly class TableQueryDTO
      * @param ?TableAnchorDTO $anchor Place the window is taken from, or null for the edge of the set
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
      * @param ?int $pageIndex Zero-based page to jump to, or null when the window is paged by anchor
-     * @param array<string, string> $searchableFields Fields the search reads, `wire row-field name => column`,
-     *     as the table declared them; empty until the table's own declaration is put in
+     * @param array<string, string|TableSearchField> $searchableFields Fields the search reads, `wire row-field
+     *     name => column`, each column bare or paired with its way of matching, as the table declared them; empty
+     *     until the table's own declaration is put in
      */
     public function __construct(
         public ?string $search = null,
@@ -54,7 +56,8 @@ readonly class TableQueryDTO
      * fields a row is keyed by. Carrying one half would mean the other is worked out a second time
      * somewhere, and two readings of one declaration are two ways for it to drift.
      *
-     * @param array<string, string> $searchableFields Fields the search reads, `wire row-field name => column`
+     * @param array<string, string|TableSearchField> $searchableFields Fields the search reads, `wire row-field
+     *     name => column`, each column bare or paired with its way of matching
      * @return self Same window, searched over the declared fields
      */
     public function withSearchScope(array $searchableFields): self

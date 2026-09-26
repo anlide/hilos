@@ -17,6 +17,7 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\TableSearchField;
 use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
@@ -374,8 +375,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * the alias it belongs to - the notification's own fields under `n`, the delivery's under `nd`.
      *
      * The recipient is searched too and is not declared here: it is matched by identity when the
-     * term is a number, and a declaration says only which fields are read, not how. It moves in
-     * when the declaration learns to carry the second question.
+     * term is a number, and every way a declaration can match a field reads the term as text.
      *
      * @return array<string, string> Searched fields mapped to their qualified columns
      */
@@ -571,15 +571,15 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
 
         $search = TableSearchTerm::normalize($query->search);
         if ($search !== null && $query->searchableFields !== []) {
-            $pattern = TableSearchTerm::likePattern($search);
             $searchConditions = [];
-            foreach ($query->searchableFields as $column) {
-                $searchConditions[] = $column . ' ' . TableSearchTerm::LIKE_COMPARISON;
-                $params[] = $pattern;
+            foreach ($query->searchableFields as $declared) {
+                $searchField = TableSearchField::of($declared);
+                $searchConditions[] = $searchField->column . ' ' . TableSearchTerm::LIKE_COMPARISON;
+                $params[] = TableSearchTerm::likePattern($search, $searchField->match);
             }
-            // The recipient answers to a number and not to a piece of text, which is a second way
-            // of searching a column and not a second column: the declaration above carries which
-            // fields are read, and this stays written out until it can carry the how as well.
+            // The recipient answers to a number and not to a piece of text. The declaration above
+            // carries how each field reads the term, but every way it knows reads the term as text;
+            // comparing a number with a column is none of them, so this stays written out here.
             if (ctype_digit($search)) {
                 $searchConditions[] = 'n.' . EntityNotification::user_id . ' = ?';
                 $params[] = (int) $search;

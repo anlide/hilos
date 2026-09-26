@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Database;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\TableSearchField;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
@@ -32,6 +33,24 @@ final class ObjectsSearchScopeTest extends TestCase
 
         SearchScopeTestObjects::initEmpty()->containsRow(
             new TableQueryDTO(search: 'beta', searchableFields: [SearchScopeTestEntity::label => 'no_such_column']),
+            1,
+        );
+    }
+
+    /**
+     * @throws DatabaseException When the query reaches the database, which this case does not
+     */
+    public function testAFieldDeclaredAsAMaskIsHeldToItsColumnAsWell(): void
+    {
+        // The pair is unfolded to the column it names before the column is checked, so the second
+        // way of writing an entry does not walk an unknown identifier past the refusal.
+        $this->expectException(TableSearchFieldUnknownException::class);
+
+        SearchScopeTestObjects::initEmpty()->containsRow(
+            new TableQueryDTO(
+                search: 'beta*',
+                searchableFields: [SearchScopeTestEntity::label => TableSearchField::mask('no_such_column')],
+            ),
             1,
         );
     }

@@ -328,12 +328,20 @@ export function hasLogKeyNodes(header: HilosLogKeysHeader | null): boolean {
  * column follows, because two sentences about one mode, once they drift apart,
  * leave a screen contradicting itself.
  *
+ * The example of a mask stands right after "key", because the key is the one
+ * field a star is a mask in: the server matches a starred term against the whole
+ * stream name, and the node only as a piece of its name. The hint stays on one
+ * line — it is also the field's accessible name, and a second line would be cut
+ * on a narrow screen.
+ *
  * @param header The latest header, or null before the first one arrives.
  */
 export function logKeysSearchPlaceholder(
   header: HilosLogKeysHeader | null,
 ): string {
-  return hasLogKeyNodes(header) ? 'Search by key or node…' : 'Search by key…'
+  return hasLogKeyNodes(header)
+    ? 'Search by key (agent-*) or node…'
+    : 'Search by key (agent-*)…'
 }
 
 /** What the stream list has to say instead of rows. */
