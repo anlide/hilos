@@ -1827,8 +1827,278 @@ final class BrowserContextViewportDeltaTest extends TestCase
 
         // Announcing a row puts nothing into the window: it holds what the connection has been
         // shown, and this row was not. So the next edit of it is an edit of a row this window
-        // never had, and nothing follows from it.
+        // never had, and one that leaves it inside announces it again - the server remembers no
+        // announcement, and the client counts the key once.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Inside, $announce->placement);
+        $this->assertSame('beta', $announce->rowKey);
+        $this->assertSame(3, $announce->totalCount);
         $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditThatBringsARowBetweenTheBoundariesIsAnnounced(): void
+    {
+        $viewport = self::pageByLabel([self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')], 2, 3);
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('zed', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // The window holds an unbroken stretch of the set, so a row standing between its first and
+        // last row that it does not hold was not there before: the entry is seen without knowing
+        // where the row came from. An edit adds no row to the set, so the total stays as it was.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Inside, $announce->placement);
+        $this->assertSame('zed', $announce->rowKey);
+        $this->assertSame(3, $announce->totalCount);
+        $this->assertTrue($announce->totalExact);
+        $this->assertSame(2, $announce->pageCount);
+        $this->assertSame(3, $viewport->totalCount());
+        $this->assertFalse($viewport->hasRow('zed'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditThatBringsARowToTheTailOfALastPageWithRoomIsAnnouncedNotAppended(): void
+    {
+        $viewport = self::pageByLabel([self::row('mike', 'Mike')], 2, 3, pageIndex: 1);
+        $context = $this->bootWithViewport(
+            [self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('mike', 'Mike'), self::row('alpha', 'Zulu')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Zulu']));
+        $context->flushToSignalRouter();
+
+        // A created row would arrive here on its own. An edited one is announced instead: a row that
+        // left this page earlier may still stand on the reader's screen with its mark, and a row put
+        // in beside it would stand twice. The wire knows no announced tail, so it travels as inside.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Inside, $announce->placement);
+        $this->assertSame('alpha', $announce->rowKey);
+        $this->assertSame(3, $announce->totalCount);
+        $this->assertFalse($viewport->hasRow('alpha'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditThatBringsARowIntoAnEmptyWindowAtTheEndOfTheSetIsAnnounced(): void
+    {
+        $viewport = self::pageByLabel([], 2, 2, pageIndex: 1);
+        $context = $this->bootWithViewport([self::row('bob', 'Bob'), self::row('alpha', 'Zulu')], $viewport);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Zulu']));
+        $context->flushToSignalRouter();
+
+        // Every row this page showed has gone, and the page still holds the end of the set: a row an
+        // edit moved past the last row of the page before it now stands here.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Inside, $announce->placement);
+        $this->assertSame('alpha', $announce->rowKey);
+        $this->assertSame(2, $announce->totalCount);
+        $this->assertFalse($viewport->hasRow('alpha'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditThatPutsARowAboveTheWindowSendsNothing(): void
+    {
+        $viewport = self::pageByLabel([self::row('mike', 'Mike'), self::row('oscar', 'Oscar')], 2, 5, pageIndex: 1);
+        $context = $this->bootWithViewport(
+            [self::row('zulu', 'Alpha'), self::row('bob', 'Bob'), self::row('mike', 'Mike'), self::row('oscar', 'Oscar')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zulu', ['label' => 'Alpha']));
+        $context->flushToSignalRouter();
+
+        // Above the window the row may have stood before the edit too, and nothing without its past
+        // can say it is new there (owner's frame, 25.09.2026).
+        $this->assertFalse($viewport->hasRow('zulu'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditThatPutsARowBelowAFullWindowSendsNothing(): void
+    {
+        $viewport = self::pageByLabel([self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')], 2, 4);
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('mike', 'Zed'), self::row('oscar', 'Oscar')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Zed']));
+        $context->flushToSignalRouter();
+
+        $this->assertFalse($viewport->hasRow('mike'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredWindowIsAnnouncedARowAnEditBroughtIntoItsSetAndThenCounted(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            2,
+            2,
+            filter: ['status' => 'failed'],
+        );
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('zed', 'Beta')],
+            $viewport,
+            inSet: true,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // The source says the row is in the set now. Whether it was before is a question about its
+        // past, so the frame carries the total the window has and the recount at the end of the
+        // flush tells the rest.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Inside, $announce->placement);
+        $this->assertSame('zed', $announce->rowKey);
+        $this->assertSame(2, $announce->totalCount);
+        $this->assertSame(3, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('zed'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredWindowIsToldNothingAboutAnEditedRowOutsideItsSet(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            2,
+            3,
+            filter: ['status' => 'failed'],
+        );
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('zed', 'Beta')],
+            $viewport,
+            inSet: false,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        $this->assertFalse($viewport->hasRow('zed'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredWindowWhoseTableCannotSayIsToldNothingAboutAnEditedRow(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            2,
+            3,
+            filter: ['status' => 'failed'],
+        );
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('zed', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // The place in the order does not say whether the row is in this set at all.
+        $this->assertFalse($viewport->hasRow('zed'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAWindowWithoutAFilterIsToldNothingAboutARowItsTableNarrowedAway(): void
+    {
+        $viewport = self::pageByLabel([self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')], 2, 3);
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('zed', 'Beta')],
+            $viewport,
+            inSet: false,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // No filter is open, but the table keeps a narrowing of its own in its SQL, and it says the
+        // row is outside it. The question is put after the place, and once.
+        $this->assertFalse($viewport->hasRow('zed'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame(1, $table->setQuestions);
+    }
+
+    public function testAWindowWithoutAFilterWhoseTableCannotSayIsStillAnnouncedAnEditedRow(): void
+    {
+        $viewport = self::pageByLabel([self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')], 2, 3);
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('zed', 'Beta')],
+            $viewport,
+            setQuestionFails: true,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // Only a no from the table's own narrowing keeps such a window silent; a refused question
+        // is read as "cannot say", and the delta keeps its own rows on the same answer.
+        $this->assertSame('zed', $this->nextAnnounce()->rowKey);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAWindowWithNoOrderIsToldNothingAboutAnEditedRow(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha', 'gamma']), 3, true, null, null);
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('zed', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        $this->assertFalse($viewport->hasRow('zed'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFocusedRowAnEditBroughtIntoTheWindowIsAnnouncedAndFollowed(): void
+    {
+        $viewport = self::pageByLabel([self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')], 2, 3);
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('zed', 'Beta')],
+            $viewport,
+        );
+        Hilos::$sr?->setTableFocus('ak-1', ViewportDeltaUnitTable::TABLE, 'zed');
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // Two readers, two frames: the strip hears of a row it has not shown, and the dialog open
+        // over that row hears the row itself.
+        $this->assertSame('zed', $this->nextAnnounce()->rowKey);
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+        $this->assertSame(['key' => 'zed', 'label' => 'Beta'], $delta->row[PagePayload::slots][ViewportDeltaUnitTable::SLOT] ?? null);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testARowTheWindowHeldAndAnEditTookOutIsNotAnnouncedAsWell(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('bob', 'Bobby'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            [self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            pageIndex: 1,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Bobby']));
+        $context->flushToSignalRouter();
+
+        // Against its neighbours the top row went past the first of them, and with no frame the
+        // window cannot prove it stayed, so the delta takes it out. Its new place still lies within
+        // the boundaries the page was served with, but a row the window held when the edit came is
+        // the delta's to judge: announced as well, it would be told two opposite things at once.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -2058,6 +2328,44 @@ final class BrowserContextViewportDeltaTest extends TestCase
     private static function anchorOf(ViewportDeltaUnitRow $row): TableAnchorDTO
     {
         return new TableAnchorDTO(['label' => $row->label, 'key' => $row->key]);
+    }
+
+    /**
+     * Builds a numbered page of a set ordered by label, recorded as it was served.
+     *
+     * The page is exact, so where the set ends is read off its number, its size and the total.
+     *
+     * @param list<ViewportDeltaUnitRow> $windowRows Rows the connection was delivered, in display order
+     * @param int $limit Size of a page
+     * @param int $totalCount Total recorded for the window
+     * @param int $pageIndex Numbered page the window stands on
+     * @param array<string, mixed> $filter Open filter map narrowing the window's set
+     * @return TableViewportSubscription Window as served
+     */
+    private static function pageByLabel(
+        array $windowRows,
+        int $limit,
+        int $totalCount,
+        int $pageIndex = 0,
+        array $filter = [],
+    ): TableViewportSubscription {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: $filter,
+            sort: self::byLabel(TableConstants::ORDER_ASC),
+            limit: $limit,
+            pageIndex: $pageIndex,
+        );
+        $viewport->recordWindow(
+            self::deliveredWindow($windowRows),
+            $totalCount,
+            true,
+            $windowRows === [] ? null : self::anchorOf($windowRows[0]),
+            $windowRows === [] ? null : self::anchorOf($windowRows[count($windowRows) - 1]),
+            self::deliveredAnchors($windowRows),
+        );
+
+        return $viewport;
     }
 
     /**

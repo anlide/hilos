@@ -270,15 +270,16 @@ export type TableFacetCountsSignalData = z.infer<
 
 /**
  * Payload of the framework table viewport announcement
- * (`type: 'table_viewport_announce'`, PHP `TableViewportAnnounceDTO`): word that a
- * row was created which this window cannot show, and where it fell — `above` the
- * window or `inside` it. The row body does not travel; `rowKey` does, so the same
- * row announced twice is counted once. The counts ride along because an
- * announcement is also a count.
+ * (`type: 'table_viewport_announce'`, PHP `TableViewportAnnounceDTO`): word of a
+ * row this window has not shown — created, or brought in by an edit — and where it
+ * fell: `above` the window or `inside` it. The row body does not travel; `rowKey`
+ * does, so the same row announced twice is counted once. The counts ride along
+ * because an announcement is also a count; from an edit the total is unshifted.
  *
- * `placement` names only the two places a window cannot show. A tail row arrives as
- * itself and a row below the window is a count, so neither is announceable, and a
- * frame naming one of them is refused rather than counted.
+ * `placement` names only the two places a window cannot show. A created tail row
+ * arrives as itself, an edited one is announced as `inside`, and a row below the
+ * window is a count, so neither tail nor below is announceable, and a frame naming
+ * one of them is refused rather than counted.
  *
  * `pageCount` is absent when `totalExact` is false, exactly as on the count signal.
  */

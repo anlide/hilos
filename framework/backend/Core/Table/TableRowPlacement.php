@@ -9,8 +9,9 @@ namespace Hilos\Core\Table;
  *
  * This is the whole answer to "may this row arrive on its own": a window is only left standing
  * by a row that lands at its tail with room to hold it, so Tail is the one outcome delivered as
- * a row. The other three say the set moved under the window without any of the shown rows
- * moving.
+ * a row - for a created row; one an edit brought there is announced as inside, since it may still
+ * stand on the reader's screen from before. The other three say the set moved under the window
+ * without any of the shown rows moving.
  *
  * They part ways after that. Above and Inside are announced to the window — the row is one it
  * cannot show and one it would be wrong to stay silent about, since the window would otherwise

@@ -100,7 +100,7 @@ export const SIGNAL_TYPE_TABLE_VIEWPORT_APPEND = 'table_viewport_append'
 /** Server frame `type` carrying the author's own new row, already placed (PHP `SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE = 'table_viewport_own_create'
 
-/** Server frame `type` announcing a created row a window cannot show (PHP `SignalTypeConstants::TABLE_VIEWPORT_ANNOUNCE`). */
+/** Server frame `type` announcing a row a window has not shown, created or edited in (PHP `SignalTypeConstants::TABLE_VIEWPORT_ANNOUNCE`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE = 'table_viewport_announce'
 
 /** Server frame `type` taking back the word of an announced row that left the set (PHP `SignalTypeConstants::TABLE_VIEWPORT_UNANNOUNCE`). */

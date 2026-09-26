@@ -16,13 +16,14 @@
 // because they disrupt nothing: table_viewport_count updates the total/page count
 // (navigation metadata), and table_viewport_append adds a row at the tail when the
 // window is the last page with room. A third accumulates without waiting on
-// apply(): table_viewport_announce is word of a created row the window cannot show,
-// and it is counted per place rather than queued — there is no row to apply, and
-// the only way to see it is show(), which asks for the window again. An explicit
-// window change discards pending and announced alike, since the new window the
-// server returns is authoritative. Work in progress (table_progress) neither waits
-// on apply() nor accumulates: a bar goes up, is replaced or comes down as the frames
-// say, and a window change leaves it standing — it does not belong to the window.
+// apply(): table_viewport_announce is word of a row the window has not shown (a
+// created one, or one an edit brought into it), and it is counted per place rather
+// than queued — there is no row to apply, and the only way to see it is show(),
+// which asks for the window again. An explicit window change discards pending and
+// announced alike, since the new window the server returns is authoritative. Work
+// in progress (table_progress) neither waits on apply() nor accumulates: a bar goes
+// up, is replaced or comes down as the frames say, and a window change leaves it
+// standing — it does not belong to the window.
 // The controller owns no rendering and no DOM.
 
 import {
@@ -249,7 +250,7 @@ type LiveViewportDelta = Extract<
 export type TableAnnouncePlacement = 'above' | 'inside'
 
 /**
- * How many created rows this window has been told about and cannot show, by place.
+ * How many rows this window has been told about and has not shown, by place.
  *
  * `total` is summed here rather than by each view because three views adding two
  * numbers is three chances to add them differently, and the strip that reads it is
@@ -653,9 +654,10 @@ export class TableViewportController<R> implements TableWindowSink {
    * Keys of the rows announced above this window, and of those announced inside it.
    *
    * Keys rather than a running number, because the same row can be announced twice — the
-   * frame is sent per foreign write and nothing recalls one — and a person told twice about
-   * one row would be told wrong. A key lands in one set only: the place it was first
-   * announced at is the place it keeps until a window arrives and settles everything.
+   * frame is sent per foreign write, again on every edit that leaves a row inside, and
+   * nothing recalls one — and a person told twice about one row would be told wrong. A key
+   * lands in one set only: the place it was first announced at is the place it keeps until
+   * a window arrives and settles everything.
    */
   private readonly announcedAbove = new Set<string>()
 
@@ -777,7 +779,7 @@ export class TableViewportController<R> implements TableWindowSink {
   readonly pendingCount: ReadonlySignal<number>
 
   /**
-   * Counts of the created rows this window has been told about and cannot show.
+   * Counts of the rows this window has been told about and has not shown.
    *
    * The two places are kept apart because they are two different facts — a row above the
    * window fell before its first shown row, a row inside it between two shown rows — and a
@@ -1730,18 +1732,18 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Ingest word of a created row this window cannot show
-   * (`table_viewport_announce`): count it under its place and take the counts.
+   * Ingest word of a row this window has not shown — created, or brought into it by an
+   * edit (`table_viewport_announce`): count it under its place and take the counts.
    *
    * The counts are taken the way {@link ingestCount} takes them, because that is what
-   * they are — the announcement carries the same total shift the count would have. What
-   * is new is the key: a row already announced under either place is counted once, so a
-   * repeat of the frame moves nothing.
+   * they are — the announcement carries the same total shift the count would have, and
+   * from an edit no shift at all. What is new is the key: a row already announced under
+   * either place is counted once, so a repeat of the frame moves nothing.
    *
    * Nothing is shown by this. The row has no body here and never enters the window; the
    * only way to see it is {@link show}, which asks the server for the window again.
    *
-   * @param rowKey Key of the created row the window cannot show.
+   * @param rowKey Key of the row the window has not shown.
    * @param placement Where the row falls against the window — above it or inside it.
    * @param totalCount Total rows matching the filter.
    * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.

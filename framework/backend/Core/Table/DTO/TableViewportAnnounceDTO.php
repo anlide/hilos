@@ -11,7 +11,7 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableRowPlacement;
 
 /**
- * TableViewportAnnounceDTO - Server-to-client word of a created row one window cannot show.
+ * TableViewportAnnounceDTO - Server-to-client word of a row one window has not shown, created or edited into it.
  *
  * A row that belongs above the window or between the rows it is showing cannot arrive on its
  * own: putting it in would shift everything below it. Staying silent is no better - the window
@@ -19,10 +19,11 @@ use Hilos\Core\Table\TableRowPlacement;
  * instead. The frame carries the row key and not the row: the key is there so the same row
  * announced twice is counted once, and the strip a person reads is a number rather than a list.
  *
- * The counts travel with it, because an announcement is also a count: the arithmetic is the one
- * the append carries, legitimate for the same reason - a window that is announced to either has
- * no filter map or has been told by the row source that the row is in its set, so a create is
- * one more row in its set. Addressed per accept key.
+ * The counts travel with it, because an announcement is also a count. A create carries the
+ * arithmetic the append carries, legitimate for the same reason - a window that is announced to
+ * either has no filter map or has been told by the row source that the row is in its set, so a
+ * create is one more row in its set. An edit carries the total unchanged: the row moved within
+ * the set and added none to it. Addressed per accept key.
  *
  * The page count travels only while the total is exact, as it does for
  * {@see TableViewportCountDTO}: past {@see TableConstants::COUNT_CEILING} the total is the
@@ -43,7 +44,7 @@ final class TableViewportAnnounceDTO extends BaseDTO implements SignalDataInterf
      *
      * @param string $page Page the table belongs to
      * @param string $tableKey Table key the announcement is for
-     * @param string $rowKey Key of the created row the window cannot show
+     * @param string $rowKey Key of the row the window has not shown: created, or brought into it by an edit
      * @param TableRowPlacement $placement Where the row falls against the window, above it or inside it
      * @param int $totalCount Total rows matching the filter
      * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at

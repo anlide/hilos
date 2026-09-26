@@ -499,6 +499,7 @@ place moved nothing, and there is nothing to hold.
 | The shown row was deleted or left the filter | **waits**, the row is marked *will leave* | Same: its place in the list changes. |
 | **The reader's own** create or edit | applies **at once**, taking the place the sort gives it | They pressed the button and are looking at the result. |
 | Somebody else's new row | depends on where it lands — see the next section | It may appear by itself only where it moves nothing. |
+| Somebody else's edit brings in a row the window does not hold | announced when it lands inside the window or at the tail of a last page with room; nothing above | The reader has not seen it here; F5 would show it. |
 
 Because a change that touches no rendered column produces no delta at all, **an
 Apply button after which the screen looks the same cannot happen**. A badge that
@@ -584,10 +585,21 @@ that window as nothing at all. A window that asked for no order, and a filtered
 window whose table cannot answer the question, cannot read a place: the row
 reaches them as the count only.
 
+**A row an edit brought in** is judged by the same place (owner's decision,
+25.09.2026, HIL-1140). A row the window does not hold that an edit put inside
+the window, or at the tail of a last page with room, is announced by the same
+frame as `inside`, with the total unchanged, and never arrives on its own: a row
+that left the page earlier may still stand on the screen with its mark, and
+would stand twice. Above the window nothing is sent — without its past the row
+may have stood there before the edit too; below it, only the count. With a
+filter the source must say the row is in the set; without one, only the
+table's own "not in the set" keeps the window silent.
+
 ## Announcing what the window cannot show
 
-What the window cannot admit is announced rather than dropped, and the
-announcement is a count, not a list of rows.
+What the window cannot admit — a created row, or one an edit brought in — is
+announced rather than dropped, and the announcement is a count, not a list of
+rows.
 
 - **The core accumulates announced rows as a number**, keyed by placement, and
   sums the two; the framework's view draws one bar with the sum and no word of
@@ -632,7 +644,10 @@ key back from whichever place holds it, so the bar names rows Show will actually
 bring. The server keeps no memory of what it announced to whom, so the frame goes
 to every window that does not hold the row; a key the core was never told about is
 dropped without touching the bar. The frame carries no count: the total of the
-delete travels on `table_viewport_count` as it always did.
+delete travels on `table_viewport_count` as it always did. Each edit that leaves
+an announced row inside sends its frame again, and the core counts the key once;
+a row a later edit takes elsewhere is not taken back and stays on the bar until
+Show — only a delete has a mirror.
 
 ## Apply
 
@@ -763,12 +778,14 @@ The question is put once per change, whichever of the two needs it first.
 - **A change or a removal of a row the window is holding** — the window is part
   of the set, so the row was in it. A removal takes one off; a change takes one
   off only if the row has left the set.
-- **A change or a removal of a row outside the window** — nobody can place it.
+- **A change or a removal of a row outside the window** — nobody can count it.
   Whether it was in the set before the change is a question about its previous
   state, and no previous state is kept: a source update carries the changed
   columns and a delete need carry no row at all. The window is marked for a single
   recount at the end of the flush, and a `table_viewport_count` frame is sent if
-  the total moved.
+  the total moved. The past is needed for the number, not for the place: an
+  edited row that now stands inside the window is still announced (see *Where an
+  arriving row lands*).
 - **A table that does not implement the question** answers "cannot say", and
   marks the window for that same single recount at the end of the flush (at most
   once per window per flush, rather than on every change). That is what the default

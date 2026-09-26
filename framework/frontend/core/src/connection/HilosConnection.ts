@@ -248,7 +248,7 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   tableViewportAppend: TableViewportAppendSignal
   /** The receiver's own new row (`table_viewport_own_create`), already placed at its index. */
   tableViewportOwnCreate: TableViewportOwnCreateSignal
-  /** Word of a created row the window cannot show (`table_viewport_announce`): its key and its place. */
+  /** Word of a row the window has not shown, created or edited into it (`table_viewport_announce`): its key and its place. */
   tableViewportAnnounce: TableViewportAnnounceSignal
   /** Word that an announced row left the set (`table_viewport_unannounce`): its key alone. */
   tableViewportUnannounce: TableViewportUnannounceSignal

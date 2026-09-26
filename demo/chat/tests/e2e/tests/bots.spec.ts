@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { watchFirstRowTop } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  dismissToasts,
+  watchFirstRowTop,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
@@ -25,6 +28,9 @@ import {
 //   Show asks for the window again at the place the reader stands;
 // - one created inside the window is announced by the same strip, and Show brings
 //   it in between the rows it belongs to;
+// - one another tab renamed into the window is announced by that strip too, and so
+//   is one renamed onto the tail of a last page with room — an edited row never
+//   comes in on its own;
 // - a value another tab edited, leaving the row in its place, lands at once,
 //   highlighted and with no gate.
 //
@@ -126,8 +132,8 @@ async function editBotDescription(
 }
 
 /**
- * Rename a bot through the edit dialog. The caller picks a name that keeps the
- * row where it stands in the order.
+ * Rename a bot through the edit dialog. The caller picks the name for the place
+ * it wants: one that keeps the row where it stands, or one that moves it.
  *
  * @param page The Playwright page on the bots admin.
  * @param rowKey The bot's row key.
@@ -450,6 +456,117 @@ test('a bot created inside the window is announced by the same strip, and Show b
   // Cleanup: A shows the bot it made.
   await tabB.close()
   await deleteBot(page, key)
+})
+
+test('a bot another tab renamed into the window is announced by the same strip, and Show brings it between the rows', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const name = `ZZ ${stamp} renamed`
+  const renamed = `Dave ${stamp}`
+
+  await signUpAdmin(page)
+  await openBots(page)
+
+  // A creates the bot BEFORE B opens, past every other bot, so B's cold first
+  // window does not hold it and its count already has it. A follows it to the
+  // last page, where its edit button is — once the notice of the create, which
+  // stands over the pager, is out of the way.
+  await createBot(page, name)
+  await dismissToasts(page)
+  await goToLastPage(page)
+  const key = await tableRowKeyByText(page, name)
+
+  const tabB = await page.context().newPage()
+  const tableWindowsOfB = countTableWindows(tabB)
+  await openBots(tabB)
+  const base = await tableTotal(tabB)
+  const keysBefore = await tableRowKeys(tabB)
+  const rowTop = await watchFirstRowTop(tabB)
+
+  // A renames it between Dasha and David, between two rows B is showing. B has
+  // not seen this row here, so it is told as of a new one — the same strip, in
+  // the same words. The set did not grow, so the total stays; nothing moves.
+  await renameBot(page, key, renamed)
+  const strip = tabB.getByTestId('hilos-table-announce')
+  await expect(strip).toContainText('1 new row')
+  await expect(strip).not.toContainText('above')
+  await expectTableTotal(tabB, base)
+  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+  await rowTop.unchanged()
+
+  // Show asks for the window again at the start of the set: the row stands
+  // between the rows it sorts between, and the last of the window leaves for the
+  // next page — what a reload shows.
+  const tableWindowsBeforeShow = tableWindowsOfB()
+  await tabB.getByTestId('hilos-table-announce-show').click()
+  await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
+  await expect(strip).toHaveCount(0)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+  const keysAfter = await tableRowKeys(tabB)
+  expect(keysAfter).toHaveLength(keysBefore.length)
+  expect(keysAfter.filter((rowKey) => rowKey !== key)).toEqual(
+    keysBefore.slice(0, -1),
+  )
+  await expectTableTotal(tabB, base)
+
+  // Cleanup: B shows the bot now.
+  await deleteBot(tabB, key)
+  await tabB.close()
+})
+
+test('a bot another tab renamed onto the tail of a last page with room is announced, not put in', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const filler = `ZZ ${stamp} filler`
+  const name = nameBeforeAll(stamp)
+  const tail = `ZZ ${stamp} tail`
+
+  await signUpAdmin(page)
+  await openBots(page)
+
+  // A makes the page with room — the filler sorts after every bot — and a bot
+  // first in the order, on its own first page, before B opens.
+  await createBot(page, filler)
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+
+  const tabB = await page.context().newPage()
+  const tableWindowsOfB = countTableWindows(tabB)
+  await openBots(tabB)
+  await goToLastPage(tabB)
+  const base = await tableTotal(tabB)
+  const fillerKey = await tableRowKeyByText(tabB, filler)
+  const keysBefore = await tableRowKeys(tabB)
+  expect(keysBefore.at(-1)).toBe(fillerKey)
+  expect(keysBefore.length).toBeLessThan(WINDOW)
+
+  // A renames it past the filler, into B's free slot. A created row would
+  // arrive there on its own; an edited one is announced instead, since a row
+  // that left this page earlier may still stand on it with its mark.
+  await renameBot(page, key, tail)
+  const strip = tabB.getByTestId('hilos-table-announce')
+  await expect(strip).toContainText('1 new row')
+  await expectTableTotal(tabB, base)
+  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+  // Show brings the window again after the place B stands: the row stands last.
+  const tableWindowsBeforeShow = tableWindowsOfB()
+  await tabB.getByTestId('hilos-table-announce-show').click()
+  await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
+  await expect(strip).toHaveCount(0)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+  expect(await tableRowKeys(tabB)).toEqual([...keysBefore, key])
+
+  // Cleanup: B is the tab that shows both.
+  await deleteBot(tabB, key)
+  await deleteBot(tabB, fillerKey)
+  await tabB.close()
 })
 
 test('a value edited in another tab lands in place, highlighted and with no gate', async ({

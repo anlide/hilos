@@ -2660,7 +2660,10 @@ abstract class BrowserContext
      * sent; a create whose row belongs above the window or inside it is announced live
      * (table_viewport_announce, the same counts) and nothing else is sent either. Otherwise a
      * live table_viewport_count carries any total shift (navigation metadata the frontend applies
-     * at once), and a pending table_viewport_delta carries an in-window row edit or removal.
+     * at once), and a pending table_viewport_delta carries an in-window row edit or removal. An
+     * edit of a row the window does not hold, which leaves the row inside the window or at the
+     * tail of a last page with room, is announced by the same frame once the count is taken
+     * ({@see self::announceViewportEntry()}).
      *
      * The originator is distinguished here: the delta is tagged `own` when the
      * grouped change's origin equals this receiver's accept key, so its own edit
@@ -2777,6 +2780,10 @@ abstract class BrowserContext
         }
 
         $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership);
+
+        // Ahead of the delta, which forgets a row it takes out of the window: a row the window held
+        // when this change came is the delta's to judge, and announcing it as well would be a second answer.
+        $this->announceViewportEntry($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership);
 
         $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own, $focused, $membership);
         if ($delta !== null) {
@@ -3099,6 +3106,9 @@ abstract class BrowserContext
      * Both roads carry the new total and page count themselves, so no separate count signal
      * follows either of them.
      *
+     * An edit that brings a row into the window is not judged here: its count is taken first, and
+     * {@see self::announceViewportEntry()} reads its place after that.
+     *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
@@ -3132,12 +3142,92 @@ abstract class BrowserContext
             return true;
         }
         if ($placement === TableRowPlacement::Above || $placement === TableRowPlacement::Inside) {
-            $this->emitViewportAnnounce($viewport, $mutation, $placement, $acceptKey, $page, $browserKey);
+            $this->emitViewportAnnounce(
+                $viewport,
+                $mutation,
+                $placement,
+                $this->countedTotal($viewport, $viewport->totalCount() + 1),
+                $acceptKey,
+                $page,
+                $browserKey,
+            );
 
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Announces a row an edit brought into one window, which that window does not hold.
+     *
+     * A window holds an unbroken stretch of its set, so a row that now stands strictly between its
+     * first and last row - or after the last row of a window that reaches the end of the set with
+     * room to spare - and is not one the window holds was not in it before: the entry is seen
+     * without knowing where the row stood. Above the window it is not, a row there may have stood
+     * above it before the edit too, and nothing is sent (owner's frame, 25.09.2026). Below the
+     * window it is a count and nothing more, as it is for a created row.
+     *
+     * The tail is announced too, and not appended. A row that left this page earlier still stands
+     * on the reader's screen with a mark or as a placeholder while the server has already forgotten
+     * it, and an appended row does not clear its key there - the row would stand twice. The wire
+     * knows no announced tail, so the tail travels as `inside`: on this page, which is all the strip
+     * says.
+     *
+     * The place is read by the create's classifier ({@see self::viewportPlacement()}), which for a
+     * window with a filter map has already required the source's yes. A window without one asks the
+     * same question after the place, and only a no from the table's own narrowing keeps it silent;
+     * a table that cannot say is announced to, as the delta treats the rows it holds.
+     *
+     * The frame carries the total the window already has: an edit adds no row to the set. What the
+     * edit does to the number is the count's business, taken before this runs, and under a filter
+     * settled by the recount at the end of the flush. The server keeps no memory of what it
+     * announced, so every edit that leaves such a row inside sends the frame again, and the client
+     * counts the key once.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
+     */
+    private function announceViewportEntry(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+        Closure $membership,
+    ): void {
+        if ($mutation->type !== TableMutationType::Update || $mutation->row === null) {
+            return;
+        }
+        if ($viewport->hasRow((string) $mutation->rowKey)) {
+            return;
+        }
+        $placement = $this->viewportPlacement($table, $viewport, $mutation, $this->viewportQuery($viewport), $membership);
+        if ($placement !== TableRowPlacement::Inside && $placement !== TableRowPlacement::Tail) {
+            return;
+        }
+        if ($viewport->filter === [] && $membership() === false) {
+            return;
+        }
+
+        $this->emitViewportAnnounce(
+            $viewport,
+            $mutation,
+            TableRowPlacement::Inside,
+            [
+                TableConstants::RESULT_KEY_TOTAL_COUNT => $viewport->totalCount(),
+                TableConstants::RESULT_KEY_TOTAL_EXACT => $viewport->totalExact(),
+            ],
+            $acceptKey,
+            $page,
+            $browserKey,
+        );
     }
 
     /**
@@ -3192,27 +3282,29 @@ abstract class BrowserContext
     }
 
     /**
-     * Announces a created row the window cannot show, without sending it.
+     * Announces a row the window has not shown - a created one, or one an edit brought into it - without sending it.
      *
-     * The window is told that the set grew under it and where the new row fell - above it or
+     * The window is told that the set moved under it and where the row fell - above it or
      * between the rows it holds - and that is all: the key travels so the same row announced
      * twice counts once, the row body does not travel at all. Nothing is written into the
-     * window's memory either, an announced row not being part of it; the next edit of that row
-     * is therefore a change to a row this window never had, and no frame follows from it.
+     * window's memory either, an announced row not being part of it; the next edit that leaves
+     * that row inside the window therefore announces it again, and the client counts the key once.
      *
      * The table is not asked anything here - no row for the wire, no anchor. This runs on every
      * foreign create in every window of every connection, and it makes no request of the source.
      *
-     * The count arithmetic is the append's, and it is legitimate for the append's reason: a
-     * window with a filter map reaches this road only once the source has said the row is in its
-     * set, and a window with none holds every row, so either way one create is one more row in
-     * the set. A window whose count stopped at its ceiling is announced to all the same - the
-     * early return the count path takes on an inexact total is no model here, that one being
-     * about a number where this is about a row.
+     * The total arrives as the caller settled it. A create brings one more: the append's
+     * arithmetic, legitimate for the append's reason - a window with a filter map reaches that road
+     * only once the source has said the row is in its set, and a window with none holds every row.
+     * An edit brings the total the window already has, a row that moved within the set adding none
+     * to it. A window whose count stopped at its ceiling is announced to all the same - the early
+     * return the count path takes on an inexact total is no model here, that one being about a
+     * number where this is about a row.
      *
      * @param TableViewportSubscription $viewport Connection's window; its total is updated in place
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param TableRowPlacement $placement Where the row falls against the window, above it or inside it
+     * @param array{totalCount: int, totalExact: bool} $total Total the frame carries, with the word on it
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
@@ -3221,13 +3313,13 @@ abstract class BrowserContext
         TableViewportSubscription $viewport,
         TableRowMutationDTO $mutation,
         TableRowPlacement $placement,
+        array $total,
         string $acceptKey,
         string $page,
         string $browserKey,
     ): void {
-        $counted = $this->countedTotal($viewport, $viewport->totalCount() + 1);
-        $totalCount = $counted[TableConstants::RESULT_KEY_TOTAL_COUNT];
-        $totalExact = $counted[TableConstants::RESULT_KEY_TOTAL_EXACT];
+        $totalCount = $total[TableConstants::RESULT_KEY_TOTAL_COUNT];
+        $totalExact = $total[TableConstants::RESULT_KEY_TOTAL_EXACT];
         $viewport->recordTotal($totalCount, $totalExact);
 
         $this->queueAddressedTableSignal(
@@ -3276,7 +3368,10 @@ abstract class BrowserContext
     }
 
     /**
-     * Reads where a created row falls against one connection's window.
+     * Reads where a row the window does not hold falls against one connection's window.
+     *
+     * The answer is the same for a created row and for one an edit moved: either way the row
+     * stands where it stands now, and the window is judged by its boundaries, not by the row's past.
      *
      * The place is read off the two boundaries the window was served with, in the order that
      * window asked for, and the table does the comparing because the boundaries are written in
@@ -3900,8 +3995,9 @@ abstract class BrowserContext
      * Maps an in-window mutation to its pending row delta, or null otherwise.
      *
      * Out-of-window changes carry no row here — their effect is the live count (and,
-     * for an inbound last-page row, a later append). An in-window delete drops the
-     * row from the delivered set and removes it; an in-window update re-sends it.
+     * for an inbound last-page row, a later append); a row outside the window that an edit
+     * brought into it is announced by {@see self::announceViewportEntry()}. An in-window delete
+     * drops the row from the delivered set and removes it; an in-window update re-sends it.
      *
      * An update whose row comes out identical to the one this connection was already
      * given sends nothing at all: what reaches the screen is the rendered row, not the
