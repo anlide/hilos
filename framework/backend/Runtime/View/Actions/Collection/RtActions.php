@@ -150,6 +150,9 @@ abstract class RtActions
     /**
      * Ensures write is allowed (collection name set and truth source permits).
      *
+     * The door of an operation over the whole collection: only a claim over every row passes it,
+     * so a claim over a set is refused here exactly as a claim over named rows is.
+     *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -166,18 +169,19 @@ abstract class RtActions
      * Ensures one operation on one runtime state id is allowed.
      *
      * @param string $stateId Runtime state id
+     * @param list<string> $setKeys Set keys the write touches, each once; empty for a row outside every set
      * @param TruthSourceOperation $operation Operation the caller is about to perform
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the row or the operation is not the caller's
      */
-    protected function ensureCanWriteState(string $stateId, TruthSourceOperation $operation): void
+    protected function ensureCanWriteState(string $stateId, array $setKeys, TruthSourceOperation $operation): void
     {
         $collectionName = $this->getCollectionName()
             ?? throw new RtActionsCollectionNameNullException(
                 "Cannot ensure write: collection name is null"
             );
-        RtTruthSourceRegistry::checkCanWriteState($collectionName, $stateId, $operation);
+        RtTruthSourceRegistry::checkCanWriteState($collectionName, $stateId, $setKeys, $operation);
     }
 
     /**
@@ -187,6 +191,10 @@ abstract class RtActions
      * new membership itself, and the subscribers to that announcement do both. This road is only
      * one of the ways a row reaches the store, and it used to be the only one that remembered.
      *
+     * This is the door that creates a runtime row: it asks for {@see TruthSourceOperation::Add} and
+     * for the set the new row is born in, so a claim over a set brings into being rows of its own
+     * set alone.
+     *
      * @param RtState $state State instance to add
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
@@ -195,7 +203,7 @@ abstract class RtActions
      */
     protected function addStateToCollection(RtState $state): void
     {
-        $this->ensureCanWriteState($state->getId(), TruthSourceOperation::Add);
+        $this->ensureCanWriteState($state->getId(), $state->touchedSetKeys(), TruthSourceOperation::Add);
         $this->getStateCollection()->add($state);
     }
 
@@ -203,6 +211,9 @@ abstract class RtActions
      * Apply diff to state and queue RT sync updated signal.
      *
      * Analogous to Object_::sync() for DB; the diff is known at call site.
+     *
+     * The check here is the only one the write gets - no {@see RtState::sync()} follows it - so the
+     * set keys are counted with the diff, and a move to another set is caught before it is applied.
      *
      * @param RtState $state State instance to apply diff to
      * @param array<string, mixed> $diff Changed fields and values
@@ -213,7 +224,7 @@ abstract class RtActions
      */
     protected function applyDiffToState(RtState $state, array $diff): void
     {
-        $this->ensureCanWriteState($state->getId(), TruthSourceOperation::Update);
+        $this->ensureCanWriteState($state->getId(), $state->touchedSetKeys($diff), TruthSourceOperation::Update);
         $previous = array_intersect_key($state->toArray(), $diff);
         $state->applyDiff($diff);
         $this->queueRtSyncUpdated($state->getId(), $diff, $previous);
@@ -226,6 +237,9 @@ abstract class RtActions
      * The previous row no longer has to be read here to be broadcast: the collection reads it
      * before dropping the key and puts it into its own announcement.
      *
+     * The write is judged by the set the stored row stands in; an id with no row behind it names
+     * no set.
+     *
      * @param string $id State ID to remove
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
@@ -234,7 +248,11 @@ abstract class RtActions
      */
     protected function removeStateFromCollection(string $id): void
     {
-        $this->ensureCanWriteState($id, TruthSourceOperation::Remove);
+        $this->ensureCanWriteState(
+            $id,
+            $this->getStateCollection()->get($id)?->touchedSetKeys() ?? [],
+            TruthSourceOperation::Remove,
+        );
         $this->getStateCollection()->remove($id);
     }
 
@@ -257,7 +275,7 @@ abstract class RtActions
         $stateCollection = $this->getStateCollection();
         if ($collectionName !== null) {
             foreach ($stateCollection as $state) {
-                $this->ensureCanWriteState($state->getId(), TruthSourceOperation::Remove);
+                $this->ensureCanWriteState($state->getId(), $state->touchedSetKeys(), TruthSourceOperation::Remove);
             }
             foreach ($stateCollection as $state) {
                 $this->queueRtSyncDeleted($state->getId(), $state->toArray());

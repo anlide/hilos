@@ -36,9 +36,11 @@ Start with `agents.md`, then read the matching runtime guide.
   agent of the node owns; the two collections the daemon master registers itself
   are framework-owned exceptions, named in `DaemonManager` and explained in
   `docs/agents/runtime/rt-context.md`.
-- Ownership is claimed per collection OR per row: a claim naming a list of keys
-  owns those entities, which is how a fleet splits one collection across nodes,
-  each member writing its own rows. A replica of an unreachable owner is still
+- Ownership is claimed per collection, per row, or per set: a claim naming a
+  list of keys owns those entities, which is how a fleet splits one collection
+  across nodes, each member writing its own rows; a claim over a set owns the
+  rows whose field named by the row class in `RtState::SET_VIA` carries the
+  agent's key. A replica of an unreachable owner is still
   served, and carries the moment it stopped being kept up to date:
   `RtItem::staleSince()` for a row, `RtCollection::staleSince()` for the earliest
   among a collection's rows, `null` in both when the copy is current. Both in

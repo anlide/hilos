@@ -72,13 +72,23 @@ abstract class RtActions
      * Defaults to editing because that is what an item action does: the row is already there,
      * held by this very item, and the ones that instead drop it name the operation themselves.
      *
+     * The write is judged by the set the row stands in now ({@see RtState::touchedSetKeys()}):
+     * callers ask this door before they assign the fields, so a move to another set is not in the
+     * row yet here, and the {@see RtState::sync()} that follows the assignments asks again and
+     * catches it.
+     *
      * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the row or the operation is not the caller's
      */
     protected function ensureCanWrite(TruthSourceOperation $operation = TruthSourceOperation::Update): void
     {
-        RtTruthSourceRegistry::checkCanWriteState($this->getRtCollectionKey(), $this->state->getId(), $operation);
+        RtTruthSourceRegistry::checkCanWriteState(
+            $this->getRtCollectionKey(),
+            $this->state->getId(),
+            $this->state->touchedSetKeys(),
+            $operation,
+        );
     }
 
     /**

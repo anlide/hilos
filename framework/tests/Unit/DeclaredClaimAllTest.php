@@ -15,6 +15,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -44,9 +45,9 @@ final class DeclaredClaimAllTest extends TestCase
     }
 
     /**
-     * An agent that declares every map holds five grants after one call: two over whole
-     * collections, two over the rows its instance named and no others, one over the set its
-     * instance named and no other.
+     * An agent that declares every map holds six grants after one call: two over whole
+     * collections, two over the rows its instance named and no others, and in each half one over
+     * the set its instance named and no other.
      */
     public function testOneCallLaysEveryMap(): void
     {
@@ -66,15 +67,47 @@ final class DeclaredClaimAllTest extends TestCase
             SourceInterestRegistry::collectionsOfConsumer(SourceConsumer::agent($agent->getId()), SourceChange::KIND_DB),
         );
         $this->assertEqualsCanonicalizing(
-            [DeclaredClaimAllTestEveryMapAgent::RT_COLLECTION, DeclaredClaimAllTestEveryMapAgent::RT_ROWS_COLLECTION],
+            [
+                DeclaredClaimAllTestEveryMapAgent::RT_COLLECTION,
+                DeclaredClaimAllTestEveryMapAgent::RT_ROWS_COLLECTION,
+                DeclaredClaimAllTestEveryMapAgent::RT_SET_COLLECTION,
+            ],
             RtTruthSourceRegistry::collectionsOf($agent->getId()),
         );
+        $this->assertEqualsCanonicalizing(
+            [
+                DeclaredClaimAllTestEveryMapAgent::RT_COLLECTION,
+                DeclaredClaimAllTestEveryMapAgent::RT_ROWS_COLLECTION,
+                DeclaredClaimAllTestEveryMapAgent::RT_SET_COLLECTION,
+            ],
+            SourceInterestRegistry::collectionsOfConsumer(SourceConsumer::agent($agent->getId()), SourceChange::KIND_RT),
+        );
         $this->assertSame(
-            [DeclaredClaimAllTestEveryMapAgent::RT_ROWS_COLLECTION => ['7']],
+            [
+                DeclaredClaimAllTestEveryMapAgent::RT_ROWS_COLLECTION => ['7'],
+                DeclaredClaimAllTestEveryMapAgent::RT_SET_COLLECTION => [],
+            ],
             RtTruthSourceRegistry::keysByCollectionOf($agent->getId()),
         );
 
         ExecutionContext::setCurrentAgentId($agent->getId());
+        RtTruthSourceRegistry::checkCanWriteState(
+            DeclaredClaimAllTestEveryMapAgent::RT_SET_COLLECTION,
+            '1',
+            ['7'],
+            TruthSourceOperation::Update,
+        );
+        try {
+            RtTruthSourceRegistry::checkCanWriteState(
+                DeclaredClaimAllTestEveryMapAgent::RT_SET_COLLECTION,
+                '1',
+                ['8'],
+                TruthSourceOperation::Update,
+            );
+            $this->fail('Expected a runtime row of another set to be refused');
+        } catch (RtTruthSourceWriteNotAllowedException $e) {
+            $this->assertStringContainsString("it holds set '7'", $e->getMessage());
+        }
         TruthSourceRegistry::checkCanWriteItem(
             DeclaredClaimAllTestEveryMapAgent::DB_SET_COLLECTION,
             '1',
@@ -91,7 +124,7 @@ final class DeclaredClaimAllTest extends TestCase
     }
 
     /**
-     * An agent that declares one map gets that grant and nothing beside it: the four maps it left
+     * An agent that declares one map gets that grant and nothing beside it: the five maps it left
      * empty reach no registry.
      *
      * This is what made it safe to move the harnesses that laid only some of the claims by hand
@@ -148,12 +181,14 @@ final class DeclaredClaimAllTestEveryMapAgent extends AbstractAgent
     public const string RT_COLLECTION = 'unit_declared_claim_all_rt';
     public const string RT_ROWS_COLLECTION = 'unit_declared_claim_all_rt_rows';
     public const string DB_SET_COLLECTION = 'unit_declared_claim_all_db_set';
+    public const string RT_SET_COLLECTION = 'unit_declared_claim_all_rt_set';
 
     public const array OWNS_DB = [self::DB_COLLECTION => [TruthSourceOperation::Update]];
     public const array OWNS_DB_ROWS = [self::DB_ROWS_COLLECTION => [TruthSourceOperation::Update]];
     public const array OWNS_RT = [self::RT_COLLECTION => [TruthSourceOperation::Update]];
     public const array OWNS_RT_ROWS = [self::RT_ROWS_COLLECTION => [TruthSourceOperation::Update]];
     public const array OWNS_DB_SET = [self::DB_SET_COLLECTION => [TruthSourceOperation::Update]];
+    public const array OWNS_RT_SET = [self::RT_SET_COLLECTION => [TruthSourceOperation::Update]];
 
     /**
      * @param string $agentIndex Row this instance holds
@@ -186,6 +221,15 @@ final class DeclaredClaimAllTestEveryMapAgent extends AbstractAgent
      * @return string The one set this instance answers for
      */
     public function ownedDbSetKey(string $collection): string
+    {
+        return (string)$this->agentIndex;
+    }
+
+    /**
+     * @param string $collection Collection the resolver is asking about
+     * @return string The one set this instance answers for
+     */
+    public function ownedRtSetKey(string $collection): string
     {
         return (string)$this->agentIndex;
     }

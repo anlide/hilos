@@ -79,7 +79,8 @@ Use this skill for agent business logic and registration work. Start by reading 
    `_setShortPath` — ends at the agent's key. That third width names the
    collection in `OWNS_DB_SET` (`OWNS_RT_SET` for the runtime half) and its set
    key in `ownedDbSetKey()` (`ownedRtSetKey()`), and the agent does not choose
-   the cut. It is specified in *A Claim Over A Set* of
+   the cut: on the runtime half the row class names the field that cuts the
+   collection, in `RtState::SET_VIA`, and there is no tree. It is specified in *A Claim Over A Set* of
    `docs/agents/architecture/truth-source.md`, which says sentence by sentence
    how much of it the code holds; read that before writing against either name.
    Say what the agent may DO with the rows it claims when that is less than

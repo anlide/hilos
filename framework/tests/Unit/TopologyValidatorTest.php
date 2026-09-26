@@ -48,6 +48,8 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlIndexType;
+use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
@@ -1376,6 +1378,64 @@ final class TopologyValidatorTest extends TestCase
         TopologySetCutClaimHilos::validateTopologyReferences();
 
         $this->addToAssertionCount(1);
+    }
+
+    public function testASetClaimOnARuntimeCollectionCutByNoFieldIsRefused(): void
+    {
+        $rt = new TopologySetClaimRtContext();
+        $rt->configure();
+        HilosFacade::$rt = $rt;
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyRtUncutClaimHilos::validateTopologyReferences();
+            },
+            [
+                TopologyRtUncutClaimAgent::class . " claims rt collection 'rt_uncut_states' by a set,"
+                    . ' but its row class ' . TopologyRtUncutState::class
+                    . ' names no SET_VIA field: a runtime collection cut by no field has no set to claim',
+            ],
+        );
+    }
+
+    public function testASetClaimOnARuntimeCollectionCutByAFieldIsAccepted(): void
+    {
+        $rt = new TopologySetClaimRtContext();
+        $rt->configure();
+        HilosFacade::$rt = $rt;
+
+        TopologyRtSetCutClaimHilos::validateTopologyReferences();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testAnAgentReadingTheRuntimeSetItOwnsIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyReadingItsOwnRtSetHilos::validateTopology();
+            },
+            [
+                TopologyReadingItsOwnRtSetAgent::class
+                    . " names rt collection 'rt_set_cut_states' in both READS_RT and OWNS_RT_SET;"
+                    . ' a claim is the reader interest already',
+            ],
+        );
+    }
+
+    public function testTwoClassesHoldingSetsOfOneRtCollectionInFullAreRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyUnrecordedSharedRtSetOwnersHilos::validateTopology();
+            },
+            [
+                TopologyFullRtSetOwnerAgent::class . ' and ' . TopologySecondFullRtSetOwnerAgent::class
+                    . " both own sets of rt collection 'shared_rt_states' in full: one field cuts the collection,"
+                    . ' so they meet on every instance both answer for',
+                'narrow the operations of one claim, or list the pair in SHARED_RT_OWNERS with the leaf that parts them',
+            ],
+        );
     }
 
     public function testASetClaimClimbingThroughATableTheAgentCannotReachIsRefused(): void
@@ -3499,6 +3559,101 @@ final class TopologyEmptyRtContext extends RtContext
     }
 }
 
+/**
+ * Mounts one runtime store whose rows are cut by a field and one whose rows are cut by none.
+ *
+ * Only the stores: the topology check reads the row class a store declares and nothing else.
+ */
+final class TopologySetClaimRtContext extends RtContext
+{
+    /**
+     * Mounts the two stores the runtime set claims are held against.
+     */
+    public function configure(): void
+    {
+        $this->_stateCollections['rt_set_cut_states'] = TopologyRtSetCutStates::init();
+        $this->_stateCollections['rt_uncut_states'] = TopologyRtUncutStates::init();
+    }
+}
+
+/**
+ * Runtime row cut into sets by the owner it carries.
+ */
+final class TopologyRtSetCutState extends RtState
+{
+    public const string id = 'id';
+    public const string ownerId = 'ownerId';
+
+    public const string SET_VIA = self::ownerId;
+
+    public private(set) string $id = '';
+
+    public ?string $ownerId = null;
+
+    public static function fromRow(array $row): static
+    {
+        $state = new self();
+        $state->id = self::requireString($row, self::id);
+        $state->ownerId = self::optionalString($row, self::ownerId);
+
+        return $state;
+    }
+
+    public function getId(): string
+    {
+        return $this->id;
+    }
+
+    public function toArray(): array
+    {
+        return [self::id => $this->id, self::ownerId => $this->ownerId];
+    }
+}
+
+/**
+ * @extends RtStates<TopologyRtSetCutState>
+ */
+final class TopologyRtSetCutStates extends RtStates
+{
+    public const string STATE_CLASS = TopologyRtSetCutState::class;
+}
+
+/**
+ * Runtime row whose class names no field to cut it by.
+ */
+final class TopologyRtUncutState extends RtState
+{
+    public const string id = 'id';
+
+    public private(set) string $id = '';
+
+    public static function fromRow(array $row): static
+    {
+        $state = new self();
+        $state->id = self::requireString($row, self::id);
+
+        return $state;
+    }
+
+    public function getId(): string
+    {
+        return $this->id;
+    }
+
+    public function toArray(): array
+    {
+        return [self::id => $this->id];
+    }
+}
+
+/**
+ * @extends RtStates<TopologyRtUncutState>
+ */
+final class TopologyRtUncutStates extends RtStates
+{
+    public const string STATE_CLASS = TopologyRtUncutState::class;
+}
+
 final class TopologyMountedRtContext extends RtContext
 {
     /**
@@ -4434,6 +4589,55 @@ final class TopologySetCutClaimAgent extends TopologyTestAgent
     ];
 }
 
+final class TopologyRtSetCutClaimAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rt_set_cut_claim_agent';
+
+    public const array OWNS_RT_SET = [
+        'rt_set_cut_states' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologyRtUncutClaimAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'rt_uncut_claim_agent';
+
+    public const array OWNS_RT_SET = [
+        'rt_uncut_states' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologyReadingItsOwnRtSetAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'reading_its_own_rt_set_agent';
+
+    public const array OWNS_RT_SET = [
+        'rt_set_cut_states' => TruthSourceOperation::BY_KIND,
+    ];
+
+    public const array READS_RT = [
+        'rt_set_cut_states',
+    ];
+}
+
+final class TopologyFullRtSetOwnerAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'full_rt_set_owner_agent';
+
+    public const array OWNS_RT_SET = [
+        'shared_rt_states' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologySecondFullRtSetOwnerAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'second_full_rt_set_owner_agent';
+
+    public const array OWNS_RT_SET = [
+        'shared_rt_states' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
 final class TopologySetStandaloneClaimAgent extends TopologyTestAgent
 {
     public const string AGENT_TYPE = 'set_standalone_claim_agent';
@@ -5012,6 +5216,90 @@ final class TopologySetCutClaimHilos extends HilosFacade
     protected static function createDb(): HilosDbContext
     {
         return new TopologySetClaimDbContext();
+    }
+}
+
+final class TopologyRtSetCutClaimHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyRtSetCutClaimAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRtSetCutClaimAgent::class,
+            AgentRegistryKey::DAEMON => TopologyRtSetCutClaimAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyRtUncutClaimHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyRtUncutClaimAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyRtUncutClaimAgent::class,
+            AgentRegistryKey::DAEMON => TopologyRtUncutClaimAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyReadingItsOwnRtSetHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyReadingItsOwnRtSetAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyReadingItsOwnRtSetAgent::class,
+            AgentRegistryKey::DAEMON => TopologyReadingItsOwnRtSetAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyUnrecordedSharedRtSetOwnersHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFullRtSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFullRtSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFullRtSetOwnerAgentDaemon::class,
+        ],
+        TopologySecondFullRtSetOwnerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySecondFullRtSetOwnerAgent::class,
+            AgentRegistryKey::DAEMON => TopologySecondFullRtSetOwnerAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
     }
 }
 

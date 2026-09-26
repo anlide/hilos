@@ -14,6 +14,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
+use Hilos\Runtime\State\Item\RtState;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -44,10 +45,10 @@ final class OwnershipDeclaration
      * every write of the agent refused with "no truth source registered", however correct
      * the declaration on its class is.
      *
-     * The database half in three widths and the runtime half in two, exactly as the worker asks for
-     * them: the whole-collection claims are read off the CLASS (which lets the declaration be answered
-     * where no instance exists), and the by-row and set claims off the INSTANCE, which is the only
-     * thing that knows which rows or which set it holds.
+     * Both halves in three widths, exactly as the worker asks for them: the whole-collection claims
+     * are read off the CLASS (which lets the declaration be answered where no instance exists), and
+     * the by-row and set claims off the INSTANCE, which is the only thing that knows which rows or
+     * which set it holds.
      *
      * A refusal leaves as it came, and the claims laid before it stay: taking them back belongs to
      * the caller, which also holds the reader interest raised before any claim - {@see WorkerManager}
@@ -65,6 +66,7 @@ final class OwnershipDeclaration
         self::claimDbRows($agent);
         self::claimRtRows($agent);
         self::claimDbSet($agent);
+        self::claimRtSet($agent);
     }
 
     /**
@@ -278,17 +280,23 @@ final class OwnershipDeclaration
     }
 
     /**
-     * The runtime collections a class claims whole without the right to add, its parents' claims folded in.
+     * The runtime collections a class claims whole or by a set without the right to add, its parents' claims folded in.
      *
      * The runtime twin of {@see self::borrowedDbCollectionsOf()}: what a start waits for beside
-     * {@see AbstractAgent::READS_RT}.
+     * {@see AbstractAgent::READS_RT}, and read off the class for the same reason.
      *
-     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
+     * An agent, not any owner, for the reason its database twin gives: the map of sets is declared
+     * on {@see AbstractAgent} alone. Every caller hands it an agent already.
+     *
+     * @param class-string<AbstractAgent> $agentClass Class to read the declaration off
      * @return list<string> Keys of the collections its borrowed claims name
      */
     public static function borrowedRtCollectionsOf(string $agentClass): array
     {
-        return array_keys(array_filter(self::rtCollectionsOf($agentClass), self::isBorrowedClaim(...)));
+        return array_values(array_unique([
+            ...array_keys(array_filter(self::rtCollectionsOf($agentClass), self::isBorrowedClaim(...))),
+            ...array_keys(array_filter(self::rtSetCollectionsOf($agentClass), self::isBorrowedClaim(...))),
+        ]));
     }
 
     /**
@@ -350,13 +358,13 @@ final class OwnershipDeclaration
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
      * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the rows
-     * @throws ClaimWidthConflictException When one collection is named by both widths of this half
+     * @throws ClaimWidthConflictException When one collection is named by more than one width of this half
      * @throws ClaimedRowKeysMissingException When the seam names no row of a narrowly declared collection
      */
     public static function claimRtRows(AbstractAgent $agent): void
     {
         $narrow = self::rtRowCollectionsOf($agent::class);
-        self::refuseWidthConflict($agent, ['OWNS_RT' => self::rtCollectionsOf($agent::class), 'OWNS_RT_ROWS' => $narrow]);
+        self::refuseWidthConflict($agent, self::rtWidthsOf($agent::class));
 
         foreach ($narrow as $collection => $operations) {
             $keys = $agent->ownedRtRowKeys($collection);
@@ -370,6 +378,68 @@ final class OwnershipDeclaration
 
             SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($agent->getId()));
             SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+        }
+    }
+
+    /**
+     * The runtime collections a class owns BY A SET, its parents' claims folded in.
+     *
+     * The runtime twin of {@see self::dbSetCollectionsOf()}. Only the collections: which set of
+     * them this owner holds is asked of the instance by {@see self::claimRtSet()}, and the field
+     * that cuts the set is not here either - the row class of the collection names it in
+     * {@see RtState::SET_VIA}, and the owner does not choose it.
+     *
+     * @param class-string<AbstractAgent> $agentClass Class to read the declaration off
+     * @return array<string, TruthSourceOperations> Collection key => operations its owner may perform on the rows of its set
+     */
+    public static function rtSetCollectionsOf(string $agentClass): array
+    {
+        return self::declaredCollectionsOf($agentClass, static fn (string $class): array => $class::OWNS_RT_SET);
+    }
+
+    /**
+     * Registers every runtime collection the agent declares by a set, over the set it names.
+     *
+     * The runtime twin of {@see self::claimDbSet()}: the map comes off the class, the set key off
+     * the live instance ({@see AbstractAgent::ownedRtSetKey()}), asked once, at start, and once is
+     * enough - the grant holds the key of the set, so a row of the set brought into being after
+     * this call is covered by it without another word. The same two refusals stand in front of
+     * the registry for the same reasons: a collection named by more than one of the three maps of
+     * this half, and a seam that names no set key, turned into a refusal that says which agent and
+     * which collection.
+     *
+     * Each claim is its own reader interest, ready at once only when it may add, as in
+     * {@see self::claimRt()}: a borrowed set claim ({@see self::isBorrowedClaim()}) edits rows
+     * somebody else brought into being, and {@see WorkerManager} waits for their state beside the
+     * reads.
+     *
+     * A class that declares nothing registers nothing - the empty map never reaches a registry.
+     *
+     * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the set
+     * @throws ClaimWidthConflictException When one collection is named by more than one width of this half
+     * @throws ClaimedSetKeyMissingException When the seam names no set key of a collection declared by a set
+     */
+    public static function claimRtSet(AbstractAgent $agent): void
+    {
+        $held = self::rtSetCollectionsOf($agent::class);
+        self::refuseWidthConflict($agent, self::rtWidthsOf($agent::class));
+
+        foreach ($held as $collection => $operations) {
+            try {
+                $keys = TruthSourceKeys::set($agent->ownedRtSetKey($collection));
+            } catch (InvalidArgumentException $noSetKey) {
+                throw new ClaimedSetKeyMissingException(
+                    $agent::class . " declares runtime collection '{$collection}' by a set and named no set key",
+                    previous: $noSetKey,
+                );
+            }
+
+            RtTruthSourceRegistry::register($collection, $keys, $agent->getId(), $operations);
+
+            SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($agent->getId()));
+            if (!self::isBorrowedClaim($operations)) {
+                SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+            }
         }
     }
 
@@ -413,6 +483,23 @@ final class OwnershipDeclaration
             'OWNS_DB' => self::dbCollectionsOf($agentClass),
             'OWNS_DB_ROWS' => self::dbRowCollectionsOf($agentClass),
             'OWNS_DB_SET' => self::dbSetCollectionsOf($agentClass),
+        ];
+    }
+
+    /**
+     * The runtime maps of a class, one per width, each folded up its chain.
+     *
+     * The runtime twin of {@see self::dbWidthsOf()}, named the same way for the same reason.
+     *
+     * @param class-string<AbstractAgent> $agentClass Class to read the declarations off
+     * @return array<string, array<string, TruthSourceOperations>> Declaration name => collections it holds
+     */
+    private static function rtWidthsOf(string $agentClass): array
+    {
+        return [
+            'OWNS_RT' => self::rtCollectionsOf($agentClass),
+            'OWNS_RT_ROWS' => self::rtRowCollectionsOf($agentClass),
+            'OWNS_RT_SET' => self::rtSetCollectionsOf($agentClass),
         ];
     }
 

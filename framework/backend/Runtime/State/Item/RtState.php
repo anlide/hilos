@@ -10,6 +10,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
@@ -30,6 +32,17 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  */
 abstract class RtState
 {
+    /**
+     * Key of the {@see toArray()} field whose value names the set this row belongs to - the runtime
+     * twin of the `_setVia` column an Entity declares ({@see Entity::META_SET_VIA}).
+     *
+     * A row class names its own field by that field's constant: `public const string SET_VIA =
+     * self::userId;`. Empty means the collection is cut by no field, and a claim over a set on it is
+     * refused by the topology check. The field holds a scalar, read as a string; null is a row in
+     * nobody's set. There is no tree: the row carries its owner's key itself, and nothing climbs.
+     */
+    public const string SET_VIA = '';
+
     /**
      * Copy of the row as of the last "synced" moment: {@see sync()} diffs {@see toArray()} against this
      * to know which fields to put in RT_SYNC_UPDATED (same idea as Object_ entity vs entitySync, without DB).
@@ -146,7 +159,12 @@ abstract class RtState
 
         $collectionKey = static::getRtCollectionKey();
         if ($collectionKey !== '' && Hilos::$sr !== null) {
-            RtTruthSourceRegistry::checkCanWriteState($collectionKey, $this->getId(), TruthSourceOperation::Update);
+            RtTruthSourceRegistry::checkCanWriteState(
+                $collectionKey,
+                $this->getId(),
+                $this->touchedSetKeys(),
+                TruthSourceOperation::Update,
+            );
             Hilos::$sr->queueRtSyncSignal(
                 SignalConstants::RT_SYNC_UPDATED,
                 new RtSyncUpdatedSignalData(
@@ -161,6 +179,44 @@ abstract class RtState
         }
 
         $this->rtSyncBaseline = $current;
+    }
+
+    /**
+     * Set keys a write of this row touches: the one it is stored under and the one it is edited to,
+     * each once.
+     *
+     * Stored is the {@see self::SET_VIA} field in the last synced copy of the row, edited is the
+     * same field in `$diff` when the diff carries it and in the row as it stands otherwise. A row
+     * never synced has no stored copy of the field and writes into its edited set alone - a new
+     * row is born in one set. A write that moves the row to another set names two keys, so only
+     * the owner of the whole collection may make it.
+     *
+     * Empty when the class names no field, and when either value is null or not a scalar: such a
+     * row is in nobody's set, and the write guard reads the empty list as belonging to no claim
+     * over a set. The twin of {@see Object_::touchedSetKeys()} without its climb, since a runtime
+     * row has no set tree; it lives on the row because the synced copy is private to it.
+     *
+     * @param array<string, mixed> $diff Fields a pending write is about to apply, empty when the row already holds them
+     * @return list<string> Set keys the write touches, empty for a row outside every set
+     */
+    public function touchedSetKeys(array $diff = []): array
+    {
+        $field = static::SET_VIA;
+        if ($field === '') {
+            return [];
+        }
+
+        $edited = array_key_exists($field, $diff) ? $diff[$field] : ($this->toArray()[$field] ?? null);
+        $values = array_key_exists($field, $this->rtSyncBaseline)
+            ? [$this->rtSyncBaseline[$field], $edited]
+            : [$edited];
+        foreach ($values as $value) {
+            if (!is_scalar($value)) {
+                return [];
+            }
+        }
+
+        return array_values(array_unique(array_map(strval(...), $values)));
     }
 
     /**

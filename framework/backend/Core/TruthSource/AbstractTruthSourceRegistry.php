@@ -199,21 +199,23 @@ abstract class AbstractTruthSourceRegistry
     }
 
     /**
-     * Operations allowed by the grants that cover one key, whoever holds them.
+     * Operations allowed by the grants that cover a write of one row, whoever holds them.
      *
      * The union, not one grant's set: the agent-less write path is judged by the collection as
-     * a whole, exactly as its width check already is.
+     * a whole, exactly as its width check already is. A grant covers the write by the row's key,
+     * or by its set keys when the grant is a claim over a set ({@see TruthSourceKeys::coversRow()}).
      *
      * @param string $collection Collection/table name
      * @param string $key Row key about to be written
+     * @param list<string> $setKeys Set keys the write touches, empty for a row outside every set
      * @return TruthSourceOperations Operations any covering grant allows, each named once
      */
-    protected static function operationsCovering(string $collection, string $key): TruthSourceOperations
+    protected static function operationsCovering(string $collection, string $key, array $setKeys): TruthSourceOperations
     {
         $sources = &static::getSources();
         $operations = new TruthSourceOperations();
         foreach ($sources[$collection] ?? [] as $grant) {
-            if (!$grant->keys->covers($key)) {
+            if (!$grant->keys->coversRow($key, $setKeys)) {
                 continue;
             }
             $operations = $operations->merge($grant->operations);

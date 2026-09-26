@@ -45,6 +45,17 @@ final class MyState extends RtState {
 }
 ```
 
+## Whose set a row is in
+
+A row class may name the field that cuts its collection into sets:
+`public const string SET_VIA = self::userId;`. It is optional — the base is `''`,
+a collection cut by no field — and only the class decides it; the agent that
+claims a set names just the value (`OWNS_RT_SET`, `ownedRtSetKey()`). There is no
+tree: the row carries its owner's key itself, and a null value is nobody's set.
+The write doors ask `touchedSetKeys()`, the stored and the edited key of that
+field, so a move to another set is refused to a set's owner. See
+[../architecture/truth-source.md](../architecture/truth-source.md), *A Claim Over A Set*.
+
 ## Inheriting a framework row: stages and the composition template
 
 Some runtime rows are declared by the framework and filled in by the project.

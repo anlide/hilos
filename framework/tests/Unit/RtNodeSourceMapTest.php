@@ -294,6 +294,32 @@ final class RtNodeSourceMapTest extends TestCase
     }
 
     /**
+     * A claim over a set reaches the map as a claim naming no key, and so speaks for no row of its
+     * collection (HIL-1115): it refuses no neighbour's frame, and its empty scope hands nothing
+     * over. Left out of the keys instead, it would read as a claim over the whole collection.
+     */
+    public function testASetClaimSpeaksForNoRowOfItsCollection(): void
+    {
+        RtTruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set('42'), self::AGENT);
+        $keysByCollection = RtTruthSourceRegistry::keysByCollectionOf(self::AGENT);
+        $map = new RtNodeSourceMap();
+
+        $map->note(
+            self::AGENT,
+            RtTruthSourceRegistry::collectionsOf(self::AGENT),
+            RtTruthSourceRegistry::partialCollectionsOf(self::AGENT),
+            $keysByCollection,
+        );
+
+        $this->assertSame([self::COLLECTION => []], $keysByCollection);
+        $this->assertTrue($map->owns(self::COLLECTION), 'Something here does write the collection');
+        $this->assertFalse($map->owns(self::COLLECTION, 'x'));
+        $this->assertFalse($map->ownsFully(self::COLLECTION));
+        $this->assertSame([], $map->fullyOwnedCollections());
+        $this->assertSame([self::COLLECTION => []], $map->keyScopedCollections());
+    }
+
+    /**
      * Two axes, and each of them alone is enough to make a claim less than whole: the rows are
      * named AND an operation is missing, so even about those rows this node's copy is not the
      * whole truth and it hands nothing over.

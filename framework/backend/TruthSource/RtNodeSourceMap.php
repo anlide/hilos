@@ -8,6 +8,7 @@ use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 
 /**
@@ -32,6 +33,14 @@ use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
  * rows of a collection leaves every other row of it to whoever writes those. A node owns a
  * collection fully when it holds all the operations over all the rows, and only two such claims
  * can be the defect.
+ *
+ * A claim over a set arrives here with an empty list of keys
+ * ({@see RtTruthSourceRegistry::keysByCollectionOf()}), and the node speaks for no row of it:
+ * {@see self::owns()} of a row and {@see self::ownsFully()} answer no, and
+ * {@see self::keyScopedCollections()} gives an empty scope, which the snapshot sending skips
+ * ({@see DaemonManager}). The rows of the set travel as deltas of a partial owner, and a node
+ * that missed the creation of one does not learn it until a set is handed over by snapshot -
+ * HIL-1116.
  */
 final class RtNodeSourceMap
 {

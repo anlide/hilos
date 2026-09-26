@@ -92,6 +92,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
             RtTruthSourceRegistry::checkCanWriteState(
                 AgentTruthSourceOperationsTestAgent::RT_COLLECTION,
                 '1',
+                [],
                 $operation,
             );
         }
@@ -108,11 +109,13 @@ final class AgentTruthSourceOperationsTest extends TestCase
         RtTruthSourceRegistry::checkCanWriteState(
             AgentTruthSourceOperationsTestLibrary::RT_COLLECTION,
             '1',
+            [],
             TruthSourceOperation::Add,
         );
         RtTruthSourceRegistry::checkCanWriteState(
             AgentTruthSourceOperationsTestLibrary::RT_COLLECTION,
             '1',
+            [],
             TruthSourceOperation::Remove,
         );
 
@@ -131,6 +134,7 @@ final class AgentTruthSourceOperationsTest extends TestCase
         RtTruthSourceRegistry::checkCanWriteState(
             AgentTruthSourceOperationsTestLibrary::RT_COLLECTION,
             '1',
+            [],
             TruthSourceOperation::Update,
         );
     }

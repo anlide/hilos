@@ -49,7 +49,8 @@ final class WorkerStatusesActions extends RtActions
             return;
         }
 
-        $this->ensureCanWriteState($workerIndex, TruthSourceOperation::Add);
+        // The row class names no SET_VIA field, so a worker status row is in no set and has no set key.
+        $this->ensureCanWriteState($workerIndex, [], TruthSourceOperation::Add);
 
         $state = StateWorkerStatus::create($workerIndex);
         $state->jobsDone = $jobsDone;

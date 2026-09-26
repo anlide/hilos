@@ -63,6 +63,7 @@ use Hilos\Database\Schema\SetTree;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
+use Hilos\Runtime\State\Item\RtState;
 
 /**
  * Validates project topology registry constants before runtime layers use them.
@@ -207,7 +208,8 @@ final class TopologyValidator
      * where both layers stand, by the same accumulate-then-throw rule as the first moment.
      *
      * @param class-string<Hilos> $hilosClass Project facade class
-     * @throws InvalidTopologyException When a declaration names a collection no layer mounts, or an agent claims a set of a table cut by no column
+     * @throws InvalidTopologyException When a declaration names a collection no layer mounts, or an agent claims a set of a table
+     *     cut by no column, or of a runtime collection cut by no field
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public function validateReferences(string $hilosClass): void
@@ -248,7 +250,9 @@ final class TopologyValidator
         }
 
         $this->validateBrowserJoinColumns($joins, $errors);
-        $this->validateSetClaims($this->constantArray($hilosClass, 'AGENTS', $errors), $errors);
+        $agents = $this->constantArray($hilosClass, 'AGENTS', $errors);
+        $this->validateSetClaims($agents, $errors);
+        $this->validateRtSetClaims($agents, $errors);
 
         if ($errors !== []) {
             throw InvalidTopologyException::forErrors($hilosClass, $errors);
@@ -379,6 +383,43 @@ final class TopologyValidator
             if (!in_array($parent, $reachable, true)) {
                 $errors[] = "{$ownerClass} claims db collection '{$collection}' by a set, and the set tree of {$entityClass}"
                     . " climbs through db collection '{$parent}', which it neither reads nor claims";
+            }
+        }
+    }
+
+    /**
+     * Holds every claim over a set of a runtime collection against the row class it is mounted with.
+     *
+     * The runtime twin of the refusal in {@see self::validateSetClaims()}, kept in a method of its
+     * own because that one climbs a database set tree and a runtime row has none. The field that
+     * cuts a runtime collection is named by the class of its rows ({@see RtState::SET_VIA}), and a
+     * class naming none leaves the collection cut by no field: a claim over a set of it holds
+     * nothing, and would say so only when the first write of the owner is refused. The answer lives
+     * on the mounted state collection, which is why it is judged here, where the runtime stands.
+     *
+     * Silent when no state collection is mounted under the key - not mounted, or a single item:
+     * no claim is held against the mounting today, whatever its width, and a claim over a set of a
+     * single row that names no field covers nothing and is refused at its first write. Silent too
+     * when the mounted collection names no row class: a broken mount, not a claim.
+     *
+     * @param array $agents Agent registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateRtSetClaims(array $agents, array &$errors): void
+    {
+        // A class the registry names wrongly is refused by validate(), which already ran.
+        $rejected = [];
+        foreach ($this->declaredOwnerClasses($agents, $rejected) as $ownerClass) {
+            foreach (array_keys(OwnershipDeclaration::rtSetCollectionsOf($ownerClass)) as $collection) {
+                $stateClass = Hilos::$rt?->stateClassOf($collection);
+                if ($stateClass === null || !is_subclass_of($stateClass, RtState::class)) {
+                    continue;
+                }
+
+                if ($stateClass::SET_VIA === '') {
+                    $errors[] = "{$ownerClass} claims rt collection '{$collection}' by a set, but its row class {$stateClass}"
+                        . ' names no SET_VIA field: a runtime collection cut by no field has no set to claim';
+                }
             }
         }
     }
@@ -819,6 +860,7 @@ final class TopologyValidator
                 $owners,
                 [
                     self::CLAIM_WHOLE => OwnershipDeclaration::rtCollectionsOf(...),
+                    self::CLAIM_SET => OwnershipDeclaration::rtSetCollectionsOf(...),
                     self::CLAIM_ROWS => OwnershipDeclaration::rtRowCollectionsOf(...),
                 ],
             )),
@@ -976,8 +1018,10 @@ final class TopologyValidator
             return "{$pair['first']} owns {$half} collection '{$collection}' in full while {$pair['second']} owns a set of it";
         }
 
+        $cut = $half === self::HALF_RT ? 'one field cuts the collection' : 'one column cuts the table';
+
         return "{$pair['first']} and {$pair['second']} both own sets of {$half} collection '{$collection}' in full:"
-            . ' one column cuts the table, so they meet on every instance both answer for';
+            . " {$cut}, so they meet on every instance both answer for";
     }
 
     /**
@@ -1164,6 +1208,7 @@ final class TopologyValidator
                 [
                     'OWNS_RT' => OwnershipDeclaration::rtCollectionsOf($ownerClass),
                     'OWNS_RT_ROWS' => OwnershipDeclaration::rtRowCollectionsOf($ownerClass),
+                    'OWNS_RT_SET' => OwnershipDeclaration::rtSetCollectionsOf($ownerClass),
                 ],
                 $errors,
             );

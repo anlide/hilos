@@ -468,6 +468,12 @@ speaks for those rows alone, and the receiver replaces them and leaves the rest 
 the collection as it found it. An owner of the whole collection sends no scope,
 and then the frame is the collection, as it has always been.
 
+A claim over a set (`OWNS_RT_SET`) reaches the node map as a claim naming no
+key, so the node speaks for no row of it: its writes travel as deltas of a
+partial owner, it refuses no neighbour's frame, and its scope is empty, so it
+hands nothing over. A node that missed the creation of a row of the set does not
+learn it until a set is handed over by snapshot, which is HIL-1116's.
+
 **A replica whose owner cannot be reached is still served — and says so.** Nothing
 refuses the reader and nothing sweeps the rows when the node that wrote them
 leaves the mesh: refusing on a broken link would replace a stale answer with an

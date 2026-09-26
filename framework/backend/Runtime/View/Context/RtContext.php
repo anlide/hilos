@@ -12,6 +12,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -679,6 +680,25 @@ abstract class RtContext
     public function hasSource(string $name): bool
     {
         return isset($this->_rtCollections[$name]) || array_key_exists($name, $this->_rtItems);
+    }
+
+    /**
+     * Names the class of the rows a mounted state collection holds.
+     *
+     * Asked by the topology check of a claim over a set ({@see TopologyValidator}), which has to
+     * know which field the rows are cut by ({@see RtState::SET_VIA}) and stands outside the
+     * runtime layer: it gets the class name and not the store, which {@see self::getStateCollection()}
+     * would hand outward.
+     *
+     * @param string $name Collection name
+     * @return ?string Row class the collection declares, empty for a collection that names none, or null when no
+     *     state collection is mounted under the name - a single item alias included
+     */
+    final public function stateClassOf(string $name): ?string
+    {
+        $stateCollection = $this->_stateCollections[$name] ?? null;
+
+        return $stateCollection === null ? null : $stateCollection::STATE_CLASS;
     }
 
     /**

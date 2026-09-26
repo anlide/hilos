@@ -161,6 +161,12 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
      * whole collection names no keys and is absent here — silence means "all of it", the way it
      * does in the grant itself.
      *
+     * A claim over a set is here with an empty list of keys, and on purpose: the node-level map
+     * reads it as a claim that speaks for no row of its collection - no snapshot of the set is
+     * handed over, and no foreign frame is refused. Left out, it would read as a claim over the
+     * whole collection, and the snapshot that follows would wipe the other nodes' sets. Handing a
+     * set over by snapshot is HIL-1116.
+     *
      * @param string $agentId Agent to ask about
      * @return array<string, list<string>> Collections it claimed by key, and the keys of each
      */
@@ -244,14 +250,24 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
      * Two questions in order, and they fail differently: whether the writer owns the row at all,
      * then whether the right it holds over that row covers this operation.
      *
+     * The first question is asked of the row's id for a claim over the whole collection or over
+     * named rows, and of the row's set keys for a claim over a set: an id says nothing about whose
+     * set a row is in. Every set key the write touches has to be the claim's own, so a write that
+     * moves a row to another set is refused to the owner of either set - it writes into both.
+     *
+     * The set keys come as a list and not as a closure, unlike on the database half: a runtime row
+     * has no set tree, so its keys are read off the row itself and cost nothing to hand over.
+     *
      * @param string $collection Collection name
      * @param string $stateId Runtime state id
+     * @param list<string> $setKeys Set keys the write touches, each once, empty for a row outside every set
      * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws RtTruthSourceWriteNotAllowedException If the row or the operation is not the caller's
      */
     public static function checkCanWriteState(
         string $collection,
         string $stateId,
+        array $setKeys,
         TruthSourceOperation $operation,
     ): void {
         if (!self::hasTruthSource($collection)) {
@@ -263,14 +279,14 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
 
         $agentId = ExecutionContext::currentAgentId();
         if ($agentId === null) {
-            if (!self::isTruthSource($collection, [$stateId])) {
+            if (!self::isStateCovered($collection, $stateId, $setKeys)) {
                 throw new RtTruthSourceWriteNotAllowedException(
                     "Write operation not allowed: no truth source covers runtime collection '{$collection}' " .
                     "state '{$stateId}'."
                 );
             }
 
-            $covering = self::operationsCovering($collection, $stateId);
+            $covering = self::operationsCovering($collection, $stateId, $setKeys);
             if ($covering->allows($operation)) {
                 return;
             }
@@ -283,11 +299,17 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         $grant = self::grantOf($collection, $agentId);
-        if ($grant === null || !$grant->keys->covers($stateId)) {
-            throw new RtTruthSourceWriteNotAllowedException(
-                "Write operation not allowed: agent '{$agentId}' is not a truth source for " .
-                "runtime collection '{$collection}' state '{$stateId}'."
-            );
+        if ($grant === null || !$grant->keys->coversRow($stateId, $setKeys)) {
+            $reason = "Write operation not allowed: agent '{$agentId}' is not a truth source for " .
+                "runtime collection '{$collection}' state '{$stateId}'";
+            if ($grant !== null && $grant->keys->coversSet()) {
+                throw new RtTruthSourceWriteNotAllowedException(
+                    "{$reason}: it holds set '{$grant->keys->setKey()}', and the state's set keys are [" .
+                    implode(', ', $setKeys) . "]."
+                );
+            }
+
+            throw new RtTruthSourceWriteNotAllowedException("{$reason}.");
         }
 
         if ($grant->allows($operation)) {
@@ -299,6 +321,30 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
             "'{$collection}' with operations [" . $grant->operations->asText() . "] and " .
             "may not {$operation->value} state '{$stateId}'."
         );
+    }
+
+    /**
+     * Whether any grant in this process covers a write of one row.
+     *
+     * Asked by the agent-less path, which judges the row by the collection as a whole. The shared
+     * {@see AbstractTruthSourceRegistry::isTruthSource()} is not asked here: it answers by row keys
+     * alone, and so has no answer for a claim over a set.
+     *
+     * @param string $collection Collection name
+     * @param string $stateId Runtime state id
+     * @param list<string> $setKeys Set keys the write touches, empty for a row outside every set
+     * @return bool True when at least one grant covers the write
+     */
+    private static function isStateCovered(string $collection, string $stateId, array $setKeys): bool
+    {
+        $sources = &self::getSources();
+        foreach ($sources[$collection] ?? [] as $grant) {
+            if ($grant->keys->coversRow($stateId, $setKeys)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -39,7 +39,8 @@ final class BotAgentStatusesActions extends RtActions
      */
     public function ensure(int $botId): ViewBotAgentStatus
     {
-        $this->ensureCanWriteState((string)$botId, TruthSourceOperation::Add);
+        // The row class names no SET_VIA field, so a bot status row is in no set and has no set key.
+        $this->ensureCanWriteState((string)$botId, [], TruthSourceOperation::Add);
 
         $existing = $this->stateCollection->get((string)$botId);
         if ($existing instanceof StateBotAgentStatus) {

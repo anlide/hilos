@@ -126,8 +126,8 @@ A third map joins them in the database half, `OWNS_DB_SET`, of the same form and
 on `AbstractAgent` for the same reason, for a collection the owner holds by one
 set of it. The maps of that half are then three and stay exclusive: a collection
 stands in exactly one of them, and one named by two refuses the agent's start.
-The runtime half gets its third map, `OWNS_RT_SET`, the same way
-(not in the code yet — HIL-1115).
+The runtime half has its third map, `OWNS_RT_SET`, the same way, and its three
+maps are exclusive as well.
 
 A record naming no operation gets `TruthSourceOperation::BY_KIND` and is answered
 by the kind of the agent, which is the empty list under a name: a bare one would
@@ -260,7 +260,10 @@ and — where `_foreign` names the parent — whether that parent declared itsel
 root, whether a declared `_setShortPath` is another column of a table in a set,
 and whether the chain of parents ends rather than returning to itself; a claim
 is an agent's statement, the guard reads no agents, and the width does not
-repeat its cross-check.
+repeat its cross-check. The runtime half has the twin of the topology floor: a
+set claimed on a runtime collection whose row class names no `RtState::SET_VIA`
+field is refused in the same pass, by `validateRtSetClaims()`, and there is no
+climb to judge there — a runtime row has no tree.
 
 **The width is a third named state of `TruthSourceKeys`.** Beside `all()` and
 `listed()` stands the factory `TruthSourceKeys::set(string $setKey)`, with the
@@ -340,11 +343,25 @@ names are its own. Whether a person's agent is such a holder is not decided here
 **The runtime half is symmetric.** `OWNS_RT_SET` and
 `ownedRtSetKey(string $collection): string` are declared, asked and refused as
 the database pair is, and land in the same epic, so that a half one width behind
-the other is not read later as a bug (not in the code yet — HIL-1115). One thing
-the database half has and the runtime half does not is the declaration of the
-cut: a runtime row has no Entity to carry `_setVia`. What names the set column
-of a runtime collection is HIL-1115's to answer; what is settled already is that
-the agent does not.
+the other is not read later as a bug. A runtime row has no Entity to carry
+`_setVia`, so the class of the row names the field that cuts its collection:
+`RtState::SET_VIA`, the key of one of its `toArray()` fields, written by that
+field's constant (`public const string SET_VIA = self::userId;`). The agent still
+names only the value. The declaration is optional — a class naming none is cut
+by no field, and a set claimed on its collection is refused by the topology. There
+is no tree: the row carries its owner's key itself, which is the short path and
+the only form. The row counts the keys a write touches, `RtState::touchedSetKeys()`
+— the one it is stored under and the one it is edited to, each once — and every
+runtime door hands them to `RtTruthSourceRegistry::checkCanWriteState()` as a
+list; a row is born through the row door with `Add`, so a set claim brings into
+being rows of its own set alone. There is no statement over many runtime rows: a
+mass edit walks the rows, and each passes the row door. On a cluster a node
+holding a set speaks for no row of it: the claim reaches the node map with no
+key, the rows of the set travel as deltas of a partial owner, no snapshot of the
+set is handed over and no foreign frame is refused. The limit is known and
+accepted: a node that missed the creation of a row of the set does not learn it
+until a set is handed over by snapshot, which is HIL-1116's (owner's decision,
+2026-09-25).
 
 | Piece | Lands with |
 |---|---|
@@ -481,8 +498,7 @@ same two halves. WHICH collection is held by a set is the constant,
 beat. The same two things refuse the start there: a seam that answers with an
 empty key, and a collection named by more than one of what are then three maps
 of the half. The runtime pair, `OWNS_RT_SET` and `ownedRtSetKey()`, is declared,
-asked and refused the same way (not in the code yet — HIL-1115). *A Claim Over A
-Set* has the width itself.
+asked and refused the same way. *A Claim Over A Set* has the width itself.
 
 **The collection's name is given by the project, not by the class.** The
 framework's `AbstractUsersLibraryAgent` needs the account table, under a name
@@ -717,15 +733,19 @@ guards on it (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 there), the third width answered by the row's set column at the value, the
 registry and the door, a row born after the declared start included, and one
 statement over one set asked at the value and the registry
-(`TruthSourceSetWidthTest`, with the set keys asked lazily and once), the walk
+(`TruthSourceSetWidthTest`, with the set keys asked lazily and once), the same
+width on the runtime half at the row, the registry and every runtime door
+(`RtTruthSourceSetWidthTest`) and its declaration (the runtime cases of
+`DeclaredSetOwnershipTest`), the walk
 up the set tree, the short path, the parent that is gone and the statement over
 a set below the top (`SetTreeTest`), the short path and the chain of parents the
 startup gate refuses (`SetOwnershipGuardTest`), the set claimed on a table cut
 by no column, through a table the claimant cannot reach, two classes holding
 sets and a whole owner beside a set owner with and without shared-owner
-receipts, and the reads that repeat a claim (`TopologyValidatorTest`), the grants
-a stop takes back
-(`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
-(`RtNodeSourceMapTest`), and the markdown rules that keep this file's links
+receipts, the runtime set on a collection cut by no field and two classes holding
+runtime sets, and the reads that repeat a claim (`TopologyValidatorTest`), the
+grants a stop takes back
+(`WorkerManagerStopCleanupTest`), the node-level map of runtime owners and the
+set claim that speaks for no row there (`RtNodeSourceMapTest`), and the markdown rules that keep this file's links
 intact (`AgentDocGuardTest`, `DOC-LINK`). The guard that refuses the call itself
 is `TRUTH-SOURCE-CLAIM`, and is described in *The Form That Is Gone*.

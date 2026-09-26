@@ -56,6 +56,7 @@ use Random\RandomException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\RtState;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
@@ -172,8 +173,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @var array<string, list<TruthSourceOperation>> Runtime collections this agent owns NOT WHOLE
      *     but by rows, each mapped to the operations it may perform on them. The runtime twin of
      *     {@see self::OWNS_DB_ROWS}, and the narrow width of {@see TruthSourceOwner::OWNS_RT}: a
-     *     collection stands in exactly one of the two maps, and one named by both refuses the
-     *     agent's start ({@see OwnershipDeclaration::claimRtRows()}).
+     *     collection stands in exactly one of the three maps of the half - whole, by rows, by a
+     *     set ({@see self::OWNS_RT_SET}) - and one named by two of them refuses the agent's start
+     *     ({@see OwnershipDeclaration::claimRtRows()}).
      *
      *     WHICH collection is declared here; WHICH ROWS of it are named by
      *     {@see self::ownedRtRowKeys()} on the live instance, asked once when the agent starts.
@@ -185,6 +187,29 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     reader interest already.
      */
     public const array OWNS_RT_ROWS = [];
+
+    /**
+     * @var array<string, list<TruthSourceOperation>> Runtime collections this agent owns neither
+     *     whole nor row by row but as ONE SET of rows, each mapped to the operations it may perform
+     *     on them. The runtime twin of {@see self::OWNS_DB_SET}, in the form
+     *     {@see TruthSourceOwner::OWNS_RT} has, {@see TruthSourceOperation::BY_KIND} included, and
+     *     the third width of the runtime half: a collection stands in exactly one of the three
+     *     maps, and one named by two of them refuses the agent's start
+     *     ({@see OwnershipDeclaration::claimRtSet()}).
+     *
+     *     WHICH collection is declared here; WHICH SET of it is named by
+     *     {@see self::ownedRtSetKey()} on the live instance, asked once when the agent starts. The
+     *     cut is not the agent's to choose: the row class of the collection names the field that
+     *     cuts it in {@see RtState::SET_VIA}, and there is no tree - the row carries its owner's
+     *     key itself.
+     *
+     *     A claim here without the right to add is borrowed - the rows of the set are brought into
+     *     being by somebody else - and the start waits for its state beside the reads.
+     *
+     *     A collection named here does not belong in {@see self::READS_RT}: the claim is the
+     *     reader interest already.
+     */
+    public const array OWNS_RT_SET = [];
 
     /** @var list<string> CLI command names owned directly by this agent. */
     public const array AGENT_COMMANDS = [];
@@ -355,6 +380,27 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public function ownedRtRowKeys(string $collection): array
     {
         return [];
+    }
+
+    /**
+     * Set of a runtime collection declared by a set that this instance owns.
+     *
+     * The runtime twin of {@see self::ownedDbSetKey()}, asked at the same beat by
+     * {@see OwnershipDeclaration::claimRtSet()}: {@see self::OWNS_RT_SET} names the collection,
+     * this names the value of the row field that cuts it - the id of the one instance the agent
+     * answers for.
+     *
+     * The base answer is the empty string, which is a REFUSAL and not a claim of nothing: a
+     * collection declared by a set whose seam names no set key stops the agent's start
+     * ({@see ClaimedSetKeyMissingException}). One key and not a list: one field cuts the
+     * collection, and every row stands in one set.
+     *
+     * @param string $collection Collection the resolver is asking about, as named in the map
+     * @return string Set key this instance claims in that collection
+     */
+    public function ownedRtSetKey(string $collection): string
+    {
+        return '';
     }
 
     /**

@@ -15,6 +15,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -34,6 +35,12 @@ final class DeclaredSetOwnershipTest extends TestCase
                 DeclaredSetOwnershipTestRowsConflictAgent::AGENT_TYPE . ':42',
                 DeclaredSetOwnershipTestHeirAgent::AGENT_TYPE . ':42',
                 DeclaredSetOwnershipTestBorrowerAgent::AGENT_TYPE . ':42',
+                DeclaredSetOwnershipTestRtAgent::AGENT_TYPE . ':42',
+                DeclaredSetOwnershipTestSilentRtAgent::AGENT_TYPE . ':42',
+                DeclaredSetOwnershipTestWholeConflictRtAgent::AGENT_TYPE . ':42',
+                DeclaredSetOwnershipTestRowsConflictRtAgent::AGENT_TYPE . ':42',
+                DeclaredSetOwnershipTestHeirRtAgent::AGENT_TYPE . ':42',
+                DeclaredSetOwnershipTestBorrowerRtAgent::AGENT_TYPE . ':42',
             ] as $agentId
         ) {
             RtTruthSourceRegistry::unregisterAgent($agentId);
@@ -185,6 +192,138 @@ final class DeclaredSetOwnershipTest extends TestCase
         $this->assertFalse(SourceInterestRegistry::isReady(
             SourceChange::KIND_DB,
             DeclaredSetOwnershipTestBorrowerAgent::COLLECTION,
+        ));
+    }
+
+    /**
+     * The runtime half: the set claim reaches the runtime registry under the key the instance
+     * named, a row of that set is the agent's to write, and a row of another set is refused.
+     */
+    public function testARuntimeSetClaimCarriesTheSetOfTheInstance(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $agent = new DeclaredSetOwnershipTestRtAgent('42');
+
+        OwnershipDeclaration::claimRtSet($agent);
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        RtTruthSourceRegistry::checkCanWriteState(
+            DeclaredSetOwnershipTestRtAgent::COLLECTION,
+            '1',
+            ['42'],
+            TruthSourceOperation::Update,
+        );
+        $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, DeclaredSetOwnershipTestRtAgent::COLLECTION));
+        $this->assertFalse(TruthSourceRegistry::hasTruthSource(DeclaredSetOwnershipTestRtAgent::COLLECTION));
+
+        $this->expectException(RtTruthSourceWriteNotAllowedException::class);
+        $this->expectExceptionMessage("it holds set '42', and the state's set keys are [7].");
+        RtTruthSourceRegistry::checkCanWriteState(
+            DeclaredSetOwnershipTestRtAgent::COLLECTION,
+            '2',
+            ['7'],
+            TruthSourceOperation::Update,
+        );
+    }
+
+    /**
+     * The runtime width is readable off the CLASS as well: the map of sets names the collection,
+     * and neither of the other two maps of the half does.
+     */
+    public function testTheRuntimeWidthOfTheClaimIsReadableOffTheClassAlone(): void
+    {
+        $this->assertSame(
+            [DeclaredSetOwnershipTestRtAgent::COLLECTION],
+            array_keys(OwnershipDeclaration::rtSetCollectionsOf(DeclaredSetOwnershipTestRtAgent::class)),
+        );
+        $this->assertSame([], OwnershipDeclaration::rtCollectionsOf(DeclaredSetOwnershipTestRtAgent::class));
+        $this->assertSame([], OwnershipDeclaration::rtRowCollectionsOf(DeclaredSetOwnershipTestRtAgent::class));
+    }
+
+    /**
+     * A runtime seam that names no set key stops the start, and the refusal says which half.
+     */
+    public function testASilentRuntimeSeamRefusesTheClaimAndRegistersNothing(): void
+    {
+        $agent = new DeclaredSetOwnershipTestSilentRtAgent('42');
+
+        $this->expectException(ClaimedSetKeyMissingException::class);
+        $this->expectExceptionMessage(
+            "declares runtime collection '" . DeclaredSetOwnershipTestSilentRtAgent::COLLECTION . "' by a set and named no set key",
+        );
+
+        try {
+            OwnershipDeclaration::claimRtSet($agent);
+        } finally {
+            $this->assertFalse(RtTruthSourceRegistry::hasTruthSource(DeclaredSetOwnershipTestSilentRtAgent::COLLECTION));
+        }
+    }
+
+    public function testARuntimeCollectionNamedWholeAndByASetRefusesTheClaim(): void
+    {
+        $agent = new DeclaredSetOwnershipTestWholeConflictRtAgent('42');
+
+        $this->expectException(ClaimWidthConflictException::class);
+        $this->expectExceptionMessage(
+            "'" . DeclaredSetOwnershipTestWholeConflictRtAgent::COLLECTION . "' in OWNS_RT and OWNS_RT_SET",
+        );
+
+        try {
+            OwnershipDeclaration::claimRtSet($agent);
+        } finally {
+            $this->assertFalse(RtTruthSourceRegistry::hasTruthSource(DeclaredSetOwnershipTestWholeConflictRtAgent::COLLECTION));
+        }
+    }
+
+    /**
+     * The narrow runtime width reads the map of sets too, and refuses in the call that lays the rows.
+     */
+    public function testTheRuntimeRowsWidthSeesTheMapOfSets(): void
+    {
+        $agent = new DeclaredSetOwnershipTestRowsConflictRtAgent('42');
+
+        $this->expectException(ClaimWidthConflictException::class);
+        $this->expectExceptionMessage(
+            "'" . DeclaredSetOwnershipTestRowsConflictRtAgent::COLLECTION . "' in OWNS_RT_ROWS and OWNS_RT_SET",
+        );
+
+        try {
+            OwnershipDeclaration::claimRtRows($agent);
+        } finally {
+            $this->assertFalse(RtTruthSourceRegistry::hasTruthSource(DeclaredSetOwnershipTestRowsConflictRtAgent::COLLECTION));
+        }
+    }
+
+    public function testARuntimeParentBySetAndAnHeirWholeRefuseTheClaim(): void
+    {
+        $agent = new DeclaredSetOwnershipTestHeirRtAgent('42');
+
+        $this->expectException(ClaimWidthConflictException::class);
+        $this->expectExceptionMessage("in OWNS_RT and OWNS_RT_SET");
+
+        OwnershipDeclaration::claimRtSet($agent);
+    }
+
+    public function testARuntimeSetClaimWithoutAddIsBorrowedAndWaitsForItsState(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $agent = new DeclaredSetOwnershipTestBorrowerRtAgent('42');
+
+        $this->assertSame(
+            [DeclaredSetOwnershipTestBorrowerRtAgent::COLLECTION],
+            OwnershipDeclaration::borrowedRtCollectionsOf(DeclaredSetOwnershipTestBorrowerRtAgent::class),
+        );
+        $this->assertSame([], OwnershipDeclaration::borrowedRtCollectionsOf(DeclaredSetOwnershipTestRtAgent::class));
+
+        OwnershipDeclaration::claimRtSet($agent);
+
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_RT,
+            DeclaredSetOwnershipTestBorrowerRtAgent::COLLECTION,
+        ));
+        $this->assertFalse(SourceInterestRegistry::isReady(
+            SourceChange::KIND_RT,
+            DeclaredSetOwnershipTestBorrowerRtAgent::COLLECTION,
         ));
     }
 }
@@ -394,6 +533,230 @@ final class DeclaredSetOwnershipTestBorrowerAgent extends AbstractAgent
      * @return string The one set this instance answers for
      */
     public function ownedDbSetKey(string $collection): string
+    {
+        return (string)$this->agentIndex;
+    }
+
+    /**
+     * Claims nothing here: the declaration above and the seam beside it are the claim.
+     */
+    public function onStart(): void
+    {
+    }
+
+    /**
+     * Holds nothing across a stop.
+     */
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * An agent holding the set of its own index in one runtime collection.
+ */
+class DeclaredSetOwnershipTestRtAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'unit_declared_set_ownership_rt';
+    public const string COLLECTION = 'unit_declared_set_ownership_rt_states';
+
+    public const array OWNS_RT_SET = [self::COLLECTION => TruthSourceOperation::BY_KIND];
+
+    /**
+     * @param string $agentIndex Set this instance holds
+     */
+    public function __construct(string $agentIndex)
+    {
+        $this->agentIndex = $agentIndex;
+    }
+
+    /**
+     * @param string $collection Collection the resolver is asking about
+     * @return string The one set this instance answers for
+     */
+    public function ownedRtSetKey(string $collection): string
+    {
+        return (string)$this->agentIndex;
+    }
+
+    /**
+     * Claims nothing here: the declaration above and the seam beside it are the claim.
+     */
+    public function onStart(): void
+    {
+    }
+
+    /**
+     * Holds nothing across a stop.
+     */
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * An agent declaring a runtime collection by a set and leaving the seam unanswered.
+ */
+final class DeclaredSetOwnershipTestSilentRtAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'unit_declared_set_ownership_silent_rt';
+    public const string COLLECTION = 'unit_declared_set_ownership_silent_rt_states';
+
+    public const array OWNS_RT_SET = [self::COLLECTION => TruthSourceOperation::BY_KIND];
+
+    /**
+     * @param string $agentIndex Index this instance carries, which it never turns into a claim
+     */
+    public function __construct(string $agentIndex)
+    {
+        $this->agentIndex = $agentIndex;
+    }
+
+    /**
+     * Claims nothing here: the declaration above is refused for want of a seam.
+     */
+    public function onStart(): void
+    {
+    }
+
+    /**
+     * Holds nothing across a stop.
+     */
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * An agent naming one runtime collection both whole and by a set.
+ */
+final class DeclaredSetOwnershipTestWholeConflictRtAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'unit_declared_set_ownership_whole_conflict_rt';
+    public const string COLLECTION = 'unit_declared_set_ownership_whole_conflict_rt_states';
+
+    public const array OWNS_RT = [self::COLLECTION => [TruthSourceOperation::Update]];
+
+    public const array OWNS_RT_SET = [self::COLLECTION => [TruthSourceOperation::Update]];
+
+    /**
+     * @param string $agentIndex Set this instance would hold, were the declaration readable
+     */
+    public function __construct(string $agentIndex)
+    {
+        $this->agentIndex = $agentIndex;
+    }
+
+    /**
+     * @param string $collection Collection the resolver is asking about
+     * @return string The one set this instance answers for
+     */
+    public function ownedRtSetKey(string $collection): string
+    {
+        return (string)$this->agentIndex;
+    }
+
+    /**
+     * Claims nothing here: the two declarations above contradict each other and are refused.
+     */
+    public function onStart(): void
+    {
+    }
+
+    /**
+     * Holds nothing across a stop.
+     */
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * An agent naming one runtime collection both by rows and by a set, each seam answering.
+ */
+final class DeclaredSetOwnershipTestRowsConflictRtAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'unit_declared_set_ownership_rows_conflict_rt';
+    public const string COLLECTION = 'unit_declared_set_ownership_rows_conflict_rt_states';
+
+    public const array OWNS_RT_ROWS = [self::COLLECTION => [TruthSourceOperation::Update]];
+
+    public const array OWNS_RT_SET = [self::COLLECTION => [TruthSourceOperation::Update]];
+
+    /**
+     * @param string $agentIndex Row and set this instance would hold, were the declaration readable
+     */
+    public function __construct(string $agentIndex)
+    {
+        $this->agentIndex = $agentIndex;
+    }
+
+    /**
+     * @param string $collection Collection the resolver is asking about
+     * @return list<string> The one row this instance answers for
+     */
+    public function ownedRtRowKeys(string $collection): array
+    {
+        return [(string)$this->agentIndex];
+    }
+
+    /**
+     * @param string $collection Collection the resolver is asking about
+     * @return string The one set this instance answers for
+     */
+    public function ownedRtSetKey(string $collection): string
+    {
+        return (string)$this->agentIndex;
+    }
+
+    /**
+     * Claims nothing here: the two declarations above contradict each other and are refused.
+     */
+    public function onStart(): void
+    {
+    }
+
+    /**
+     * Holds nothing across a stop.
+     */
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * A subclass of the runtime set holder declaring the same collection whole.
+ */
+final class DeclaredSetOwnershipTestHeirRtAgent extends DeclaredSetOwnershipTestRtAgent
+{
+    public const string AGENT_TYPE = 'unit_declared_set_ownership_heir_rt';
+
+    public const array OWNS_RT = [self::COLLECTION => [TruthSourceOperation::Update]];
+}
+
+/**
+ * An agent holding a runtime set it may edit and remove from but not add to.
+ */
+final class DeclaredSetOwnershipTestBorrowerRtAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'unit_declared_set_ownership_borrower_rt';
+    public const string COLLECTION = 'unit_declared_set_ownership_borrowed_rt_states';
+
+    public const array OWNS_RT_SET = [self::COLLECTION => [TruthSourceOperation::Update, TruthSourceOperation::Remove]];
+
+    /**
+     * @param string $agentIndex Set this instance holds
+     */
+    public function __construct(string $agentIndex)
+    {
+        $this->agentIndex = $agentIndex;
+    }
+
+    /**
+     * @param string $collection Collection the resolver is asking about
+     * @return string The one set this instance answers for
+     */
+    public function ownedRtSetKey(string $collection): string
     {
         return (string)$this->agentIndex;
     }

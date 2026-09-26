@@ -250,6 +250,31 @@ final class TopologySetCutClaimAgentDaemon extends TopologyTestAgentDaemon
     public const string AGENT_TYPE = 'set_cut_claim_agent';
 }
 
+final class TopologyRtSetCutClaimAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'rt_set_cut_claim_agent';
+}
+
+final class TopologyRtUncutClaimAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'rt_uncut_claim_agent';
+}
+
+final class TopologyReadingItsOwnRtSetAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'reading_its_own_rt_set_agent';
+}
+
+final class TopologyFullRtSetOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'full_rt_set_owner_agent';
+}
+
+final class TopologySecondFullRtSetOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'second_full_rt_set_owner_agent';
+}
+
 final class TopologySetStandaloneClaimAgentDaemon extends TopologyTestAgentDaemon
 {
     public const string AGENT_TYPE = 'set_standalone_claim_agent';
