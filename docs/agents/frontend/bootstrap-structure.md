@@ -23,10 +23,13 @@ configures rather than re-implements:
   the socket opens.
 - `bindSessionScope` / `sessionUserName` — route the handshake response into the
   session scope and expose the current user.
-- `bootHilos({ connection, scopes, router, pageEntityTypes?, pageTitles?, appName? })`
+- `bootHilos({ connection, actions, scopes, router, pageEntityTypes?, pageTitles?, appName? })`
   — bind the session scope, the page scope, and the page-ready gate, build the
   navigator, open the socket, apply the URL, and return the navigator to provide
-  to the view. `pageTitles` (the project's page key → browser-tab title) and
+  to the view. `actions` is the application's one action reply lifecycle (the
+  `actions` of `createHilosConnection`): the shell dispatches its own tracked
+  controls on it — Stop on the impersonation strip (HIL-1064) — and a second
+  lifecycle on the same connection would mint colliding request ids. `pageTitles` (the project's page key → browser-tab title) and
   `appName` feed the navigator's `currentTitle`, which the app shell binds to
   `document.title` and a page-change live region (WCAG 2.4.2); framework admin
   and footer pages are titled from their own catalogs, so a project lists only
@@ -55,14 +58,15 @@ say what to do next.
    `createHilosConnection(...)`. State only the project's endpoint policy
    (defaults to same-origin `/ws`; pass `url: import.meta.env.VITE_WS_URL` when
    supporting environments with a separate WebSocket hostname like preview stacks)
-   and any extra project signal schemas. Export `connection`, and
-   `actionErrors` only when the project reads action errors.
+   and any extra project signal schemas. Export `connection` and `actions` —
+   `actions` goes to `bootHilos` — and `actionErrors` only when the project
+   reads action errors.
 3. **`bootstrap/session.ts`** owns the `ScopeManager` singleton, mints the
    session-token cookie at module load with `ensureSessionTokenCookie()` (so it
    rides the handshake, before the socket opens), and exports `currentUserName`
    from `sessionUserName(scopes)`.
 4. **`bootstrap/main`** (`main.ts` / `main.tsx`) calls `bootHilos(...)` with the
-   project's `connection`, `scopes`, page `router`, and optional
+   project's `connection`, `actions`, `scopes`, page `router`, and optional
    `pageEntityTypes`, `pageTitles`, and `appName` (the latter two from
    `pages/pageTitles.ts`), then mounts the view and provides the returned
    navigator (Vue `hilosRouterKey`, React `HilosRouterContext`, Angular

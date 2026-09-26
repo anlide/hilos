@@ -289,6 +289,14 @@ export {
   TOAST_ACTION_READING,
 } from './session/sessionToasts.js'
 export {
+  bindImpersonation,
+  hilosImpersonation,
+  stopImpersonation,
+  IMPERSONATION_ACTION_STOP,
+  IMPERSONATION_STRIP_COPY,
+  type ImpersonationStrip,
+} from './session/impersonation.js'
+export {
   bindNotificationsScope,
   createHilosNotificationStore,
   hilosNotifications,

@@ -3271,12 +3271,20 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * happened, so the project would have had to answer "accepted" and leave a mistyped
      * token looking like a success.
      *
+     * A browser action that ends in a rebind - Stop, leaving a takeover (HIL-1064) - hands its
+     * request id and name here beside the frame, and the answer then rides the state frame the
+     * bind publishes, behind the identity it announces, exactly as a sign-out's does. They stay
+     * off the frame itself: {@see SessionRebindSignalData} is the wire frame a project sends,
+     * and a browser's request id is not the project's to carry.
+     *
      * @param SessionRebindSignalData $frame Session, the state it must reach, and whom to answer
+     * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
+     * @param ?string $action Action name the state frame answers, or null when it answers none
      * @throws HilosException On database or runtime failure
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws InvalidArgumentException When the state frame or the reply cannot be named
      */
-    private function rebindSession(SessionRebindSignalData $frame): void
+    private function rebindSession(SessionRebindSignalData $frame, ?string $requestId = null, ?string $action = null): void
     {
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
         if ($session === null) {
@@ -3291,7 +3299,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $liveToken = $frame->userId === null
             ? $this->deauthenticateSessionAndKeepToken($frame->sessionToken)
-            : $this->authenticateSession($frame->sessionToken, $frame->userId, $frame->initiatorAcceptKey);
+            : $this->authenticateSession(
+                $frame->sessionToken,
+                $frame->userId,
+                $frame->initiatorAcceptKey,
+                requestId: $requestId,
+                action: $action,
+            );
 
         $this->replyToRebind($frame, null, $liveToken ?? $frame->sessionToken);
     }
@@ -3362,10 +3376,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Most do not answer here. Logout, erase, dismissing an ack and ending a takeover finish
      * in a state frame which the project puts on the wire, so the answer leaves behind the
-     * identity it announces (HIL-622). The three toast controls finish in a toast frame
-     * instead (HIL-768), and it goes to the whole SESSION rather than to the tab that spoke:
-     * the tabs agreeing is the answer, and a tab that only heard about its own click would be
-     * the disagreement again.
+     * identity it announces (HIL-622). Ending a takeover reaches that frame through the rebind,
+     * and its request id travels with it (HIL-1064); the correlation id it hands the core is
+     * still null for a browser, and only an operator on the command socket has one (HIL-729).
+     * The three toast controls finish in a toast frame instead (HIL-768), and it goes to the
+     * whole SESSION rather than to the tab that spoke: the tabs agreeing is the answer, and a
+     * tab that only heard about its own click would be the disagreement again.
      *
      * The erase on /privacy (HIL-839) is the fourth of the frame-answered kind, and the one
      * that needs the frame most: it ends this browser's session and mints a replacement, so
@@ -3446,7 +3462,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ImpersonateStopActionDTO) {
                     throw new InvalidActionPayloadException($action, ImpersonateStopActionDTO::class, $dto);
                 }
-                $this->stopImpersonation($sessionToken, $acceptKey, null);
+                $this->stopImpersonation($sessionToken, $acceptKey, null, $this->currentActionRequestId(), $action);
 
                 return null;
 
@@ -3734,6 +3750,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param string $sessionToken Session cookie token of the impersonating session
      * @param ?string $initiatorAcceptKey Accept key of the requesting connection, or null for the CLI path
      * @param ?string $correlationId Command correlation id to answer the operator on, or null for a browser
+     * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
+     * @param ?string $action Action name the state frame answers, or null when it answers none
      * @throws ValidationException When the session is missing or not impersonating
      * @throws InvalidArgumentException When the state frame or the reply cannot be named
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
@@ -3743,6 +3761,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         string $sessionToken,
         ?string $initiatorAcceptKey,
         ?string $correlationId,
+        ?string $requestId = null,
+        ?string $action = null,
     ): void {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
@@ -3763,7 +3783,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             impersonatorUserId: null,
             initiatorAcceptKey: $initiatorAcceptKey,
             correlationId: $correlationId,
-        ));
+        ), $requestId, $action);
 
         $this->logAgentInfo('impersonate_stop ' . json_encode([
             'event' => 'impersonate_stop',

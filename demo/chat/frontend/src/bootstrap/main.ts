@@ -12,7 +12,7 @@ import { hilosAuthContext } from '../auth/hilosAuthContext'
 import { pageEntityTypes } from '../pages/entityTypes'
 import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
-import { connection } from './connection'
+import { actions, connection } from './connection'
 import { currentUserId, pendingAck, scopes } from './session'
 
 // The framework OAuth client, bound to this project's context. Its redirect state
@@ -36,6 +36,7 @@ oauth.bindOAuthLinkReplay(currentUserId)
 
 const hilosRouter = bootHilos({
   connection,
+  actions,
   scopes,
   router,
   pageEntityTypes,

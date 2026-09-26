@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { bootHilos } from '../../src/bootstrap/bootHilos.js'
+import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type NavigationEnvironment } from '../../src/routing/HilosRouter.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
+import { hilosImpersonation } from '../../src/session/impersonation.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { hilosToasts } from '../../src/state/toasts.js'
 import {
@@ -71,8 +73,10 @@ function boot(connection: ReturnType<typeof fakeConnection>) {
     { main: { path: '/', admin: false } },
     { fallback: 'main' },
   )
+  const hilosConnection = connection as unknown as HilosConnection
   const hilosRouter = bootHilos({
-    connection: connection as unknown as HilosConnection,
+    connection: hilosConnection,
+    actions: new ActionLifecycle(hilosConnection),
     scopes,
     router,
     navigationEnvironment: fakeNavigation('/'),
@@ -142,8 +146,10 @@ describe('bootHilos', () => {
       { main: { path: '/', admin: false } },
       { fallback: 'main' },
     )
+    const hilosConnection = connection as unknown as HilosConnection
     const hilosRouter = bootHilos({
-      connection: connection as unknown as HilosConnection,
+      connection: hilosConnection,
+      actions: new ActionLifecycle(hilosConnection),
       scopes,
       router,
       navigationEnvironment: fakeNavigation('/'),
@@ -165,8 +171,10 @@ describe('bootHilos', () => {
       { [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true } },
       { fallback: HilosPages.SETTINGS },
     )
+    const hilosConnection = connection as unknown as HilosConnection
     const hilosRouter = bootHilos({
-      connection: connection as unknown as HilosConnection,
+      connection: hilosConnection,
+      actions: new ActionLifecycle(hilosConnection),
       scopes,
       router,
       navigationEnvironment: fakeNavigation('/hilos/settings'),
@@ -182,6 +190,24 @@ describe('bootHilos', () => {
     })
 
     expect(hilosRouter.currentTitle.get()).toBe('Settings · Demo')
+  })
+
+  it('binds the impersonation strip so it follows the handshake', () => {
+    const connection = fakeConnection()
+    boot(connection)
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: {
+        currentUser: { id: 2, name: 'Bob' },
+        impersonatedBy: { id: 1, name: 'Ada' },
+      },
+    })
+    expect(hilosImpersonation.get()).toEqual({ userName: 'Bob' })
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: { id: 1, name: 'Ada' }, impersonatedBy: null },
+    })
+    expect(hilosImpersonation.get()).toBeNull()
   })
 
   it('binds the page scope so a page_response lands in the page scope', () => {

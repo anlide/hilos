@@ -229,12 +229,16 @@ Several tier-1 components are part of the contract, so pages never reinvent them
 
 - the **`HilosLayout`** application shell — the navbar (project brand and nav
   slots, the admin gear, the live connection indicator), a full-width banner
-  region below the nav a project fills with an app-wide status strip (e.g. an
-  impersonation banner) — empty and zero-height otherwise — and a footer of the
-  public framework pages, around the routed page content. The region is the same
-  in all three shells and only its delivery differs: Vue takes it through the
-  `#banner` slot, React through the `banner` prop, Angular through a projected
-  `[banner]` node. The shell is a
+  region below the nav — empty and zero-height while nothing is up — and a
+  footer of the public framework pages, around the routed page content. The
+  region carries the framework's own strips first: protected mode, then
+  impersonation, which the SDK draws from the session (`hilosImpersonation`,
+  bound by `bootHilos`) and whose Stop is a tracked action answered behind the
+  restored identity (HIL-1064) — a project mounts nothing for either. Below
+  them comes the strip a project passes (e.g. a trial notice); that delivery is
+  the same in all three shells and only its form differs: Vue takes it through
+  the `#banner` slot, React through the `banner` prop, Angular through a
+  projected `[banner]` node. The shell is a
   fixed-height viewport column whose main region owns the scroll, so a page
   either scrolls inside it or fills it and scrolls an inner region; the footer
   links come from the framework (`HILOS_FOOTER_LINKS`), so every project shows

@@ -3,9 +3,11 @@ app frame a project fills rather than re-implements. It renders the top
 navigation bar carrying the project's brand, nav, and user slots, the framework admin
 entry (the gear linking to the Hilos dashboard), the live connection indicator
 the SDK owns (core-and-connection.md), a full-width banner region below the nav
-carrying, in this order, the framework's own protected-mode strip and the app-wide
-status strip a project fills (e.g. an impersonation banner) through the #banner
-slot — one live region for both, empty and zero-height while neither is up — the
+carrying, in this order, the framework's own protected-mode strip, its
+impersonation strip (drawn from the session, with a Stop that waits for the
+server's answer), and the app-wide status strip a project fills (e.g. a trial
+notice) through the #banner slot — one live region for all, empty and
+zero-height while none is up — the
 routed page content in the default slot, and a footer of the public framework pages
 (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100): the
 nav, banner, and footer never scroll (flex-shrink-0) and the main region grows
@@ -30,13 +32,17 @@ import {
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  hilosImpersonation,
+  IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  stopImpersonation,
 } from '@hilos/core'
 import { computed, inject, watch } from 'vue'
 
 import HilosLink from './HilosLink.vue'
+import LoadingButton from './LoadingButton.vue'
 import HilosMaintenance from './HilosMaintenance.vue'
 import HilosToastHost from './HilosToastHost.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'
@@ -48,6 +54,7 @@ import { useProtectedMode } from './useProtectedMode.js'
 import { useReconnectDragging } from './useReconnectDragging.js'
 import { useRtStaleness } from './useRtStaleness.js'
 import { useSignal } from './useSignal.js'
+import { useTrackedAction } from './useTrackedAction.js'
 
 const props = defineProps<{
   connection: HilosConnection
@@ -88,6 +95,24 @@ const underMaintenance = computed(() => protectedMode.value.active)
 const verificationBanner = computed(() =>
   protectedModeBannerCopy(protectedMode.value),
 )
+
+// The second framework strip (HIL-1064): the session says an administrator
+// stands behind it, so the person is told whom they are acting as and given the
+// way back. It is the shell's and reads the core store bootHilos binds - no
+// project input. Stop is a tracked action with the driver's defaults: busy
+// disables it at once, a refusal is the error toast and leaves the strip
+// standing, and success needs no toast - the strip leaves by itself with the
+// identity the answer rides behind. Below the protected-mode strip because what
+// is about the node comes before what is about the session.
+const impersonation = useSignal(hilosImpersonation)
+const { busy: impersonationStopBusy, run: runImpersonationStop } =
+  useTrackedAction()
+const onImpersonationStop = (): void => {
+  if (impersonationStopBusy.value) {
+    return
+  }
+  void runImpersonationStop(stopImpersonation())
+}
 
 // Before any of that can be read there is a frame where nothing has been
 // announced yet, and drawing the ordinary shell in it is what makes a reload
@@ -281,6 +306,29 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             <i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i>
             {{ verificationBanner }}
           </span>
+        </div>
+      </div>
+      <div
+        v-if="impersonation !== null && !underMaintenance"
+        class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+        data-id="impersonation-banner"
+      >
+        <div
+          class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
+        >
+          <span>
+            <i class="bi bi-people-fill me-1" aria-hidden="true"></i>
+            {{ IMPERSONATION_STRIP_COPY.lead }}
+            <strong>{{ impersonation.userName }}</strong>
+          </span>
+          <LoadingButton
+            class="btn-sm btn-outline-dark"
+            data-id="impersonation-stop"
+            :loading="impersonationStopBusy"
+            @click="onImpersonationStop"
+          >
+            {{ IMPERSONATION_STRIP_COPY.stop }}
+          </LoadingButton>
         </div>
       </div>
       <slot name="banner" />

@@ -10,6 +10,7 @@ use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -85,6 +86,9 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
 
     /** Accept key standing in for the browser that submitted an action. */
     private const string ACCEPT_KEY = 'accept-1';
+
+    /** Request id a tracked browser action carries. */
+    private const string REQUEST_ID = 'request-1';
 
     /**
      * @var list<string> Framework tables this case needs. `hilos_setting` is the one framework
@@ -408,7 +412,44 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         );
 
         self::assertSame([self::ADMIN_USER_ID, null], self::soleSessionIds());
+        self::assertFalse($agent->actionReplyDeferred(), 'An untracked stop has no answer to hand over');
         self::assertSame([], $this->drainReplies());
+    }
+
+    /**
+     * A tracked Stop is answered off the state frame, behind the identity it announces (HIL-1064).
+     *
+     * The shell's Stop waits for its answer, and an ack sent by the dispatcher would overtake the
+     * identity: the button would come back while the strip still stood. So the library hands the
+     * answer over, and the frame it queues names the request and the action.
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     * @throws HilosException When the action fails
+     */
+    public function testATrackedBrowserStopIsAnsweredOffTheStateFrame(): void
+    {
+        self::seedSession(self::TOKEN, self::TARGET_USER_ID, self::ADMIN_USER_ID);
+        $this->mountLiveConnection();
+        $agent = new ImpersonationRouteTestAgent();
+
+        $agent->beginActionDispatch(self::REQUEST_ID);
+        try {
+            $agent->onAgentAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::HILOS_IMPERSONATE_STOP,
+                new ImpersonateStopActionDTO(),
+            );
+            self::assertTrue($agent->actionReplyDeferred(), 'The project answers after the identity, not the dispatcher');
+        } finally {
+            $agent->endActionDispatch();
+        }
+
+        $state = $this->nextSessionState();
+        self::assertNotNull($state, 'The stop publishes the restored identity');
+        self::assertSame(self::REQUEST_ID, $state->requestId);
+        self::assertSame(HilosSignalConstants::HILOS_IMPERSONATE_STOP, $state->action);
+        self::assertSame(self::ADMIN_USER_ID, $state->userId);
+        self::assertSame([self::ADMIN_USER_ID, null], self::soleSessionIds());
     }
 
     /**
@@ -660,6 +701,24 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         }
 
         return $found;
+    }
+
+    /**
+     * Drains the queue up to the next session-state frame the library addressed to the project.
+     *
+     * @return ?SessionStateSignalData Next state frame, or null when none was sent
+     */
+    private function nextSessionState(): ?SessionStateSignalData
+    {
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_SESSION_STATE
+                && $signal->data instanceof AgentSignalData
+                && $signal->data->data instanceof SessionStateSignalData) {
+                return $signal->data->data;
+            }
+        }
+
+        return null;
     }
 
     /**

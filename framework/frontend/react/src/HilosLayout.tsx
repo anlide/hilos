@@ -5,12 +5,13 @@
 // nav, the framework admin entry (the gear linking to the Hilos dashboard), the
 // live connection indicator the SDK owns (core-and-connection.md), a full-width
 // banner region below the nav carrying, in this order, the framework's own
-// protected-mode strip and the app-wide status strip a project fills (e.g. an
-// impersonation banner) through the banner prop — one live region for both,
-// empty and zero-height while neither is up — the content, and a footer of the
-// public framework pages (HILOS_FOOTER_LINKS). The shell is a fixed-height
-// viewport column (vh-100): the nav, banner, and footer never scroll
-// (flex-shrink-0) and the main region grows and scrolls its own overflow
+// protected-mode strip, its impersonation strip (drawn from the session, with a
+// Stop that waits for the server's answer), and the app-wide status strip a
+// project fills (e.g. a trial notice) through the banner prop — one live region
+// for all, empty and zero-height while none is up — the content, and a footer
+// of the public framework pages (HILOS_FOOTER_LINKS). The shell is a
+// fixed-height viewport column (vh-100): the nav, banner, and footer never
+// scroll (flex-shrink-0) and the main region grows and scrolls its own overflow
 // (min-h-0 + overflow-auto), so a page either scrolls inside main or — like the
 // chat page — fills it and scrolls an inner region rather than the whole
 // document. The brand, the gear, and the footer links are HilosLinks —
@@ -36,15 +37,19 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   createSignal,
+  hilosImpersonation,
+  IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  stopImpersonation,
 } from '@hilos/core'
 import { useContext, useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 import { HilosLink } from './HilosLink.js'
 import { HilosMaintenance } from './HilosMaintenance.js'
+import { LoadingButton } from './LoadingButton.js'
 import { HilosToastHost } from './HilosToastHost.js'
 import type { HilosToastCorner } from './hilosToastCorner.js'
 import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
@@ -55,6 +60,7 @@ import { useProtectedMode } from './useProtectedMode.js'
 import { useReconnectDragging } from './useReconnectDragging.js'
 import { useRtStaleness } from './useRtStaleness.js'
 import { useSignal } from './useSignal.js'
+import { useTrackedAction } from './useTrackedAction.js'
 
 /** Props for {@link HilosLayout}. */
 export interface HilosLayoutProps {
@@ -85,8 +91,8 @@ export interface HilosLayoutProps {
   user?: ReactNode
   /**
    * The app-wide status strip a project draws in the banner region below the
-   * nav (the Vue shell's `#banner` slot): an impersonation banner, a trial
-   * notice. Optional — omit it and the region stays empty.
+   * nav (the Vue shell's `#banner` slot), under the framework's own strips: a
+   * trial notice. Optional — omit it and the region carries only those.
    */
   banner?: ReactNode
   /** The routed page content rendered in the shell body. */
@@ -162,6 +168,23 @@ export function HilosLayout({
   // reconnect, an F5 and a second tab all learn it from the frame rather than
   // from a store that would have to be rebuilt on each of them.
   const verificationBanner = protectedModeBannerCopy(protectedMode)
+
+  // The second framework strip (HIL-1064): the session says an administrator
+  // stands behind it, so the person is told whom they are acting as and given
+  // the way back. It is the shell's and reads the core store bootHilos binds -
+  // no project input. Stop is a tracked action with the driver's defaults: busy
+  // disables it at once, a refusal is the error toast and leaves the strip
+  // standing, and success needs no toast - the strip leaves by itself with the
+  // identity the answer rides behind. Below the protected-mode strip because
+  // what is about the node comes before what is about the session.
+  const impersonation = useSignal(hilosImpersonation)
+  const impersonationStop = useTrackedAction()
+  const onImpersonationStop = (): void => {
+    if (impersonationStop.busy) {
+      return
+    }
+    void impersonationStop.run(stopImpersonation())
+  }
 
   // A live socket that is nonetheless showing part of a frozen replica
   // (HIL-711): the same green, with a snowflake instead of the tick. It replaces
@@ -318,6 +341,31 @@ export function HilosLayout({
                     ></i>{' '}
                     {verificationBanner}
                   </span>
+                </div>
+              </div>
+            )}
+            {impersonation !== null && !underMaintenance && (
+              <div
+                className="alert alert-warning border-0 rounded-0 mb-0 py-2"
+                data-id="impersonation-banner"
+              >
+                <div className="container d-flex flex-wrap align-items-center justify-content-center gap-3">
+                  <span>
+                    <i
+                      className="bi bi-people-fill me-1"
+                      aria-hidden="true"
+                    ></i>{' '}
+                    {IMPERSONATION_STRIP_COPY.lead}{' '}
+                    <strong>{impersonation.userName}</strong>
+                  </span>
+                  <LoadingButton
+                    className="btn-sm btn-outline-dark"
+                    data-id="impersonation-stop"
+                    loading={impersonationStop.busy}
+                    onClick={onImpersonationStop}
+                  >
+                    {IMPERSONATION_STRIP_COPY.stop}
+                  </LoadingButton>
                 </div>
               </div>
             )}

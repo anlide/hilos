@@ -14,7 +14,7 @@ import { hilosAuthContext } from '../auth/hilosAuthContext'
 import { pageEntityTypes } from '../pages/entityTypes'
 import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
-import { connection } from './connection'
+import { actions, connection } from './connection'
 import { bindGuestIdentity } from './guest'
 import { currentUserId, pendingAck, scopes } from './session'
 
@@ -43,6 +43,7 @@ oauth.bindOAuthLinkReplay(currentUserId)
 
 const hilosRouter = bootHilos({
   connection,
+  actions,
   scopes,
   router,
   pageEntityTypes,

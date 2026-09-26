@@ -5,11 +5,12 @@
 // framework admin entry (the gear linking to the Hilos dashboard), the live
 // connection indicator the SDK owns (core-and-connection.md), a full-width
 // banner region below the nav carrying, in this order, the framework's own
-// protected-mode strip and the app-wide status strip a project fills (e.g. an
-// impersonation banner) through a projected [banner] node — one live region for
-// both, empty and zero-height while neither is up — the content, and a footer
-// of the public framework pages (HILOS_FOOTER_LINKS). The shell is a
-// fixed-height viewport column (vh-100): the nav, banner, and footer never
+// protected-mode strip, its impersonation strip (drawn from the session, with a
+// Stop that waits for the server's answer), and the app-wide status strip a
+// project fills (e.g. a trial notice) through a projected [banner] node — one
+// live region for all, empty and zero-height while none is up — the content,
+// and a footer of the public framework pages (HILOS_FOOTER_LINKS). The shell is
+// a fixed-height viewport column (vh-100): the nav, banner, and footer never
 // scroll (flex-shrink-0) and the main region grows and scrolls its own overflow
 // (min-h-0 + overflow-auto), so a page either scrolls inside main or — like the
 // chat page — fills it and scrolls an inner region rather than the whole
@@ -47,18 +48,23 @@ import {
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
   HilosPages,
+  hilosImpersonation,
+  IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  stopImpersonation,
 } from '@hilos/core'
 
 import { HilosLink } from './HilosLink.js'
 import { HilosMaintenance } from './HilosMaintenance.js'
+import { LoadingButton } from './LoadingButton.js'
 import { HilosToastHost } from './HilosToastHost.js'
 import type { HilosToastCorner } from './hilosToastCorner.js'
 import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'
+import { createHilosTrackedAction } from './hilosTrackedAction.js'
 
 // Each transport state maps to a Bootstrap Icon and a Bootstrap text color:
 // green while the socket is live and green on a first connect too — the person
@@ -82,7 +88,13 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
 @Component({
   selector: 'hilos-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosLink, HilosMaintenance, HilosOAuthWaitModal, HilosToastHost],
+  imports: [
+    HilosLink,
+    HilosMaintenance,
+    HilosOAuthWaitModal,
+    HilosToastHost,
+    LoadingButton,
+  ],
   template: `
     <!-- The one place the two boot outcomes are named, on the marker a test
     waits for rather than polling for chrome that is absent by design while
@@ -186,6 +198,32 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
               </div>
             </div>
           }
+          @if (impersonation(); as strip) {
+            @if (!underMaintenance()) {
+              <div
+                class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+                data-id="impersonation-banner"
+              >
+                <div
+                  class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
+                >
+                  <span>
+                    <i class="bi bi-people-fill me-1" aria-hidden="true"></i>
+                    {{ stripCopy.lead }} <strong>{{ strip.userName }}</strong>
+                  </span>
+                  <button
+                    hilosLoadingButton
+                    class="btn-sm btn-outline-dark"
+                    data-id="impersonation-stop"
+                    [loading]="impersonationStop.busy()"
+                    (click)="onImpersonationStop()"
+                  >
+                    {{ stripCopy.stop }}
+                  </button>
+                </div>
+              </div>
+            }
+          }
           <ng-content select="[banner]" />
         </div>
         <main
@@ -286,6 +324,17 @@ export class HilosLayout {
   protected readonly verificationBanner = computed(() =>
     protectedModeBannerCopy(this.protectedMode()),
   )
+  // The second framework strip (HIL-1064): the session says an administrator
+  // stands behind it, so the person is told whom they are acting as and given
+  // the way back. It is the shell's and reads the core store bootHilos binds -
+  // no project input. Stop is a tracked action with the driver's defaults: busy
+  // disables it at once, a refusal is the error toast and leaves the strip
+  // standing, and success needs no toast - the strip leaves by itself with the
+  // identity the answer rides behind. Below the protected-mode strip because
+  // what is about the node comes before what is about the session.
+  protected readonly impersonation = hilosSignal(hilosImpersonation)
+  protected readonly impersonationStop = createHilosTrackedAction()
+  protected readonly stripCopy = IMPERSONATION_STRIP_COPY
   // Before any of that can be read there is a frame where nothing has been
   // announced yet, and drawing the ordinary shell in it is what makes a reload
   // into a frozen node flash (HIL-613). On a browser that has met maintenance
@@ -431,5 +480,13 @@ export class HilosLayout {
         document.title = title
       }
     })
+  }
+
+  /** Leave the takeover through the tracked driver; a second press while busy is dropped. */
+  protected onImpersonationStop(): void {
+    if (this.impersonationStop.busy()) {
+      return
+    }
+    void this.impersonationStop.run(stopImpersonation())
   }
 }

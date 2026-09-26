@@ -5,8 +5,6 @@
 // from @hilos/core; this file holds only the project's session state.
 import {
   ScopeManager,
-  sessionImpersonatedByName,
-  sessionImpersonating,
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionUserId,
@@ -25,12 +23,6 @@ export const currentUserId = sessionUserId(scopes)
 
 /** Whether the current user holds the admin privilege; false until the handshake says so. */
 export const currentUserIsAdmin = sessionUserIsAdmin(scopes)
-
-/** Whether this session is currently being impersonated by an admin. */
-export const impersonating = sessionImpersonating(scopes)
-
-/** The impersonating admin's display name; empty unless impersonated. */
-export const impersonatedByName = sessionImpersonatedByName(scopes)
 
 /**
  * The auth step this session stands on and has not finished, or null when it

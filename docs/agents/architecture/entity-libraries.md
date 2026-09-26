@@ -446,10 +446,12 @@ either.
 `HilosSignalConstants::HILOS_IMPERSONATE_STOP` is the worked example, because it
 is the one that has to argue the second half. While a takeover is on, the
 effective user is the non-admin target, so no admin page is guaranteed to be
-under the control — it lives in the app shell
-(`demo/chat/frontend/src/App.vue:184`). Its right passes the first half too: the
-administrator to go back to is read off the session's own marker, so ending a
-takeover is allowed to whoever is inside it, exactly as signing out is.
+under the control — it lives in the SDK shell's impersonation strip
+(`framework/frontend/*/src/HilosLayout.*`, HIL-1064). Its right passes the first
+half too: the administrator to go back to is read off the session's own marker,
+so ending a takeover is allowed to whoever is inside it, exactly as signing out
+is. Its answer rides the session state frame, as the sign-out's does: the request
+id travels through the rebind, so the ack leaves behind the restored identity.
 `HilosSignalConstants::HILOS_LOGOUT` is the plainest form of the same, and the
 three session-toast controls are the same again.
 

@@ -326,8 +326,13 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
 
 // HIL-824: the takeover is a framework row action on the Hilos users page. Its name is
 // closed by that page's ADMIN level and the sessions library performs the write, so what
-// proves the whole two-hop route in one assertion is the banner: the shell draws it from
-// the rebound session's own handshake, which cannot arrive unless the write landed.
+// proves the whole two-hop route in one assertion is the banner: the framework shell
+// draws it from the rebound session's own handshake, which cannot arrive unless the
+// write landed (HIL-1064 - the strip is the SDK's, the chat mounts nothing for it).
+//
+// Stop is the way back, and it is a tracked action: its answer rides the identity the
+// server restores, so the strip leaving and the admin gear coming back are the proof
+// that the session is the administrator's again.
 //
 // The refusal branch is not driven from here on purpose. Once the ADMIN level closes the
 // page, the guards the library still runs are out of a browser's reach — a non-admin never
@@ -349,6 +354,14 @@ test('takes a user over from the users table and shows the shell banner', async 
   await expect(impersonate).toBeVisible()
   await impersonate.click()
 
+  // The takeover rotates the session token, and the client drops and reopens its socket
+  // for it once the takeover is answered. The proof the reopen happened is the next
+  // socket, not a glimpse of the reconnecting label a fast reopen passes through unseen.
+  let sockets = 0
+  page.on('websocket', () => {
+    sockets += 1
+  })
+
   // A mutation is confirmed in a modal, and the confirm is what dispatches.
   const confirm = page.getByTestId('hilos-users-impersonate-confirm')
   await expect(confirm).toBeVisible()
@@ -356,5 +369,20 @@ test('takes a user over from the users table and shows the shell banner', async 
 
   // The takeover arrives as the rebound session, not as an ack the view acted on.
   await expect(page.getByTestId('impersonation-banner')).toBeVisible()
-  await expect(page.getByTestId('impersonation-stop')).toBeVisible()
+
+  // Stop pressed inside the rotation's reopen is refused as not connected - honestly,
+  // and beside the point here - so it waits for the new socket to be up.
+  await expect.poll(() => sockets).toBeGreaterThan(0)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  const stop = page.getByTestId('impersonation-stop')
+  await stop.scrollIntoViewIfNeeded()
+  await expect(stop).toBeVisible()
+  await expect(stop).toBeEnabled()
+  await stop.focus()
+  await stop.click()
+
+  // The way back arrives the same way: the restored identity takes the strip away and
+  // brings the admin gear back.
+  await expect(page.getByTestId('impersonation-banner')).toBeHidden()
+  await expect(page.getByTestId('nav-admin')).toBeVisible()
 })

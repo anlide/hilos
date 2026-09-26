@@ -7,6 +7,13 @@
 // the framework's own protected-mode strip, that strip brings no live region of
 // its own, and it stays above the strip a project passes.
 //
+// The second describe is the impersonation strip (HIL-1064), the framework's
+// second strip, with the same cases the Vue and React shells run
+// (vue/src/HilosLayout.test.ts, react/test/HilosLayout.test.tsx): no strip for
+// a plain session, the name while impersonated, the region's child order, none
+// under the maintenance surface, Stop tracked and disabled until its reply, a
+// refusal that leaves the strip and toasts, and no live region of its own.
+//
 // Order is read off the shell's child order rather than off heights: jsdom does
 // not lay out, so every height there is zero and a measurement would pass on a
 // broken region too.
@@ -17,14 +24,24 @@
 import { Component } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import {
+  ActionLifecycle,
+  bindImpersonation,
+  bindSessionScope,
+  hilosToasts,
+  IMPERSONATION_ACTION_STOP,
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
+  ScopeManager,
+  type ActionErrorSignal,
+  type ActionLifecycleSource,
+  type ActionSuccessSignal,
   type ConnectionState,
   type HilosConnection,
+  type ProjectSignal,
   type ProtectedModeStatus,
   type RtStalenessStatus,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosLayout } from '../src/HilosLayout.js'
 
@@ -191,5 +208,276 @@ describe('HilosLayout banner region', () => {
 
     expect(strip).toBeGreaterThanOrEqual(0)
     expect(passed).toBeGreaterThan(strip)
+  })
+})
+
+/** A node frozen for a restore: the shell turns into the maintenance surface. */
+const FROZEN: ProtectedModeStatus = {
+  ...PROTECTED_MODE_INACTIVE,
+  active: true,
+  operation: 'restore',
+  title: 'Restoring a backup',
+  message: 'The application will be back in a few minutes.',
+}
+
+/** A handshake naming Bob as the user and Ada as the administrator behind him. */
+const TAKEOVER = {
+  entities: {
+    currentUser: { id: 2, name: 'Bob' },
+    impersonatedBy: { id: 1, name: 'Ada' },
+  },
+}
+
+/** A lifecycle source that records what was sent and replies on demand. */
+class ReplyingSource implements ActionLifecycleSource {
+  readonly sent: { action: string; data: unknown; requestId?: string }[] = []
+  private readonly success: ((signal: ActionSuccessSignal) => void)[] = []
+  private readonly error: ((signal: ActionErrorSignal) => void)[] = []
+
+  sendAction(action: string, data: unknown, requestId?: string): boolean {
+    this.sent.push({ action, data, requestId })
+
+    return true
+  }
+
+  on(event: string, listener: (payload: never) => void): () => void {
+    if (event === 'actionSuccess') {
+      this.success.push(listener as (signal: ActionSuccessSignal) => void)
+    }
+    if (event === 'actionError') {
+      this.error.push(listener as (signal: ActionErrorSignal) => void)
+    }
+
+    return () => {}
+  }
+
+  succeed(requestId: string | undefined): void {
+    for (const listener of this.success) {
+      listener({
+        kind: 'actionSuccess',
+        action: IMPERSONATION_ACTION_STOP,
+        requestId,
+        envelope: { type: 'action_success', data: {} },
+      } as ActionSuccessSignal)
+    }
+  }
+
+  refuse(requestId: string | undefined, reason: string): void {
+    for (const listener of this.error) {
+      listener({
+        kind: 'actionError',
+        action: IMPERSONATION_ACTION_STOP,
+        reason,
+        requestId,
+        envelope: { type: 'action_error', data: {} },
+      } as ActionErrorSignal)
+    }
+  }
+}
+
+/**
+ * Bind the strip's store the way bootHilos does, over a session scope fed by
+ * handshakes this harness emits.
+ *
+ * @returns The lifecycle source, the unbind, and the handshake emitter.
+ */
+function bindSession() {
+  const projectListeners: ((signal: ProjectSignal) => void)[] = []
+  const handshakes = {
+    on(event: string, listener: (payload: never) => void): () => void {
+      if (event === 'projectSignal') {
+        projectListeners.push(listener as (signal: ProjectSignal) => void)
+      }
+
+      return () => {}
+    },
+  } as unknown as HilosConnection
+  const scopes = new ScopeManager()
+  bindSessionScope(handshakes, scopes)
+  const source = new ReplyingSource()
+  const unbind = bindImpersonation(scopes, new ActionLifecycle(source))
+
+  return {
+    source,
+    unbind,
+    handshake(payload: Record<string, unknown>): void {
+      const signal = {
+        kind: 'project',
+        type: 'handshake_response',
+        data: payload,
+        envelope: {},
+      } as unknown as ProjectSignal
+      for (const listener of projectListeners) {
+        listener(signal)
+      }
+    },
+  }
+}
+
+/**
+ * Mount the bare shell on a connection double.
+ *
+ * @param protectedMode Protected-mode state the shell reads off the connection.
+ * @returns The fixture, already checked once.
+ */
+function mountShell(
+  protectedMode: ProtectedModeStatus = PROTECTED_MODE_INACTIVE,
+) {
+  const fixture = TestBed.createComponent(HilosLayout)
+  fixture.componentRef.setInput('connection', fakeConnection(protectedMode))
+  fixture.detectChanges()
+
+  return fixture
+}
+
+/**
+ * Let the tracked driver settle on the reply it was just given.
+ *
+ * @returns Resolves after the driver's awaited handle has run its finally.
+ */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+describe('HilosLayout impersonation strip', () => {
+  let unbind: (() => void) | undefined
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+    hilosToasts.clear()
+  })
+
+  it('draws no strip for a plain session', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake({ entities: { currentUser: { id: 1, name: 'Ada' } } })
+
+    const root = mountShell().nativeElement as HTMLElement
+
+    expect(root.querySelector('[data-id="impersonation-banner"]')).toBeNull()
+  })
+
+  it('names the user the session acts as while impersonated', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+
+    const root = mountShell().nativeElement as HTMLElement
+
+    const strip = root.querySelector('[data-id="impersonation-banner"]')
+    expect(strip?.textContent).toContain('You are impersonating')
+    expect(strip?.querySelector('strong')?.textContent).toBe('Bob')
+    expect(
+      root.querySelector('[data-id="impersonation-stop"]')?.textContent?.trim(),
+    ).toBe('Stop')
+  })
+
+  it('stands between the protected-mode strip and the project strip', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+
+    const fixture = TestBed.createComponent(BannerHost)
+    fixture.componentInstance.connection = fakeConnection(ADMITTED)
+    fixture.detectChanges()
+
+    const region = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="app-banner"]',
+    )
+    const order = Array.from(region?.children ?? []).map((child) =>
+      child.getAttribute('data-id'),
+    )
+    expect(order).toEqual([
+      'protected-mode-banner',
+      'impersonation-banner',
+      'test-banner',
+    ])
+  })
+
+  it('draws no strip under the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+
+    const root = mountShell(FROZEN).nativeElement as HTMLElement
+
+    expect(root.querySelector('[data-id="impersonation-banner"]')).toBeNull()
+  })
+
+  it('sends Stop tracked and keeps it disabled until the reply settles', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const fixture = mountShell()
+    const stop = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="impersonation-stop"]',
+    ) as HTMLButtonElement
+
+    stop.click()
+    fixture.detectChanges()
+
+    expect(session.source.sent).toHaveLength(1)
+    expect(session.source.sent[0]?.action).toBe('hilos_impersonate_stop')
+    expect(session.source.sent[0]?.data).toEqual({})
+    expect(session.source.sent[0]?.requestId).toBeTruthy()
+    expect(stop.disabled).toBe(true)
+
+    session.source.succeed(session.source.sent[0]?.requestId)
+    await settle()
+    fixture.detectChanges()
+
+    expect(stop.disabled).toBe(false)
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('leaves the strip standing on a refusal and says why in a toast', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const fixture = mountShell()
+    const root = fixture.nativeElement as HTMLElement
+    const stop = root.querySelector(
+      '[data-id="impersonation-stop"]',
+    ) as HTMLButtonElement
+
+    stop.click()
+    fixture.detectChanges()
+    session.source.refuse(
+      session.source.sent[0]?.requestId,
+      'Session is not impersonating',
+    )
+    await settle()
+    fixture.detectChanges()
+
+    expect(
+      root.querySelector('[data-id="impersonation-banner"]'),
+    ).not.toBeNull()
+    expect(stop.disabled).toBe(false)
+    expect(
+      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
+    ).toEqual([['error', 'Session is not impersonating']])
+  })
+
+  it('adds no live region of its own when the strip goes up', () => {
+    // Counted before the strip goes up: both shells read the one store, so the
+    // plain one would grow the strip too once the takeover lands.
+    const live = '[role="status"][aria-live="polite"]'
+    const plain = bindSession()
+    plain.handshake({ entities: { currentUser: { id: 1, name: 'Ada' } } })
+    const down = mountShell()
+    const liveWithout = (down.nativeElement as HTMLElement).querySelectorAll(
+      live,
+    ).length
+    down.destroy()
+    plain.unbind()
+
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const up = mountShell().nativeElement as HTMLElement
+
+    expect(up.querySelector('[data-id="impersonation-banner"]')).not.toBeNull()
+    expect(up.querySelectorAll(live).length).toBe(liveWithout)
   })
 })

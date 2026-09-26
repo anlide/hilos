@@ -4,6 +4,7 @@
 // (docs/agents/frontend/bootstrap-structure.md). The connection and scopes are
 // created by the project (so its modules import them as singletons); bootHilos
 // wires and starts them.
+import { type ActionLifecycle } from '../connection/actionLifecycle.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
   bindNotificationsScope,
@@ -25,6 +26,7 @@ import {
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
+import { bindImpersonation } from '../session/impersonation.js'
 import {
   bindSessionToasts,
   clearToastsOnSignOut,
@@ -39,6 +41,13 @@ import { bindPageReady } from '../subscription/pageReadyGate.js'
 export interface BootHilosConfig {
   /** The application's connection (e.g. from `createHilosConnection`). */
   connection: HilosConnection
+  /**
+   * The application's one action reply lifecycle (the `actions` created beside
+   * the connection). The shell dispatches its own tracked controls on it — Stop
+   * on the impersonation strip — and a second lifecycle on the same connection
+   * would mint colliding request ids, since each counts its own.
+   */
+  actions: ActionLifecycle
   /** The application's scope-partitioned stores. */
   scopes: ScopeManager
   /** The page router resolving a URL to its page key and route params. */
@@ -82,7 +91,7 @@ export interface BootHilosConfig {
  * cookie must already be minted (the project's session module does this at
  * import) so it rides the handshake.
  *
- * @param config The connection, scopes, router, and optional overrides.
+ * @param config The connection, action lifecycle, scopes, router, and optional overrides.
  * @returns The navigator the app provides to `HilosView` / `HilosLink`.
  */
 export function bootHilos(config: BootHilosConfig): HilosRouter {
@@ -104,6 +113,11 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // leaf promises. No option either: a project with codes has the line, and one
   // without them is never sent a frame.
   bindCodeSendProgress(config.connection)
+  // The impersonation strip (HIL-1064) is the shell's, drawn in every SDK from
+  // the session this binding follows, and its Stop runs on the application's
+  // own lifecycle. One behavior, no option: a project with takeovers has the
+  // strip, and one without them is never told it is impersonated.
+  bindImpersonation(config.scopes, config.actions, config.session)
   if (config.notifications === true) {
     bindNotificationsScope(
       config.connection,
