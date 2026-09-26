@@ -37,6 +37,32 @@ built on it; each one is supply-chain and maintenance risk passed downstream.
   version, and a caret there lifts the whole Angular framework — see
   `docs/agents/frontend/sdk-packaging.md`, "Angular versions".
 
+## Heavy data files
+
+Put heavy framework data — lists, dictionaries, and datasets — in
+`framework/data/`. The entire directory is tracked by Git LFS through the root
+`.gitattributes`; add that rule before adding data so the ordinary Git history
+receives pointers. Project data is outside this framework directory's scope.
+
+Read a file through `Hilos\Fs\FrameworkData::path($name)`, then through the
+`Hilos\Fs\FsPath` primitives. The locator refuses an absent file and a Git LFS
+pointer instead of letting a reader mistake the pointer for data.
+
+`EntrypointPrelude::run()` checks the whole directory before env initialization
+on daemon, worker, and docker watchdog startup. A pointer names the file and
+the remedy: install git-lfs and run `git lfs pull`; a package archive must
+include its LFS objects. The CLI skips the startup check so it stays available
+for repair; the locator still checks every file it reads.
+
+`FrameworkDataTest` checks materialization and the `.gitattributes` rule. It also
+refuses files larger than 1 MiB under `framework/**` outside `framework/data/`,
+excluding generated/dependency directories `node_modules`, `dist`, `.angular`,
+and `vendor`. Put heavy data in the LFS directory instead of raising the limit.
+
+Attribute third-party data and its license in the root `THIRD_PARTY_NOTICES.md`,
+which remains ordinary text in Git. **git-lfs is a base installation
+requirement** wherever a framework checkout is used.
+
 ## Extension points
 
 - Framework base classes expose project variation through protected factory or

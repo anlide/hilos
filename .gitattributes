@@ -3,3 +3,6 @@
 
 # Keep PHP explicit because runtime code is especially sensitive to CRLF drift.
 *.php text eol=lf
+
+# Heavy framework data belongs in Git LFS, outside ordinary Git history (HIL-650).
+framework/data/** filter=lfs diff=lfs merge=lfs -text

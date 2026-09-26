@@ -20,6 +20,12 @@ Before writing backend code, read `agents.md` at the repo root — especially
 the **Contract approval gate**: a new project declares pages, agent types, and
 router defaults, which are gated contract surfaces.
 
+Install **git-lfs** on every machine holding a framework checkout, run
+`git lfs install`, then `git lfs pull` to materialize `framework/data/`.
+Package archives must include their Git LFS objects. Daemon, worker, and
+docker watchdog startup refuses an unmaterialized pointer with its file name
+and the repair command; the CLI stays available for repair.
+
 ## Project layout
 
 ```
@@ -252,7 +258,10 @@ How the DEV page reaches the daemon differs per framework — see
 
 ## Verification checklist for a new project
 
-Run everything through the composer scripts (containers only):
+Verify that git-lfs is installed on the checkout's machine and
+`framework/data/` contains real files after `git lfs pull` (or that the package
+archive includes its LFS objects). Then run everything through the composer
+scripts (containers only):
 
 1. `composer validate` + `composer run install-deps` (generates the lock —
    commit it).

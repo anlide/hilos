@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Recovery;
 
+use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\Registration\RegistrationReservationService;
@@ -20,6 +21,7 @@ use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Random\RandomException;
 
@@ -163,6 +165,8 @@ final class PasswordRecoveryService
      * @param string $newPassword New plaintext password to store
      * @return ?int User the password now belongs to, or null when the reset can no longer be completed
      * @throws ValueTooShortException When the new password is shorter than the policy minimum
+     * @throws PasswordTooCommonException When the new password is in the common-password list
+     * @throws FsException When the framework password list cannot be read
      * @throws PasswordUnchangedException When the new password is the account's current one
      * @throws DatabaseException When an identity or verification query fails
      * @throws LogicException When the identities or verifications object collection is unavailable

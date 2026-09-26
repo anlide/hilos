@@ -558,6 +558,39 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     }
 
     /**
+     * A common password is refused before the reset code is spent (HIL-650).
+     *
+     * @throws HilosException When setup or recovery fails
+     */
+    public function testACommonPasswordIsRefusedWithoutSpendingTheCode(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $this->openSession($agent, 'common-reset-ak');
+
+        try {
+            $this->requestReset($agent, 'common-reset-ak', $email);
+            $this->seedKnownCode($email);
+            $this->confirm($agent, 'common-reset-ak', $email, self::CODE);
+
+            $outcome = $this->complete($agent, 'common-reset-ak', '12345678');
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_PASSWORD_TOO_COMMON, $outcome->code);
+            $this->assertSame('That password is too common and easy to guess, choose a different one', $outcome->message);
+            $this->assertNull($outcome->step);
+            $this->assertTrue(password_verify(self::OLD_PASSWORD, (string)$this->readSecret($email)));
+            $this->assertTrue(Hilos::$rt->hilosRecoveryWaiters['common-reset-ak']?->codeAccepted);
+
+            $this->assertTrue($this->complete($agent, 'common-reset-ak', self::NEW_PASSWORD)->ok);
+            $this->assertTrue(password_verify(self::NEW_PASSWORD, (string)$this->readSecret($email)));
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * Saving signs this session in and logs every other session of the user out.
      *
      * @throws HilosException When setup or reset handling fails

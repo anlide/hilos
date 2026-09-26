@@ -64,6 +64,9 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** The new password typed into a reset is the account's current one: the surface stays put. */
     public const string CODE_PASSWORD_UNCHANGED = 'password_unchanged';
 
+    /** The new password is in the common breached-password list: refusal without a next step (HIL-650). */
+    public const string CODE_PASSWORD_TOO_COMMON = 'password_too_common';
+
     /** The sign-in waiting on a second factor ran out: back to the address field (HIL-494). */
     public const string CODE_SECOND_FACTOR_EXPIRED = 'second_factor_expired';
 

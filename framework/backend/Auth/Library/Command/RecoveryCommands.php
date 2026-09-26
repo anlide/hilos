@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -18,6 +19,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Verification\VerificationType;
+use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
@@ -169,7 +171,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * code makes of a second device saving second. The winner has already changed the
      * password by then, so the loser is sent to sign in with it.
      *
-     * A third way, and the only one that moves the surface NOWHERE: the password typed is
+     * A third way, refused without a next step: the password typed is
      * the one the account already has (HIL-654). It is refused rather than accepted with a
      * "password changed" nobody's password changed for, and the person stays on the screen
      * they are on to type a different one - their code is still unspent, because the seam
@@ -178,6 +180,10 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * answer of the form, and a form the frontend cannot pre-check, since only the server
      * can compare against a hash. The length it can and does pre-check, so reaching it at
      * all means a client that ignored its own contract.
+     *
+     * A fourth way uses the same reply: the password is in the framework's common-password
+     * list (HIL-650). That list lives only on the server, and this refusal also precedes
+     * the code spend, preserving the recovery grant for another submit.
      *
      * The force-logout is the point of resetting a password at all: it is done when access
      * has leaked, so the reset takes the account back rather than adding one more live
@@ -188,6 +194,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome The rollback the losing session gets, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValueTooShortException When the new password is too short
+     * @throws FsException When the framework password list cannot be read
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When the secret write or the runtime read fails
      */
@@ -209,6 +216,8 @@ final class RecoveryCommands extends AbstractLibraryCommands
             $userId = new PasswordRecoveryService()->complete($email, $dto->password);
         } catch (PasswordUnchangedException $exception) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_PASSWORD_UNCHANGED, $exception->getMessage());
+        } catch (PasswordTooCommonException $exception) {
+            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_PASSWORD_TOO_COMMON, $exception->getMessage());
         }
 
         if ($userId === null) {

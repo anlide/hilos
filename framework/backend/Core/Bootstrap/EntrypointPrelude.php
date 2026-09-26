@@ -7,6 +7,9 @@ namespace Hilos\Core\Bootstrap;
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Exception\LfsPointerException;
+use Hilos\Fs\FrameworkData;
+use Hilos\Fs\FsException;
 use Hilos\Hilos;
 
 /**
@@ -19,17 +22,26 @@ use Hilos\Hilos;
  * static binding), the project Hilos subclass is passed in rather than assumed. Reused by
  * the daemon, worker and docker spines; the CLI spine calls {@see initEnvironment()} alone,
  * because it must build its command manager between the env and the connect.
+ *
+ * Before env initialization, refuse a node whose framework data is still in Git LFS
+ * pointer form. The CLI skips this startup check so it remains available for repair;
+ * reading a data file through FrameworkData still checks that individual file.
  */
 final class EntrypointPrelude
 {
     /**
+     * Refuses missing or unmaterialized framework data before initializing the environment.
+     *
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param string $projectRoot Project root that holds .env (and tests/.env under the test stack)
      * @param callable(): void $persistenceInit Persistence bootstrap (e.g. Database::initialize) run after env is ready
      * @throws EnvException When the environment refuses a name the prelude reads, or the test env file is missing
+     * @throws LfsPointerException When the framework data contains a Git LFS pointer
+     * @throws FsException When the framework data directory or a file cannot be read
      */
     public static function run(string $hilosClass, string $projectRoot, callable $persistenceInit): void
     {
+        FrameworkData::assertMaterialized();
         self::initEnvironment($hilosClass, $projectRoot);
 
         $persistenceInit();

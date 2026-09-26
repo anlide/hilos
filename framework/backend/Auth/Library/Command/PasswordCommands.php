@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
@@ -25,6 +26,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
+use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
@@ -398,11 +400,12 @@ final class PasswordCommands extends AbstractLibraryCommands
      * {@see RecoveryCommands::completePasswordReset()} - a password screen that could name
      * an address would be a way to take one somebody else proved.
      *
-     * Four answers, in the order they are asked. No proved hold - it ran out, it was
+     * Five answers, in the order they are asked. No proved hold - it ran out, it was
      * evicted, or this browser never had one - is not the person's mistake and rolls the
      * surface back to the address field. A password under the minimum is an ordinary
      * error on the field; the check lives here now because before this leaf there was no
-     * password to check at the submit. The address having become somebody's while the
+     * password to check at the submit. A common password is refused by an ordinary reply,
+     * leaving the proved hold intact. The address having become somebody's while the
      * password was being chosen is a move to sign-in, not an error to retype. Everything
      * else lands.
      *
@@ -417,6 +420,7 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome Where the surface goes next, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValueTooShortException When the password is too short
+     * @throws FsException When the framework password list cannot be read
      * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws InvalidFormatException When the proved address is not a valid identifier
      * @throws InvalidArgumentException When the landing frame cannot be named or queued
@@ -440,7 +444,11 @@ final class PasswordCommands extends AbstractLibraryCommands
         // current password of its own for the new one to already be. Whether the ADDRESS
         // gained an account meanwhile is a different question, and the block below is the
         // one that asks it.
-        PasswordPolicy::assertValid($dto->password, false);
+        try {
+            PasswordPolicy::assertValid($dto->password, false);
+        } catch (PasswordTooCommonException $exception) {
+            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_PASSWORD_TOO_COMMON, $exception->getMessage());
+        }
 
         // Asked once more, for the reason it is asked at the code: the hold keeps a second
         // REGISTRATION off the address, not an account that arrived by another road while

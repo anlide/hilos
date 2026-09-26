@@ -260,6 +260,38 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
+     * A common password is refused without spending the proved reservation (HIL-650).
+     *
+     * @throws HilosException When setup or registration fails
+     */
+    public function testSavingRefusesACommonPasswordAndKeepsTheReservation(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'common-pw-ak');
+
+        try {
+            $this->register($agent, 'common-pw-ak', $email);
+            $this->seedKnownCode($email);
+            $this->confirm($agent, 'common-pw-ak', $email, self::CODE);
+
+            $outcome = $this->complete($agent, 'common-pw-ak', '12345678');
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_PASSWORD_TOO_COMMON, $outcome->code);
+            $this->assertSame('That password is too common and easy to guess, choose a different one', $outcome->message);
+            $this->assertNull($outcome->step);
+            $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email));
+            $this->assertTrue($this->holdOf('common-pw-ak')?->isProven());
+
+            $this->assertTrue($this->complete($agent, 'common-pw-ak', self::PASSWORD)->ok);
+            $this->assertTrue(Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email)?->verifyPassword(self::PASSWORD));
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * A wrong code is an inline error that leaves the hold and the step alone.
      *
      * @throws HilosException When setup or confirm handling fails

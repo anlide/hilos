@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordRequestActionDTO;
@@ -24,6 +25,7 @@ use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Verification\VerificationType;
+use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Random\RandomException;
@@ -78,6 +80,8 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @param ProfileSetPasswordActionDTO $dto New password and, for a change, the current one
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValueTooShortException When the new password is shorter than the policy minimum
+     * @throws PasswordTooCommonException When the new password is in the common-password list
+     * @throws FsException When the framework password list cannot be read
      * @throws PasswordUnchangedException When the new password is the one the account already has
      * @throws ValidationException When the current password is wrong or the account has no verified email
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
@@ -240,6 +244,8 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @param ProfileAddPasswordConfirmActionDTO $dto Address, the code it received, and the new password
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValueTooShortException When the password is shorter than the policy minimum
+     * @throws PasswordTooCommonException When the new password is in the common-password list
+     * @throws FsException When the framework password list cannot be read
      * @throws ValidationException When the account already has a password, the code is
      *     invalid or expired, or the email is already in use
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued

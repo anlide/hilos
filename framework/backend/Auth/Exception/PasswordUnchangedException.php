@@ -13,9 +13,9 @@ use Hilos\Core\Exception\ValidationException;
  * Changing a password is not editing a field, it is revoking a secret, and accepting the
  * old value told a person they had done that when they had not. Its own class, and not the
  * bare {@see ValidationException} the length refusal used to be, for one reason: the
- * recovery door has to tell this refusal from every other the seam can raise, because this
- * is the only one it answers as an ordinary reply of the form rather than as a broken
- * client contract. Nothing else catches it - the profile lets it out through the same
+ * recovery door has to distinguish it from a broken client contract and answer it as an
+ * ordinary reply of the form, as it also does for a common password (HIL-650).
+ * Nothing else catches it - the profile lets it out through the same
  * action_error channel that carries "Current password is incorrect".
  *
  * A {@see ValidationException} child, so the doors and the tests that catch the family go
