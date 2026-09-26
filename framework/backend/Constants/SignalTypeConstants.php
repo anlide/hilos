@@ -113,6 +113,9 @@ final class SignalTypeConstants
     /** @var string Table window refused signal type (server-to-client refusal of one table's window) */
     public const string TABLE_WINDOW_REFUSED = 'table_window_refused';
 
+    /** @var string Table viewport frozen signal type (server-to-client live word that one table's window stopped receiving its live changes) */
+    public const string TABLE_VIEWPORT_FROZEN = 'table_viewport_frozen';
+
     /** @var string Table viewport delta signal type (server-to-client live pending change for one table) */
     public const string TABLE_VIEWPORT_DELTA = 'table_viewport_delta';
 

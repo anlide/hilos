@@ -6,12 +6,13 @@ import {
 } from '../../src/table/tableLive.js'
 
 describe('hilosTableLive', () => {
-  it('ranks report, bulk run, pending changes, new rows above, a frozen source, then work running', () => {
+  it('ranks report, bulk run, pending changes, new rows, a frozen table, a frozen source, then work running', () => {
     expect(HILOS_TABLE_LIVE_ORDER).toEqual([
       'report',
       'bulk',
       'pending',
       'announce',
+      'frozen',
       'stale',
       'progress',
     ])
@@ -24,6 +25,7 @@ describe('hilosTableLive', () => {
         bulk: false,
         pending: false,
         announce: false,
+        frozen: false,
         stale: false,
         progress: false,
       }),
@@ -37,6 +39,7 @@ describe('hilosTableLive', () => {
         bulk: true,
         pending: false,
         announce: false,
+        frozen: false,
         stale: false,
         progress: false,
       }),
@@ -50,6 +53,7 @@ describe('hilosTableLive', () => {
         bulk: true,
         pending: true,
         announce: false,
+        frozen: false,
         stale: false,
         progress: false,
       }),
@@ -77,14 +81,28 @@ describe('hilosTableLive', () => {
     ['as', 'announce', ['stale']],
     ['ag', 'announce', ['progress']],
     ['sg', 'stale', ['progress']],
+    ['f', 'frozen', []],
+    ['pf', 'pending', ['frozen']],
+    ['af', 'announce', ['frozen']],
+    ['fg', 'frozen', ['progress']],
+    ['fs', 'frozen', []],
+    ['fsg', 'frozen', ['progress']],
+    ['pfs', 'pending', ['frozen']],
     ['rbp', 'report', ['bulk', 'pending']],
     ['pas', 'pending', ['announce', 'stale']],
     ['pag', 'pending', ['announce', 'progress']],
     ['psg', 'pending', ['stale', 'progress']],
     ['asg', 'announce', ['stale', 'progress']],
     ['rbpasg', 'report', ['bulk', 'pending', 'announce', 'stale', 'progress']],
+    [
+      'rbpafsg',
+      'report',
+      ['bulk', 'pending', 'announce', 'frozen', 'progress'],
+    ],
   ]
 
+  // A frozen table takes a stale source out of the room entirely — not only off the line
+  // but from the icons after it: the stale phrase ends "The other columns are live".
   it.each(cases)(
     'live "%s" puts %s on the line and the rest after it',
     (flags, top, rest) => {
@@ -93,6 +111,7 @@ describe('hilosTableLive', () => {
         bulk: flags.includes('b'),
         pending: flags.includes('p'),
         announce: flags.includes('a'),
+        frozen: flags.includes('f'),
         stale: flags.includes('s'),
         progress: flags.includes('g'),
       })

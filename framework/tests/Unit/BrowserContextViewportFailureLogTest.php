@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
@@ -17,6 +18,7 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
@@ -24,6 +26,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableViewportFrozenSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -31,6 +34,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -48,9 +52,11 @@ use RuntimeException;
  * touched" one line below.
  *
  * The containment itself is not on trial here — HIL-592 asks for it to be kept, so both
- * catches still swallow and still return, and these tests assert exactly that alongside the
- * line. What is on trial is that the failure is now addressable: which table, which page,
- * WHICH connection, and what threw where.
+ * catches still return, and these tests assert exactly that alongside the line. What is on
+ * trial is that the failure is now addressable: which table, which page, WHICH connection, and
+ * what threw where. The delta path no longer leaves the connection in silence either: its window
+ * freezes and says so with one table_viewport_frozen frame (HIL-1139), which
+ * BrowserContextTableFreezeTest puts on trial as a whole.
  */
 final class BrowserContextViewportFailureLogTest extends TestCase
 {
@@ -88,9 +94,19 @@ final class BrowserContextViewportFailureLogTest extends TestCase
         $context = $this->boot($viewport, throwOnMutation: true);
 
         $context->record(SourceChange::dbUpdated(ViewportFailureLogUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha']));
+        $before = TimeHelper::nowMs();
         $context->flushToSignalRouter();
 
-        // The subscriber is told nothing at all — that silence is the defect the line describes.
+        // The subscriber is told its window froze, once, and nothing else goes out.
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::TABLE_VIEWPORT_FROZEN, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(TableViewportFrozenSignalData::class, $signal->data->data);
+        $this->assertSame(ViewportFailureLogUnitContext::PAGE, $signal->data->data->page);
+        $this->assertSame(ViewportFailureLogUnitTable::TABLE, $signal->data->data->tableKey);
+        $this->assertGreaterThanOrEqual($before, $signal->data->data->since);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
 
         $lines = $this->writtenLines();

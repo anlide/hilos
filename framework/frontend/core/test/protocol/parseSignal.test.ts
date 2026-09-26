@@ -318,6 +318,33 @@ describe('parseSignal', () => {
     }
   })
 
+  it('parses a table_viewport_frozen frame as a framework signal', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_frozen","data":{"page":"hilos_settings","tableKey":"settings","since":1790000000123}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableViewportFrozen') {
+      expect(result.signal.data).toEqual({
+        page: 'hilos_settings',
+        tableKey: 'settings',
+        since: 1790000000123,
+      })
+    }
+  })
+
+  it('rejects a table_viewport_frozen frame whose since is not an integer', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_frozen","data":{"page":"hilos_settings","tableKey":"settings","since":"1790000000123"}}',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure).toMatchObject({
+        kind: 'invalid-signal-data',
+        type: 'table_viewport_frozen',
+      })
+    }
+  })
+
   it('parses a table_viewport_delta row_updated frame', () => {
     const result = parseSignal(
       '{"type":"table_viewport_delta","data":{"page":"hilos_settings","tableKey":"settings","kind":"row_updated","rowKey":"theme","row":{"rowKey":"theme","slots":{"settings":{"key":"theme"}}}}}',

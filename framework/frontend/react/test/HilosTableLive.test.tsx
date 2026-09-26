@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { TableViewportController, createSignal } from '@hilos/core'
+import {
+  TableViewportController,
+  createSignal,
+  hilosTableFrozenLabel,
+} from '@hilos/core'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
@@ -216,6 +220,60 @@ describe('HilosTableLive', () => {
     expect(byId(container, 'hilos-table-stale')?.textContent).toBe(
       'Presence is not updating: the link to its source was lost. The other columns are live.',
     )
+  })
+
+  it('says since when a frozen table has not updated, with the snowflake and no button', () => {
+    const controller = makeController()
+    const since = Date.now()
+    controller.ingestFrozen(since)
+    const { container } = renderLive(controller)
+
+    const line = byId(container, 'hilos-table-frozen') as HTMLElement
+    expect(line.textContent).toBe(hilosTableFrozenLabel(since))
+    expect(line.textContent).toContain('This table has not updated since')
+    expect(line.classList.contains('alert-info')).toBe(true)
+    expect(line.querySelector('i')?.classList.contains('bi-snow')).toBe(true)
+    expect(line.querySelector('button')).toBeNull()
+    expect(byId(container, 'hilos-table-live-status')?.textContent).toBe(
+      hilosTableFrozenLabel(since),
+    )
+  })
+
+  it('keeps the frozen table as its snowflake after pending changes holding the line', () => {
+    const controller = makeController()
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestFrozen(Date.now())
+    const { container } = renderLive(controller)
+
+    expect(byId(container, 'hilos-table-pending-row')).not.toBeNull()
+    const icons = Array.from(
+      container.querySelectorAll('[data-id="hilos-table-live-rest"] i'),
+    )
+    expect(icons.map((icon) => Array.from(icon.classList))).toEqual([
+      ['bi', 'flex-shrink-0', 'bi-snow'],
+    ])
+    expect(byId(container, 'hilos-table-live-status')?.textContent).toBe(
+      '1 row will move or leave. Also: the table stopped updating.',
+    )
+  })
+
+  it('drops the quiet source from the room while the table is frozen', () => {
+    const controller = makeController()
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['connections'],
+    })
+    controller.ingestFrozen(Date.now())
+    const { container } = renderLive(controller)
+
+    expect(byId(container, 'hilos-table-frozen')).not.toBeNull()
+    expect(byId(container, 'hilos-table-stale')).toBeNull()
+    expect(byId(container, 'hilos-table-live-rest')).toBeNull()
   })
 
   it('draws running work on one line, the track along its bottom edge', () => {

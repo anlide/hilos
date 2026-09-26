@@ -161,7 +161,8 @@ about what that connection shows, not about every change to the table.
 
 `filter`, `sort`, `anchor`, and `limit` change **only** by an explicit user
 action — filter, sort, paginate, navigate, or press Show on the announcement bar.
-Nothing on the live stream moves the window.
+Nothing on the live stream moves the window: the catch-up of a window that froze
+(HIL-1139) re-sends the same window with its rows read again, not another one.
 
 An explicit window change is **authoritative**: the snapshot that arrives already
 carries everything that was waiting, so the pending queue is emptied rather than
@@ -936,11 +937,15 @@ a **bar**, and there are exactly three:
    `table-progress-action` beside it in Vue; `tableProgress` and
    `tableProgressAction` render props in React; `#tableProgress` and
    `#tableProgressAction` templates in Angular), each receiving the whole bar,
-   `detail` and all. The bar is one of the six live messages that share the one room above
-   the table, and the most junior of them: while a bulk report or bulk work stands,
-   changes wait for Apply, rows wait to be shown, or a source is behind, the line is
-   theirs and the bar stands beside it as an icon in order of precedence:
-   `report` → `bulk` → `pending` → `announce` → `stale` → `progress` (`tableLive.ts`, and
+   `detail` and all. The bar is one of the seven live messages that share the one room
+   above the table, and the most junior of them: while a bulk report or bulk work stands,
+   changes wait for Apply, rows wait to be shown, the table stopped updating, or a
+   source is behind, the line is theirs and the bar stands beside it as an icon in order
+   of precedence: `report` → `bulk` → `pending` → `announce` → `frozen` → `stale` →
+   `progress`. A frozen table takes `stale` out of the room entirely, line and icon
+   alike: the stale sentence ends "The other columns are live", and while the table is
+   frozen that is not true; the source's snowflakes in the header and the rows stay
+   (`tableLive.ts`, and
    [styling-rules.md](styling-rules.md), "The room a live message takes"). It reads no key out of
    `detail` itself: `detail` is the project's arbitrary payload, so a view
    reading keys from it would invent a naming contract nobody declared and oblige
@@ -1170,8 +1175,8 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-live-status` — the hidden region that speaks them. The line
   carries the handle of the message holding it: `hilos-table-bulk-report`,
   `hilos-table-progress-bulk`, `hilos-table-pending-row`, `hilos-table-announce`,
-  `hilos-table-stale` or `hilos-table-progress` — so a message that yielded the
-  line has no handle of its own until it gets it back;
+  `hilos-table-frozen`, `hilos-table-stale` or `hilos-table-progress` — so a
+  message that yielded the line has no handle of its own until it gets it back;
 - **waiting and announcing:** `hilos-table-pending`,
   `hilos-table-pending-move-<rowKey>`, `hilos-table-pending-remove-<rowKey>`,
   `hilos-table-apply`, `hilos-table-announce`, `hilos-table-announce-show`;
@@ -1222,6 +1227,7 @@ addressed to the one connection it concerns:
 | `table_row_focus` | client → server | `page`, `tableKey`, `rowKey` (required; empty releases the focus) — the row a tab holds in focus for an open dialog, sent on open, on close, and again with every window the tab receives; nothing is sent back while the window holds the row, and one `table_viewport_delta` of kind `row_removed` when it does not — with the row's body, or without one when the row is gone |
 | `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is) |
 | `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`) |
+| `table_viewport_frozen` | server → client, live | `page`, `tableKey`, `since` (server ms of the first failure) — sent once per freeze |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row` (on `row_removed` only for the row the tab holds in focus, and only while it is alive), `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount` |
@@ -1231,12 +1237,23 @@ addressed to the one connection it concerns:
 | `table_progress` | server → client, live | `page`, `tableKey`, `scope` (`row` / `table` / `bulk`), `progressKey`, `rowKey` (`scope: row` only), `current`, `total`, `ended`, `detail` — work already running when a tab subscribes arrives instead in the `progress` key of the `windows` section |
 | `table_bulk_report` | server → client, addressed to the initiator | `page`, `tableKey`, `progressKey`, `touched` (a count, never names — changed rows have already arrived as live deltas), `untouched` (`[{ rowKey, reason }]`), `untouchedOmitted` (absent when every name fit under the server's ceiling) |
 
-A **full window snapshot never travels on the live stream**. It travels on one of
-two roads and no other: in reply to a `table_viewport` request, which is a window
-the reader changed, and in the `windows` section of the page's own
+A **full window snapshot travels on the live stream for one reason only**. It
+travels on three roads and no other: in reply to a `table_viewport` request, which
+is a window the reader changed; in the `windows` section of the page's own
 `page_response`, which is the first window of every viewport table the page
-declares — a cold load and a reconnect alike. A refusal of that window travels
-the same two roads: `table_window_refused` in reply to a request, and the
+declares — a cold load and a reconnect alike; and as the catch-up of a window that
+froze on the live road (HIL-1139). A window freezes when a change or a freshness
+move cannot be built for it, or anything further down its live road throws: the
+connection is told once with `table_viewport_frozen`, its rows stay where they
+are, and the first delivery that reaches the window without a throw sends it a
+`table_window` of the reply's shape, followed by its facet counts, instead of a
+delta. A delta would be judged against rows the connection was never brought up
+to date on; the whole window is laid down the way one is after a broken socket —
+pending, placeholders, highlights and announcements go, the selection narrows to
+the rows that came, the focus is said again — and the frozen line goes with them.
+Any window and any refusal clear the freeze, and a window that cannot be built
+sends nothing and leaves it standing. A refusal of a window travels the first
+two roads only: `table_window_refused` in reply to a request, and the
 `refusedWindows` section of `page_response`. A table stands in one of those,
 never both. A bulk action is still an ordinary
 `action` in the shape given above, but its OUTCOME has a frame of its own,

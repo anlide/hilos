@@ -61,6 +61,18 @@ final class SubscriptionRegistry
     private array $pageDeliveryFailures = [];
 
     /**
+     * @var array<string, array<string, true>> Windows already told they stopped receiving live changes, keyed by
+     *     accept key, then table key
+     *
+     * One bit per window, not per failure, for the page failures' reason: a change the table cannot
+     * build for a window fails again on every flush that carries it, and the connection would be told
+     * the same thing each time. The bit is also what the next successful delivery reads to know the
+     * window owes a full snapshot instead of a delta. It lives and dies with the window: dropped
+     * wherever the viewport is dropped, and wherever a fresh window replaces the frozen rows.
+     */
+    private array $tableViewportFreezes = [];
+
+    /**
      * @param string $acceptKey Client accept key
      * @param string $page Page identifier
      * @param array<string, mixed> $params Route params
@@ -81,6 +93,7 @@ final class SubscriptionRegistry
         // what remains is a connection re-subscribing the page it is already on, where the
         // answer overwrites each of its windows with the one it just built.
         unset($this->pageDeliveryFailures[$acceptKey]);
+        unset($this->tableViewportFreezes[$acceptKey]);
     }
 
     /**
@@ -174,6 +187,7 @@ final class SubscriptionRegistry
         unset($this->tableFacetRequests[$acceptKey]);
         unset($this->tableFocus[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
+        unset($this->tableViewportFreezes[$acceptKey]);
     }
 
     /**
@@ -278,6 +292,7 @@ final class SubscriptionRegistry
         unset($this->tableFacetRequests[$acceptKey]);
         unset($this->tableFocus[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
+        unset($this->tableViewportFreezes[$acceptKey]);
     }
 
     /**
@@ -319,6 +334,64 @@ final class SubscriptionRegistry
         }
 
         unset($this->pageDeliveryFailures[$acceptKey]);
+
+        return true;
+    }
+
+    /**
+     * Records that one table's window stopped receiving its live changes, and answers whether to say so.
+     *
+     * A test-and-set for {@see self::markPageDeliveryFailure()}'s reason: the answer has to be the
+     * state BEFORE this call, so that the second failure of the same window says nothing.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key of the frozen window
+     * @return bool Whether this window has not been told yet, and is owed the frozen frame
+     */
+    public function markTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    {
+        if ($acceptKey === '' || isset($this->tableViewportFreezes[$acceptKey][$tableKey])) {
+            return false;
+        }
+
+        $this->tableViewportFreezes[$acceptKey][$tableKey] = true;
+
+        return true;
+    }
+
+    /**
+     * Answers whether one table's window is frozen, without clearing the mark.
+     *
+     * A read rather than a test-and-clear: the catch-up that reads it may fail to build the window,
+     * and a mark cleared before the window left would let the next delivery send a delta onto rows
+     * the connection never got back.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key of the window
+     * @return bool Whether the window was told it froze and has not received a full window since
+     */
+    public function isTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    {
+        return isset($this->tableViewportFreezes[$acceptKey][$tableKey]);
+    }
+
+    /**
+     * Clears one table's frozen mark once a full window or its refusal has replaced the frozen rows.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key of the window
+     * @return bool Whether the mark was standing
+     */
+    public function clearTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    {
+        if (!isset($this->tableViewportFreezes[$acceptKey][$tableKey])) {
+            return false;
+        }
+
+        unset($this->tableViewportFreezes[$acceptKey][$tableKey]);
+        if ($this->tableViewportFreezes[$acceptKey] === []) {
+            unset($this->tableViewportFreezes[$acceptKey]);
+        }
 
         return true;
     }
@@ -375,6 +448,7 @@ final class SubscriptionRegistry
         }
         $this->forgetTableFacets($acceptKey, $tableKey);
         $this->clearTableFocus($acceptKey, $tableKey);
+        $this->clearTableViewportFrozen($acceptKey, $tableKey);
     }
 
     /**

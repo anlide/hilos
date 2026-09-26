@@ -1,6 +1,7 @@
 // HilosTableLive — the one room above a table for everything live it has to say:
-// changes waiting for Apply, rows created that the window cannot show, a source that
-// stopped being kept up to date, and work running on the set, plus bulk action
+// changes waiting for Apply, rows created that the window cannot show, a table that
+// stopped updating, a source that stopped being kept up to date, and work running on
+// the set, plus bulk action
 // progress and outcome report (Design D3). The room is exactly one line tall at every
 // table and never changes height (styling-rules.md, "The room a live message takes"):
 // an invisible twin of the very same row stands in the flow at all times and holds
@@ -23,6 +24,8 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  TABLE_FROZEN_COPY,
+  hilosTableFrozenLabel,
   hilosTableStaleColumns,
   hilosTableStaleLabel,
   hilosTableStaleSources,
@@ -75,6 +78,7 @@ const VARIANT: Record<Exclude<HilosTableLiveKind, 'report'>, string> = {
   bulk: 'alert-secondary',
   pending: 'alert-warning',
   announce: 'alert-secondary',
+  frozen: 'alert-info',
   stale: 'alert-info',
   progress: 'alert-secondary',
 }
@@ -85,6 +89,7 @@ const ICON: Record<HilosTableLiveKind, string> = {
   bulk: 'bi-check2-square',
   pending: 'bi-pause-circle',
   announce: 'bi-arrow-down-circle',
+  frozen: 'bi-snow',
   stale: 'bi-snow',
   progress: 'bi-arrow-repeat',
 }
@@ -95,6 +100,7 @@ const ROW_ID: Record<HilosTableLiveKind, string> = {
   bulk: 'hilos-table-progress-bulk',
   pending: 'hilos-table-pending-row',
   announce: 'hilos-table-announce',
+  frozen: 'hilos-table-frozen',
   stale: 'hilos-table-stale',
   progress: 'hilos-table-progress',
 }
@@ -105,6 +111,7 @@ const REST_WORDS: Record<HilosTableLiveKind, string> = {
   bulk: 'work on the marked rows',
   pending: 'pending changes',
   announce: 'new rows',
+  frozen: TABLE_FROZEN_COPY.rest,
   stale: 'a source is behind',
   progress: 'work running',
 }
@@ -132,6 +139,7 @@ export function HilosTableLive<R>({
   const bulkProgress = useSignal(controller.progress.bulk)
   const bulkStarted = useSignal(controller.bulk.started)
   const bulkReport = useSignal(controller.bulk.report)
+  const frozenSince = useSignal(controller.frozenSince)
 
   let bulkBarCaption = ''
   if (bulkProgress !== null) {
@@ -175,6 +183,9 @@ export function HilosTableLive<R>({
     sources.size > 0,
   )
 
+  // The moment the table froze, on the reader's own clock.
+  const frozenLabel = hilosTableFrozenLabel(frozenSince)
+
   // The numeral of each message is chosen here rather than in the markup: '1 rows'
   // would stand in the most visible place of the screen.
   const announceLabel =
@@ -195,6 +206,7 @@ export function HilosTableLive<R>({
     bulk: `${bulkBarCaption}.`,
     pending: `${pendingCount} ${pendingSuffix}.`,
     announce: `${announceLabel}.`,
+    frozen: frozenLabel ?? '',
     stale: staleLabel ?? '',
     progress: 'Work is running on this table.',
   }
@@ -257,6 +269,7 @@ export function HilosTableLive<R>({
               </>
             ) : null}
             {top === 'announce' ? announceLabel : null}
+            {top === 'frozen' ? frozenLabel : null}
             {top === 'stale' ? staleLabel : null}
             {/* No check for whether the page filled the place: an empty one draws
                 nothing, and the twin holds the height either way. */}

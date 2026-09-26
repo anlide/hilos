@@ -137,6 +137,99 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
     }
 
     /**
+     * The mark is a test-and-set: the first failure of a window owes the connection a frame and
+     * every later one does not, until something replaces the frozen rows (HIL-1139).
+     */
+    public function testMarkingAFrozenWindowAnswersOnlyTheFirstTime(): void
+    {
+        $registry = new SubscriptionRegistry();
+
+        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
+        $this->assertTrue($registry->markTableViewportFrozen('ak', 'settings'));
+        $this->assertFalse($registry->markTableViewportFrozen('ak', 'settings'));
+        $this->assertTrue($registry->isTableViewportFrozen('ak', 'settings'));
+        $this->assertFalse($registry->isTableViewportFrozen('ak', 'users'));
+    }
+
+    public function testReadingTheFrozenMarkLeavesItStanding(): void
+    {
+        $registry = new SubscriptionRegistry();
+        $registry->markTableViewportFrozen('ak', 'settings');
+
+        $registry->isTableViewportFrozen('ak', 'settings');
+
+        $this->assertTrue($registry->isTableViewportFrozen('ak', 'settings'));
+    }
+
+    public function testClearingTheFrozenMarkAnswersWhetherItStood(): void
+    {
+        $registry = new SubscriptionRegistry();
+        $registry->markTableViewportFrozen('ak', 'settings');
+        $registry->markTableViewportFrozen('ak', 'users');
+
+        $this->assertTrue($registry->clearTableViewportFrozen('ak', 'settings'));
+        $this->assertFalse($registry->clearTableViewportFrozen('ak', 'settings'));
+        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
+        $this->assertTrue($registry->isTableViewportFrozen('ak', 'users'));
+        $this->assertTrue($registry->markTableViewportFrozen('ak', 'settings'));
+    }
+
+    public function testAnEmptyAcceptKeyIsNeverMarkedFrozen(): void
+    {
+        $registry = new SubscriptionRegistry();
+
+        $this->assertFalse($registry->markTableViewportFrozen('', 'settings'));
+        $this->assertFalse($registry->isTableViewportFrozen('', 'settings'));
+    }
+
+    public function testSubscribingDropsEveryFrozenMarkOfTheConnection(): void
+    {
+        $registry = new SubscriptionRegistry();
+        $registry->markTableViewportFrozen('ak', 'settings');
+        $registry->markTableViewportFrozen('other', 'settings');
+
+        $registry->subscribeToPage('ak', 'page', []);
+
+        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
+        $this->assertTrue($registry->isTableViewportFrozen('other', 'settings'));
+    }
+
+    public function testUnsubscribingFromThePageDropsTheFrozenMarks(): void
+    {
+        $registry = new SubscriptionRegistry();
+        $registry->subscribeToPage('ak', 'page', []);
+        $registry->markTableViewportFrozen('ak', 'settings');
+
+        $registry->unsubscribeFromPage('ak', 'page');
+
+        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
+    }
+
+    public function testUnsubscribingFromAllDropsTheFrozenMarks(): void
+    {
+        $registry = new SubscriptionRegistry();
+        $registry->markTableViewportFrozen('ak', 'settings');
+
+        $registry->unsubscribeFromAll('ak');
+
+        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
+    }
+
+    public function testForgettingAViewportDropsOnlyThatTablesFrozenMark(): void
+    {
+        $registry = new SubscriptionRegistry();
+        $registry->setTableViewport('ak', new TableViewportSubscription(tableKey: 'settings'));
+        $registry->setTableViewport('ak', new TableViewportSubscription(tableKey: 'users'));
+        $registry->markTableViewportFrozen('ak', 'settings');
+        $registry->markTableViewportFrozen('ak', 'users');
+
+        $registry->forgetTableViewport('ak', 'settings');
+
+        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
+        $this->assertTrue($registry->isTableViewportFrozen('ak', 'users'));
+    }
+
+    /**
      * Turns a list of row-id keys into a window of placeholder wire rows.
      *
      * These tests ask the subscription what it remembers, not what a row body

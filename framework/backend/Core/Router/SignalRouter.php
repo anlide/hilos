@@ -863,6 +863,42 @@ class SignalRouter
     }
 
     /**
+     * Records that one table's window stopped receiving its live changes, and answers whether to say so.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key of the frozen window
+     * @return bool Whether this window has not been told yet, and is owed the frozen frame
+     */
+    public function markTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    {
+        return $this->subscriptions->markTableViewportFrozen($acceptKey, $tableKey);
+    }
+
+    /**
+     * Answers whether one table's window is frozen, without clearing the mark.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key of the window
+     * @return bool Whether the window was told it froze and has not received a full window since
+     */
+    public function isTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    {
+        return $this->subscriptions->isTableViewportFrozen($acceptKey, $tableKey);
+    }
+
+    /**
+     * Clears one table's frozen mark once a full window or its refusal has replaced the frozen rows.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key of the window
+     * @return bool Whether the mark was standing
+     */
+    public function clearTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    {
+        return $this->subscriptions->clearTableViewportFrozen($acceptKey, $tableKey);
+    }
+
+    /**
      * Accept keys currently subscribed to a page, optionally filtered by a single route param.
      *
      * @param string $page Page identifier to match subscriptions against

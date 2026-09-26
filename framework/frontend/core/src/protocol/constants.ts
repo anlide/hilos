@@ -85,6 +85,9 @@ export const SIGNAL_TYPE_TABLE_WINDOW = 'table_window'
 /** Server frame `type` refusing a table window (PHP `SignalTypeConstants::TABLE_WINDOW_REFUSED`). */
 export const SIGNAL_TYPE_TABLE_WINDOW_REFUSED = 'table_window_refused'
 
+/** Server frame `type` saying one table's window stopped receiving its live changes (PHP `SignalTypeConstants::TABLE_VIEWPORT_FROZEN`). */
+export const SIGNAL_TYPE_TABLE_VIEWPORT_FROZEN = 'table_viewport_frozen'
+
 /** Server frame `type` carrying a live table pending change (PHP `SignalTypeConstants::TABLE_VIEWPORT_DELTA`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_DELTA = 'table_viewport_delta'
 

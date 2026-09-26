@@ -23,7 +23,11 @@
 // announced alike, since the new window the server returns is authoritative. Work
 // in progress (table_progress) neither waits on apply() nor accumulates: a bar goes
 // up, is replaced or comes down as the frames say, and a window change leaves it
-// standing — it does not belong to the window.
+// standing — it does not belong to the window. A freeze (table_viewport_frozen) neither
+// waits on apply() nor accumulates either: it says the window stopped receiving its live
+// changes, the rows stay as they are, and only the moment of the first failure is kept. Any
+// window and any refusal clear it — and after a freeze the window comes without being asked
+// for, laid down the way one is after a broken socket.
 // The controller owns no rendering and no DOM.
 
 import {
@@ -373,6 +377,13 @@ export interface TableWindowSink {
    * @param errorCode Machine-readable reason the server named.
    */
   ingestRefusal(errorCode: string): void
+  /**
+   * Ingest word that this table's window stopped receiving its live changes
+   * (`table_viewport_frozen`). The rows stay; the next window or refusal clears it.
+   *
+   * @param since Server milliseconds of the first failure.
+   */
+  ingestFrozen(since: number): void
 }
 
 export interface TableViewportControllerOptions<R> {
@@ -520,6 +531,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** The refusal code the table is standing in, or null while a window holds. */
   private readonly refusalSignal = createSignal<string | null>(null)
+
+  /** Server milliseconds the window froze at, or null while its live changes arrive. */
+  private readonly frozenSinceSignal = createSignal<number | null>(null)
 
   private readonly placeholdersSignal = createSignal<
     ReadonlyMap<string, TableRemovalReason>
@@ -795,10 +809,10 @@ export class TableViewportController<R> implements TableWindowSink {
   /**
    * The live messages over the table and which of them holds the room above the rows.
    *
-   * Nothing new is counted here: the six facts are the bulk report, the bulk progress,
-   * the pending count, the rows announced to the window, wherever they fell, a frozen
-   * source anywhere in the window, and the table bar — each already read by the view on
-   * its own. What is added is the precedence, so the one room of live messages never
+   * Nothing new is counted here: the seven facts are the bulk report, the bulk progress,
+   * the pending count, the rows announced to the window, wherever they fell, the window
+   * that stopped receiving its live changes, a frozen source anywhere in the window, and
+   * the table bar — each already read by the view on its own. What is added is the precedence, so the one room of live messages never
    * changes height and never shows two messages side by side.
    */
   readonly live: ReadonlySignal<HilosTableLive>
@@ -1109,6 +1123,7 @@ export class TableViewportController<R> implements TableWindowSink {
         bulk: this.bulkProgressSignal.get() !== null,
         pending: this.pendingCount.get() > 0,
         announce: this.announced.get().total > 0,
+        frozen: this.frozenSinceSignal.get() !== null,
         stale: hilosTableStaleSources(this.rows.get()).size > 0,
         progress: this.progress.table.get() !== null,
       }),
@@ -1230,6 +1245,15 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   get ownCreateRequestId(): ReadonlySignal<string | null> {
     return this.ownCreateRequestIdSignal
+  }
+
+  /**
+   * Server milliseconds of the first failure since this table's window stopped receiving
+   * its live changes, or null while they arrive. The view turns it into the reader's own
+   * clock (`hilosTableFrozenLabel`, tableFrozen.ts).
+   */
+  get frozenSince(): ReadonlySignal<number | null> {
+    return this.frozenSinceSignal
   }
 
   /**
@@ -1519,6 +1543,7 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   ingestRefusal(errorCode: string): void {
     this.refusalSignal.set(errorCode)
+    this.frozenSinceSignal.set(null)
     this.windowSignal.set([])
     this.totalCountSignal.set(0)
     this.totalExactSignal.set(true)
@@ -1533,6 +1558,30 @@ export class TableViewportController<R> implements TableWindowSink {
     this.clearAnnounced()
     this.selectedKeysSignal.set(new Set())
     this.expandedKeysSignal.set(new Set())
+  }
+
+  /**
+   * Ingest word that this table's window stopped receiving its live changes
+   * (`table_viewport_frozen`).
+   *
+   * Nothing on the table moves: the rows, the pending changes and the marks stay as they
+   * are, and the live line says since when they may be out of date. The first moment is
+   * kept — the server says it once per freeze, and a second word would still be about the
+   * same failure. The next window, the one the server sends on its own when the road is
+   * back or one the reader asks for, clears it, and so does a refusal. A table standing in
+   * a refusal takes no freeze, like every other live frame: there are no rows on it to be
+   * out of date, and the window that ends the freeze ends the refusal too.
+   *
+   * @param since Server milliseconds of the first failure.
+   */
+  ingestFrozen(since: number): void {
+    if (
+      this.refusalSignal.get() !== null ||
+      this.frozenSinceSignal.get() !== null
+    ) {
+      return
+    }
+    this.frozenSinceSignal.set(since)
   }
 
   /**
@@ -1568,6 +1617,7 @@ export class TableViewportController<R> implements TableWindowSink {
     rowsBefore: number | null = null,
   ): void {
     this.refusalSignal.set(null)
+    this.frozenSinceSignal.set(null)
     this.windowSignal.set(rows.slice())
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)

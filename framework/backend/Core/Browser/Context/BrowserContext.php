@@ -73,6 +73,7 @@ use Hilos\Core\Table\DTO\TableViewportAnnounceDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\DTO\TableViewportFrozenSignalData;
 use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\DTO\TableViewportUnannounceDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
@@ -99,6 +100,7 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
 use ArrayAccess;
@@ -161,6 +163,18 @@ abstract class BrowserContext
      * @var array<string, array<string, string>>
      */
     private array $facetRecounts = [];
+
+    /**
+     * Viewport windows frozen during this flush, by accept key and browser table key.
+     *
+     * The registry's frozen mark outlives the flush and is what the next delivery reads to catch
+     * the window up; this set is the flush's own, and says the window is not to be touched again
+     * before the flush ends — not by a later change, and not by the catch-up: a delivery built in
+     * the same flush as the failure that froze the window is no proof the road is back.
+     *
+     * @var array<string, array<string, true>>
+     */
+    private array $frozenThisFlush = [];
 
     /**
      * Facet counts the test-only table lag is holding back, in the order they were asked for (HIL-1020).
@@ -526,6 +540,10 @@ abstract class BrowserContext
             }
         }
 
+        // Either frame below replaces the rows the client holds for this table, so a window that
+        // froze on the live road is not frozen any more once one of them is on its way.
+        Hilos::$sr->clearTableViewportFrozen($acceptKey, $viewport->tableKey);
+
         $window = $this->buildTableWindow($table, $viewport, $page);
         if ($window === null) {
             $this->sendTableWindowRefusal(
@@ -538,29 +556,44 @@ abstract class BrowserContext
             return false;
         }
 
-        $snapshot = $window->snapshot;
-
-        Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::WORKER),
-            signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName(SignalTypeConstants::TABLE_WINDOW),
-            signalData: new WebSocketSignalData(
-                data: new TableWindowSignalData(
-                    page: $page,
-                    tableKey: $viewport->tableKey,
-                    rows: $window->rows,
-                    totalCount: $snapshot->totalCount,
-                    totalExact: $snapshot->totalExact,
-                    limit: $snapshot->limit,
-                    firstAnchor: $snapshot->firstAnchor,
-                    lastAnchor: $snapshot->lastAnchor,
-                    rowsBefore: $snapshot->rowsBefore,
-                ),
-                targetAcceptKey: $acceptKey,
-            ),
-        );
+        $this->queueTableWindow($page, $acceptKey, $viewport->tableKey, $window);
 
         return true;
+    }
+
+    /**
+     * Queues one built window as a table_window frame for one connection.
+     *
+     * The frame has two senders and one shape: the reply to a window request
+     * ({@see self::sendTableWindow()}) and the catch-up of a window that froze on the live road
+     * ({@see self::catchUpFrozenViewport()}). The client lays both down the same way, so the
+     * two may not drift apart in a single key.
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Connection the window is for
+     * @param string $tableKey Table key of the window
+     * @param BrowserTableWindow $window Built window
+     * @throws InvalidArgumentException When the table-window signal cannot be named
+     */
+    private function queueTableWindow(string $page, string $acceptKey, string $tableKey, BrowserTableWindow $window): void
+    {
+        $snapshot = $window->snapshot;
+
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_WINDOW,
+            new TableWindowSignalData(
+                page: $page,
+                tableKey: $tableKey,
+                rows: $window->rows,
+                totalCount: $snapshot->totalCount,
+                totalExact: $snapshot->totalExact,
+                limit: $snapshot->limit,
+                firstAnchor: $snapshot->firstAnchor,
+                lastAnchor: $snapshot->lastAnchor,
+                rowsBefore: $snapshot->rowsBefore,
+            ),
+            $acceptKey,
+        );
     }
 
     /**
@@ -1056,6 +1089,9 @@ abstract class BrowserContext
     ): ?array {
         $viewport = $this->subscriptionViewport($acceptKey, $tableKey, $table, $reported);
         Hilos::$sr?->setTableViewport($acceptKey, $viewport);
+        // The answer carries this table either in `windows` or in `refusedWindows`, and both
+        // replace the rows the client holds, so a window frozen on the live road thaws here.
+        Hilos::$sr?->clearTableViewportFrozen($acceptKey, $tableKey);
         if ($reported !== null) {
             // The options a tab asked counts beside travel in its report for the reason its window
             // does: after a broken socket the tab is the only side that still knows them.
@@ -1259,6 +1295,7 @@ abstract class BrowserContext
             $this->staleness = [];
             $this->totalRecounts = [];
             $this->facetRecounts = [];
+            $this->frozenThisFlush = [];
         }
     }
 
@@ -1596,7 +1633,6 @@ abstract class BrowserContext
      * @param string $acceptKey Subscriber accept key
      * @param array<string, mixed> $subscription Page subscription mirror entry
      * @throws PageInternalErrorException When a page or source declaration is malformed
-     * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
      * @throws DatabaseException When reading a joined database source fails
      * @throws LogicException When a database collection is not configured with its class constants
      * @throws CollectionNotManualException When the collection built for a join refuses its own items
@@ -1627,13 +1663,32 @@ abstract class BrowserContext
             if ($viewportTable !== null) {
                 $viewport = Hilos::$sr?->getTableViewport($acceptKey, $browserKey);
                 if ($viewport !== null) {
-                    $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $browserKey);
+                    // Contained per window rather than per subscription: whatever this table's live
+                    // road throws freezes this one window and says so, and the page, its lists and
+                    // the neighboring tables go on living. A window frozen earlier in this flush is
+                    // left alone until the flush ends, catch-up included. The bar is not part of the
+                    // window and goes out either way.
+                    if (!isset($this->frozenThisFlush[$acceptKey][$browserKey])) {
+                        try {
+                            $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $browserKey);
+                        } catch (Throwable $e) {
+                            Logger::error(
+                                "Viewport fan-out froze a window whose live road failed: table={$browserKey}, "
+                                    . "page={$page}, acceptKey={$acceptKey}, "
+                                    . "source={$change->kind}:{$change->sourceKey}#{$change->sourceId}, "
+                                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+                            );
+                            $this->freezeViewport($page, $acceptKey, $browserKey);
+                        }
+                    }
                     $this->emitTableProgress($viewportTable, $change, $acceptKey, $page, $browserKey);
                 }
                 // A viewport table is delivered only through its window and deltas; with or
                 // without an active viewport it never uses the page_response table fan-out.
                 // Lists and data are not viewport tables and fall through to the declarative
-                // path below.
+                // path below. Their throws are not contained here: they reach the subscription's
+                // own trap in emitBrowserSignals() and fail the page, as they always did.
                 continue;
             }
 
@@ -1740,15 +1795,30 @@ abstract class BrowserContext
                     continue;
                 }
 
+                // Contained per window for the reason a content change is (addBrowserChange()).
                 foreach ($stateIds as $stateId) {
-                    $this->emitViewportStaleness(
-                        $viewportTable,
-                        $viewport,
-                        SourceChange::rtUpdated($collectionKey, $stateId, []),
-                        $acceptKey,
-                        $page,
-                        $browserKey,
-                    );
+                    if (isset($this->frozenThisFlush[$acceptKey][$browserKey])) {
+                        break;
+                    }
+
+                    try {
+                        $this->emitViewportStaleness(
+                            $viewportTable,
+                            $viewport,
+                            SourceChange::rtUpdated($collectionKey, $stateId, []),
+                            $acceptKey,
+                            $page,
+                            $browserKey,
+                        );
+                    } catch (Throwable $e) {
+                        Logger::error(
+                            "Viewport fan-out froze a window whose live road failed: table={$browserKey}, "
+                                . "page={$page}, acceptKey={$acceptKey}, source={$collectionKey}#{$stateId}, "
+                                . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                                . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+                        );
+                        $this->freezeViewport($page, $acceptKey, $browserKey);
+                    }
                 }
 
                 continue;
@@ -1795,10 +1865,13 @@ abstract class BrowserContext
      * it on purpose ({@see TableViewportSubscription::digest()}), so this row is still the
      * row the connection was given.
      *
-     * A table that refuses to build the row leaves this window on its old marks and says so in
-     * the log, rather than telling the subscriber its page failed. Freshness is the least of
-     * what a page carries, and taking the page down over it would be the wrong trade
-     * ({@see self::emitViewportDelta()} contains its build for the same reason).
+     * A table that refuses to build the row freezes this window and says so — a line in the log
+     * and one table_viewport_frozen frame to the connection ({@see self::freezeViewport()}) —
+     * rather than telling the subscriber its page failed. Freshness is the least of what a page
+     * carries, and taking the page down over it would be the wrong trade
+     * ({@see self::emitViewportDelta()} contains its build for the same reason). A frozen window
+     * this build reaches without a throw is caught up instead of marked: the rows under the marks
+     * are the frozen ones, and the whole window replaces them ({@see self::catchUpFrozenViewport()}).
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
@@ -1806,6 +1879,7 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
+     * @throws InvalidArgumentException When a catch-up frame cannot be named
      */
     private function emitViewportStaleness(
         ViewportTable $table,
@@ -1817,11 +1891,14 @@ abstract class BrowserContext
     ): void {
         try {
             $mutation = $table->buildMutationForSourceEvent($address);
-            if ($mutation?->row === null || !$viewport->hasRow((string) $mutation->rowKey)) {
-                return;
-            }
+            $owesCatchUp = $mutation !== null && Hilos::$sr?->isTableViewportFrozen($acceptKey, $browserKey) === true;
+            if (!$owesCatchUp) {
+                if ($mutation?->row === null || !$viewport->hasRow((string) $mutation->rowKey)) {
+                    return;
+                }
 
-            $staleSources = $this->staleSourcesOfRow($table->browserRow($mutation->row));
+                $staleSources = $this->staleSourcesOfRow($table->browserRow($mutation->row));
+            }
         } catch (Throwable $e) {
             Logger::error(
                 "Viewport staleness skipped a row the table failed to build: table={$browserKey}, "
@@ -1829,6 +1906,13 @@ abstract class BrowserContext
                     . "source={$address->sourceKey}#{$address->sourceId}, "
                     . 'exception=' . $e::class . ", message={$e->getMessage()}",
             );
+            $this->freezeViewport($page, $acceptKey, $browserKey);
+
+            return;
+        }
+
+        if ($owesCatchUp) {
+            $this->catchUpFrozenViewport($table, $viewport, $page, $acceptKey, $browserKey);
 
             return;
         }
@@ -2691,6 +2775,11 @@ abstract class BrowserContext
      * option cannot be known without the row's previous record, so all declared facets are recalculated
      * at the end of the flush.
      *
+     * A table that fails to build the change freezes this window ({@see self::freezeViewport()}). A
+     * window frozen earlier is sent none of the above: the first mutation the table builds for it is
+     * the proof its road is back, and it brings the whole window instead
+     * ({@see self::catchUpFrozenViewport()}).
+     *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
      * @param SourceChange $change Grouped DB/RT source change
@@ -2698,6 +2787,7 @@ abstract class BrowserContext
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
      * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
+     * @throws InvalidArgumentException When a table signal cannot be named
      */
     private function emitViewportDelta(
         ViewportTable $table,
@@ -2710,9 +2800,10 @@ abstract class BrowserContext
         try {
             $mutation = $table->buildMutationForSourceEvent($change);
         } catch (Throwable $e) {
-            // This window stops receiving deltas and freezes on its old rows while
-            // every neighboring window stays live. Without this line the refusal is
-            // indistinguishable from the routine "this table is not touched" below.
+            // This window freezes on its old rows while every neighboring window stays live,
+            // and the connection is told so rather than left with rows that look live. Without
+            // this line the refusal is indistinguishable from the routine "this table is not
+            // touched" below.
             Logger::error(
                 "Viewport delta skipped a change the table failed to build: table={$viewport->tableKey}, "
                     . "page={$page}, acceptKey={$acceptKey}, "
@@ -2720,11 +2811,20 @@ abstract class BrowserContext
                     . 'exception=' . $e::class . ", message={$e->getMessage()}, "
                     . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
             );
+            $this->freezeViewport($page, $acceptKey, $browserKey);
 
             return;
         }
 
         if ($mutation === null) {
+            return;
+        }
+
+        if (Hilos::$sr->isTableViewportFrozen($acceptKey, $browserKey)) {
+            // A delta judged against rows the connection was never brought up to date on would be
+            // a guess; the change that proves the road is back brings the whole window instead.
+            $this->catchUpFrozenViewport($table, $viewport, $page, $acceptKey, $browserKey);
+
             return;
         }
 
@@ -2797,6 +2897,84 @@ abstract class BrowserContext
             // Nothing is left to follow: the frame above said so, with or without the window.
             Hilos::$sr->clearTableFocus($acceptKey, $browserKey);
         }
+    }
+
+    /**
+     * Freezes one connection's window after its live road failed, and tells the connection once.
+     *
+     * The rows on the screen stay where they are, and without a word they would look live: the
+     * connection is sent one table_viewport_frozen frame carrying the moment of the first failure,
+     * and a second failure of the same window says nothing ({@see SubscriptionRegistry::markTableViewportFrozen()}).
+     * The window is also set aside for the rest of this flush, so that nothing later in it — not a
+     * change, not a recount, not a catch-up — touches rows the connection has just been told are
+     * out of date.
+     *
+     * The frame is caught if it cannot be named, the way the page's own failure frame is
+     * ({@see self::tellPageDeliveryFailed()}): a frame that could not name itself is a mistake in a
+     * constant, and raising it here would replace one frozen table with a worker that does not run.
+     *
+     * @param string $page Subscribed page key
+     * @param string $acceptKey Connection whose window froze
+     * @param string $browserKey Browser table key of the window
+     */
+    private function freezeViewport(string $page, string $acceptKey, string $browserKey): void
+    {
+        $this->frozenThisFlush[$acceptKey][$browserKey] = true;
+        if (Hilos::$sr === null || !Hilos::$sr->markTableViewportFrozen($acceptKey, $browserKey)) {
+            return;
+        }
+
+        try {
+            $this->queueAddressedTableSignal(
+                SignalTypeConstants::TABLE_VIEWPORT_FROZEN,
+                new TableViewportFrozenSignalData($page, $browserKey, TimeHelper::nowMs()),
+                $acceptKey,
+            );
+        } catch (InvalidArgumentException $e) {
+            Logger::error("Table frozen frame could not be sent: table={$browserKey}, page={$page}, error={$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Replaces a frozen window with the whole of it, on the first delivery that reached it without a throw.
+     *
+     * The client lays this frame down the way it lays down a window after a broken socket: rows,
+     * counts and anchors are replaced, the changes it was holding for Apply are dropped, and the
+     * frozen line goes away. A delta would not do: it is judged against the rows the connection
+     * was given, and those stopped matching the table the moment the window froze. The counts
+     * beside the table's filters follow the window, as they follow a page answer.
+     *
+     * A window that cannot be built sends nothing, not even a refusal, and the mark stays: the
+     * rows on the screen are still the frozen ones and are still said to be. The window is set
+     * aside for the rest of the flush, as a freeze sets it aside: the table that refused it once
+     * refuses it for every later change of the same flush, and each would cost a full query and a
+     * line in the log. The next flush that reaches it tries again. The mark is cleared only after
+     * the window is on its way.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window; its delivered rows are replaced
+     * @param string $page Subscribed page key
+     * @param string $acceptKey Connection whose window is caught up
+     * @param string $browserKey Browser table key of the window
+     * @throws InvalidArgumentException When the table-window or facet-counts signal cannot be named
+     */
+    private function catchUpFrozenViewport(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        string $page,
+        string $acceptKey,
+        string $browserKey,
+    ): void {
+        $window = $this->buildTableWindow($table, $viewport, $page);
+        if ($window === null) {
+            $this->frozenThisFlush[$acceptKey][$browserKey] = true;
+
+            return;
+        }
+
+        $this->queueTableWindow($page, $acceptKey, $browserKey, $window);
+        Hilos::$sr?->clearTableViewportFrozen($acceptKey, $browserKey);
+        $this->sendTableFacetCounts($page, $acceptKey, $viewport);
     }
 
     /**
@@ -3759,6 +3937,12 @@ abstract class BrowserContext
             foreach ($tables as $tableKey => $page) {
                 $viewport = Hilos::$sr->getTableViewport((string) $acceptKey, (string) $tableKey);
                 if ($viewport === null) {
+                    continue;
+                }
+                if (isset($this->frozenThisFlush[$acceptKey][$tableKey])
+                    || Hilos::$sr->isTableViewportFrozen((string) $acceptKey, (string) $tableKey)
+                ) {
+                    // A frozen window's numbers arrive with its catch-up, beside the rows they count.
                     continue;
                 }
 

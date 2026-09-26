@@ -176,6 +176,24 @@ export type TableWindowRefusedSignalData = z.infer<
 >
 
 /**
+ * Payload of the framework table-viewport freeze (`type: 'table_viewport_frozen'`,
+ * PHP `TableViewportFrozenSignalData`): the page and table whose window stopped
+ * receiving its live changes, and `since` — server milliseconds of the first
+ * failure, on the scale of `rt_staleness`'s `since`. Sent live, addressed to the one
+ * connection whose window froze, once per freeze; the window thaws with the next
+ * window that arrives, which the server sends on its own.
+ */
+export const tableViewportFrozenSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  since: z.number().int(),
+})
+
+export type TableViewportFrozenSignalData = z.infer<
+  typeof tableViewportFrozenSignalDataSchema
+>
+
+/**
  * Payload of the framework table viewport delta (`type: 'table_viewport_delta'`,
  * PHP `TableViewportDeltaDTO`): the addressed live row change for one table,
  * discriminated by `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`). A

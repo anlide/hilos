@@ -1,6 +1,7 @@
 // HilosTableLive — the one room above a table for everything live it has to say:
-// changes waiting for Apply, rows created that the window cannot show, a source that
-// stopped being kept up to date, and work running on the set, plus bulk action
+// changes waiting for Apply, rows created that the window cannot show, a table that
+// stopped updating, a source that stopped being kept up to date, and work running on
+// the set, plus bulk action
 // progress and outcome report (Design D3). The room is exactly one line tall at every
 // table and never changes height (styling-rules.md, "The room a live message takes"):
 // an invisible twin of the very same row stands in the flow at all times and holds
@@ -32,6 +33,8 @@ import {
 } from '@angular/core'
 import type { TemplateRef, WritableSignal } from '@angular/core'
 import {
+  TABLE_FROZEN_COPY,
+  hilosTableFrozenLabel,
   hilosTableStaleColumns,
   hilosTableStaleLabel,
   hilosTableStaleSources,
@@ -71,6 +74,7 @@ const VARIANT: Record<Exclude<HilosTableLiveKind, 'report'>, string> = {
   bulk: 'alert-secondary',
   pending: 'alert-warning',
   announce: 'alert-secondary',
+  frozen: 'alert-info',
   stale: 'alert-info',
   progress: 'alert-secondary',
 }
@@ -81,6 +85,7 @@ const ICON: Record<HilosTableLiveKind, string> = {
   bulk: 'bi-check2-square',
   pending: 'bi-pause-circle',
   announce: 'bi-arrow-down-circle',
+  frozen: 'bi-snow',
   stale: 'bi-snow',
   progress: 'bi-arrow-repeat',
 }
@@ -91,6 +96,7 @@ const ROW_ID: Record<HilosTableLiveKind, string> = {
   bulk: 'hilos-table-progress-bulk',
   pending: 'hilos-table-pending-row',
   announce: 'hilos-table-announce',
+  frozen: 'hilos-table-frozen',
   stale: 'hilos-table-stale',
   progress: 'hilos-table-progress',
 }
@@ -101,6 +107,7 @@ const REST_WORDS: Record<HilosTableLiveKind, string> = {
   bulk: 'work on the marked rows',
   pending: 'pending changes',
   announce: 'new rows',
+  frozen: TABLE_FROZEN_COPY.rest,
   stale: 'a source is behind',
   progress: 'work running',
 }
@@ -141,6 +148,8 @@ const BULK_BAR_NAME = 'Working on the marked rows'
               {{ pendingSuffix() }}
             } @else if (top === 'announce') {
               {{ announceLabel() }}
+            } @else if (top === 'frozen') {
+              {{ frozenLabel() }}
             } @else if (top === 'stale') {
               {{ staleLabel() }}
             } @else if (tableBar(); as progress) {
@@ -318,6 +327,7 @@ export class HilosTableLive<R> {
     label: string
   } | null>(null)
   protected readonly bulkReport = signal<HilosTableBulkReport | null>(null)
+  private readonly frozenSince = signal<number | null>(null)
 
   protected readonly bulkBarCaption = computed(() => {
     const progress = this.bulkProgress()
@@ -379,6 +389,11 @@ export class HilosTableLive<R> {
     )
   })
 
+  // The moment the table froze, on the reader's own clock.
+  protected readonly frozenLabel = computed(() =>
+    hilosTableFrozenLabel(this.frozenSince()),
+  )
+
   // The numeral of each message is chosen here rather than in the template: '1 rows'
   // would stand in the most visible place of the screen.
   protected readonly announceLabel = computed(() =>
@@ -408,6 +423,7 @@ export class HilosTableLive<R> {
       bulk: `${this.bulkBarCaption()}.`,
       pending: `${this.pendingCount()} ${this.pendingSuffix()}.`,
       announce: `${this.announceLabel()}.`,
+      frozen: this.frozenLabel() ?? '',
       stale: this.staleLabel() ?? '',
       progress: 'Work is running on this table.',
     }
@@ -441,6 +457,7 @@ export class HilosTableLive<R> {
         bind(controller.progress.bulk, this.bulkProgress),
         bind(controller.bulk.started, this.bulkStarted),
         bind(controller.bulk.report, this.bulkReport),
+        bind(controller.frozenSince, this.frozenSince),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {

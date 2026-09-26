@@ -256,6 +256,18 @@ The table agent becomes the second source of
 the same frame: a holder that is missing answers exactly as a window that could
 not be built does, and the epic raises no refusal leaf of its own.
 
+**A window whose live road broke freezes and says so.** A window that was built
+and then stopped receiving its changes — a change the table could not build for
+it, a freshness move it could not build, any throw further down that one
+window's live road — keeps its rows on the screen and tells its connection with
+one `table_viewport_frozen` frame (`page`, `tableKey`, `since`, HIL-1139); the
+tab says "not updated since" in the table's live line. The first delivery that
+reaches the window without a throw brings it the whole window as a
+`table_window`, and the mark goes away. This too is contained to the one window
+of one connection: the page, its lists and the neighboring tables stay live.
+The table agent inherits the frame as it is — the second source of the same
+word, the way it is the second source of the refusal.
+
 **A source that fell behind is marked, not hidden.** A composite row whose one
 source stopped updating is still delivered, with the lagging source named
 inside it; the cells of that source are marked, the rest stay live, and an

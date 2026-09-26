@@ -1,10 +1,10 @@
 // The per-table viewport binder: wires ONE server-windowed table to the
 // connection by its (page, tableKey) address. A table's controller only ever
-// sees the windows, refusals, deltas, counts, appends, own-creates, announcements, their
-// withdrawals and progress bars addressed to it — there is no central
+// sees the windows, refusals, freezes, deltas, counts, appends, own-creates, announcements,
+// their withdrawals and progress bars addressed to it — there is no central
 // switchboard holding every table and handing each its data
 // (table-subscription.md). The binder subscribes the connection's table_window
-// / table_window_refused / table_viewport_delta / table_viewport_count /
+// / table_window_refused / table_viewport_frozen / table_viewport_delta / table_viewport_count /
 // table_viewport_append / table_viewport_own_create / table_viewport_announce /
 // table_viewport_unannounce / table_progress / table_facet_counts signals,
 // drops everything not addressed to this table or whose page is no longer
@@ -100,6 +100,20 @@ export function bindTableViewport(
       sink.ingestRefusal(data.errorCode)
     },
   )
+
+  // Live, and not an answer to anything: the server says this window stopped receiving its
+  // changes, and the rows stay where they are until the window it sends on its own arrives.
+  const unsubscribeFrozen = connection.on('tableViewportFrozen', (signal) => {
+    const data = signal.data
+    if (data.tableKey !== address.tableKey || data.page !== address.page) {
+      return
+    }
+    const scope = currentScope()
+    if (!scope) {
+      return
+    }
+    sink.ingestFrozen(data.since)
+  })
 
   // The sixth road into the same sink, and the one a cold entry arrives by: the page's own
   // answer carries the first window of every table it declares, so nothing is asked for it
@@ -292,6 +306,7 @@ export function bindTableViewport(
   return () => {
     unsubscribeWindow()
     unsubscribeWindowRefused()
+    unsubscribeFrozen()
     unsubscribePageWindow()
     unsubscribeDelta()
     unsubscribeCount()

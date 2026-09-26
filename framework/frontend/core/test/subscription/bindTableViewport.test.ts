@@ -31,6 +31,7 @@ import {
   type TableViewportDeltaSignal,
   type TableWindowSignal,
   type TableWindowRefusedSignal,
+  type TableViewportFrozenSignal,
   type ProjectSignal,
 } from '../../src/protocol/parseSignal.js'
 
@@ -40,6 +41,7 @@ function fakeConnection() {
   const windowRefusedListeners = new Set<
     (signal: TableWindowRefusedSignal) => void
   >()
+  const frozenListeners = new Set<(signal: TableViewportFrozenSignal) => void>()
   const deltaListeners = new Set<(signal: TableViewportDeltaSignal) => void>()
   const countListeners = new Set<(signal: TableViewportCountSignal) => void>()
   const appendListeners = new Set<(signal: TableViewportAppendSignal) => void>()
@@ -85,6 +87,14 @@ function fakeConnection() {
           windowRefusedListeners.add(typed)
 
           return () => windowRefusedListeners.delete(typed)
+        }
+        case 'tableViewportFrozen': {
+          const typed = listener as unknown as (
+            signal: TableViewportFrozenSignal,
+          ) => void
+          frozenListeners.add(typed)
+
+          return () => frozenListeners.delete(typed)
         }
         case 'tableViewportCount': {
           const typed = listener as unknown as (
@@ -187,6 +197,11 @@ function fakeConnection() {
         listener({ data } as unknown as TableWindowRefusedSignal)
       }
     },
+    emitFrozen(data: TableViewportFrozenSignal['data']): void {
+      for (const listener of frozenListeners) {
+        listener({ data } as unknown as TableViewportFrozenSignal)
+      }
+    },
     emitDelta(data: TableViewportDeltaSignal['data']): void {
       for (const listener of deltaListeners) {
         listener({ data } as unknown as TableViewportDeltaSignal)
@@ -268,6 +283,7 @@ function fakeSink(): TableWindowSink & {
   bulkReports: HilosTableBulkReport[]
   facetCounts: TableFacetCountsByFilter[]
   refusals: string[]
+  freezes: number[]
 } {
   const windows: Array<{
     rows: readonly TableRow[]
@@ -304,6 +320,7 @@ function fakeSink(): TableWindowSink & {
   const bulkReports: HilosTableBulkReport[] = []
   const facetCounts: TableFacetCountsByFilter[] = []
   const refusals: string[] = []
+  const freezes: number[] = []
 
   return {
     windows,
@@ -318,6 +335,7 @@ function fakeSink(): TableWindowSink & {
     bulkReports,
     facetCounts,
     refusals,
+    freezes,
     ingestFacetCounts(facets) {
       facetCounts.push(facets)
     },
@@ -387,6 +405,9 @@ function fakeSink(): TableWindowSink & {
     },
     ingestRefusal(errorCode): void {
       refusals.push(errorCode)
+    },
+    ingestFrozen(since): void {
+      freezes.push(since)
     },
   }
 }
@@ -532,6 +553,55 @@ describe('bindTableViewport', () => {
     expect(backups.windows).toHaveLength(1)
     expect(backups.windows[0]?.rows[0]?.rowKey).toBe('b1')
     expect(backups.refusals).toEqual([])
+  })
+
+  it('routes a freeze to this table alone and leaves a neighbour on the same page live', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const settings = fakeSink()
+    const backups = fakeSink()
+    bind(connection, scopes, settings)
+    bindTableViewport(
+      connection as unknown as HilosConnection,
+      scopes,
+      { page: 'main', tableKey: 'backups' },
+      backups,
+    )
+
+    connection.emitFrozen({
+      page: 'main',
+      tableKey: 'settings',
+      since: 1790000000123,
+    })
+
+    expect(settings.freezes).toEqual([1790000000123])
+    expect(backups.freezes).toEqual([])
+  })
+
+  it('drops a freeze addressed to another page', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitFrozen({ page: 'other', tableKey: 'settings', since: 1 })
+
+    expect(sink.freezes).toHaveLength(0)
+  })
+
+  it('drops a freeze once the page scope is no longer the table page', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+    scopes.openPage('profile')
+
+    connection.emitFrozen({ page: 'main', tableKey: 'settings', since: 1 })
+
+    expect(sink.freezes).toHaveLength(0)
   })
 
   it('drops a refusal addressed to another page', () => {
@@ -924,6 +994,7 @@ describe('bindTableViewport', () => {
       tableKey: 'settings',
       errorCode: 'internal_error',
     })
+    connection.emitFrozen({ page: 'main', tableKey: 'settings', since: 1 })
     connection.emitCount({
       page: 'main',
       tableKey: 'settings',
@@ -945,6 +1016,7 @@ describe('bindTableViewport', () => {
     expect(sink.counts).toHaveLength(0)
     expect(sink.appends).toHaveLength(0)
     expect(sink.refusals).toHaveLength(0)
+    expect(sink.freezes).toHaveLength(0)
   })
 
   it('routes a count addressed to the table', () => {

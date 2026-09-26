@@ -22,6 +22,7 @@ import {
   SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
   SIGNAL_TYPE_TABLE_WINDOW,
   SIGNAL_TYPE_TABLE_WINDOW_REFUSED,
+  SIGNAL_TYPE_TABLE_VIEWPORT_FROZEN,
 } from './constants.js'
 import {
   signalEnvelopeSchema,
@@ -30,6 +31,7 @@ import {
   actionSuccessSignalDataSchema,
   tableWindowSignalDataSchema,
   tableWindowRefusedSignalDataSchema,
+  tableViewportFrozenSignalDataSchema,
   tableViewportDeltaSignalDataSchema,
   tableFacetCountsSignalDataSchema,
   tableViewportCountSignalDataSchema,
@@ -43,6 +45,7 @@ import {
   type SignalEnvelope,
   type TableWindowSignalData,
   type TableWindowRefusedSignalData,
+  type TableViewportFrozenSignalData,
   type TableViewportDeltaSignalData,
   type TableFacetCountsSignalData,
   type TableViewportCountSignalData,
@@ -126,6 +129,11 @@ export type ParsedSignal =
       envelope: SignalEnvelope
     }
   | {
+      kind: 'tableViewportFrozen'
+      data: TableViewportFrozenSignalData
+      envelope: SignalEnvelope
+    }
+  | {
       kind: 'tableViewportDelta'
       data: TableViewportDeltaSignalData
       envelope: SignalEnvelope
@@ -192,6 +200,10 @@ export type TableWindowSignal = Extract<ParsedSignal, { kind: 'tableWindow' }>
 export type TableWindowRefusedSignal = Extract<
   ParsedSignal,
   { kind: 'tableWindowRefused' }
+>
+export type TableViewportFrozenSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableViewportFrozen' }
 >
 export type TableViewportDeltaSignal = Extract<
   ParsedSignal,
@@ -488,6 +500,31 @@ export function parseSignal(
         ok: true,
         signal: {
           kind: 'tableWindowRefused',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_VIEWPORT_FROZEN: {
+      const data = tableViewportFrozenSignalDataSchema.safeParse(
+        envelope.data.data,
+      )
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_VIEWPORT_FROZEN,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableViewportFrozen',
           data: data.data,
           envelope: envelope.data,
         },

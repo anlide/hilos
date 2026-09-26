@@ -675,6 +675,41 @@ describe('signal routing', () => {
     expect(connection.state).toBe('connected')
   })
 
+  it('emits tableViewportFrozen for a table_viewport_frozen frame', () => {
+    const { connection } = createConnection()
+    const received: { page: string; tableKey: string; since: number }[] = []
+    connection.on('tableViewportFrozen', (signal) => received.push(signal.data))
+
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(
+      '{"type":"table_viewport_frozen","data":{"page":"hilos_settings","tableKey":"settings","since":1790000000123}}',
+    )
+
+    expect(received).toEqual([
+      { page: 'hilos_settings', tableKey: 'settings', since: 1790000000123 },
+    ])
+    expect(connection.state).toBe('connected')
+  })
+
+  it('emits parseFailure for a table_viewport_frozen frame whose since is not an integer', () => {
+    const { connection } = createConnection()
+    const received: unknown[] = []
+    const invalid: string[] = []
+    connection.on('tableViewportFrozen', (signal) => received.push(signal.data))
+    connection.on('parseFailure', (failure) => invalid.push(failure.kind))
+
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(
+      '{"type":"table_viewport_frozen","data":{"page":"hilos_settings","tableKey":"settings","since":1.5}}',
+    )
+
+    expect(received).toEqual([])
+    expect(invalid).toEqual(['invalid-signal-data'])
+    expect(connection.state).toBe('connected')
+  })
+
   it('emits unknownSignal for unknown types and stays connected', () => {
     const { connection } = createConnection()
     const unknown: string[] = []

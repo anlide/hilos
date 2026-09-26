@@ -3,7 +3,11 @@
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { afterEach, describe, expect, it } from 'vitest'
-import { TableViewportController, createSignal } from '@hilos/core'
+import {
+  TableViewportController,
+  createSignal,
+  hilosTableFrozenLabel,
+} from '@hilos/core'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
@@ -290,6 +294,58 @@ describe('HilosTableLive', () => {
     ).toBe(
       'Presence is not updating: the link to its source was lost. The other columns are live.',
     )
+  })
+
+  it('says since when a frozen table has not updated, with the snowflake and no button', () => {
+    const controller = makeController()
+    const since = Date.now()
+    controller.ingestFrozen(since)
+    const fixture = mountLive(controller)
+
+    const line = query(fixture, '[data-id="hilos-table-frozen"]') as HTMLElement
+    expect(line.textContent?.trim()).toBe(hilosTableFrozenLabel(since))
+    expect(line.textContent).toContain('This table has not updated since')
+    expect(line.classList.contains('alert-info')).toBe(true)
+    expect(line.querySelector('i')?.classList.contains('bi-snow')).toBe(true)
+    expect(line.querySelector('button')).toBeNull()
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
+    ).toBe(hilosTableFrozenLabel(since))
+  })
+
+  it('keeps the frozen table as its snowflake after pending changes holding the line', () => {
+    const controller = makeController()
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestFrozen(Date.now())
+    const fixture = mountLive(controller)
+
+    expect(query(fixture, '[data-id="hilos-table-pending-row"]')).not.toBeNull()
+    const icons = all(fixture, '[data-id="hilos-table-live-rest"] i')
+    expect(icons.map((icon) => Array.from(icon.classList).sort())).toEqual([
+      ['bi', 'bi-snow', 'flex-shrink-0'],
+    ])
+    expect(
+      query(fixture, '[data-id="hilos-table-live-status"]')?.textContent,
+    ).toBe('1 row will move or leave. Also: the table stopped updating.')
+  })
+
+  it('drops the quiet source from the room while the table is frozen', () => {
+    const controller = makeController()
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['connections'],
+    })
+    controller.ingestFrozen(Date.now())
+    const fixture = mountLive(controller)
+
+    expect(query(fixture, '[data-id="hilos-table-frozen"]')).not.toBeNull()
+    expect(query(fixture, '[data-id="hilos-table-stale"]')).toBeNull()
+    expect(query(fixture, '[data-id="hilos-table-live-rest"]')).toBeNull()
   })
 
   // The placing classes sit on the track's own element, the way an Angular component

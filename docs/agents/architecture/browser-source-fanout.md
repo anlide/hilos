@@ -100,7 +100,11 @@ agent/page fan-out.
 A source declaration that names no collection, or names one of an unknown kind,
 is a mistake in the config and is refused with `PageInternalErrorException` — on
 subscribe it reaches the client as a 500 `subscription_page_error`, and in the
-reactive fan-out it is logged and skips that one subscription. It used to be
+reactive fan-out it is logged and skips that one subscription. A table with a
+window is the exception: whatever its live road throws freezes that one window
+instead — a line in the log and one `table_viewport_frozen` frame to its
+connection, the whole window on the next delivery that succeeds — and the page
+around it stays live (HIL-1139). It used to be
 read as "this source is currently empty", which dropped the row fragment (or the
 whole collection) with nothing said, so a mistyped `KEY` looked exactly like a
 page whose data had not arrived yet. An unknown collection under a well-formed

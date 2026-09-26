@@ -1,17 +1,18 @@
 <!-- HilosTableLive — the one room above a table for everything live it has to
 say: changes waiting for Apply, rows created that the window cannot show, a
-source that stopped being kept up to date, and work running on the set, plus
-bulk action progress and outcome report (Design D3). The room is exactly one
-line tall at every table and never changes height (styling-rules.md, "The room a
-live message takes"): an invisible twin of the very same row stands in the flow
-at all times and holds it, and the message is laid over that twin — over its OWN
-reserve, the way LoadingButton lays its spinner over its own text, and never
-over a row of the table. The twin stays in the flow rather than taking turns
-with the message under v-if/v-else, because the rows are not one height: some
-rows have buttons, and a room swapping to a buttonless row would sit down.
+table that stopped updating, a source that stopped being kept up to date, and
+work running on the set, plus bulk action progress and outcome report (Design
+D3). The room is exactly one line tall at every table and never changes height
+(styling-rules.md, "The room a live message takes"): an invisible twin of the
+very same row stands in the flow at all times and holds it, and the message is
+laid over that twin — over its OWN reserve, the way LoadingButton lays its
+spinner over its own text, and never over a row of the table. The twin stays in
+the flow rather than taking turns with the message under v-if/v-else, because
+the rows are not one height: some rows have buttons, and a room swapping to a
+buttonless row would sit down.
 When several are live, the core decides which holds the line (tableLive.ts) and
-the others stand beside its text as their icons alone. Details of an untouched bulk
-report open in a dialog (HilosModal) mounted outside the live strip so that
+the others stand beside its text as their icons alone. Details of an untouched
+bulk report open in a dialog (HilosModal) mounted outside the live strip so that
 messages cycling underneath do not dismiss it.
 What a screen reader hears is one hidden region that stands before there is
 anything to say, never the row itself: the track of running work lives in the
@@ -21,6 +22,8 @@ the reason the bar and the footer are not — outside a table it means nothing. 
 <script setup lang="ts" generic="R">
 import { computed, ref } from 'vue'
 import {
+  TABLE_FROZEN_COPY,
+  hilosTableFrozenLabel,
   hilosTableStaleColumns,
   hilosTableStaleLabel,
   hilosTableStaleSources,
@@ -75,6 +78,7 @@ const VARIANT: Record<Exclude<HilosTableLiveKind, 'report'>, string> = {
   bulk: 'alert-secondary',
   pending: 'alert-warning',
   announce: 'alert-secondary',
+  frozen: 'alert-info',
   stale: 'alert-info',
   progress: 'alert-secondary',
 }
@@ -85,6 +89,7 @@ const ICON: Record<HilosTableLiveKind, string> = {
   bulk: 'bi-check2-square',
   pending: 'bi-pause-circle',
   announce: 'bi-arrow-down-circle',
+  frozen: 'bi-snow',
   stale: 'bi-snow',
   progress: 'bi-arrow-repeat',
 }
@@ -95,6 +100,7 @@ const ROW_ID: Record<HilosTableLiveKind, string> = {
   bulk: 'hilos-table-progress-bulk',
   pending: 'hilos-table-pending-row',
   announce: 'hilos-table-announce',
+  frozen: 'hilos-table-frozen',
   stale: 'hilos-table-stale',
   progress: 'hilos-table-progress',
 }
@@ -105,6 +111,7 @@ const REST_WORDS: Record<HilosTableLiveKind, string> = {
   bulk: 'work on the marked rows',
   pending: 'pending changes',
   announce: 'new rows',
+  frozen: TABLE_FROZEN_COPY.rest,
   stale: 'a source is behind',
   progress: 'work running',
 }
@@ -117,6 +124,7 @@ const tableProgress = useSignal(props.controller.progress.table)
 const bulkProgress = useSignal(props.controller.progress.bulk)
 const bulkStarted = useSignal(props.controller.bulk.started)
 const bulkReport = useSignal(props.controller.bulk.report)
+const frozenSince = useSignal(props.controller.frozenSince)
 
 /** The accessible name of the track, and the caption of a bar we did not start. */
 const BULK_BAR_NAME = 'Working on the marked rows'
@@ -172,6 +180,9 @@ const staleLabel = computed(() => {
   )
 })
 
+// The moment the table froze, on the reader's own clock.
+const frozenLabel = computed(() => hilosTableFrozenLabel(frozenSince.value))
+
 // The numeral of each message is chosen here rather than in the template: '1 rows'
 // would stand in the most visible place of the screen.
 const announceLabel = computed(() =>
@@ -201,6 +212,7 @@ const announcement = computed(() => {
     bulk: `${bulkBarCaption.value}.`,
     pending: `${pendingCount.value} ${pendingSuffix.value}.`,
     announce: `${announceLabel.value}.`,
+    frozen: frozenLabel.value ?? '',
     stale: staleLabel.value ?? '',
     progress: 'Work is running on this table.',
   }
@@ -274,6 +286,7 @@ function openDetails(): void {
         <template v-else-if="live.top === 'announce'">{{
           announceLabel
         }}</template>
+        <template v-else-if="live.top === 'frozen'">{{ frozenLabel }}</template>
         <template v-else-if="live.top === 'stale'">{{ staleLabel }}</template>
         <template v-else-if="tableProgress">
           <slot name="table-progress" :progress="tableProgress" />

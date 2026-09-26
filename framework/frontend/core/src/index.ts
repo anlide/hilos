@@ -131,6 +131,10 @@ export {
   hilosTableStaleSources,
 } from './table/tableStaleness.js'
 export {
+  TABLE_FROZEN_COPY,
+  hilosTableFrozenLabel,
+} from './table/tableFrozen.js'
+export {
   HILOS_TABLE_MIRROR_ORDER_SUFFIX,
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,

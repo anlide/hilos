@@ -55,6 +55,7 @@ import {
   type TableViewportDeltaSignal,
   type TableWindowSignal,
   type TableWindowRefusedSignal,
+  type TableViewportFrozenSignal,
   type UnknownSignal,
 } from '../protocol/parseSignal.js'
 import {
@@ -238,6 +239,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   tableWindow: TableWindowSignal
   /** A table window refusal (`table_window_refused`): the server could not build this table's window. */
   tableWindowRefused: TableWindowRefusedSignal
+  /** A table window freeze (`table_viewport_frozen`): this table's window stopped receiving its live changes. */
+  tableViewportFrozen: TableViewportFrozenSignal
   /** A live table pending change (`table_viewport_delta`): scoped to the connection's window. */
   tableViewportDelta: TableViewportDeltaSignal
   /** A live table count update (`table_viewport_count`): the new total/page count for the window. */
@@ -1031,6 +1034,9 @@ export class HilosConnection {
         break
       case 'tableWindowRefused':
         this.emitter.emit('tableWindowRefused', signal)
+        break
+      case 'tableViewportFrozen':
+        this.emitter.emit('tableViewportFrozen', signal)
         break
       case 'tableViewportDelta':
         this.emitter.emit('tableViewportDelta', signal)

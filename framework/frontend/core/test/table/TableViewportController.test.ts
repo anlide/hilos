@@ -2094,7 +2094,7 @@ describe('TableViewportController', () => {
     expect(controller.progress.bulk.get()?.progressKey).toBe('delete-40')
   })
 
-  it('recomputes the live room whenever any of its six sources changes', () => {
+  it('recomputes the live room whenever any of its sources changes', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
     expect(controller.live.get()).toEqual({ top: null, rest: [] })
@@ -2182,6 +2182,108 @@ describe('TableViewportController', () => {
     controller.ingestAnnounce('b', 'inside', 2, true)
 
     expect(controller.live.get()).toEqual({ top: 'announce', rest: [] })
+  })
+
+  it('keeps the moment of the first failure when a freeze is said again', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    expect(controller.frozenSince.get()).toBeNull()
+
+    controller.ingestFrozen(1790000000123)
+    controller.ingestFrozen(1790000009999)
+
+    expect(controller.frozenSince.get()).toBe(1790000000123)
+  })
+
+  it('leaves the rows and the pending changes where they are when the window freezes', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+
+    controller.ingestFrozen(1790000000123)
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
+    expect(controller.pendingCount.get()).toBe(1)
+  })
+
+  it('takes any window after a freeze as the way out, and drops the pending changes with it', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.ingestFrozen(1790000000123)
+
+    open([{ rowKey: 'b', slots: { name: 'fresh' } }], 1, true, null, null)
+
+    expect(controller.frozenSince.get()).toBeNull()
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['b'])
+    expect(controller.live.get()).toEqual({ top: null, rest: [] })
+  })
+
+  it('takes a refusal after a freeze as the way out too', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestFrozen(1790000000123)
+
+    controller.ingestRefusal('internal_error')
+
+    expect(controller.frozenSince.get()).toBeNull()
+    expect(controller.frame.body.get()).toBe('unavailable')
+  })
+
+  it('takes no freeze while the table stands in a refusal', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestRefusal('internal_error')
+
+    controller.ingestFrozen(1790000000123)
+
+    expect(controller.frozenSince.get()).toBeNull()
+    expect(controller.live.get()).toEqual({ top: null, rest: [] })
+  })
+
+  it('raises the frozen message, yields the room to pending changes and silences a stale source', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['presence'],
+    })
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 3,
+      total: 11,
+    })
+    expect(controller.live.get()).toEqual({
+      top: 'stale',
+      rest: ['progress'],
+    })
+
+    controller.ingestFrozen(1790000000123)
+    expect(controller.live.get()).toEqual({
+      top: 'frozen',
+      rest: ['progress'],
+    })
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    expect(controller.live.get()).toEqual({
+      top: 'pending',
+      rest: ['frozen', 'progress'],
+    })
   })
 
   it('runBulk sets bulk.started on acceptance and ignores refusal without unhandled rejection', async () => {
