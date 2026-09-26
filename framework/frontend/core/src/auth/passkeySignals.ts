@@ -1,7 +1,7 @@
 // The inbound passkey-options signal the daemon delivers WS_USER to the
 // initiating connection (HIL-284), declared as a project signal schema so the
 // parse boundary validates it before the ceremony driver reacts. Kept pure
-// (schema + names only, no connection import) so `bootstrap/connection` can merge
+// (schema + names only, no connection import) so `createHilosConnection` can merge
 // it without a cycle through `passkeyCeremony`, which drives the flow over it.
 //
 // A `passkey_*_options` action's `action_success` carries no domain payload, so

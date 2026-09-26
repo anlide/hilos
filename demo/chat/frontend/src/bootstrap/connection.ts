@@ -11,24 +11,13 @@
 //
 // `actions` is the requestId-correlated reply lifecycle: a modal submit calls
 // `actions.dispatch(...)` and closes on the returned handle's resolved `done`.
-import {
-  AUTH_CONVERGE_SIGNAL_SCHEMAS,
-  createHilosConnection,
-  OAUTH_SIGNAL_SCHEMAS,
-  PASSKEY_SIGNAL_SCHEMAS,
-} from '@hilos/core'
+//
+// No projectSchemas: chat declares no inbound signal of its own. The sign-in
+// ones it is answered by — OAuth, passkey, auth-converge — are the framework's
+// and are merged by createHilosConnection itself, like every other framework
+// signal (HIL-1150).
+import { createHilosConnection } from '@hilos/core'
 
 export const { connection, actionErrors, actions } = createHilosConnection({
   url: import.meta.env.VITE_WS_URL,
-  // The inbound signals this project mounts: the four auth ones the framework
-  // owns and declares — the OAuth login start-reply and failure/timeout
-  // (HIL-281), the passkey ceremony options (HIL-284), the phone code-request
-  // outcome (HIL-492), the auth-converge step change (HIL-415). All arrive
-  // WS_USER. The profile's password-updated signal is the framework's and is
-  // merged by createHilosConnection itself (HIL-1137).
-  projectSchemas: {
-    ...AUTH_CONVERGE_SIGNAL_SCHEMAS,
-    ...OAUTH_SIGNAL_SCHEMAS,
-    ...PASSKEY_SIGNAL_SCHEMAS,
-  },
 })

@@ -1,6 +1,7 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 
 import {
+  addVirtualAuthenticator,
   platformsLeftOut,
   readPasskeyCreations,
   watchPasskeyCreation,
@@ -66,38 +67,6 @@ import { gotoPage } from '../helpers/page'
 // "Create it with a passkey" instead of choosing a password. The key the virtual
 // authenticator makes there is the account's way in, which is what the leg ends
 // on: signed out, the same key opens the account from an empty field.
-
-/**
- * Attach a CDP virtual platform authenticator to the page so
- * navigator.credentials create/get resolve without a real device or OS prompt.
- * ctap2 + internal transport + resident key + auto-verified user models a modern
- * platform passkey; automaticPresenceSimulation auto-answers the user-presence
- * gesture. Attached once and left for the whole test so the credential minted in
- * the register ceremony survives into the later discoverable login on the same
- * page.
- *
- * @param page The page whose browser context gets the authenticator.
- * @param automaticPresence Whether the authenticator auto-answers the
- *   user-presence gesture. Pass false to leave the ceremony hanging on the
- *   waiting screen — the cancel test parks there on purpose.
- */
-async function addVirtualAuthenticator(
-  page: Page,
-  automaticPresence = true,
-): Promise<void> {
-  const client = await page.context().newCDPSession(page)
-  await client.send('WebAuthn.enable')
-  await client.send('WebAuthn.addVirtualAuthenticator', {
-    options: {
-      protocol: 'ctap2',
-      transport: 'internal',
-      hasResidentKey: true,
-      hasUserVerification: true,
-      isUserVerified: true,
-      automaticPresenceSimulation: automaticPresence,
-    },
-  })
-}
 
 test('signs in usernameless with a discoverable passkey — no email', async ({
   page,

@@ -1,7 +1,7 @@
 // The two inbound OAuth login signals the daemon delivers WS_USER to the
 // initiating connection (HIL-281), declared as project signal schemas so the
 // parse boundary validates them before a reaction runs. Kept pure (schemas +
-// names only, no connection import) so `bootstrap/connection` can merge the
+// names only, no connection import) so `createHilosConnection` can merge the
 // schemas without a cycle through `oauthLogin`, which drives the flow over them.
 //
 // - `hilos_oauth_authorize` is the `hilos_oauth_start` reply: `action_success` carries

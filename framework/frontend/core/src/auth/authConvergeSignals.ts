@@ -1,7 +1,7 @@
 // The inbound auth-converge signal the daemon delivers WS_USER to a parked
 // sign-in surface (HIL-415/416/486), declared as a project signal schema so the
 // parse boundary validates it before a reaction runs. Kept pure (schema + names
-// only, no connection import) so `bootstrap/connection` can merge it without a
+// only, no connection import) so `createHilosConnection` can merge it without a
 // cycle through the module that drives the flow over it — the same shape as
 // `authCodeSignals`.
 //

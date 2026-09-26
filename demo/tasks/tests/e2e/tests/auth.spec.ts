@@ -34,7 +34,10 @@ import {
 //
 // The exhaustive per-method coverage (phone codes, magic links, passkeys, OAuth)
 // belongs to the parity leaf HIL-426; repeating it here would prove the
-// framework twice and this activation once.
+// framework twice and this activation once. The one exception is the passkey
+// road, proved in passkey.spec.ts: both of its ceremonies hung in this demo
+// until HIL-1150, so it earned a spec of its own here; the rest stays with
+// HIL-426.
 
 test('holds the address in a modal over the page, and signs the session in on the mailed code', async ({
   page,

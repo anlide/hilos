@@ -5,6 +5,8 @@ import {
   HilosConnection,
   type WebSocketLike,
 } from '../../src/connection/HilosConnection.js'
+import * as core from '../../src/index.js'
+import { type ProjectSignalSchemas } from '../../src/protocol/parseSignal.js'
 
 /** Scripted WebSocket stand-in; the test drives open/message explicitly. */
 class MockWebSocket implements WebSocketLike {
@@ -104,6 +106,97 @@ describe('createHilosConnection', () => {
       'hilos_upload_state',
     ])
     expect(unknownCount).toBe(0)
+  })
+
+  it('merges the auth signals the framework sign-in surface waits on', () => {
+    // A project that forgot one of these got a sign-in button that waits
+    // forever: the frame arrived as an unknown signal and nobody listened
+    // (HIL-1150, tasks — passkey, OAuth, and converge alike).
+    const { connection, socket } = openConnection()
+    const projectTypes: string[] = []
+    let unknownCount = 0
+    connection.on('projectSignal', (signal) => projectTypes.push(signal.type))
+    connection.on('unknownSignal', () => {
+      unknownCount += 1
+    })
+
+    const frames = [
+      {
+        type: 'hilos_passkey_options',
+        data: {
+          acceptKey: 'key-1',
+          ceremony: 'login',
+          publicKeyOptions: { challenge: 'abc' },
+          signedChallenge: 'signed',
+        },
+      },
+      {
+        type: 'hilos_oauth_authorize',
+        data: {
+          acceptKey: 'key-1',
+          authorizeUrl: 'https://provider.test/authorize',
+          tripId: 'trip-1',
+          provider: 'github',
+        },
+      },
+      {
+        type: 'hilos_oauth_result',
+        data: {
+          acceptKey: 'key-1',
+          provider: 'github',
+          reason: 'provider_error',
+          email: null,
+          linkToken: null,
+        },
+      },
+      {
+        type: 'hilos_auth_converge',
+        data: {
+          acceptKey: 'key-1',
+          identifier: 'guest@example.test',
+          step: 'identifier',
+          intent: 'sign_in',
+          code: 'reservation_expired',
+        },
+      },
+    ]
+    for (const frame of frames) {
+      socket.emit('message', { data: JSON.stringify(frame) })
+    }
+
+    expect(projectTypes).toEqual([
+      'hilos_passkey_options',
+      'hilos_oauth_authorize',
+      'hilos_oauth_result',
+      'hilos_auth_converge',
+    ])
+    expect(unknownCount).toBe(0)
+  })
+
+  it('merges every signal schema group @hilos/core exports', () => {
+    // The guard of the class: a group the framework declares and the factory
+    // does not merge is a silent hang in whichever project forgets it. A merged
+    // schema answers an empty payload with projectSignal or parseFailure; only a
+    // schema nobody merged answers unknownSignal.
+    const { connection, socket } = openConnection()
+    const groups = Object.entries(core).filter(([name]) =>
+      name.endsWith('_SIGNAL_SCHEMAS'),
+    ) as [string, ProjectSignalSchemas][]
+    let current = ''
+    const missing: string[] = []
+    connection.on('unknownSignal', () => {
+      missing.push(current)
+    })
+
+    for (const [groupName, schemas] of groups) {
+      for (const type of Object.keys(schemas)) {
+        current = `${groupName}:${type}`
+        socket.emit('message', { data: JSON.stringify({ type, data: {} }) })
+      }
+    }
+
+    expect(groups.length).toBeGreaterThan(0)
+    expect(missing).toEqual([])
   })
 
   it('invokes the build-mismatch handler on a stale welcome', () => {

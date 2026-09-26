@@ -1,5 +1,5 @@
 // One-call connection factory: the single WebSocket every Hilos SPA opens, with
-// the framework session and page schemas already merged, the action-error store
+// every framework signal schema already merged, the action-error store
 // attached, and the stale-build welcome wired to a reload. Lifted from every
 // project's connection bootstrap (docs/agents/frontend/bootstrap-structure.md).
 import { BACKUP_SIGNAL_SCHEMAS } from '../admin/backup/hilosBackups.js'
@@ -9,6 +9,9 @@ import { LOGS_OVERVIEW_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogsOverview.js
 import { LOGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogRotations.js'
 import { LOGS_VIEWER_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogViewer.js'
 import { LOGS_WORKERS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogWorkers.js'
+import { AUTH_CONVERGE_SIGNAL_SCHEMAS } from '../auth/authConvergeSignals.js'
+import { OAUTH_SIGNAL_SCHEMAS } from '../auth/oauthSignals.js'
+import { PASSKEY_SIGNAL_SCHEMAS } from '../auth/passkeySignals.js'
 import { browserValue } from '../browser/browserValue.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
@@ -39,8 +42,12 @@ export interface CreateHilosConnectionOptions {
    */
   url?: string
   /**
-   * Extra project signal schemas, merged after the framework's session and page
-   * schemas. A project adds its own signal types here; most pass nothing.
+   * Extra project signal schemas, merged after the framework's own. Every signal
+   * schema the framework declares is merged here; a project adds only the signal
+   * types it declares itself, and most pass nothing. A framework schema left to
+   * the project is a silent hang the day one project forgets it — the frame
+   * arrives as an unknown signal and the surface waiting on it waits forever
+   * (HIL-1150).
    */
   projectSchemas?: ProjectSignalSchemas
   /**
@@ -142,8 +149,8 @@ function sameOriginWebSocketUrl(): string {
 }
 
 /**
- * Create the application's single Hilos connection with the framework schemas
- * merged, an {@link ActionErrorStore} attached, and both forced-refresh checks
+ * Create the application's single Hilos connection with every framework signal
+ * schema merged, an {@link ActionErrorStore} attached, and both forced-refresh checks
  * wired — the stale build and the lifting of protected mode. The connection is returned unopened — {@link bootHilos} (or the caller)
  * opens it once the subscriptions are bound.
  *
@@ -171,6 +178,9 @@ export function createHilosConnection(
       ...ACCOUNT_DELETION_SIGNAL_SCHEMAS,
       ...PROFILE_PASSWORD_SIGNAL_SCHEMAS,
       ...UPLOAD_SIGNAL_SCHEMAS,
+      ...AUTH_CONVERGE_SIGNAL_SCHEMAS,
+      ...OAUTH_SIGNAL_SCHEMAS,
+      ...PASSKEY_SIGNAL_SCHEMAS,
       ...options.projectSchemas,
     },
     webSocketFactory: options.webSocketFactory,

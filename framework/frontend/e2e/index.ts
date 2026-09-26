@@ -38,6 +38,7 @@ export {
   type PasskeyCreation,
   type PasskeyPlatform,
 } from './passkeyCreation.js'
+export { addVirtualAuthenticator } from './virtualAuthenticator.js'
 export { dismissToasts } from './toasts.js'
 export {
   clearCustomSetting,
