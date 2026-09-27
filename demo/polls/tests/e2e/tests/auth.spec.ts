@@ -102,6 +102,9 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('nav-profile-name')).toContainText(
     nameFromEmail(email),
   )
+  await expect(
+    page.getByTestId('nav-profile-name').getByTestId('hilos-avatar'),
+  ).toHaveText(nameFromEmail(email).charAt(0).toUpperCase())
   await expect(page.getByTestId('nav-signin')).toHaveCount(0)
 })
 

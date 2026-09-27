@@ -291,3 +291,25 @@ body.modal-open .toast-container > * {
   grid-area: 1 / 1;
   min-width: 0;
 }
+
+// WHY: Bootstrap has no fixed square sizes with matching font sizes, and an
+// avatar must stay a circle regardless of the initials it holds.
+// WHAT: HilosAvatar in the header (sm), admin card (md) and profile (lg), sized
+// as in mockups/framework/layout, mockups/admin/users and mockups/framework/account.
+.hilos-avatar-sm {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.75rem;
+}
+
+.hilos-avatar-md {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1rem;
+}
+
+.hilos-avatar-lg {
+  width: 4rem;
+  height: 4rem;
+  font-size: 1.5rem;
+}

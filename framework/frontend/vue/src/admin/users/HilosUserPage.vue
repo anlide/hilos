@@ -45,6 +45,7 @@ import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosActionError from '../../HilosActionError.vue'
+import HilosAvatar from '../../HilosAvatar.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosModal from '../../HilosModal.vue'
@@ -379,14 +380,7 @@ watch(error, (reason) => {
     <template v-if="detail">
       <div class="card" data-id="hilos-user-detail">
         <div class="card-header d-flex align-items-center gap-2">
-          <span
-            class="rounded-circle flex-shrink-0"
-            :class="
-              detail.presence === 'online' ? 'bg-success' : 'bg-secondary'
-            "
-            style="width: 10px; height: 10px"
-            aria-hidden="true"
-          />
+          <HilosAvatar :name="detail.name" size="md" />
           <span class="h5 mb-0" data-id="hilos-user-name">{{
             detail.name
           }}</span>

@@ -47,6 +47,7 @@ import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosAvatar } from '../../HilosAvatar.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -371,13 +372,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
         <>
           <div className="card" data-id="hilos-user-detail">
             <div className="card-header d-flex align-items-center gap-2">
-              <span
-                className={`rounded-circle flex-shrink-0 ${
-                  detail.presence === 'online' ? 'bg-success' : 'bg-secondary'
-                }`}
-                style={{ width: '10px', height: '10px' }}
-                aria-hidden="true"
-              />
+              <HilosAvatar name={detail.name} size="md" />
               <span className="h5 mb-0" data-id="hilos-user-name">
                 {detail.name}
               </span>

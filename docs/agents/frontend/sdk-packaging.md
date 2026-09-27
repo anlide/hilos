@@ -271,7 +271,14 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   states — the concrete form of "a placeholder for everything"
   ([core-and-connection.md](core-and-connection.md)). Of the three, the skeleton
   is built — **`HilosSkeleton`** in each view package, which `HilosView` also
-  draws in a page's place while the page waits for its first answer.
+  draws in a page's place while the page waits for its first answer;
+- **`HilosAvatar`** in each view package — a person's circle, with initials
+  from `formatInitials` in `@hilos/core`, one color and three sizes: `sm` for
+  the header, `md` for the admin card, `lg` for the profile. The circle is
+  hidden from screen readers; its surroundings carry the name, in the header
+  as hidden text and a `title`. The project's header user area places it
+  instead of the name (HIL-301). A photo fills the same circle later
+  (not in the code yet — HIL-1205).
 
 The skeleton is a **data-block** loading state — it fills a block while that
 block's data streams in, not a wait on a code chunk: the app ships as a single

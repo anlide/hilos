@@ -5,6 +5,7 @@
 // The live connection state is the shell's own indicator (an extra status
 // surface allowed by docs/agents/frontend/core-and-connection.md).
 import {
+  HilosAvatar,
   HilosLayout,
   HilosMagicLinkPage,
   HilosSecondFactorCancelPage,
@@ -204,9 +205,9 @@ export default function App({ authGate }: AppProps) {
         userName ? (
           <>
             <HilosNotificationBell connection={connection} />
-            <span className="small" data-id="nav-profile-name">
-              <i className="bi bi-person-circle me-1" aria-hidden="true" />
-              {userName}
+            <span className="small" data-id="nav-profile-name" title={userName}>
+              <HilosAvatar name={userName} />
+              <span className="visually-hidden">{userName}</span>
             </span>
             <button
               type="button"

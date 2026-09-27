@@ -7,6 +7,7 @@ by docs/agents/frontend/core-and-connection.md). -->
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
 import {
+  HilosAvatar,
   HilosLayout,
   HilosLink,
   HilosMagicLinkPage,
@@ -226,9 +227,10 @@ watch(userName, (name) => {
         :to="profileHref"
         class="nav-link d-inline-flex align-items-center p-0"
         data-id="nav-profile"
+        :title="userName"
       >
-        <i class="bi bi-person-circle me-1" aria-hidden="true"></i
-        >{{ userName }}
+        <HilosAvatar :name="userName" />
+        <span class="visually-hidden">{{ userName }}</span>
       </HilosLink>
       <button
         v-if="userName"

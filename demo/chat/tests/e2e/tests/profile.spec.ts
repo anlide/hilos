@@ -51,15 +51,24 @@ test('the navbar links the current user to the profile page', async ({
     fullLoads += 1
   })
 
-  await signUp(page)
+  const { name } = await signUp(page)
   const loadsAfterColdLoad = fullLoads
 
   await expect(page.getByTestId('nav-profile')).toBeVisible()
+  await expect(
+    page.getByTestId('nav-profile').getByTestId('hilos-avatar'),
+  ).toHaveText(name.charAt(0).toUpperCase())
+  await expect(page.getByTestId('nav-profile')).toHaveAccessibleName(name)
+  await expect(page.getByTestId('nav-profile')).toHaveAttribute('title', name)
   await page.getByTestId('nav-profile').click()
 
   // Reached over the live socket with no document reload.
   expect(new URL(page.url()).pathname).toBe('/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(
+    page.getByTestId('profile-identity').getByTestId('hilos-avatar'),
+  ).toHaveText(name.charAt(0).toUpperCase())
+  await expect(page.getByTestId('profile-identity-name')).toHaveText(name)
   const sections = [
     'sign-in',
     'notifications',

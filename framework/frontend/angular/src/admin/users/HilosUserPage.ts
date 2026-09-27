@@ -65,6 +65,7 @@ import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosAvatar } from '../../HilosAvatar.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -99,6 +100,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
   imports: [
     HilosAdminPage,
     HilosActionError,
+    HilosAvatar,
     HilosEditNotice,
     HilosFormError,
     HilosModal,
@@ -113,14 +115,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
       @if (detail(); as detail) {
         <div class="card" data-id="hilos-user-detail">
           <div class="card-header d-flex align-items-center gap-2">
-            <span
-              class="rounded-circle flex-shrink-0"
-              [class]="
-                detail.presence === 'online' ? 'bg-success' : 'bg-secondary'
-              "
-              style="width: 10px; height: 10px"
-              aria-hidden="true"
-            ></span>
+            <hilos-avatar [name]="detail.name" size="md" />
             <span class="h5 mb-0" data-id="hilos-user-name">{{
               detail.name
             }}</span>

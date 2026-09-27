@@ -32,6 +32,7 @@ import {
   ConflictActions,
   ConflictHeader,
   HilosAccountDeletion,
+  HilosAvatar,
   HilosFormError,
   HilosLink,
   HilosModal,
@@ -302,6 +303,25 @@ function mergeBoth(): void {
 <template>
   <section v-if="isAuthenticated" data-id="profile-view">
     <HilosPageHeading />
+    <div
+      v-if="detail"
+      class="d-flex align-items-center gap-3 mt-3"
+      data-id="profile-identity"
+    >
+      <HilosAvatar :name="detail.name" size="lg" />
+      <div class="flex-grow-1 text-break">
+        <div class="h5 mb-0" data-id="profile-identity-name">
+          {{ detail.name }}
+        </div>
+        <div
+          v-if="password.verifiedEmail"
+          class="small text-body-secondary"
+          data-id="profile-identity-email"
+        >
+          {{ password.verifiedEmail }}
+        </div>
+      </div>
+    </div>
     <h2 class="h6 text-uppercase text-body-secondary mt-4 mb-2">Account</h2>
     <div v-if="detail" data-id="profile-detail">
       <div class="d-flex align-items-center gap-3 py-3 border-bottom">

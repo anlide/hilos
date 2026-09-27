@@ -14,6 +14,7 @@ import type { Type } from '@angular/core'
 import {
   HILOS_AUTH_GATE,
   HILOS_ROUTER,
+  HilosAvatar,
   HilosLayout,
   HilosMagicLinkPage,
   HilosSecondFactorCancelPage,
@@ -72,6 +73,7 @@ const LOGOUT_FALLBACK_MS = 5000
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    HilosAvatar,
     HilosLayout,
     HilosMagicLinkPage,
     HilosSecondFactorCancelPage,
@@ -89,9 +91,9 @@ const LOGOUT_FALLBACK_MS = 5000
     <ng-container ngProjectAs="[user]">
       @if (userName()) {
         <hilos-notification-bell [connection]="connection" />
-        <span class="small" data-id="nav-profile-name">
-          <i class="bi bi-person-circle me-1" aria-hidden="true"></i>
-          {{ userName() }}
+        <span class="small" data-id="nav-profile-name" [title]="userName()">
+          <hilos-avatar [name]="userName()" />
+          <span class="visually-hidden">{{ userName() }}</span>
         </span>
         <button
           type="button"

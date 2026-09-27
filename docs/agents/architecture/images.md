@@ -185,7 +185,7 @@ entries alone do not guarantee it, just as for uploads and publication.
 ## What Is Not Here
 
 - Chat thumbnails and GD in its image — HIL-144; avatar variants and a person's
-  crop choice — HIL-301.
+  crop choice — HIL-1205.
 - Original metadata removal — HIL-1171. Copies carry no source metadata; the
   original is unchanged. GD does not preserve color profiles.
 - HEIC, TIFF, AVIF, BMP or SVG decoding in GD; those originals are served as
