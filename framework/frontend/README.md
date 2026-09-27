@@ -24,19 +24,19 @@ For example, append `npm install` or `npm run build` as `<command>`.
 
 ## Angular versions
 
-Both npm roots that carry Angular — this workspace, through
-`angular/package.json`, and `demo/polls/frontend` — declare every `@angular/*`
-in `dependencies` / `devDependencies` as an exact version, and both declare the
-same one. Three kinds of entry beside them are ranges on purpose: the `^22`
-`peerDependencies` of `@hilos/angular` (a peer range is what a consuming project
-resolves against), the `ng-packagr` caret, and the `typescript` tilde
-(`@angular/compiler-cli` requires `typescript >=6.0 <6.1`). Angular's own
-packages hold each other to an exact version in their `peerDependencies`, so one
-caret resolved a minor ahead of its siblings drags the whole framework with it,
-and only the AOT build (`ng-packagr`, i.e. `npm run build` for `@hilos/angular`)
-notices (HIL-848). Adding an `@angular/*` package or upgrading Angular follows
-`docs/agents/frontend/sdk-packaging.md`, section "Angular versions: exact in
-both roots, a range only in the peers".
+Every npm root in the tree that carries Angular — today this workspace, through
+`angular/package.json`, and `demo/polls/frontend` — declares every `@angular/*`
+in `dependencies` / `devDependencies` as an exact version, and all of them
+declare the same one. Three kinds of entry beside them are ranges on purpose:
+the `^22` `peerDependencies` of `@hilos/angular` (a peer range is what a
+consuming project resolves against), the `ng-packagr` caret, and the
+`typescript` tilde (`@angular/compiler-cli` requires `typescript >=6.0 <6.1`).
+Angular's own packages hold each other to an exact version in their
+`peerDependencies`, so one caret resolved a minor ahead of its siblings drags
+the whole framework with it, and only the AOT build (`ng-packagr`, i.e.
+`npm run build` for `@hilos/angular`) notices (HIL-848). Adding an `@angular/*`
+package or upgrading Angular follows `docs/agents/frontend/sdk-packaging.md`,
+section "Angular versions: exact in every root, a range only in the peers".
 
 ## Commands
 

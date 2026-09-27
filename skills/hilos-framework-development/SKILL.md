@@ -64,6 +64,6 @@ that match the affected subsystem.
   `docs/agents/framework-development.md` → Dependencies).
 - Do not add or bump an `@angular/*` package without reading
   `docs/agents/frontend/sdk-packaging.md` → Angular versions: in
-  `dependencies` / `devDependencies` both npm roots declare the same exact
-  version, a caret there lifts the whole Angular framework, and only the AOT
-  build notices.
+  `dependencies` / `devDependencies` every npm root that carries Angular
+  declares the same exact version, a caret there lifts the whole Angular
+  framework, and only the AOT build notices.

@@ -21,19 +21,24 @@ Common ground (containers, connection, e2e, stable ids) is in
   `app.config.ts` keeps only `provideBrowserGlobalErrorListeners()`.
 - Flat dist: `outputPath: { "base": "dist", "browser": "" }` so the nginx
   mount stays `../frontend/dist`, uniform with the Vite demos.
-- deps `@angular/{common,compiler,core,platform-browser}` `^22`, `rxjs`,
+- deps `@angular/{common,compiler,core,platform-browser}`, `rxjs`,
   `tslib`, `@vue/reactivity` and `qrcode-generator` (see below),
   `bootstrap` + `bootstrap-icons` (see Styling), and `@hilos/angular` pinned
   at the **package root**: `file:../../../framework/frontend/angular`. The Angular view layer is
   built with **ng-packagr** (Angular Package Format: a FESM2022 bundle + a
   generated manifest), unlike the Vue/React layers' Vite library build, because
   only an Angular-aware compiler can emit the shell's declarables. devDeps
-  `@angular/{build,cli,compiler-cli}` `^22`, `typescript ~6.0.x`;
+  `@angular/{build,cli,compiler-cli}`, `typescript ~6.0.x`;
   `cli.analytics: false` for container runs. Like the Vite demos, the SDK
   resolves to **`src` in dev** and to its built **`dist` in production** (the
   package `main`/`types`), so a dev edit shows up with no ng-packagr rebuild and
   only e2e/prod — which run the production build — need the dist rebuilt first.
   How that split is wired is *Dev-source consumption* below.
+- The version of every `@angular/*` in both lists above is not this recipe's
+  to name, nor the generator's: it is set by
+  [../agents/frontend/sdk-packaging.md](../agents/frontend/sdk-packaging.md),
+  *Angular versions: exact in every root, a range only in the peers* — the
+  project's frontend is one more root that carries Angular.
 - **`preserveSymlinks: true`** in `angular.json` build options: the SDK is a
   symlinked `file:` dependency whose FESM imports `@angular/core` (a peer); with
   symlinks resolved to their real path the import lands on the SDK workspace's

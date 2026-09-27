@@ -65,24 +65,31 @@ dependency the core takes — today also `qrcode-generator`, the QR library behi
 `qrMatrix` (HIL-494). Full recipe in
 [docs/new-project/frontend-angular.md](../../new-project/frontend-angular.md).
 
-## Angular versions: exact in both roots, a range only in the peers
+## Angular versions: exact in every root, a range only in the peers
 
-**Both npm roots that carry Angular declare every `@angular/*` of their
-`dependencies` / `devDependencies` exactly, and both declare the same version.**
-The roots are the SDK workspace `framework/frontend` — its Angular entries live
-in the manifest of the `@hilos/angular` view layer,
+**Every npm root in the tree that carries Angular declares every `@angular/*`
+of its `dependencies` / `devDependencies` exactly, and all of them declare the
+same version.** An npm root is a directory with its own `package-lock.json`; it
+carries Angular when its manifest, or the manifest of a member of its
+workspace, names an `@angular/*` package in those two fields — every
+`package.json` outside `node_modules` that names `@angular/` points at one.
+Today there are two: the SDK workspace `framework/frontend` — its Angular
+entries live in the manifest of the `@hilos/angular` view layer,
 `framework/frontend/angular/package.json` — and `demo/polls/frontend`, that
-layer's consumer and the Angular conformance demo. No other `package.json` in
-the tree names an `@angular/*` package. In those two fields the SDK manifest
-declares `@angular/compiler`, `@angular/compiler-cli` and
+layer's consumer and the Angular conformance demo. In those two fields the SDK
+manifest declares `@angular/compiler`, `@angular/compiler-cli` and
 `@angular/platform-browser`; the demo declares `@angular/common`,
 `@angular/compiler`, `@angular/core` and `@angular/platform-browser`, plus
 `@angular/build`, `@angular/cli`, `@angular/compiler-cli`,
 `@angular/platform-server`, `@angular/router` and `@angular/ssr`. Every one of
-them reads `22.0.1`, with no caret and no tilde. `22.0.1` is today's fact, not a
-target to keep: what the rule fixes is that the entries are exact and equal
-across both roots, whatever the number is. The reason sits inside Angular. Its
-packages hold each other to an exact version in their own `peerDependencies` —
+them reads `22.0.1`, with no caret and no tilde. The frontend of a new project
+([docs/new-project/README.md](../../new-project/README.md), *Project layout*)
+joins them with the first `@angular/*` its manifest names, and the rule binds
+it from its first install. `22.0.1` and the two roots are today's facts, not a
+list to keep: what the rule fixes is that the entries are exact and equal
+across every root that carries Angular, whatever the number is and however
+many roots there are. The reason sits inside Angular. Its packages hold each
+other to an exact version in their own `peerDependencies` —
 `@angular/core@22.0.1` declares `{"@angular/compiler": "22.0.1"}`, readable in
 `framework/frontend/package-lock.json` — so one caret resolved a minor ahead of
 its siblings drags the whole framework in, and the lockfile shows it as an
@@ -96,22 +103,25 @@ major it is compatible with, not the version a project must install.
 `"ng-packagr": "^22.0.0"` in the same manifest stays a caret: its own peer on
 `@angular/compiler-cli` is a range (`^22.0.0 || ^22.1.0-next.0`), so it does not
 drag Angular by itself — but it belongs to the same set when Angular is lifted.
-`"typescript": "~6.0.3"`, in `demo/polls/frontend/package.json` and in the
-workspace root `framework/frontend/package.json`, stays a tilde because
-`@angular/compiler-cli` requires `typescript >=6.0 <6.1`. This section rules on
-the Angular set and on that tilde; it says nothing about any other range in
-either root.
+The `typescript` entry stays a tilde (`"~6.0.3"` today) in every root that
+carries Angular — today `demo/polls/frontend/package.json` and the workspace
+root `framework/frontend/package.json` — because `@angular/compiler-cli`
+requires `typescript >=6.0 <6.1`. This section rules on the Angular set and on
+that tilde; it says nothing about any other range in any of these roots.
 
 **Add a new `@angular/*` package at the version already in the tree; lift
-Angular as one change to both roots.** A new `@angular/*` entry, in either root,
-is written as the exact version its siblings already carry. Do not write a
+Angular as one change to every root.** A new `@angular/*` entry, in any root,
+is written as the exact version the tree already carries. Do not write a
 caret, and do not take a newer version because the registry offers one — a bare
 `npm install @angular/<name>` does both at once, so name the version
 (`--save-exact @angular/<name>@<the version in the tree>`) or write the manifest
-line by hand. Upgrading Angular is one deliberate edit of both roots in the same
+line by hand. A new project's frontend is no exception: its first install
+writes that root's whole Angular set in one command, exactly, at the version
+the tree already carries — not at the ranges of the manifest a generator
+writes. Upgrading Angular is one deliberate edit of every root in the same
 change: in each root, install that root's whole Angular set at the new version
 in one command. Never let Angular move as a side effect of installing something
-else, and never leave one root ahead of the other.
+else, and never leave one root ahead of the rest.
 
 **Do not delete a `package-lock.json` to get past an `ERESOLVE` conflict.** The
 lockfile is the resolution of every range in its root, not only of the entry
@@ -120,11 +130,12 @@ being changed, so deleting it re-resolves all of them. On HIL-974 that carried
 while the intended change was ten Angular packages. Instead, install the version
 already in the tree, or lift the whole Angular set of that root in one install.
 
-The only step that fails on a mixed Angular is the AOT build of `@hilos/angular`
-(`ng-packagr`), i.e. `composer run test:framework:frontend:build`; check, unit,
-lint and format-check all stay green on it (HIL-848), and no automated check
-reads the manifests for this rule. How an already-declared lockfile is installed
-and when that install is skipped is not restated here — see
+In the SDK workspace, the only step that fails on a mixed Angular is the AOT
+build of `@hilos/angular` (`ng-packagr`), i.e.
+`composer run test:framework:frontend:build`; check, unit, lint and
+format-check all stay green on it (HIL-848), and no automated check reads the
+manifests for this rule. How an already-declared lockfile is installed and when
+that install is skipped is not restated here — see
 [build-and-docker.md](build-and-docker.md), *The build and install guards*.
 
 ## Distribution: a Composer-vendored tarball
