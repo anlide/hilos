@@ -4,6 +4,7 @@ import { waitForMailCode, waitForMailTo } from '../helpers/mail'
 import {
   PASSWORD,
   clickSubmit,
+  changePassword,
   login,
   register,
   signUp,
@@ -215,41 +216,83 @@ test('surfaces a conflict when the name changes in another tab', async ({
   await expect(tabB.getByTestId('conflict-badge')).toBeHidden()
 })
 
-test('changes the current user password from the profile (HIL-402)', async ({
+for (const signOutOthers of [true, false]) {
+  test(`changes the password and ${signOutOthers ? 'ends' : 'keeps'} the other session (HIL-300)`, async ({
+    page,
+    browser,
+  }) => {
+    const { email } = await signUp(page)
+    const otherContext = await browser.newContext()
+    try {
+      const other = await otherContext.newPage()
+      await gotoPage(other, '/profile/sign-in')
+      await login(other, email)
+      await expect(other.getByTestId('profile-sign-in-view')).toBeVisible()
+      await changePassword(page, {
+        email,
+        currentPassword: PASSWORD,
+        newPassword: 'a-fresh-passphrase',
+        signOutOthers,
+      })
+      await expect(
+        page.getByTestId('profile-password-outcome-sessions'),
+      ).toHaveText(
+        signOutOthers
+          ? 'Other sessions were signed out.'
+          : 'Other sessions stay signed in.',
+      )
+      await expect(page.getByTestId('profile-password-outcome')).toContainText(
+        'Password reset codes, if any were sent, no longer work.',
+      )
+      if (signOutOthers) {
+        await expect(other.getByTestId('auth-surface')).toBeVisible()
+        await login(other, email, PASSWORD)
+        await expect(other.getByTestId('auth-error')).toContainText(
+          'Incorrect password',
+        )
+        await login(other, email, 'a-fresh-passphrase')
+        await expect(other.getByTestId('profile-sign-in-view')).toBeVisible()
+      } else {
+        await expect(other.getByTestId('profile-sign-in-view')).toBeVisible()
+        await expect(other.getByTestId('auth-surface')).toHaveCount(0)
+      }
+      await clickSubmit(page.getByTestId('profile-password-done'))
+      await expect(page.getByTestId('profile-password-modal')).toHaveCount(0)
+    } finally {
+      await otherContext.close()
+    }
+  })
+}
+
+test('keeps password-change input after a wrong code and a common password (HIL-300)', async ({
   page,
 }) => {
-  // A registered account already has a password, so the profile shows the Change
-  // form (current + new). The change re-auths the current password server-side.
-  await signUp(page)
+  const { email } = await signUp(page)
   await gotoPage(page, '/profile/sign-in')
   await clickSubmit(page.getByTestId('profile-password-change'))
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('profile-password-current')).toBeVisible()
-
-  const newPassword = 'a-fresh-passphrase'
-
-  // The wrong current password is refused with an inline error; no success toast.
-  await typeInto(
-    page.getByTestId('profile-password-current'),
-    'not the password',
+  await confirmStepUp(page, 'profile-password-step-up-confirm')
+  await clickSubmit(page.getByTestId('profile-password-send-code'))
+  await expect(page.getByTestId('profile-password-code')).toBeVisible()
+  const code = await waitForMailCode(email, 'Confirm changing your password')
+  const wrongCode = (code.startsWith('0') ? '1' : '0') + code.slice(1)
+  await typeInto(page.getByTestId('profile-password-code'), wrongCode)
+  await clickSubmit(page.getByTestId('profile-password-confirm-code'))
+  await expect(page.getByTestId('profile-password-error')).toContainText(
+    'Invalid or expired code',
   )
-  await typeInto(page.getByTestId('profile-password-new'), newPassword)
-  await typeInto(page.getByTestId('profile-password-confirm'), newPassword)
+  await expect(page.getByTestId('profile-password-code')).toHaveValue(wrongCode)
+  await typeInto(page.getByTestId('profile-password-code'), code)
+  await clickSubmit(page.getByTestId('profile-password-confirm-code'))
+  await expect(page.getByTestId('profile-password-new')).toBeVisible()
+  await typeInto(page.getByTestId('profile-password-new'), '12345678')
   await clickSubmit(page.getByTestId('profile-password-save'))
-  await expect(page.getByTestId('profile-set-password-error')).toBeVisible()
-  await expect(
-    page.getByTestId('hilos-toasts').getByText('Password changed.'),
-  ).toHaveCount(0)
-
-  // The correct current password updates it: the success toast lands (over the
-  // password_updated signal, not a projection change) and the dialog closes.
-  await typeInto(page.getByTestId('profile-password-current'), PASSWORD)
+  await expect(page.getByTestId('profile-password-error')).toContainText(
+    'That password is too common and easy to guess, choose a different one',
+  )
+  await expect(page.getByTestId('profile-password-new')).toHaveValue('12345678')
+  await typeInto(page.getByTestId('profile-password-new'), 'a-fresh-passphrase')
   await clickSubmit(page.getByTestId('profile-password-save'))
-  await expect(
-    page.getByTestId('hilos-toasts').getByText('Password changed.'),
-  ).toBeVisible()
-  await expect(page.getByTestId('profile-set-password-error')).toHaveCount(0)
-  await expect(page.getByTestId('profile-password-modal')).toHaveCount(0)
+  await expect(page.getByTestId('profile-password-outcome')).toBeVisible()
 })
 
 test('changes the account email in five steps (HIL-299)', async ({ page }) => {

@@ -29,6 +29,7 @@ final class NotificationVerificationDelivererTest extends TestCase
         $router->deliver('+15551234567', VerificationType::SMS_ADD, VerificationDeliverable::code('222'));
         $router->deliver('+15551234567', VerificationType::STEP_UP_SMS, VerificationDeliverable::code('333'));
         $router->deliver('+15551234567', VerificationType::ACCOUNT_DELETION_SMS, VerificationDeliverable::code('444'));
+        $router->deliver('+15551234567', VerificationType::PASSWORD_CHANGE_SMS, VerificationDeliverable::code('444'));
 
         self::assertSame(
             [
@@ -36,6 +37,7 @@ final class NotificationVerificationDelivererTest extends TestCase
                 VerificationType::SMS_ADD,
                 VerificationType::STEP_UP_SMS,
                 VerificationType::ACCOUNT_DELETION_SMS,
+                VerificationType::PASSWORD_CHANGE_SMS,
             ],
             $sms->types,
         );
@@ -56,6 +58,7 @@ final class NotificationVerificationDelivererTest extends TestCase
         );
         $router->deliver('user@example.com', VerificationType::STEP_UP, VerificationDeliverable::code('444'));
         $router->deliver('user@example.com', VerificationType::ACCOUNT_DELETION, VerificationDeliverable::code('555'));
+        $router->deliver('user@example.com', VerificationType::PASSWORD_CHANGE, VerificationDeliverable::code('555'));
 
         self::assertSame(
             [
@@ -63,6 +66,7 @@ final class NotificationVerificationDelivererTest extends TestCase
                 VerificationType::MAGIC_LINK,
                 VerificationType::STEP_UP,
                 VerificationType::ACCOUNT_DELETION,
+                VerificationType::PASSWORD_CHANGE,
             ],
             $mail->types,
         );

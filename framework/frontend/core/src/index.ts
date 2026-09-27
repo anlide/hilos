@@ -1372,3 +1372,18 @@ export {
   type HilosLogViewerStream,
   type HilosLogLevelOption,
 } from './admin/logs/hilosLogViewer.js'
+
+export {
+  createHilosProfilePasswordChangeActions,
+  createHilosProfilePasswordChangeFlow,
+  HILOS_PROFILE_PASSWORD_CHANGE_COPY,
+  PASSWORD_CHANGE_OPERATION,
+  PROFILE_CHANGE_PASSWORD_OPEN_ACTION,
+  PROFILE_CHANGE_PASSWORD_CODE_REQUEST_ACTION,
+  PROFILE_CHANGE_PASSWORD_CODE_CONFIRM_ACTION,
+  PROFILE_CHANGE_PASSWORD_ACTION,
+  type HilosProfilePasswordChangeActions,
+  type HilosProfilePasswordChangeFlow,
+  type HilosProfilePasswordChangeOpening,
+  type HilosProfilePasswordChangeStep,
+} from './profile/passwordChange.js'

@@ -111,7 +111,6 @@ describe('add sign-in method flow', () => {
     await world.flow.submitPasswordNew('other-secret')
     expect(world.dispatch).toHaveBeenCalledTimes(1)
     expect(world.dispatch).toHaveBeenCalledWith('profile_set_password', {
-      currentPassword: '',
       newPassword: 'new-secret',
     })
     world.passwordUpdated()

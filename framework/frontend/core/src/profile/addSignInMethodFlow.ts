@@ -230,7 +230,7 @@ export function createHilosProfileAddSignInFlow(
     submitPasswordNew(newPassword) {
       return submit(
         'password-new',
-        () => actions.setPassword(null, newPassword),
+        () => actions.setPassword(newPassword),
         () => {},
         true,
       )

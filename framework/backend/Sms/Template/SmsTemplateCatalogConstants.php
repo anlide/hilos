@@ -33,6 +33,9 @@ final class SmsTemplateCatalogConstants
     /** Template key: confirm by phone a person's own request to delete their account. */
     public const string AUTH_SMS_ACCOUNT_DELETION = 'auth.' . VerificationType::ACCOUNT_DELETION_SMS;
 
+    /** Code confirming a change of the account password (HIL-300). */
+    public const string AUTH_SMS_PASSWORD_CHANGE = 'auth.' . VerificationType::PASSWORD_CHANGE_SMS;
+
     /** Template key: a durable notification delivered by SMS. */
     public const string NOTIFICATION_GENERIC = 'notification.generic';
 }

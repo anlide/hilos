@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
+use Hilos\HilosException;
 use Hilos\Auth\Session\DTO\SessionEndActionDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
@@ -128,6 +130,34 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         self::assertSame(self::USER_ID, $admin->userId);
         self::assertSame(self::ADMIN_ID, $admin->impersonatorUserId);
         self::assertSame('Signed out of 1 session', $this->nextSuccessMessage());
+    }
+
+    /**
+     * The password-change frame uses the same session-ending path as the profile control.
+     *
+     * @throws HilosException When a seed or session update fails
+     */
+    public function testPasswordChangeFrameKeepsTheCurrentAndImpersonatedSessions(): void
+    {
+        $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
+        $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
+        $admin = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
+
+        new SessionsEndActionsAgent()->onSignalAgent(
+            new AgentSignalData(new AuthOtherSessionsEndSignalData(self::USER_ID, self::CURRENT_TOKEN)),
+            'users-library',
+            HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END,
+        );
+
+        self::assertSame(self::USER_ID, $current->userId);
+        self::assertNull($other->userId);
+        self::assertSame(self::USER_ID, $admin->userId);
+        self::assertSame(self::ADMIN_ID, $admin->impersonatorUserId);
+        $state = $this->nextSessionState();
+        self::assertNotNull($state);
+        self::assertNull($state->userId);
+        self::assertSame([self::OTHER_ACCEPT_KEY], $state->acceptKeys);
+        self::assertNull($this->nextSuccessMessage(), 'The holder owes no second acknowledgement');
     }
 
     public function testEndingAllOthersReportsWhenThereWereNone(): void

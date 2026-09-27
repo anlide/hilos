@@ -36,6 +36,9 @@ final class SmsTemplateCatalogStub implements CatalogProviderInterface
             SmsTemplateCatalogConstants::AUTH_SMS_ACCOUNT_DELETION => [
                 SmsTemplateCatalogConstants::TEMPLATE_CLASS => SmsVerificationCodeTemplate::class,
             ],
+            SmsTemplateCatalogConstants::AUTH_SMS_PASSWORD_CHANGE => [
+                SmsTemplateCatalogConstants::TEMPLATE_CLASS => SmsVerificationCodeTemplate::class,
+            ],
             SmsTemplateCatalogConstants::NOTIFICATION_GENERIC => [
                 SmsTemplateCatalogConstants::TEMPLATE_CLASS => GenericNotificationSmsTemplate::class,
             ],

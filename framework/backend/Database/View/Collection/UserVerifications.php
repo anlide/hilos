@@ -31,8 +31,7 @@ final class UserVerifications extends DbCollection
     /**
      * Deletes every code challenge of a person - the account is being erased (HIL-302).
      *
-     * Bridged to the object collection, the one write this collection exposes; the object
-     * carries each row out with its delete announcement.
+     * The object collection carries each row out with its delete announcement.
      *
      * @param int $userId Person whose rows to delete
      * @throws DatabaseException When the lookup or a delete fails
@@ -43,5 +42,22 @@ final class UserVerifications extends DbCollection
     public function deleteForUser(int $userId): void
     {
         $this->objectCollection->deleteForUser($userId);
+    }
+
+    /**
+     * Deletes one type of code on every address belonging to a person (HIL-300).
+     *
+     * Every deleted row leaves through its object and announces the deletion.
+     *
+     * @param int $userId Person whose rows to delete
+     * @param string $type Verification type to remove
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForUserOfType(int $userId, string $type): void
+    {
+        $this->objectCollection->deleteForUserOfType($userId, $type);
     }
 }

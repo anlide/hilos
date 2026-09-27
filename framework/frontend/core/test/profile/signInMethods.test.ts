@@ -24,8 +24,7 @@ describe('profile sign-in methods', () => {
     } as unknown as ActionLifecycle
     const signIn = createHilosProfileSignInActions({ actions })
 
-    expect(signIn.setPassword('old', 'new-secret')).toBe(handle)
-    expect(signIn.setPassword(null, 'new-secret')).toBe(handle)
+    expect(signIn.setPassword('new-secret')).toBe(handle)
     expect(signIn.unlinkIdentity(7)).toBe(handle)
     expect(signIn.requestSmsAdd('+15551234')).toBe(handle)
     expect(signIn.confirmSmsAdd('+15551234', '123456')).toBe(handle)
@@ -36,11 +35,7 @@ describe('profile sign-in methods', () => {
     expect(sent).toEqual([
       {
         action: 'profile_set_password',
-        payload: { currentPassword: 'old', newPassword: 'new-secret' },
-      },
-      {
-        action: 'profile_set_password',
-        payload: { currentPassword: '', newPassword: 'new-secret' },
+        payload: { newPassword: 'new-secret' },
       },
       { action: 'profile_unlink_identity', payload: { identityId: 7 } },
       { action: 'profile_add_sms_request', payload: { phone: '+15551234' } },

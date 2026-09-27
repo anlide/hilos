@@ -10,11 +10,12 @@ use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowIntent;
-use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
+use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -39,7 +40,6 @@ use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Auth\SecondFactor\SecondFactorGate;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
-use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
@@ -55,11 +55,12 @@ use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionEndActionDTO;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
-use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
-use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
+use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
+use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
+use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\Exception\SessionNotOnConnectionException;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Session\SessionAck;
@@ -119,9 +120,9 @@ use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
-use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
+use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
 use Hilos\Runtime\View\Item\HilosOAuthTrip;
@@ -277,7 +278,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * The frames this library is addressed by: eight from the users library, two from the
      * project holding the sockets, one from anybody with something to say to a browser, and
-     * one from a page of the framework's own.
+     * one from a page of the framework's own. A password change adds the request to end the
+     * other ordinary sessions (HIL-300), sent by the users library after the password write.
      *
      * Routing takes the destination from whoever declares a name here, so this list IS the
      * move: the frames the users library has always sent to "the holder" now arrive at an
@@ -352,6 +354,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => AuthSecondFactorMissedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
     ];
@@ -2362,7 +2365,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * to be one of the user's sessions - a token that is not among them simply keeps
      * nothing, which is the honest answer for a caller that has none.
      * Sessions carrying an impersonator are skipped as well: a person may not end the
-     * administrator's work through password recovery or the profile controls.
+     * administrator's work through password recovery or the profile controls. The profile
+     * password change uses this same operation when the person asks to end other sessions (HIL-300).
      *
      * Reaches the connections of THIS node only, exactly like the logout it is built
      * from; a session held open on another node of a cluster keeps its socket until
@@ -2828,7 +2832,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the takeover's name and forwards its write here (HIL-824), one from whoever is carrying
      * a code, each time the send moves (HIL-826), one from the agent holding the logins a
      * restore left (HIL-846), two about a provider sign-in a tab is waiting on and one from the
-     * master about agents that are gone (HIL-1044), and one from whoever wrote a block flag (HIL-289).
+     * master about agents that are gone (HIL-1044), one from whoever wrote a block flag (HIL-289),
+     * and the password change's request to end other sessions (HIL-300).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -3109,6 +3114,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->forgetSecondFactor($data->data->userId);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END:
+                if (!$data->data instanceof AuthOtherSessionsEndSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthOtherSessionsEndSignalData::class, $data->data);
+                }
+
+                $this->deauthenticateOtherSessions($data->data->userId, $data->data->sessionToken);
 
                 return;
 

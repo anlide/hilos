@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Exception\PasswordTooCommonException;
-use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordRequestActionDTO;
@@ -24,13 +23,8 @@ use Hilos\HilosException;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 
 /**
- * The profile's own ways in, run by the framework's users library (HIL-402, HIL-403, HIL-406, HIL-1137).
- *
- * A password is changed with the current one or added to a confirmed address; a phone and a
- * password by mail are added in two steps with a code; a way in is taken off by id. What is
- * pinned is the order of each command's refusals - what is asked before a code is spent, and
- * that the password gate speaks only after the current password did (HIL-654) - and that the
- * password-updated frame reaches every tab of the person, not only the one that saved.
+ * Profile sign-in methods: first password, code-proven additions and unlink (HIL-1137, HIL-300).
+ * Existing passwords are refused here; PasswordChangeIntegrationTest covers their change.
  */
 final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCase
 {
@@ -43,91 +37,17 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     private const string WRONG_CODE = '000000';
 
     /**
-     * A change re-hashes the secret and tells every tab of the person it was changed.
+     * The former change entrance cannot bypass operation confirmation or the address code.
      *
-     * @throws HilosException When the seed or the command fails
+     * @throws HilosException When the seed or command fails
      */
-    public function testChangePasswordRewritesTheSecretAndSignalsEveryTab(): void
+    public function testSetPasswordOnAnAccountWithAPasswordIsRefused(): void
     {
         $this->seedPassword();
-
-        $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::PASSWORD, self::NEW_PASSWORD));
-
-        $identity = Hilos::$db->identities->findPasswordByUser(self::USER_ID);
-        self::assertTrue($identity?->verifyPassword(self::NEW_PASSWORD));
-        self::assertFalse($identity->verifyPassword(self::PASSWORD));
-        self::assertSame(
-            [
-                [self::ACCEPT_KEY, ProfilePasswordUpdatedSignalData::MODE_CHANGED],
-                [self::OTHER_ACCEPT_KEY, ProfilePasswordUpdatedSignalData::MODE_CHANGED],
-            ],
-            $this->passwordUpdates(),
-        );
-    }
-
-    /**
-     * A change to the password already in force is refused, and nothing is announced (HIL-654).
-     *
-     * @throws HilosException When the seed fails
-     */
-    public function testChangePasswordToTheCurrentOneIsRefused(): void
-    {
-        $this->seedPassword();
-
-        try {
-            $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::PASSWORD, self::PASSWORD));
-            self::fail('The password already in force must be refused');
-        } catch (PasswordUnchangedException) {
-            // refused
-        }
-
-        self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::PASSWORD));
-        self::assertSame([], $this->passwordUpdates(), 'Nothing changed, so the tabs are told nothing');
-    }
-
-    /**
-     * A common replacement leaves the existing secret and the update signals untouched (HIL-650).
-     *
-     * @throws HilosException When the seed or the command fails
-     */
-    public function testChangePasswordToACommonOneIsRefused(): void
-    {
-        $this->seedPassword();
-
-        try {
-            $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::PASSWORD, '12345678'));
-            self::fail('A common replacement password must be refused');
-        } catch (PasswordTooCommonException) {
-            // refused
-        }
-
-        self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::PASSWORD));
-        self::assertSame([], $this->passwordUpdates());
-    }
-
-    /**
-     * A wrong current password is refused first - even when the new one would fail the policy too.
-     *
-     * @throws HilosException When the seed fails
-     */
-    public function testChangePasswordWithAWrongCurrentOneIsRefusedBeforeThePolicy(): void
-    {
-        $this->seedPassword();
-
         $this->assertRefused(
-            AuthMessages::CURRENT_PASSWORD_INCORRECT,
+            AuthMessages::ALREADY_HAS_PASSWORD,
             HilosSignalConstants::PROFILE_SET_PASSWORD,
-            new ProfileSetPasswordActionDTO('not the password', self::NEW_PASSWORD),
-        );
-        $this->assertRefused(
-            AuthMessages::CURRENT_PASSWORD_INCORRECT,
-            HilosSignalConstants::PROFILE_SET_PASSWORD,
-            new ProfileSetPasswordActionDTO('', 'short'),
-        );
-        $this->assertRefused(
-            AuthMessages::CURRENT_PASSWORD_INCORRECT,
-            HilosSignalConstants::PROFILE_SET_PASSWORD,
-            new ProfileSetPasswordActionDTO('not the password', '12345678'),
+            new ProfileSetPasswordActionDTO(self::NEW_PASSWORD),
         );
 
         self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::PASSWORD));
@@ -143,7 +63,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
 
-        $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO('', self::NEW_PASSWORD));
+        $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
 
         $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, self::EMAIL);
         self::assertSame(self::USER_ID, $identity?->userId);
@@ -168,7 +88,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
 
         try {
-            $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO('', '12345678'));
+            $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO('12345678'));
             self::fail('A common first password must be refused');
         } catch (PasswordTooCommonException) {
             // refused
@@ -188,7 +108,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         $this->assertRefused(
             AuthMessages::CONFIRM_EMAIL_FIRST,
             HilosSignalConstants::PROFILE_SET_PASSWORD,
-            new ProfileSetPasswordActionDTO('', self::NEW_PASSWORD),
+            new ProfileSetPasswordActionDTO(self::NEW_PASSWORD),
         );
 
         self::assertSame([], self::rowsOf(self::USER_ID));
@@ -207,7 +127,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
 
         $this->submit(
             HilosSignalConstants::PROFILE_SET_PASSWORD,
-            new ProfileSetPasswordActionDTO('', self::NEW_PASSWORD),
+            new ProfileSetPasswordActionDTO(self::NEW_PASSWORD),
             self::ANONYMOUS_ACCEPT_KEY,
         );
     }

@@ -20,11 +20,13 @@ use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\Library\Command\MagicLinkCommands;
 use Hilos\Auth\Library\Command\OAuthCommands;
 use Hilos\Auth\Library\Command\PasskeyCommands;
+use Hilos\Auth\Library\Command\PasswordChangeCommands;
 use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\Library\Command\StepUpCommands;
+use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -63,10 +65,15 @@ use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddSmsConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddSmsRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileChangePasswordActionDTO;
+use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileChangePasswordOpenActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
@@ -95,9 +102,9 @@ use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
 use Hilos\Auth\SecondFactor\SecondFactorResetSweeper;
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
-use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -108,9 +115,9 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
-use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
@@ -277,6 +284,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN => ProfileChangePasswordOpenActionDTO::class,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST => ProfileChangePasswordCodeRequestActionDTO::class,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM => ProfileChangePasswordCodeConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD => ProfileChangePasswordActionDTO::class,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN => AccountDeletionOpenActionDTO::class,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => AccountDeletionCodeActionDTO::class,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => AccountDeletionStartActionDTO::class,
@@ -306,6 +317,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * a phone and of a password by mail, which guess a code; and the three email-change steps
      * that carry the current address's code. The submits that only send a code are absent -
      * the code carries its own send cap - and so are the unlink and the provider link start.
+     *
+     * Password-change confirmation and save are throttled too (HIL-300): they guess a code
+     * and can reach the password policy's unchanged-password answer.
      *
      * Account deletion adds its start by the same rule (HIL-302): it guesses the code the
      * address received. Opening the window, sending the code and calling it off guess nothing.
@@ -348,6 +362,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_START,
     ];
 
@@ -359,7 +375,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * the same reason: they prove and open an operation of the signed-in person. So are the
      * profile's own ways in and the email change, whole (HIL-1137): each reads its person
      * from the acting session, which an anonymous one has none of. So are the four submits of
-     * account deletion (HIL-302), for the same reason.
+     * account deletion (HIL-302) and password change (HIL-300), for the same reason.
      */
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
@@ -385,6 +401,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM,
+        HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_START,
@@ -433,6 +453,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     /** The four steps of changing the account's email, built on first use. */
     private ?EmailChangeCommands $emailChangeCommands = null;
+
+    /** The existing-password change, built on first use. */
+    private ?PasswordChangeCommands $passwordChangeCommands = null;
 
     /** The second factor's commands, built on first use. */
     private ?SecondFactorCommands $secondFactorCommands = null;
@@ -943,6 +966,42 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Fans the password-updated signal to every socket the person has open.
+     *
+     * Every tab, not only the one that saved: a change moves nothing the other tabs can see,
+     * and any of them may show the confirmation.
+     *
+     * @param int $userId Account whose secret changed
+     * @param string $mode Whether the password was added or changed, a {@see ProfilePasswordUpdatedSignalData} mode
+     * @throws InvalidArgumentException When the signal cannot be named or queued
+     */
+    public function announcePasswordUpdated(int $userId, string $mode): void
+    {
+        foreach (Hilos::$rt?->sessionConnectionsSource()?->findByUser($userId) ?? [] as $connection) {
+            $this->sendToUser(
+                HilosSignalConstants::PROFILE_PASSWORD_UPDATED,
+                $connection->acceptKey,
+                new ProfilePasswordUpdatedSignalData($mode),
+            );
+        }
+    }
+
+    /**
+     * Asks the session holder to end the person's other ordinary sessions (HIL-300).
+     * The password action answers immediately; the holder processes this frame independently.
+     *
+     * @param ActingSession $acting Person and acting session to preserve
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceOtherSessionsEnd(ActingSession $acting): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END,
+            new AuthOtherSessionsEndSignalData($acting->userId, $acting->sessionToken),
+        );
+    }
+
+    /**
      * Asks the session holder to let this browser's second-factor wait go, and hands it the answer (HIL-494).
      *
      * @param ActingSession $acting Browser whose wait ends
@@ -1295,14 +1354,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /**
      * Runs one of the profile's sign-in-method or email-change submits, or hands the name on (HIL-1137).
      *
-     * None of them answers with a reply: each writes, and the browser learns of it from the
-     * identities projection that re-emits, or from the password-updated signal fanned to the
-     * person's own sockets. A bad payload is refused the way every other one here is.
+     * Opening a password change answers with its code destination. Writes announce identity
+     * changes through the projection and password changes through the person's own sockets.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Null for every profile submit, or what the account deletion or second factor command answered
+     * @return ?ActionReplyDTO Opening answer for password change, null for writes, or a delegated command reply
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
      * @throws ValidationException When the command refuses what was submitted
@@ -1392,6 +1450,36 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, ProfileEmailChangeNewConfirmActionDTO::class, $dto);
                 }
                 $this->emailChangeCommands()->confirmNewCode($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN:
+                if (!$dto instanceof ProfileChangePasswordOpenActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileChangePasswordOpenActionDTO::class, $dto);
+                }
+                return $this->passwordChangeCommands()->open($acceptKey);
+
+            case HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST:
+                if (!$dto instanceof ProfileChangePasswordCodeRequestActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileChangePasswordCodeRequestActionDTO::class, $dto);
+                }
+                $this->passwordChangeCommands()->requestCode($acceptKey);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM:
+                if (!$dto instanceof ProfileChangePasswordCodeConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileChangePasswordCodeConfirmActionDTO::class, $dto);
+                }
+                $this->passwordChangeCommands()->confirmCode($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_CHANGE_PASSWORD:
+                if (!$dto instanceof ProfileChangePasswordActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileChangePasswordActionDTO::class, $dto);
+                }
+                $this->passwordChangeCommands()->change($acceptKey, $dto);
 
                 return null;
 
@@ -1626,6 +1714,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private function emailChangeCommands(): EmailChangeCommands
     {
         return $this->emailChangeCommands ??= new EmailChangeCommands($this, $this->stepUpCommands());
+    }
+
+    /**
+     * @return PasswordChangeCommands Existing-password change, built once per process
+     */
+    private function passwordChangeCommands(): PasswordChangeCommands
+    {
+        return $this->passwordChangeCommands ??= new PasswordChangeCommands($this, $this->stepUpCommands());
     }
 
     /**

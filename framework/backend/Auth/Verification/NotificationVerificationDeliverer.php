@@ -64,6 +64,7 @@ final class NotificationVerificationDeliverer implements VerificationDeliverer
             VerificationType::SMS_ADD,
             VerificationType::STEP_UP_SMS,
             VerificationType::ACCOUNT_DELETION_SMS => $this->sms,
+            VerificationType::PASSWORD_CHANGE_SMS => $this->sms,
             default => $this->mail,
         };
     }

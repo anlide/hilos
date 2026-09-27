@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import {
   createHilosProfileAddSignInFlow,
+  createHilosProfilePasswordChangeFlow,
   createHilosProfileSignInActions,
   createSignal,
   focusInitial,
@@ -20,6 +21,7 @@ import {
 } from '@hilos/core'
 import { computed, nextTick, onUnmounted, ref, useId, watch } from 'vue'
 
+import HilosProfilePasswordChange from './HilosProfilePasswordChange.vue'
 import HilosActionError from '../HilosActionError.vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
@@ -89,49 +91,12 @@ watch(
   },
 )
 
-const passwordOpen = ref(false)
-const currentPassword = ref('')
-const newPassword = ref('')
-const confirmPassword = ref('')
-const passwordAction = useTrackedAction()
-const passwordAwaiting = ref(false)
-const passwordValid = computed(
-  () =>
-    currentPassword.value !== '' &&
-    newPassword.value.length >= PASSWORD_MIN &&
-    newPassword.value === confirmPassword.value,
-)
-function changePassword(): void {
-  passwordAction.clearError()
-  currentPassword.value = ''
-  newPassword.value = ''
-  confirmPassword.value = ''
-  passwordAwaiting.value = false
-  passwordOpen.value = true
-}
-async function savePassword(): Promise<void> {
-  if (
-    !passwordValid.value ||
-    passwordAwaiting.value ||
-    passwordAction.busy.value
-  )
-    return
-  passwordAwaiting.value = true
-  if (
-    !(await passwordAction.run(
-      actions.setPassword(currentPassword.value, newPassword.value),
-    ))
-  )
-    passwordAwaiting.value = false
-}
+const passwordFlow = createHilosProfilePasswordChangeFlow(props.context)
+const passwordStep = useSignal(passwordFlow.step)
 const stopPassword = watchHilosProfilePasswordUpdated(
   props.context.connection,
   (data) => {
-    passwordOpen.value = false
-    passwordAwaiting.value = false
-    currentPassword.value = ''
-    newPassword.value = ''
-    confirmPassword.value = ''
+    if (passwordFlow.step.get() !== 'closed') return
     hilosToasts.push(
       data.mode === PROFILE_PASSWORD_MODE_ADDED
         ? HILOS_PROFILE_SIGN_IN_COPY.passwordAdded
@@ -301,6 +266,7 @@ async function submitAdd(): Promise<void> {
 }
 onUnmounted(() => {
   stopPassword()
+  passwordFlow.dispose()
   flow.dispose()
 })
 </script>
@@ -354,15 +320,14 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="d-flex gap-2">
-          <button
+          <LoadingButton
             v-if="method.type === 'password'"
-            class="btn btn-sm btn-outline-secondary"
-            type="button"
+            class="btn-sm btn-outline-secondary"
+            :loading="passwordStep === 'opening'"
             data-id="profile-password-change"
-            @click="changePassword"
+            @click="passwordFlow.open()"
+            >Change</LoadingButton
           >
-            Change
-          </button>
           <button
             class="btn btn-sm btn-outline-secondary"
             type="button"
@@ -424,87 +389,7 @@ onUnmounted(() => {
       </template>
     </HilosModal>
 
-    <HilosModal
-      v-model="passwordOpen"
-      title="Change your password"
-      :confirm-on-close="
-        currentPassword !== '' || newPassword !== '' || confirmPassword !== ''
-      "
-    >
-      <form
-        :id="`${baseId}-password`"
-        data-id="profile-password-modal"
-        @submit.prevent="savePassword"
-      >
-        <label :for="`${baseId}-current`" class="form-label"
-          >Current password</label
-        >
-        <input
-          :id="`${baseId}-current`"
-          v-model="currentPassword"
-          type="password"
-          autocomplete="current-password"
-          class="form-control mb-3"
-          data-id="profile-password-current"
-          data-autofocus
-        />
-        <label :for="`${baseId}-new`" class="form-label">New password</label>
-        <input
-          :id="`${baseId}-new`"
-          v-model="newPassword"
-          type="password"
-          autocomplete="new-password"
-          class="form-control mb-3"
-          :aria-describedby="`${baseId}-password-hint`"
-          data-id="profile-password-new"
-        />
-        <label :for="`${baseId}-confirm`" class="form-label"
-          >Confirm new password</label
-        >
-        <input
-          :id="`${baseId}-confirm`"
-          v-model="confirmPassword"
-          type="password"
-          autocomplete="new-password"
-          class="form-control mb-3"
-          :aria-describedby="`${baseId}-password-hint`"
-          data-id="profile-password-confirm"
-        />
-        <div
-          :id="`${baseId}-password-hint`"
-          class="form-text mb-3"
-          data-id="profile-password-hint"
-        >
-          {{ HILOS_PROFILE_SIGN_IN_COPY.passwordHint }}
-        </div>
-        <HilosActionError
-          :action="passwordAction"
-          details-title="Couldn't change the password"
-          data-id="profile-set-password-error"
-        />
-      </form>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          data-id="profile-password-cancel"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          type="submit"
-          :form="`${baseId}-password`"
-          class="btn btn-primary"
-          :loading="passwordAction.loading.value"
-          :disabled="
-            !passwordValid || passwordAwaiting || passwordAction.busy.value
-          "
-          data-id="profile-password-save"
-          >Save</LoadingButton
-        >
-      </template>
-    </HilosModal>
+    <HilosProfilePasswordChange :flow="passwordFlow" />
 
     <HilosModal
       v-model="addOpen"

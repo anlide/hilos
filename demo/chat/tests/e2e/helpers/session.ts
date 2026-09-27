@@ -476,6 +476,49 @@ export async function signUp(page: Page): Promise<SignedInUser> {
   return { email, name, userId }
 }
 
+/**
+ * Change an existing password through operation confirmation and a code from Mailpit.
+ *
+ * @param page The signed-in browser.
+ * @param options The account address, current and new passwords, and session choice.
+ */
+export async function changePassword(
+  page: Page,
+  {
+    email,
+    currentPassword,
+    newPassword,
+    signOutOthers = true,
+  }: {
+    email: string
+    currentPassword: string
+    newPassword: string
+    signOutOthers?: boolean
+  },
+): Promise<void> {
+  await gotoPage(page, '/profile/sign-in')
+  await clickSubmit(page.getByTestId('profile-password-change'))
+  await expect(page.getByTestId('profile-password-modal')).toBeVisible()
+  if (await page.getByTestId('step-up-password').count()) {
+    await typeInto(page.getByTestId('step-up-password'), currentPassword)
+    await clickSubmit(page.getByTestId('profile-password-step-up-confirm'))
+  }
+  await clickSubmit(page.getByTestId('profile-password-send-code'))
+  await expect(page.getByTestId('profile-password-code')).toBeVisible()
+  await typeInto(
+    page.getByTestId('profile-password-code'),
+    await waitForMailCode(email, 'Confirm changing your password'),
+  )
+  await clickSubmit(page.getByTestId('profile-password-confirm-code'))
+  await expect(page.getByTestId('profile-password-new')).toBeVisible()
+  await typeInto(page.getByTestId('profile-password-new'), newPassword)
+  await page
+    .getByTestId('profile-password-sign-out-others')
+    .setChecked(signOutOthers)
+  await clickSubmit(page.getByTestId('profile-password-save'))
+  await expect(page.getByTestId('profile-password-outcome')).toBeVisible()
+}
+
 /** The subject EmailAddMailTemplate sends the add-password code under. */
 const EMAIL_ADD_SUBJECT = 'Confirm your email address'
 

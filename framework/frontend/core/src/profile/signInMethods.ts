@@ -1,4 +1,4 @@
-// The profile's own ways in (HIL-1137): the actions that change a password, add
+// The profile's own ways in (HIL-1137): the actions that add a first password, add
 // a phone or a password by mail, and take a way in off, and the frame that tells
 // every tab of the person a password was added or changed. Framework-agnostic —
 // the windows and their steps are the project's, this module is only the wire.
@@ -15,8 +15,7 @@ import {
 } from '../connection/actionLifecycle.js'
 
 /**
- * Client→server: change the password with the current one, or add one to the
- * confirmed address (PHP `HilosSignalConstants::PROFILE_SET_PASSWORD`).
+ * Client→server: add the first password to a confirmed address (PHP `HilosSignalConstants::PROFILE_SET_PASSWORD`).
  */
 export const PROFILE_SET_PASSWORD_ACTION = 'profile_set_password'
 
@@ -87,13 +86,11 @@ export interface HilosProfileSignInActionContext {
 /** The profile's sign-in-method actions. */
 export interface HilosProfileSignInActions {
   /**
-   * Change the password, or add one to the confirmed address. The server
-   * chooses from the account's own ways in, never from this argument.
+   * Add the first password to the confirmed address.
    *
-   * @param currentPassword The current password for a change, or null when adding.
    * @param newPassword The new password.
    */
-  setPassword(currentPassword: string | null, newPassword: string): ActionHandle
+  setPassword(newPassword: string): ActionHandle
   /**
    * Take one way in off the account; the last one stays.
    *
@@ -142,9 +139,8 @@ export function createHilosProfileSignInActions(
   context: HilosProfileSignInActionContext,
 ): HilosProfileSignInActions {
   return {
-    setPassword(currentPassword, newPassword) {
+    setPassword(newPassword) {
       return context.actions.dispatch(PROFILE_SET_PASSWORD_ACTION, {
-        currentPassword: currentPassword ?? '',
         newPassword,
       })
     },

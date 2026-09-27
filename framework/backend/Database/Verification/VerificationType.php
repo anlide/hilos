@@ -45,6 +45,9 @@ use Hilos\Auth\Verification\VerificationService;
  * `account_deletion` and `account_deletion_sms` confirm a person's own request to delete
  * their account (HIL-302). Both carry the acting user id and go to the same address a
  * step-up would pick; they are types of their own so the letter says what is being asked.
+ * `password_change` and `password_change_sms` prove the account address before an existing
+ * password changes (HIL-300). They are checked without spending, then spent after the password
+ * policy accepts the new secret.
  * `magic_link_code` is the companion of `magic_link` (HIL-606) — the six digits that
  * ride in the same letter as the link, for the person who reads the mail on one device
  * and stands on the sign-in screen on another. It is minted inside the SAME issue as
@@ -69,6 +72,8 @@ final class VerificationType
     public const string STEP_UP_SMS = 'step_up_sms';
     public const string ACCOUNT_DELETION = 'account_deletion';
     public const string ACCOUNT_DELETION_SMS = 'account_deletion_sms';
+    public const string PASSWORD_CHANGE = 'password_change';
+    public const string PASSWORD_CHANGE_SMS = 'password_change_sms';
 
     /**
      * Returns the fixed set of verification type values in declaration order.
@@ -91,6 +96,8 @@ final class VerificationType
             self::STEP_UP_SMS,
             self::ACCOUNT_DELETION,
             self::ACCOUNT_DELETION_SMS,
+            self::PASSWORD_CHANGE,
+            self::PASSWORD_CHANGE_SMS,
         ];
     }
 
@@ -108,7 +115,8 @@ final class VerificationType
         return $type === self::SMS_LOGIN
             || $type === self::SMS_ADD
             || $type === self::STEP_UP_SMS
-            || $type === self::ACCOUNT_DELETION_SMS;
+            || $type === self::ACCOUNT_DELETION_SMS
+            || $type === self::PASSWORD_CHANGE_SMS;
     }
 
     /**

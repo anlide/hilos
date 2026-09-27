@@ -7,6 +7,7 @@ import { dictateModerationVerdict } from '../helpers/moderation'
 import { gotoPage } from '../helpers/page'
 import {
   clickSubmit,
+  changePassword,
   login,
   PASSWORD,
   signUp,
@@ -43,24 +44,12 @@ test('merges another account into the user on the admin card', async ({
 
     // Give the survivor a secret distinct from the loser's. The post-merge
     // login through the loser's address can then prove which password survived.
-    await gotoPage(survivorPage, '/profile/sign-in')
-    await clickSubmit(survivorPage.getByTestId('profile-password-change'))
-    await typeInto(
-      survivorPage.getByTestId('profile-password-current'),
-      PASSWORD,
-    )
-    await typeInto(
-      survivorPage.getByTestId('profile-password-new'),
-      SURVIVOR_PASSWORD,
-    )
-    await typeInto(
-      survivorPage.getByTestId('profile-password-confirm'),
-      SURVIVOR_PASSWORD,
-    )
-    await clickSubmit(survivorPage.getByTestId('profile-password-save'))
-    await expect(survivorPage.getByTestId('hilos-toast-success')).toContainText(
-      'Password changed.',
-    )
+    await changePassword(survivorPage, {
+      email: survivor.email,
+      currentPassword: PASSWORD,
+      newPassword: SURVIVOR_PASSWORD,
+    })
+    await clickSubmit(survivorPage.getByTestId('profile-password-done'))
     await expect(
       survivorPage.getByTestId('profile-password-modal'),
     ).toHaveCount(0)

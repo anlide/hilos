@@ -73,7 +73,6 @@ it('adds a password under StrictMode and removes every listener on unmount', asy
     fireEvent.click(node('profile-add-password-save'))
   })
   expect(dispatch).toHaveBeenCalledWith('profile_set_password', {
-    currentPassword: '',
     newPassword: 'new-secret',
   })
   act(() => {

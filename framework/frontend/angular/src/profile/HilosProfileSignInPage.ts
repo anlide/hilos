@@ -11,6 +11,7 @@ import {
 } from '@angular/core'
 import {
   createHilosProfileAddSignInFlow,
+  createHilosProfilePasswordChangeFlow,
   createHilosProfileSignInActions,
   createSignal,
   focusInitial,
@@ -28,8 +29,10 @@ import {
   type AuthMethodEntry,
   type HilosAuthContext,
   type HilosProfileAddSignInStep,
+  type HilosProfilePasswordChangeStep,
   type HilosProfileSignInMethod,
 } from '@hilos/core'
+import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -52,6 +55,7 @@ let signInSequence = 0
   selector: 'hilos-profile-sign-in-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    HilosProfilePasswordChange,
     HilosActionError,
     HilosFormError,
     HilosModal,
@@ -110,8 +114,10 @@ let signInSequence = 0
                 <button
                   class="btn btn-sm btn-outline-secondary"
                   type="button"
+                  hilosLoadingButton
+                  [loading]="passwordStep() === 'opening'"
                   data-id="profile-password-change"
-                  (click)="changePassword()"
+                  (click)="passwordFlow().open()"
                 >
                   Change
                 </button>
@@ -179,98 +185,8 @@ let signInSequence = 0
           </button>
         </ng-template>
       </hilos-modal>
-      <hilos-modal
-        [open]="passwordOpen()"
-        (openChange)="passwordOpen.set($event)"
-        title="Change your password"
-        [confirmOnClose]="
-          currentPassword() !== '' ||
-          newPassword() !== '' ||
-          confirmPassword() !== ''
-        "
-      >
-        <form
-          [id]="baseId + '-password'"
-          data-id="profile-password-modal"
-          (submit)="$event.preventDefault(); savePassword()"
-        >
-          <label [attr.for]="baseId + '-current'" class="form-label"
-            >Current password</label
-          >
-          <input
-            [id]="baseId + '-current'"
-            [value]="currentPassword()"
-            (input)="currentPassword.set(valueOf($event))"
-            type="password"
-            autocomplete="current-password"
-            class="form-control mb-3"
-            data-id="profile-password-current"
-            data-autofocus
-          />
-          <label [attr.for]="baseId + '-new'" class="form-label"
-            >New password</label
-          >
-          <input
-            [id]="baseId + '-new'"
-            [value]="newPassword()"
-            (input)="newPassword.set(valueOf($event))"
-            type="password"
-            autocomplete="new-password"
-            class="form-control mb-3"
-            [attr.aria-describedby]="baseId + '-password-hint'"
-            data-id="profile-password-new"
-          />
-          <label [attr.for]="baseId + '-confirm'" class="form-label"
-            >Confirm new password</label
-          >
-          <input
-            [id]="baseId + '-confirm'"
-            [value]="confirmPassword()"
-            (input)="confirmPassword.set(valueOf($event))"
-            type="password"
-            autocomplete="new-password"
-            class="form-control mb-3"
-            [attr.aria-describedby]="baseId + '-password-hint'"
-            data-id="profile-password-confirm"
-          />
-          <div
-            [id]="baseId + '-password-hint'"
-            class="form-text mb-3"
-            data-id="profile-password-hint"
-          >
-            {{ copy.passwordHint }}
-          </div>
-          <div data-id="profile-set-password-error">
-            <hilos-action-error
-              [action]="passwordAction"
-              detailsTitle="Couldn't change the password"
-            />
-          </div>
-        </form>
-        <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            data-id="profile-password-cancel"
-            (click)="requestClose()"
-          >
-            Cancel
-          </button>
-          <button
-            hilosLoadingButton
-            type="submit"
-            [attr.form]="baseId + '-password'"
-            class="btn btn-primary"
-            [loading]="passwordAction.loading()"
-            [disabled]="
-              !passwordValid() || passwordAwaiting() || passwordAction.busy()
-            "
-            data-id="profile-password-save"
-          >
-            Save
-          </button>
-        </ng-template>
-      </hilos-modal>
+      <hilos-profile-password-change [flow]="passwordFlow()" />
+
       <hilos-modal
         [open]="step() !== 'closed'"
         (openChange)="closeAdd($event)"
@@ -568,18 +484,11 @@ export class HilosProfileSignInPage {
       .join(', '),
   )
   protected readonly unlinkAction = createHilosTrackedAction()
-  protected readonly passwordOpen = signal(false)
-  protected readonly currentPassword = signal('')
-  protected readonly newPassword = signal('')
-  protected readonly confirmPassword = signal('')
-  protected readonly passwordAction = createHilosTrackedAction()
-  protected readonly passwordAwaiting = signal(false)
-  protected readonly passwordValid = computed(
-    () =>
-      this.currentPassword() !== '' &&
-      this.newPassword().length >= PASSWORD_MIN &&
-      this.newPassword() === this.confirmPassword(),
+  protected readonly passwordFlow = computed(() =>
+    createHilosProfilePasswordChangeFlow(this.context()),
   )
+  protected readonly passwordStep =
+    signal<HilosProfilePasswordChangeStep>('closed')
   protected readonly flow = computed(() =>
     createHilosProfileAddSignInFlow(this.context(), this.methodsSignal),
   )
@@ -679,6 +588,17 @@ export class HilosProfileSignInPage {
   )
 
   constructor() {
+    effect((onCleanup) => {
+      const flow = this.passwordFlow()
+      this.passwordStep.set(flow.step.get())
+      const off = subscribeSignal(flow.step, (value) =>
+        this.passwordStep.set(value),
+      )
+      onCleanup(() => {
+        off()
+        flow.dispose()
+      })
+    })
     effect(() => this.methodsSignal.set(this.methods()))
     effect(() => {
       if (this.unlinkKey() !== null && !this.unlinkMethod())
@@ -711,11 +631,7 @@ export class HilosProfileSignInPage {
     effect((onCleanup) => {
       onCleanup(
         watchHilosProfilePasswordUpdated(this.context().connection, (data) => {
-          this.passwordOpen.set(false)
-          this.passwordAwaiting.set(false)
-          this.currentPassword.set('')
-          this.newPassword.set('')
-          this.confirmPassword.set('')
+          if (this.passwordFlow().step.get() !== 'closed') return
           hilosToasts.push(
             data.mode === PROFILE_PASSWORD_MODE_ADDED
               ? this.copy.passwordAdded
@@ -757,29 +673,6 @@ export class HilosProfileSignInPage {
     if (key === null || this.unlinkAction.busy()) return
     if (await this.unlinkAction.run(this.actions().unlinkIdentity(Number(key))))
       this.unlinkKey.set(null)
-  }
-  protected changePassword(): void {
-    this.passwordAction.clearError()
-    this.currentPassword.set('')
-    this.newPassword.set('')
-    this.confirmPassword.set('')
-    this.passwordAwaiting.set(false)
-    this.passwordOpen.set(true)
-  }
-  protected async savePassword(): Promise<void> {
-    if (
-      !this.passwordValid() ||
-      this.passwordAwaiting() ||
-      this.passwordAction.busy()
-    )
-      return
-    this.passwordAwaiting.set(true)
-    if (
-      !(await this.passwordAction.run(
-        this.actions().setPassword(this.currentPassword(), this.newPassword()),
-      ))
-    )
-      this.passwordAwaiting.set(false)
   }
   protected openAdd(): void {
     this.draft.set(emptyDraft())

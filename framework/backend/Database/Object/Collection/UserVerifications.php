@@ -339,6 +339,37 @@ final class UserVerifications extends Objects
     }
 
     /**
+     * Deletes one type of code on every address belonging to a person (HIL-300).
+     *
+     * Each row leaves through its object so a delete announcement reaches every reader.
+     * A person with none is not an error.
+     *
+     * @param int $userId Person whose rows to delete
+     * @param string $type Verification type to remove
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForUserOfType(int $userId, string $type): void
+    {
+        foreach (EntityUserVerification::get([
+            EntityUserVerification::user_id => $userId,
+            EntityUserVerification::type => $type,
+        ]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, ObjectUserVerification::fromEntity($entity));
+            }
+            $this->objects[$id]->delete();
+            unset($this[$id]);
+        }
+    }
+
+    /**
      * Loads and caches every challenge row for a (type, identifier) pair.
      *
      * @param string $type Verification type (see VerificationType)

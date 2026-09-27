@@ -15,7 +15,6 @@ use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Verification\VerificationService;
-use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -53,63 +52,34 @@ use Random\RandomException;
 final class IdentityCommands extends AbstractLibraryCommands
 {
     /**
-     * Adds or changes the signed-in person's password from the profile (HIL-402).
-     *
-     * Two in-scope flows, chosen from the account's own identities (never from a client
-     * flag): a CHANGE (the account already has a `password` identity) re-auths the current
-     * password before rewriting the secret; an ADD (no password yet) attaches a `password`
-     * identity to the account's already-proven email - no email code, since the email is
-     * verified - and marks it verified. An account with no verified email (SMS-only or
-     * legacy OAuth) is refused here; its way to a password is the email-and-code pair
-     * ({@see requestPasswordAdd()}, HIL-406). On success the password-updated signal is
-     * fanned to all the person's connections, because a change moves nothing in the
-     * identity projection that could confirm it.
-     *
-     * Which password it changes is the framework's answer (HIL-692): an account holds one,
-     * and asking for it by account is what makes "your password is changed" true even for
-     * data written before the rule.
-     *
-     * The password gate is asked LAST on the change branch, after the current password has
-     * been checked, and the order is the security property (HIL-654). It can answer "that is
-     * already your password", so a form that asked it first would hand the account's
-     * password to anybody who guessed it in the NEW field, without ever having to type the
-     * current one. The cost of the right order is a smaller one: a submit with both a wrong
-     * current password and a short new one is told about the current one.
+     * Adds the first password on the person's confirmed email (HIL-300).
+     * Existing passwords can only change through PasswordChangeCommands, with operation and address proof.
+     * An account with no verified email adds its first password through requestPasswordAdd().
      *
      * @param string $acceptKey Accept key the action arrived on
-     * @param ProfileSetPasswordActionDTO $dto New password and, for a change, the current one
+     * @param ProfileSetPasswordActionDTO $dto New password
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValueTooShortException When the new password is shorter than the policy minimum
-     * @throws PasswordTooCommonException When the new password is in the common-password list
+     * @throws ValueTooShortException When the password is shorter than the policy minimum
+     * @throws PasswordTooCommonException When the password is in the common-password list
      * @throws FsException When the framework password list cannot be read
-     * @throws PasswordUnchangedException When the new password is the one the account already has
-     * @throws ValidationException When the current password is wrong or the account has no verified email
+     * @throws PasswordUnchangedException When the password policy refuses a reused password
+     * @throws ValidationException When the account already has a password or has no confirmed email
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
-     * @throws HilosException When an identity read or secret write query fails
+     * @throws HilosException When an identity read or write fails
      */
     public function setPassword(string $acceptKey, ProfileSetPasswordActionDTO $dto): void
     {
         $userId = $this->actingUser($acceptKey)->userId;
-
-        $passwordIdentity = Hilos::$db->identities->findPasswordByUser($userId);
-        if ($passwordIdentity !== null) {
-            if ($dto->currentPassword === '' || !$passwordIdentity->verifyPassword($dto->currentPassword)) {
-                throw new ValidationException(AuthMessages::CURRENT_PASSWORD_INCORRECT);
-            }
-            PasswordPolicy::assertValid($dto->newPassword, $passwordIdentity->verifyPassword($dto->newPassword));
-            $passwordIdentity->setPassword($dto->newPassword);
-            $mode = ProfilePasswordUpdatedSignalData::MODE_CHANGED;
-        } else {
-            $email = Hilos::$db->identities->findVerifiedEmailByUser($userId);
-            if ($email === null) {
-                throw new ValidationException(AuthMessages::CONFIRM_EMAIL_FIRST);
-            }
-            PasswordPolicy::assertValid($dto->newPassword, false);
-            Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
-            $mode = ProfilePasswordUpdatedSignalData::MODE_ADDED;
+        if (Hilos::$db->identities->findPasswordByUser($userId) !== null) {
+            throw new ValidationException(AuthMessages::ALREADY_HAS_PASSWORD);
         }
-
-        $this->fanPasswordUpdated($userId, $mode);
+        $email = Hilos::$db->identities->findVerifiedEmailByUser($userId);
+        if ($email === null) {
+            throw new ValidationException(AuthMessages::CONFIRM_EMAIL_FIRST);
+        }
+        PasswordPolicy::assertValid($dto->newPassword, false);
+        Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
+        $this->library->announcePasswordUpdated($userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
     }
 
     /**
@@ -282,7 +252,7 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_EMAIL);
         }
 
-        $this->fanPasswordUpdated($userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
+        $this->library->announcePasswordUpdated($userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
     }
 
     /**
@@ -332,26 +302,5 @@ final class IdentityCommands extends AbstractLibraryCommands
         }
 
         Hilos::$db->identities->deleteIdentity($acting->userId, $identityId);
-    }
-
-    /**
-     * Fans the password-updated signal to every socket the person has open.
-     *
-     * Every tab, not only the one that saved: a change moves nothing the other tabs can see,
-     * and any of them may show the confirmation.
-     *
-     * @param int $userId Account whose secret changed
-     * @param string $mode Whether the password was added or changed, a {@see ProfilePasswordUpdatedSignalData} mode
-     * @throws InvalidArgumentException When the signal cannot be named or queued
-     */
-    private function fanPasswordUpdated(int $userId, string $mode): void
-    {
-        foreach (Hilos::$rt?->sessionConnectionsSource()?->findByUser($userId) ?? [] as $connection) {
-            $this->library->sendToUser(
-                HilosSignalConstants::PROFILE_PASSWORD_UPDATED,
-                $connection->acceptKey,
-                new ProfilePasswordUpdatedSignalData($mode),
-            );
-        }
     }
 }

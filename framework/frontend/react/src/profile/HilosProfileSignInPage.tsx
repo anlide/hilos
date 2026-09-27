@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   createHilosProfileAddSignInFlow,
+  createHilosProfilePasswordChangeFlow,
   createHilosProfileSignInActions,
   createSignal,
   focusInitial,
@@ -17,6 +18,7 @@ import {
   type HilosAuthContext,
   type HilosProfileSignInMethod,
 } from '@hilos/core'
+import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -88,48 +90,16 @@ export function HilosProfileSignInPage({
     removing.current = false
   }
 
-  const [passwordOpen, setPasswordOpen] = useState(false)
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const passwordAction = useTrackedAction()
-  const [passwordAwaiting, setPasswordAwaiting] = useState(false)
-  const waitingPassword = useRef(false)
-  const passwordValid =
-    currentPassword !== '' &&
-    newPassword.length >= PASSWORD_MIN &&
-    newPassword === confirmPassword
-  function changePassword(): void {
-    passwordAction.clearError()
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-    setPasswordAwaiting(false)
-    waitingPassword.current = false
-    setPasswordOpen(true)
-  }
-  async function savePassword(): Promise<void> {
-    if (!passwordValid || waitingPassword.current || passwordAction.busy) return
-    waitingPassword.current = true
-    setPasswordAwaiting(true)
-    if (
-      !(await passwordAction.run(
-        actions.setPassword(currentPassword, newPassword),
-      ))
-    ) {
-      waitingPassword.current = false
-      setPasswordAwaiting(false)
-    }
-  }
+  const passwordFlow = useMemo(
+    () => createHilosProfilePasswordChangeFlow(context),
+    [context],
+  )
+  const passwordStep = useSignal(passwordFlow.step)
+  useEffect(() => () => passwordFlow.dispose(), [passwordFlow])
   useEffect(
     () =>
       watchHilosProfilePasswordUpdated(context.connection, (data) => {
-        setPasswordOpen(false)
-        setPasswordAwaiting(false)
-        waitingPassword.current = false
-        setCurrentPassword('')
-        setNewPassword('')
-        setConfirmPassword('')
+        if (passwordFlow.step.get() !== 'closed') return
         hilosToasts.push(
           data.mode === PROFILE_PASSWORD_MODE_ADDED
             ? HILOS_PROFILE_SIGN_IN_COPY.passwordAdded
@@ -137,7 +107,7 @@ export function HilosProfileSignInPage({
           { severity: 'success' },
         )
       }),
-    [context.connection],
+    [context.connection, passwordFlow],
   )
 
   const flow = useMemo(
@@ -312,14 +282,14 @@ export function HilosProfileSignInPage({
             </div>
             <div className="d-flex gap-2">
               {method.type === 'password' ? (
-                <button
-                  className="btn btn-sm btn-outline-secondary"
-                  type="button"
+                <LoadingButton
+                  className="btn-sm btn-outline-secondary"
+                  loading={passwordStep === 'opening'}
                   data-id="profile-password-change"
-                  onClick={changePassword}
+                  onClick={() => void passwordFlow.open()}
                 >
                   Change
-                </button>
+                </LoadingButton>
               ) : null}
               <button
                 className="btn btn-sm btn-outline-secondary"
@@ -388,100 +358,8 @@ export function HilosProfileSignInPage({
           </div>
         </div>
       </HilosModal>
-      <HilosModal
-        open={passwordOpen}
-        onClose={() => setPasswordOpen(false)}
-        title="Change your password"
-        confirmOnClose={
-          currentPassword !== '' || newPassword !== '' || confirmPassword !== ''
-        }
-        actions={({ requestClose }) => (
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              data-id="profile-password-cancel"
-              onClick={requestClose}
-            >
-              Cancel
-            </button>
-            <LoadingButton
-              type="submit"
-              form={`${baseId}-password`}
-              className="btn btn-primary"
-              loading={passwordAction.loading}
-              disabled={
-                !passwordValid || passwordAwaiting || passwordAction.busy
-              }
-              data-id="profile-password-save"
-            >
-              Save
-            </LoadingButton>
-          </>
-        )}
-      >
-        <form
-          id={`${baseId}-password`}
-          data-id="profile-password-modal"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void savePassword()
-          }}
-        >
-          <label htmlFor={`${baseId}-current`} className="form-label">
-            Current password
-          </label>
-          <input
-            id={`${baseId}-current`}
-            value={currentPassword}
-            onChange={(event) => setCurrentPassword(event.target.value)}
-            type="password"
-            autoComplete="current-password"
-            className="form-control mb-3"
-            data-id="profile-password-current"
-            data-autofocus
-          />
-          <label htmlFor={`${baseId}-new`} className="form-label">
-            New password
-          </label>
-          <input
-            id={`${baseId}-new`}
-            value={newPassword}
-            onChange={(event) => setNewPassword(event.target.value)}
-            type="password"
-            autoComplete="new-password"
-            className="form-control mb-3"
-            aria-describedby={`${baseId}-password-hint`}
-            data-id="profile-password-new"
-          />
-          <label htmlFor={`${baseId}-confirm`} className="form-label">
-            Confirm new password
-          </label>
-          <input
-            id={`${baseId}-confirm`}
-            value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            type="password"
-            autoComplete="new-password"
-            className="form-control mb-3"
-            aria-describedby={`${baseId}-password-hint`}
-            data-id="profile-password-confirm"
-          />
-          <div
-            id={`${baseId}-password-hint`}
-            className="form-text mb-3"
-            data-id="profile-password-hint"
-          >
-            {HILOS_PROFILE_SIGN_IN_COPY.passwordHint}
-          </div>
-          <div data-id="profile-set-password-error">
-            <HilosActionError
-              action={passwordAction}
-              detailsTitle="Couldn't change the password"
-            />
-          </div>
-        </form>
-      </HilosModal>
+      <HilosProfilePasswordChange flow={passwordFlow} />
+
       <HilosModal
         open={step !== 'closed'}
         onClose={flow.close}

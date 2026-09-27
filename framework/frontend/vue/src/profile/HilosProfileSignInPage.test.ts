@@ -109,29 +109,34 @@ describe('profile sign-in page dialogs', () => {
       document.querySelector('[data-id="profile-unlink-modal"]'),
     ).toBeNull()
   })
-  it('changes a password in its dialog and closes on the authoritative frame', async () => {
+  it('opens the confirmed password flow and leaves it open on another tab’s update', async () => {
     const world = setup()
+    world.dispatch.mockImplementationOnce(() => ({
+      loading: createSignal(false),
+      done: Promise.resolve({
+        reply: { required: false, purpose: 'change your password' },
+      }),
+    }))
+    world.dispatch.mockImplementationOnce(() => ({
+      loading: createSignal(false),
+      done: Promise.resolve({ reply: { channel: null, destination: null } }),
+    }))
     await world.wrapper
       .get('[data-id="profile-password-change"]')
       .trigger('click')
-    expect(byId('profile-password-hint').textContent).toContain(
-      'At least 8 characters',
-    )
-    await fill('profile-password-current', 'old-secret')
-    await fill('profile-password-new', 'new-secret')
-    await fill('profile-password-confirm', 'new-secret')
-    byId('profile-password-save').click()
     await flushPromises()
-    expect(world.dispatch).toHaveBeenCalledWith('profile_set_password', {
-      currentPassword: 'old-secret',
-      newPassword: 'new-secret',
-    })
-    expect(byId('profile-password-modal')).toBeDefined()
+    await fill('profile-password-new', 'new-secret')
     world.emit('profile_password_updated', { mode: 'changed' })
     await flushPromises()
-    expect(
-      document.querySelector('[data-id="profile-password-modal"]'),
-    ).toBeNull()
+    expect(byId('profile-password-modal')).toBeDefined()
+    byId('profile-password-save').click()
+    await flushPromises()
+    expect(world.dispatch).toHaveBeenCalledWith('profile_change_password', {
+      code: '',
+      newPassword: 'new-secret',
+      signOutOthers: true,
+    })
+    expect(byId('profile-password-outcome')).toBeDefined()
   })
   it('moves from phone to code in one dialog and focuses the new field', async () => {
     const world = setup()

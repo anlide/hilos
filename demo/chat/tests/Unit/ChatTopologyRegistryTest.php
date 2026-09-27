@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Closure;
+use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Browser\ChatBrowserContext;
+use Demo\Chat\CLI\ChatCliManager;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
-use Demo\Chat\Agents\BotAgent;
-use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
-use Demo\Chat\CLI\ChatCliManager;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
@@ -23,17 +24,22 @@ use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStartActionDTO;
-use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
-use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
-use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
-use Hilos\Constants\HttpConstants;
-use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
+use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
+use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
+use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CancelSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
@@ -50,6 +56,7 @@ use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
 use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
+use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Library\DTO\OAuthStartActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyDiscoverableLoginOptionsActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyLoginConfirmActionDTO;
@@ -59,6 +66,10 @@ use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddSmsConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddSmsRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileChangePasswordActionDTO;
+use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeConfirmActionDTO;
+use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileChangePasswordOpenActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
@@ -76,6 +87,9 @@ use Hilos\Auth\Library\DTO\SecondFactorResetRequestActionDTO;
 use Hilos\Auth\Library\DTO\SecondFactorSetupConfirmActionDTO;
 use Hilos\Auth\Library\DTO\SecondFactorSetupFinishActionDTO;
 use Hilos\Auth\Library\DTO\SecondFactorSetupStartActionDTO;
+use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesRenewActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesShowActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollConfirmActionDTO;
@@ -84,18 +98,25 @@ use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorRemoveActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
+use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
+use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
+use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
+use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
+use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
+use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
+use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
+use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
+use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
+use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
+use Hilos\Auth\Session\DTO\SessionEndActionDTO;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
+use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
+use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
-use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
-use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
-use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
-use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
-use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
-use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
-use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
-use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
-use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
-use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleSuccessSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
@@ -109,74 +130,20 @@ use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
-use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
-use Hilos\Log\DTO\LogsFollowStartSignalData;
-use Hilos\Log\DTO\LogsFollowStopSignalData;
-use Hilos\Log\DTO\LogsIndexWatchSignalData;
-use Hilos\Log\DTO\LogsReadLinesSignalData;
-use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
-use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
-use Hilos\Log\DTO\NodeLogIndexSignalData;
-use Hilos\Notification\DTO\NotificationForgetUserSignalData;
-use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
-use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
-use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
-use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
-use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Constants\HilosPageConstants;
-use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
-use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
-use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
-use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
-use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
-use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
-use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
-use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
-use Hilos\Auth\Session\DTO\LogoutActionDTO;
-use Hilos\Auth\Session\DTO\SessionEndActionDTO;
-use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
-use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
-use Hilos\Auth\Session\DTO\SessionRebindSignalData;
-use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
-use Hilos\Auth\Session\DTO\SessionStateSignalData;
-use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
-use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
-use Hilos\Users\DTO\AccountMergeSignalData;
-use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Mail\DTO\MailSendSignalData;
-use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
-use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
-use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
-use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
-use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
-use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
-use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
-use Hilos\Notification\DTO\DeliveryRetrySignalData;
-use Hilos\Notification\DTO\NotificationEmitSignalData;
-use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
-use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
-use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
-use Hilos\Notification\NotificationAction;
-use Hilos\Notification\NotificationPreferenceAction;
-use Hilos\Push\DTO\PushSubscribeActionDTO;
-use Hilos\Push\DTO\PushRemoveActionDTO;
-use Hilos\Files\DTO\FileBindSignalData;
-use Hilos\Files\DTO\FilePublishSignalData;
-use Hilos\Files\HilosFiles;
-use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
-use Hilos\Push\DTO\PushUnsubscribeActionDTO;
-use Hilos\Push\PushSubscriptionAction;
-use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
@@ -185,9 +152,47 @@ use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
+use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
+use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\HilosFiles;
+use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
+use Hilos\Log\DTO\LogsFollowStartSignalData;
+use Hilos\Log\DTO\LogsFollowStopSignalData;
+use Hilos\Log\DTO\LogsIndexWatchSignalData;
+use Hilos\Log\DTO\LogsReadLinesSignalData;
+use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
+use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
+use Hilos\Log\DTO\NodeLogIndexSignalData;
+use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
+use Hilos\Notification\DTO\DeliveryRetrySignalData;
+use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
+use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\DTO\NotificationForgetUserSignalData;
+use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
+use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
+use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\NotificationAction;
+use Hilos\Notification\NotificationPreferenceAction;
+use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
+use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
+use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
+use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
+use Hilos\Push\DTO\PushRemoveActionDTO;
+use Hilos\Push\DTO\PushSubscribeActionDTO;
+use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
+use Hilos\Push\DTO\PushUnsubscribeActionDTO;
+use Hilos\Push\PushSubscriptionAction;
+use Hilos\Sms\DTO\SmsSendSignalData;
+use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\DTO\AdminRenameSignalData;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use Closure;
 
 /**
  * Guards the project-level chat topology registry.
@@ -531,6 +536,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
@@ -690,6 +696,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => AuthSecondFactorMissedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
@@ -787,6 +794,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -877,6 +888,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN => ProfileChangePasswordOpenActionDTO::class,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST => ProfileChangePasswordCodeRequestActionDTO::class,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM => ProfileChangePasswordCodeConfirmActionDTO::class,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD => ProfileChangePasswordActionDTO::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_OPEN => AccountDeletionOpenActionDTO::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => AccountDeletionCodeActionDTO::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => AccountDeletionStartActionDTO::class,

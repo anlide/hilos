@@ -40,6 +40,7 @@ final class MailTemplateRegistryTest extends TestCase
             MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
             MailTemplateCatalogConstants::AUTH_STEP_UP,
             MailTemplateCatalogConstants::AUTH_ACCOUNT_DELETION,
+            MailTemplateCatalogConstants::AUTH_PASSWORD_CHANGE,
         ] as $key) {
             $content = $registry->render($key, $params, null);
 
@@ -112,6 +113,7 @@ final class MailTemplateRegistryTest extends TestCase
                 MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
                 MailTemplateCatalogConstants::AUTH_STEP_UP,
                 MailTemplateCatalogConstants::AUTH_ACCOUNT_DELETION,
+                MailTemplateCatalogConstants::AUTH_PASSWORD_CHANGE,
                 MailTemplateCatalogConstants::NOTIFICATION_GENERIC,
                 MailTemplateCatalogConstants::PROTECTED_MODE_STUCK,
                 MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED,
@@ -143,6 +145,19 @@ final class MailTemplateRegistryTest extends TestCase
 
         self::assertSame('Confirm deleting your account', $content->subject);
         self::assertStringContainsString('asked to delete your account', $content->text);
+        self::assertStringContainsString('246810', $content->text);
+    }
+
+    public function testPasswordChangeLetterSaysWhatIsAsked(): void
+    {
+        $content = new MailTemplateRegistry()->render(
+            MailTemplateCatalogConstants::AUTH_PASSWORD_CHANGE,
+            [AbstractVerificationCodeMailTemplate::PARAM_CODE => '246810'],
+            null,
+        );
+
+        self::assertSame('Confirm changing your password', $content->subject);
+        self::assertStringContainsString('asked to change your password', $content->text);
         self::assertStringContainsString('246810', $content->text);
     }
 

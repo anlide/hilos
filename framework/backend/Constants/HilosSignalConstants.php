@@ -10,6 +10,7 @@ use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStateSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -36,8 +37,8 @@ use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
-use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
+use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
@@ -69,15 +70,15 @@ use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogStoreAgent;
-use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\HilosMailer;
-use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
-use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\DTO\NotificationForgetUserSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
@@ -86,12 +87,12 @@ use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Push\Delivery\PushDeliveryChannel;
-use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
+use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\Users\AccountBlockReader;
-use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\DTO\AdminRenameSignalData;
 
 /**
  * Signal names used by framework-level Hilos admin pages.
@@ -547,12 +548,8 @@ final class HilosSignalConstants
 
     // ── Hilos profile: sign-in methods and email change (client → server, signed in, HIL-1137) ──
     /**
-     * Client → server: change the password with the current one, or add one to a confirmed address.
-     *
-     * One action, two branches, chosen from the account's own ways in and never from the payload:
-     * an account with a password proves the current one; one without adds a password to its
-     * confirmed address. Renamed from the chat's bare `set_password`, which the sign-in flow's
-     * step of the same name would have collided with.
+     * Client → server: add the first password to an account with a confirmed email address.
+     * An existing password is refused; changing it requires PROFILE_CHANGE_PASSWORD (HIL-300).
      */
     public const string PROFILE_SET_PASSWORD = 'profile_set_password';
 
@@ -591,6 +588,19 @@ final class HilosSignalConstants
      * landed. Was the chat's `password_updated`.
      */
     public const string PROFILE_PASSWORD_UPDATED = 'profile_password_updated';
+
+    // ── Hilos profile: password change (client → server, signed in, HIL-300) ──
+    /** Client → server: open the change; replies with nullable channel and full destination. */
+    public const string PROFILE_CHANGE_PASSWORD_OPEN = 'profile_change_password_open';
+
+    /** Client → server: request a password-change code on the server-resolved account address. */
+    public const string PROFILE_CHANGE_PASSWORD_CODE_REQUEST = 'profile_change_password_code_request';
+
+    /** Client → server: check the supplied code without spending it. */
+    public const string PROFILE_CHANGE_PASSWORD_CODE_CONFIRM = 'profile_change_password_code_confirm';
+
+    /** Client → server: code, newPassword and signOutOthers; spends the proof and changes the password. */
+    public const string PROFILE_CHANGE_PASSWORD = 'profile_change_password';
 
     // ── Hilos logs admin: viewer page actions (client → server) ──
     /**
@@ -1183,6 +1193,12 @@ final class HilosSignalConstants
      * waiting on a code go. Carried by {@see AuthSecondFactorOffSignalData}.
      */
     public const string HILOS_AUTH_SECOND_FACTOR_OFF = 'hilos_auth_second_factor_off';
+
+    /**
+     * Users library → session holder: end the other sessions after a password change (HIL-300).
+     * Preserves the acting session and impersonated sessions. Carried by {@see AuthOtherSessionsEndSignalData}.
+     */
+    public const string HILOS_AUTH_OTHER_SESSIONS_END = 'hilos_auth_other_sessions_end';
 
     /**
      * Users library → the session holder: let this browser's second-factor wait go, and answer (HIL-494).

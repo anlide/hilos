@@ -45,6 +45,9 @@ final class MailTemplateCatalogConstants
     /** Template key: confirm a person's own request to delete their account. */
     public const string AUTH_ACCOUNT_DELETION = 'auth.' . VerificationType::ACCOUNT_DELETION;
 
+    /** Code confirming a change of the account password (HIL-300). */
+    public const string AUTH_PASSWORD_CHANGE = 'auth.' . VerificationType::PASSWORD_CHANGE;
+
     /** Template key: a durable notification delivered by email. */
     public const string NOTIFICATION_GENERIC = 'notification.generic';
 

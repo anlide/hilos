@@ -47,7 +47,7 @@
 CREATE TABLE `hilos_user_verification` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` INT UNSIGNED DEFAULT NULL,
-    `type` ENUM('register_confirm', 'password_reset', 'email_change', 'sms_login', 'magic_link', 'sms_add', 'email_add', 'magic_link_code', 'email_change_current', 'step_up', 'step_up_sms', 'account_deletion', 'account_deletion_sms') NOT NULL,
+    `type` ENUM('register_confirm', 'password_reset', 'email_change', 'sms_login', 'magic_link', 'sms_add', 'email_add', 'magic_link_code', 'email_change_current', 'step_up', 'step_up_sms', 'account_deletion', 'account_deletion_sms', 'password_change', 'password_change_sms') NOT NULL,
     `identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `channel` VARCHAR(32) DEFAULT NULL,
     `code_hash` VARCHAR(255) DEFAULT NULL,
