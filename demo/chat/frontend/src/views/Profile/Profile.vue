@@ -131,7 +131,7 @@ function sectionSummary(page: string): string {
     case HilosPages.PROFILE_NOTIFICATIONS:
       return describeHilosNotificationChannels(channels.value)
     case HilosPages.PROFILE_SESSIONS:
-      return `${sessionsCount.value} active sign-ins`
+      return sessionsCount.value === 1 ? '1 active sign-in' : `${sessionsCount.value} active sign-ins`
     case HilosPages.PROFILE_DEVICES:
       return `${devicesCount.value} subscribed to push`
     case HilosPages.PROFILE_AGREEMENTS:
