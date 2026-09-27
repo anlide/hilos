@@ -1,7 +1,11 @@
 -- Adds the image variants of the files registry (HIL-141).
 -- Mirrors the framework stub create_hilos_file_variant.sql.
+-- Landed as 059 after 060/061 (HIL-300/303) and 062 (HIL-498), and the
+-- migrator, which applies what is above MAX(index), skipped it on live
+-- databases; renumbered 063. A database built from scratch since 0afc9f551
+-- already has the table under 059, hence IF NOT EXISTS.
 
-CREATE TABLE `hilos_file_variant` (
+CREATE TABLE IF NOT EXISTS `hilos_file_variant` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `file_id` INT UNSIGNED NOT NULL,
     `variant` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
