@@ -241,25 +241,24 @@ Several tier-1 components are part of the contract, so pages never reinvent them
 - the **`HilosLayout`** application shell — the navbar (project brand and nav
   slots, the admin gear, the live connection indicator, and, last, the sign-out
   control), a full-width banner region below the nav — empty and zero-height
-  while nothing is up — and a
-  footer of the public framework pages, around the routed page content. The SDK
-  draws sign-out while a person stands behind the session (`hilosSignedIn`,
-  bound by `bootHilos`) and runs it as a tracked `hilos_logout` answered behind
-  the anonymous identity (HIL-1063). A project mounts nothing for it; its user
-  region carries only its own controls (the bell, the profile link, a guest's
-  Sign in). The banner region carries the framework's own strips first:
-  protected mode, then impersonation, which the SDK draws from the session (`hilosImpersonation`,
-  bound by `bootHilos`) and whose Stop is a tracked action answered behind the
-  restored identity (HIL-1064) — a project mounts nothing for either. Below
-  them comes the strip a project passes (e.g. a trial notice); that delivery is
-  the same in all three shells and only its form differs: Vue takes it through
-  the `#banner` slot, React through the `banner` prop, Angular through a
-  projected `[banner]` node. The shell is a
-  fixed-height viewport column whose main region owns the scroll, so a page
-  either scrolls inside it or fills it and scrolls an inner region; the footer
-  links come from the framework (`HILOS_FOOTER_LINKS`), so every project shows
-  the same About / Terms / Privacy / License set and supplies only each page's
-  content;
+  while nothing is up — and a footer of the public framework pages, around the
+  routed page content. The SDK draws sign-out while a person stands behind the
+  session (`hilosSignedIn`, bound by `bootHilos`) and runs it as a tracked
+  `hilos_logout` answered behind the anonymous identity (HIL-1063). A project
+  mounts nothing for it; its user region carries only its own controls (the
+  bell, the profile link, a guest's Sign in). The banner region carries the
+  framework's own strips first: protected mode, then impersonation, which the
+  SDK draws from the session (`hilosImpersonation`, bound by `bootHilos`) and
+  whose Stop is a tracked action answered behind the restored identity
+  (HIL-1064) — a project mounts nothing for either. Below them comes the strip a
+  project passes (e.g. a trial notice); that delivery is the same in all three
+  shells and only its form differs: Vue takes it through the `#banner` slot,
+  React through the `banner` prop, Angular through a projected `[banner]` node.
+  The shell is a fixed-height viewport column whose main region owns the scroll,
+  so a page either scrolls inside it or fills it and scrolls an inner region;
+  the footer links come from the framework (`HILOS_FOOTER_LINKS`), so every
+  project shows the same About / Terms / Privacy / License set and supplies only
+  each page's content;
 - **`HilosStaticPage`** — the frame for a static page: a centered reading
   column with a heading, the project filling the body. It frames a project's own
   static pages, and it is what the four public framework pages (tier 2, above)

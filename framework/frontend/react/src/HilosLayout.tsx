@@ -5,17 +5,17 @@
 // nav, the framework admin entry (the gear linking to the Hilos dashboard), the
 // live connection indicator the SDK owns (core-and-connection.md), and, last,
 // its tracked sign-out control while a person stands behind the session;
-// a full-width banner region below the nav carrying the framework's own
-// protected-mode strip, its impersonation strip (drawn from the session, with a
-// Stop that waits for the server's answer), and the app-wide status strip a
-// project fills (e.g. a trial notice) through the banner prop — one live region
-// for all, empty and zero-height while none is up — the content, and a footer
-// of the public framework pages (HILOS_FOOTER_LINKS). The shell is a
-// fixed-height viewport column (vh-100): the nav, banner, and footer never
-// scroll (flex-shrink-0) and the main region grows and scrolls its own overflow
-// (min-h-0 + overflow-auto), so a page either scrolls inside main or — like the
-// chat page — fills it and scrolls an inner region rather than the whole
-// document. The brand, the gear, and the footer links are HilosLinks —
+// a full-width banner region below the nav carrying, in this order, the
+// framework's own protected-mode strip, its impersonation strip (drawn from the
+// session, with a Stop that waits for the server's answer), and the app-wide
+// status strip a project fills (e.g. a trial notice) through the banner prop —
+// one live region for all, empty and zero-height while none is up — the
+// content, and a footer of the public framework pages (HILOS_FOOTER_LINKS). The
+// shell is a fixed-height viewport column (vh-100): the nav, banner, and footer
+// never scroll (flex-shrink-0) and the main region grows and scrolls its own
+// overflow (min-h-0 + overflow-auto), so a page either scrolls inside main or —
+// like the chat page — fills it and scrolls an inner region rather than the
+// whole document. The brand, the gear, and the footer links are HilosLinks —
 // no-refresh navigation that leaves the socket alive — so the shell alone moves
 // between the project home, the admin section, and the public pages. While the
 // connection reports protected mode the shell becomes the maintenance surface

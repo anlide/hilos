@@ -4,7 +4,7 @@ navigation bar carrying the project's brand, nav, and user slots, the framework 
 entry (the gear linking to the Hilos dashboard), the live connection indicator
 the SDK owns (core-and-connection.md), and, last, its tracked sign-out control
 while a person stands behind the session; a full-width banner region below the nav
-carrying the framework's own protected-mode strip, its
+carrying, in this order, the framework's own protected-mode strip, its
 impersonation strip (drawn from the session, with a Stop that waits for the
 server's answer), and the app-wide status strip a project fills (e.g. a trial
 notice) through the #banner slot — one live region for all, empty and
