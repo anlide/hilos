@@ -188,9 +188,13 @@ export function formatHilosLegalDate(date: string): string {
   }).format(parsed)
 }
 
-/** Formats a recorded acceptance moment as a UTC calendar day. */
+/** Formats a recorded acceptance moment in the reader's time zone: a moment, unlike a revision's calendar date. */
 export function formatHilosLegalAcceptanceDate(moment: number): string {
-  return formatHilosLegalDate(new Date(moment).toISOString().slice(0, 10))
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(moment))
 }
 
 /** The profile summary follows the worst document, as judged by the backend. */
@@ -231,7 +235,9 @@ export function describeHilosLegalAgreement(agreement: HilosLegalAgreement) {
   const standard = `Hilos standard ${revision.setVersion}${
     revision.deviationCount === 0
       ? ', no project differences'
-      : ` and ${revision.deviationCount} project differences`
+      : revision.deviationCount === 1
+        ? ' and 1 project difference'
+        : ` and ${revision.deviationCount} project differences`
   }`
   let notice: string | null = null
   if (agreement.standing === 'window' && agreement.deadline !== null) {

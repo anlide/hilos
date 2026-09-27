@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import {
   createHilosLegalAgreementsStore,
   describeHilosLegalAgreement,
   describeHilosLegalAgreements,
+  formatHilosLegalAcceptanceDate,
   formatHilosLegalDate,
   legalAgreementsStateSchema,
   legalChangeSchema,
@@ -44,6 +45,28 @@ describe('legal agreement contracts', () => {
   it('formats calendar dates without moving them across time zones', () => {
     expect(formatHilosLegalDate('2026-09-17')).toBe('17 September 2026')
     expect(formatHilosLegalDate('2026-01-01')).toBe('1 January 2026')
+  })
+  it("formats an acceptance moment on the reader's day, not the UTC one", () => {
+    vi.stubEnv('TZ', 'Europe/Warsaw')
+    try {
+      // 22:30 UTC on 17 September is 00:30 on 18 September in Warsaw
+      expect(
+        formatHilosLegalAcceptanceDate(Date.UTC(2026, 8, 17, 22, 30)),
+      ).toBe('18 September 2026')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+  it('names one project difference in the singular', () => {
+    const withDifferences = (deviationCount: number) =>
+      describeHilosLegalAgreement({
+        ...agreement,
+        held: { ...first, deviationCount },
+      }).standard
+    expect(withDifferences(0)).toContain(', no project differences')
+    expect(withDifferences(1)).toContain(' and 1 project difference')
+    expect(withDifferences(1)).not.toContain('differences')
+    expect(withDifferences(2)).toContain(' and 2 project differences')
   })
   it('summarizes the worst document and the nearest outstanding date', () => {
     const none = {
