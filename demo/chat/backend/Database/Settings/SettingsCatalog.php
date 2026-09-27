@@ -17,6 +17,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
+use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 
@@ -135,6 +136,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             DeliveryLogSettingsCatalog::getCatalog(),
             FilesSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
+            LegalSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),
             SecondFactorSettingsCatalog::getCatalog(),

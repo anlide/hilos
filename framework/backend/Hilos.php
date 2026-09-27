@@ -52,6 +52,7 @@ use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Pages\PageCatalogStub;
 use Hilos\Database\Settings\Preset\SettingPresetChangeSubscriber;
+use Hilos\Legal\LegalAcceptanceChangeSubscriber;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
@@ -1114,6 +1115,7 @@ abstract class Hilos implements TruthSourceOwner
         SourceChangeBus::subscribe(new OutboundRtSyncSubscriber());
         SourceChangeBus::subscribe(new LogWriteLevelSubscriber());
         SourceChangeBus::subscribe(new SettingPresetChangeSubscriber());
+        SourceChangeBus::subscribe(new LegalAcceptanceChangeSubscriber());
 
         static::validateTopologyReferences();
     }

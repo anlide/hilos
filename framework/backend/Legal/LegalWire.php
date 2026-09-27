@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Legal;
 
 use Hilos\Legal\Exception\LegalTextFileMissingException;
+use Hilos\Legal\Exception\UnknownStandardSetVersionException;
 
 /** Serializes legal model values at the browser boundary (HIL-498). */
 final class LegalWire
@@ -23,6 +24,45 @@ final class LegalWire
             'setVersion' => $revision->setVersion,
             'deviationCount' => count($revision->deviations),
         ];
+    }
+
+    /**
+     * @param StandardSet $set Framework standard set
+     * @return array<string, mixed> Set metadata and ordered clause statements
+     */
+    public static function standardSet(StandardSet $set): array
+    {
+        return [
+            'version' => $set->version,
+            'publishedOn' => $set->publishedOn,
+            'significance' => $set->significance->value,
+            'clauses' => array_map(static fn (StandardClause $clause): array => [
+                'clauseKey' => $clause->key,
+                'statement' => $clause->statement,
+            ], $set->clauses),
+        ];
+    }
+
+    /**
+     * @param LegalRevision $revision Validated project declaration
+     * @return list<array<string, mixed>> Deviations with their standard statements and full project text
+     * @throws UnknownStandardSetVersionException When the adopted set does not exist
+     * @throws LegalTextFileMissingException When a deviation's file cannot be read
+     */
+    public static function deviations(LegalRevision $revision): array
+    {
+        $statements = [];
+        foreach (StandardSetCatalog::set($revision->document, $revision->setVersion)->clauses as $clause) {
+            $statements[$clause->key] = $clause->statement;
+        }
+
+        return array_map(static fn (Deviation $deviation): array => [
+            'clauseKey' => $deviation->clauseKey,
+            'standardStatement' => $statements[$deviation->clauseKey],
+            'statement' => $deviation->statement,
+            'text' => LegalCatalogResolver::text($deviation->textFile),
+            'direction' => $deviation->direction->value,
+        ], $revision->deviations);
     }
 
     /**

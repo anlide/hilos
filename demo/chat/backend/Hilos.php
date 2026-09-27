@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\Chat;
 
+use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
+use Demo\Chat\Pages\Hilos\Legal\LegalPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
+use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalChecksTable;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosLegalSettingsTable;
+
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\ChatContextAnalyzerAgent;
@@ -355,6 +368,11 @@ final class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        LegalPage::PAGE => LegalPage::class,
+        LegalDocumentPage::PAGE => LegalDocumentPage::class,
+        LegalRevisionPage::PAGE => LegalRevisionPage::class,
+        LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
+        LegalSettingsPage::PAGE => LegalSettingsPage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         ProfileAgreementsPage::PAGE => ProfileAgreementsPage::class,
         ProfileAgreementsHistoryPage::PAGE => ProfileAgreementsHistoryPage::class,
@@ -447,6 +465,10 @@ final class Hilos extends HilosFacade
         DemoHilosLogsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
+        DemoHilosLegalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosLegalAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosLegalAgentDaemon::class,
         ],
         BackupAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => BackupAgent::class,
@@ -565,6 +587,11 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         ChatTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         ChatTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+        ChatTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+        ChatTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
+        ChatTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
+        ChatTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
+        ChatTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
         ChatTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
     ];
 
@@ -721,6 +748,23 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => [
             ChatTableContext::hilosSecurityTwoFactor => [],
             ChatTableContext::hilosSecurityStepUp => [],
+        ],
+        LegalPage::PAGE => [
+            ChatTableContext::hilosLegalDocuments => [],
+            ChatTableContext::hilosLegalChecks => [],
+            ChatTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentPage::PAGE => [
+            ChatTableContext::hilosLegalRevisions => [],
+        ],
+        LegalRevisionPage::PAGE => [
+            ChatTableContext::hilosLegalRevisions => [],
+        ],
+        LegalAcceptancesPage::PAGE => [
+            ChatTableContext::hilosLegalAcceptances => [],
+        ],
+        LegalSettingsPage::PAGE => [
+            ChatTableContext::hilosLegalSettings => [],
         ],
         LogsKeysPage::PAGE => [
             ChatTableContext::hilosLogKeys => [],

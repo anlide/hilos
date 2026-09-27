@@ -12,6 +12,7 @@ use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
+use Hilos\Legal\LegalSettingsCatalog;
 
 /**
  * PollsSettingsCatalog - Project settings catalog for the polls demo.
@@ -51,6 +52,7 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
             ],
         ],
             LogSettingsCatalog::getCatalog(),
+            LegalSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),
             SecondFactorSettingsCatalog::getCatalog(),

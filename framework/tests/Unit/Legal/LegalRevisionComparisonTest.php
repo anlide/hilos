@@ -85,6 +85,37 @@ final class LegalRevisionComparisonTest extends TestCase
         self::assertSame(LegalRevisionOrigin::STANDARD, LegalStandingResolver::origin(LegalDocument::TERMS, 'new'));
     }
 
+    public function testStandardSetsCompareTheirOwnTextWithoutProjectDeviations(): void
+    {
+        $changes = LegalWire::changes(LegalRevisionComparison::standardSets(LegalDocument::TERMS, 1, 2));
+        self::assertSame(['added', 'hidden', 'text', 'statement', 'removed'], array_column($changes, 'clauseKey'));
+        self::assertSame(['added', 'changed', 'changed', 'changed', 'removed'], array_column($changes, 'kind'));
+        foreach ($changes as $change) {
+            foreach ([$change['before'], $change['after']] as $side) {
+                if ($side !== null) {
+                    self::assertSame('standard', $side['source']);
+                    self::assertNull($side['direction']);
+                }
+            }
+        }
+        self::assertSame([], LegalRevisionComparison::standardSets(LegalDocument::TERMS, 1, 1));
+    }
+
+    public function testSetAndDeviationWireShapesPreserveBothStatements(): void
+    {
+        $set = LegalWire::standardSet(StandardSetCatalog::set(LegalDocument::TERMS, 2));
+        self::assertSame(2, $set['version']);
+        self::assertSame('2026-02-01', $set['publishedOn']);
+        self::assertSame('substantial', $set['significance']);
+        self::assertSame(['direction', 'added', 'hidden', 'text', 'statement', 'source'], array_column($set['clauses'], 'clauseKey'));
+        $deviations = LegalWire::deviations(LegalCatalogResolver::revision(LegalDocument::TERMS, 'new'));
+        self::assertSame(['hidden', 'direction', 'source'], array_column($deviations, 'clauseKey'));
+        self::assertSame('Changed hidden standard', $deviations[0]['standardStatement']);
+        self::assertSame('Project text', $deviations[0]['statement']);
+        self::assertSame(LegalCatalogResolver::text(__DIR__ . '/Fixtures/padded.txt'), $deviations[0]['text']);
+        self::assertSame('stricter', $deviations[0]['direction']);
+    }
+
     public function testAnUnchangedDeviationHidesChangesInTheUnderlyingStandard(): void
     {
         $clauses = LegalWire::clauses(LegalCatalogResolver::compose(LegalDocument::TERMS, 'new'));

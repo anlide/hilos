@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Tables;
 
+use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalChecksTable;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosLegalSettingsTable;
+
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
@@ -39,6 +45,11 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosSecurityOAuthRedirectTable $hilosSecurityOauthRedirect
  * @property-read HilosSecuritySignInMethodsTable $hilosSecuritySignInMethods
  * @property-read HilosSecurityTwoFactorTable $hilosSecurityTwoFactor
+ * @property-read HilosLegalDocumentsTable $hilosLegalDocuments
+ * @property-read HilosLegalChecksTable $hilosLegalChecks
+ * @property-read HilosLegalRevisionsTable $hilosLegalRevisions
+ * @property-read HilosLegalAcceptancesTable $hilosLegalAcceptances
+ * @property-read HilosLegalSettingsTable $hilosLegalSettings
  * @property-read HilosSecurityStepUpTable $hilosSecurityStepUp
  */
 final class TasksTableContext extends TableContext
@@ -55,6 +66,11 @@ final class TasksTableContext extends TableContext
     public const string hilosSecurityOauthRedirect = HilosSecurityOAuthRedirectTable::TABLE;
     public const string hilosSecuritySignInMethods = HilosSecuritySignInMethodsTable::TABLE;
     public const string hilosSecurityTwoFactor = HilosSecurityTwoFactorTable::TABLE;
+    public const string hilosLegalDocuments = HilosLegalDocumentsTable::TABLE;
+    public const string hilosLegalChecks = HilosLegalChecksTable::TABLE;
+    public const string hilosLegalRevisions = HilosLegalRevisionsTable::TABLE;
+    public const string hilosLegalAcceptances = HilosLegalAcceptancesTable::TABLE;
+    public const string hilosLegalSettings = HilosLegalSettingsTable::TABLE;
     public const string hilosSecurityStepUp = HilosSecurityStepUpTable::TABLE;
 
     /**

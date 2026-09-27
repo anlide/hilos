@@ -108,3 +108,135 @@ A project with no catalog receives `documents: []`.
 The two profile routes are `/profile/agreements` and
 `/profile/agreements/history`. This feature supplies no browser action to
 accept a revision; registration and re-consent call the command entry above.
+
+## Admin section
+
+The `Legal` section under Access & identity is closed by `ADMIN`. Activate it by
+registering its five pages and tables and a project subclass of
+`AbstractHilosLegalAgent`; there is no `HilosFeature` case for this section.
+Chat, tasks and polls provide these bindings. The framework owns the pages,
+projections, settings rules and all three SDK views. The project supplies person
+names and name searches to `AbstractHilosLegalAcceptancesTable`.
+
+| Route | Contents |
+|---|---|
+| `/hilos/legal` | Documents, coverage counts and four catalog checks |
+| `/hilos/legal/{documentKey}` | Adopted standard set, newer framework set, project deviations and revision history |
+| `/hilos/legal/{documentKey}/{revisionId}` | Exact text, predecessor comparison and acceptance count |
+| `/hilos/legal/acceptances` | Immutable acceptance records, document/revision filters and person search |
+| `/hilos/legal/settings` | The two legal settings, edited in modals |
+
+The section writes no document or acceptance. Texts stay in code and a revision
+is published by deployment. The revision view reuses `HilosLegalRevisionText`
+and `HilosLegalChanges`, the same components as the personal agreement surfaces.
+A recorded revision missing from the catalog still opens, with its count and an
+explanation in place of text. A key with neither declaration nor records is
+refused with `PageResourceNotFoundException` (404 / `not_found`). The revision detail narrows `hilosLegalRevisions` by both `document` and
+`revision`: its count must not depend on whether its row fits in the first
+history window. An already-open historical revision reports zero when its last
+record is erased, and distinguishes a refused count window from a loading one.
+
+A `LegalException` from the catalog becomes `legalCatalogRefusal` on the root,
+document and revision pages. Their declaration tables answer empty windows;
+the page shows the refusal. Acceptance history and settings remain usable.
+A project without a catalog has no declared documents and no checks to show.
+
+### Counts and checks
+
+`LegalTally` folds two SQL histograms per document: distinct people by their
+latest accepted **declared** revision, and acceptance records by revision.
+`heldCounts()` selects declaration rank, not the timestamp of acceptance.
+`LegalStandingResolver::standingOf()` depends on that held revision alone, so
+PHP needs one entry per revision rather than one per person or acceptance.
+
+- `covered` includes the current revision and editorially equivalent holdings.
+- `window` counts holdings with an outstanding substantial revision whose
+  nearest deadline is still ahead.
+- `lapsed` counts holdings whose deadline has arrived. Its label is `Frozen`
+  for `legal.refusal_after_deadline=freeze`, or `Past deadline` for `remind`.
+- A revision's `heldCount` counts people whose latest declared acceptance is
+  that revision. For an undeclared revision it counts its records; the unique
+  person/document/revision key makes that a count of people too.
+- `acceptedCount` is the number of records for the exact revision, regardless
+  of later acceptances. People with no recorded acceptance are outside these
+  tallies; their enforcement belongs to HIL-945.
+
+The four checks identify accepted revisions missing from code, substantial
+non-first revisions with zero-length windows, newer framework standard sets,
+and declared project deviations. A document with no deviations carries the
+reminder that consent will say there are no differences. A deviation pointing
+at a missing standard clause is a catalog refusal, not a fifth check.
+
+The section runs on its own cluster singleton, `hilos_legal`, started by its
+first page subscription. Its daemon proxy requires a monopolistic worker:
+whole-history SQL must not occupy the shared administration worker's tick.
+The agent reads acceptance records and owns no DB or RT collection. The users
+library remains their writer.
+
+`LegalAcceptanceChangeSubscriber` invalidates `LegalAdminAudience` on local and
+remote acceptance changes. That process-local audience shares histograms and
+projections across windows, coalesces changes until its next tick and resends
+subscribed aggregate windows. When `LegalStandingResolver::today()` changes,
+it folds the cached histograms again without SQL. An acceptance-only audience
+does not read the coverage histograms; a section with no viewers does no work.
+Settings rows use the ordinary source-change fan-out, including the root's
+refusal-policy label.
+
+### Acceptance windows and filter vocabulary
+
+Acceptance windows come from SQL in `accepted_at DESC, id DESC` order. Only
+the timestamp is sortable; reversing it also reverses the primary-key tie.
+Keep both indexes with this declaration: `idx_legal_acceptance_accepted_at`
+on `(accepted_at)`, and `idx_legal_acceptance_document_revision` on
+`(document, revision_id, accepted_at)` for an exact document/revision window.
+InnoDB supplies the primary-key suffix. The latter index also serves the
+prefix read of distinct recorded document/revision pairs.
+
+Do not build the filters from the current window: its 25 rows cannot name
+all historical revisions. `revisionsOnRecord()` supplies the complete recorded
+pairs independently of catalog validity. The catalog adds declared documents
+with no records and orders their recorded revisions newest first; unknown
+revisions follow in descending id order. Undeclared document keys follow the
+catalog's documents in key order.
+
+The page sends `HilosLegalAcceptanceFiltersSignalData` on
+`subscription_page_hilos_legal_acceptances` before its `page_response`, through
+the same subscription, without a client catalog request. The connection retains
+that early frame for a view mounted later. The audience sends the vocabulary
+again after an acceptance change only when its fingerprint differs. Answering
+a new subscriber does not consume a broadcast owed to existing viewers. A date
+change does not reread or resend filter options. Every vocabulary push rechecks
+the current page access level and browser guards; a past subscription is not
+authority to keep receiving data after rights are revoked.
+
+Both a history row and an option carry `declared`: `true` for a declaration,
+`false` for a record missing from code, `null` when the catalog refused and the
+answer is unknown. Only `false` draws the missing-code mark. Changing the
+document filter clears the revision filter in the same viewport request.
+Rows, facet counts and pending changes otherwise follow the shared viewport
+protocol; there is no legal-specific mutation path.
+
+### Settings
+
+| Key | Values | Default |
+|---|---|---|
+| `legal.consent_form` | `checkbox`, `line` | `checkbox` |
+| `legal.refusal_after_deadline` | `freeze`, `remind` | `freeze` |
+
+Merge `LegalSettingsCatalog::getCatalog()` into the project's setting catalog.
+A stored row is needed only when a value is edited; `LegalSettings` reads the
+catalog default otherwise. `legal_setting_set` stays on the admin page and
+hands the write to the settings library; the library validates the value and
+returns `hilos_legal_setting_write_done`. The page refuses unrelated keys.
+
+Every view uses `createHilosLegalSettingEdit` over the focused setting row and
+the shared `rowEdit` merge. A save stays unavailable while unchanged, in flight,
+conflicting or deleted. Incoming changes update a pristine draft, and a refused
+write keeps the modal and draft with its inline error. Closing follows the
+tracked settings-owner reply; the table value follows the DB source. Preview
+controls are disabled illustrations, not a second registration flow.
+
+The consent-form value is consumed by registration (not in the code yet —
+HIL-499). Re-consent and access enforcement consume the refusal policy (not in
+the code yet — HIL-500 and HIL-945); this section already uses it to name the
+lapsed count. Neither setting changes a revision's text or effective date.

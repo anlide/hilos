@@ -94,6 +94,11 @@ export const HilosPages = {
   SECURITY_OAUTH: 'hilos_security_oauth',
   SECURITY_OAUTH_PROVIDER: 'hilos_security_oauth_provider',
   SECURITY_SIGN_IN_METHODS: 'hilos_security_sign_in_methods',
+  LEGAL: 'hilos_legal',
+  LEGAL_DOCUMENT: 'hilos_legal_document',
+  LEGAL_REVISION: 'hilos_legal_revision',
+  LEGAL_ACCEPTANCES: 'hilos_legal_acceptances',
+  LEGAL_SETTINGS: 'hilos_legal_settings',
   BILLING: 'hilos_billing',
   BILLING_PROVIDER: 'hilos_billing_provider',
   BILLING_PAYMENTS: 'hilos_billing_payments',
@@ -280,6 +285,20 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/security/sign-in-methods',
     admin: true,
   },
+  [HilosPages.LEGAL]: { path: '/hilos/legal', admin: true },
+  [HilosPages.LEGAL_DOCUMENT]: {
+    path: '/hilos/legal/{documentKey}',
+    admin: true,
+  },
+  [HilosPages.LEGAL_REVISION]: {
+    path: '/hilos/legal/{documentKey}/{revisionId}',
+    admin: true,
+  },
+  [HilosPages.LEGAL_ACCEPTANCES]: {
+    path: '/hilos/legal/acceptances',
+    admin: true,
+  },
+  [HilosPages.LEGAL_SETTINGS]: { path: '/hilos/legal/settings', admin: true },
   [HilosPages.BILLING]: { path: '/hilos/billing', admin: true },
   [HilosPages.BILLING_PROVIDER]: {
     path: '/hilos/billing/{providerId}',

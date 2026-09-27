@@ -43,6 +43,45 @@ class LegalAcceptances extends DbCollection
     }
 
     /**
+     * @param string $document Stored document key
+     * @param list<string> $declaredIds Revision keys in declaration order, from the catalog boundary
+     * @return array<string, int> People by their latest accepted declared revision
+     * @throws DatabaseException When the histogram query fails
+     */
+    public function heldCounts(string $document, array $declaredIds): array
+    {
+        return $this->objectCollection->heldCounts($document, $declaredIds);
+    }
+
+    /**
+     * @param string $document Stored document key, including an undeclared document
+     * @return array<string, int> Persisted record counts by revision
+     * @throws DatabaseException When the histogram query fails
+     */
+    public function acceptedCounts(string $document): array
+    {
+        return $this->objectCollection->acceptedCounts($document);
+    }
+
+    /**
+     * @return list<string> Distinct persisted document keys, including undeclared documents
+     * @throws DatabaseException When the document query fails
+     */
+    public function documentsOnRecord(): array
+    {
+        return $this->objectCollection->documentsOnRecord();
+    }
+
+    /**
+     * @return array<string, list<string>> Distinct recorded revision keys per document, without object hydration
+     * @throws DatabaseException When the revision query fails
+     */
+    public function revisionsOnRecord(): array
+    {
+        return $this->objectCollection->revisionsOnRecord();
+    }
+
+    /**
      * @param int $userId Person accepting
      * @param LegalDocument $document Document
      * @param string $revisionId Revision key

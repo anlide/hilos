@@ -103,6 +103,33 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_USERS,
         ],
 
+        HilosPageConstants::HILOS_LEGAL => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Legal',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What the project declares, and who accepted it.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-file-earmark-check',
+        ],
+        HilosPageConstants::HILOS_LEGAL_DOCUMENT => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Document',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The standard set, project deviations, and declared revisions.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL,
+        ],
+        HilosPageConstants::HILOS_LEGAL_REVISION => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Revision',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The exact text, its changes, and its acceptances.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL_DOCUMENT,
+        ],
+        HilosPageConstants::HILOS_LEGAL_ACCEPTANCES => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Acceptances',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Who accepted which revision, and when.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL,
+        ],
+        HilosPageConstants::HILOS_LEGAL_SETTINGS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Settings',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'How consent is given, and what a refusal after the deadline leads to.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_LEGAL,
+        ],
+
         // — Configuration & localization —
         HilosPageConstants::HILOS_ROLES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Roles',
@@ -444,6 +471,7 @@ final class HilosPageCatalog
             PageCatalogConstants::SECTION_ITEMS => [
                 HilosPageConstants::HILOS_USERS,
                 HilosPageConstants::HILOS_ROLES,
+                HilosPageConstants::HILOS_LEGAL,
             ],
         ],
         [

@@ -25,4 +25,7 @@ final class AgentType
 
     /** @var string Hilos logs agent type (serves every screen of the logs section) */
     public const string HILOS_LOGS = HilosAgentType::HILOS_LOGS;
+
+    /** Legal administration subscriptions and aggregate reads. */
+    public const string HILOS_LEGAL = HilosAgentType::HILOS_LEGAL;
 }

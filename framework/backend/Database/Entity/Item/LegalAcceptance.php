@@ -36,6 +36,12 @@ class LegalAcceptance extends Entity
             Entity::INDEX_COLUMNS => [self::user_id, self::document, self::revision_id],
             Entity::INDEX_UNIQUE => true,
         ],
+        'idx_legal_acceptance_document_revision' => [
+            Entity::INDEX_COLUMNS => [self::document, self::revision_id, self::accepted_at],
+        ],
+        'idx_legal_acceptance_accepted_at' => [
+            Entity::INDEX_COLUMNS => [self::accepted_at],
+        ],
     ];
     public const string _setVia = self::user_id;
     public const bool _setRoot = false;

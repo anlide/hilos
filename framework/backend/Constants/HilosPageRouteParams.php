@@ -26,4 +26,8 @@ final class HilosPageRouteParams
      * Route param for {@see HilosPageConstants::HILOS_GUARDIAN_AGENT} (`/hilos/guardian/{agentId}`).
      */
     public const string HILOS_GUARDIAN_AGENT_AGENT_ID = AgentConstants::FIELD_AGENT_ID;
+
+    /** Legal document and revision route parameters. */
+    public const string HILOS_LEGAL_DOCUMENT_KEY = 'documentKey';
+    public const string HILOS_LEGAL_REVISION_ID = 'revisionId';
 }

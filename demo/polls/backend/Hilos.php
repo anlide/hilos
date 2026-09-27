@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\Polls;
 
+use Demo\Polls\Agents\Hilos\DemoHilosLegalAgent;
+use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
+use Demo\Polls\Pages\Hilos\Legal\LegalPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
+use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalChecksTable;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosLegalSettingsTable;
+
 use Demo\Polls\Agents\Hilos\DataExportAgent;
 use Demo\Polls\Agents\Hilos\DemoHilosAgent;
 use Demo\Polls\Agents\Hilos\DemoHilosLogsAgent;
@@ -166,6 +179,11 @@ final class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        LegalPage::PAGE => LegalPage::class,
+        LegalDocumentPage::PAGE => LegalDocumentPage::class,
+        LegalRevisionPage::PAGE => LegalRevisionPage::class,
+        LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
+        LegalSettingsPage::PAGE => LegalSettingsPage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         ProfileDataPage::PAGE => ProfileDataPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
@@ -214,6 +232,10 @@ final class Hilos extends HilosFacade
         DemoHilosLogsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
+        DemoHilosLegalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosLegalAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosLegalAgentDaemon::class,
         ],
         OAuthAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => OAuthAgent::class,
@@ -307,6 +329,11 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         PollsTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         PollsTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+        PollsTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+        PollsTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
+        PollsTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
+        PollsTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
+        PollsTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
         PollsTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
     ];
 
@@ -344,6 +371,23 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => [
             PollsTableContext::hilosSecurityTwoFactor => [],
             PollsTableContext::hilosSecurityStepUp => [],
+        ],
+        LegalPage::PAGE => [
+            PollsTableContext::hilosLegalDocuments => [],
+            PollsTableContext::hilosLegalChecks => [],
+            PollsTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentPage::PAGE => [
+            PollsTableContext::hilosLegalRevisions => [],
+        ],
+        LegalRevisionPage::PAGE => [
+            PollsTableContext::hilosLegalRevisions => [],
+        ],
+        LegalAcceptancesPage::PAGE => [
+            PollsTableContext::hilosLegalAcceptances => [],
+        ],
+        LegalSettingsPage::PAGE => [
+            PollsTableContext::hilosLegalSettings => [],
         ],
         UsersPage::PAGE => [
             PollsTableContext::hilosUsers => [],

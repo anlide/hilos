@@ -22,6 +22,9 @@ final class HilosAgentType
     /** @var string Hilos analytics agent (visit statistics) */
     public const string HILOS_ANALYTICS = 'hilos_analytics';
 
+    /** Legal section agent: serves its five pages and holds their tallies. */
+    public const string HILOS_LEGAL = 'hilos_legal';
+
     /** @var string Hilos logs overview agent (rotation metrics under daemon log archive) */
     public const string HILOS_LOGS = 'hilos_logs';
 

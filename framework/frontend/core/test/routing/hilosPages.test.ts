@@ -70,6 +70,23 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     }
   })
 
+  it('keeps the static legal pages ahead of document and revision routes', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
+      fallback: HilosPages.DASHBOARD,
+    })
+    expect(router.match('/hilos/legal/terms/2026-09-27')).toEqual({
+      page: HilosPages.LEGAL_REVISION,
+      params: { documentKey: 'terms', revisionId: '2026-09-27' },
+      admin: true,
+    })
+    expect(router.match('/hilos/legal/acceptances').page).toBe(
+      HilosPages.LEGAL_ACCEPTANCES,
+    )
+    expect(router.match('/hilos/legal/settings').page).toBe(
+      HilosPages.LEGAL_SETTINGS,
+    )
+  })
+
   it('routes its own templated paths back to their page keys', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
       fallback: HilosPages.DASHBOARD,

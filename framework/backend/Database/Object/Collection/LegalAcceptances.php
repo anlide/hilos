@@ -9,6 +9,7 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\LegalAcceptances as EntityLegalAcceptances;
 use Hilos\Database\Entity\Collection\EntityCollection;
@@ -73,6 +74,84 @@ class LegalAcceptances extends Objects
             [],
             [EntityLegalAcceptance::accepted_at => SqlSortDirection::ASC, EntityLegalAcceptance::id => SqlSortDirection::ASC],
         ));
+    }
+
+    /**
+     * Aggregates in SQL; unknown revisions do not give a person a held declaration.
+     *
+     * @param string $document Stored document key
+     * @param list<string> $declaredIds Revision keys in declaration order, from the catalog boundary
+     * @return array<string, int> People by their latest accepted declared revision
+     * @throws DatabaseException When the histogram query fails
+     */
+    public function heldCounts(string $document, array $declaredIds): array
+    {
+        if ($declaredIds === []) {
+            return [];
+        }
+        $cases = [];
+        foreach ($declaredIds as $index => $id) {
+            $cases[] = 'WHEN ? THEN ' . ($index + 1);
+        }
+        $counts = [];
+        foreach (Database::sql(
+            'SELECT held, COUNT(*) AS people FROM (SELECT MAX(CASE revision_id '
+            . implode(' ', $cases) . ' ELSE 0 END) AS held FROM ' . EntityLegalAcceptance::_table
+            . ' WHERE document = ? GROUP BY user_id) AS holders WHERE held > 0 GROUP BY held ORDER BY held',
+            [...$declaredIds, $document],
+        )->rows() as $row) {
+            $counts[$declaredIds[(int) $row['held'] - 1]] = (int) $row['people'];
+        }
+
+        return $counts;
+    }
+
+    /**
+     * @param string $document Stored document key, including an undeclared document
+     * @return array<string, int> Persisted record counts by revision, without hydrating objects
+     * @throws DatabaseException When the histogram query fails
+     */
+    public function acceptedCounts(string $document): array
+    {
+        $counts = [];
+        foreach (Database::sql(
+            'SELECT revision_id, COUNT(*) AS acceptances FROM ' . EntityLegalAcceptance::_table
+            . ' WHERE document = ? GROUP BY revision_id ORDER BY revision_id',
+            [$document],
+        )->rows() as $row) {
+            $counts[(string) $row[EntityLegalAcceptance::revision_id]] = (int) $row['acceptances'];
+        }
+
+        return $counts;
+    }
+
+    /**
+     * @return list<string> Distinct persisted document keys, including undeclared documents
+     * @throws DatabaseException When the document query fails
+     */
+    public function documentsOnRecord(): array
+    {
+        return array_map(
+            static fn (array $row): string => (string) $row[EntityLegalAcceptance::document],
+            Database::sql('SELECT DISTINCT document FROM ' . EntityLegalAcceptance::_table . ' ORDER BY document')->rows(),
+        );
+    }
+
+    /**
+     * @return array<string, list<string>> Distinct recorded revision keys per document, without object hydration
+     * @throws DatabaseException When the revision query fails
+     */
+    public function revisionsOnRecord(): array
+    {
+        $revisions = [];
+        foreach (Database::sql(
+            'SELECT document, revision_id FROM ' . EntityLegalAcceptance::_table
+            . ' GROUP BY document, revision_id ORDER BY document, revision_id',
+        )->rows() as $row) {
+            $revisions[(string) $row[EntityLegalAcceptance::document]][] = (string) $row[EntityLegalAcceptance::revision_id];
+        }
+
+        return $revisions;
     }
 
     /**

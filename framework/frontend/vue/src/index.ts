@@ -109,3 +109,11 @@ export { default as HilosLegalChanges } from './legal/HilosLegalChanges.vue'
 export { default as HilosLegalRevisionText } from './legal/HilosLegalRevisionText.vue'
 export { default as HilosProfileAgreementsPage } from './profile/HilosProfileAgreementsPage.vue'
 export { default as HilosProfileAgreementsHistoryPage } from './profile/HilosProfileAgreementsHistoryPage.vue'
+
+export { default as HilosLegalPage } from './admin/legal/HilosLegalPage.vue'
+export { default as HilosLegalDocumentPage } from './admin/legal/HilosLegalDocumentPage.vue'
+export { default as HilosLegalRevisionPage } from './admin/legal/HilosLegalRevisionPage.vue'
+
+export { default as HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAcceptancesPage.vue'
+
+export { default as HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.vue'

@@ -245,4 +245,11 @@ final class HilosPageConstants
 
     /** @var string Hilos — public License page */
     public const string HILOS_LICENSE = 'hilos_license';
+
+    /** Legal administration pages. */
+    public const string HILOS_LEGAL = 'hilos_legal';
+    public const string HILOS_LEGAL_DOCUMENT = 'hilos_legal_document';
+    public const string HILOS_LEGAL_REVISION = 'hilos_legal_revision';
+    public const string HILOS_LEGAL_ACCEPTANCES = 'hilos_legal_acceptances';
+    public const string HILOS_LEGAL_SETTINGS = 'hilos_legal_settings';
 }

@@ -4,6 +4,22 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Tests\Unit;
 
+use Demo\Tasks\Agents\Hilos\DemoHilosLegalAgent;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
+use Demo\Tasks\Pages\Hilos\Legal\LegalPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
+use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalChecksTable;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosLegalSettingsTable;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Legal\LegalSettings;
+use Hilos\Legal\LegalSettingsCatalog;
+
 use Hilos\DataExport\DataExportHttp;
 use Hilos\Constants\HttpConstants;
 use Hilos\DataExport\DataExportAgentDaemon;
@@ -81,6 +97,35 @@ use PHPUnit\Framework\TestCase;
  */
 final class TasksTopologyRegistryTest extends TestCase
 {
+    /** Legal administration is bound to its own worker, page routes and tables. */
+    public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
+    {
+        $this->assertSame(DemoHilosLegalAgent::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::WORKER]);
+        $this->assertSame(DemoHilosLegalAgentDaemon::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::DAEMON]);
+        $this->assertTrue(new DemoHilosLegalAgentDaemon()->requiresMonopolisticProcess());
+        foreach ([
+            LegalPage::class, LegalDocumentPage::class, LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
+        ] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(AgentType::HILOS_LEGAL, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
+        $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
+        $this->assertSame([
+            TasksTableContext::hilosLegalDocuments => [],
+            TasksTableContext::hilosLegalChecks => [],
+            TasksTableContext::hilosLegalSettings => [],
+        ], Hilos::PAGE_TABLES[LegalPage::PAGE]);
+        $this->assertSame([TasksTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
+        $this->assertSame([TasksTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
+        $this->assertSame([TasksTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
+        $this->assertSame([TasksTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalSettingsPage::PAGE]);
+        $catalog = TasksSettingsCatalog::getCatalog();
+        foreach (LegalSettings::KEYS as $key) {
+            $this->assertSame(LegalSettingsCatalog::getCatalog()[$key], $catalog[$key]);
+        }
+    }
+
     /** The archive address is answered by the export owner. */
     public function testDataExportHttpRoute(): void
     {
@@ -435,6 +480,11 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
             TasksTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
             TasksTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+            TasksTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+            TasksTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
+            TasksTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
+            TasksTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
+            TasksTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
             TasksTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
         ], Hilos::TABLES);
 
@@ -455,6 +505,11 @@ final class TasksTopologyRegistryTest extends TestCase
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
                 SecurityTwoFactorPage::PAGE,
+                LegalPage::PAGE,
+                LegalDocumentPage::PAGE,
+                LegalRevisionPage::PAGE,
+                LegalAcceptancesPage::PAGE,
+                LegalSettingsPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
             ],

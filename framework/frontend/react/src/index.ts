@@ -262,3 +262,11 @@ export {
   HilosProfileAgreementsHistoryPage,
   type HilosProfileAgreementsHistoryPageProps,
 } from './profile/HilosProfileAgreementsHistoryPage.js'
+
+export { HilosLegalPage } from './admin/legal/HilosLegalPage.js'
+export { HilosLegalDocumentPage } from './admin/legal/HilosLegalDocumentPage.js'
+export { HilosLegalRevisionPage } from './admin/legal/HilosLegalRevisionPage.js'
+
+export { HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAcceptancesPage.js'
+
+export { HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.js'

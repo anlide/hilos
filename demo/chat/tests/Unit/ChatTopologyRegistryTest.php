@@ -4,6 +4,23 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
+use Demo\Chat\Pages\Hilos\Legal\LegalPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
+use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
+use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalChecksTable;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosLegalSettingsTable;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Demo\Chat\Database\Settings\SettingsCatalog;
+use Hilos\Legal\LegalSettings;
+use Hilos\Legal\LegalSettingsCatalog;
+
 use Hilos\DataExport\DataExportHttp;
 use Hilos\DataExport\DTO\DataExportOrderActionDTO;
 use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
@@ -208,6 +225,35 @@ use ReflectionClass;
  */
 final class ChatTopologyRegistryTest extends TestCase
 {
+    /** Legal administration is bound to its own worker, page routes and tables. */
+    public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
+    {
+        $this->assertSame(DemoHilosLegalAgent::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::WORKER]);
+        $this->assertSame(DemoHilosLegalAgentDaemon::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::DAEMON]);
+        $this->assertTrue(new DemoHilosLegalAgentDaemon()->requiresMonopolisticProcess());
+        foreach ([
+            LegalPage::class, LegalDocumentPage::class, LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
+        ] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(AgentType::HILOS_LEGAL, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
+        $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
+        $this->assertSame([
+            ChatTableContext::hilosLegalDocuments => [],
+            ChatTableContext::hilosLegalChecks => [],
+            ChatTableContext::hilosLegalSettings => [],
+        ], Hilos::PAGE_TABLES[LegalPage::PAGE]);
+        $this->assertSame([ChatTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
+        $this->assertSame([ChatTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
+        $this->assertSame([ChatTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
+        $this->assertSame([ChatTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalSettingsPage::PAGE]);
+        $catalog = SettingsCatalog::getCatalog();
+        foreach (LegalSettings::KEYS as $key) {
+            $this->assertSame(LegalSettingsCatalog::getCatalog()[$key], $catalog[$key]);
+        }
+    }
+
     /** The export runs once on the policy-selected node and has a worker of its own. */
     public function testDataExportAgentIsPolicyPlacedAndMonopolistic(): void
     {
@@ -421,6 +467,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => PageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
             HilosSignalConstants::SECURITY_2FA_SETTING_SET => HilosPageConstants::HILOS_SECURITY_2FA,
             HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => HilosPageConstants::HILOS_SECURITY_2FA,
+            HilosSignalConstants::LEGAL_SETTING_SET => HilosPageConstants::HILOS_LEGAL_SETTINGS,
             HilosSignalConstants::HILOS_LEGAL_REVISION_TEXT => HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY,
             HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES => HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_SET => PageConstants::HILOS_SECURITY_OAUTH,
@@ -478,6 +525,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_2FA_SETTING_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::LEGAL_SETTING_SET => AgentType::HILOS_LEGAL,
             HilosSignalConstants::HILOS_LEGAL_REVISION_TEXT => AgentType::CHAT,
             HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES => AgentType::CHAT,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_SET => AgentType::HILOS_INDEX,
@@ -511,6 +559,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE
                     => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
                 HilosSignalConstants::HILOS_SECOND_FACTOR_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_2FA,
+                HilosSignalConstants::HILOS_LEGAL_SETTING_WRITE_DONE => HilosPageConstants::HILOS_LEGAL_SETTINGS,
                 HilosSignalConstants::HILOS_OAUTH_REDIRECT_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_OAUTH,
                 HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
             ],
@@ -536,6 +585,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_SECOND_FACTOR_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_LEGAL_SETTING_WRITE_DONE => AgentType::HILOS_LEGAL,
                 HilosSignalConstants::HILOS_OAUTH_REDIRECT_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE => AgentType::HILOS_INDEX,
             ],

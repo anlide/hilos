@@ -2009,4 +2009,17 @@ final class HilosSignalConstants
      * next one instead of needing a protocol for asking again.
      */
     public const string LOGS_CLUSTER_INDEX_PORTION = 'logs_cluster_index_portion';
+
+    /** Legal administration subscription signals. */
+    public const string SUBSCRIPTION_PAGE_HILOS_LEGAL = 'subscription_page_hilos_legal';
+    public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT = 'subscription_page_hilos_legal_document';
+    public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_REVISION = 'subscription_page_hilos_legal_revision';
+    public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES = 'subscription_page_hilos_legal_acceptances';
+    public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_SETTINGS = 'subscription_page_hilos_legal_settings';
+
+    /** Writes one of the legal section settings. */
+    public const string LEGAL_SETTING_SET = 'legal_setting_set';
+
+    /** Settings library answer routed back to the legal settings page. */
+    public const string HILOS_LEGAL_SETTING_WRITE_DONE = 'hilos_legal_setting_write_done';
 }

@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\Tasks;
 
+use Demo\Tasks\Agents\Hilos\DemoHilosLegalAgent;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
+use Demo\Tasks\Pages\Hilos\Legal\LegalPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
+use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
+use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalChecksTable;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosLegalSettingsTable;
+
 use Demo\Tasks\Agents\Hilos\DataExportAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
@@ -173,6 +186,11 @@ final class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        LegalPage::PAGE => LegalPage::class,
+        LegalDocumentPage::PAGE => LegalDocumentPage::class,
+        LegalRevisionPage::PAGE => LegalRevisionPage::class,
+        LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
+        LegalSettingsPage::PAGE => LegalSettingsPage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         ProfileDataPage::PAGE => ProfileDataPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
@@ -221,6 +239,10 @@ final class Hilos extends HilosFacade
         DemoHilosLogsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
+        DemoHilosLegalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosLegalAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosLegalAgentDaemon::class,
         ],
         BackupAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => BackupAgent::class,
@@ -320,6 +342,11 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         TasksTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         TasksTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+        TasksTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+        TasksTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
+        TasksTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
+        TasksTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
+        TasksTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
         TasksTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
     ];
 
@@ -360,6 +387,23 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => [
             TasksTableContext::hilosSecurityTwoFactor => [],
             TasksTableContext::hilosSecurityStepUp => [],
+        ],
+        LegalPage::PAGE => [
+            TasksTableContext::hilosLegalDocuments => [],
+            TasksTableContext::hilosLegalChecks => [],
+            TasksTableContext::hilosLegalSettings => [],
+        ],
+        LegalDocumentPage::PAGE => [
+            TasksTableContext::hilosLegalRevisions => [],
+        ],
+        LegalRevisionPage::PAGE => [
+            TasksTableContext::hilosLegalRevisions => [],
+        ],
+        LegalAcceptancesPage::PAGE => [
+            TasksTableContext::hilosLegalAcceptances => [],
+        ],
+        LegalSettingsPage::PAGE => [
+            TasksTableContext::hilosLegalSettings => [],
         ],
         UsersPage::PAGE => [
             TasksTableContext::hilosUsers => [],

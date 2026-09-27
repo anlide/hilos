@@ -4,6 +4,22 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Tests\Unit;
 
+use Demo\Polls\Agents\Hilos\DemoHilosLegalAgent;
+use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
+use Demo\Polls\Pages\Hilos\Legal\LegalPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalDocumentPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
+use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
+use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Legal\HilosLegalDocumentsTable;
+use Hilos\Tables\Legal\HilosLegalChecksTable;
+use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\Tables\Legal\HilosLegalSettingsTable;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Legal\LegalSettings;
+use Hilos\Legal\LegalSettingsCatalog;
+
 use Hilos\DataExport\DataExportHttp;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\Config\AgentPlacement;
@@ -77,6 +93,35 @@ use PHPUnit\Framework\TestCase;
  */
 final class PollsTopologyRegistryTest extends TestCase
 {
+    /** Legal administration is bound to its own worker, page routes and tables. */
+    public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
+    {
+        $this->assertSame(DemoHilosLegalAgent::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::WORKER]);
+        $this->assertSame(DemoHilosLegalAgentDaemon::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::DAEMON]);
+        $this->assertTrue(new DemoHilosLegalAgentDaemon()->requiresMonopolisticProcess());
+        foreach ([
+            LegalPage::class, LegalDocumentPage::class, LegalRevisionPage::class, LegalAcceptancesPage::class, LegalSettingsPage::class,
+        ] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(AgentType::HILOS_LEGAL, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
+        $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
+        $this->assertSame([
+            PollsTableContext::hilosLegalDocuments => [],
+            PollsTableContext::hilosLegalChecks => [],
+            PollsTableContext::hilosLegalSettings => [],
+        ], Hilos::PAGE_TABLES[LegalPage::PAGE]);
+        $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalDocumentPage::PAGE]);
+        $this->assertSame([PollsTableContext::hilosLegalRevisions => []], Hilos::PAGE_TABLES[LegalRevisionPage::PAGE]);
+        $this->assertSame([PollsTableContext::hilosLegalAcceptances => []], Hilos::PAGE_TABLES[LegalAcceptancesPage::PAGE]);
+        $this->assertSame([PollsTableContext::hilosLegalSettings => []], Hilos::PAGE_TABLES[LegalSettingsPage::PAGE]);
+        $catalog = PollsSettingsCatalog::getCatalog();
+        foreach (LegalSettings::KEYS as $key) {
+            $this->assertSame(LegalSettingsCatalog::getCatalog()[$key], $catalog[$key]);
+        }
+    }
+
     /** The archive address is answered by the export owner. */
     public function testDataExportHttpRoute(): void
     {
@@ -420,6 +465,11 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
             PollsTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
             PollsTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+            PollsTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
+            PollsTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
+            PollsTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
+            PollsTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
+            PollsTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
             PollsTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
         ], Hilos::TABLES);
 
@@ -439,6 +489,11 @@ final class PollsTopologyRegistryTest extends TestCase
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
                 SecurityTwoFactorPage::PAGE,
+                LegalPage::PAGE,
+                LegalDocumentPage::PAGE,
+                LegalRevisionPage::PAGE,
+                LegalAcceptancesPage::PAGE,
+                LegalSettingsPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
             ],
