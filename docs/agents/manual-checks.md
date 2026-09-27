@@ -75,11 +75,12 @@ for the phone"** for those items rather than silently skipping them.
 
 | Platform | Browsers | Promised | Checked by hand |
 |---|---|---|---|
-| Windows + Windows Hello | Chrome | yes | refused 2026-08-22 at the acceptance of HIL-418 ("this computer" missing, fixed by HIL-658); not checked since |
+| Windows + Windows Hello | Chrome | yes | refused 2026-08-22 at the acceptance of HIL-418 ("this computer" missing, fixed by HIL-658); not checked since; 2026-09-27 (HIL-659): not reached — Chrome kept the key in Google Password Manager and refused a second one before any Windows window |
 | Mac — Touch ID, iCloud Keychain | Safari, Chrome | yes | never |
 | iPhone — iCloud Keychain | Safari | yes | never |
 | A phone by QR from a computer (hybrid) | Chrome | yes | never |
 | Android — Google Password Manager | Chrome | yes | never |
+| Windows — Google Password Manager (Chrome's own store) | Chrome | yes | 2026-09-27 at HIL-659: items 3, 8, 9 ok |
 | FIDO2 security key (USB/NFC) | Chrome | yes | never |
 | U2F-only key without discoverable credentials | — | no — sign-in names no account, so the key must hold a discoverable credential (`buildRegistrationOptions()` in `framework/backend/Auth/Library/Command/PasskeyCommands.php` requires `residentKey: 'required'`) | — |
 
