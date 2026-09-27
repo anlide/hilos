@@ -755,26 +755,26 @@ the empty set key and the borrowed wait (`DeclaredSetOwnershipTest`), the one
 call that lays every map (`DeclaredClaimAllTest`), the operation axis and the
 guards on it (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 `DbWriteGuardLazyCollectionsTest`, the set door and the two create doors beside
-the collection door there), the third width answered by the row's set column at the value, the
-registry and the door, a row born after the declared start included, one
-statement over one set asked at the value and the registry, and a row created
-into a set at the value, the registry and the door of a row not stored yet
-(`TruthSourceSetWidthTest`, with the set keys asked lazily and once), the same
-width on the runtime half at the row, the registry and every runtime door
-(`RtTruthSourceSetWidthTest`) and its declaration (the runtime cases of
-`DeclaredSetOwnershipTest`), the walk
-up the set tree, the short path, the parent that is gone and the statement over
-a set below the top (`SetTreeTest`), the short path and the chain of parents the
-startup gate refuses (`SetOwnershipGuardTest`), the set claimed on a table cut
-by no column, through a table the claimant cannot reach, two classes holding
-sets and a whole owner beside a set owner with and without shared-owner
-receipts, the runtime set on a collection cut by no field and two classes holding
-runtime sets, and the reads that repeat a claim (`TopologyValidatorTest`), the
-grants a stop takes back
-(`WorkerManagerStopCleanupTest`), the node-level map of runtime owners, the
-set claim that speaks for no row there and the set it hands over
+the collection door there), the third width answered by the row's set column at
+the value, the registry and the door, a row born after the declared start
+included, one statement over one set asked at the value and the registry, and a
+row created into a set at the value, the registry and the door of a row not
+stored yet (`TruthSourceSetWidthTest`, with the set keys asked lazily and once),
+the same width on the runtime half at the row, the registry and every runtime
+door (`RtTruthSourceSetWidthTest`) and its declaration (the runtime cases of
+`DeclaredSetOwnershipTest`), the walk up the set tree, the short path, the
+parent that is gone and the statement over a set below the top (`SetTreeTest`),
+the short path and the chain of parents the startup gate refuses
+(`SetOwnershipGuardTest`), the set claimed on a table cut by no column, through
+a table the claimant cannot reach, two classes holding sets and a whole owner
+beside a set owner with and without shared-owner receipts, the runtime set on a
+collection cut by no field and two classes holding runtime sets, and the reads
+that repeat a claim (`TopologyValidatorTest`), the grants a stop takes back
+(`WorkerManagerStopCleanupTest`), the node-level map of runtime owners, the set
+claim that speaks for no row there and the set it hands over
 (`RtNodeSourceMapTest`), the hand-over of a set, the answer to a query with its
 rows and the offer that skips them (`DaemonManagerRtSyncPeerTest`), the rows of
-a set read off the collection (`RtSnapshotTest`), and the markdown rules that keep this file's links
-intact (`AgentDocGuardTest`, `DOC-LINK`). The guard that refuses the call itself
-is `TRUTH-SOURCE-CLAIM`, and is described in *The Form That Is Gone*.
+a set read off the collection (`RtSnapshotTest`), and the markdown rules that
+keep this file's links intact (`AgentDocGuardTest`, `DOC-LINK`). The guard that
+refuses the call itself is `TRUTH-SOURCE-CLAIM`, and is described in
+*The Form That Is Gone*.
