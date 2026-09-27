@@ -1,6 +1,11 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
+import {
+  uniquePhone,
+  waitForSmsCode,
+} from '../../../../../framework/frontend/scripts/standSms.mjs'
 import { readRegisterCode } from './mail'
+import { gotoPage } from './page.js'
 
 // Sign-in helpers for the polls demo (HIL-634). A fresh browser context is
 // a guest: it reads the app and carries a guest name, but has no account until it
@@ -284,6 +289,34 @@ export async function login(
 export async function openSignIn(page: Page): Promise<void> {
   await page.getByTestId('nav-signin').click()
   await expect(page.getByTestId('auth-surface')).toBeVisible()
+}
+
+/**
+ * Signs in with a fresh phone by SMS code, leaving the number confirmed.
+ *
+ * Maintenance can name that proven address. uniquePhone returns E.164, which
+ * PhoneNumber.normalize leaves unchanged, so the returned phone is also the
+ * circle row's key and the address in its toast.
+ *
+ * @param page The page in a fresh browser context.
+ * @returns The confirmed phone in canonical E.164.
+ */
+export async function signInByPhone(page: Page): Promise<string> {
+  const phone = uniquePhone()
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await openSignIn(page)
+  await typeInto(page.getByTestId('auth-identifier'), phone)
+  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await typeInto(page.getByTestId('auth-code'), await waitForSmsCode(phone))
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await continueFromDone(page)
+  await expect(page.getByTestId('self-user')).toHaveText(phone)
+
+  return phone
 }
 
 /**

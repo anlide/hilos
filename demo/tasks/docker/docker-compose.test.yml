@@ -317,6 +317,10 @@ services:
       COMMAND_PORT: "8094"
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # The mail interceptor's HTTP API. The shared stand mailbox module
+      # (framework/frontend/scripts/standMailbox.mjs) reads its address from here
+      # and has no default of its own; SMS and Telegram codes arrive there as mail.
+      MAILPIT_URL: http://tasks-mailpit-test:8025
       # How far the run wants every Playwright cap stretched. Set by
       # scripts/run-test-suite.php from the lane count it resolved; the default is
       # deliberately EMPTY rather than "1", because empty means "no override" to

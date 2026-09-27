@@ -1,0 +1,82 @@
+import { test, expect } from '@playwright/test'
+
+import {
+  addToMaintenanceCircle,
+  clearMaintenanceCircle,
+  confirmMaintenanceCircleRemoval,
+  dismissToasts,
+  maintenanceCircleRow,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import { gotoPage } from '../helpers/page.js'
+import { signInByPhone } from '../helpers/session.js'
+
+// Taking a verifier out in Maintenance: the row leaves over the live table, and a
+// dialog open over a row removed in another tab says so before anybody presses Remove.
+// The other live circle seams run once in their own demos: chat's protected-mode.spec.ts
+// covers the freeze, the admitted circle and an absent member with the live presence
+// mark; tasks' maintenance.spec.ts covers naming and both refusals in the dialog
+// and in the corner.
+// The section's dialogs in all three SDKs remain covered by unit tests:
+// framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.test.ts,
+// framework/frontend/react/test/HilosMaintenancePage.test.tsx,
+// framework/frontend/angular/test/HilosMaintenancePage.test.ts.
+
+const MAINTENANCE_URL = '/hilos/maintenance'
+
+test('taking a verifier out removes the row, and a dialog over a row taken out in another tab says so and locks Remove', async ({
+  page,
+  browser,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, MAINTENANCE_URL)
+  await clearMaintenanceCircle(page)
+
+  const memberContext = await browser.newContext()
+  const member = await memberContext.newPage()
+  const phone = await signInByPhone(member)
+  await addToMaintenanceCircle(page, phone)
+  await dismissToasts(page)
+
+  // A second tab of the same administrator, on the same section and the same row.
+  const tabB = await page.context().newPage()
+  await gotoPage(tabB, MAINTENANCE_URL)
+  await expect(maintenanceCircleRow(tabB, phone)).toBeVisible()
+
+  // A opens the dialog over the row: it names the address and Remove is live.
+  await page
+    .getByTestId('hilos-maintenance-circle-table')
+    .getByTestId(`hilos-maintenance-circle-remove-${phone}`)
+    .click()
+  const dialogA = page.getByTestId('modal')
+  const confirmA = page.getByTestId('hilos-maintenance-circle-remove-confirm')
+  await expect(confirmA).toBeEnabled()
+  await expect(dialogA).toContainText(phone)
+
+  // B takes the member out: the row leaves B's table over the live table, and the
+  // ack's own sentence is B's toast.
+  await tabB
+    .getByTestId('hilos-maintenance-circle-table')
+    .getByTestId(`hilos-maintenance-circle-remove-${phone}`)
+    .click()
+  await confirmMaintenanceCircleRemoval(tabB)
+  await expect(maintenanceCircleRow(tabB, phone)).toHaveCount(0)
+  await expect(
+    tabB
+      .getByTestId('hilos-toasts')
+      .getByText(`${phone} removed from the circle.`),
+  ).toBeVisible()
+
+  // A's dialog heard it before anybody pressed anything: Remove reads Removed and is
+  // locked, and the message line says why. Cancel is all that is left to press.
+  await expect(confirmA).toHaveText('Removed')
+  await expect(confirmA).toBeDisabled()
+  await expect(
+    page.getByTestId('hilos-maintenance-circle-remove-notice'),
+  ).toContainText('Removed from the circle elsewhere.')
+  await dialogA.getByTestId('modal-close').click()
+  await expect(confirmA).toHaveCount(0)
+
+  await tabB.close()
+  await memberContext.close()
+})

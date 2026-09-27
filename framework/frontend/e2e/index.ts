@@ -41,6 +41,15 @@ export {
 export { addVirtualAuthenticator } from './virtualAuthenticator.js'
 export { dismissToasts } from './toasts.js'
 export {
+  CIRCLE_OFFLINE,
+  CIRCLE_ONLINE,
+  addToMaintenanceCircle,
+  clearMaintenanceCircle,
+  confirmMaintenanceCircleRemoval,
+  maintenanceCircleOnline,
+  maintenanceCircleRow,
+} from './maintenance.js'
+export {
   clearCustomSetting,
   draftCustomSetting,
   openSettingEdit,

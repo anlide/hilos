@@ -1,6 +1,14 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
+import {
+  CIRCLE_OFFLINE,
+  CIRCLE_ONLINE,
+  addToMaintenanceCircle,
+  clearMaintenanceCircle,
+  maintenanceCircleOnline,
+  maintenanceCircleRow,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import {
   expectPageReady,
@@ -12,10 +20,7 @@ import {
 } from '../helpers/page'
 import { signUpWithVerifiedEmail } from '../helpers/session'
 import {
-  addToMaintenanceCircle,
-  clearMaintenanceCircle,
   closeProtectedMode,
-  confirmMaintenanceCircleRemoval,
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
@@ -60,12 +65,6 @@ const BACKUP_URL = '/hilos/backup'
 
 // The verifier circle is administered in the Maintenance section.
 const MAINTENANCE_URL = '/hilos/maintenance'
-
-// The two words of the circle's presence column. A case reads them as the node's own
-// answer to "is this person here", because the mark is computed from the very connections
-// the freeze photographs.
-const CIRCLE_ONLINE = 'signed in'
-const CIRCLE_OFFLINE = 'not signed in'
 
 test.afterEach(async () => {
   // Unconditional, and an open rather than a leave: an enter can be refused and
@@ -782,8 +781,8 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // writes this row, so a broken action surface fails here rather than silently
   // passing on a row nobody could have created.
   await addToMaintenanceCircle(page, memberEmail)
-  await expect(circleRow(page, memberEmail)).toBeVisible()
-  await expect(circleOnline(page, memberEmail)).toHaveText(CIRCLE_ONLINE)
+  await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
+  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(CIRCLE_ONLINE)
 
   // The member has to be HERE when the node freezes: what is photographed is the set
   // of live connections, so a tab opened afterwards is a tab that was never in it.
@@ -873,9 +872,8 @@ test('the named circle walks in with the tab it already had open, and nobody els
   await gotoMaintenance(member, '/')
   await gotoMaintenance(page, '/')
 
-  // Lifted, and then the other half of the surface: the membership outlived the freeze
-  // it was named for - a test drive replaces no database, so the row is still the one
-  // the operator typed - and taking somebody out is a click and a confirmation.
+  // The membership outlived the freeze it was named for - a test drive replaces no
+  // database, so the row is still the one the operator typed.
   // The lift sends the browsers it had behind the stub back to the application on their
   // own, so the operator's page is already navigating and must be let to land before it is
   // steered anywhere. Waiting for the stub to go was not enough: it goes on the frame that
@@ -885,9 +883,8 @@ test('the named circle walks in with the tab it already had open, and nobody els
   expect(await openProtectedMode()).toBe('inactive')
   await expectSelfReload(page)
   await gotoPage(page, MAINTENANCE_URL)
-  await expect(circleRow(page, memberEmail)).toBeVisible()
-  await removeFromCircle(page, memberEmail)
-  await expect(circleRow(page, memberEmail)).toHaveCount(0)
+  await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
+  await clearMaintenanceCircle(page)
 
   await memberContext.close()
   await strangerContext.close()
@@ -910,14 +907,21 @@ test('a circle member who was away when the node froze is named and still outsid
   const member = await memberContext.newPage()
   const { email: memberEmail } = await signUpWithVerifiedEmail(member)
   await addToMaintenanceCircle(page, memberEmail)
-  await expect(circleRow(page, memberEmail)).toBeVisible()
+  await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
+  await gotoPage(member, '/')
+  await expect(member.getByTestId('conn-state')).toHaveText('connected')
+  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(CIRCLE_ONLINE)
 
   // Away: the whole context goes, and then the case waits for the NODE to have noticed.
   // Closing a browser is a client-side act, and freezing in the same breath photographs a
   // hall the leaver is still standing in - which is how this case read "admitted 1" of a
-  // circle whose one member had shut their browser.
+  // circle whose one member had shut their browser. The operator's page stays open,
+  // with no navigation or reload: the mark is re-drawn solely from the member's socket
+  // closing in another process, the seam a unit test cannot cross. It reads the same
+  // live connections the freeze photographs, so its change also proves the node saw
+  // the departure before freezing.
   await memberContext.close()
-  await waitForCircleOffline(page, memberEmail)
+  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(CIRCLE_OFFLINE)
 
   expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
   expect(await leaveProtectedMode()).toBe('verifying')
@@ -954,67 +958,6 @@ async function expectInsideMainPage(page: Page): Promise<void> {
   )
   await expectPageReady(page)
   await expect(page.getByTestId('events-header')).toBeVisible()
-}
-
-/**
- * The circle row of one address, named by the handle its own row carries.
- *
- * Keyed by the address rather than bare, because the circle is a list: a bare handle
- * names every row at once the moment a second person is in it, which is every run after
- * the first.
- *
- * @param page The operator's page, on the maintenance section.
- * @param identifier The address the member was named by.
- */
-function circleRow(page: Page, identifier: string) {
-  return page.getByTestId(`hilos-maintenance-circle-row-${identifier}`)
-}
-
-/**
- * The presence mark of one circle row, named by the handle its own cell carries.
- *
- * @param page The operator's page, on the maintenance section.
- * @param identifier The address the member was named by.
- */
-function circleOnline(page: Page, identifier: string) {
-  return page.getByTestId(`hilos-maintenance-circle-online-${identifier}`)
-}
-
-/**
- * Waits until the circle's presence column says the named person is gone.
- *
- * The honest reading of "away": the mark answers off the same live connections the freeze
- * photographs, so a case that has seen it turn can freeze knowing what the photograph will
- * hold. Without it the case asserts a client-side fact and the node answers a server-side
- * one, which is a race it loses about half the time.
- *
- * Re-subscribed on every attempt: that was the only way while the mark was a photograph
- * taken when the row was drawn. The mark is live since HIL-1119, so the reload now only
- * re-reads what the closing connection already re-drew; the case moves to the maintenance
- * section with the rest of the circle's cases.
- *
- * @param page The operator's page, steered back to Maintenance on each attempt.
- * @param identifier The address the member was named by.
- */
-async function waitForCircleOffline(
-  page: Page,
-  identifier: string,
-): Promise<void> {
-  await expect(async () => {
-    await gotoPage(page, MAINTENANCE_URL)
-    await expect(circleOnline(page, identifier)).toHaveText(CIRCLE_OFFLINE)
-  }).toPass()
-}
-
-/**
- * Takes one address out of the verifier circle through the row's own modal.
- *
- * @param page The operator's page, already on the maintenance section.
- * @param identifier The address to remove.
- */
-async function removeFromCircle(page: Page, identifier: string): Promise<void> {
-  await page.getByTestId(`hilos-maintenance-circle-remove-${identifier}`).click()
-  await confirmMaintenanceCircleRemoval(page)
 }
 
 /**

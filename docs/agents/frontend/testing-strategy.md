@@ -244,6 +244,17 @@ assert on an unsaved value or a refusal. Keep table moves such as isolating a ro
 and all assertions in the demo: those describe what the spec is proving, not how
 the shared framework form is driven.
 
+### The verifier circle — name, confirm removal, clear
+
+`addToMaintenanceCircle`, `confirmMaintenanceCircleRemoval` and `clearMaintenanceCircle`
+drive the Maintenance section's dialogs and settle on their closing. They expect the
+operator's page on `/hilos/maintenance`. `maintenanceCircleRow` and
+`maintenanceCircleOnline` locate the row and its presence mark; `CIRCLE_ONLINE` and
+`CIRCLE_OFFLINE` are that mark's words. Only an address somebody has confirmed can be
+named: a phone signed into by SMS code, or an email confirmed through the profile
+(registration leaves email unconfirmed). The database list outlives a scenario, so
+start every circle scenario with `clearMaintenanceCircle`. Assertions stay in the demo.
+
 ### Geometry — take a bookmark and ask whether it moved
 
 Measure boxes through `watchTop(element)`, `watchHeight(element)` or

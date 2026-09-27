@@ -1,4 +1,4 @@
-import { expect, type BrowserContext, type Page } from '@playwright/test'
+import type { BrowserContext } from '@playwright/test'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/protectedModeReAsk.mjs'
@@ -33,12 +33,6 @@ const OPEN_COMMAND = 'test:protected-mode:open'
 const CLOSE_COMMAND = 'test:protected-mode:close'
 const PASS_COMMAND = 'test:protected-mode:pass'
 const INSPECT_COMMAND = 'protected-mode:inspect'
-
-// How many rows the circle is emptied of before the attempt is called broken. Every
-// removal takes one row out, so the count is what ends that loop; this only makes a
-// removal surface that stopped removing fail where it broke instead of hanging until
-// the test times out.
-const CIRCLE_CLEAR_LIMIT = 25
 
 /**
  * A refusal the daemon answered with, as opposed to a command it never answered.
@@ -347,84 +341,4 @@ function protectedModeReAskError(
   return new Error(
     `${command} was not answered; the node reads '${snapshot.phase}', so the command was not taken`,
   )
-}
-
-// The verifier circle is named and taken out only in Maintenance. These steps expect
-// the operator's page on /hilos/maintenance.
-
-/**
- * Names one address to the verifier circle through the maintenance section's own modal.
- *
- * @param page The operator's page, already on the maintenance section.
- * @param identifier The address to name.
- */
-export async function addToMaintenanceCircle(
-  page: Page,
-  identifier: string,
-): Promise<void> {
-  await page.getByTestId('hilos-maintenance-circle-add').click()
-
-  const field = page.getByTestId('hilos-maintenance-circle-add-field')
-  await expect(field).toBeVisible()
-  await field.fill('')
-  await field.pressSequentially(identifier, { delay: 10 })
-
-  const submit = page.getByTestId('hilos-maintenance-circle-add-confirm')
-  await submit.scrollIntoViewIfNeeded()
-  await expect(submit).toBeVisible()
-  await expect(submit).toBeEnabled()
-  await submit.focus()
-  await submit.click()
-  // The modal closes on the ack and stays open on a refusal, so waiting for the field
-  // to go is waiting for the write to have landed rather than for a fixed moment.
-  await expect(field).toHaveCount(0)
-}
-
-/**
- * Drives the confirmation of the maintenance section's removal modal that is already open.
- *
- * Its own step because a case taking one named person out and the clearing every circle
- * case starts with both open that modal. The confirmation contract belongs in one place.
- *
- * @param page The operator's page, with the section's removal modal open.
- */
-export async function confirmMaintenanceCircleRemoval(page: Page): Promise<void> {
-  const submit = page.getByTestId('hilos-maintenance-circle-remove-confirm')
-  await expect(submit).toBeVisible()
-  await submit.scrollIntoViewIfNeeded()
-  await expect(submit).toBeEnabled()
-  await submit.focus()
-  await submit.click()
-  // The modal closes on the ack and stays open on a refusal, so waiting for the button
-  // to go is waiting for the removal to have landed rather than for a fixed moment.
-  await expect(submit).toHaveCount(0)
-}
-
-/**
- * Empties the verifier circle through the maintenance section's own removal modal.
- *
- * Every case that counts the circle starts here: the database list outlives a case,
- * so a neighbour that failed before cleanup may leave a member named. Without a clear,
- * circleAdmitted can count somebody this case never named. The first window is waited
- * for rather than assumed: an empty list and rows not yet delivered look alike. The
- * search is scoped to the circle table so the modal's own confirm button, which
- * shares the removal prefix, cannot be taken for a row's.
- *
- * @param page The operator's page, already on the maintenance section.
- */
-export async function clearMaintenanceCircle(page: Page): Promise<void> {
-  const table = page.getByTestId('hilos-maintenance-circle-table')
-  await expect(table).toBeVisible()
-  await expect(table.getByTestId('hilos-table-loading')).toHaveCount(0)
-
-  const removals = table.getByTestId(/^hilos-maintenance-circle-remove-/)
-  for (let guard = 0; guard < CIRCLE_CLEAR_LIMIT; guard++) {
-    if ((await removals.count()) === 0) {
-      break
-    }
-    await removals.first().click()
-    await confirmMaintenanceCircleRemoval(page)
-  }
-
-  await expect(removals).toHaveCount(0)
 }
