@@ -128,8 +128,8 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            // The environment gate, and deliberately ABOVE every branch below it: three of
-            // the test-only commands are answered by the master itself and appear in no
+            // The environment gate, and deliberately ABOVE every branch below it: several
+            // of the test-only commands are answered by the master itself and appear in no
             // agent registry, while the rest are parked and leave as a signal - a gate
             // placed after the split would have to be written twice and would still miss
             // whichever half a later command lands in. What it judges is the command, not
