@@ -53,7 +53,7 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
 
         self::assertSame(
             [
-                LegalDocument::TERMS->value => ['2026-09-17' => 1],
+                LegalDocument::TERMS->value => ['2026-09-17' => 1, '2026-09-27' => 1],
                 LegalDocument::PRIVACY->value => ['2026-09-17' => 1],
             ],
             $published,

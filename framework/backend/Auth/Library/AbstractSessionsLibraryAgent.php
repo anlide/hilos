@@ -265,6 +265,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactorSettings => [TruthSourceOperation::Remove],
         // TODO(HIL-630): also credited by the sign-in the block refused (HIL-303); shared with the users library.
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
+        HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure.
     ];
 
     /**
@@ -4763,6 +4764,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             Hilos::$db->secondFactorSettings->actions->deleteForUser($userId);
             Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
             Hilos::$db->stepUps->actions->deleteForUser($userId);
+            Hilos::$db->legalAcceptances->actions->deleteForUser($userId);
             $erasure = $this->applyAccountErasure($userId);
             Database::transactionCommit();
         } catch (HilosException $e) {

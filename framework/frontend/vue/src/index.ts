@@ -102,3 +102,8 @@ export { default as HilosDashboardPage } from './admin/dashboard/HilosDashboardP
 export { default as HilosProfilePasswordChange } from './profile/HilosProfilePasswordChange.vue'
 
 export { default as HilosDataExport } from './profile/HilosDataExport.vue'
+
+export { default as HilosLegalChanges } from './legal/HilosLegalChanges.vue'
+export { default as HilosLegalRevisionText } from './legal/HilosLegalRevisionText.vue'
+export { default as HilosProfileAgreementsPage } from './profile/HilosProfileAgreementsPage.vue'
+export { default as HilosProfileAgreementsHistoryPage } from './profile/HilosProfileAgreementsHistoryPage.vue'

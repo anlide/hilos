@@ -11,6 +11,9 @@ use Hilos\Hilos;
 use Hilos\Legal\Exception\DocumentWithoutRevisionsException;
 use Hilos\Legal\Exception\DuplicateDeviationException;
 use Hilos\Legal\Exception\DuplicateRevisionIdException;
+use Hilos\Legal\Exception\EffectiveBeforePublicationException;
+use Hilos\Legal\Exception\EditorialRevisionDeferredException;
+use Hilos\Legal\Exception\RevisionsOutOfOrderException;
 use Hilos\Legal\Exception\LegalException;
 use Hilos\Legal\Exception\LegalTextFileMissingException;
 use Hilos\Legal\Exception\MisplacedRevisionException;
@@ -100,8 +103,8 @@ final class LegalCatalogResolver
     /**
      * Returns the revision declared last for a document.
      *
-     * Last in declaration order and nothing more: which revision is in force on a given date needs
-     * effective dates to mean something, which they do not yet (HIL-498).
+     * The last declared revision is current. Its effective date is the deadline for holders of
+     * an earlier revision, not the date the published text changes (HIL-498).
      *
      * @param LegalDocument $document Document whose revision to read
      * @return LegalRevision Last declared revision
@@ -117,6 +120,26 @@ final class LegalCatalogResolver
         }
 
         return $revisions[array_key_last($revisions)];
+    }
+
+    /**
+     * @param LegalDocument $document Document whose previous revision to read
+     * @param string $id Revision id
+     * @return ?LegalRevision Previous declaration, or null for the first
+     * @throws UnknownRevisionException When the revision is not declared
+     * @throws LegalException When the catalog declaration is faulty
+     */
+    public static function predecessor(LegalDocument $document, string $id): ?LegalRevision
+    {
+        $previous = null;
+        foreach (self::revisions($document) as $revision) {
+            if ($revision->id === $id) {
+                return $previous;
+            }
+            $previous = $revision;
+        }
+
+        throw new UnknownRevisionException("Legal document {$document->value} declares no revision {$id}");
     }
 
     /**
@@ -215,6 +238,15 @@ final class LegalCatalogResolver
                 $set = StandardSetCatalog::set($revision->document, $revision->setVersion);
                 if ($predecessor !== null && $revision->lowersAdoptedSetSignificance($predecessor, $set)) {
                     throw new SignificanceLoweredException($revision->document, $revision->id, $set->version, $set->significance);
+                }
+                if ($revision->effectiveOn < $revision->publishedOn) {
+                    throw new EffectiveBeforePublicationException("Revision {$revision->id} takes effect before publication");
+                }
+                if ($revision->significance === LegalSignificance::EDITORIAL && $revision->effectiveOn !== $revision->publishedOn) {
+                    throw new EditorialRevisionDeferredException("Editorial revision {$revision->id} defers its effective date");
+                }
+                if ($predecessor !== null && $revision->publishedOn < $predecessor->publishedOn) {
+                    throw new RevisionsOutOfOrderException("Revision {$revision->id} precedes its predecessor's publication");
                 }
                 $predecessor = $revision;
 

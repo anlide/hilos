@@ -11,6 +11,7 @@ use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\AccountDeletion;
+use Hilos\Database\Entity\Item\LegalAcceptance;
 use Hilos\Database\Entity\Item\DataExport;
 use Hilos\Database\Entity\Item\Identity;
 use Hilos\Database\Entity\Item\PasskeyCredential;
@@ -101,6 +102,7 @@ final class AuthFeature extends FeatureDefinition
                 SecondFactorSetting::_table,
                 StepUp::_table,
                 AccountDeletion::_table,
+                LegalAcceptance::_table,
                 DataExport::_table,
             ],
         );

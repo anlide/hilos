@@ -1,0 +1,3 @@
+Messages are kept indefinitely.
+
+The standard limits content retention to 12 months. In this project, messages have no time limit: they remain until you delete them or your account is deleted.

@@ -72,6 +72,18 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
 
+        HilosPageConstants::HILOS_PROFILE_AGREEMENTS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Agreements',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What you accepted, and when.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+        ],
+        HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Revision history',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD =>
+                'Every revision of the terms and the privacy policy, including those before you registered.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
+        ],
+
         // — Access & identity —
         HilosPageConstants::HILOS_USERS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Users',

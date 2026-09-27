@@ -10,6 +10,7 @@ use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\AccountDeletions as ObjectAccountDeletions;
 use Hilos\Database\Object\Collection\DataExports as ObjectDataExports;
+use Hilos\Database\Object\Collection\LegalAcceptances as ObjectLegalAcceptances;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\Files as ObjectFiles;
 use Hilos\Database\Object\Collection\FileVariants as ObjectFileVariants;
@@ -34,6 +35,7 @@ use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCirc
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
+use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\FileVariants as DbCollectionFileVariants;
@@ -57,6 +59,7 @@ use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifica
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
 use Hilos\Database\Actions\Collection\DataExportsActions;
+use Hilos\Database\Actions\Collection\LegalAcceptancesActions;
 use Hilos\Database\Actions\Collection\FilesActions;
 use Hilos\Database\Actions\Collection\FileVariantsActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
@@ -114,6 +117,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionStepUps $stepUps
  * @property-read DbCollectionDataExports $dataExports Data export requests
  * @property-read DbCollectionAccountDeletions $accountDeletions
+ * @property-read DbCollectionLegalAcceptances $legalAcceptances
  * @property-read DbCollectionFiles $files
  * @property-read DbCollectionFileVariants $fileVariants
  */
@@ -158,6 +162,8 @@ abstract class HilosDbContext extends DbContext
     public const string stepUp = 'stepUp';
     public const string accountDeletions = 'accountDeletions';
     public const string accountDeletion = 'accountDeletion';
+    public const string legalAcceptances = 'legalAcceptances';
+    public const string legalAcceptance = 'legalAcceptance';
     public const string dataExports = 'dataExports';
     public const string dataExport = 'dataExport';
     public const string files = 'files';
@@ -170,7 +176,7 @@ abstract class HilosDbContext extends DbContext
      * passkey credentials, sessions, notifications, notification deliveries,
      * notification preferences, push subscriptions, the verifier circle, auth blocks,
      * OAuth providers, the five tables of the second factor, operation confirmations, account
-     * deletion requests, and the files registry).
+     * deletion requests, legal acceptances, and the files registry).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
      * notification deliveries, notification preferences, push subscriptions and auth
@@ -295,6 +301,9 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::stepUps] = ObjectStepUps::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::stepUps, DbCollectionStepUps::class, StepUpsActions::class);
+
+        $this->_objectCollections[self::legalAcceptances] = ObjectLegalAcceptances::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::legalAcceptances, DbCollectionLegalAcceptances::class, LegalAcceptancesActions::class);
 
         $this->_objectCollections[self::accountDeletions] = ObjectAccountDeletions::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(

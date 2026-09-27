@@ -17,6 +17,7 @@ import { PASSKEY_SIGNAL_SCHEMAS } from '../auth/passkeySignals.js'
 import { browserValue } from '../browser/browserValue.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
+import { LEGAL_AGREEMENTS_SIGNAL_SCHEMAS } from '../legal/legalAgreements.js'
 import { ACCOUNT_DELETION_SIGNAL_SCHEMAS } from '../profile/accountDeletion.js'
 import { SECOND_FACTOR_SIGNAL_SCHEMAS } from '../profile/secondFactor.js'
 import { PROFILE_PASSWORD_SIGNAL_SCHEMAS } from '../profile/signInMethods.js'
@@ -178,6 +179,7 @@ export function createHilosConnection(
       ...NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,
       ...SECOND_FACTOR_SIGNAL_SCHEMAS,
       ...ACCOUNT_DELETION_SIGNAL_SCHEMAS,
+      ...LEGAL_AGREEMENTS_SIGNAL_SCHEMAS,
       ...DATA_EXPORT_SIGNAL_SCHEMAS,
       ...PROFILE_PASSWORD_SIGNAL_SCHEMAS,
       ...UPLOAD_SIGNAL_SCHEMAS,

@@ -1402,3 +1402,6 @@ export {
 } from './profile/passwordChange.js'
 
 export * from './profile/dataExport.js'
+
+export * from './legal/legalAgreements.js'
+export * from './legal/legalRevisions.js'

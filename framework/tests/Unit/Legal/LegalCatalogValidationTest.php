@@ -12,6 +12,9 @@ use Hilos\Legal\Exception\DuplicateDeviationException;
 use Hilos\Legal\Exception\DuplicateRevisionIdException;
 use Hilos\Legal\Exception\LegalTextFileMissingException;
 use Hilos\Legal\Exception\MisplacedRevisionException;
+use Hilos\Legal\Exception\EffectiveBeforePublicationException;
+use Hilos\Legal\Exception\EditorialRevisionDeferredException;
+use Hilos\Legal\Exception\RevisionsOutOfOrderException;
 use Hilos\Legal\Exception\UnknownRevisionException;
 use Hilos\Legal\Exception\UnknownStandardClauseException;
 use Hilos\Legal\Exception\UnknownStandardSetVersionException;
@@ -46,6 +49,27 @@ final class LegalCatalogValidationTest extends TestCase
         Hilos::resetBrowser();
 
         parent::tearDown();
+    }
+
+    public function testEffectiveBeforePublicationIsRefused(): void
+    {
+        EffectiveBeforePublicationHilos::initBrowser();
+        $this->expectException(EffectiveBeforePublicationException::class);
+        LegalCatalogResolver::documents();
+    }
+
+    public function testEditorialDeferredIsRefused(): void
+    {
+        EditorialDeferredHilos::initBrowser();
+        $this->expectException(EditorialRevisionDeferredException::class);
+        LegalCatalogResolver::documents();
+    }
+
+    public function testPublicationReversedIsRefused(): void
+    {
+        PublicationReversedHilos::initBrowser();
+        $this->expectException(RevisionsOutOfOrderException::class);
+        LegalCatalogResolver::documents();
     }
 
     public function testARevisionOnASetVersionTheFrameworkLacksIsRefused(): void
@@ -428,4 +452,61 @@ abstract class MisplacedRevisionHilos extends Hilos
 abstract class DuplicateDeviationHilos extends Hilos
 {
     protected const ?string LEGAL_CATALOG = DuplicateDeviationCatalog::class;
+}
+
+/** Invalid catalog fixture for EffectiveBeforePublication. */
+final class EffectiveBeforePublicationCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array<string, list<LegalRevision>> Faulty declaration */
+    public static function revisions(): array
+    {
+        return [LegalDocument::TERMS->value => [
+            new LegalRevision(LegalDocument::TERMS, 'first', '2026-01-10', 1, LegalSignificance::SUBSTANTIAL, '2026-01-10', []),
+            new LegalRevision(LegalDocument::TERMS, 'second', '2026-02-20', 1, LegalSignificance::SUBSTANTIAL, '2026-01-10', []),
+        ]];
+    }
+}
+
+/** Binds the invalid declaration. */
+abstract class EffectiveBeforePublicationHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = EffectiveBeforePublicationCatalog::class;
+}
+
+/** Invalid catalog fixture for EditorialDeferred. */
+final class EditorialDeferredCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array<string, list<LegalRevision>> Faulty declaration */
+    public static function revisions(): array
+    {
+        return [LegalDocument::TERMS->value => [
+            new LegalRevision(LegalDocument::TERMS, 'first', '2026-01-10', 1, LegalSignificance::SUBSTANTIAL, '2026-01-10', []),
+            new LegalRevision(LegalDocument::TERMS, 'second', '2026-02-20', 1, LegalSignificance::EDITORIAL, '2026-03-20', []),
+        ]];
+    }
+}
+
+/** Binds the invalid declaration. */
+abstract class EditorialDeferredHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = EditorialDeferredCatalog::class;
+}
+
+/** Invalid catalog fixture for PublicationReversed. */
+final class PublicationReversedCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array<string, list<LegalRevision>> Faulty declaration */
+    public static function revisions(): array
+    {
+        return [LegalDocument::TERMS->value => [
+            new LegalRevision(LegalDocument::TERMS, 'first', '2026-01-10', 1, LegalSignificance::SUBSTANTIAL, '2026-01-10', []),
+            new LegalRevision(LegalDocument::TERMS, 'second', '2026-01-01', 1, LegalSignificance::SUBSTANTIAL, '2026-01-01', []),
+        ]];
+    }
+}
+
+/** Binds the invalid declaration. */
+abstract class PublicationReversedHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = PublicationReversedCatalog::class;
 }

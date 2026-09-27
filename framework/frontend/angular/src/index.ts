@@ -113,3 +113,11 @@ export { HilosProfileNotificationsPage } from './profile/HilosProfileNotificatio
 export { HilosProfilePasswordChange } from './profile/HilosProfilePasswordChange.js'
 
 export { HilosDataExport } from './profile/HilosDataExport.js'
+
+export { HilosLegalChanges } from './legal/HilosLegalChanges.js'
+
+export { HilosLegalRevisionText } from './legal/HilosLegalRevisionText.js'
+
+export { HilosProfileAgreementsPage } from './profile/HilosProfileAgreementsPage.js'
+
+export { HilosProfileAgreementsHistoryPage } from './profile/HilosProfileAgreementsHistoryPage.js'

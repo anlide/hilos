@@ -101,8 +101,7 @@ final class LegalCompositionTest extends TestCase
     }
 
     /**
-     * "Latest" is the last declared and nothing more: which revision is in force needs effective
-     * dates to mean something, and they do not yet.
+     * The current text is the last declared revision even before its acceptance deadline.
      */
     public function testTheLatestRevisionIsTheLastDeclared(): void
     {

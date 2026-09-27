@@ -11,9 +11,8 @@ namespace Hilos\Legal;
  * on and its own deviations. That is why deviations hang here rather than on the document - an
  * old revision must keep composing to the text a person agreed to.
  *
- * `significance` and `effectiveOn` are declared whole with the record but read by nobody yet
- * beyond the one structural rule below, which {@see LegalCatalogResolver} enforces; what they
- * mean lands with HIL-498.
+ * A substantial revision gives holders of earlier revisions a deadline at `effectiveOn`;
+ * an editorial revision preserves their coverage. See docs/agents/architecture/legal-documents.md.
  */
 final readonly class LegalRevision
 {

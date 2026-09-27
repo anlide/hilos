@@ -33,6 +33,12 @@ final class HilosPageConstants
     /** @var string Hilos profile security page - the second factor (HIL-494) */
     public const string HILOS_PROFILE_SECURITY = 'hilos_profile_security';
 
+    /** @var string Personal legal acceptances (HIL-498) */
+    public const string HILOS_PROFILE_AGREEMENTS = 'hilos_profile_agreements';
+
+    /** @var string Legal revision history and personal acceptance dates (HIL-498) */
+    public const string HILOS_PROFILE_AGREEMENTS_HISTORY = 'hilos_profile_agreements_history';
+
     /** @var string Hilos settings page */
     public const string HILOS_SETTINGS = 'hilos_settings';
 

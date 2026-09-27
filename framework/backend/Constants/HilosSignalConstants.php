@@ -122,6 +122,18 @@ final class HilosSignalConstants
     /** Subscription signal for the profile's notification channels. */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_NOTIFICATIONS = 'subscription_page_hilos_profile_notifications';
 
+    /** Browser subscription signal of the personal agreements page (HIL-498). */
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_AGREEMENTS = 'subscription_page_hilos_profile_agreements';
+
+    /** Browser subscription signal of the personal revision-history page (HIL-498). */
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_AGREEMENTS_HISTORY = 'subscription_page_hilos_profile_agreements_history';
+
+    /** Client → server: read {document, revisionId}; reply carries {document, revisionId, clauses}. */
+    public const string HILOS_LEGAL_REVISION_TEXT = 'hilos_legal_revision_text';
+
+    /** Client → server: compare {document, revisionId}; reply carries {document, fromRevisionId, toRevisionId, changes}. */
+    public const string HILOS_LEGAL_REVISION_CHANGES = 'hilos_legal_revision_changes';
+
     /** Subscription signal for Hilos settings page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
 
@@ -1274,6 +1286,14 @@ final class HilosSignalConstants
      * {deletion: {requestedAt, effectiveAt} | null}, carried by {@see AccountDeletionStateSignalData}.
      */
     public const string HILOS_ACCOUNT_DELETION_STATE = 'hilos_account_deletion_state';
+
+    /**
+     * Server → client (WS_GROUP): whole acceptance state for one person (HIL-498).
+     *
+     * Payload {documents: [{document, current, held, acceptedAt, accepted, standing, deadline}]}.
+     * Revision metadata and timestamps match the legalAgreements page-response section.
+     */
+    public const string HILOS_LEGAL_AGREEMENTS_STATE = 'hilos_legal_agreements_state';
 
     /** Server → client (WS_GROUP): {dataExport: {state, requestedAt, finishedAt, expiresAt, sizeBytes} | null}. */
     public const string HILOS_DATA_EXPORT_STATE = 'hilos_data_export_state';

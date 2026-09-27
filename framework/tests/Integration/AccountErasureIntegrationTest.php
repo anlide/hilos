@@ -87,6 +87,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         'hilos_second_factor_setting',
         'hilos_second_factor_trust',
         'hilos_step_up',
+        'hilos_legal_acceptance',
     ];
 
     private string $boundAppClass;
@@ -380,6 +381,10 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::seedSession($token, $userId, self::CREATED_AT, null);
         $sessionId = (int)Hilos::$db->sessions->findByToken($token)?->id;
 
+        Database::sqlRun(
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
+            [$userId, 'terms', '2026-09-17', self::CREATED_AT],
+        );
         $identity = Hilos::$db->identities->createPasskeyIdentity($userId, "credential-{$userId}");
         Database::sqlRun(
             'INSERT INTO `hilos_passkey_credential` '

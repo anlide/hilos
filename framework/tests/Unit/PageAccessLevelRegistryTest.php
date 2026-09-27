@@ -13,6 +13,8 @@ use Hilos\Pages\AbstractHilosProfilePage;
 use Hilos\Pages\AbstractHilosProfileDevicesPage;
 use Hilos\Pages\AbstractHilosProfileNotificationsPage;
 use Hilos\Pages\AbstractHilosProfileSecurityPage;
+use Hilos\Pages\AbstractHilosProfileAgreementsPage;
+use Hilos\Pages\AbstractHilosProfileAgreementsHistoryPage;
 use Hilos\Pages\AbstractHilosProfileSessionsPage;
 use Hilos\Pages\AbstractHilosProfileSignInPage;
 use Hilos\Pages\AbstractHilosTermsPage;
@@ -40,6 +42,8 @@ final class PageAccessLevelRegistryTest extends TestCase
 
     /** Exact set of framework pages open to any signed-in user. */
     private const array AUTHENTICATED_PAGES = [
+        AbstractHilosProfileAgreementsHistoryPage::class,
+        AbstractHilosProfileAgreementsPage::class,
         AbstractHilosProfilePage::class,
         AbstractHilosProfileDevicesPage::class,
         AbstractHilosProfileNotificationsPage::class,

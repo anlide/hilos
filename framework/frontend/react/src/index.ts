@@ -240,3 +240,23 @@ export {
   HilosDataExport,
   type HilosDataExportProps,
 } from './profile/HilosDataExport.js'
+
+export {
+  HilosLegalChanges,
+  type HilosLegalChangesProps,
+} from './legal/HilosLegalChanges.js'
+
+export {
+  HilosLegalRevisionText,
+  type HilosLegalRevisionTextProps,
+} from './legal/HilosLegalRevisionText.js'
+
+export {
+  HilosProfileAgreementsPage,
+  type HilosProfileAgreementsPageProps,
+} from './profile/HilosProfileAgreementsPage.js'
+
+export {
+  HilosProfileAgreementsHistoryPage,
+  type HilosProfileAgreementsHistoryPageProps,
+} from './profile/HilosProfileAgreementsHistoryPage.js'

@@ -12,6 +12,7 @@ use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Auth\Library\Command\AccountDeletionCommands;
+use Hilos\Auth\Library\Command\LegalAcceptanceCommands;
 use Hilos\Auth\Library\Command\ActingSession;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\Command\DetectionCommands;
@@ -211,6 +212,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactorSettings => TruthSourceOperation::ALL,
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => TruthSourceOperation::ALL,
+        HilosDbContext::legalAcceptances => TruthSourceOperation::ALL,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
@@ -675,6 +677,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function oauthService(): ?OAuthService
     {
         return $this->buildOAuthService();
+    }
+
+    /** @return LegalAcceptanceCommands Shared write entry for registration and re-consent */
+    public function legalAcceptanceCommands(): LegalAcceptanceCommands
+    {
+        return new LegalAcceptanceCommands($this);
     }
 
     /**

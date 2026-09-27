@@ -138,6 +138,8 @@ use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Chat\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityPage;
 use Demo\Chat\Pages\Hilos\ProfileSecurityPage;
+use Demo\Chat\Pages\Hilos\ProfileAgreementsPage;
+use Demo\Chat\Pages\Hilos\ProfileAgreementsHistoryPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
@@ -353,6 +355,8 @@ final class Hilos extends HilosFacade
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
+        ProfileAgreementsPage::PAGE => ProfileAgreementsPage::class,
+        ProfileAgreementsHistoryPage::PAGE => ProfileAgreementsHistoryPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
         SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,

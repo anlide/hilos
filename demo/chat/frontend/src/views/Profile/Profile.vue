@@ -11,6 +11,8 @@ import {
 } from 'vue'
 import {
   createHilosSecondFactorStore,
+  createHilosLegalAgreementsStore,
+  describeHilosLegalAgreements,
   describeHilosNotificationChannels,
   describeHilosProfileSignInMethods,
   focusInitial,
@@ -76,6 +78,9 @@ const deletionContext: HilosSecondFactorContext = {
 }
 const secondFactor = createHilosSecondFactorStore(deletionContext)
 const securityState = useSignal(secondFactor.state)
+const agreements = createHilosLegalAgreementsStore(deletionContext)
+const agreementState = useSignal(agreements.state)
+let stopAgreements: (() => void) | null = null
 const router = inject(hilosRouterKey)
 if (!router) throw new Error('Profile requires a provided Hilos router.')
 const identity = useSignal(router.pageIdentity)
@@ -100,6 +105,8 @@ function sectionIcon(page: string): string {
       return 'bi-laptop'
     case HilosPages.PROFILE_DEVICES:
       return 'bi-broadcast'
+    case HilosPages.PROFILE_AGREEMENTS:
+      return 'bi-file-earmark-check'
     case HilosPages.PROFILE_SECURITY:
       return 'bi-shield-lock'
     default:
@@ -116,6 +123,8 @@ function sectionSummary(page: string): string {
       return `${sessionsCount.value} active sign-ins`
     case HilosPages.PROFILE_DEVICES:
       return `${devicesCount.value} subscribed to push`
+    case HilosPages.PROFILE_AGREEMENTS:
+      return describeHilosLegalAgreements(agreementState.value)
     case HilosPages.PROFILE_SECURITY:
       return `Two-step verification is ${securityState.value?.authenticators.length ? 'on' : 'off'}`
     default:
@@ -126,10 +135,12 @@ let stopPreferences: (() => void) | null = null
 onMounted(() => {
   stopPreferences = startHilosNotificationPreferences({ connection, scopes })
   secondFactor.start()
+  stopAgreements = agreements.start()
 })
 onUnmounted(() => {
   stopPreferences?.()
   secondFactor.dispose()
+  stopAgreements?.()
 })
 
 const editing = ref(false)

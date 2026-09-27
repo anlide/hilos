@@ -18,12 +18,16 @@ use Hilos\Legal\StandardSetCatalog;
  * Chat keeps more and shows more than the standard promises - people moderate, messages and
  * files stay, files open by link - and keeps less in one place: it records no access logs. Each
  * of those is a deviation of the revision that declares it, never an edit of the framework text.
- * A revision once published stays here for good: a person may hold it.
+ * A revision once published stays here for good: a person may hold it. The second terms
+ * revision clarifies the retention wording without changing its meaning.
  */
 final class LegalCatalog implements LegalCatalogProviderInterface
 {
     /** @var string First terms revision, named by its publication date */
     private const string TERMS_FIRST_REVISION = '2026-09-17';
+
+    /** @var string Editorial clarification of the message retention wording */
+    private const string TERMS_WORDING_REVISION = '2026-09-27';
 
     /** @var string First privacy revision, named by its publication date */
     private const string PRIVACY_FIRST_REVISION = '2026-09-17';
@@ -32,7 +36,7 @@ final class LegalCatalog implements LegalCatalogProviderInterface
     private const string TEXT_DIRECTORY = __DIR__ . '/Text';
 
     /**
-     * Returns one revision per document on standard set version 1, with the chat's deviations.
+     * Returns the published revisions on standard set version 1, with the chat's deviations.
      *
      * @return array<string, list<LegalRevision>> Revisions per `LegalDocument` value
      */
@@ -59,6 +63,34 @@ final class LegalCatalog implements LegalCatalogProviderInterface
                             direction: DeviationDirection::STRICTER,
                             statement: 'Messages are kept indefinitely',
                             textFile: self::TEXT_DIRECTORY . '/terms/standard.retention.2026-09-17.txt',
+                        ),
+                        new Deviation(
+                            clauseKey: StandardSetCatalog::CLAUSE_FILE_ACCESS,
+                            direction: DeviationDirection::STRICTER,
+                            statement: 'Files are reachable by direct link',
+                            textFile: self::TEXT_DIRECTORY . '/terms/standard.file_access.2026-09-17.txt',
+                        ),
+                    ],
+                ),
+                new LegalRevision(
+                    document: LegalDocument::TERMS,
+                    id: self::TERMS_WORDING_REVISION,
+                    publishedOn: self::TERMS_WORDING_REVISION,
+                    setVersion: 1,
+                    significance: LegalSignificance::EDITORIAL,
+                    effectiveOn: self::TERMS_WORDING_REVISION,
+                    deviations: [
+                        new Deviation(
+                            clauseKey: StandardSetCatalog::CLAUSE_MODERATION,
+                            direction: DeviationDirection::STRICTER,
+                            statement: 'Conversations are visible to moderators',
+                            textFile: self::TEXT_DIRECTORY . '/terms/standard.moderation.2026-09-17.txt',
+                        ),
+                        new Deviation(
+                            clauseKey: StandardSetCatalog::CLAUSE_RETENTION,
+                            direction: DeviationDirection::STRICTER,
+                            statement: 'Messages are kept indefinitely',
+                            textFile: self::TEXT_DIRECTORY . '/terms/standard.retention.2026-09-27.txt',
                         ),
                         new Deviation(
                             clauseKey: StandardSetCatalog::CLAUSE_FILE_ACCESS,

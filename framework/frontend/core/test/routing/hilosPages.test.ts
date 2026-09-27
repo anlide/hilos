@@ -29,6 +29,8 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       HilosPages.PROFILE_SESSIONS,
       HilosPages.PROFILE_DEVICES,
       HilosPages.PROFILE_SECURITY,
+      HilosPages.PROFILE_AGREEMENTS,
+      HilosPages.PROFILE_AGREEMENTS_HISTORY,
       ...HILOS_FOOTER_LINKS.map((l) => l.page),
     ])
     for (const [page, declaration] of Object.entries(
