@@ -36,6 +36,7 @@ use Hilos\Core\CLI\Commands\ClusterTlsCaCommand;
 use Hilos\Core\CLI\Commands\ClusterTlsIssueCommand;
 use Hilos\Core\CLI\Commands\ClusterTlsTrustCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
+use Hilos\Core\CLI\Commands\CommandChannelClientTrait;
 use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandTestEchoCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
@@ -80,6 +81,7 @@ use Hilos\Core\CLI\Commands\TableTestRefuseCommand;
 use Hilos\Core\CLI\Commands\ThrottleTestResetCommand;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
+use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Database\DatabaseException;
 use Throwable;
 
@@ -94,6 +96,12 @@ class CliManager
 {
     /** @var string Option prefix */
     private const string OPTION_PREFIX = '--';
+
+    /**
+     * @var string What a refused command's sentence is prefixed with, the way
+     *     {@see CommandChannelClientTrait::refusalText()} relays a refusal the daemon answered
+     */
+    private const string REFUSAL_PREFIX = 'Refused: ';
 
     /** @var list<string> command line arguments */
     private array $argv;
@@ -370,6 +378,11 @@ class CliManager
             
             echo "\n";
             return ExitCode::ERROR;
+        } catch (TestOnlyCommandOnProductionException $e) {
+            // A refused test-only command is a verdict, not a crash: one sentence on stderr,
+            // worded as the command socket words the same refusal
+            $this->writeToStandardError(self::REFUSAL_PREFIX . $e->getMessage());
+            return ExitCode::ERROR;
         } catch (Throwable $e) {
             // Handle unexpected errors
             echo "\n✗ Unexpected Error\n";
@@ -377,6 +390,20 @@ class CliManager
             echo "File: {$e->getFile()}:{$e->getLine()}\n\n";
             return ExitCode::ERROR;
         }
+    }
+
+    /**
+     * Writes one sentence to stderr.
+     *
+     * Protected for the reason {@see CommandChannelClientTrait::writeToStandardError()} is:
+     * stderr is the one side of run() that leaves the process, and a test double stands in
+     * for it to read what a refusal said.
+     *
+     * @param string $text Sentence to write, without its line break
+     */
+    protected function writeToStandardError(string $text): void
+    {
+        fwrite(STDERR, $text . "\n");
     }
 
     /**
