@@ -67,12 +67,13 @@ test('the navbar links the current user to the profile page', async ({
     'devices',
     'security',
     'agreements',
+    'data',
   ]
   await expect(page.getByTestId('profile-section')).toHaveCount(sections.length)
   expect(
     await page
       .getByTestId(
-        /^profile-(sign-in|notifications|sessions|devices|security|agreements)-open$/,
+        /^profile-(sign-in|notifications|sessions|devices|security|agreements|data)-open$/,
       )
       .evaluateAll((links) =>
         links.map((link) => link.getAttribute('data-id')),

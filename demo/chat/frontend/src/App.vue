@@ -54,6 +54,7 @@ import ProfileSignIn from './views/ProfileSignIn/ProfileSignIn.vue'
 import ProfileNotifications from './views/ProfileNotifications/ProfileNotifications.vue'
 import ProfileAgreements from './views/ProfileAgreements/ProfileAgreements.vue'
 import ProfileAgreementsHistory from './views/ProfileAgreementsHistory/ProfileAgreementsHistory.vue'
+import ProfileData from './views/ProfileData/ProfileData.vue'
 import ProfileDevices from './views/ProfileDevices/ProfileDevices.vue'
 import ProfileSessions from './views/ProfileSessions/ProfileSessions.vue'
 import ProfileSecurity from './views/Profile/ProfileSecurity.vue'
@@ -106,6 +107,7 @@ const pages: Record<string, Component> = {
   [HilosPages.PROFILE_NOTIFICATIONS]: ProfileNotifications,
   [HilosPages.PROFILE_AGREEMENTS]: ProfileAgreements,
   [HilosPages.PROFILE_AGREEMENTS_HISTORY]: ProfileAgreementsHistory,
+  [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.PROFILE_SESSIONS]: ProfileSessions,
   [HilosPages.PROFILE_DEVICES]: ProfileDevices,
   [HilosPages.PROFILE_SECURITY]: ProfileSecurity,

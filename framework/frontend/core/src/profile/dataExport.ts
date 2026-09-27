@@ -13,8 +13,10 @@ import { type HilosConnection } from '../connection/HilosConnection.js'
 import { formatBytes } from '../format/bytes.js'
 import { formatCalendarDate } from '../format/date.js'
 import { toLocal } from '../session/serverClock.js'
+import { type ScopeManager } from '../state/ScopeManager.js'
 import {
   createSignal,
+  computedSignal,
   subscribeSignal,
   type ReadonlySignal,
 } from '../state/signal.js'
@@ -61,6 +63,14 @@ export const HILOS_DATA_EXPORT_COPY = {
   title: 'Your data',
   lead: 'Download a copy of what your account holds.',
   blockedLead: 'Blocking takes away signing in, not your data.',
+  sectionLead:
+    'The copy holds your account, your ways to sign in and device keys, sessions, two-step verification, notifications, a pending deletion, and what you keep in this app. Passwords, keys and codes are never in it.',
+  summaryNone: 'No copy yet',
+  summaryPreparing: 'Preparing a copy…',
+  summaryReady: 'Copy ready until {date}',
+  summaryFailed: 'The last copy could not be prepared',
+  deleteHint: 'Want a copy first?',
+  deleteLink: 'Your data',
   prepare: 'Prepare a copy',
   preparing:
     'Preparing your copy… Started at {time}. You can close this page: the copy will wait here.',
@@ -233,4 +243,61 @@ export function createHilosDataExportFlow(
       close()
     },
   }
+}
+
+/**
+ * Summarize the copy for its profile row, using the store's local dates.
+ * @param node The person's copy or its absence.
+ */
+export function describeHilosDataExport(node: DataExportNode | null): string {
+  switch (node?.state) {
+    case 'preparing':
+      return HILOS_DATA_EXPORT_COPY.summaryPreparing
+    case 'ready':
+      return HILOS_DATA_EXPORT_COPY.summaryReady.replace(
+        '{date}',
+        formatCalendarDate(node.expiresAt),
+      )
+    case 'failed':
+      return HILOS_DATA_EXPORT_COPY.summaryFailed
+    default:
+      return HILOS_DATA_EXPORT_COPY.summaryNone
+  }
+}
+
+/**
+ * Read the copy carried by the page's subscription, in server time.
+ * @param scopes The page scope owning the section.
+ */
+export function profileDataExportNode(
+  scopes: ScopeManager,
+): ReadonlySignal<DataExportNode | null> {
+  const section = scopes.pageDataSignal(PROFILE_DATA_EXPORT_SECTION)
+  return computedSignal(() => {
+    const parsed = dataExportNodeSchema.nullable().safeParse(section.get())
+    return parsed.success ? parsed.data : null
+  })
+}
+
+/** The project's connection, page scope and action lifecycle. */
+export interface HilosDataExportContext {
+  readonly connection: HilosConnection
+  readonly scopes: ScopeManager
+  readonly actions: ActionLifecycle
+}
+
+/**
+ * Bind a profile copy to the existing store and confirmation flow.
+ * The owner starts the store and disposes both objects on unmount.
+ * @param context The project's profile context.
+ */
+export function createHilosProfileDataExport(context: HilosDataExportContext): {
+  store: HilosDataExportStore
+  flow: HilosDataExportFlow
+} {
+  const store = createHilosDataExportStore(
+    context.connection,
+    profileDataExportNode(context.scopes),
+  )
+  return { store, flow: createHilosDataExportFlow(context.actions, store) }
 }

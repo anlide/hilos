@@ -84,6 +84,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE_AGREEMENTS,
         ],
 
+        HilosPageConstants::HILOS_PROFILE_DATA => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Your data',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Download a copy of what your account holds.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+        ],
+
         // — Access & identity —
         HilosPageConstants::HILOS_USERS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Users',

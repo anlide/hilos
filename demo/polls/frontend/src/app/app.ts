@@ -52,6 +52,7 @@ import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
 import { SecuritySignInMethods } from './views/hilos/security/sign-in-methods'
 import { SecurityTwoFactor } from './views/hilos/security/two-factor'
 import { ProfileSecurity } from './views/profile/profile-security'
+import { ProfileData } from './views/profile/profile-data.js'
 import { Settings } from './views/hilos/settings/settings'
 import { Terms } from './views/terms/terms'
 import { User } from './views/hilos/users/user'
@@ -217,6 +218,7 @@ export class App {
     [HilosPages.SECURITY_SIGN_IN_METHODS]: SecuritySignInMethods,
     [HilosPages.SECURITY_2FA]: SecurityTwoFactor,
     [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
+    [HilosPages.PROFILE_DATA]: ProfileData,
     // The framework logs section, activated whole: the framework owns the six
     // screens, their tables and every phrase on them; the project binds its
     // connection, scope stores and action lifecycle (views/hilos/logs) and, on its

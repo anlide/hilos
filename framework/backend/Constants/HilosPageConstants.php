@@ -39,6 +39,9 @@ final class HilosPageConstants
     /** @var string Legal revision history and personal acceptance dates (HIL-498) */
     public const string HILOS_PROFILE_AGREEMENTS_HISTORY = 'hilos_profile_agreements_history';
 
+    /** @var string Current-user personal data copy (HIL-1177) */
+    public const string HILOS_PROFILE_DATA = 'hilos_profile_data';
+
     /** @var string Hilos settings page */
     public const string HILOS_SETTINGS = 'hilos_settings';
 

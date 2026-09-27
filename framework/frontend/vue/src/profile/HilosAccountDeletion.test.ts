@@ -9,6 +9,7 @@ import {
   type ActionHandle,
   type ActionLifecycle,
   type HilosConnection,
+  type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
@@ -16,6 +17,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 
 import HilosAccountDeletion from './HilosAccountDeletion.vue'
+import { hilosRouterKey } from '../hilosRouterKey.js'
 
 // The modal teleports to <body>, so assertions query the document.
 afterEach(() => {
@@ -36,6 +38,8 @@ const DAY = 86_400_000
  */
 function zoneWorld(answers: Record<string, unknown>) {
   const listeners: Array<(signal: ProjectSignal) => void> = []
+  const sent: string[] = []
+  const navigated: string[] = []
   const connection = {
     on(event: string, listener: (payload: never) => void): () => void {
       if (event === 'projectSignal') {
@@ -47,6 +51,7 @@ function zoneWorld(answers: Record<string, unknown>) {
   } as unknown as HilosConnection
   const actions = {
     dispatch(action: string): ActionHandle {
+      sent.push(action)
       const answer = answers[action] ?? []
 
       return {
@@ -62,10 +67,20 @@ function zoneWorld(answers: Record<string, unknown>) {
 
   mount(HilosAccountDeletion, {
     attachTo: document.body,
+    global: {
+      provide: {
+        [hilosRouterKey as symbol]: {
+          currentPath: createSignal('/profile'),
+          navigate: (path: string) => navigated.push(path),
+        } as unknown as HilosRouter,
+      },
+    },
     props: { context: { connection, scopes: new ScopeManager(), actions } },
   })
 
   return {
+    sent,
+    navigated,
     state(data: unknown): void {
       for (const listener of listeners) {
         listener({
@@ -167,4 +182,29 @@ describe('HilosAccountDeletion', () => {
     )
     expect(document.activeElement).toBe(byId('account-deletion-code'))
   })
+})
+
+it('leaves the explanation for Your data without scheduling deletion', async () => {
+  const world = zoneWorld({
+    hilos_step_up_start: { required: false, purpose: 'delete your account' },
+    hilos_account_deletion_open: {
+      graceDays: 30,
+      channel: 'email',
+      destination: 'me@example.test',
+    },
+  })
+  world.state({ deletion: null })
+  await nextTick()
+  byId('account-deletion-open').click()
+  await flushPromises()
+  const link = byId('account-deletion-data-link').querySelector('a')
+  expect(link?.getAttribute('href')).toBe('/profile/data')
+  link?.click()
+  await flushPromises()
+  expect(world.navigated).toEqual(['/profile/data'])
+  expect(find('account-deletion-modal')).toBeNull()
+  expect(world.sent).toEqual([
+    'hilos_step_up_start',
+    'hilos_account_deletion_open',
+  ])
 })

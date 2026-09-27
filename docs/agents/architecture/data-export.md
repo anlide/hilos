@@ -20,8 +20,8 @@ one whole archive is built per tick, with blocking I/O confined to that worker.
 
 `export_data` is a step-up operation. Its declaration permits the blocked person
 held on the browser's session and passes an account with nothing to confirm with.
-Impersonation remains refused. A signed-in profile can use the same operation;
-its surface is HIL-1177.
+Impersonation remains refused. The signed-in profile uses the same operation
+on `/profile/data`.
 
 A refused sign-in credits this operation only if `provenBy` matches the method
 `StepUpMethodResolver` would ask for now. A password cannot stand for a connected
@@ -38,6 +38,33 @@ node in `hilos_data_export_state`. Closing or changing the card removes the old
 membership. The core store follows the initial node and group frames; the flow
 orders through the action lifecycle. `HilosDataExport` in each SDK consumes that
 store and flow. Their owner starts the store and disposes both when it is done.
+
+## The Profile Section
+
+`AbstractHilosProfileDataPage` serves `hilos_profile_data` at `/profile/data` with
+AUTHENTICATED access. Each demo binds the page to its own subscription agent.
+The `dataExport` section in its `page_response` carries the same archive node,
+or null when no copy exists; after answering, the connection joins the person's
+`DataExportGroup`. The chat profile root carries the same section and joins the
+same group for its live summary.
+
+`HilosProfileDataPage` mounts the shared `HilosDataExport` block without its own
+heading or border (`titled=false`): the page's catalog heading names the section.
+The account-deletion explanation links here and closes its window without
+scheduling deletion. While impersonating, the block keeps the copy's state but
+hides Download; ordering still receives the step-up refusal.
+
+## Notifications
+
+A recorded build outcome emits `data_export.ready` (info) or
+`data_export.failed` (warning) through the notification owner. Both types are
+optional and honor the person's enabled channels, including for a blocked
+account. Their data carries `url: '/profile/data'`; the ready notice names the
+copy's lifetime in days rather than a date in an unknown timezone.
+
+An erased account or a request replaced during assembly gets no completion
+notice. Expiry sends none either. Notification dispatch sits outside archive
+failure handling, so it cannot turn a ready copy into a failed build.
 
 ## Building And Restarting
 
@@ -85,6 +112,7 @@ between nodes. A node without that shared storage may return 404.
 
 ## What Is Not Here
 
-The signed-in profile section and readiness notifications are HIL-1177. Access
-journal records are added by HIL-1174. Cross-node archive transport and exports
-ordered by administrators for another person are not part of this mechanism.
+The frozen-screen link is HIL-500. Notification-menu entries are not clickable;
+the notice text names the profile section. Access journal records are added by
+HIL-1174. Cross-node archive transport and exports ordered by administrators for
+another person are not part of this mechanism.

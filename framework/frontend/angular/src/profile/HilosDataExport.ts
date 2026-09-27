@@ -11,11 +11,13 @@ import {
   HILOS_DATA_EXPORT_COPY,
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
+  hilosImpersonation,
   subscribeSignal,
   type DataExportNode,
   type HilosDataExportStore,
   type HilosDataExportFlow,
 } from '@hilos/core'
+import { hilosSignal } from '../hilosSignal.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
@@ -27,9 +29,16 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosFormError, HilosModal, HilosStepUpStep, LoadingButton],
   template: `
-    <section class="border rounded p-3 mb-3" data-id="data-export">
-      <h3 class="h6 mb-2">{{ copy.title }}</h3>
-      <p class="small text-body-secondary mb-2">{{ copy.lead }} {{ lead() }}</p>
+    <section
+      [class]="titled() ? 'border rounded p-3 mb-3' : 'mb-3'"
+      data-id="data-export"
+    >
+      @if (titled()) {
+        <h3 class="h6 mb-2">{{ copy.title }}</h3>
+      }
+      <p class="small text-body-secondary mb-2">
+        {{ titled() ? copy.lead : '' }} {{ lead() }}
+      </p>
       <div class="visually-hidden" role="status" aria-live="polite">
         {{ status() }}
       </div>
@@ -63,13 +72,15 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
         </div>
         <div class="d-flex flex-column gap-2">
           @if (node()?.state === 'ready') {
-            <a
-              class="btn btn-sm btn-primary"
-              [href]="downloadPath"
-              download
-              data-id="data-export-download"
-              >{{ copy.download }}</a
-            >
+            @if (impersonation() === null) {
+              <a
+                class="btn btn-sm btn-primary"
+                [href]="downloadPath"
+                download
+                data-id="data-export-download"
+                >{{ copy.download }}</a
+              >
+            }
             <button
               hilosLoadingButton
               class="btn-sm btn-outline-secondary"
@@ -143,6 +154,8 @@ export class HilosDataExport {
   readonly store = input.required<HilosDataExportStore>()
   readonly flow = input.required<HilosDataExportFlow>()
   readonly lead = input('')
+  readonly titled = input(true)
+  protected readonly impersonation = hilosSignal(hilosImpersonation)
   protected readonly copy = HILOS_DATA_EXPORT_COPY
   protected readonly stepUpCopy = HILOS_STEP_UP_COPY
   protected readonly downloadPath = DATA_EXPORT_DOWNLOAD_PATH

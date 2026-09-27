@@ -5,6 +5,7 @@ import {
   HILOS_DATA_EXPORT_COPY as COPY,
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
+  hilosImpersonation,
   type HilosDataExportStore,
   type HilosDataExportFlow,
 } from '@hilos/core'
@@ -14,11 +15,16 @@ import LoadingButton from '../LoadingButton.vue'
 import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
 import { useSignal } from '../useSignal.js'
 
-const props = defineProps<{
-  store: HilosDataExportStore
-  flow: HilosDataExportFlow
-  lead?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    store: HilosDataExportStore
+    flow: HilosDataExportFlow
+    lead?: string
+    titled?: boolean
+  }>(),
+  { titled: true, lead: '' },
+)
+const impersonation = useSignal(hilosImpersonation)
 const node = useSignal(props.store.state)
 const busy = useSignal(props.flow.busy)
 const refusal = useSignal(props.flow.refusal)
@@ -38,9 +44,15 @@ const preparingRoom = COPY.preparing.replace(
 </script>
 
 <template>
-  <section class="border rounded p-3 mb-3" data-id="data-export">
-    <h3 class="h6 mb-2">{{ COPY.title }}</h3>
-    <p class="small text-body-secondary mb-2">{{ COPY.lead }} {{ lead }}</p>
+  <section
+    class="mb-3"
+    :class="{ 'border rounded p-3': titled }"
+    data-id="data-export"
+  >
+    <h3 v-if="titled" class="h6 mb-2">{{ COPY.title }}</h3>
+    <p class="small text-body-secondary mb-2">
+      {{ titled ? COPY.lead : '' }} {{ lead }}
+    </p>
     <div class="visually-hidden" role="status" aria-live="polite">
       {{ status }}
     </div>
@@ -73,6 +85,7 @@ const preparingRoom = COPY.preparing.replace(
       <div class="d-flex flex-column gap-2">
         <template v-if="node?.state === 'ready'">
           <a
+            v-if="impersonation === null"
             class="btn btn-sm btn-primary"
             :href="DATA_EXPORT_DOWNLOAD_PATH"
             download

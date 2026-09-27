@@ -5,6 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\DataExport\DataExportHttp;
+use Hilos\DataExport\DataExportNotificationType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Notification\DTO\NotificationEmitSignalData;
+use Hilos\Notification\HilosNotifier;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Closure;
@@ -32,6 +38,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     ];
     private string $directory;
     private ?FsContext $previousFs;
+    private ?SignalRouter $previousRouter;
+    private ?HilosNotifier $previousNotify;
 
     /**
      * @throws HilosException When the fixture cannot be mounted
@@ -39,6 +47,10 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousRouter = Hilos::$sr;
+        $this->previousNotify = Hilos::$notify;
+        Hilos::$sr = new SignalRouter();
+        Hilos::$notify = new HilosNotifier();
         foreach (self::EXTRA_TABLES as $table) {
             Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
             Database::sqlRun(file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql'));
@@ -60,6 +72,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     protected function tearDown(): void
     {
         SourceChangeBus::reset();
+        Hilos::$sr = $this->previousRouter;
+        Hilos::$notify = $this->previousNotify;
         Hilos::$fs = $this->previousFs;
         Hilos::initBrowser();
         Hilos::resetBrowser();
@@ -130,6 +144,15 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             }
         }
         self::assertSame('ready', $agent->published[0]['state']);
+        $announcements = $this->announcements();
+        self::assertCount(1, $announcements);
+        self::assertSame(DataExportNotificationType::READY, $announcements[0]->type);
+        self::assertSame(7, $announcements[0]->userId);
+        self::assertSame('info', $announcements[0]->severity);
+        self::assertSame('Your copy of your data is ready', $announcements[0]->title);
+        self::assertSame('It is kept for 7 days. Open Profile › Your data to download it.', $announcements[0]->body);
+        self::assertSame(['url' => '/profile/data'], $announcements[0]->data);
+        self::assertNull($announcements[0]->channels);
     }
 
     /**
@@ -241,6 +264,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertNull(Hilos::$db->dataExports->ofUser(7));
         self::assertSame([], glob($this->directory . '/*'));
         self::assertSame([], $agent->published);
+        self::assertSame([], $this->announcements());
     }
 
     /**
@@ -261,6 +285,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame(DataExportState::PREPARING, Hilos::$db->dataExports->ofUser(7)?->state);
         self::assertSame([], glob($this->directory . '/*'));
         self::assertSame([], $agent->published);
+        self::assertSame([], $this->announcements());
     }
 
     /**
@@ -281,6 +306,31 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         $agent->onTick();
         self::assertCount(1, $agent->published);
         self::assertSame('failed', $agent->published[0]['state']);
+        $announcements = $this->announcements();
+        self::assertCount(1, $announcements);
+        self::assertSame(DataExportNotificationType::FAILED, $announcements[0]->type);
+        self::assertSame(7, $announcements[0]->userId);
+        self::assertSame('warning', $announcements[0]->severity);
+        self::assertSame('We could not prepare your copy of your data', $announcements[0]->title);
+        self::assertSame('Open Profile › Your data to try again.', $announcements[0]->body);
+        self::assertSame(['url' => '/profile/data'], $announcements[0]->data);
+        self::assertNull($announcements[0]->channels);
+    }
+
+    /** @return list<NotificationEmitSignalData> Completion notices queued for the notification owner */
+    private function announcements(): array
+    {
+        $notices = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_NOTIFICATION_EMIT) {
+                continue;
+            }
+            self::assertInstanceOf(AgentSignalData::class, $signal->data);
+            self::assertInstanceOf(NotificationEmitSignalData::class, $signal->data->data);
+            $notices[] = $signal->data->data;
+        }
+
+        return $notices;
     }
 
     /**

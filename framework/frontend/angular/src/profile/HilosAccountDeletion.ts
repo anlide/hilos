@@ -28,6 +28,9 @@ import {
   formatCalendarDate,
   HILOS_ACCOUNT_DELETION_COPY,
   HILOS_STEP_UP_COPY,
+  HILOS_DATA_EXPORT_COPY,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
   subscribeSignal,
 } from '@hilos/core'
 import type {
@@ -37,6 +40,7 @@ import type {
   HilosSecondFactorContext,
 } from '@hilos/core'
 
+import { HilosLink } from '../HilosLink.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
@@ -45,7 +49,13 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 @Component({
   selector: 'hilos-account-deletion',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosFormError, HilosModal, HilosStepUpStep, LoadingButton],
+  imports: [
+    HilosFormError,
+    HilosModal,
+    HilosStepUpStep,
+    LoadingButton,
+    HilosLink,
+  ],
   template: `
     <section class="mt-5" data-id="account-deletion">
       @if (deletion() !== null) {
@@ -151,6 +161,12 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
               <p class="small text-body-secondary mb-0">
                 {{ copy.explainChangeMind }}
               </p>
+              <p class="small mb-0 mt-2" data-id="account-deletion-data-link">
+                {{ exportCopy.deleteHint }}
+                <a [hilosLink]="dataPath" (click)="flow().close()">{{
+                  exportCopy.deleteLink
+                }}</a>
+              </p>
             } @else {
               <form (submit)="$event.preventDefault(); flow().start()">
                 <p class="small text-body-secondary mb-3">
@@ -246,6 +262,8 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
   `,
 })
 export class HilosAccountDeletion {
+  protected readonly exportCopy = HILOS_DATA_EXPORT_COPY
+  protected readonly dataPath = HILOS_PAGE_ROUTES[HilosPages.PROFILE_DATA]
   /** The project context: connection, scope stores, and the action lifecycle. */
   readonly context = input.required<HilosSecondFactorContext>()
 

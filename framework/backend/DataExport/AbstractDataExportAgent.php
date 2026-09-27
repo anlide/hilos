@@ -36,6 +36,9 @@ use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Notification\NotificationDraft;
+use Hilos\Notification\NotificationSeverity;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
@@ -361,6 +364,24 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             }
         }
         $this->publishState($export->userId);
+        $this->announce($export->userId, $export->state === DataExportState::READY);
+    }
+
+    /**
+     * @param int $userId Person whose request reached a recorded outcome
+     * @param bool $ready Whether the copy is ready rather than failed
+     * @throws InvalidArgumentException When the notification signal cannot be queued
+     */
+    private function announce(int $userId, bool $ready): void
+    {
+        Hilos::$notify?->emit(new NotificationDraft(
+            userId: $userId,
+            type: $ready ? DataExportNotificationType::READY : DataExportNotificationType::FAILED,
+            title: $ready ? DataExportMessages::READY_TITLE : DataExportMessages::FAILED_TITLE,
+            severity: $ready ? NotificationSeverity::INFO : NotificationSeverity::WARNING,
+            body: $ready ? sprintf(DataExportMessages::READY_BODY, self::LIFETIME_DAYS) : DataExportMessages::FAILED_BODY,
+            data: [DataExportNotificationType::DATA_URL => DataExportNotificationType::SECTION_PATH],
+        ));
     }
 
     /**

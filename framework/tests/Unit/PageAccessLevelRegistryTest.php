@@ -11,6 +11,7 @@ use Hilos\Pages\AbstractHilosLicensePage;
 use Hilos\Pages\AbstractHilosPrivacyPage;
 use Hilos\Pages\AbstractHilosProfilePage;
 use Hilos\Pages\AbstractHilosProfileDevicesPage;
+use Hilos\Pages\AbstractHilosProfileDataPage;
 use Hilos\Pages\AbstractHilosProfileNotificationsPage;
 use Hilos\Pages\AbstractHilosProfileSecurityPage;
 use Hilos\Pages\AbstractHilosProfileAgreementsPage;
@@ -46,6 +47,7 @@ final class PageAccessLevelRegistryTest extends TestCase
         AbstractHilosProfileAgreementsPage::class,
         AbstractHilosProfilePage::class,
         AbstractHilosProfileDevicesPage::class,
+        AbstractHilosProfileDataPage::class,
         AbstractHilosProfileNotificationsPage::class,
         AbstractHilosProfileSecurityPage::class,
         AbstractHilosProfileSessionsPage::class,

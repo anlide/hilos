@@ -16,6 +16,8 @@ use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\HilosException;
+use Hilos\DataExport\DataExportGroup;
+use Hilos\DataExport\DataExportStateProjector;
 use Hilos\Legal\LegalAgreementsProjector;
 use Hilos\Legal\LegalAgreementsGroup;
 use Hilos\Legal\LegalStandingResolver;
@@ -29,14 +31,14 @@ use Hilos\Pages\AbstractHilosProfileSecurityPage;
  *
  * The framework owns the page identity (key, route, subscription signal); this concrete binds
  * the chat agent and the self-connection browser data. The subscription carries notifications,
- * second-factor state, account deletion state and legal agreements beside the section summaries' browser lists.
+ * second-factor state, account deletion state, data-copy state and legal agreements beside the section summaries' browser lists.
  *
  * It is a READING surface (HIL-771). Every submit that writes a person lives where those tables
  * are owned: the rename on {@see UsersLibraryAgent}, the ways in and the email change on the
  * framework's users library (HIL-1137). Starting a provider link belongs to ProfileSignInPage.
  * This page is still served by the chat agent, whose browser data it reads.
  *
- * After answering, it joins the deletion, second-factor and legal-agreements groups so the person's state
+ * After answering, it joins the deletion, data-export, second-factor and legal-agreements groups so the person's state
  * remains live across tabs, as on the framework's security page.
  *
  * @property ChatAgent $agent
@@ -46,7 +48,7 @@ final class ProfilePage extends AbstractHilosProfilePage
     /**
      * @var list<string> What is left to read once the writing submits have gone (HIL-771): the
      *     notification section the subscription carries, the two stores a channel resolves
-     *     a person's address in, account deletion requests, legal acceptances, and the second-factor section.
+     *     a person's address in, account deletion requests, data-copy requests, legal acceptances, and the second-factor section.
      */
     public const array READS_DB = [
         ChatDbContext::identities,
@@ -59,13 +61,14 @@ final class ProfilePage extends AbstractHilosProfilePage
         ChatDbContext::secondFactorBackupCodes,
         ChatDbContext::secondFactorResets,
         ChatDbContext::secondFactorSettings,
+        ChatDbContext::dataExports,
     ];
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     /**
      * Contributes the signed-in user's notification preferences as the profile's
-     * page-data section, plus account deletion, second-factor and legal-agreements state.
+     * page-data section, plus account deletion, data-export, second-factor and legal-agreements state.
      *
      * The profile is a self-only surface with no route params: the recipient is the
      * session user, read from the self-connection (never a client value), so an
@@ -77,8 +80,8 @@ final class ProfilePage extends AbstractHilosProfilePage
      *
      * @param string $acceptKey WebSocket accept key of the subscribing connection (unused; this page reads its subscriber off the self-connection)
      * @param PageRouteParams $params Route params for the profile subscription (unused; profile has none)
-     * @return ?PagePayload Notification, deletion, second-factor and legal-agreements state, or null outside a signed-in session
-     * @throws HilosException When a preference, address, deletion or second-factor lookup fails
+     * @return ?PagePayload Notification, deletion, data-export, second-factor and legal-agreements state, or null outside a signed-in session
+     * @throws HilosException When a preference, address, deletion, data-export or second-factor lookup fails
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
@@ -87,6 +90,9 @@ final class ProfilePage extends AbstractHilosProfilePage
         }
 
         return new PagePayload(data: [
+            DataExportStateProjector::SECTION => DataExportStateProjector::nodeFor(
+                Hilos::$db->dataExports->ofUser(Hilos::$rt->selfConnection->userId),
+            ),
             LegalAgreementsProjector::SECTION => LegalAgreementsProjector::stateFor(
                 Hilos::$rt->selfConnection->userId, LegalStandingResolver::today(),
             )->toArray(),
@@ -103,7 +109,7 @@ final class ProfilePage extends AbstractHilosProfilePage
     }
 
     /**
-     * Joins the person's account deletion, second-factor and legal-agreements groups after answering.
+     * Joins the person's account deletion, data-export, second-factor and legal-agreements groups after answering.
      *
      * @param string $acceptKey WebSocket accept key of the subscribing connection
      * @param PageRouteParams $params Route params (unused; profile has none)
@@ -119,5 +125,6 @@ final class ProfilePage extends AbstractHilosProfilePage
         AccountDeletionGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
         LegalAgreementsGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
         SecondFactorGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
+        DataExportGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
     }
 }

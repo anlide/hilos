@@ -18,9 +18,13 @@ import {
   formatCalendarDate,
   HILOS_ACCOUNT_DELETION_COPY as COPY,
   HILOS_STEP_UP_COPY,
+  HILOS_DATA_EXPORT_COPY,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
 } from '@hilos/core'
 import type { HilosSecondFactorContext } from '@hilos/core'
 
+import { HilosLink } from '../HilosLink.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
@@ -283,6 +287,18 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
                   </div>
                   <p className="small text-body-secondary mb-0">
                     {COPY.explainChangeMind}
+                  </p>
+                  <p
+                    className="small mb-0 mt-2"
+                    data-id="account-deletion-data-link"
+                  >
+                    {HILOS_DATA_EXPORT_COPY.deleteHint}{' '}
+                    <HilosLink
+                      to={HILOS_PAGE_ROUTES[HilosPages.PROFILE_DATA]}
+                      onClick={() => flow.close()}
+                    >
+                      {HILOS_DATA_EXPORT_COPY.deleteLink}
+                    </HilosLink>
                   </p>
                 </>
               ) : (

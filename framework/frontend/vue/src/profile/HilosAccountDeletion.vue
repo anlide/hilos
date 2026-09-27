@@ -20,11 +20,15 @@ import {
   formatCalendarDate,
   HILOS_ACCOUNT_DELETION_COPY as COPY,
   HILOS_STEP_UP_COPY,
+  HILOS_DATA_EXPORT_COPY,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
   type HilosSecondFactorContext,
 } from '@hilos/core'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import HilosFormError from '../HilosFormError.vue'
+import HilosLink from '../HilosLink.vue'
 import HilosModal from '../HilosModal.vue'
 import LoadingButton from '../LoadingButton.vue'
 import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
@@ -227,6 +231,14 @@ function fill(template: string): string {
             </div>
             <p class="small text-body-secondary mb-0">
               {{ COPY.explainChangeMind }}
+            </p>
+            <p class="small mb-0 mt-2" data-id="account-deletion-data-link">
+              {{ HILOS_DATA_EXPORT_COPY.deleteHint }}
+              <HilosLink
+                :to="HILOS_PAGE_ROUTES[HilosPages.PROFILE_DATA]"
+                @click="flow.close()"
+                >{{ HILOS_DATA_EXPORT_COPY.deleteLink }}</HilosLink
+              >
             </p>
           </template>
           <form v-else @submit.prevent="flow.start()">

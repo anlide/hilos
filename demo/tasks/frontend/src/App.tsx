@@ -44,6 +44,7 @@ import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProv
 import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods'
 import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor'
 import ProfileSecurity from './views/Profile/ProfileSecurity'
+import ProfileData from './views/Profile/ProfileData.js'
 import HilosUser from './views/Hilos/Users/User'
 import HilosUsers from './views/Hilos/Users/Users'
 import License from './views/License/License'
@@ -102,6 +103,7 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
   [HilosPages.SECURITY_2FA]: HilosSecurityTwoFactor,
   [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
+  [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,

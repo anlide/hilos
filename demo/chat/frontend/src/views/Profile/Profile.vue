@@ -12,6 +12,9 @@ import {
 import {
   createHilosSecondFactorStore,
   createHilosLegalAgreementsStore,
+  createHilosDataExportStore,
+  profileDataExportNode,
+  describeHilosDataExport,
   describeHilosLegalAgreements,
   describeHilosNotificationChannels,
   describeHilosProfileSignInMethods,
@@ -80,6 +83,11 @@ const secondFactor = createHilosSecondFactorStore(deletionContext)
 const securityState = useSignal(secondFactor.state)
 const agreements = createHilosLegalAgreementsStore(deletionContext)
 const agreementState = useSignal(agreements.state)
+const dataExport = createHilosDataExportStore(
+  connection,
+  profileDataExportNode(scopes),
+)
+const dataExportState = useSignal(dataExport.state)
 let stopAgreements: (() => void) | null = null
 const router = inject(hilosRouterKey)
 if (!router) throw new Error('Profile requires a provided Hilos router.')
@@ -107,6 +115,8 @@ function sectionIcon(page: string): string {
       return 'bi-broadcast'
     case HilosPages.PROFILE_AGREEMENTS:
       return 'bi-file-earmark-check'
+    case HilosPages.PROFILE_DATA:
+      return 'bi-download'
     case HilosPages.PROFILE_SECURITY:
       return 'bi-shield-lock'
     default:
@@ -125,6 +135,8 @@ function sectionSummary(page: string): string {
       return `${devicesCount.value} subscribed to push`
     case HilosPages.PROFILE_AGREEMENTS:
       return describeHilosLegalAgreements(agreementState.value)
+    case HilosPages.PROFILE_DATA:
+      return describeHilosDataExport(dataExportState.value)
     case HilosPages.PROFILE_SECURITY:
       return `Two-step verification is ${securityState.value?.authenticators.length ? 'on' : 'off'}`
     default:
@@ -136,11 +148,13 @@ onMounted(() => {
   stopPreferences = startHilosNotificationPreferences({ connection, scopes })
   secondFactor.start()
   stopAgreements = agreements.start()
+  dataExport.start()
 })
 onUnmounted(() => {
   stopPreferences?.()
   secondFactor.dispose()
   stopAgreements?.()
+  dataExport.dispose()
 })
 
 const editing = ref(false)

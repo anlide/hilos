@@ -61,3 +61,4 @@ export {
   signInAs,
   waitForProviderWindow,
 } from './standOAuthUser.js'
+export { downloadBytes } from './download.js'

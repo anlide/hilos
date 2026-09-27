@@ -3,6 +3,7 @@ import {
   HILOS_DATA_EXPORT_COPY as COPY,
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
+  hilosImpersonation,
   type HilosDataExportStore,
   type HilosDataExportFlow,
 } from '@hilos/core'
@@ -16,10 +17,17 @@ export interface HilosDataExportProps {
   store: HilosDataExportStore
   flow: HilosDataExportFlow
   lead?: string
+  titled?: boolean
 }
 
 /** The shared personal-copy surface; its owner supplies the running store and flow. */
-export function HilosDataExport({ store, flow, lead }: HilosDataExportProps) {
+export function HilosDataExport({
+  store,
+  flow,
+  lead,
+  titled = true,
+}: HilosDataExportProps) {
+  const impersonation = useSignal(hilosImpersonation)
   const node = useSignal(store.state)
   const busy = useSignal(flow.busy)
   const refusal = useSignal(flow.refusal)
@@ -31,10 +39,13 @@ export function HilosDataExport({ store, flow, lead }: HilosDataExportProps) {
     new Date().toLocaleString(),
   )
   return (
-    <section className="border rounded p-3 mb-3" data-id="data-export">
-      <h3 className="h6 mb-2">{COPY.title}</h3>
+    <section
+      className={titled ? 'border rounded p-3 mb-3' : 'mb-3'}
+      data-id="data-export"
+    >
+      {titled ? <h3 className="h6 mb-2">{COPY.title}</h3> : null}
       <p className="small text-body-secondary mb-2">
-        {COPY.lead} {lead}
+        {titled ? COPY.lead : ''} {lead}
       </p>
       <div className="visually-hidden" role="status" aria-live="polite">
         {status}
@@ -70,14 +81,16 @@ export function HilosDataExport({ store, flow, lead }: HilosDataExportProps) {
         <div className="d-flex flex-column gap-2">
           {node?.state === 'ready' ? (
             <>
-              <a
-                className="btn btn-sm btn-primary"
-                href={DATA_EXPORT_DOWNLOAD_PATH}
-                download
-                data-id="data-export-download"
-              >
-                {COPY.download}
-              </a>
+              {impersonation === null ? (
+                <a
+                  className="btn btn-sm btn-primary"
+                  href={DATA_EXPORT_DOWNLOAD_PATH}
+                  download
+                  data-id="data-export-download"
+                >
+                  {COPY.download}
+                </a>
+              ) : null}
               <LoadingButton
                 className="btn-sm btn-outline-secondary"
                 loading={busy}

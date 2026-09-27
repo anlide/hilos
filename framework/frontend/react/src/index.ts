@@ -230,6 +230,7 @@ export type { HilosTableColumn } from '@hilos/core'
 export { HilosPageHeading } from './HilosPageHeading.js'
 export { HilosProfileSignInPage } from './profile/HilosProfileSignInPage.js'
 export { HilosProfileNotificationsPage } from './profile/HilosProfileNotificationsPage.js'
+export { HilosProfileDataPage } from './profile/HilosProfileDataPage.js'
 
 export {
   HilosProfilePasswordChange,

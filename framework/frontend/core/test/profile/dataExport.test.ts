@@ -6,9 +6,14 @@ import {
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import { createSignal } from '../../src/state/signal.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { formatCalendarDate } from '../../src/format/date.js'
 import { applyServerTime } from '../../src/session/serverClock.js'
 import {
   createHilosDataExportFlow,
+  createHilosProfileDataExport,
+  describeHilosDataExport,
+  profileDataExportNode,
   createHilosDataExportStore,
   dataExportNodeSchema,
   type DataExportNode,
@@ -173,5 +178,62 @@ describe('data export', () => {
     await pending
     expect(w.sent).toEqual(['hilos_step_up_start'])
     w.dispose()
+  })
+})
+
+describe('profile data export', () => {
+  it('summarizes all four copy states with the local expiry date', () => {
+    expect(describeHilosDataExport(null)).toBe('No copy yet')
+    expect(describeHilosDataExport(preparing)).toBe('Preparing a copy…')
+    expect(describeHilosDataExport(ready)).toBe(
+      `Copy ready until ${formatCalendarDate(ready.expiresAt)}`,
+    )
+    expect(
+      describeHilosDataExport({ ...ready, state: 'failed', sizeBytes: null }),
+    ).toBe('The last copy could not be prepared')
+  })
+  it('reads the section, clearing missing and malformed nodes across navigation', () => {
+    const scopes = new ScopeManager()
+    const node = profileDataExportNode(scopes)
+    expect(node.get()).toBeNull()
+    const page = scopes.openPage('hilos_profile_data')
+    page.data.set('dataExport', ready)
+    expect(node.get()).toEqual(ready)
+    page.data.set('dataExport', { state: 'ready' })
+    expect(node.get()).toBeNull()
+    page.data.set('dataExport', null)
+    expect(node.get()).toBeNull()
+    scopes.openPage('hilos_profile').data.set('dataExport', preparing)
+    expect(node.get()).toEqual(preparing)
+    scopes.dropPage()
+    expect(node.get()).toBeNull()
+  })
+  it('starts with page data and follows group frames until disposal', () => {
+    const listeners = new Set<(frame: ProjectSignal) => void>()
+    const connection = {
+      on: (_: string, listener: (frame: ProjectSignal) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    scopes.openPage('hilos_profile_data').data.set('dataExport', preparing)
+    const copy = createHilosProfileDataExport({
+      connection,
+      scopes,
+      actions: {} as ActionLifecycle,
+    })
+    copy.store.start()
+    expect(copy.store.state.get()?.state).toBe('preparing')
+    for (const listener of listeners)
+      listener({
+        type: 'hilos_data_export_state',
+        data: { dataExport: ready },
+      } as unknown as ProjectSignal)
+    expect(copy.store.state.get()?.state).toBe('ready')
+    copy.flow.dispose()
+    copy.store.dispose()
+    expect(listeners.size).toBe(0)
+    expect(copy.store.state.get()).toBeNull()
   })
 })
