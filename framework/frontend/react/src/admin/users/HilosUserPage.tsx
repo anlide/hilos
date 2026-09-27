@@ -12,6 +12,14 @@
 // backend fail ack inside the modal. Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
+  ACCOUNT_DELETION_TICK_MS,
+  createHilosUserLifecycle,
+  HILOS_USER_LIFECYCLE_COPY,
+  hilosUserLifecycleSections,
+  hilosUserLifecyclePrompt,
+  submitHilosUserLifecycle,
+  type HilosUserLifecycleChoice,
+  type HilosUserLifecyclePrompt,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   USER_IDENTITIES_FIELD,
@@ -86,6 +94,56 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
 
   const detail = useSignal(userDetail)
   const error = useSignal(rename.renameError)
+  const lifecycle = useMemo(() => createHilosUserLifecycle(context), [context])
+  const lifecycleAction = useTrackedAction()
+  const [lifecyclePrompt, setLifecyclePrompt] =
+    useState<HilosUserLifecyclePrompt | null>(null)
+  const graceDays = useSignal(lifecycle.graceDays)
+  const lifecycleUserId = useSignal(lifecycle.currentUserId)
+  const [lifecycleNow, setLifecycleNow] = useState(() => Date.now())
+  useEffect(() => {
+    setLifecycleNow(Date.now())
+  }, [detail?.deletionEffectiveAt])
+  const lifecycleCopy = HILOS_USER_LIFECYCLE_COPY
+  const lifecycleSections = hilosUserLifecycleSections(
+    detail,
+    lifecycleUserId,
+    graceDays,
+    lifecycleNow,
+  )
+  useEffect(() => {
+    const tick = setInterval(
+      () => setLifecycleNow(Date.now()),
+      ACCOUNT_DELETION_TICK_MS,
+    )
+    return () => clearInterval(tick)
+  }, [])
+
+  function openLifecycle(choice: HilosUserLifecycleChoice): void {
+    if (!detail || lifecycleAction.busy) return
+    lifecycleAction.clearError()
+    setLifecyclePrompt(hilosUserLifecyclePrompt(detail, choice, graceDays))
+  }
+
+  function closeLifecycle(): void {
+    if (!lifecycleAction.busy) setLifecyclePrompt(null)
+  }
+
+  async function submitLifecycle(): Promise<void> {
+    if (
+      !lifecyclePrompt ||
+      lifecycleAction.busy ||
+      detail?.id !== lifecyclePrompt.userId
+    )
+      return
+    if (
+      await lifecycleAction.run(
+        submitHilosUserLifecycle(lifecycle, lifecyclePrompt),
+      )
+    )
+      closeLifecycle()
+  }
+
   const mergeCandidates = useMemo(
     () => createHilosMergeCandidates(context),
     [context],
@@ -354,6 +412,61 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               </dl>
             </div>
           </div>
+          {lifecycleSections.map((section) => (
+            <section
+              key={section.key}
+              className="card mt-4"
+              data-id={`hilos-user-${section.key}`}
+            >
+              <div className="card-body">
+                <h2 className="h5">{section.title}</h2>
+                {section.rows.map((row) => (
+                  <div
+                    key={row.key}
+                    className="d-flex flex-wrap align-items-start gap-3 py-2"
+                  >
+                    <div
+                      className="flex-grow-1"
+                      data-id={`hilos-user-${row.key}-state`}
+                    >
+                      <h3 className="h6 mb-1">
+                        {row.title}{' '}
+                        <span className="badge text-bg-secondary">
+                          {row.state ? lifecycleCopy.yes : lifecycleCopy.no}
+                        </span>
+                      </h3>
+                      <p className="small text-body-secondary mb-0">
+                        {row.hint}
+                      </p>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${lifecycleCopy.confirmations[row.choice].danger ? 'btn-outline-danger' : 'btn-primary'}`}
+                        disabled={row.disabled}
+                        aria-describedby={`hilos-user-${row.key}-reason`}
+                        data-id={`hilos-user-${row.key}-open`}
+                        onClick={() => openLifecycle(row.choice)}
+                      >
+                        {lifecycleCopy[row.choice]}
+                      </button>
+                      <div className="hilos-stack small text-body-secondary mt-1">
+                        <span className="invisible" aria-hidden="true">
+                          {row.reasonSpace}
+                        </span>
+                        <span
+                          id={`hilos-user-${row.key}-reason`}
+                          data-id={`hilos-user-${row.key}-reason`}
+                        >
+                          {row.reason}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
           {context.accountMerge ? (
             <section
               className="card border-danger mt-4"
@@ -382,6 +495,52 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           Loading user…
         </p>
       )}
+
+      <HilosModal
+        open={lifecyclePrompt !== null}
+        onClose={closeLifecycle}
+        title={lifecyclePrompt?.title}
+        initialFocus="dialog"
+        closeOnBackdrop={!lifecycleAction.busy}
+        closeOnEsc={!lifecycleAction.busy}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={lifecycleAction.busy}
+              data-id="hilos-user-lifecycle-cancel"
+              onClick={requestClose}
+            >
+              {lifecycleCopy.cancel}
+            </button>
+            <LoadingButton
+              className={lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'}
+              loading={lifecycleAction.loading}
+              disabled={
+                lifecycleAction.busy || detail?.id !== lifecyclePrompt?.userId
+              }
+              data-id="hilos-user-lifecycle-confirm"
+              onClick={() => void submitLifecycle()}
+            >
+              {lifecyclePrompt?.confirm}
+            </LoadingButton>
+          </>
+        )}
+      >
+        <div className="visually-hidden" role="alert" aria-live="assertive">
+          {lifecycleAction.error}
+        </div>
+        {lifecyclePrompt?.paragraphs.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+        <div data-id="hilos-user-lifecycle-error">
+          <HilosActionError
+            action={lifecycleAction}
+            detailsTitle="Account change refused"
+          />
+        </div>
+      </HilosModal>
 
       <HilosModal
         open={editing}

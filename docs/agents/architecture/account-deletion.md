@@ -53,6 +53,10 @@ The grace period is the setting `auth.account_deletion.grace_days` — 30 by
 default, 1 to 365 (`AccountDeletionSettingsCatalog`, folded into the project's
 catalog).
 
+The admin user card schedules the same request and grace period through
+`scheduleFor()`, and cancels it through `cancelFor()`. Both publish the same
+state to the person; either the administrator or the person may call it off.
+
 ## The Erasure
 
 Once a minute, where a sign-in exists, the session holder sweeps the due
@@ -85,6 +89,9 @@ leaves rows of nobody. A failure after the commit is logged and not retried: the
 request is carried out, and no sweep comes back for it.
 
 ## The Project's Seam
+
+`assertAdministratorMayDelete()` judges the admin card's target before scheduling:
+refuse an administrator and, where accounts merge, a merged account. Its default refuses.
 
 `applyAccountErasure()` refuses by default (`NotImplementedException`), like the
 merge's seams: a project that forgot to erase its rows hears it when the first

@@ -144,6 +144,22 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     }
 
     /**
+     * @param int $userId Target account id
+     * @param bool $block Requested block flag
+     * @throws ItemNotFoundForUpdateException When the account does not exist
+     * @throws HilosException On database or truth-source failure
+     */
+    protected function applyAccountBlock(int $userId, bool $block): void
+    {
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+
+        $user->actions->setBlock($block);
+    }
+
+    /**
      * Deletes everything this demo keeps of a person whose account is being erased (HIL-302).
      *
      * The rename audit rows first, because they restrict the delete of the user row, then the

@@ -462,7 +462,9 @@ single-user ADMIN page owns `HILOS_USER_MERGE`, forwards `HILOS_ACCOUNT_MERGE` w
 project's merge seams inside the transaction, then answers the page on
 `HILOS_ACCOUNT_MERGE_DONE` with the finished summary as the success message. The project
 does not mint a second action or ack name merely because it contributes rows to the write;
-the gatekeeper still owns the browser outcome.
+the gatekeeper still owns the browser outcome. The card's admin-rights, block and
+deletion actions use the same handover: the sessions library writes rights and blocks,
+and the users library schedules or cancels deletion; the ADMIN page answers each press.
 
 **An operation with two entrances: the gatekeeper's lock closes the browser one
 only.** The writer keeps its own seam for the entrance that has no page. The

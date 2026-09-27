@@ -133,6 +133,9 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Users\AccountBlockReader;
+use Hilos\Users\AskingAdministrator;
+use Hilos\Users\DTO\AccountAdminSetSignalData;
+use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\AccountErasure;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
@@ -331,9 +334,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * of the wait by frame - a wrong code counted, an enrolment on the way in confirmed, a factor
      * gone, a wait to let go.
      *
-     * The newest has no fixed sender (HIL-289): whoever wrote a person's block flag says "look
-     * at this person again", and it arrives here because what a block takes away - every session
-     * of the person - and the card it leaves behind are this library's to write.
+     * A block-change frame has no fixed sender (HIL-289): whoever wrote a person's flag asks
+     * this library to enforce it. Two requests from the admin card (HIL-304) write rights and
+     * block flags here; their answer names belong to the page that deferred the submit.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -346,6 +349,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
         HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
+        HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET => AccountAdminSetSignalData::class,
+        HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => AccountBlockSetSignalData::class,
         HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
         HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
         HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
@@ -1704,6 +1709,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $admin = (bool)($data->payload[AdminCommandConstants::FIELD_ADMIN] ?? false);
 
         try {
+            if (!$admin) {
+                $this->refuseLastAdministrator($userId);
+            }
             $this->applyAdminGrant($userId, $admin);
         } catch (Throwable $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
@@ -1762,10 +1770,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $connections = Hilos::$rt?->sessionConnectionsSource();
         if ($connections === null) {
-            return new AdminGrantAnnouncement(0, null);
+            return new AdminGrantAnnouncement(0, null, 0);
         }
 
         $sessions = 0;
+        $tabs = 0;
 
         try {
             $keysByToken = [];
@@ -1786,6 +1795,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     pendingAck: $session === null ? null : $this->sessionPendingAck($session),
                 ));
                 $sessions++;
+                $tabs += count($acceptKeys);
             }
         } catch (WiringRefusal $refusal) {
             // Told apart and written down as its own thing, then reported like any other reason:
@@ -1793,14 +1803,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // raise it to. The line is what says this process was never going to announce.
             $this->logAgentError("Admin grant for user #{$userId} cannot be announced here: {$refusal->getMessage()}");
 
-            return new AdminGrantAnnouncement($sessions, $refusal->getMessage());
+            return new AdminGrantAnnouncement($sessions, $refusal->getMessage(), $tabs);
         } catch (Throwable $e) {
             $this->logAgentError("Admin grant for user #{$userId} was not announced: {$e->getMessage()}");
 
-            return new AdminGrantAnnouncement($sessions, $e->getMessage());
+            return new AdminGrantAnnouncement($sessions, $e->getMessage(), $tabs);
         }
 
-        return new AdminGrantAnnouncement($sessions, null);
+        return new AdminGrantAnnouncement($sessions, null, $tabs);
     }
 
     /**
@@ -1825,6 +1835,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     protected function applyAdminGrant(int $userId, bool $admin): void
     {
         throw new NotImplementedException('Admin grant is not wired in this project');
+    }
+
+    /**
+     * Writes only the project's block flag; the library enforces it after the write.
+     *
+     * @param int $userId Target account id
+     * @param bool $block Requested block flag
+     * @throws NotImplementedException When the project has not wired account blocking
+     * @throws HilosException When the project refuses the account or cannot write the flag
+     */
+    protected function applyAccountBlock(int $userId, bool $block): void
+    {
+        throw new NotImplementedException('Account block is not wired in this project');
     }
 
     /**
@@ -3047,7 +3070,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * a code, each time the send moves (HIL-826), one from the agent holding the logins a
      * restore left (HIL-846), two about a provider sign-in a tab is waiting on and one from the
      * master about agents that are gone (HIL-1044), one from whoever wrote a block flag (HIL-289),
-     * and the password change's request to end other sessions (HIL-300).
+     * two from the admin card asking to write rights or a block (HIL-304), and the password
+     * change's request to end other sessions (HIL-300).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -3208,6 +3232,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->handleAccountMergeRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET:
+                $this->handleAdminSetRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET:
+                $this->handleBlockSetRequest($data->data);
 
                 return;
 
@@ -4496,13 +4530,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * as it is: a merged loser is not a punished person, and its tabs get the plain sign-in form.
      *
      * @param int $userId Person whose block flag was written
+     * @return int Sessions ended by this enforcement pass
      * @throws InvalidArgumentException When a state frame cannot be named
      * @throws HilosException When the flag, the sessions or the identities cannot be read or written
      */
-    private function enforceAccountBlock(int $userId): void
+    private function enforceAccountBlock(int $userId): int
     {
         if (!$this->enforcesAccountBlock()) {
-            return;
+            return 0;
         }
 
         if (!new AccountBlockReader()->isBlocked($userId)) {
@@ -4511,7 +4546,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $this->publishBlockedCardState($session, null, null, null, null);
             }
 
-            return;
+            return 0;
         }
 
         $sessions = array_merge(
@@ -4522,7 +4557,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             Hilos::$db->sessions->findByImpersonator($userId),
         );
         if ($sessions === []) {
-            return;
+            return 0;
         }
 
         $ended = [];
@@ -4537,6 +4572,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             'user' => $userId,
             'sessions' => $ended,
         ]));
+
+        return count($ended);
     }
 
     /**
@@ -6436,5 +6473,116 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         return $parked;
+    }
+
+    /**
+     * @param int $userId Account whose administrator rights would be removed
+     * @throws ValidationException When it is the last active administrator
+     * @throws HilosException When the project's administrator list cannot be read
+     */
+    private function refuseLastAdministrator(int $userId): void
+    {
+        $all = Hilos::adminAudienceClass()::all();
+        if (in_array($userId, $all, true) && count($all) === 1) {
+            throw new ValidationException('The last active administrator cannot lose the rights');
+        }
+    }
+
+    /**
+     * @param AccountAdminSetSignalData $request Target rights and waiting administrator
+     * @throws WiringRefusal When this worker cannot access a required source
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     */
+    private function handleAdminSetRequest(AccountAdminSetSignalData $request): void
+    {
+        try {
+            $by = AskingAdministrator::of($request->acceptKey);
+            if (!$request->admin) {
+                if ($request->userId === $by) {
+                    throw new ValidationException('You cannot remove your own admin rights');
+                }
+                $this->refuseLastAdministrator($request->userId);
+            }
+            $this->applyAdminGrant($request->userId, $request->admin);
+            $announcement = $this->announceAdminGrant($request->userId);
+            if ($announcement->error !== null) {
+                $message = $request->admin
+                    ? "Admin rights granted, but not every tab was told: {$announcement->tabs} updated, the rest learn on reconnect"
+                    : "Admin rights removed, but not every tab was told: {$announcement->tabs} updated, the rest learn on reconnect";
+            } elseif ($announcement->tabs > 0) {
+                $message = $request->admin
+                    ? "Admin rights granted. Open tabs updated: {$announcement->tabs}"
+                    : "Admin rights removed. Open tabs updated: {$announcement->tabs}";
+            } else {
+                $message = $request->admin
+                    ? 'Admin rights granted. No open tabs: they apply at the next sign-in'
+                    : 'Admin rights removed. No open tabs: it applies at the next sign-in';
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Admin rights for #{$request->userId} failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
+
+            return;
+        }
+
+        $this->sendToAgent($request->replySignal, new HandoverAnswerSignalData(
+            acceptKey: $request->acceptKey,
+            requestId: $request->requestId,
+            action: $request->action,
+            successMessage: $message,
+            error: null,
+            errorType: null,
+            errorDetail: null,
+        ));
+    }
+
+    /**
+     * @param AccountBlockSetSignalData $request Target block and waiting administrator
+     * @throws WiringRefusal When this worker cannot access a required source
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     */
+    private function handleBlockSetRequest(AccountBlockSetSignalData $request): void
+    {
+        try {
+            $by = AskingAdministrator::of($request->acceptKey);
+            if ($request->userId === $by) {
+                throw new ValidationException('You cannot block yourself');
+            }
+            $this->applyAccountBlock($request->userId, $request->block);
+            $ended = $this->enforceAccountBlock($request->userId);
+            $this->logAgentInfo('account_block_set ' . json_encode([
+                'event' => 'account_block_set',
+                'user' => $request->userId,
+                'by' => $by,
+                'block' => $request->block,
+            ]));
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Account block for #{$request->userId} failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
+
+            return;
+        }
+
+        $this->sendToAgent($request->replySignal, new HandoverAnswerSignalData(
+            acceptKey: $request->acceptKey,
+            requestId: $request->requestId,
+            action: $request->action,
+            successMessage: $request->block
+                ? "Account blocked. Sessions ended: {$ended}"
+                : 'Block lifted. The person can sign in again',
+            error: null,
+            errorType: null,
+            errorDetail: null,
+        ));
     }
 }

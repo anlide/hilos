@@ -19,6 +19,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
@@ -119,6 +120,23 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
             $data->data->replySignal,
             HandoverAnswerSignalData::to($data->data, $this->renameForAdmin($data->data)),
         );
+    }
+
+    /**
+     * @param int $userId Account to schedule for deletion
+     * @throws ItemNotFoundForUpdateException When the account does not exist
+     * @throws ValidationException When the account is an administrator or cannot be deleted
+     * @throws HilosException When the account cannot be read
+     */
+    protected function assertAdministratorMayDelete(int $userId): void
+    {
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+        if ($user->admin === true) {
+            throw new ValidationException('Remove the admin rights first');
+        }
     }
 
     /**

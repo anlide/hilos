@@ -136,10 +136,39 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_CODE);
         }
 
+        $this->scheduleFor($userId);
+    }
+
+    /**
+     * Schedules the same request for self-service and administrator entry points.
+     *
+     * @param int $userId Account whose deletion was authorized by the caller
+     * @throws ValidationException When a live request already exists
+     * @throws HilosException When the request or its state cannot be written or sent
+     */
+    public function scheduleFor(int $userId): void
+    {
+        $this->refuseScheduled($userId);
         Hilos::$db->accountDeletions->actions->request(
             $userId,
             date('Y-m-d H:i:s', time() + AccountDeletionSettings::graceDays() * TimeConstants::SECONDS_PER_DAY),
         );
+        $this->publishState($userId);
+    }
+
+    /**
+     * Cancels an administrator-targeted request, refusing when there is nothing left to cancel.
+     *
+     * @param int $userId Account whose cancellation was authorized by the caller
+     * @throws ValidationException When no live request can be canceled
+     * @throws HilosException When the request or its state cannot be written or sent
+     */
+    public function cancelFor(int $userId): void
+    {
+        $deletion = Hilos::$db->accountDeletions->liveOf($userId);
+        if ($deletion === null || !$deletion->actions->cancel()) {
+            throw new ValidationException(AccountDeletionMessages::NOTHING_SCHEDULED);
+        }
         $this->publishState($userId);
     }
 

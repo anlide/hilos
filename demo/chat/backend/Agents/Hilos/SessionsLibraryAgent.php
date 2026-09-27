@@ -141,6 +141,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      *
      * @param int $userId Target user id, already validated as positive
      * @param bool $admin New admin flag
+     * @throws ValidationException When the account was merged into another one
      * @throws ItemNotFoundForUpdateException When no user carries that id
      * @throws HilosException On database failure while writing the flag
      */
@@ -151,7 +152,31 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
             throw new ItemNotFoundForUpdateException("No such user: {$userId}");
         }
 
+        if ($user->mergedInto !== null) {
+            throw new ValidationException('This account was merged into another one');
+        }
+
         $user->actions->setAdmin($admin);
+    }
+
+    /**
+     * @param int $userId Target account id
+     * @param bool $block Requested block flag
+     * @throws ItemNotFoundForUpdateException When the account does not exist
+     * @throws ValidationException When the account was merged into another one
+     * @throws HilosException On database or truth-source failure
+     */
+    protected function applyAccountBlock(int $userId, bool $block): void
+    {
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+        if ($user->mergedInto !== null) {
+            throw new ValidationException('This account was merged into another one');
+        }
+
+        $user->actions->setBlock($block);
     }
 
     /**

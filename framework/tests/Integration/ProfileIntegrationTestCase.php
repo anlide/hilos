@@ -34,6 +34,7 @@ use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\HilosSmsSender;
+use Hilos\Users\AdminAudience;
 
 /**
  * Base of the profile's sign-in-method and email-change cases (HIL-1137).
@@ -55,6 +56,8 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     public const string OTHER_ACCEPT_KEY = 'accept-profile-other';
     public const string ANONYMOUS_ACCEPT_KEY = 'accept-profile-anonymous';
     public const int USER_ID = 1137;
+    public const int ADMIN_USER_ID = 1139;
+    public const string ADMIN_ACCEPT_KEY = 'accept-profile-admin';
 
     /** Another account, holding what the person under test is refused. */
     protected const int OTHER_USER_ID = 1138;
@@ -304,6 +307,10 @@ final class ProfileIntegrationRtContext extends RtContext
             ProfileIntegrationTestCase::OTHER_SESSION_TOKEN,
         ));
         $connections->add(ProfileIntegrationConnection::create(
+            ProfileIntegrationTestCase::ADMIN_ACCEPT_KEY,
+            ProfileIntegrationTestCase::ADMIN_USER_ID,
+        ));
+        $connections->add(ProfileIntegrationConnection::create(
             ProfileIntegrationTestCase::ANONYMOUS_ACCEPT_KEY,
             null,
             ProfileIntegrationTestCase::ANONYMOUS_SESSION_TOKEN,
@@ -317,6 +324,8 @@ final class ProfileIntegrationRtContext extends RtContext
  */
 final class ProfileIntegrationLibrary extends AbstractUsersLibraryAgent
 {
+    public array $messages = [];
+
     /**
      * @param string $displayName Unused display name
      * @return int Never returns
@@ -334,6 +343,18 @@ final class ProfileIntegrationLibrary extends AbstractUsersLibraryAgent
     public function displayNameOf(int $userId): ?string
     {
         return null;
+    }
+
+    protected function assertAdministratorMayDelete(int $userId): void
+    {
+        if (in_array($userId, ProfileIntegrationAdminAudience::$ids, true)) {
+            throw new ValidationException('Remove the admin rights first');
+        }
+    }
+
+    protected function logAgentInfo(string $message): void
+    {
+        $this->messages[] = $message;
     }
 }
 
@@ -416,4 +437,20 @@ final class ProfileRecordingMailer extends HilosMailer
             array_filter($this->sent, static fn (array $sent): bool => $sent['templateKey'] === $templateKey),
         ));
     }
+}
+
+/** Admin fixture has no user table: its audience is declared by each case. */
+final class ProfileIntegrationAdminAudience extends AdminAudience
+{
+    public static array $ids = [];
+
+    protected static function userIds(): array
+    {
+        return self::$ids;
+    }
+}
+
+abstract class ProfileIntegrationAdminHilos extends Hilos
+{
+    protected const string ADMIN_AUDIENCE = ProfileIntegrationAdminAudience::class;
 }

@@ -19,6 +19,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
+use Hilos\Users\AdminAudience;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -56,6 +57,8 @@ final class AdminGrantCommandRouteTest extends TestCase
 
     protected function setUp(): void
     {
+        AdminGrantRouteTestHilos::initBrowser();
+        AdminGrantRouteTestAudience::$ids = [self::LIVE_USER_ID, 8];
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new AdminGrantRouteTestRtContext();
         Hilos::$rt->configure();
@@ -65,6 +68,7 @@ final class AdminGrantCommandRouteTest extends TestCase
     {
         Hilos::$sr = null;
         Hilos::$rt = null;
+        Hilos::initBrowser();
 
         parent::tearDown();
     }
@@ -114,6 +118,21 @@ final class AdminGrantCommandRouteTest extends TestCase
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
         self::assertSame(1, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
         self::assertNull($reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
+    }
+
+    public function testTheLastActiveAdministratorCannotBeRevokedByTheCli(): void
+    {
+        AdminGrantRouteTestAudience::$ids = [self::LIVE_USER_ID];
+        $agent = new AdminGrantRouteTestAgent();
+        $this->sendCommand($agent, CliCommands::ADMIN_REVOKE, [
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
+            AdminCommandConstants::FIELD_ADMIN => false,
+        ]);
+
+        $reply = $this->consumeReply();
+        self::assertFalse($reply->isOk());
+        self::assertSame('The last active administrator cannot lose the rights', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertNull($agent->applied);
     }
 
     public function testAnUnwiredProjectRefusesAsAnErrorReply(): void
@@ -395,4 +414,20 @@ final class AdminGrantRouteTestFailingConnections extends HilosSessionConnection
     {
         throw new HilosException('Runtime connections are unreadable');
     }
+}
+
+/** Active administrator list is independent of the in-memory grant recorder. */
+final class AdminGrantRouteTestAudience extends AdminAudience
+{
+    public static array $ids = [];
+
+    protected static function userIds(): array
+    {
+        return self::$ids;
+    }
+}
+
+abstract class AdminGrantRouteTestHilos extends Hilos
+{
+    protected const string ADMIN_AUDIENCE = AdminGrantRouteTestAudience::class;
 }

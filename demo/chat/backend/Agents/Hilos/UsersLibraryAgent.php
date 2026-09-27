@@ -258,6 +258,26 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     }
 
     /**
+     * @param int $userId Account to schedule for deletion
+     * @throws ItemNotFoundForUpdateException When the account does not exist
+     * @throws ValidationException When the account is an administrator or cannot be deleted
+     * @throws HilosException When the account cannot be read
+     */
+    protected function assertAdministratorMayDelete(int $userId): void
+    {
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+        if ($user->admin === true) {
+            throw new ValidationException('Remove the admin rights first');
+        }
+        if ($user->mergedInto !== null) {
+            throw new ValidationException('This account was merged into another one');
+        }
+    }
+
+    /**
      * Writes the rename and its log line, or says why neither happened.
      *
      * @param AdminRenameSignalData $rename Whom to rename, to what, and on whose word

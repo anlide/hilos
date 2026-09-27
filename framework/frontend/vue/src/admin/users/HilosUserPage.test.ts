@@ -5,9 +5,12 @@
 // merge cases below cover the separate live two-step modal.
 import { flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ActionLifecycle,
+  ActionError,
+  type ActionResult,
+  formatCalendarDate,
   HilosPages,
   ScopeManager,
   createSignal,
@@ -84,6 +87,8 @@ function userContext(
     'user',
     (fields) => ({
       id: Number(fields.id),
+      admin: fields.admin === true,
+      block: fields.block === true,
       name: String(fields.name ?? ''),
       lastActivity: (fields.lastActivity as string | null) ?? null,
     }),
@@ -507,5 +512,201 @@ describe('HilosUserPage rename modal', () => {
     modalEl('modal-confirm-discard')?.click()
     await nextTick()
     expect(modalEl('modal')).toBeNull()
+  })
+})
+
+describe('HilosUserPage lifecycle', () => {
+  it('keeps own-account controls disabled with reasons and follows live rights', async () => {
+    const { context } = userContext()
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    const find = modalEl
+    const settle = async () => {
+      await nextTick()
+      await flushPromises()
+    }
+    const change = async (fn: () => void) => {
+      fn()
+      await settle()
+    }
+
+    await change(() => {
+      context.scopes.session.data.set('currentUser', { type: 'user', id: 1 })
+      context.scopes.page()?.data.set('accountDeletionGraceDays', 30)
+      context.scopes
+        .page()
+        ?.entities.upsert({ type: 'user', id: 1 }, { admin: true })
+    })
+    expect(find('hilos-user-rights')).not.toBeNull()
+    expect(find('hilos-user-access')).not.toBeNull()
+    expect((find('hilos-user-admin-open') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect(find('hilos-user-admin-reason')?.textContent).toContain(
+      'You cannot remove your own rights',
+    )
+    expect((find('hilos-user-block-open') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect(find('hilos-user-block-reason')?.textContent).toContain(
+      'You cannot block yourself',
+    )
+    expect(
+      (find('hilos-user-deletion-open') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(find('hilos-user-deletion-reason')?.textContent).toContain(
+      'Delete your own account from your profile',
+    )
+    await change(() => {
+      context.scopes.session.data.set('currentUser', { type: 'user', id: 99 })
+    })
+    expect((find('hilos-user-admin-open') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    expect(find('hilos-user-deletion-reason')?.textContent).toContain(
+      'Remove the admin rights first',
+    )
+    await change(() => {
+      context.scopes
+        .page()
+        ?.entities.upsert({ type: 'user', id: 1 }, { admin: false })
+    })
+    expect(
+      (find('hilos-user-deletion-open') as HTMLButtonElement).disabled,
+    ).toBe(false)
+  })
+
+  it('names the deletion grace period and follows its live date and cancellation', async () => {
+    const { context } = userContext()
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    const find = modalEl
+    const settle = async () => {
+      await nextTick()
+      await flushPromises()
+    }
+    const change = async (fn: () => void) => {
+      fn()
+      await settle()
+    }
+    const click = async (id: string) => {
+      find(id)?.click()
+      await settle()
+    }
+    expect(
+      (find('hilos-user-deletion-open') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(find('hilos-user-deletion-reason')?.textContent?.trim()).toBe('')
+    await change(() => {
+      context.scopes.page()?.data.set('accountDeletionGraceDays', 30)
+    })
+    await click('hilos-user-deletion-open')
+    expect(find('modal')?.textContent).toContain('After 30 days')
+    await click('hilos-user-lifecycle-cancel')
+    const effectiveAt = Date.now() + 30 * 86_400_000
+    await change(() => {
+      context.scopes.page()?.tables.upsert('userDetail', 1, {
+        users: { type: 'user', id: 1 },
+        accountDeletions: { deletionEffectiveAt: effectiveAt },
+      })
+    })
+    expect(find('hilos-user-deletion-state')?.textContent).toContain(
+      formatCalendarDate(effectiveAt),
+    )
+    expect(find('hilos-user-deletion-state')?.textContent).toContain(
+      '30 days left',
+    )
+    expect(find('hilos-user-deletion-open')?.textContent).toContain(
+      'Cancel deletion',
+    )
+    await change(() => {
+      context.scopes.page()?.tables.upsert('userDetail', 1, {
+        users: { type: 'user', id: 1 },
+        accountDeletions: { deletionEffectiveAt: null },
+      })
+    })
+    expect(find('hilos-user-deletion-open')?.textContent).toContain(
+      'Delete account',
+    )
+  })
+
+  it('waits for the tracked block reply, keeps a refusal in the modal and closes on success', async () => {
+    const { context } = userContext()
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    const find = modalEl
+    const settle = async () => {
+      await nextTick()
+      await flushPromises()
+    }
+    const change = async (fn: () => void) => {
+      fn()
+      await settle()
+    }
+    const click = async (id: string) => {
+      find(id)?.click()
+      await settle()
+    }
+    let resolve!: (value: ActionResult) => void
+    let reject!: (reason: unknown) => void
+    const dispatch = vi
+      .spyOn(context.actions, 'dispatch')
+      .mockImplementation(() => ({
+        requestId: 'lifecycle-test',
+        loading: createSignal(false),
+        done: new Promise<ActionResult>((yes, no) => {
+          resolve = yes
+          reject = no
+        }),
+      }))
+    await click('hilos-user-block-open')
+    expect(find('modal')?.textContent).toContain('No reason is stored')
+    await click('hilos-user-lifecycle-confirm')
+    expect(dispatch).toHaveBeenLastCalledWith('hilos_user_block_set', {
+      userId: 1,
+      block: true,
+    })
+    expect(
+      (find('hilos-user-lifecycle-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(
+      (find('hilos-user-lifecycle-cancel') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    await change(() => {
+      find('modal')?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+    })
+    expect(find('modal')).not.toBeNull()
+    await change(() => {
+      reject(
+        new ActionError(
+          'hilos_user_block_set',
+          'fail',
+          'No longer an administrator',
+        ),
+      )
+    })
+    expect(find('hilos-user-lifecycle-error')?.textContent).toContain(
+      'No longer an administrator',
+    )
+    expect(find('modal')).not.toBeNull()
+    await click('hilos-user-lifecycle-confirm')
+    await change(() => {
+      resolve({ message: 'Account blocked. Sessions ended: 1' })
+    })
+    expect(find('hilos-user-lifecycle-confirm')).toBeNull()
   })
 })

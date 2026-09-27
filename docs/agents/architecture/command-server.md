@@ -174,7 +174,8 @@ seam `applyAdminGrant()` calls its own `setAdmin($bool)`, which persists and
 everyone viewing the users list. The command channel only carries the request and
 the outcome (success / "no such user" / already-set). The two
 `AbstractSetAdminCommand` subclasses (`admin:grant`, `admin:revoke`) are real
-operator commands — not `TestOnlyCommand`.
+operator commands — not `TestOnlyCommand`. `admin:revoke` refuses to remove the
+last active administrator, using the same guard as the admin account card.
 
 It is answered by the **sessions library**, beside `admin:create` and for the same
 reason (HIL-729): the flag changes what a browser may open, so every live session

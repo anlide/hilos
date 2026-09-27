@@ -11,9 +11,17 @@ is state-driven (the committed name reaches the draft over the live table,
 closing the modal); a failure surfaces from the backend fail ack inside the
 modal. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import {
+  ACCOUNT_DELETION_TICK_MS,
+  createHilosUserLifecycle,
+  HILOS_USER_LIFECYCLE_COPY,
+  hilosUserLifecycleSections,
+  hilosUserLifecyclePrompt,
+  submitHilosUserLifecycle,
+  type HilosUserLifecycleChoice,
+  type HilosUserLifecyclePrompt,
   createHilosUserDetail,
   createHilosAccountMerge,
   createHilosMergeCandidates,
@@ -77,6 +85,71 @@ const rename = createHilosUserRename(props.context)
 
 const detail = useSignal(userDetail)
 const error = useSignal(rename.renameError)
+const lifecycle = createHilosUserLifecycle(props.context)
+const lifecycleAction = useTrackedAction()
+const lifecyclePrompt = ref<HilosUserLifecyclePrompt | null>(null)
+const graceDays = useSignal(lifecycle.graceDays)
+const lifecycleUserId = useSignal(lifecycle.currentUserId)
+const lifecycleNow = ref(Date.now())
+watch(
+  () => detail.value?.deletionEffectiveAt,
+  () => {
+    lifecycleNow.value = Date.now()
+  },
+)
+const lifecycleCopy = HILOS_USER_LIFECYCLE_COPY
+const lifecycleSections = computed(() =>
+  hilosUserLifecycleSections(
+    detail.value,
+    lifecycleUserId.value,
+    graceDays.value,
+    lifecycleNow.value,
+  ),
+)
+const lifecycleOpen = computed({
+  get: () => lifecyclePrompt.value !== null,
+  set: (open: boolean) => {
+    if (!open) closeLifecycle()
+  },
+})
+let lifecycleTick: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  lifecycleTick = setInterval(() => {
+    lifecycleNow.value = Date.now()
+  }, ACCOUNT_DELETION_TICK_MS)
+})
+onUnmounted(() => {
+  clearInterval(lifecycleTick)
+})
+
+function openLifecycle(choice: HilosUserLifecycleChoice): void {
+  if (!detail.value || lifecycleAction.busy.value) return
+  lifecycleAction.clearError()
+  lifecyclePrompt.value = hilosUserLifecyclePrompt(
+    detail.value,
+    choice,
+    graceDays.value,
+  )
+}
+
+function closeLifecycle(): void {
+  if (!lifecycleAction.busy.value) lifecyclePrompt.value = null
+}
+
+async function submitLifecycle(): Promise<void> {
+  if (
+    !lifecyclePrompt.value ||
+    lifecycleAction.busy.value ||
+    detail.value?.id !== lifecyclePrompt.value.userId
+  )
+    return
+  if (
+    await lifecycleAction.run(
+      submitHilosUserLifecycle(lifecycle, lifecyclePrompt.value),
+    )
+  )
+    closeLifecycle()
+}
 
 const mergeCandidates = createHilosMergeCandidates(props.context)
 const mergeRows = useSignal(mergeCandidates.controller.rows)
@@ -345,6 +418,58 @@ watch(error, (reason) => {
         </div>
       </div>
       <section
+        v-for="section in lifecycleSections"
+        :key="section.key"
+        class="card mt-4"
+        :data-id="`hilos-user-${section.key}`"
+      >
+        <div class="card-body">
+          <h2 class="h5">{{ section.title }}</h2>
+          <div
+            v-for="row in section.rows"
+            :key="row.key"
+            class="d-flex flex-wrap align-items-start gap-3 py-2"
+          >
+            <div class="flex-grow-1" :data-id="`hilos-user-${row.key}-state`">
+              <h3 class="h6 mb-1">
+                {{ row.title }}
+                <span class="badge text-bg-secondary">{{
+                  row.state ? lifecycleCopy.yes : lifecycleCopy.no
+                }}</span>
+              </h3>
+              <p class="small text-body-secondary mb-0">{{ row.hint }}</p>
+            </div>
+            <div>
+              <button
+                type="button"
+                class="btn btn-sm"
+                :class="
+                  lifecycleCopy.confirmations[row.choice].danger
+                    ? 'btn-outline-danger'
+                    : 'btn-primary'
+                "
+                :disabled="row.disabled"
+                :aria-describedby="`hilos-user-${row.key}-reason`"
+                :data-id="`hilos-user-${row.key}-open`"
+                @click="openLifecycle(row.choice)"
+              >
+                {{ lifecycleCopy[row.choice] }}
+              </button>
+              <div class="hilos-stack small text-body-secondary mt-1">
+                <span class="invisible" aria-hidden="true">{{
+                  row.reasonSpace
+                }}</span>
+                <span
+                  :id="`hilos-user-${row.key}-reason`"
+                  :data-id="`hilos-user-${row.key}-reason`"
+                  >{{ row.reason }}</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section
         v-if="context.accountMerge"
         class="card border-danger mt-4"
         data-id="hilos-user-merge-zone"
@@ -369,6 +494,49 @@ watch(error, (reason) => {
     <p v-else class="text-body-secondary" data-id="hilos-user-empty">
       Loading user…
     </p>
+
+    <HilosModal
+      v-model="lifecycleOpen"
+      :title="lifecyclePrompt?.title"
+      initial-focus="dialog"
+      :close-on-backdrop="!lifecycleAction.busy.value"
+      :close-on-esc="!lifecycleAction.busy.value"
+      @cancel="closeLifecycle"
+    >
+      <div class="visually-hidden" role="alert" aria-live="assertive">
+        {{ lifecycleAction.error.value }}
+      </div>
+      <p v-for="paragraph in lifecyclePrompt?.paragraphs" :key="paragraph">
+        {{ paragraph }}
+      </p>
+      <div data-id="hilos-user-lifecycle-error">
+        <HilosActionError
+          :action="lifecycleAction"
+          details-title="Account change refused"
+        />
+      </div>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="lifecycleAction.busy.value"
+          data-id="hilos-user-lifecycle-cancel"
+          @click="requestClose"
+        >
+          {{ lifecycleCopy.cancel }}
+        </button>
+        <LoadingButton
+          :class="lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'"
+          :loading="lifecycleAction.loading.value"
+          :disabled="
+            lifecycleAction.busy.value || detail?.id !== lifecyclePrompt?.userId
+          "
+          data-id="hilos-user-lifecycle-confirm"
+          @click="submitLifecycle"
+          >{{ lifecyclePrompt?.confirm }}</LoadingButton
+        >
+      </template>
+    </HilosModal>
 
     <HilosModal v-model="editing" :confirm-on-close="dirty" @cancel="closeEdit">
       <template #header>

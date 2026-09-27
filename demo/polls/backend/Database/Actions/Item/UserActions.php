@@ -97,6 +97,27 @@ final class UserActions extends DbActions
     }
 
     /**
+     * Persists the account block flag only when it changes.
+     *
+     * @param bool $block Requested block flag
+     * @throws ItemNotFoundForUpdateException When the user has no persisted id
+     * @throws HilosException On database or truth-source failure
+     */
+    public function setBlock(bool $block): void
+    {
+        $this->ensureCanWrite();
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for setBlock (id is null)');
+        }
+        if ($this->object->block === $block) {
+            return;
+        }
+
+        $this->object->block = $block;
+        $this->object->sync();
+    }
+
+    /**
      * Deletes this user's row - the account is being erased (HIL-302).
      *
      * The last write of the demo's half of the erasure: the rename rows pointing at this one are

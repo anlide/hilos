@@ -14,4 +14,7 @@ final class AccountDeletionMessages
 {
     /** A deletion is already scheduled - another tab started it between opening and now. */
     public const string ALREADY_SCHEDULED = 'Your account is already scheduled for deletion';
+
+    /** Administrator cancellation found no live request. */
+    public const string NOTHING_SCHEDULED = 'No deletion is scheduled for this account';
 }

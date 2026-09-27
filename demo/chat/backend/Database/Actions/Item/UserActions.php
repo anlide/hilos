@@ -98,6 +98,27 @@ final class UserActions extends DbActions
     }
 
     /**
+     * Persists the account block flag only when it changes.
+     *
+     * @param bool $block Requested block flag
+     * @throws ItemNotFoundForUpdateException When the user has no persisted id
+     * @throws HilosException On database or truth-source failure
+     */
+    public function setBlock(bool $block): void
+    {
+        $this->ensureCanWrite();
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for setBlock (id is null)');
+        }
+        if ($this->object->block === $block) {
+            return;
+        }
+
+        $this->object->block = $block;
+        $this->object->sync();
+    }
+
+    /**
      * Tombstones this user as the loser of an account merge (HIL-378).
      *
      * A merged loser is soft-deleted, never dropped: the row stays for audit and

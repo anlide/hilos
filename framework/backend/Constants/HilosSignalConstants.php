@@ -92,6 +92,9 @@ use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\Users\AccountBlockReader;
+use Hilos\Users\DTO\AccountAdminSetSignalData;
+use Hilos\Users\DTO\AccountBlockSetSignalData;
+use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 
@@ -314,12 +317,21 @@ final class HilosSignalConstants
     /** Wire signal name for incremental table row mutations. */
     public const string TABLE_MUTATION = 'table_mutation';
 
-    // ── Hilos users admin: single-user rename action + acks (client ↔ server) ──
+    // ── Hilos users admin: single-user actions + acks (client ↔ server) ──
     /** Client → server: rename the displayed user (handled on the HILOS_USER page). */
     public const string HILOS_USER_UPDATE = 'hilos_user_update';
 
     /** Client → server: merge another account into the displayed user (handled on the HILOS_USER page). */
     public const string HILOS_USER_MERGE = 'hilos_user_merge';
+
+    /** Client → server: set administrator rights on the HILOS_USER page. */
+    public const string HILOS_USER_ADMIN_SET = 'hilos_user_admin_set';
+
+    /** Client → server: set account blocking on the HILOS_USER page. */
+    public const string HILOS_USER_BLOCK_SET = 'hilos_user_block_set';
+
+    /** Client → server: set scheduled account deletion on the HILOS_USER page. */
+    public const string HILOS_USER_DELETION_SET = 'hilos_user_deletion_set';
 
     /** Server → initiator: hilos_user_update succeeded. */
     public const string HILOS_USER_UPDATE_SUCCESS = 'hilos_user_update_success';
@@ -1463,8 +1475,9 @@ final class HilosSignalConstants
     /**
      * Block writer → sessions library: look at this person's block flag again (HIL-289).
      *
-     * Sent by whoever wrote the flag - the admin button (HIL-304), the operator command (HIL-98),
-     * the test command (HIL-324) or a project's own writer. The frame names only whom to look at:
+     * Sent by an external flag writer - the operator command (HIL-98), the test command
+     * (HIL-324) or a project's own writer. The admin card's write is already inside the library
+     * and calls enforcement directly. The frame names only whom to look at;
      * the library reads the flag itself through {@see AccountBlockReader}, so a false or repeated
      * frame is harmless - it can neither sign out an account that is not blocked nor leave a blocked
      * one signed in. Blocked, every session of the person goes and shows the "Access closed" card;
@@ -1503,6 +1516,54 @@ final class HilosSignalConstants
      * with the library's outcome. Carried by {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_ACCOUNT_MERGE_DONE = 'hilos_account_merge_done';
+
+    /**
+     * Hilos user page → sessions library: set administrator rights (HIL-304).
+     *
+     * The page keeps the ADMIN gate and defers the submit. The owning library judges the
+     * request and writes it. Carried by {@see AccountAdminSetSignalData}.
+     */
+    public const string HILOS_ACCOUNT_ADMIN_SET = 'hilos_account_admin_set';
+
+    /**
+     * Sessions library → Hilos user page: the administrator rights outcome (HIL-304).
+     *
+     * Answers {@see self::HILOS_ACCOUNT_ADMIN_SET} through {@see HandoverAnswerSignalData};
+     * the page completes the waiting tracked submit with the library's success text or refusal.
+     */
+    public const string HILOS_ACCOUNT_ADMIN_SET_DONE = 'hilos_account_admin_set_done';
+
+    /**
+     * Hilos user page → sessions library: set account blocking (HIL-304).
+     *
+     * The page keeps the ADMIN gate and defers the submit. The owning library judges the
+     * request and writes it. Carried by {@see AccountBlockSetSignalData}.
+     */
+    public const string HILOS_ACCOUNT_BLOCK_SET = 'hilos_account_block_set';
+
+    /**
+     * Sessions library → Hilos user page: the account blocking outcome (HIL-304).
+     *
+     * Answers {@see self::HILOS_ACCOUNT_BLOCK_SET} through {@see HandoverAnswerSignalData};
+     * the page completes the waiting tracked submit with the library's success text or refusal.
+     */
+    public const string HILOS_ACCOUNT_BLOCK_SET_DONE = 'hilos_account_block_set_done';
+
+    /**
+     * Hilos user page → users library: set scheduled deletion (HIL-304).
+     *
+     * The page keeps the ADMIN gate and defers the submit. The owning library judges the
+     * request and writes it. Carried by {@see AccountDeletionSetSignalData}.
+     */
+    public const string HILOS_ACCOUNT_DELETION_SET = 'hilos_account_deletion_set';
+
+    /**
+     * Users library → Hilos user page: the scheduled deletion outcome (HIL-304).
+     *
+     * Answers {@see self::HILOS_ACCOUNT_DELETION_SET} through {@see HandoverAnswerSignalData};
+     * the page completes the waiting tracked submit with the library's success text or refusal.
+     */
+    public const string HILOS_ACCOUNT_DELETION_SET_DONE = 'hilos_account_deletion_set_done';
 
     // ── Hilos files registry: the project → the files library (agent signal) ──
     /**

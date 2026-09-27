@@ -128,6 +128,12 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Exception\NotImplementedException;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Users\AskingAdministrator;
+use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
@@ -214,10 +220,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * the project: routing picks the verdict's destination from whoever declared it, and
      * this is the agent whose dispatcher parks the throttled sign-in commands and waits for
      * it. Declaring it elsewhere takes the answer away from the pool that is waiting (HIL-420).
+     * The admin card also hands deletion requests here, because this library owns their rows
+     * and publishes the account's state after scheduling or canceling them (HIL-304).
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
     ];
 
     /**
@@ -575,19 +584,36 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name === HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT) {
-            return;
-        }
-        if ($name !== HilosSignalConstants::HILOS_OAUTH_LOGIN_READY) {
-            throw new AgentUnknownSignalException($name);
-        }
-        if (!$data->data instanceof OAuthLoginReadySignalData) {
-            throw new ValidationException(
-                HilosSignalConstants::HILOS_OAUTH_LOGIN_READY . ' payload must be ' . OAuthLoginReadySignalData::class,
-            );
-        }
+        switch ($name) {
+            case HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT:
+                return;
 
-        $ready = $data->data;
+            case HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET:
+                $this->handleDeletionSetRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_OAUTH_LOGIN_READY:
+                if (!$data->data instanceof OAuthLoginReadySignalData) {
+                    throw new ValidationException(
+                        HilosSignalConstants::HILOS_OAUTH_LOGIN_READY . ' payload must be ' . OAuthLoginReadySignalData::class,
+                    );
+                }
+                $this->handleOAuthLoginReady($data->data);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
+     * @param OAuthLoginReadySignalData $ready Provider login to complete or report as failed
+     * @throws InvalidArgumentException When the failure frame cannot be named or queued
+     */
+    private function handleOAuthLoginReady(OAuthLoginReadySignalData $ready): void
+    {
         try {
             $this->oauthCommands()->completeLogin($ready);
         } catch (WiringRefusal $refusal) {
@@ -651,6 +677,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function oauthService(): ?OAuthService
     {
         return $this->buildOAuthService();
+    }
+
+    /**
+     * @param int $userId Account an administrator wants to schedule for deletion
+     * @throws NotImplementedException When the project has not wired deletion by an administrator
+     * @throws HilosException When the project refuses the account or cannot read it
+     */
+    protected function assertAdministratorMayDelete(int $userId): void
+    {
+        throw new NotImplementedException('Deletion by an administrator is not wired in this project');
     }
 
     /**
@@ -1802,5 +1838,57 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     {
         $this->sendToAgent($signalName, $data);
         $this->deferActionReply();
+    }
+
+    /**
+     * @param AccountDeletionSetSignalData $request Target deletion and waiting administrator
+     * @throws WiringRefusal When this worker cannot access a required source
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     */
+    private function handleDeletionSetRequest(AccountDeletionSetSignalData $request): void
+    {
+        try {
+            $by = AskingAdministrator::of($request->acceptKey);
+            if ($request->scheduled) {
+                if ($request->userId === $by) {
+                    throw new ValidationException('Delete your own account from your profile');
+                }
+                $this->assertAdministratorMayDelete($request->userId);
+                $this->accountDeletionCommands()->scheduleFor($request->userId);
+                $this->logAgentInfo('account_deletion_scheduled ' . json_encode([
+                    'event' => 'account_deletion_scheduled', 'user' => $request->userId, 'by' => $by,
+                ]));
+                $days = AccountDeletionSettings::graceDays();
+                $message = $days === 1
+                    ? 'Deletion scheduled: the account is erased in 1 day'
+                    : "Deletion scheduled: the account is erased in {$days} days";
+            } else {
+                $this->accountDeletionCommands()->cancelFor($request->userId);
+                $this->logAgentInfo('account_deletion_canceled ' . json_encode([
+                    'event' => 'account_deletion_canceled', 'user' => $request->userId, 'by' => $by,
+                ]));
+                $message = 'Deletion canceled';
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Account deletion for #{$request->userId} failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
+
+            return;
+        }
+
+        $this->sendToAgent($request->replySignal, new HandoverAnswerSignalData(
+            acceptKey: $request->acceptKey,
+            requestId: $request->requestId,
+            action: $request->action,
+            successMessage: $message,
+            error: null,
+            errorType: null,
+            errorDetail: null,
+        ));
     }
 }

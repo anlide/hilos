@@ -15,14 +15,21 @@ import {
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatCalendarDate } from '../../format/date.js'
+import {
+  accountDeletionDaysLeft,
+  formatAccountDeletionDays,
+} from '../../profile/accountDeletion.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { sessionUserId } from '../../session/sessionScope.js'
-import { type Entity } from '../../state/entity.js'
+import { toLocal } from '../../session/serverClock.js'
+import { type User } from '../../state/entity.js'
 import { type EntityCollection } from '../../state/EntityCollection.js'
 import { type EntityRef } from '../../state/EntityStore.js'
 import {
   readBoolean,
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -62,7 +69,7 @@ export function toHilosPresence(value: unknown): HilosPresence {
  * resolve to at least these fields for the row resolver to build its view-model.
  * The project's own entity (e.g. the chat `User`) extends this with more.
  */
-export interface HilosUserProfile extends Entity {
+export interface HilosUserProfile extends User {
   /** Display name. */
   readonly name: string
   /** Last activity timestamp, or null when never recorded. */
@@ -87,6 +94,12 @@ export interface HilosUserRow {
 export interface HilosUserDetailRow extends HilosUserRow {
   /** Whether the account currently owns a password identity. */
   readonly hasPassword: boolean
+  /** Whether the account can open the admin panel. */
+  readonly admin: boolean
+  /** Whether the account is blocked from signing in. */
+  readonly block: boolean
+  /** Scheduled erasure in local epoch milliseconds, or null when none stands. */
+  readonly deletionEffectiveAt: number | null
 }
 
 /** One safe sign-in identity shown while choosing an account to merge. */
@@ -138,6 +151,10 @@ const MERGE_CANDIDATES_TABLE = 'mergeCandidates'
 // runtime connection summary a project fills on its backend.
 const USER_SLOT = 'users'
 const USER_IDENTITIES_SLOT = 'identities'
+const USER_DELETION_SLOT = 'accountDeletions'
+/** Row payload key of the standing deletion request's erasure time. */
+const USER_DELETION_EFFECTIVE_AT_FIELD = 'deletionEffectiveAt'
+const USER_DELETION_GRACE_DAYS_KEY = 'accountDeletionGraceDays'
 const MERGE_SLOT = 'merge'
 const MERGE_IDENTITY_TYPE_FIELD = 'type'
 const MERGE_IDENTITY_IDENTIFIER_FIELD = 'identifier'
@@ -173,6 +190,9 @@ const HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail'
 // draws the control and no project restates the name.
 const HILOS_IMPERSONATE_START_ACTION = 'hilos_impersonate_start'
 const HILOS_USER_MERGE_ACTION = 'hilos_user_merge'
+const HILOS_USER_ADMIN_SET_ACTION = 'hilos_user_admin_set'
+const HILOS_USER_BLOCK_SET_ACTION = 'hilos_user_block_set'
+const HILOS_USER_DELETION_SET_ACTION = 'hilos_user_deletion_set'
 
 /**
  * The project-supplied context the users admin reads from: the scope-partitioned
@@ -545,9 +565,19 @@ export function createHilosUserDetail<TUser extends HilosUserProfile>(
     }
     const row = rows[0]
     const identities = recordSlot(row.slots[USER_IDENTITIES_SLOT])
+    const ref = row.slots[USER_SLOT] as EntityRef | undefined
+    const user = ref ? context.users.signal(ref).get() : undefined
+    const deletion = recordSlot(row.slots[USER_DELETION_SLOT])
+    const deletionEffectiveAt = deletion
+      ? readNumberOrNull(deletion, USER_DELETION_EFFECTIVE_AT_FIELD)
+      : null
 
     return {
       ...resolveHilosUserRow(row, context.users),
+      admin: user?.admin ?? false,
+      block: user?.block ?? false,
+      deletionEffectiveAt:
+        deletionEffectiveAt === null ? null : toLocal(deletionEffectiveAt),
       hasPassword:
         identities === undefined
           ? false
@@ -634,5 +664,315 @@ export function createHilosAccountMerge(
         ...(passwordFate === undefined ? {} : { passwordFate }),
       })
     },
+  }
+}
+
+/** The tracked account-card operations and the identity behind their controls. */
+export interface HilosUserLifecycle {
+  /** Person behind the current session. */
+  readonly currentUserId: ReadonlySignal<number | null>
+  /** Deletion grace period from the page's first answer. */
+  readonly graceDays: ReadonlySignal<number | null>
+  /**
+   * Grant or remove administrator rights.
+   * @param userId The target account.
+   * @param admin The requested rights flag.
+   */
+  setAdmin(userId: number, admin: boolean): ActionHandle
+  /**
+   * Block the account or lift its block.
+   * @param userId The target account.
+   * @param block The requested block flag.
+   */
+  setBlock(userId: number, block: boolean): ActionHandle
+  /**
+   * Schedule deletion or cancel the standing request.
+   * @param userId The target account.
+   * @param scheduled Whether a deletion request should stand.
+   */
+  setDeletion(userId: number, scheduled: boolean): ActionHandle
+}
+
+/**
+ * Account-card controls read committed state and dispatch tracked page actions.
+ * @param context The page stores and the action lifecycle.
+ */
+export function createHilosUserLifecycle(
+  context: HilosUsersContext,
+): HilosUserLifecycle {
+  const graceDays = context.scopes.pageDataSignal(USER_DELETION_GRACE_DAYS_KEY)
+
+  return {
+    currentUserId: sessionUserId(context.scopes),
+    graceDays: computedSignal(() => {
+      const value = graceDays.get()
+
+      return typeof value === 'number' && Number.isInteger(value) && value >= 1
+        ? value
+        : null
+    }),
+    setAdmin: (userId, admin) =>
+      context.actions.dispatch(HILOS_USER_ADMIN_SET_ACTION, { userId, admin }),
+    setBlock: (userId, block) =>
+      context.actions.dispatch(HILOS_USER_BLOCK_SET_ACTION, { userId, block }),
+    setDeletion: (userId, scheduled) =>
+      context.actions.dispatch(HILOS_USER_DELETION_SET_ACTION, {
+        userId,
+        scheduled,
+      }),
+  }
+}
+
+/** English copy shared by the three account-card views. */
+export const HILOS_USER_LIFECYCLE_COPY = {
+  rights: 'Rights',
+  access: 'Access to the product',
+  administrator: 'Administrator',
+  administratorHint: 'Opens the whole admin panel of this project',
+  blocked: 'Blocked',
+  blockedHint: 'Sessions end, sign-in is closed',
+  deletionScheduled: 'Deletion scheduled',
+  deletionSummary: 'Erased on {date} — {days} left',
+  deletionNone: 'No deletion is scheduled',
+  yes: 'Yes',
+  no: 'No',
+  grant: 'Grant rights',
+  revoke: 'Remove rights',
+  block: 'Block',
+  unblock: 'Lift the block',
+  delete: 'Delete account…',
+  cancelDeletion: 'Cancel deletion',
+  cancel: 'Cancel',
+  ownRevokeReason: 'You cannot remove your own rights',
+  ownBlockReason: 'You cannot block yourself',
+  ownDeleteReason: 'Delete your own account from your profile',
+  adminDeleteReason: 'Remove the admin rights first',
+  confirmations: {
+    grant: {
+      title: 'Grant admin rights',
+      paragraphs: [
+        'This person will have access to the whole admin panel: settings, logs, backups and users, including this screen.',
+        'Rights apply immediately, without signing in again. Open tabs are updated with the access they now have.',
+        'Any administrator may remove these rights, except when this is the last active administrator.',
+      ],
+      confirm: 'Grant rights',
+      danger: false,
+    },
+    revoke: {
+      title: 'Remove admin rights',
+      paragraphs: [
+        'This person will lose access to the admin panel immediately. Open admin screens will show an access refusal.',
+        'Their sessions stay open and they remain signed in to the product. Only admin rights are removed.',
+      ],
+      confirm: 'Remove rights',
+      danger: true,
+    },
+    block: {
+      title: 'Block account',
+      paragraphs: [
+        'All sessions of this person end immediately. They cannot sign in again while the account is blocked.',
+        'No reason is stored: the person sees that access is closed, not why.',
+        'Blocking is reversible and deletes nothing. Lifting the block restores sign-in immediately.',
+      ],
+      confirm: 'Block',
+      danger: true,
+    },
+    unblock: {
+      title: 'Lift the block',
+      paragraphs: [
+        'This person can sign in again immediately, without waiting or receiving a message.',
+        'Their previous sessions do not return. They must sign in again.',
+      ],
+      confirm: 'Lift the block',
+      danger: false,
+    },
+    delete: {
+      title: 'Delete account',
+      paragraphs: [
+        'After {graceDays} the account and its data are erased for good.',
+        'Until then, an administrator can cancel deletion here, and the person can cancel it from their profile.',
+      ],
+      confirm: 'Schedule deletion',
+      danger: true,
+    },
+    cancelDeletion: {
+      title: 'Cancel deletion',
+      paragraphs: [
+        'The scheduled deletion is canceled. The account and its data remain.',
+      ],
+      confirm: 'Cancel deletion',
+      danger: false,
+    },
+  },
+} as const
+
+/** The six parameter-free confirmations offered by the account card. */
+export type HilosUserLifecycleChoice =
+  keyof typeof HILOS_USER_LIFECYCLE_COPY.confirmations
+
+/** A confirmation snapshots its addressee so a later row update cannot retarget it. */
+export interface HilosUserLifecyclePrompt {
+  readonly userId: number
+  readonly choice: HilosUserLifecycleChoice
+  readonly title: string
+  readonly paragraphs: readonly string[]
+  readonly confirm: string
+  readonly danger: boolean
+}
+
+/** A status row and its visible reason when the control is unavailable. */
+export interface HilosUserLifecycleRow {
+  readonly key: 'admin' | 'block' | 'deletion'
+  readonly title: string
+  readonly hint: string
+  readonly state: boolean
+  readonly choice: HilosUserLifecycleChoice
+  readonly disabled: boolean
+  readonly reason: string | null
+  readonly reasonSpace: string
+}
+
+/** One account-card section, rendered alike by all three SDKs. */
+export interface HilosUserLifecycleSection {
+  readonly key: 'rights' | 'access'
+  readonly title: string
+  readonly rows: readonly HilosUserLifecycleRow[]
+}
+
+/**
+ * Present the three independent states and the controls the current card offers.
+ * @param detail The committed user row, absent until the table arrives.
+ * @param currentUserId The person behind this session.
+ * @param graceDays The subscription's grace-period snapshot.
+ * @param now The current local epoch milliseconds, for the remaining days.
+ */
+export function hilosUserLifecycleSections(
+  detail: HilosUserDetailRow | undefined,
+  currentUserId: number | null,
+  graceDays: number | null,
+  now: number,
+): readonly HilosUserLifecycleSection[] {
+  if (!detail) return []
+  const copy = HILOS_USER_LIFECYCLE_COPY
+  const own = detail.id === currentUserId
+  const scheduled = detail.deletionEffectiveAt !== null
+  const deletionReason = scheduled
+    ? null
+    : own
+      ? copy.ownDeleteReason
+      : detail.admin
+        ? copy.adminDeleteReason
+        : null
+
+  return [
+    {
+      key: 'rights',
+      title: copy.rights,
+      rows: [
+        {
+          key: 'admin',
+          title: copy.administrator,
+          hint: copy.administratorHint,
+          state: detail.admin,
+          choice: detail.admin ? 'revoke' : 'grant',
+          disabled: own && detail.admin,
+          reason: own && detail.admin ? copy.ownRevokeReason : null,
+          reasonSpace: copy.ownRevokeReason,
+        },
+      ],
+    },
+    {
+      key: 'access',
+      title: copy.access,
+      rows: [
+        {
+          key: 'block',
+          title: copy.blocked,
+          hint: copy.blockedHint,
+          state: detail.block,
+          choice: detail.block ? 'unblock' : 'block',
+          disabled: own && !detail.block,
+          reason: own && !detail.block ? copy.ownBlockReason : null,
+          reasonSpace: copy.ownBlockReason,
+        },
+        {
+          key: 'deletion',
+          title: copy.deletionScheduled,
+          hint:
+            detail.deletionEffectiveAt === null
+              ? copy.deletionNone
+              : copy.deletionSummary
+                  .replace(
+                    '{date}',
+                    formatCalendarDate(detail.deletionEffectiveAt),
+                  )
+                  .replace(
+                    '{days}',
+                    formatAccountDeletionDays(
+                      accountDeletionDaysLeft(detail.deletionEffectiveAt, now),
+                    ),
+                  ),
+          state: scheduled,
+          choice: scheduled ? 'cancelDeletion' : 'delete',
+          disabled:
+            !scheduled && (deletionReason !== null || graceDays === null),
+          reason: deletionReason,
+          reasonSpace: copy.ownDeleteReason,
+        },
+      ],
+    },
+  ]
+}
+
+/**
+ * Freeze the person and the confirmation text at the moment a control is pressed.
+ * @param detail The account whose control was pressed.
+ * @param choice The requested operation.
+ * @param graceDays The grace period named by this page's subscription.
+ */
+export function hilosUserLifecyclePrompt(
+  detail: HilosUserDetailRow,
+  choice: HilosUserLifecycleChoice,
+  graceDays: number | null,
+): HilosUserLifecyclePrompt {
+  const copy = HILOS_USER_LIFECYCLE_COPY.confirmations[choice]
+
+  return {
+    userId: detail.id,
+    choice,
+    title: `${copy.title} · ${detail.name}`,
+    paragraphs: copy.paragraphs.map((line) =>
+      line.replace(
+        '{graceDays}',
+        graceDays === null ? '' : formatAccountDeletionDays(graceDays),
+      ),
+    ),
+    confirm: copy.confirm,
+    danger: copy.danger,
+  }
+}
+
+/**
+ * Dispatch the operation that was confirmed, keeping its original account and choice.
+ * @param lifecycle The tracked account-card actions.
+ * @param prompt The confirmation that was shown.
+ */
+export function submitHilosUserLifecycle(
+  lifecycle: HilosUserLifecycle,
+  prompt: HilosUserLifecyclePrompt,
+): ActionHandle {
+  switch (prompt.choice) {
+    case 'grant':
+      return lifecycle.setAdmin(prompt.userId, true)
+    case 'revoke':
+      return lifecycle.setAdmin(prompt.userId, false)
+    case 'block':
+      return lifecycle.setBlock(prompt.userId, true)
+    case 'unblock':
+      return lifecycle.setBlock(prompt.userId, false)
+    case 'delete':
+      return lifecycle.setDeletion(prompt.userId, true)
+    case 'cancelDeletion':
+      return lifecycle.setDeletion(prompt.userId, false)
   }
 }

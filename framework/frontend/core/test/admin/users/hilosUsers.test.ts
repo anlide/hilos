@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserDetail,
+  createHilosUserLifecycle,
   resolveHilosMergeCandidateRow,
   type HilosUserProfile,
   type HilosUsersContext,
@@ -15,6 +16,7 @@ import {
 } from '../../../src/connection/HilosConnection.js'
 import { entityCollection } from '../../../src/state/EntityCollection.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
+import { applyServerTime } from '../../../src/session/serverClock.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 /** Build a page scope and the typed user collection the admin module resolves through. */
@@ -29,6 +31,8 @@ function userStore(): {
     'user',
     (fields) => ({
       id: Number(fields.id),
+      admin: fields.admin === true,
+      block: fields.block === true,
       name: String(fields.name ?? ''),
       lastActivity: (fields.lastActivity as string | null) ?? null,
     }),
@@ -81,7 +85,50 @@ describe('resolveHilosMergeCandidateRow', () => {
   })
 })
 
+afterEach(() => {
+  applyServerTime(Date.now())
+  vi.useRealTimers()
+})
+
 describe('createHilosUserDetail', () => {
+  it('follows live rights, block and deletion changes on the local clock', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(100_000)
+    applyServerTime(120_000)
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const ref = { type: 'user', id: 1 }
+    page.entities.upsert(ref, {
+      id: 1,
+      name: 'Candidate',
+      admin: true,
+      block: false,
+    })
+    page.tables.upsert('userDetail', 1, { users: ref })
+    const detail = createHilosUserDetail({ scopes, users } as HilosUsersContext)
+
+    expect(detail.get()).toMatchObject({
+      admin: true,
+      block: false,
+      deletionEffectiveAt: null,
+    })
+    page.entities.upsert(ref, { admin: false, block: true })
+    page.tables.upsert('userDetail', 1, {
+      users: ref,
+      accountDeletions: { userId: 1, deletionEffectiveAt: 320_000 },
+    })
+    expect(detail.get()).toMatchObject({
+      admin: false,
+      block: true,
+      deletionEffectiveAt: 300_000,
+    })
+    page.tables.upsert('userDetail', 1, {
+      users: ref,
+      accountDeletions: { userId: 1, deletionEffectiveAt: null },
+    })
+    expect(detail.get()?.deletionEffectiveAt).toBeNull()
+  })
+
   it('reads password presence from the identities slot and defaults it to false', () => {
     const { scopes, users } = userStore()
     const page = scopes.page()
@@ -205,5 +252,51 @@ describe('createHilosAccountMerge', () => {
         },
       },
     ])
+  })
+})
+
+describe('createHilosUserLifecycle', () => {
+  it('sends all six choices as tracked actions without changing committed state', () => {
+    const { scopes, users } = userStore()
+    const dispatch = vi.fn().mockReturnValue({ done: Promise.resolve() })
+    const context = {
+      scopes,
+      users,
+      actions: { dispatch },
+    } as unknown as HilosUsersContext
+    const lifecycle = createHilosUserLifecycle(context)
+    for (const requested of [true, false]) {
+      expect(lifecycle.setAdmin(12, requested)).toBe(
+        dispatch.mock.results.at(-1)?.value,
+      )
+      lifecycle.setBlock(12, requested)
+      lifecycle.setDeletion(12, requested)
+    }
+    expect(dispatch.mock.calls).toEqual([
+      ['hilos_user_admin_set', { userId: 12, admin: true }],
+      ['hilos_user_block_set', { userId: 12, block: true }],
+      ['hilos_user_deletion_set', { userId: 12, scheduled: true }],
+      ['hilos_user_admin_set', { userId: 12, admin: false }],
+      ['hilos_user_block_set', { userId: 12, block: false }],
+      ['hilos_user_deletion_set', { userId: 12, scheduled: false }],
+    ])
+    expect(scopes.page()?.tables.signal('userDetail').get()).toEqual([])
+  })
+
+  it('reads the grace period from page data, including later subscriptions', () => {
+    const { scopes, users } = userStore()
+    const lifecycle = createHilosUserLifecycle({
+      scopes,
+      users,
+    } as HilosUsersContext)
+    expect(lifecycle.graceDays.get()).toBeNull()
+    for (const invalid of [0, -1, 1.5, '30', null]) {
+      scopes.page()?.data.set('accountDeletionGraceDays', invalid)
+      expect(lifecycle.graceDays.get()).toBeNull()
+    }
+    scopes.page()?.data.set('accountDeletionGraceDays', 30)
+    expect(lifecycle.graceDays.get()).toBe(30)
+    scopes.openPage('hilos_user').data.set('accountDeletionGraceDays', 1)
+    expect(lifecycle.graceDays.get()).toBe(1)
   })
 })

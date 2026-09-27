@@ -15,7 +15,9 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Database\Object\Item\AccountDeletion;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Tables\Users\AbstractHilosUserTableRow;
 
 /**
  * Browser table config for a single Hilos user detail page.
@@ -36,6 +38,7 @@ final class UserDetailBrowserTable
         ],
         BrowserTableConfigKey::SOURCES => [
             PollsBrowserSource::DB_USERS,
+            PollsBrowserSource::DB_ACCOUNT_DELETIONS,
             PollsBrowserSource::RT_CONNECTIONS,
         ],
         BrowserTableConfigKey::ROWS => [
@@ -49,6 +52,8 @@ final class UserDetailBrowserTable
                     User::id => HilosUserTableRow::id,
                     User::name => HilosUserTableRow::name,
                     User::lastActivity => HilosUserTableRow::lastActivity,
+                    User::admin => HilosUserTableRow::admin,
+                    User::block => HilosUserTableRow::block,
                 ],
             ],
             [
@@ -63,6 +68,19 @@ final class UserDetailBrowserTable
                 BrowserTableFieldKey::COMPUTED => [
                     HilosUserPresenceSummary::presence,
                     HilosUserPresenceSummary::onlineSessionCount,
+                ],
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => PollsBrowserSource::DB_ACCOUNT_DELETIONS,
+                BrowserTableFieldKey::ROW_KEY => AccountDeletion::userId,
+                BrowserTableFieldKey::WHERE => [
+                    AccountDeletion::userId => PollsBrowserRef::TABLE_HILOS_USER_ID,
+                ],
+                BrowserTableFieldKey::FIELDS => [
+                    AccountDeletion::userId,
+                ],
+                BrowserTableFieldKey::COMPUTED => [
+                    AbstractHilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
                 ],
             ],
         ],

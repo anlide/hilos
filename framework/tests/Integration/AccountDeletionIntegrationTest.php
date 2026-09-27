@@ -22,6 +22,9 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Database\Database;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
@@ -50,6 +53,122 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 
     /** Slack between the moment a case computes and the moment the command stamped, in seconds. */
     private const int CLOCK_SLACK_SEC = 5;
+
+    private string $previousAppClass;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->previousAppClass = Hilos::appClass();
+        ProfileIntegrationAdminHilos::initBrowser();
+        ProfileIntegrationAdminAudience::$ids = [self::ADMIN_USER_ID];
+    }
+
+    protected function tearDown(): void
+    {
+        $this->previousAppClass::initBrowser();
+        parent::tearDown();
+    }
+
+    public function testAdministratorSchedulesTheSameGraceAndPublishesThePersonsState(): void
+    {
+        $reply = $this->adminDeletion(self::USER_ID, true);
+        self::assertNull($reply->error);
+        self::assertSame('Deletion scheduled: the account is erased in 30 days', $reply->successMessage);
+        $deletion = Hilos::$db->accountDeletions->liveOf(self::USER_ID);
+        self::assertNotNull($deletion);
+        self::assertEqualsWithDelta(
+            self::GRACE_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            TimeHelper::sqlToMs($deletion->effectiveAt) - TimeHelper::sqlToMs($deletion->requestedAt),
+            self::CLOCK_SLACK_SEC * TimeConstants::MS_PER_SECOND,
+        );
+        $frames = $this->stateFrames();
+        self::assertCount(1, $frames);
+        self::assertSame(TimeHelper::sqlToMs($deletion->effectiveAt), $frames[0]->deletion['effectiveAt']);
+        self::assertSame(
+            'account_deletion_scheduled ' . json_encode(['event' => 'account_deletion_scheduled',
+                'user' => self::USER_ID, 'by' => self::ADMIN_USER_ID]),
+            $this->library->messages[0],
+        );
+    }
+
+    public function testAdministratorCanCancelAndThePersonCanCancelAnAdministratorsRequest(): void
+    {
+        $this->adminDeletion(self::USER_ID, true);
+        $this->stateFrames();
+        self::assertNull($this->adminDeletion(self::USER_ID, false)->error);
+        self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+        self::assertNull($this->stateFrames()[0]->deletion);
+        self::assertStringStartsWith('account_deletion_canceled ', $this->library->messages[1]);
+
+        $this->adminDeletion(self::USER_ID, true);
+        $this->stateFrames();
+        $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, new AccountDeletionCancelActionDTO());
+        self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+        self::assertNull($this->stateFrames()[0]->deletion);
+    }
+
+    public function testAdministratorCannotScheduleSelfAnotherAdministratorOrAnExistingRequest(): void
+    {
+        self::assertSame('Delete your own account from your profile', $this->adminDeletion(self::ADMIN_USER_ID, true)->error);
+        ProfileIntegrationAdminAudience::$ids[] = self::USER_ID;
+        self::assertSame('Remove the admin rights first', $this->adminDeletion(self::USER_ID, true)->error);
+        self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+        ProfileIntegrationAdminAudience::$ids = [self::ADMIN_USER_ID];
+        $this->adminDeletion(self::USER_ID, true);
+        $this->stateFrames();
+        self::assertSame(AccountDeletionMessages::ALREADY_SCHEDULED, $this->adminDeletion(self::USER_ID, true)->error);
+        self::assertSame([], $this->stateFrames());
+    }
+
+    public function testAdministratorCancellationWithoutARequestIsRefusedButCancelingSelfIsAllowed(): void
+    {
+        self::assertSame(AccountDeletionMessages::NOTHING_SCHEDULED, $this->adminDeletion(self::USER_ID, false)->error);
+        Hilos::$db->accountDeletions->actions->request(self::ADMIN_USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        self::assertNull($this->adminDeletion(self::ADMIN_USER_ID, false)->error);
+        self::assertNull(Hilos::$db->accountDeletions->liveOf(self::ADMIN_USER_ID));
+    }
+
+    public function testOrdinaryAndAnonymousConnectionsCannotScheduleOrCancel(): void
+    {
+        self::assertSame(
+            'Only an active administrator can do this',
+            $this->adminDeletion(self::OTHER_USER_ID, true, self::ACCEPT_KEY)->error,
+        );
+        self::assertSame('User session not found', $this->adminDeletion(self::USER_ID, true, self::ANONYMOUS_ACCEPT_KEY)->error);
+        self::assertNull(Hilos::$db->accountDeletions->liveOf(self::OTHER_USER_ID));
+        $this->adminDeletion(self::USER_ID, true);
+        self::assertSame(
+            'Only an active administrator can do this',
+            $this->adminDeletion(self::USER_ID, false, self::ACCEPT_KEY)->error,
+        );
+        self::assertNotNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+    }
+
+    private function adminDeletion(int $userId, bool $scheduled, string $acceptKey = self::ADMIN_ACCEPT_KEY): HandoverAnswerSignalData
+    {
+        $this->library->onSignalAgent(new AgentSignalData(new AccountDeletionSetSignalData(
+            $userId, $scheduled, HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE,
+            $acceptKey, 'admin-deletion', HilosSignalConstants::HILOS_USER_DELETION_SET, null,
+        )), 'page', HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET);
+        $other = [];
+        $answer = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                self::assertNull($answer);
+                $answer = $signal->data->data;
+                self::assertSame('admin-deletion', $answer->requestId);
+            } else {
+                $other[] = $signal;
+            }
+        }
+        foreach ($other as $signal) {
+            Hilos::$sr->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
+        self::assertNotNull($answer);
+
+        return $answer;
+    }
 
     /**
      * A password account must freshly confirm the operation before the window opens.

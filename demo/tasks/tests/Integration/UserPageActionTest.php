@@ -13,6 +13,14 @@ use Demo\Tasks\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Users\DTO\AccountBlockSetSignalData;
+use Hilos\Users\DTO\AccountDeletionSetSignalData;
+use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
+use Demo\Tasks\Users\TasksAdminAudience;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -67,6 +75,65 @@ final class UserPageActionTest extends IntegrationTestCase
         $this->assertNotNull($audit);
         $this->assertSame($originalName, $audit->old_name);
         $this->assertSame('Renamed', $audit->new_name);
+    }
+
+    public function testTheProjectWritesBlocksAndItsAudienceExcludesBlockedAdministrators(): void
+    {
+        $adminId = (int) Hilos::$db->users->actions->registerAdmin()->id;
+        $targetId = (int) Hilos::$db->users->actions->createWithName('Target administrator')->id;
+        Hilos::$db->users[$targetId]->actions->setAdmin(true);
+        Hilos::$rt->connections->actions->register('lifecycle-admin', $adminId);
+        self::assertContains($adminId, TasksAdminAudience::all());
+        self::assertContains($targetId, TasksAdminAudience::all());
+        $library = $this->sessionsLibrary();
+
+        foreach ([true, false] as $block) {
+            ExecutionContext::run(new ExecutionFrame(agentId: $library->getId()), static fn () => $library->onSignalAgent(
+                new AgentSignalData(new AccountBlockSetSignalData(
+                    $targetId, $block, HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE,
+                    'lifecycle-admin', 'lifecycle-request', HilosSignalConstants::HILOS_USER_BLOCK_SET, null,
+                )),
+                '',
+                HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET,
+            ));
+            $reply = null;
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                    $reply = $signal->data->data;
+                }
+            }
+            self::assertNotNull($reply);
+            self::assertNull($reply->error);
+            self::assertSame($block, Hilos::$db->users[$targetId]->block);
+            self::assertSame(!$block, in_array($targetId, TasksAdminAudience::all(), true));
+        }
+    }
+
+    public function testAnAdministratorAccountMustLoseItsRightsBeforeDeletion(): void
+    {
+        $adminId = (int) Hilos::$db->users->actions->registerAdmin()->id;
+        $targetId = (int) Hilos::$db->users->actions->createWithName('Target administrator')->id;
+        Hilos::$db->users[$targetId]->actions->setAdmin(true);
+        Hilos::$rt->connections->actions->register('lifecycle-admin', $adminId);
+        $library = new UsersLibraryAgent();
+        $this->startAgent($library);
+        ExecutionContext::run(new ExecutionFrame(agentId: $library->getId()), static fn () => $library->onSignalAgent(
+            new AgentSignalData(new AccountDeletionSetSignalData(
+                $targetId, true, HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE,
+                'lifecycle-admin', 'lifecycle-request', HilosSignalConstants::HILOS_USER_DELETION_SET, null,
+            )),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET,
+        ));
+        $reply = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $reply = $signal->data->data;
+            }
+        }
+        self::assertNotNull($reply);
+        self::assertSame('Remove the admin rights first', $reply->error);
+        self::assertNull(Hilos::$db->accountDeletions->liveOf($targetId));
     }
 
     /**

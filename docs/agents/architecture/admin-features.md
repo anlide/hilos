@@ -200,7 +200,8 @@ Follow the framework extension contract in
   sends the sessions library `hilos_account_block_changed` {userId}; the library
   reads the flag itself, signs the person out, refuses their sign-in and leaves
   the "Access closed" card the shell draws (HIL-289). A missed frame is caught at
-  the next handshake.
+  the next handshake. The admin card is the exception to sending that frame:
+  the sessions library calls `applyAccountBlock()` and enforces the flag directly.
 
 ## hilos-users base
 
@@ -213,6 +214,10 @@ matches the frontend `User` type, which already carries the mandatory RBAC
 `admin_users` is NOT a hilos-users extension — it is a separate, project-owned
 table (Mode 2). Keep the two distinct; the framework feature is the panel
 operators, the project table is the project's own.
+
+The account card requires `applyAccountBlock()` on the sessions library,
+`assertAdministratorMayDelete()` on the users library, and `ADMIN_AUDIENCE`.
+That audience judges the requesting administrator and protects the last active one.
 
 ## Preferred Shape
 

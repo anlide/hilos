@@ -20,6 +20,7 @@ abstract class AbstractHilosUserTableRow extends AbstractTableRow
     public const string id = 'id';
     public const string admin = 'admin';
     public const string block = 'block';
+    public const string FIELD_DELETION_EFFECTIVE_AT = 'deletionEffectiveAt';
     public const string presence = HilosUserPresenceSummary::presence;
     public const string onlineSessionCount = HilosUserPresenceSummary::onlineSessionCount;
 

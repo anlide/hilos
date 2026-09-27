@@ -120,6 +120,8 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
     'user',
     (fields) => ({
       id: Number(fields.id),
+      admin: fields.admin === true,
+      block: fields.block === true,
       name: String(fields.name ?? ''),
       lastActivity: (fields.lastActivity as string | null) ?? null,
     }),

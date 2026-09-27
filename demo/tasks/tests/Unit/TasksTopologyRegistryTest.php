@@ -187,6 +187,8 @@ final class TasksTopologyRegistryTest extends TestCase
                 // The merge is mounted here as everywhere else and refuses, because this demo
                 // wires neither of its seams (HIL-729).
                 HilosSignalConstants::HILOS_ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 // The one frame with no fixed sender: whoever finished something a person is
                 // waiting on raises a toast on their session, and the stack is the library's
                 // (HIL-768).
@@ -222,6 +224,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 // agents and the two node-scoped auth agents answer on their own names.
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
                 // The logs section's own frames (HIL-392): the section agent takes the
                 // cluster picture in portions, the per-node store answers the reads the
@@ -447,6 +450,27 @@ final class TasksTopologyRegistryTest extends TestCase
             UserPage::PAGE,
             Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
                 [HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE],
+        );
+
+        $this->assertSame(UserPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_ADMIN_SET]);
+        $this->assertSame(
+            UserPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE],
+        );
+
+        $this->assertSame(UserPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_BLOCK_SET]);
+        $this->assertSame(
+            UserPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE],
+        );
+
+        $this->assertSame(UserPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_DELETION_SET]);
+        $this->assertSame(
+            UserPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE],
         );
     }
 

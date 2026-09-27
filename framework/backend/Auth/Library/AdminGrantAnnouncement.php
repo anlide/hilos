@@ -20,10 +20,12 @@ final class AdminGrantAnnouncement
     /**
      * @param int $sessions Live sessions that received the state frame
      * @param ?string $error Why the pass stopped, null when it ran to the end
+     * @param int $tabs Open connections addressed by the state frames
      */
     public function __construct(
         public readonly int $sessions,
         public readonly ?string $error,
+        public readonly int $tabs,
     ) {
     }
 }

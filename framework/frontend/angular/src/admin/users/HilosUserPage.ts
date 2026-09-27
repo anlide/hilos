@@ -23,6 +23,16 @@ import {
   untracked,
 } from '@angular/core'
 import {
+  ACCOUNT_DELETION_TICK_MS,
+  createHilosUserLifecycle,
+  HILOS_USER_LIFECYCLE_COPY,
+  hilosUserLifecycleSections,
+  hilosUserLifecyclePrompt,
+  submitHilosUserLifecycle,
+  type HilosUserLifecycle,
+  type HilosUserLifecycleChoice,
+  type HilosUserLifecyclePrompt,
+  type HilosUserLifecycleSection,
   HilosPages,
   createHilosAccountMerge,
   createHilosMergeCandidates,
@@ -141,6 +151,62 @@ function noticeText(live: RowEditState<UserEditFields>): string {
             </dl>
           </div>
         </div>
+        @for (section of lifecycleSections(); track section.key) {
+          <section
+            class="card mt-4"
+            [attr.data-id]="'hilos-user-' + section.key"
+          >
+            <div class="card-body">
+              <h2 class="h5">{{ section.title }}</h2>
+              @for (row of section.rows; track row.key) {
+                <div class="d-flex flex-wrap align-items-start gap-3 py-2">
+                  <div
+                    class="flex-grow-1"
+                    [attr.data-id]="'hilos-user-' + row.key + '-state'"
+                  >
+                    <h3 class="h6 mb-1">
+                      {{ row.title }}
+                      <span class="badge text-bg-secondary">{{
+                        row.state ? lifecycleCopy.yes : lifecycleCopy.no
+                      }}</span>
+                    </h3>
+                    <p class="small text-body-secondary mb-0">{{ row.hint }}</p>
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      [class.btn-outline-danger]="
+                        lifecycleCopy.confirmations[row.choice].danger
+                      "
+                      [class.btn-primary]="
+                        !lifecycleCopy.confirmations[row.choice].danger
+                      "
+                      [disabled]="row.disabled"
+                      [attr.aria-describedby]="
+                        'hilos-user-' + row.key + '-reason'
+                      "
+                      [attr.data-id]="'hilos-user-' + row.key + '-open'"
+                      (click)="openLifecycle(row.choice)"
+                    >
+                      {{ lifecycleCopy[row.choice] }}
+                    </button>
+                    <div class="hilos-stack small text-body-secondary mt-1">
+                      <span class="invisible" aria-hidden="true">{{
+                        row.reasonSpace
+                      }}</span>
+                      <span
+                        [id]="'hilos-user-' + row.key + '-reason'"
+                        [attr.data-id]="'hilos-user-' + row.key + '-reason'"
+                        >{{ row.reason }}</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          </section>
+        }
         @if (context().accountMerge) {
           <section
             class="card border-danger mt-4"
@@ -257,6 +323,56 @@ function noticeText(live: RowEditState<UserEditFields>): string {
               </button>
             </ng-template>
           </div>
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
+        [open]="lifecyclePrompt() !== null"
+        (openChange)="onLifecycleOpenChange($event)"
+        [title]="lifecyclePrompt()?.title ?? ''"
+        initialFocus="dialog"
+        [closeOnBackdrop]="!lifecycleAction.busy()"
+        [closeOnEsc]="!lifecycleAction.busy()"
+      >
+        <div class="visually-hidden" role="alert" aria-live="assertive">
+          {{ lifecycleAction.error() }}
+        </div>
+        @for (
+          paragraph of lifecyclePrompt()?.paragraphs ?? [];
+          track paragraph
+        ) {
+          <p>{{ paragraph }}</p>
+        }
+        <div data-id="hilos-user-lifecycle-error">
+          <hilos-action-error
+            [action]="lifecycleAction"
+            detailsTitle="Account change refused"
+          />
+        </div>
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="lifecycleAction.busy()"
+            data-id="hilos-user-lifecycle-cancel"
+            (click)="requestClose()"
+          >
+            {{ lifecycleCopy.cancel }}
+          </button>
+          <button
+            hilosLoadingButton
+            [class.btn-danger]="lifecyclePrompt()?.danger"
+            [class.btn-primary]="!lifecyclePrompt()?.danger"
+            [loading]="lifecycleAction.loading()"
+            [disabled]="
+              lifecycleAction.busy() ||
+              detail()?.id !== lifecyclePrompt()?.userId
+            "
+            data-id="hilos-user-lifecycle-confirm"
+            (click)="submitLifecycle()"
+          >
+            {{ lifecyclePrompt()?.confirm }}
+          </button>
         </ng-template>
       </hilos-modal>
 
@@ -447,6 +563,24 @@ export class HilosUserPage {
   // Mirrored from the core selectors, which derive from the context input.
   protected readonly detail = signal<HilosUserDetailRow | undefined>(undefined)
   protected readonly renameError = signal<string | null>(null)
+  private lifecycle: HilosUserLifecycle | undefined
+  protected readonly lifecycleAction = createHilosTrackedAction()
+  protected readonly lifecyclePrompt = signal<HilosUserLifecyclePrompt | null>(
+    null,
+  )
+  protected readonly lifecycleCopy = HILOS_USER_LIFECYCLE_COPY
+  private readonly graceDays = signal<number | null>(null)
+  private readonly lifecycleNow = signal(Date.now())
+  protected readonly lifecycleSections = computed<
+    readonly HilosUserLifecycleSection[]
+  >(() =>
+    hilosUserLifecycleSections(
+      this.detail(),
+      this.currentUserId(),
+      this.graceDays(),
+      this.lifecycleNow(),
+    ),
+  )
   private rename: HilosUserRename | undefined
   private mergeCandidates: HilosMergeCandidates | undefined
   private accountMerge: HilosAccountMerge | undefined
@@ -530,6 +664,36 @@ export class HilosUserPage {
     this.live().gone ? 'Deleted' : 'Save',
   )
 
+  protected openLifecycle(choice: HilosUserLifecycleChoice): void {
+    const detail = this.detail()
+    if (!detail || this.lifecycleAction.busy()) return
+    this.lifecycleAction.clearError()
+    this.lifecyclePrompt.set(
+      hilosUserLifecyclePrompt(detail, choice, this.graceDays()),
+    )
+  }
+
+  protected onLifecycleOpenChange(open: boolean): void {
+    if (!open) this.lifecyclePrompt.set(null)
+  }
+
+  protected async submitLifecycle(): Promise<void> {
+    const prompt = this.lifecyclePrompt()
+    if (
+      !prompt ||
+      !this.lifecycle ||
+      this.lifecycleAction.busy() ||
+      this.detail()?.id !== prompt.userId
+    )
+      return
+    if (
+      await this.lifecycleAction.run(
+        submitHilosUserLifecycle(this.lifecycle, prompt),
+      )
+    )
+      this.lifecyclePrompt.set(null)
+  }
+
   constructor() {
     // The context arrives via input and carries core signals; build the detail
     // selector and rename surface once it binds, mirror their signals into
@@ -543,13 +707,22 @@ export class HilosUserPage {
       this.rename = rename
       this.mergeCandidates = mergeCandidates
       this.accountMerge = createHilosAccountMerge(context)
+      const lifecycle = createHilosUserLifecycle(context)
+      this.lifecycle = lifecycle
+      this.graceDays.set(lifecycle.graceDays.get())
       this.mergeCandidatesController.set(mergeCandidates.controller)
       this.detail.set(detailSignal.get())
       this.renameError.set(rename.renameError.get())
       this.mergeRows.set(mergeCandidates.controller.rows.get())
       this.currentUserId.set(currentUserId.get())
       const subscriptions = [
-        subscribeSignal(detailSignal, (value) => this.detail.set(value)),
+        subscribeSignal(lifecycle.graceDays, (value) =>
+          this.graceDays.set(value),
+        ),
+        subscribeSignal(detailSignal, (value) => {
+          this.lifecycleNow.set(Date.now())
+          this.detail.set(value)
+        }),
         subscribeSignal(rename.renameError, (value) =>
           this.renameError.set(value),
         ),
@@ -560,7 +733,12 @@ export class HilosUserPage {
           this.currentUserId.set(value),
         ),
       ]
+      const tick = setInterval(
+        () => this.lifecycleNow.set(Date.now()),
+        ACCOUNT_DELETION_TICK_MS,
+      )
       onCleanup(() => {
+        clearInterval(tick)
         mergeCandidates.dispose()
         for (const unsubscribe of subscriptions) {
           unsubscribe()

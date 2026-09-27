@@ -16,7 +16,9 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Database\Object\Item\Identity;
+use Hilos\Database\Object\Item\AccountDeletion;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Tables\Users\AbstractHilosUserTableRow;
 use Hilos\Tables\Users\AbstractHilosMergeCandidatesTable;
 
 /**
@@ -35,6 +37,7 @@ final class UserDetailBrowserTable
         ],
         BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_USERS,
+            ChatBrowserSource::DB_ACCOUNT_DELETIONS,
             ChatBrowserSource::RT_CONNECTIONS,
             ChatBrowserSource::DB_IDENTITIES,
         ],
@@ -49,6 +52,8 @@ final class UserDetailBrowserTable
                     User::id => HilosUserTableRow::id,
                     User::name => HilosUserTableRow::name,
                     User::lastActivity => HilosUserTableRow::lastActivity,
+                    User::admin => HilosUserTableRow::admin,
+                    User::block => HilosUserTableRow::block,
                 ],
             ],
             [
@@ -76,6 +81,19 @@ final class UserDetailBrowserTable
                 ],
                 BrowserTableFieldKey::COMPUTED => [
                     AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD,
+                ],
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_ACCOUNT_DELETIONS,
+                BrowserTableFieldKey::ROW_KEY => AccountDeletion::userId,
+                BrowserTableFieldKey::WHERE => [
+                    AccountDeletion::userId => ChatBrowserRef::TABLE_HILOS_USER_ID,
+                ],
+                BrowserTableFieldKey::FIELDS => [
+                    AccountDeletion::userId,
+                ],
+                BrowserTableFieldKey::COMPUTED => [
+                    AbstractHilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
                 ],
             ],
         ],

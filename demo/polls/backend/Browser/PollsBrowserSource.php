@@ -19,6 +19,11 @@ final class PollsBrowserSource
         BrowserSourceKey::KEY => PollsDbContext::users,
     ];
 
+    public const array DB_ACCOUNT_DELETIONS = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => PollsDbContext::accountDeletions,
+    ];
+
     public const array RT_CONNECTIONS = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => PollsRtContext::connections,
