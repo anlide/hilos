@@ -31,7 +31,8 @@ Covers the full spike-HIL-176 matrix:
   2 master-master              one leader among masters, slaves never lead
   3 placement                  the no-op agent is placed on a data-plane node
   4 slave-kill failover        leader re-places the agent onto another slave
-  5 leader-kill re-election     survivors elect a new leader
+  5 leader-kill re-election     survivors elect a new leader, and the fleet it inherits keeps
+                               running past its slaves' fence window (HIL-440)
   6 hot-join                   a returning node is admitted; full roster
   7 quorum-loss                a minority stops leading; no new leader
   8 split-brain prevention     the majority keeps one leader; the minority steps down

@@ -95,14 +95,14 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
    hand-over of that set (HIL-1116)
 
 They run in the order the driver lists them, which is not the order they are
-numbered: the RT scenarios and scenario 19 go right after placement, while
-the fleet the leader just placed is still spread over both slaves. Scenario 19
+numbered: the RT scenarios and scenario 19 go right after placement, while the
+fleet the leader just placed is still spread over both slaves. Scenario 19
 therefore keeps members on workers of its victim that survive. That order was
-forced by a defect — the matrix
-used to leave the fleet dead behind it (P-152) — and it is kept now that the defect
-is gone, because moving a scenario moves its timing with it. Every run still starts
-from a fresh stack: the matrix kills, partitions and recreates every node it
-touches, so there is nothing in a used one worth keeping.
+forced by a defect — the matrix used to leave the fleet dead behind it (P-152) —
+and it is kept now that the defect is gone, because moving a scenario moves its
+timing with it. Every run still starts from a fresh stack: the matrix kills,
+partitions and recreates every node it touches, so there is nothing in a used
+one worth keeping.
 
 ### Timing on a loaded host (HIL-367)
 
