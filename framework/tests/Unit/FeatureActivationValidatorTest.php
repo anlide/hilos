@@ -10,6 +10,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Feature\Definition\FilesFeature;
+use Hilos\Core\Feature\Definition\ImagesFeature;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureDefinition;
@@ -30,8 +31,18 @@ use Hilos\Files\Library\AbstractFilesLibraryAgentDaemon;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Files\Upload\UploadsAgentDaemon;
+use Hilos\Files\Image\GdImageEngine;
+use Hilos\Files\Image\ImageEngineInterface;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImageProbe;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImagesAgentDaemon;
+use Hilos\Files\Image\ImageVariant;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Hilos as HilosFacade;
 use PHPUnit\Framework\TestCase;
+use LogicException;
 
 /**
  * Unit tests for feature activation validation.
@@ -288,6 +299,49 @@ final class FeatureActivationValidatorTest extends TestCase
 
         FeatureActivationFilesUnfoldedHilos::validateFeatureActivation();
     }
+
+    public function testDeclaredImagesWithTheRegistryAgentAndEnginePasses(): void
+    {
+        FeatureActivationImagesHilos::validateFeatureActivation();
+        self::assertInstanceOf(GdImageEngine::class, ImagesAgent::createEngine());
+        self::assertTrue(new ImagesAgentDaemon()->requiresMonopolisticProcess());
+    }
+
+    /** @return iterable<string, array{class-string<HilosFacade>, string}> Broken image activation and its refusal */
+    public static function incompleteImages(): iterable
+    {
+        yield 'no files' => [FeatureActivationImagesWithoutFilesHilos::class, 'the HilosFeature::FILES it is built on is not'];
+        yield 'no agent' => [FeatureActivationImagesWithoutAgentHilos::class, 'agent hilos_images is not registered'];
+        yield 'no daemon' => [FeatureActivationImagesWithoutDaemonHilos::class, 'does not declare both a worker and a daemon class'];
+        yield 'no declaration' => [FeatureActivationImageVariantsOnlyHilos::class, 'IMAGE_VARIANTS names variants, but'];
+        yield 'no variants' => [FeatureActivationImagesWithoutVariantsHilos::class, 'IMAGE_VARIANTS names no variant'];
+        yield 'foreign worker' => [FeatureActivationImagesForeignWorkerHilos::class, 'its worker must be'];
+        yield 'unusable engine' => [FeatureActivationImagesUnusableEngineHilos::class, 'the image engine cannot run: gd lacks webp'];
+    }
+
+    /**
+     * @param class-string<HilosFacade> $facade Broken declaration
+     * @param string $message Caller-facing activation refusal
+     */
+    #[DataProvider('incompleteImages')]
+    public function testIncompleteImageActivationIsRefused(string $facade, string $message): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage($message);
+        $facade::validateFeatureActivation();
+    }
+
+    public function testInvalidVariantsAreReportedTogether(): void
+    {
+        try {
+            FeatureActivationImagesBadVariantsHilos::validateFeatureActivation();
+            self::fail('Every malformed variant must refuse startup');
+        } catch (IncompleteFeatureActivationException $e) {
+            foreach (['name must', 'width must', 'height must', 'fit must', 'format must', 'unknown key'] as $message) {
+                self::assertStringContainsString($message, $e->getMessage());
+            }
+        }
+    }
 }
 
 /**
@@ -307,6 +361,7 @@ final class FeatureActivationTestRegistry extends FeatureRegistry
             new FeatureActivationFragmentFeature(),
             new UploadsFeature(),
             new FilesFeature(),
+            new ImagesFeature(),
         ];
     }
 }
@@ -996,4 +1051,115 @@ final class FeatureActivationFilesLibraryOnlyHilos extends FeatureActivationFile
 final class FeatureActivationFilesUnfoldedHilos extends FeatureActivationFilesHilos
 {
     protected const string SETTINGS_CATALOG = FeatureActivationBareCatalog::class;
+}
+
+/** Complete image feature declaration, including the files feature it builds on. */
+class FeatureActivationImagesHilos extends FeatureActivationFilesHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::FILES, HilosFeature::IMAGES];
+
+    public const array AGENTS = parent::AGENTS + [
+        ImagesAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => ImagesAgent::class, AgentRegistryKey::DAEMON => ImagesAgentDaemon::class],
+    ];
+
+    public const array IMAGE_VARIANTS = [
+        'thumb' => [ImageVariant::WIDTH => 384, ImageVariant::HEIGHT => 384, ImageVariant::FIT => ImageFit::CONTAIN],
+    ];
+}
+
+final class FeatureActivationImagesWithoutFilesHilos extends FeatureActivationImagesHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::IMAGES];
+}
+
+final class FeatureActivationImagesWithoutAgentHilos extends FeatureActivationImagesHilos
+{
+    public const array AGENTS = FeatureActivationFilesHilos::AGENTS;
+}
+
+final class FeatureActivationImagesWithoutDaemonHilos extends FeatureActivationImagesHilos
+{
+    public const array AGENTS = FeatureActivationFilesHilos::AGENTS + [
+        ImagesAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => ImagesAgent::class],
+    ];
+}
+
+final class FeatureActivationImageVariantsOnlyHilos extends FeatureActivationValidHilos
+{
+    public const array IMAGE_VARIANTS = FeatureActivationImagesHilos::IMAGE_VARIANTS;
+}
+
+final class FeatureActivationImagesWithoutVariantsHilos extends FeatureActivationImagesHilos
+{
+    public const array IMAGE_VARIANTS = [];
+}
+
+final class FeatureActivationImagesForeignWorkerHilos extends FeatureActivationImagesHilos
+{
+    public const array AGENTS = FeatureActivationFilesHilos::AGENTS + [
+        ImagesAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => UploadsAgent::class, AgentRegistryKey::DAEMON => ImagesAgentDaemon::class],
+    ];
+}
+
+final class FeatureActivationImagesUnusableEngineHilos extends FeatureActivationImagesHilos
+{
+    public const array AGENTS = FeatureActivationFilesHilos::AGENTS + [
+        ImagesAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationUnusableImagesAgent::class,
+            AgentRegistryKey::DAEMON => ImagesAgentDaemon::class,
+        ],
+    ];
+}
+
+final class FeatureActivationUnusableImagesAgent extends ImagesAgent
+{
+    /** @return ImageEngineInterface Unusable engine, asked before an agent starts */
+    public static function createEngine(): ImageEngineInterface
+    {
+        return new class implements ImageEngineInterface {
+            /**
+             * @param list<ImageFormat> $outputs Declared formats
+             * @return ?string Missing output capability
+             */
+            public function unusableReason(array $outputs): ?string
+            {
+                return in_array(ImageFormat::WEBP, $outputs, true) ? 'gd lacks webp' : null;
+            }
+
+            /**
+             * @param string $bytes Unused source
+             * @return ?ImageProbe No header in this startup-only engine
+             */
+            public function probe(string $bytes): ?ImageProbe
+            {
+                return null;
+            }
+
+            /**
+             * @param string $bytes Unused source
+             * @param ImageProbe $probe Unused header
+             * @param int $orientation Unused orientation
+             * @param ImageVariant $variant Unused declaration
+             * @param string $targetPath Unused output path
+             * @return int No rendering in the startup validator
+             */
+            public function render(string $bytes, ImageProbe $probe, int $orientation, ImageVariant $variant, string $targetPath): int
+            {
+                throw new LogicException('Startup must never render');
+            }
+        };
+    }
+}
+
+final class FeatureActivationImagesBadVariantsHilos extends FeatureActivationImagesHilos
+{
+    public const array IMAGE_VARIANTS = [
+        'Bad' => [],
+        'wide' => [ImageVariant::WIDTH => 4097, ImageVariant::HEIGHT => 1, ImageVariant::FIT => ImageFit::CONTAIN],
+        'tall' => [ImageVariant::WIDTH => 1, ImageVariant::HEIGHT => 0, ImageVariant::FIT => ImageFit::CONTAIN],
+        'fit' => [ImageVariant::WIDTH => 1, ImageVariant::HEIGHT => 1, ImageVariant::FIT => 'contain'],
+        'format' => [ImageVariant::WIDTH => 1, ImageVariant::HEIGHT => 1, ImageVariant::FIT => ImageFit::CONTAIN,
+            ImageVariant::FORMAT => 'webp'],
+        'extra' => ['extra' => true],
+    ];
 }

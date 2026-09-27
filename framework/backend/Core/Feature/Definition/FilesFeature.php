@@ -9,6 +9,7 @@ use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\File;
+use Hilos\Database\Entity\Item\FileVariant;
 use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Fs\Context\FsContext;
@@ -38,7 +39,7 @@ final class FilesFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The files library, the settings library, the lifetime catalog fragment and the file table
+     * @return FeatureRequirements The library pair, lifetime catalog and registry tables, including image copies
      */
     public function requirements(): FeatureRequirements
     {
@@ -46,7 +47,7 @@ final class FilesFeature extends FeatureDefinition
             requiredAgents: [HilosAgentType::HILOS_FILES_LIBRARY],
             requiredSharedAgents: [HilosAgentType::HILOS_SETTINGS_LIBRARY],
             requiredCatalogFragments: [FilesSettingsCatalog::class],
-            requiredDbTables: [File::_table],
+            requiredDbTables: [File::_table, FileVariant::_table],
         );
     }
 }

@@ -16,6 +16,7 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -23,6 +24,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\Database\View\Item\File;
+use Hilos\Database\View\Item\FileVariant;
 use Hilos\Database\View\Item\Session;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishItemData;
@@ -34,6 +36,11 @@ use Hilos\Files\Download\FileDownloadResponse;
 use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
+use Hilos\Files\Image\DTO\ImageRenderedSignalData;
+use Hilos\Files\Image\DTO\ImageRenderSignalData;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImageRenderOutcome;
+use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Storage\FilesStorageInterface;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
@@ -76,6 +83,9 @@ use Random\RandomException;
  * the session (HIL-138). The row's visibility decides ({@see FileAccess}), the project's
  * {@see self::grantsRead()} may widen it, and {@see FileDownloadResponse} builds the answer.
  *
+ * Image copies are drawn by the images agent and kept only here. Its handed-over memory is a
+ * hint: ready without a live copy is checked by a retry frame. The janitor removes copies first.
+ *
  * Abstract by convention, as the notifications library is. A project subclass adds its name, and
  * may override {@see self::grantsRead()} to let more viewers see a file than its visibility does.
  */
@@ -88,17 +98,18 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      */
     public const array OWNS_DB = [
         HilosDbContext::files => TruthSourceOperation::BY_KIND,
+        HilosDbContext::fileVariants => TruthSourceOperation::BY_KIND,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_FILES_LIBRARY;
 
     /**
-     * The two frames the library is addressed by: the project linked these files, and the
-     * uploads agent handed these files over to be kept.
+     * Bind requests, uploads handed over for publication, and rendered image copies to keep.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
         HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
+        HilosSignalConstants::HILOS_IMAGE_RENDERED => ImageRenderedSignalData::class,
     ];
 
     /** The address a file is served at, answered here and not in the master (HIL-138). */
@@ -161,8 +172,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Marks bound the files the project says it linked, or keeps and registers the files the
-     * uploads agent handed over.
+     * Binds linked files, publishes handed-over uploads, or keeps image copies and answers their waiting requests.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -192,13 +202,21 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_IMAGE_RENDERED:
+                if (!$data->data instanceof ImageRenderedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ImageRenderedSignalData::class, $data->data);
+                }
+                $this->onImageRendered($data->data);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
     }
 
     /**
-     * Serves a registry file by id to the browser that asked, or refuses it.
+     * Serves a registry file, refuses it, or forwards its waiting request to the image renderer.
      *
      * @param HttpRequestDTO $data Request the master parked for this address
      * @param string $source Signal source (unused)
@@ -208,7 +226,10 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      */
     public function onSignalHttpRequest(HttpRequestDTO $data, string $source, string $name): void
     {
-        $this->replyToHttpRequest($this->serveFile($data));
+        $reply = $this->serveFile($data);
+        if ($reply !== null) {
+            $this->replyToHttpRequest($reply);
+        }
     }
 
     /**
@@ -237,11 +258,21 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      * a registry this agent cannot read is a wiring defect, not a 404.
      *
      * @param HttpRequestDTO $request Request for a file
-     * @return HttpReplyDTO The file, or the refusal
+     * @return ?HttpReplyDTO The file or refusal, or null while the request travels with a rendering job
      * @throws HilosException When the row, the session or the environment cannot be read
      */
-    private function serveFile(HttpRequestDTO $request): HttpReplyDTO
+    private function serveFile(HttpRequestDTO $request): ?HttpReplyDTO
     {
+        $variant = null;
+        if (array_key_exists(HilosFiles::DOWNLOAD_VARIANT_KEY, $request->query)) {
+            if (!Hilos::hasFeature(HilosFeature::IMAGES)) {
+                return HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND);
+            }
+            $variant = ImageVariant::named($request->query[HilosFiles::DOWNLOAD_VARIANT_KEY]);
+            if ($variant === null) {
+                return HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND);
+            }
+        }
         $rawId = $request->query[HilosFiles::DOWNLOAD_ID_KEY] ?? null;
         if ($rawId === null || !ctype_digit($rawId) || (int)$rawId <= 0) {
             return HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND);
@@ -270,6 +301,9 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
         }
 
         try {
+            if ($variant !== null) {
+                return $this->serveVariant($request, $file, $variant);
+            }
             $response = FileDownloadResponse::forFile(
                 $request,
                 $file,
@@ -290,6 +324,198 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
                 . ' the daemon serves itself; set ' . EnvConstants::HILOS_FILES_XACCEL_LOCATION->name,
             ),
             FileDownloadOutcome::UNREADABLE => $this->logAgentError("File {$fileId} is on disk and could not be read"),
+        };
+
+        return $response->reply;
+    }
+
+    /**
+     * @param HttpRequestDTO $request Authorized request
+     * @param File $file Original registry row
+     * @param ImageVariant $variant Declared variant
+     * @return ?HttpReplyDTO Live copy or fallback, or null once the render request leaves
+     * @throws HilosException When the registry, storage or declarations cannot be read
+     */
+    private function serveVariant(HttpRequestDTO $request, File $file, ImageVariant $variant): ?HttpReplyDTO
+    {
+        if (!ImageFormat::readsSource($file->mimeType)) {
+            return $this->respondFallback($request, $file);
+        }
+        $copy = $this->liveCopy($file->id, $variant);
+        if ($copy !== null) {
+            return $this->respondVariant($request, $file, $copy);
+        }
+        $this->requestRender($request, $file, $variant, false);
+
+        return null;
+    }
+
+    /**
+     * @param int $fileId Original registry id
+     * @param ImageVariant $variant Current declaration
+     * @return ?FileVariant Current row whose file is still in storage
+     * @throws HilosException When the registry or storage cannot be read
+     */
+    private function liveCopy(int $fileId, ImageVariant $variant): ?FileVariant
+    {
+        $copy = Hilos::$db->fileVariants->findFor($fileId, $variant->name);
+
+        return $copy !== null && $copy->signature === $variant->signature() && $this->storage()->size($copy->storedName) !== null
+            ? $copy : null;
+    }
+
+    /**
+     * @param HttpRequestDTO $request Authorized browser request that will travel back with the result
+     * @param File $file Original registry row
+     * @param ImageVariant $variant Declared variant
+     * @param bool $retry A ready hint proved inaccurate; demand rendering instead of another hint
+     * @throws HilosException When the request cannot be serialized or sent
+     */
+    private function requestRender(HttpRequestDTO $request, File $file, ImageVariant $variant, bool $retry): void
+    {
+        $this->sendToAgent(HilosSignalConstants::HILOS_IMAGE_RENDER,
+            new ImageRenderSignalData($request, $file->id, $file->storedName, $file->mimeType, $variant->name, $retry));
+    }
+
+    /**
+     * Keeps a rendered copy or checks the renderer's hint, then answers the already authorized requests.
+     *
+     * @param ImageRenderedSignalData $result Rendering outcome and every waiting request
+     * @throws HilosException When the registry or environment cannot be read past the expected storage and write failures
+     * @throws RandomException When a stored filename cannot be drawn
+     */
+    private function onImageRendered(ImageRenderedSignalData $result): void
+    {
+        $file = Hilos::$db->files[$result->fileId];
+        if ($file === null || $result->outcome === ImageRenderOutcome::MISSING) {
+            $this->discardImageTmp($result->tmpIndex);
+            if ($file !== null) {
+                $this->logAgentWarning("File {$result->fileId} has a row but no file on disk");
+            }
+            foreach ($result->requests as $request) {
+                $this->replyToHttpRequest(HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND));
+            }
+            return;
+        }
+        $variant = ImageVariant::named($result->variant);
+        if ($result->outcome === ImageRenderOutcome::FAILED || $variant === null) {
+            $this->discardImageTmp($result->tmpIndex);
+            foreach ($result->requests as $request) {
+                $this->replyToHttpRequest($this->respondFallback($request, $file));
+            }
+            return;
+        }
+
+        $storedName = null;
+        try {
+            $copy = $this->liveCopy($result->fileId, $variant);
+            if ($copy !== null) {
+                $this->discardImageTmp($result->tmpIndex);
+            } elseif ($result->outcome === ImageRenderOutcome::READY) {
+                foreach ($result->requests as $request) {
+                    $this->requestRender($request, $file, $variant, true);
+                }
+                return;
+            } else {
+                $storedName = RandomHelper::secureHex(self::STORED_NAME_BYTES) . FsFile::extensionForMime($result->mimeType);
+                $this->storage()->storeFromTmp($storedName, $result->tmpIndex);
+                $copy = Hilos::$db->fileVariants->findFor($result->fileId, $result->variant);
+                if ($copy === null) {
+                    $copy = Hilos::$db->fileVariants->actions->create(
+                        $result->fileId, $result->variant, $result->signature, $storedName, $result->mimeType, $result->size,
+                    );
+                } else {
+                    $oldStoredName = $copy->storedName;
+                    $copy->actions->replace($result->signature, $storedName, $result->mimeType, $result->size);
+                    $this->deleteKept($oldStoredName);
+                }
+            }
+        } catch (FsException | DatabaseException | ValidationException $e) {
+            $this->logAgentError("Cannot keep variant {$result->variant} of file {$result->fileId}: " . $e->getMessage());
+            $this->discardImageTmp($result->tmpIndex);
+            if ($storedName !== null) {
+                $this->deleteKept($storedName);
+            }
+            foreach ($result->requests as $request) {
+                $this->replyToHttpRequest($this->respondFallback($request, $file));
+            }
+            return;
+        }
+
+        foreach ($result->requests as $request) {
+            $this->replyToHttpRequest($this->respondVariant($request, $file, $copy));
+        }
+    }
+
+    /** @param ?string $tmpIndex Temporary copy to discard after refusal or a duplicate rendering */
+    private function discardImageTmp(?string $tmpIndex): void
+    {
+        if ($tmpIndex === null) {
+            return;
+        }
+        try {
+            (Hilos::$fs ?? throw new DirectoryNotFoundException('FS context is not configured'))->getTmp()[$tmpIndex]->unlink();
+        } catch (FsException $e) {
+            $this->logAgentError("Cannot delete the temporary image {$tmpIndex}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * @param HttpRequestDTO $request Authorized browser request
+     * @param File $file Original row supplying the filename and visibility
+     * @param FileVariant $copy Registered copy
+     * @return HttpReplyDTO Copy or storage refusal
+     * @throws HilosException When the environment cannot be read
+     */
+    private function respondVariant(HttpRequestDTO $request, File $file, FileVariant $copy): HttpReplyDTO
+    {
+        try {
+            $response = FileDownloadResponse::forVariant($request, $file, $copy, $this->storage(),
+                Hilos::$env[EnvConstants::HILOS_FILES_XACCEL_LOCATION]->string());
+        } catch (FsException $e) {
+            $this->logAgentError("File {$file->id} variant {$copy->variant} cannot be served: " . $e->getMessage());
+            return HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR);
+        }
+
+        return $this->imageDownloadReply($response, $file->id, $copy->variant);
+    }
+
+    /**
+     * @param HttpRequestDTO $request Authorized request naming the unavailable variant
+     * @param File $file Original to serve with a short cache lifetime
+     * @return HttpReplyDTO Original or storage refusal
+     * @throws HilosException When the environment cannot be read
+     */
+    private function respondFallback(HttpRequestDTO $request, File $file): HttpReplyDTO
+    {
+        $variant = $request->query[HilosFiles::DOWNLOAD_VARIANT_KEY];
+        try {
+            $response = FileDownloadResponse::forFallback($request, $file, $this->storage(),
+                Hilos::$env[EnvConstants::HILOS_FILES_XACCEL_LOCATION]->string());
+        } catch (FsException $e) {
+            $this->logAgentError("File {$file->id} variant {$variant} fallback cannot be served: " . $e->getMessage());
+            return HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR);
+        }
+
+        return $this->imageDownloadReply($response, $file->id, $variant);
+    }
+
+    /**
+     * @param FileDownloadResponse $response Built copy or fallback response
+     * @param int $fileId Original registry id
+     * @param string $variant Requested copy name
+     * @return HttpReplyDTO Response with its storage outcome logged
+     */
+    private function imageDownloadReply(FileDownloadResponse $response, int $fileId, string $variant): HttpReplyDTO
+    {
+        match ($response->outcome) {
+            FileDownloadOutcome::SERVED => null,
+            FileDownloadOutcome::MISSING_ON_DISK => $this->logAgentWarning("File {$fileId} variant {$variant} has a row but no file on disk"),
+            FileDownloadOutcome::TOO_LARGE_TO_SEND_DIRECTLY => $this->logAgentError(
+                "File {$fileId} variant {$variant} is {$response->size} bytes, above the " . FileDownloadResponse::DIRECT_MAX_BYTES
+                . ' the daemon serves itself; set ' . EnvConstants::HILOS_FILES_XACCEL_LOCATION->name,
+            ),
+            FileDownloadOutcome::UNREADABLE => $this->logAgentError("File {$fileId} variant {$variant} is on disk and could not be read"),
         };
 
         return $response->reply;
@@ -446,21 +672,31 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             $fileId = $file->id;
             $storedName = $file->storedName;
 
+            // Keep the names across the row removals: bytes go only after their registry rows.
+            $variantNames = [];
+            foreach (Hilos::$db->fileVariants->forFile($fileId) as $variant) {
+                $variantNames[] = $variant->storedName;
+                $variant->actions->delete();
+            }
+
             try {
                 $file->actions->delete();
             } catch (ForeignKeyConstraintException) {
                 $file->actions->markBound();
                 $this->logAgentWarning("File {$fileId} is referenced by a project row; marked bound");
                 $marked++;
+                // The copy rows are already gone, even when a project link keeps the original.
+                foreach ($variantNames as $variantName) {
+                    $this->deleteSweptFile($variantName);
+                }
                 continue;
             }
             $removed++;
 
-            try {
-                $this->storage()->delete($storedName);
-            } catch (FileDeleteException $e) {
-                $this->logAgentError("Orphan file {$storedName} left on disk: " . $e->getMessage());
+            foreach ($variantNames as $variantName) {
+                $this->deleteSweptFile($variantName);
             }
+            $this->deleteSweptFile($storedName);
         }
 
         $done = $removed + $marked;
@@ -468,6 +704,20 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
 
         if ($done > 0) {
             $this->logAgentInfo("Files sweep: removed {$removed} unbound, marked {$marked} referenced");
+        }
+    }
+
+    /**
+     * @param string $storedName Name whose registry row the sweep has already removed
+     * @throws LogicException When the files door is not configured
+     * @throws FsException When storage fails for a reason other than a refused deletion
+     */
+    private function deleteSweptFile(string $storedName): void
+    {
+        try {
+            $this->storage()->delete($storedName);
+        } catch (FileDeleteException $e) {
+            $this->logAgentError("Orphan file {$storedName} left on disk: " . $e->getMessage());
         }
     }
 

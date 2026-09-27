@@ -22,6 +22,9 @@ FROM php:8.4-cli
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
     libssl-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
     git \
     zip \
     unzip \
@@ -33,7 +36,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Align with root composer.json (ext-posix, pcntl, sockets, mbstring, mysqli, …)
+# GD draws image variants (HilosFeature::IMAGES); the suite renders real pictures.
+RUN docker-php-ext-configure gd --with-jpeg --with-webp
 RUN docker-php-ext-install -j$(nproc) \
+    gd \
     sockets \
     pcntl \
     posix \

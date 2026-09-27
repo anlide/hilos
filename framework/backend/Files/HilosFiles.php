@@ -17,6 +17,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
+use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Storage\FilesStorageInterface;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
@@ -37,6 +38,9 @@ class HilosFiles
     /** @var string Query key carrying the id of the file served at {@see self::DOWNLOAD_PATH} */
     public const string DOWNLOAD_ID_KEY = 'id';
 
+    public const string DOWNLOAD_VARIANT_KEY = 'variant';
+    public const string DOWNLOAD_SIGNATURE_KEY = 'v';
+
     /**
      * @param FilesStorageInterface $storage Where the registry's files are kept. It lives on the door so that
      *     every process reaching the registry sees the same storage; only {@see AbstractFilesLibraryAgent} writes it.
@@ -53,11 +57,21 @@ class HilosFiles
      * Whether the browser gets the file is decided when it asks, by the row's visibility.
      *
      * @param int $fileId Id of the registry row
-     * @return string Address of the file, with its id in the query
+     * @param ?string $variant Declared image variant, null for the original
+     * @return string Address of the file or its revisioned image copy
+     * @throws InvalidArgumentException When the variant is undeclared or its declaration is malformed
      */
-    public static function downloadPath(int $fileId): string
+    public static function downloadPath(int $fileId, ?string $variant = null): string
     {
-        return self::DOWNLOAD_PATH . HttpConstants::QUERY_STRING_SEPARATOR . http_build_query([self::DOWNLOAD_ID_KEY => $fileId]);
+        $query = [self::DOWNLOAD_ID_KEY => $fileId];
+        if ($variant !== null) {
+            $declaration = ImageVariant::named($variant)
+                ?? throw new InvalidArgumentException("Image variant {$variant} is not declared");
+            $query[self::DOWNLOAD_VARIANT_KEY] = $variant;
+            $query[self::DOWNLOAD_SIGNATURE_KEY] = $declaration->signature();
+        }
+
+        return self::DOWNLOAD_PATH . HttpConstants::QUERY_STRING_SEPARATOR . http_build_query($query);
     }
 
     /**

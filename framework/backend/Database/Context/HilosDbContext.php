@@ -12,6 +12,7 @@ use Hilos\Database\Object\Collection\AccountDeletions as ObjectAccountDeletions;
 use Hilos\Database\Object\Collection\DataExports as ObjectDataExports;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\Files as ObjectFiles;
+use Hilos\Database\Object\Collection\FileVariants as ObjectFileVariants;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
@@ -35,6 +36,7 @@ use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeleti
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
+use Hilos\Database\View\Collection\FileVariants as DbCollectionFileVariants;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
@@ -56,6 +58,7 @@ use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifier
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
 use Hilos\Database\Actions\Collection\DataExportsActions;
 use Hilos\Database\Actions\Collection\FilesActions;
+use Hilos\Database\Actions\Collection\FileVariantsActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\OAuthProvidersActions;
@@ -72,6 +75,7 @@ use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
 use Hilos\Database\Actions\Item\DataExportActions;
 use Hilos\Database\Actions\Item\FileActions;
+use Hilos\Database\Actions\Item\FileVariantActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
 use Hilos\Database\Actions\Item\SecondFactorActions;
@@ -111,6 +115,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionDataExports $dataExports Data export requests
  * @property-read DbCollectionAccountDeletions $accountDeletions
  * @property-read DbCollectionFiles $files
+ * @property-read DbCollectionFileVariants $fileVariants
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -157,6 +162,8 @@ abstract class HilosDbContext extends DbContext
     public const string dataExport = 'dataExport';
     public const string files = 'files';
     public const string file = 'file';
+    public const string fileVariants = 'fileVariants';
+    public const string fileVariant = 'fileVariant';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
@@ -196,7 +203,7 @@ abstract class HilosDbContext extends DbContext
      *
      * The files registry (HIL-336) loads by row id and by the files library's bounded batch of
      * unbound rows, never as a full set, so it stays inert for projects that do not activate the
-     * hilos_file table.
+     * hilos_file table. Its image copies load by original file and stay inert without their table too (HIL-141).
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
@@ -302,6 +309,9 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::files] = ObjectFiles::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::files, DbCollectionFiles::class, FilesActions::class, FileActions::class);
+
+        $this->_objectCollections[self::fileVariants] = ObjectFileVariants::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::fileVariants, DbCollectionFileVariants::class, FileVariantsActions::class, FileVariantActions::class);
     }
 
     /**

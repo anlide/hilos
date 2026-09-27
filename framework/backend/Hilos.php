@@ -346,6 +346,14 @@ abstract class Hilos implements TruthSourceOwner
      */
     public const array UPLOAD_TARGETS = [];
 
+    /**
+     * Named image copies: width, height, fit and optional format (WEBP by default).
+     * Names starting with hilos_ are reserved for framework features; declare together with IMAGES.
+     *
+     * @var array<string, array<string, mixed>> Image variant declaration boundary
+     */
+    public const array IMAGE_VARIANTS = [];
+
     /** Page table bindings keyed by page name, then table name. */
     public const array PAGE_TABLES = [];
 

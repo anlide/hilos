@@ -70,7 +70,7 @@ use ReflectionProperty;
 final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** Framework tables the cases raise, in dependency order. */
-    private const array TABLES = ['hilos_setting', 'hilos_file'];
+    private const array TABLES = ['hilos_setting', 'hilos_file', 'hilos_file_variant'];
 
     private const string GUEST = 'ak-publish-guest';
 
@@ -365,6 +365,27 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         try {
             $this->declare(self::SIGNED_IN, 'u3', size: 1);
             self::fail('One byte past the limit is refused');
+        } catch (ValidationException $refused) {
+            self::assertSame('Storage limit would be exceeded', $refused->getMessage());
+        }
+        self::assertNull(Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u3'));
+    }
+
+    /** Image copies consume the same storage budget as originals and pending uploads. */
+    public function testTheLimitIncludesImageVariants(): void
+    {
+        Hilos::$setting = new SettingsAccessor(FilePublishLimitedSettingsCatalog::class);
+        $this->complete(self::SIGNED_IN, 'u1', str_repeat('a', 8));
+        $answer = $this->publish(self::SIGNED_IN, ['u1']);
+        ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_FILES_LIBRARY);
+        Hilos::$db->fileVariants->actions->create($answer->fileIds[0], 'thumb', '1234abcd', 'thumb.webp', 'image/webp', 7);
+        self::assertSame(15, Hilos::$db->files->totalSize());
+
+        $this->declare(self::SIGNED_IN, 'u2', size: 5);
+
+        try {
+            $this->declare(self::SIGNED_IN, 'u3', size: 1);
+            self::fail('The next byte after the original, copy and pending upload must be refused');
         } catch (ValidationException $refused) {
             self::assertSame('Storage limit would be exceeded', $refused->getMessage());
         }

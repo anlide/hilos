@@ -46,6 +46,9 @@ final class HilosAgentType
     /** @var string Hilos uploads agent (sole owner of the upload sessions: declared files, their signed chunks and temporary files) */
     public const string HILOS_UPLOADS = 'hilos_uploads';
 
+    /** @var string Hilos images agent (renders registry picture variants into temporary files for the files library) */
+    public const string HILOS_IMAGES = 'hilos_images';
+
     /** @var string Hilos auth code agent (async owner of probing, minting and delivering phone one-time codes) */
     public const string HILOS_AUTH_CODE = 'hilos_auth_code';
 

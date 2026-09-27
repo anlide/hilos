@@ -6,8 +6,11 @@ namespace Hilos\Tests\Unit\Files;
 
 use Hilos\Constants\HttpConstants;
 use Hilos\Database\Entity\Item\File as EntityFile;
+use Hilos\Database\Entity\Item\FileVariant as EntityFileVariant;
 use Hilos\Database\Object\Item\File as ObjectFile;
+use Hilos\Database\Object\Item\FileVariant as ObjectFileVariant;
 use Hilos\Database\View\Item\File;
+use Hilos\Database\View\Item\FileVariant;
 use Hilos\Files\Download\FileDownloadOutcome;
 use Hilos\Files\Download\FileDownloadResponse;
 use Hilos\Files\FileVisibility;
@@ -153,6 +156,80 @@ final class FileDownloadResponseTest extends TestCase
 
         $this->assertSame(FileDownloadOutcome::UNREADABLE, $response->outcome);
         $this->assertSame(HttpConstants::HTTP_NOT_FOUND, $response->reply->status);
+    }
+
+    /** Copies use their own bytes, MIME type and extension, and inherit the original's cache visibility. */
+    public function testAVariantIsServedDirectlyOrThroughNginx(): void
+    {
+        $request = new HttpRequestDTO(str_repeat('c', 32), 'GET', '/_hilos/file', ['id' => '1', 'variant' => 'thumb'], null, null);
+        foreach ([FileVisibility::PUBLIC, FileVisibility::OWNER, FileVisibility::AUTHENTICATED] as $visibility) {
+            foreach (['', self::XACCEL_LOCATION] as $xAccelLocation) {
+                $storage = $this->storage('webp copy', 'copy.webp');
+                $response = FileDownloadResponse::forVariant(
+                    $request, $this->file('photo.jpg', 'image/jpeg', $visibility), $this->variant(), $storage, $xAccelLocation,
+                );
+                self::assertSame(200, $response->reply->status);
+                self::assertSame('image/webp', $response->reply->headers[HttpConstants::HEADER_CONTENT_TYPE]);
+                self::assertSame("inline; filename=\"photo.webp\"; filename*=UTF-8''photo.webp",
+                    $response->reply->headers[HttpConstants::HEADER_CONTENT_DISPOSITION]);
+                self::assertSame('nosniff', $response->reply->headers[HttpConstants::HEADER_X_CONTENT_TYPE_OPTIONS]);
+                self::assertSame(($visibility === FileVisibility::PUBLIC ? 'public' : 'private') . ', max-age=31536000, immutable',
+                    $response->reply->headers[HttpConstants::HEADER_CACHE_CONTROL]);
+                if ($xAccelLocation === '') {
+                    self::assertSame('webp copy', $response->reply->body);
+                    self::assertSame(1, $storage->reads);
+                } else {
+                    self::assertSame('/_files_internal/copy.webp', $response->reply->headers[HttpConstants::HEADER_X_ACCEL_REDIRECT]);
+                    self::assertSame('', $response->reply->body);
+                    self::assertSame(0, $storage->reads);
+                }
+            }
+        }
+    }
+
+    /** Original responses used as fallbacks have a one-hour cache, including behind nginx. */
+    public function testFallbackKeepsTheOriginalHeadersButShortensTheCache(): void
+    {
+        $request = new HttpRequestDTO(str_repeat('c', 32), 'GET', '/_hilos/file', ['id' => '1', 'variant' => 'thumb'], null, null);
+        foreach ([FileVisibility::PUBLIC, FileVisibility::OWNER, FileVisibility::AUTHENTICATED] as $visibility) {
+            foreach (['', self::XACCEL_LOCATION] as $xAccelLocation) {
+                $response = FileDownloadResponse::forFallback(
+                    $request, $this->file('photo.jpg', 'image/jpeg', $visibility), $this->storage('original'), $xAccelLocation,
+                );
+                self::assertSame(200, $response->reply->status);
+                self::assertSame('image/jpeg', $response->reply->headers[HttpConstants::HEADER_CONTENT_TYPE]);
+                self::assertSame("inline; filename=\"photo.jpg\"; filename*=UTF-8''photo.jpg",
+                    $response->reply->headers[HttpConstants::HEADER_CONTENT_DISPOSITION]);
+                self::assertSame(($visibility === FileVisibility::PUBLIC ? 'public' : 'private') . ', max-age=3600',
+                    $response->reply->headers[HttpConstants::HEADER_CACHE_CONTROL]);
+            }
+        }
+    }
+
+    /** A name without a stem still gets a usable download filename. */
+    public function testAVariantOfADotfileHasAFallbackFilename(): void
+    {
+        $request = new HttpRequestDTO(str_repeat('c', 32), 'GET', '/_hilos/file', ['id' => '1'], null, null);
+        $response = FileDownloadResponse::forVariant(
+            $request, $this->file('.jpg', 'image/jpeg'), $this->variant(), $this->storage('copy', 'copy.webp'), '',
+        );
+        self::assertSame("inline; filename=\"file.webp\"; filename*=UTF-8''file.webp",
+            $response->reply->headers[HttpConstants::HEADER_CONTENT_DISPOSITION]);
+    }
+
+    /** @return FileVariant Registered WEBP copy fixture */
+    private function variant(): FileVariant
+    {
+        return new FileVariant(ObjectFileVariant::fromEntity(EntityFileVariant::fromRow([
+            EntityFileVariant::id => 2,
+            EntityFileVariant::file_id => 1,
+            EntityFileVariant::variant => 'thumb',
+            EntityFileVariant::signature => '1234abcd',
+            EntityFileVariant::stored_name => 'copy.webp',
+            EntityFileVariant::mime_type => 'image/webp',
+            EntityFileVariant::size => 9,
+            EntityFileVariant::created_at => '2026-09-27 12:00:00',
+        ])));
     }
 
     /**

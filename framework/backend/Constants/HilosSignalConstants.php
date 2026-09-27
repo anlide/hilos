@@ -1596,6 +1596,19 @@ final class HilosSignalConstants
      */
     public const string HILOS_FILE_PUBLISH = 'hilos_file_publish';
 
+    /**
+     * Files library → images agent: draw a registry picture variant (HIL-141).
+     * The browser request rides along and comes back in the answer. retry asks again after a
+     * ready with no live copy in storage; a retry is never answered ready.
+     */
+    public const string HILOS_IMAGE_RENDER = 'hilos_image_render';
+
+    /**
+     * Images agent → files library: the variant drawn into a temporary file, or why not,
+     * with every HTTP request that waited for it (HIL-141).
+     */
+    public const string HILOS_IMAGE_RENDERED = 'hilos_image_rendered';
+
     // ── Hilos notification seam: any worker → the notifications library (agent signal) ──
     /**
      * {@see HilosNotifier::emit()} → notifications library: write this notification and deliver it.

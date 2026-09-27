@@ -43,8 +43,8 @@ public const array AGENTS = [
 
 `FilesLibraryAgent` and its daemon are empty subclasses of
 `AbstractFilesLibraryAgent` / `AbstractFilesLibraryAgentDaemon`: the registry has
-no project half. The project also copies the migration stub
-`create_hilos_file.sql`, folds `FilesSettingsCatalog::getCatalog()` into its
+no project half. The project also copies the migration stubs
+`create_hilos_file.sql` and `create_hilos_file_variant.sql`, folds `FilesSettingsCatalog::getCatalog()` into its
 settings catalog, and registers the files directory in its FS context:
 
 ```php
@@ -123,6 +123,11 @@ an error. Only the library calls them: publication puts files in, the janitor
 takes them out. Two reads serve a file (below): `size($storedName)`, null when
 nothing is kept under the name, and `read($storedName)`, the whole file.
 
+[Image variants](images.md) share that storage under their own random names.
+The images agent reads the original and draws into tmp; the library alone
+stores the copy and writes its row. The copy table belongs to FILES even in a
+project without IMAGES, so cleanup and size accounting have one path.
+
 The framework ships `LocalFilesStorage`: the file of the stored name in the
 files directory, asked for on every call, because the facade creates the door
 before the FS context is configured. It renames the temporary file, and when the
@@ -157,12 +162,19 @@ Every 15 minutes the library takes up to 100 unbound rows older than the
 setting `files.unbound_ttl_hours` (default 24; zero or less switches the janitor
 off, read on every pass), oldest first, and for each one, in this order:
 
-1. removes the **row**. A foreign-key refusal means a project row links the file
+1. removes its **copy rows**, collecting their storage names first;
+2. removes the **original row**. A foreign-key refusal means a project row links the file
    and only its bind frame was lost: the row is marked bound instead, the file
    stays, and a warning says so;
-2. removes the **file**, through the storage. An absent file is not an error. A
+3. removes the **copy files and original**, through the storage. An absent file is not an error. A
    file that will not go is logged as an orphan, and the row is not brought
    back: a spare file on disk is cheaper than a row pointing at nothing.
+
+Copy files are removed even when a project's foreign key keeps the original:
+their rows already went, and leaving the bytes would leave orphans. The next
+variant request draws them again. The copy's `ON DELETE CASCADE` foreign key is
+a safeguard; deleting the copy rows first means the janitor never mistakes
+its own copy for a project's link.
 
 A full batch that did something makes the next tick continue without waiting
 for the schedule. Only these two refusals are caught; anything else — the
@@ -182,6 +194,11 @@ declares `HilosFeature::FILES` and nowhere else, and it is answered by the
 library rather than by the master, which may read neither the row nor the
 session — the mechanism is [agent-http-routes.md](agent-http-routes.md). The
 browser's cookie rides along by itself, so the address is same-origin.
+
+With IMAGES declared, `variant=<name>` asks for a named image copy, built with
+`HilosFiles::downloadPath($fileId, $variant)`. The same access check applies;
+a missing copy is drawn on its first request. The address, signature, renderer
+and fallback policy are [images.md](images.md).
 
 Who gets the file is the row's `visibility` (`FileAccess`):
 

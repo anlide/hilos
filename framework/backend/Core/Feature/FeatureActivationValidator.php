@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Hilos;
 
@@ -101,6 +106,12 @@ final class FeatureActivationValidator
             in_array(HilosFeature::UPLOADS, $declared, true),
             $this->constantArray($hilosClass, 'UPLOAD_TARGETS'),
             $pages,
+            $errors,
+        );
+        $this->validateImages(
+            in_array(HilosFeature::IMAGES, $declared, true),
+            $this->constantArray($hilosClass, 'IMAGE_VARIANTS'),
+            $agents,
             $errors,
         );
 
@@ -482,6 +493,44 @@ final class FeatureActivationValidator
                     . 'frame_binary: frame_binary is routed by type - a page upload and '
                     . "{$feature} cannot share a project";
             }
+        }
+    }
+
+    /**
+     * @param bool $declared Whether IMAGES is declared
+     * @param array<mixed> $variants Project variant catalog
+     * @param array<mixed> $agents Project agent registry
+     * @param list<string> $errors Activation refusals collected together
+     */
+    private function validateImages(bool $declared, array $variants, array $agents, array &$errors): void
+    {
+        $feature = $this->name(HilosFeature::IMAGES);
+        if (!$declared) {
+            if ($variants !== []) {
+                $errors[] = "IMAGE_VARIANTS names variants, but {$feature} is not declared";
+            }
+            return;
+        }
+        if ($variants === []) {
+            $errors[] = "{$feature} is declared but IMAGE_VARIANTS names no variant";
+        }
+        $formats = [];
+        foreach ($variants as $name => $declaration) {
+            try {
+                $formats[] = ImageVariant::fromDeclaration((string)$name, $declaration)->format;
+            } catch (InvalidArgumentException $e) {
+                $errors[] = $e->getMessage();
+            }
+        }
+        $entry = $agents[HilosAgentType::HILOS_IMAGES] ?? null;
+        $class = is_array($entry) ? ($entry[AgentRegistryKey::WORKER] ?? null) : null;
+        if (!is_string($class) || !is_a($class, ImagesAgent::class, true)) {
+            $errors[] = "{$feature} is declared but its worker must be " . ImagesAgent::class . ' or a subclass';
+            return;
+        }
+        $reason = $class::createEngine()->unusableReason($formats);
+        if ($reason !== null) {
+            $errors[] = "{$feature} is declared but the image engine cannot run: {$reason}";
         }
     }
 

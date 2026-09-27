@@ -11,6 +11,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Collection\Files as EntityFiles;
 use Hilos\Database\Entity\Item\File as EntityFile;
+use Hilos\Database\Entity\Item\FileVariant as EntityFileVariant;
 use Hilos\Database\Object\Item\File as ObjectFile;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
@@ -54,7 +55,7 @@ final class Files extends Objects
     }
 
     /**
-     * Sums the sizes of every registered file, bound or not.
+     * Sums the sizes of every registered file and its image variants, bound or not.
      *
      * @return int Bytes the registry's files take, 0 when it holds none
      * @throws DatabaseException When the sum query fails
@@ -62,7 +63,8 @@ final class Files extends Objects
     public function totalSize(): int
     {
         $row = Database::sql(
-            'SELECT COALESCE(SUM(`' . EntityFile::size . '`), 0) AS `total` FROM `' . EntityFile::_table . '`',
+            'SELECT (SELECT COALESCE(SUM(`' . EntityFile::size . '`), 0) FROM `' . EntityFile::_table . '`)'
+                . ' + (SELECT COALESCE(SUM(`' . EntityFileVariant::size . '`), 0) FROM `' . EntityFileVariant::_table . '`) AS `total`',
         )->firstRow();
 
         return $row === null ? 0 : (int)$row['total'];

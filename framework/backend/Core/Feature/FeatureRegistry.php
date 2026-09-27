@@ -10,6 +10,7 @@ use Hilos\Core\Feature\Definition\CodeChannelsFeature;
 use Hilos\Core\Feature\Definition\BackupFeature;
 use Hilos\Core\Feature\Definition\FilesFeature;
 use Hilos\Core\Feature\Definition\HilosUsersFeature;
+use Hilos\Core\Feature\Definition\ImagesFeature;
 use Hilos\Core\Feature\Definition\LogsFeature;
 use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
 use Hilos\Core\Feature\Definition\NotificationsFeature;
@@ -98,6 +99,7 @@ class FeatureRegistry
             new AuthFeature(),
             new FilesFeature(),
             new UploadsFeature(),
+            new ImagesFeature(),
         ];
     }
 }

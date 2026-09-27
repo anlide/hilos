@@ -163,6 +163,7 @@ use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\Image\DTO\ImageRenderedSignalData;
 use Hilos\Files\HilosFiles;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
@@ -581,6 +582,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
+            HilosSignalConstants::HILOS_IMAGE_RENDERED => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
@@ -748,6 +750,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => NotificationForgetUserSignalData::class,
             HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
             HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
+            HilosSignalConstants::HILOS_IMAGE_RENDERED => ImageRenderedSignalData::class,
             HilosSignalConstants::HILOS_SETTING_WRITE => SettingWriteSignalData::class,
             HilosSignalConstants::HILOS_SETTING_RESET => SettingResetSignalData::class,
             HilosSignalConstants::HILOS_SETTING_DELETE => SettingDeleteSignalData::class,

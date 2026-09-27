@@ -7,10 +7,12 @@ namespace Hilos\Files\Download;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Database\View\Item\File;
+use Hilos\Database\View\Item\FileVariant;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Storage\FilesStorageInterface;
 use Hilos\Fs\FsException;
+use Hilos\Fs\FsFile;
 use Hilos\HilosException;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
@@ -45,6 +47,9 @@ final readonly class FileDownloadResponse
 
     /** @var string Cache-Control of a file only some viewers may see: kept by the browser alone */
     private const string CACHE_CONTROL_PRIVATE = 'private, max-age=31536000, immutable';
+
+    private const string CACHE_CONTROL_FALLBACK_PUBLIC = 'public, max-age=3600';
+    private const string CACHE_CONTROL_FALLBACK_PRIVATE = 'private, max-age=3600';
 
     /** @var string Prefix of the MIME types a browser may render in place */
     private const string IMAGE_MIME_PREFIX = 'image/';
@@ -85,7 +90,77 @@ final readonly class FileDownloadResponse
         FilesStorageInterface $storage,
         string $xAccelLocation,
     ): self {
-        $size = $storage->size($file->storedName);
+        return self::build($request, $file->storedName, $file->mimeType, $file->filename,
+            $file->visibility === FileVisibility::PUBLIC ? self::CACHE_CONTROL_PUBLIC : self::CACHE_CONTROL_PRIVATE,
+            $storage, $xAccelLocation);
+    }
+
+    /**
+     * @param HttpRequestDTO $request Request being answered
+     * @param File $file Original row, whose visibility and filename the copy inherits
+     * @param FileVariant $variant Registered copy to serve
+     * @param FilesStorageInterface $storage Where the copy is kept
+     * @param string $xAccelLocation Internal nginx location, empty for a direct reply
+     * @return self Copy response or its storage refusal
+     * @throws FsException When the storage cannot be reached
+     */
+    public static function forVariant(
+        HttpRequestDTO $request,
+        File $file,
+        FileVariant $variant,
+        FilesStorageInterface $storage,
+        string $xAccelLocation,
+    ): self {
+        $basename = pathinfo($file->filename, PATHINFO_FILENAME);
+
+        return self::build($request, $variant->storedName, $variant->mimeType,
+            ($basename === '' ? 'file' : $basename) . FsFile::extensionForMime($variant->mimeType),
+            $file->visibility === FileVisibility::PUBLIC ? self::CACHE_CONTROL_PUBLIC : self::CACHE_CONTROL_PRIVATE,
+            $storage, $xAccelLocation);
+    }
+
+    /**
+     * Revisit a failed rendering after an hour, rather than caching the original for a year.
+     *
+     * @param HttpRequestDTO $request Request being answered
+     * @param File $file Original to send in place of its unavailable variant
+     * @param FilesStorageInterface $storage Where the original is kept
+     * @param string $xAccelLocation Internal nginx location, empty for a direct reply
+     * @return self Original response with a short cache lifetime, or its storage refusal
+     * @throws FsException When the storage cannot be reached
+     */
+    public static function forFallback(
+        HttpRequestDTO $request,
+        File $file,
+        FilesStorageInterface $storage,
+        string $xAccelLocation,
+    ): self {
+        return self::build($request, $file->storedName, $file->mimeType, $file->filename,
+            $file->visibility === FileVisibility::PUBLIC ? self::CACHE_CONTROL_FALLBACK_PUBLIC : self::CACHE_CONTROL_FALLBACK_PRIVATE,
+            $storage, $xAccelLocation);
+    }
+
+    /**
+     * @param HttpRequestDTO $request Request being answered
+     * @param string $storedName File to read from storage
+     * @param string $mimeType Encoded MIME type
+     * @param string $filename Download filename
+     * @param string $cacheControl Cache policy selected by the response kind
+     * @param FilesStorageInterface $storage Where the bytes are kept
+     * @param string $xAccelLocation Internal nginx location, empty for direct transport
+     * @return self Served response or the precise storage refusal
+     * @throws FsException When the storage cannot be reached
+     */
+    private static function build(
+        HttpRequestDTO $request,
+        string $storedName,
+        string $mimeType,
+        string $filename,
+        string $cacheControl,
+        FilesStorageInterface $storage,
+        string $xAccelLocation,
+    ): self {
+        $size = $storage->size($storedName);
         if ($size === null) {
             return new self(
                 HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND),
@@ -94,23 +169,20 @@ final readonly class FileDownloadResponse
             );
         }
 
-        $mimeType = $file->mimeType;
         $inline = str_starts_with($mimeType, self::IMAGE_MIME_PREFIX) && $mimeType !== self::SVG_MIME_TYPE;
         $headers = [
             HttpConstants::HEADER_CONTENT_TYPE => $mimeType,
             HttpConstants::HEADER_CONTENT_DISPOSITION => HttpHeaderHelper::contentDisposition(
                 $inline ? HttpConstants::CONTENT_DISPOSITION_INLINE : HttpConstants::CONTENT_DISPOSITION_ATTACHMENT,
-                $file->filename,
+                $filename,
             ),
-            HttpConstants::HEADER_CACHE_CONTROL => $file->visibility === FileVisibility::PUBLIC
-                ? self::CACHE_CONTROL_PUBLIC
-                : self::CACHE_CONTROL_PRIVATE,
+            HttpConstants::HEADER_CACHE_CONTROL => $cacheControl,
             HttpConstants::HEADER_X_CONTENT_TYPE_OPTIONS => HttpConstants::X_CONTENT_TYPE_OPTIONS_NOSNIFF,
         ];
 
         if ($xAccelLocation !== '') {
             $headers[HttpConstants::HEADER_X_ACCEL_REDIRECT] = rtrim($xAccelLocation, self::PATH_SEPARATOR)
-                . self::PATH_SEPARATOR . rawurlencode($file->storedName);
+                . self::PATH_SEPARATOR . rawurlencode($storedName);
 
             return new self(
                 HttpReplyDTO::response($request, HttpConstants::HTTP_OK, $headers, ''),
@@ -128,7 +200,7 @@ final readonly class FileDownloadResponse
         }
 
         try {
-            $body = $storage->read($file->storedName);
+            $body = $storage->read($storedName);
         } catch (FsException) {
             return new self(
                 HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND),

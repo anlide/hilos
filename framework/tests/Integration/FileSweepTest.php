@@ -17,6 +17,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -47,7 +48,7 @@ use ReflectionProperty;
 final class FileSweepTest extends FrameworkIntegrationTestCase
 {
     /** Framework tables the cases raise, in dependency order. */
-    private const array TABLES = ['hilos_setting', 'hilos_file'];
+    private const array TABLES = ['hilos_setting', 'hilos_file', 'hilos_file_variant'];
 
     /** Project table whose foreign key holds a registry row, as a chat attachment will (HIL-144). */
     private const string LINK_TABLE = 'file_sweep_test_link';
@@ -149,6 +150,100 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         self::assertContains('Files sweep: removed 1 unbound, marked 0 referenced', $this->agent->infos);
     }
 
+    /** The library's own copies must not be mistaken for a project's link. */
+    public function testAnOldUnboundFileLosesBothOfItsVariants(): void
+    {
+        $old = $this->publish('old.bin', hoursAgo: self::OLD_HOURS);
+        $other = $this->publish('young.bin', hoursAgo: 0);
+        $this->keepVariant($old, 'thumb', 'old-thumb.webp');
+        $this->keepVariant($old, 'preview', 'old-preview.webp');
+        $this->keepVariant($other, 'thumb', 'young-thumb.webp');
+        $copies = Hilos::$db->fileVariants->forFile($old);
+        self::assertCount(2, $copies);
+
+        $this->runSweep();
+
+        self::assertFalse(self::rowExists($old));
+        self::assertSame([], Hilos::$db->fileVariants->forFile($old));
+        foreach ($copies as $copy) {
+            self::assertNull(Hilos::$db->fileVariants[$copy->id], 'Deleted copies leave the item cache too');
+        }
+        self::assertFileDoesNotExist($this->filesPath . '/old.bin');
+        self::assertFileDoesNotExist($this->filesPath . '/old-thumb.webp');
+        self::assertFileDoesNotExist($this->filesPath . '/old-preview.webp');
+        self::assertCount(1, Hilos::$db->fileVariants->forFile($other));
+        self::assertFileExists($this->filesPath . '/young-thumb.webp');
+        self::assertSame([], $this->agent->warnings);
+    }
+
+    /** A project link keeps the original; the removed copy rows must leave no stray bytes. */
+    public function testAReferencedFileKeepsItsOriginalAndLosesItsVariants(): void
+    {
+        $linked = $this->publish('linked.bin', hoursAgo: self::OLD_HOURS);
+        $this->keepVariant($linked, 'thumb', 'linked-thumb.webp');
+        $this->keepVariant($linked, 'preview', 'linked-preview.webp');
+        Database::sqlRun('INSERT INTO `' . self::LINK_TABLE . '` (`file_id`) VALUES (?)', [$linked]);
+
+        $this->runSweep();
+
+        self::assertTrue(self::rowExists($linked));
+        self::assertSame(1, self::boundFlag($linked));
+        self::assertSame([], Hilos::$db->fileVariants->forFile($linked));
+        self::assertFileExists($this->filesPath . '/linked.bin');
+        self::assertFileDoesNotExist($this->filesPath . '/linked-thumb.webp');
+        self::assertFileDoesNotExist($this->filesPath . '/linked-preview.webp');
+        self::assertContains("File {$linked} is referenced by a project row; marked bound", $this->agent->warnings);
+    }
+
+    /** Replacing a rendering keeps the same row key and updates the values read after reloading. */
+    public function testAVariantCanBeReplacedAndReadByItsFileAndName(): void
+    {
+        $fileId = $this->publish('original.bin', hoursAgo: 0);
+        $this->keepVariant($fileId, 'thumb', 'thumb.webp');
+        $variant = Hilos::$db->fileVariants->findFor($fileId, 'thumb');
+        self::assertNotNull($variant);
+        $id = $variant->id;
+
+        $variant->actions->replace('abcdef12', 'new-thumb.png', 'image/png', 42);
+
+        Hilos::$db = new FileSweepTestDbContext();
+        Hilos::$db->configure();
+        $reloaded = Hilos::$db->fileVariants->findFor($fileId, 'thumb');
+        self::assertNotNull($reloaded);
+        self::assertSame($id, $reloaded->id);
+        self::assertSame('abcdef12', $reloaded->signature);
+        self::assertSame('new-thumb.png', $reloaded->storedName);
+        self::assertSame('image/png', $reloaded->mimeType);
+        self::assertSame(42, $reloaded->size);
+        self::assertNull(Hilos::$db->fileVariants->findFor($fileId, 'absent'));
+        self::assertSame(43, Hilos::$db->files->totalSize());
+    }
+
+    /** A refused replacement must not leave the cached item pointing at bytes the caller will discard. */
+    public function testARefusedReplacementKeepsTheStoredCopyInMemory(): void
+    {
+        $fileId = $this->publish('original.bin', hoursAgo: 0);
+        $this->keepVariant($fileId, 'thumb', 'thumb.webp');
+        $this->keepVariant($fileId, 'preview', 'preview.webp');
+        $variant = Hilos::$db->fileVariants->findFor($fileId, 'thumb');
+        self::assertNotNull($variant);
+
+        try {
+            $variant->actions->replace('abcdef12', 'preview.webp', 'image/png', 42);
+            self::fail('Two rows cannot claim the same stored name');
+        } catch (DuplicateEntryException) {
+            self::assertSame('thumb.webp', $variant->storedName);
+            self::assertSame('1234abcd', $variant->signature);
+            self::assertSame('image/webp', $variant->mimeType);
+            self::assertSame(4, $variant->size);
+        }
+        self::assertSame(9, Hilos::$db->files->totalSize());
+
+        $variant->actions->replace('abcdef12', 'new-thumb.png', 'image/png', 42);
+        self::assertSame('new-thumb.png', Hilos::$db->fileVariants->findFor($fileId, 'thumb')?->storedName);
+        self::assertSame(47, Hilos::$db->files->totalSize());
+    }
+
     public function testAYoungUnboundFileAndAnOldBoundFileStay(): void
     {
         $young = $this->publish('young.bin', hoursAgo: 0);
@@ -213,6 +308,22 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         self::assertStringStartsWith('Orphan file ' . self::UNDELETABLE_NAME . ' left on disk: ', $this->agent->errors[0]);
     }
 
+    /** A stuck copy is reported after its row goes, and does not prevent the original's cleanup. */
+    public function testAVariantThatStaysOnDiskIsReportedAsAnOrphan(): void
+    {
+        $old = $this->register('absent-original.bin', hoursAgo: self::OLD_HOURS);
+        Hilos::$db->fileVariants->actions->create($old, 'thumb', '1234abcd', self::UNDELETABLE_NAME, 'image/webp', 1);
+        Hilos::$fs = new FileSweepTestFsContext(self::UNDELETABLE_DIRECTORY);
+        Hilos::$fs->configure();
+
+        $this->runSweep();
+
+        self::assertFalse(self::rowExists($old));
+        self::assertSame([], Hilos::$db->fileVariants->forFile($old));
+        self::assertCount(1, $this->agent->errors);
+        self::assertStringStartsWith('Orphan file ' . self::UNDELETABLE_NAME . ' left on disk: ', $this->agent->errors[0]);
+    }
+
     public function testARowAProjectRowReferencesIsMarkedBoundAndKeepsItsFile(): void
     {
         $linked = $this->publish('linked.bin', hoursAgo: self::OLD_HOURS);
@@ -252,6 +363,18 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         $this->bind([$file]);
 
         self::assertSame(0, self::boundFlag($file));
+    }
+
+    /**
+     * @param int $fileId Original registry file id
+     * @param string $variant Variant name
+     * @param string $storedName Copy's name in storage
+     * @throws HilosException When the copy cannot be registered
+     */
+    private function keepVariant(int $fileId, string $variant, string $storedName): void
+    {
+        file_put_contents($this->filesPath . '/' . $storedName, 'copy');
+        Hilos::$db->fileVariants->actions->create($fileId, $variant, '1234abcd', $storedName, 'image/webp', 4);
     }
 
     /**

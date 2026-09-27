@@ -76,6 +76,13 @@ router's ordinary 404.
    `Connection` by the keep-alive rule, finishes the request's analytics row
    with the reply's status and the time since parking, and goes on parsing.
 
+The addressed agent may carry the held request onward in one of its own
+frames and answer when it returns. Whoever calls `replyToHttpRequest()` sends
+the response; the original request still carries the correlation and origin
+node. [Image variants](images.md) use this trip: the files library sends the
+request to the renderer and receives it back with the temporary copy, then
+stores and serves that copy without keeping a wait map of its own.
+
 ## When Nobody Answers
 
 - **The master cannot hand it over** — no agent declares it, the agent is not

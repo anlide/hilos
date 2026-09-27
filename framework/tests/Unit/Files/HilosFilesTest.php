@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Files;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Core\Feature\HilosFeature;
@@ -16,6 +17,8 @@ use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
@@ -59,6 +62,24 @@ final class HilosFilesTest extends TestCase
             AbstractFilesLibraryAgent::AGENT_SIGNALS[HilosSignalConstants::HILOS_FILE_BIND] ?? null,
         );
         self::assertSame(HilosAgentType::HILOS_FILES_LIBRARY, AbstractFilesLibraryAgent::AGENT_TYPE);
+    }
+
+    /** The optional variant adds its settings signature without changing an original's address. */
+    public function testTheVariantAddressCarriesItsDeclarationSignature(): void
+    {
+        self::bindAppClass(HilosFilesVariantsTestHilos::class);
+        self::assertSame('/_hilos/file?id=7', HilosFiles::downloadPath(7));
+        self::assertSame('/_hilos/file?id=7&variant=thumb&v=' . ImageVariant::named('thumb')?->signature(),
+            HilosFiles::downloadPath(7, 'thumb'));
+    }
+
+    /** An undeclared variant is a project error, rather than an address that silently serves something else. */
+    public function testAnUndeclaredVariantCannotBeNamed(): void
+    {
+        self::bindAppClass(HilosFilesVariantsTestHilos::class);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Image variant missing is not declared');
+        HilosFiles::downloadPath(7, 'missing');
     }
 
     public function testAProjectWithoutTheFeatureIsRefusedAtTheDoor(): void
@@ -208,4 +229,12 @@ abstract class HilosFilesPublishingTestHilos extends Hilos
  */
 abstract class HilosFilesUndeclaredTestHilos extends Hilos
 {
+}
+
+/** A project catalog for address construction; no agent starts in this test. */
+abstract class HilosFilesVariantsTestHilos extends Hilos
+{
+    public const array IMAGE_VARIANTS = [
+        'thumb' => [ImageVariant::WIDTH => 384, ImageVariant::HEIGHT => 384, ImageVariant::FIT => ImageFit::CONTAIN],
+    ];
 }

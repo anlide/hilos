@@ -64,4 +64,7 @@ enum HilosFeature: string
 
     /** Upload sessions: declaring a file, receiving its signed chunks, checks, the temporary file until a consumer takes it (HIL-135). */
     case UPLOADS = 'uploads';
+
+    /** Image variants: registry picture copies in declared sizes, drawn on the first request by their agent (HIL-141). */
+    case IMAGES = 'images';
 }

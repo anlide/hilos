@@ -57,7 +57,7 @@ final class Files extends DbCollection
     }
 
     /**
-     * Sums the sizes of every registered file, bound or not.
+     * Sums the sizes of every registered file and its image variants, bound or not.
      *
      * @return int Bytes the registry's files take, 0 when it holds none
      * @throws DatabaseException When the sum query fails

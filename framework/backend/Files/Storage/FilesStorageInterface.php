@@ -15,8 +15,8 @@ use Hilos\Fs\FsException;
  * The seam between the registry and the place its files lie. It lives on the door,
  * {@see HilosFiles::$storage}, and has one writer: {@see AbstractFilesLibraryAgent}, which puts
  * a handed-over temporary file in when it publishes and takes an unbound one out when its
- * janitor sweeps. Its one reader is the same agent serving a file by id (HIL-138): the size to
- * judge whether the daemon may send the file itself, and the bytes when it does. The path
+ * janitor sweeps. The library reads the size and bytes when serving a file by id (HIL-138), and
+ * the images agent reads an original to draw its variants (HIL-141). Only the library keeps the copies. The path
  * nginx is pointed at by X-Accel is not asked of the storage - it is the stored name under the
  * internal location the installation configures.
  *

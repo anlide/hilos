@@ -70,9 +70,9 @@ final class File extends Entity
         'idx_file_owner_hash' => [Entity::INDEX_COLUMNS => [self::owner_user_id, self::content_hash]],
     ];
 
-    // The owner is the NOT NULL column that names a person; nobody hangs a set on a file yet.
+    // The owner names a person; the file's rendered variants hang their sets on this row.
     public const string _setVia = self::owner_user_id;
-    public const bool _setRoot = false;
+    public const bool _setRoot = true;
 
     // The name a person gave the file can say who they are or what it is about; the rest
     // is the registry's own bookkeeping. The content hash is a fingerprint of bytes, not a
