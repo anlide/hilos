@@ -31,7 +31,7 @@ export const HilosStepUpOperationRowKey = {
 /** Shared copy for the protected-operation section. */
 export const HILOS_STEP_UP_ADMIN_COPY = {
   heading: 'Operations that ask for confirmation',
-  lead: 'Asked right before the operation, even on a trusted device. The project declares the list; the framework gives the mechanism and three operations of its own.',
+  lead: 'Asked right before the operation, even on a trusted device. The project declares the list; the framework gives the mechanism and operations of its own.',
   framework: 'Framework',
   project: 'Project',
 } as const

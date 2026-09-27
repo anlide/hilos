@@ -10,9 +10,10 @@ appends its operations to `parent::operations()`, and points its Hilos facade's
 `STEP_UP_OPERATION_DIRECTORY` at that subclass. Each `StepUpOperation` carries a
 stable key, an administration label, a phrase completing “To …”, and whether the
 operation itself opens by proving the account's email or phone number.
-`opensOnBlockedCard` also admits the blocked person held by the browser's session;
-`passesWithNothingToConfirm` passes an account for which no proof is available.
-Both default to false. `export_data` declares both (see [data-export.md](data-export.md)).
+`opensOnBlockedCard` also admits the blocked person held by the browser's
+session; `passesWithNothingToConfirm` passes an account for which no proof is
+available. Both default to false. `export_data` declares both (see
+[data-export.md](data-export.md)).
 
 Declaring an operation does not protect it by itself. Every server action that
 belongs to the operation calls `requireStepUp($acceptKey, $operation)` before it

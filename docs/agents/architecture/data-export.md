@@ -1,14 +1,16 @@
 # Personal Data Export
 
 Read this before changing the archive builder, a project's `applyAccountExport`
-seam, the blocked card's export controls, or the authenticated download (HIL-303).
+seam, the blocked card's export controls, or the authenticated download
+(HIL-303).
 
 ## One Copy Per Person
 
-`hilos_data_export` is a durable queue with one row per person. An order replaces
-that person's previous copy and file; ordering while `preparing` is a quiet
-success. The states are `preparing`, `ready` and `failed`. Ready and failed copies
-expire seven days after completion; the hourly sweep removes the row and file.
+`hilos_data_export` is a durable queue with one row per person. An order
+replaces that person's previous copy and file; ordering while `preparing` is a
+quiet success. The states are `preparing`, `ready` and `failed`. Ready and
+failed copies expire seven days after completion; the hourly sweep removes the
+row and file.
 
 `AbstractDataExportAgent` owns the queue outright. Every AUTH project registers
 its subclass with `DataExportAgentDaemon` and policy placement, activates the
@@ -19,14 +21,15 @@ one whole archive is built per tick, with blocking I/O confined to that worker.
 ## Confirmation And The Blocked Card
 
 `export_data` is a step-up operation. Its declaration permits the blocked person
-held on the browser's session and passes an account with nothing to confirm with.
-Impersonation remains refused. The signed-in profile uses the same operation
-on `/profile/data`.
+held on the browser's session and passes an account with nothing to confirm
+with. Impersonation remains refused. The signed-in profile uses the same
+operation on `/profile/data`.
 
 A refused sign-in credits this operation only if `provenBy` matches the method
-`StepUpMethodResolver` would ask for now. A password cannot stand for a connected
-second factor, and provider login credits nothing. A card raised by losing the
-session has no fresh sign-in to credit and asks for confirmation normally.
+`StepUpMethodResolver` would ask for now. A password cannot stand for a
+connected second factor, and provider login credits nothing. A card raised by
+losing the session has no fresh sign-in to credit and asks for confirmation
+normally.
 
 `hilos_data_export_order` resolves the person from the connection/session and
 rechecks step-up. A blocked-card order also checks that the account remains
@@ -41,18 +44,18 @@ store and flow. Their owner starts the store and disposes both when it is done.
 
 ## The Profile Section
 
-`AbstractHilosProfileDataPage` serves `hilos_profile_data` at `/profile/data` with
-AUTHENTICATED access. Each demo binds the page to its own subscription agent.
-The `dataExport` section in its `page_response` carries the same archive node,
-or null when no copy exists; after answering, the connection joins the person's
-`DataExportGroup`. The chat profile root carries the same section and joins the
-same group for its live summary.
+`AbstractHilosProfileDataPage` serves `hilos_profile_data` at `/profile/data`
+with AUTHENTICATED access. Each demo binds the page to its own subscription
+agent. The `dataExport` section in its `page_response` carries the same archive
+node, or null when no copy exists; after answering, the connection joins the
+person's `DataExportGroup`. The chat profile root carries the same section and
+joins the same group for its live summary.
 
 `HilosProfileDataPage` mounts the shared `HilosDataExport` block without its own
-heading or border (`titled=false`): the page's catalog heading names the section.
-The account-deletion explanation links here and closes its window without
-scheduling deletion. While impersonating, the block keeps the copy's state but
-hides Download; ordering still receives the step-up refusal.
+heading or border (`titled=false`): the page's catalog heading names the
+section. The account-deletion explanation links here and closes its window
+without scheduling deletion. While impersonating, the block keeps the copy's
+state but hides Download; ordering still receives the step-up refusal.
 
 ## Notifications
 
@@ -79,8 +82,9 @@ are excluded. A project without push storage gets an empty push section.
 
 `applyAccountExport(int $userId, DataExportWriter $writer)` must contribute the
 project's person row and all content belonging to that person, excluding other
-people's records. It refuses by default. `section()` writes JSON; `file()` copies
-attachment bytes and returns the relative archive path the JSON should reference.
+people's records. It refuses by default. `section()` writes JSON; `file()`
+copies attachment bytes and returns the relative archive path the JSON should
+reference.
 
 A failure removes partial bytes, marks the request failed and logs the reason.
 There is no automatic retry of a failed request. A restart retries a preparing
@@ -88,27 +92,30 @@ request from the beginning. Startup drops ready rows whose files disappeared;
 startup and the hourly sweep remove files not named by a ready row.
 
 Before publication the builder queries `accountDeletions->erasedOf()` directly:
-a completed erasure discards the build without publication. After erasure commits,
-`DataExportNotifier::forgetUser()` queues `hilos_data_export_forget_user` to remove
-the copy. This also closes an erasure arriving after the builder's final check.
-A late completion cannot finish a request replaced while it was being built.
+a completed erasure discards the build without publication. After erasure
+commits, `DataExportNotifier::forgetUser()` queues
+`hilos_data_export_forget_user` to remove the copy. This also closes an erasure
+arriving after the builder's final check. A late completion cannot finish a
+request replaced while it was being built.
 
 ## Download And Storage
 
 `GET /_hilos/data-export` is an agent HTTP route. The cookie or header session,
 never a URL credential, selects the copy: signed in as its person, or holding
 that person's block notice. Missing/expired sessions are refused, impersonation
-is 403, and a missing, unfinished or expired copy is 404. Replies are not cached.
+is 403, and a missing, unfinished or expired copy is 404. Replies are not
+cached.
 
 A successful response is an attachment named `your-data-YYYY-MM-DD.zip`, dated
-by readiness. `HILOS_DATA_EXPORT_XACCEL_LOCATION` makes nginx send the bytes from
-its internal location. Empty, it sends a direct body up to the files subsystem's
-4 MiB ceiling; above that it returns 500 and logs which env value to configure.
-The demos configure nginx for test/prod and direct same-origin proxies for dev.
+by readiness. `HILOS_DATA_EXPORT_XACCEL_LOCATION` makes nginx send the bytes
+from its internal location. Empty, it sends a direct body up to the files
+subsystem's 4 MiB ceiling; above that it returns 500 and logs which env value to
+configure. The demos configure nginx for test/prod and direct same-origin
+proxies for dev.
 
-`data_export` is one directory shared by every node and its nginx. A multi-machine
-installation supplies a shared volume; the framework does not copy archives
-between nodes. A node without that shared storage may return 404.
+`data_export` is one directory shared by every node and its nginx. A
+multi-machine installation supplies a shared volume; the framework does not copy
+archives between nodes. A node without that shared storage may return 404.
 
 ## What Is Not Here
 
