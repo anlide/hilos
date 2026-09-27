@@ -10,7 +10,6 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\SecondFactorSettings as ObjectSecondFactorSettings;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -38,7 +37,6 @@ final class SecondFactorSettingsActions extends DbActions
      * @param ?string $pendingFrom Moment the parked wait takes over (SQL datetime), or null when none is parked
      * @throws CreateNotAllowedException When the truth source rejects the insert
      * @throws WriteNotAllowedException When the truth source rejects the update
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
      * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException When the lookup or the write fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
@@ -57,7 +55,6 @@ final class SecondFactorSettingsActions extends DbActions
      *
      * @param int $userId Person
      * @throws WriteNotAllowedException When the truth source rejects the delete
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
      * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException When the lookup or a delete fails
      * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid

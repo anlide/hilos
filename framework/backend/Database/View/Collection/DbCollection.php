@@ -725,7 +725,12 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
 
     /**
      * Check if element exists at offset.
-     * For automatic collections, may trigger lazy-load existence check.
+     *
+     * A miss in memory is answered by a read, whatever the strategy: a collection that promised
+     * the whole table reads it here, a lazy one asks for the key, and a loaded, manual or empty
+     * one answers out of memory at no cost, as before. This is a reader's question and not a
+     * mirror's - the object layer's own offsetExists() stays pure memory, which is what the sync
+     * applicator looks at mirrors through.
      *
      * @param mixed $offset Primary key ID, or null for a missing optional relation key
      * @return bool True if element exists at offset
@@ -748,11 +753,8 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
         if (isset($objectCollection[$offset])) {
             return true;
         }
-        if ($objectCollection->allowLazyLoading) {
-            $object = $objectCollection[$offset];
-            return $object !== null;
-        }
-        return false;
+
+        return $objectCollection->offsetGet($offset) !== null;
     }
 
     /**

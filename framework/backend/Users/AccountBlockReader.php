@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Users;
 
-use Hilos\Core\Exception\LogicException;
-use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
-use Hilos\Database\Exception\View\UnknownLazyStrategyException;
 use Hilos\Database\View\Collection\HilosUserBlockSource;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -43,9 +40,6 @@ final class AccountBlockReader
      * @throws UserBlockSourceMissingException When no block source can be read in this process
      * @throws DbCollectionNotReadableException When this process does not read the block source
      * @throws CollectionNotFoundException When the block source disappears between the scan and the read
-     * @throws UnknownLazyStrategyException When the block source's lazy strategy is unknown
-     * @throws LogicException When the block source's entity class is not configured
-     * @throws DatabaseException On connection or schema error
      * @throws HilosException When the block source cannot read its database state
      */
     public function isBlocked(int $userId): bool
@@ -64,9 +58,6 @@ final class AccountBlockReader
      * @throws UserBlockSourceMissingException When no block source can be read in this process
      * @throws DbCollectionNotReadableException When this process does not read the block source
      * @throws CollectionNotFoundException When the block source disappears between the scan and the read
-     * @throws UnknownLazyStrategyException When the block source's lazy strategy is unknown
-     * @throws LogicException When the block source's entity class is not configured
-     * @throws DatabaseException On connection or schema error
      * @throws HilosException When the block source cannot read its database state
      */
     public function blockedAmong(array $userIds): array
@@ -100,9 +91,6 @@ final class AccountBlockReader
      * @throws UserBlockSourceMissingException When the process has no database layer, or the project mounted no block source
      * @throws DbCollectionNotReadableException When this process does not read the block source
      * @throws CollectionNotFoundException When the block source disappears between the scan and the read
-     * @throws UnknownLazyStrategyException When the block source's lazy strategy is unknown
-     * @throws LogicException When the block source's entity class is not configured
-     * @throws DatabaseException On connection or schema error
      */
     private function source(): HilosUserBlockSource
     {

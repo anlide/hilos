@@ -24,9 +24,12 @@ use PHPUnit\Framework\TestCase;
  * strategy, so only a collection loaded whole was ever guarded. Every hot table is lazy, and
  * every one of them was written by anybody in silence.
  *
- * These cases stand on the three LAZY strategies for that reason - they are the branches that
- * used to be a bare `break` - and they stop at the door, which is the last point before a
- * write reaches the database: refusing there costs no connection, so the cases need none.
+ * These cases stand on all four strategies and stop at the door, which is the last point before
+ * a write reaches the database: refusing there costs no connection, so the cases need none. The
+ * three LAZY strategies are the branches that used to be a bare `break`. LAZY_STRATEGY_NONE was
+ * left out until HIL-1144, because its branch loaded the whole table at the door and so needed a
+ * database; now the door asks the right and loads nothing, and the fixture proves it - it has no
+ * entity collection to load from, so any load at the door would fail the case.
  */
 final class DbWriteGuardLazyCollectionsTest extends TestCase
 {
@@ -44,11 +47,12 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
     }
 
     /**
-     * @return list<array{int}> One case per lazy strategy, by its own name
+     * @return list<array{int}> One case per strategy, by its own name
      */
     public static function lazyStrategies(): array
     {
         return [
+            'none' => [Objects::LAZY_STRATEGY_NONE],
             'key' => [Objects::LAZY_STRATEGY_KEY],
             'batch' => [Objects::LAZY_STRATEGY_BATCH],
             'full on access' => [Objects::LAZY_STRATEGY_FULL_ON_ACCESS],

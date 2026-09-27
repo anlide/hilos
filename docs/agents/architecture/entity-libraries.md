@@ -196,13 +196,13 @@ covers iteration as well as filtering, and the branch that skipped it does not.
 
 **"Complete" is one answer per lazy strategy, not one bit**, and an implementing
 leaf that reads `isAllLoaded()` alone will refuse collections that are perfectly
-sound. There are four strategies, and every switch over them in the framework
-enumerates all four before throwing `UnknownLazyStrategyException` on the
-default (`DbContext::__get()`, and the collection- and item-level `DbActions`):
+sound. There are four strategies, and `initDB()` refuses any other at the mount
+with `UnknownLazyStrategyException`; nothing past the mount switches over them
+(HIL-1144):
 
 | Strategy | How it becomes complete | What a refusal must do |
 |---|---|---|
-| `LAZY_STRATEGY_NONE` | `loadAllFromDB()`; `preloadAll()` is a **no-op** here, being gated on `_allowLazyLoading`, which `initDB()` sets to false for this strategy | never refuse: the collection is not lazy at all |
+| `LAZY_STRATEGY_NONE` | its own first read — by key, a count, a walk, `first()`/`last()` — fills in the whole table, whichever entrance handed the collection out, and rows already held stay; `preloadAll()` is a **no-op** here, being gated on `_allowLazyLoading`, which `initDB()` sets to false for this strategy | never refuse: the collection is not lazy at all |
 | `LAZY_STRATEGY_BATCH` | `current()` self-loads the whole set on first iteration — and this is `initDB()`'s default | never refuse an iteration: it is the load |
 | `LAZY_STRATEGY_KEY` | only `preloadAll()`, which is what a holder calls | refuse when `isAllLoaded()` is false |
 | `LAZY_STRATEGY_FULL_ON_ACCESS` | `offsetGet()` loads the whole set on the first read by key — but iteration loads nothing, because `current()` self-loads for `BATCH` only | refuse when `isAllLoaded()` is false, exactly as for `LAZY_STRATEGY_KEY` |

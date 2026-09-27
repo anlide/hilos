@@ -11,7 +11,6 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\View\Collection\PushSubscriptions as DbCollectionPushSubscriptions;
@@ -43,8 +42,6 @@ final class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When the write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws LogicException When the collection has no usable object metadata
-     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
      * @throws CreateNotAllowedException When the caller may not add a subscription of that person
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
@@ -61,8 +58,6 @@ final class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When a lookup or write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws LogicException When the collection has no usable object metadata
-     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
      * @throws WriteNotAllowedException When the notifications library cannot update subscriptions
      */
     public function markGone(array $endpoints): int
@@ -81,7 +76,6 @@ final class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When the lookup or delete query fails
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws LogicException When the collection has no usable object metadata
-     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
      * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
      */
     public function removeOwned(int $userId, int $id): bool
@@ -99,8 +93,6 @@ final class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws LogicException When the collection has no usable object metadata
-     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
      * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
      */
     public function unsubscribeOwned(int $userId, string $endpoint): void
@@ -116,8 +108,6 @@ final class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When a delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws LogicException When the collection has no usable object metadata
-     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
      * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
      */
     public function deleteForUser(int $userId): void

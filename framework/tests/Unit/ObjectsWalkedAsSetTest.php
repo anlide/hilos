@@ -28,13 +28,16 @@ use PHPUnit\Framework\TestCase;
 final class ObjectsWalkedAsSetTest extends TestCase
 {
     /**
+     * The eager strategy promised the whole table, and a walk is its first read (HIL-1144): the
+     * answer is the table, not the empty memory the promise used to leave behind.
+     *
      * @throws HilosException When the collection refuses the walk
      */
-    public function testTheEagerStrategyIsNeverRefused(): void
+    public function testTheEagerStrategyAnswersWithTheWholeTable(): void
     {
         $collection = WalkedAsSetObjects::withStrategy(Objects::LAZY_STRATEGY_NONE);
 
-        $this->assertSame([], $collection->keys());
+        $this->assertSame([1, 2], $collection->keys());
     }
 
     /**

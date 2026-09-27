@@ -10,7 +10,6 @@ use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\View\Item\Setting;
-use Hilos\HilosException;
 
 /**
  * Settings Db collection.
@@ -93,7 +92,6 @@ final class Settings extends DbCollection
      * @throws DatabaseException On database error while loading settings
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
-     * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function getOrphans(array $catalog): array
     {

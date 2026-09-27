@@ -15,7 +15,6 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
@@ -59,7 +58,6 @@ final class SettingsActions extends DbActions
      * @throws DuplicateIdException When the created setting id already exists in the collection
      * @throws ObjectGetIdStringNotImplementedException When the created setting has no persisted id
      * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
-     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws CreateNotAllowedException When the truth source rejects settings collection creation
      * @throws HilosException When a collection refuses to be re-read from the replaced database
@@ -113,7 +111,6 @@ final class SettingsActions extends DbActions
      * @throws DuplicateIdException When the created setting id already exists in the collection
      * @throws ObjectGetIdStringNotImplementedException When the created setting has no persisted id
      * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
-     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws CreateNotAllowedException When the truth source rejects settings collection creation
      * @throws HilosException When a collection refuses to be re-read from the replaced database
@@ -159,7 +156,6 @@ final class SettingsActions extends DbActions
      * @throws ItemNotFoundForDeleteException When no setting row for the key exists
      * @throws InvalidArgumentException When a row the settings collection holds is of another object type
      * @throws DatabaseException When collection loading or setting deletion fails
-     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting delete
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises

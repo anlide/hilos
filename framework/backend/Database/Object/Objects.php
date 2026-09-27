@@ -25,6 +25,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\CollectionNotFullyLoadedException;
+use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Hilos;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
@@ -91,23 +92,51 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     protected bool $_allLoaded = false;
 
     /**
+     * Whether this collection promised the whole table and reads it on its own first read.
+     *
+     * A flag of its own and not the strategy, because LAZY_STRATEGY_NONE is what the strategy
+     * property holds by default: a collection built by initEmpty() and a FilteredCollection are
+     * in exactly that state, and neither has a table to read. Only initDB() under that strategy
+     * makes the promise (HIL-1144).
+     *
+     * @var bool
+     */
+    private bool $_loadsWholeOnFirstRead = false;
+
+    /**
      * Initialize collection with database loading strategy
      * Automatically determines loading behavior based on strategy
      *
      * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
      * @return static Collection instance
+     * @throws UnknownLazyStrategyException When the strategy is none of the four this class names
      */
     public static function initDB(int $strategy = self::LAZY_STRATEGY_BATCH): static
     {
+        if (!in_array($strategy, [
+            self::LAZY_STRATEGY_NONE,
+            self::LAZY_STRATEGY_KEY,
+            self::LAZY_STRATEGY_BATCH,
+            self::LAZY_STRATEGY_FULL_ON_ACCESS,
+        ], true)) {
+            // Refused at the mount and not at the first read or write: nothing past this point
+            // switches over the strategy any more, and a walk under an unknown one would quietly
+            // read memory.
+            throw new UnknownLazyStrategyException(
+                "Unknown lazy loading strategy {$strategy} for collection '" . static::COLLECTION_KEY . "'"
+            );
+        }
+
         $self = new static();
 
-        // For LAZY_STRATEGY_NONE, configure for lazy loading on first access
-        // Data will be loaded when collection is first accessed (read or write)
         if ($strategy === self::LAZY_STRATEGY_NONE) {
+            // Eager by promise, not by load: the collection reads the table whole on its own
+            // first read - by key, a count, a walk, first()/last() - whichever entrance handed it
+            // out (HIL-1144). Nothing is read here.
             $self->_allowLazyLoading = false;
             $self->_lazyStrategy = self::LAZY_STRATEGY_NONE;
-            $self->_allLoaded = false; // Will be loaded on first access
-            // Do NOT load all data here - load on first access instead
+            $self->_allLoaded = false;
+            $self->_loadsWholeOnFirstRead = true;
         } else {
             $self->_allowLazyLoading = true;
             $self->_lazyStrategy = $strategy;
@@ -209,6 +238,31 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         }
 
         $this->_allLoaded = true;
+    }
+
+    /**
+     * Reads the table whole when this collection promised to and has not yet.
+     *
+     * The promise is its own flag rather than the strategy, because LAZY_STRATEGY_NONE is what
+     * the strategy property holds by default: a collection built by {@see self::initEmpty()} and
+     * a {@see FilteredCollection} are in exactly that state, and neither has a table to read.
+     * Only {@see self::initDB()} under that strategy makes the promise.
+     *
+     * The read fills in what memory does not hold rather than clearing and re-reading, so a row
+     * already held - put there by a lookup by key or by a write on this node - keeps its instance
+     * under the View wrappers already handed out. {@see self::loadAllFromDB()} replaces every
+     * instance, which is why the demos clear their view caches after it, and it declares
+     * HilosException for the collections that refuse it; neither belongs on a read.
+     *
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
+     */
+    protected function loadWholeIfPromised(): void
+    {
+        if (!$this->_loadsWholeOnFirstRead || $this->_allLoaded) {
+            return;
+        }
+        $this->lazyLoadAll();
     }
 
     /**
@@ -757,8 +811,10 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * is the narrow case the other two name - a lazy collection that loads nothing on a walk
      * being walked anyway.
      *
-     * Every caller past this point therefore holds either a collection that is not lazy or one
-     * that is fully loaded, which is what lets a walk read memory without asking again.
+     * A collection that promised the whole table reads it here first, so the walk is its first
+     * read like any other. Every caller past this point therefore holds either a collection that
+     * is not lazy or one that is fully loaded, which is what lets a walk read memory without
+     * asking again.
      *
      * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException When loading the full object collection from the database fails
@@ -766,6 +822,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     private function settleSetForWalk(): void
     {
+        $this->loadWholeIfPromised();
+
         if (!$this->_allowLazyLoading || $this->_allLoaded) {
             return;
         }
@@ -911,7 +969,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     /**
      * Get object at offset.
      *
-     * Supports lazy loading if enabled.
+     * A miss in memory on a collection that promised the whole table is its first read: the
+     * table comes in and memory is asked once more. The lazy strategies get their turn after
+     * that, as before.
      *
      * @param mixed $offset Array key, or null for a missing optional relation key
      * @return ?T Object instance or null if not found
@@ -922,6 +982,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     {
         if ($offset === null) {
             return null;
+        }
+        if (!isset($this->objects[$offset])) {
+            $this->loadWholeIfPromised();
         }
         if (isset($this->objects[$offset])) {
             return $this->objects[$offset];
@@ -949,13 +1012,17 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     /**
      * Get count of objects.
      *
-     * Supports lazy loading count from database.
+     * A collection that promised the whole table reads it first and counts memory; a lazy one
+     * asks the database for the count without loading anything.
      *
      * @return int Number of objects in collection
+     * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException When SQL execution fails
      */
     public function count(): int
     {
+        $this->loadWholeIfPromised();
+
         if ($this->_allowLazyLoading && !$this->_allLoaded) {
             if ($this->_lazyStrategy === self::LAZY_STRATEGY_KEY) {
                 return $this->lazyLoadCount();
@@ -1104,10 +1171,16 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     /**
      * Get first object in collection.
      *
+     * A collection that promised the whole table reads it first; the answer is then memory.
+     *
      * @return ?T First Object_ or null if collection empty
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
      */
     public function first(): ?Object_
     {
+        $this->loadWholeIfPromised();
+
         if (empty($this->objects)) {
             return null;
         }
@@ -1119,10 +1192,16 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     /**
      * Get last object in collection.
      *
+     * A collection that promised the whole table reads it first; the answer is then memory.
+     *
      * @return ?T Last Object_ or null if collection empty
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
      */
     public function last(): ?Object_
     {
+        $this->loadWholeIfPromised();
+
         if (empty($this->objects)) {
             return null;
         }

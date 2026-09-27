@@ -5,14 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Item;
 
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
-use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
@@ -68,24 +65,21 @@ abstract class DbActions
     }
 
     /**
-     * Ensures write is allowed and collection is loaded if needed.
+     * Ensures write is allowed.
      *
      * Defaults to editing because that is what an item action does: the row is already there,
      * held by this very item, and the ones that instead drop it name the operation themselves.
      * Minting a new row goes through the collection's create guard instead.
      *
-     * The right is asked before the strategy is looked at, because the two answer different
-     * questions: who may write this table, and how much of it has to be in memory first. The
-     * switch below is left with the second one only.
+     * The right is the only question asked here. Nothing is loaded before a write: a collection
+     * that promised the whole table reads it on its own first read, and the row this write puts
+     * into memory keeps its instance when that read comes (HIL-1144).
      *
      * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws ObjectCollectionNullException If object collection is null (manual)
      * @throws ObjectGetIdStringNotImplementedException When the item primary key is null during the per-item write check
-     * @throws UnknownLazyStrategyException If lazy strategy is unknown
      * @throws WriteNotAllowedException If write not allowed by truth source
      * @throws CreateNotAllowedException If the row is not in the database yet and creating it is not allowed
-     * @throws LogicException When the object collection entity class is not configured
-     * @throws DatabaseException If load fails
      */
     protected function ensureCanWrite(TruthSourceOperation $operation = TruthSourceOperation::Update): void
     {
@@ -104,22 +98,6 @@ abstract class DbActions
             // The row is not in the database yet, so an insert is the one write it can receive: the door asks the right to
             // create in the set it lands in, whatever the caller named.
             DbWriteGuard::guardCreate($collectionKey, $this->object->touchedSetKeys(...));
-        }
-
-        switch ($objectCollection->getLazyStrategy()) {
-            case Objects::LAZY_STRATEGY_NONE:
-                if (!$objectCollection->isAllLoaded()) {
-                    $objectCollection->loadAllFromDB();
-                }
-                break;
-
-            case Objects::LAZY_STRATEGY_KEY:
-            case Objects::LAZY_STRATEGY_BATCH:
-            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
-                break;
-
-            default:
-                throw new UnknownLazyStrategyException("Unknown lazy loading strategy for write check");
         }
     }
 }

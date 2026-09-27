@@ -6,6 +6,7 @@ namespace Hilos\Database\Context;
 
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\AccountDeletions as ObjectAccountDeletions;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
@@ -191,6 +192,7 @@ abstract class HilosDbContext extends DbContext
      * hilos_file table.
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
+     * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
      */
     public function configure(): void
     {

@@ -6,12 +6,10 @@ namespace Hilos\Database\Actions\Item;
 
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\SecondFactorReset as ObjectSecondFactorReset;
@@ -35,8 +33,6 @@ final class SecondFactorResetActions extends DbActions
      * @return bool True when this call canceled it, false when it was canceled or carried out already
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the request cannot expose its id string
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
      * @throws DatabaseException When the update, the row count or the re-announcement fails
@@ -56,8 +52,6 @@ final class SecondFactorResetActions extends DbActions
      * @return bool True when this call ended it, false when it was canceled or carried out already
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the request cannot expose its id string
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
      * @throws DatabaseException When the update, the row count or the re-announcement fails
@@ -77,8 +71,6 @@ final class SecondFactorResetActions extends DbActions
      * @throws ItemNotFoundForUpdateException When the request is not persisted (id is null)
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the request cannot expose its id string
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws CreateNotAllowedException Never for a persisted row; declared by the sync
      * @throws DatabaseException When the update fails

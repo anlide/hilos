@@ -12,7 +12,6 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
@@ -88,7 +87,6 @@ HELP;
      * @throws SettingNotInCatalogException When the example key is not in the settings catalog
      * @throws SettingValueRefusedException When the example key declares a catalog rule the value fails
      * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
-     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      */
     protected function run(array $options, array $args): int
     {

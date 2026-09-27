@@ -6,12 +6,10 @@ namespace Hilos\Database\Actions\Item;
 
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
@@ -36,8 +34,6 @@ final class OAuthProviderActions extends DbActions
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws DatabaseException When collection loading or row persistence fails
      * @throws ObjectGetIdStringNotImplementedException When the primary key is null during the per-item write check
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the row write
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
@@ -60,8 +56,6 @@ final class OAuthProviderActions extends DbActions
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws DatabaseException When collection loading or row persistence fails
      * @throws ObjectGetIdStringNotImplementedException When the primary key is null during the per-item write check
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the row write
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
@@ -87,8 +81,6 @@ final class OAuthProviderActions extends DbActions
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws DatabaseException When collection loading or the secret update fails
      * @throws ObjectGetIdStringNotImplementedException When the primary key is null during the per-item write check
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the row write
      * @throws CreateNotAllowedException Never for a persisted row; declared by the item door for a row not stored yet
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named

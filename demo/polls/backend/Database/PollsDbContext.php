@@ -16,6 +16,7 @@ use Demo\Polls\Database\View\Collection\Guests;
 use Demo\Polls\Database\View\Collection\UserRenames;
 use Demo\Polls\Database\View\Collection\Users;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Objects;
 
@@ -41,6 +42,7 @@ final class PollsDbContext extends HilosDbContext
      * collections and their view representations.
      *
      * @throws ObjectCollectionNotFoundException When a represented object collection is missing
+     * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
      */
     public function configure(): void
     {

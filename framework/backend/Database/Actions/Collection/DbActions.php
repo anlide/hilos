@@ -16,7 +16,6 @@ use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
@@ -184,12 +183,12 @@ abstract class DbActions
     }
 
     /**
-     * Ensure write is allowed and data is loaded if needed
-     * Asks the write guard for the right, then loads data based on lazy loading strategy
+     * Ensure write is allowed
+     * Asks the write guard for the right over the whole table
      *
-     * The right is asked before the strategy is looked at, because the two answer different
-     * questions: who may write this table, and how much of it has to be in memory first. The
-     * load that follows is left with the second one only.
+     * The right is the only question asked at any of the four doors. Nothing is loaded before a
+     * write: a collection that promised the whole table reads it on its own first read, and a row
+     * a write puts into memory keeps its instance when that read comes (HIL-1144).
      *
      * The operation has no default: this door is shared by actions that insert rows in bulk, edit
      * them in bulk and delete them, and no one value is right for all of them. A door that creates
@@ -198,21 +197,16 @@ abstract class DbActions
      *
      * @param TruthSourceOperation $operation Operation the caller performs across the collection: Add for an insert
      *     in bulk through the whole table, Update for a bulk edit, Remove for a delete
-     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If write is not allowed
-     * @throws LogicException When the object collection entity class is not configured
-     * @throws DatabaseException On connection or load error
      */
     protected function ensureCanWrite(TruthSourceOperation $operation): void
     {
         DbWriteGuard::guardCollectionWrite($this->objectCollection->getCollectionKey(), $operation);
-
-        $this->loadForWrite();
     }
 
     /**
-     * Ensure a write over every row of one set is allowed and data is loaded if needed
-     * Asks the write guard for the right over that set, then loads data based on lazy loading strategy
+     * Ensure a write over every row of one set is allowed
+     * Asks the write guard for the right over that set
      *
      * The door for a bulk write cut by one set - the rows of one person, say - where
      * ensureCanWrite() would ask for the whole table. The set column is the entity's own, so only its value is
@@ -222,10 +216,7 @@ abstract class DbActions
      * @param string $setKey Value of the set column the write cuts the table by
      * @param TruthSourceOperation $operation Operation the caller performs on every row of the set: Update for a bulk
      *     edit, Remove for a delete
-     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If the write over that set is not allowed
-     * @throws LogicException When the object collection entity class is not configured
-     * @throws DatabaseException On connection or load error
      */
     protected function ensureCanWriteSet(string $setKey, TruthSourceOperation $operation): void
     {
@@ -236,37 +227,27 @@ abstract class DbActions
             SetTree::climb($objectClass::ENTITY_CLASS, $setKey),
             $operation,
         );
-
-        $this->loadForWrite();
     }
 
     /**
-     * Ensure create is allowed and data is loaded if needed
-     * Asks the write guard for the create right, then loads data based on lazy loading strategy
-     *
-     * The right is asked before the strategy is looked at, for the same reason the write door
-     * does it: the switch answers how much of the table has to be in memory, not who owns it.
+     * Ensure create is allowed
+     * Asks the write guard for the create right over the whole table
      *
      * The door for a table cut by no set. On a table cut by one it names no set for the new row,
      * so it lets the owner of the whole table and the mint-only claim create, as before, and
      * refuses the owner of a set: to that claim the row belongs to nobody's set. A row that lands
      * in a set asks ensureCanCreateInSet().
      *
-     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws CreateNotAllowedException If create is not allowed
-     * @throws LogicException When the object collection entity class is not configured
-     * @throws DatabaseException On connection or load error
      */
     protected function ensureCanCreate(): void
     {
         DbWriteGuard::guardCreate($this->objectCollection->getCollectionKey(), static fn(): array => []);
-
-        $this->loadForWrite();
     }
 
     /**
-     * Ensure creating a row in one set is allowed and data is loaded if needed
-     * Asks the write guard for the create right in that set, then loads data based on lazy loading strategy
+     * Ensure creating a row in one set is allowed
+     * Asks the write guard for the create right in that set
      *
      * The door for a row of a table cut by a set - the rows of one person, of one room. The set
      * column is the entity's own, so only the value the new row will carry in it is named here,
@@ -276,17 +257,12 @@ abstract class DbActions
      * caught before the insert.
      *
      * @param string $setKey Value of the table's set column the new row will carry
-     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws CreateNotAllowedException If creating a row in that set is not allowed
-     * @throws LogicException When the object collection entity class is not configured
-     * @throws DatabaseException On connection or load error
      */
     protected function ensureCanCreateInSet(string $setKey): void
     {
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         DbWriteGuard::guardCreate($this->objectCollection->getCollectionKey(), SetTree::climb($objectClass::ENTITY_CLASS, $setKey));
-
-        $this->loadForWrite();
     }
 
     /**
@@ -331,11 +307,9 @@ abstract class DbActions
      * stay with the concrete Actions class
      *
      * @throws CallbackNotSetException If the clear-cache callback is not set
-     * @throws DatabaseException If the delete or a preceding load fails
+     * @throws DatabaseException If the delete fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
-     * @throws LogicException When the object collection entity class is not configured
      * @throws ObjectCollectionNullException When the collection is manual and has no ObjectCollection
-     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If write is not allowed
      */
     protected function deleteAllObjects(): void
@@ -345,36 +319,5 @@ abstract class DbActions
         $this->objectCollection->deleteAll();
 
         $this->clearCollectionCache();
-    }
-
-    /**
-     * Loads as much of the table as the lazy loading strategy asks a write to hold in memory.
-     *
-     * Shared by the collection door, the set door and the two create doors: each asks its own right
-     * first, and this answers only how much of the table has to be loaded before the write.
-     *
-     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
-     * @throws LogicException When the object collection entity class is not configured
-     * @throws DatabaseException On connection or load error
-     */
-    private function loadForWrite(): void
-    {
-        $objectCollection = $this->objectCollection;
-
-        switch ($objectCollection->getLazyStrategy()) {
-            case Objects::LAZY_STRATEGY_NONE:
-                if (!$objectCollection->isAllLoaded()) {
-                    $objectCollection->loadAllFromDB();
-                }
-                break;
-
-            case Objects::LAZY_STRATEGY_KEY:
-            case Objects::LAZY_STRATEGY_BATCH:
-            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
-                break;
-
-            default:
-                throw new UnknownLazyStrategyException("Unknown lazy loading strategy for write check");
-        }
     }
 }

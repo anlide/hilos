@@ -12,7 +12,6 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
@@ -53,7 +52,6 @@ final class VerifierCircleMembersActions extends DbActions
      * @throws DuplicateIdException When the created member id already exists in the collection
      * @throws ObjectGetIdStringNotImplementedException When the created member has no persisted id
      * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
-     * @throws UnknownLazyStrategyException When the circle collection has an unsupported lazy strategy
      * @throws LogicException When the circle object collection entity class is not configured
      * @throws CreateNotAllowedException When the truth source rejects circle collection creation
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises

@@ -12,7 +12,6 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\VerifierCircleMember as ObjectVerifierCircleMember;
@@ -37,7 +36,6 @@ final class VerifierCircleMemberActions extends DbActions
      * @throws ObjectCollectionNullException When the member action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the member object cannot expose its id string
      * @throws DatabaseException When collection loading or the delete fails
-     * @throws UnknownLazyStrategyException When the circle collection has an unsupported lazy strategy
      * @throws LogicException When the circle object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the member delete
      * @throws CreateNotAllowedException Never for a persisted row; declared by the item door for a row not stored yet

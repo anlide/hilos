@@ -154,6 +154,9 @@ final class DbSyncClearSelfEchoTest extends TestCase
         $this->assertNotNull($objectCollection->get('2'));
     }
 
+    /**
+     * @throws DatabaseException When the fake table refuses the re-read
+     */
     public function testUnreadableDatabaseLeavesTheCollectionMarkedForReReadInsteadOfKillingTheLoop(): void
     {
         $objectCollection = $this->registerCollection([2]);
@@ -162,9 +165,12 @@ final class DbSyncClearSelfEchoTest extends TestCase
         // Runs inside the worker message loop and the daemon signal loop: it must not throw.
         DbSyncApplicator::applyCleared(new DbSyncClearedSignalData(self::COLLECTION_KEY, emitter: 'other-process'));
 
-        $this->assertSame(0, $objectCollection->count());
         // Not "loaded and empty" — otherwise the mirror would stay empty over a live table.
         $this->assertFalse($objectCollection->isAllLoaded());
+        // The promise "the next access re-reads" holds through any entrance (HIL-1144): the
+        // count is that access, and it reads the table itself.
+        $this->assertSame(1, $objectCollection->count());
+        $this->assertTrue($objectCollection->isAllLoaded());
     }
 
     /**
@@ -288,6 +294,26 @@ final class ClearEchoObjects extends Objects
 
         foreach ($this->tableRows as $id) {
             $this->hydrate((string) $id, ClearEchoObject::fromEntity(ClearEchoEntity::withId($id)));
+        }
+        $this->_allLoaded = true;
+    }
+
+    /**
+     * Fills in from the fake table what memory does not hold, the way the promised first read does.
+     *
+     * @throws DatabaseException When the fake table was told to be unreachable
+     */
+    protected function lazyLoadAll(): void
+    {
+        if ($this->failNextLoad) {
+            $this->failNextLoad = false;
+            throw new DatabaseException('fake table unreachable');
+        }
+
+        foreach ($this->tableRows as $id) {
+            if (!isset($this->objects[(string) $id])) {
+                $this->hydrate((string) $id, ClearEchoObject::fromEntity(ClearEchoEntity::withId($id)));
+            }
         }
         $this->_allLoaded = true;
     }

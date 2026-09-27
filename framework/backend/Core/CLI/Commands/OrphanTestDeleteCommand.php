@@ -12,7 +12,6 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingKeyInCatalogException;
@@ -80,7 +79,6 @@ HELP;
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws SettingKeyInCatalogException When the key is in the catalog (its row is an override)
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws WriteNotAllowedException When the truth source rejects the setting delete
      */
     protected function run(array $options, array $args): int

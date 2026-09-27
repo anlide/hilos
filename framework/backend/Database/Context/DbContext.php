@@ -19,7 +19,6 @@ use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
-use Hilos\Database\Exception\View\UnknownLazyStrategyException;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Collection\HilosUserBlockSource;
@@ -177,10 +176,10 @@ abstract class DbContext
     /**
      * Get DB item view collection by name.
      *
-     * The registry of views has no way in from outside otherwise: {@see self::__get()} loads the
-     * collection from the database when it is missing, and {@see self::getObjectCollection()}
-     * hands out the store rather than the view. What a subscriber repairing a view cache needs
-     * is the view already mounted under that name, and nothing else.
+     * The registry of views has no way in from outside otherwise: {@see self::__get()} refuses a
+     * collection this process does not read, and {@see self::getObjectCollection()} hands out
+     * the store rather than the view. What a subscriber repairing a view cache needs is the view
+     * already mounted under that name, and nothing else.
      *
      * @param string $name Collection name (e.g. users, events)
      * @return ?DbCollection DB item view collection, or null when no view is mounted under that name
@@ -223,9 +222,6 @@ abstract class DbContext
      * @return ?HilosUserBlockSource Collection reporting account blocks, or null when none is mounted
      * @throws CollectionNotFoundException When the collection disappears between the scan and the read
      * @throws DbCollectionNotReadableException When nothing here reads the collection, or its readiness is on its way
-     * @throws UnknownLazyStrategyException When lazy strategy is unknown
-     * @throws LogicException When the object collection entity class is not configured
-     * @throws DatabaseException On connection or schema error
      */
     final public function userBlockSource(): ?HilosUserBlockSource
     {
@@ -349,13 +345,14 @@ abstract class DbContext
     /**
      * Get DB collection by name (magic getter for $db->users, $db->events, etc.).
      *
+     * Hands the view out and reads nothing: a collection that promised the whole table reads it
+     * on its own first read, whichever entrance handed it out (HIL-1144), so this door and
+     * {@see self::getObjectCollection()} answer alike.
+     *
      * @param string $name Collection name (e.g. users, events)
      * @return DbCollection DB collection instance
      * @throws CollectionNotFoundException When collection does not exist
      * @throws DbCollectionNotReadableException When nothing here reads the collection, or its readiness is on its way
-     * @throws UnknownLazyStrategyException When lazy strategy is unknown
-     * @throws LogicException When the object collection entity class is not configured
-     * @throws DatabaseException On connection or schema error
      */
     public function __get(string $name)
     {
@@ -364,26 +361,6 @@ abstract class DbContext
         }
 
         $this->assertReadable($name);
-
-        switch ($this->_objectCollections[$name]->getLazyStrategy()) {
-            case Objects::LAZY_STRATEGY_NONE:
-                if (!$this->_objectCollections[$name]->isAllLoaded()) {
-                    $this->_objectCollections[$name]->loadAllFromDB();
-                }
-                break;
-
-            case Objects::LAZY_STRATEGY_KEY:
-                break;
-
-            case Objects::LAZY_STRATEGY_BATCH:
-                break;
-
-            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
-                break;
-
-            default:
-                throw new UnknownLazyStrategyException("Unknown lazy loading strategy for collection [{$name}]");
-        }
 
         return $this->_dbItemCollections[$name];
     }

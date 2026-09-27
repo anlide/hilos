@@ -11,7 +11,6 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
@@ -43,7 +42,6 @@ final class SettingActions extends DbActions
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws ObjectCollectionNullException When the setting action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the setting primary key is null during the per-item write check
-     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting write
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
@@ -79,7 +77,6 @@ final class SettingActions extends DbActions
      * @throws ObjectCollectionNullException When the setting action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the setting object cannot expose its id string
      * @throws DatabaseException When collection loading or setting deletion fails
-     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting delete
      * @throws CreateNotAllowedException Never for a persisted row; declared by the item door for a row not stored yet

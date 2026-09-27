@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\SecondFactors as ObjectSecondFactors;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -42,8 +40,6 @@ final class SecondFactorsActions extends DbActions
      * @return SecondFactor The unconfirmed authenticator
      * @throws CreateNotAllowedException When the truth source rejects the insert
      * @throws WriteNotAllowedException When the truth source rejects the replacement or the secret write
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException When a lookup, the insert or the secret write fails
      * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
@@ -62,8 +58,6 @@ final class SecondFactorsActions extends DbActions
      *
      * @param int $userId Person
      * @throws WriteNotAllowedException When the truth source rejects the delete
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException When a lookup or a delete fails
      * @throws InvalidArgumentException When a query or the queued DB-sync signal is invalid
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises

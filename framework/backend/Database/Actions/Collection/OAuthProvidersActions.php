@@ -13,7 +13,6 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\OAuthProviders as ObjectOAuthProviders;
@@ -50,7 +49,6 @@ final class OAuthProvidersActions extends DbActions
      * @throws DuplicateIdException When the created row id already exists in the collection
      * @throws ObjectGetIdStringNotImplementedException When the created row has no persisted id
      * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
      * @throws LogicException When the object collection entity class is not configured
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws CreateNotAllowedException When the truth source rejects the row creation

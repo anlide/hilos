@@ -13,7 +13,6 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
@@ -35,8 +34,6 @@ final class SecondFactorActions extends DbActions
      * @throws ItemNotFoundForUpdateException When the authenticator is not persisted (id is null)
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the authenticator cannot expose its id string
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws CreateNotAllowedException Never for a persisted row; declared by the sync
      * @throws DatabaseException When the update fails
@@ -63,8 +60,6 @@ final class SecondFactorActions extends DbActions
      * @return bool True when this call took the step, false when it was taken already
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the authenticator cannot expose its id string
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
-     * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the update
      * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
      * @throws DatabaseException When the update, the row count or the re-announcement fails
@@ -84,7 +79,6 @@ final class SecondFactorActions extends DbActions
      * @throws ItemNotFoundForDeleteException When the authenticator is not persisted (id is null)
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the authenticator cannot expose its id string
-     * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
      * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the delete
      * @throws CreateNotAllowedException Never for a persisted row; declared by the item door for a row not stored yet
