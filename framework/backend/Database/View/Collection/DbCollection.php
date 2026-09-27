@@ -15,6 +15,7 @@ use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Actions\Collection\DbActions;
+use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
@@ -88,7 +89,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      */
     private ?string $_actionsClass = null;
 
-    /** @var ?class-string<DbActions> item actions class for each DbItem (set via setItemActionsClass) */
+    /** @var ?class-string<ItemDbActions> item actions class for each DbItem (set via setItemActionsClass) */
     private ?string $_itemActionsClass = null;
 
     /**
@@ -200,7 +201,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * Set Item Actions class name.
      * Called when collection is registered.
      *
-     * @param ?class-string<DbActions> $itemActionsClass Item actions class name or null
+     * @param ?class-string<ItemDbActions> $itemActionsClass Item actions class name or null
      */
     public function setItemActionsClass(?string $itemActionsClass): void
     {

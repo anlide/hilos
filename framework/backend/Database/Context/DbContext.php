@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Database\Context;
 
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractPage;
@@ -13,6 +12,7 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Actions\Collection\DbActions;
+use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
@@ -91,7 +91,7 @@ abstract class DbContext
      * @param string $name Collection name (e.g. users)
      * @param class-string<DbCollection> $dbItemCollectionClass DB collection class name
      * @param ?class-string<DbActions> $actionsClass Collection actions class name (optional)
-     * @param ?class-string<TableItemActions> $itemActionsClass Item actions class name (optional)
+     * @param ?class-string<ItemDbActions> $itemActionsClass Item actions class name (optional)
      * @throws CollectionAlreadyMountedException When a view is already mounted under the key
      * @throws ObjectCollectionNotFoundException When object collection not found
      */
