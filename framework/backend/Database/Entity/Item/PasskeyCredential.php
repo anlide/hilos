@@ -30,7 +30,7 @@ use Hilos\Database\PhpType;
  * @method static EntityPasskeyCredentials get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityPasskeyCredentials getAll()
  */
-final class PasskeyCredential extends Entity
+class PasskeyCredential extends Entity
 {
     public const string id = 'id';
     public const string identity_id = 'identity_id';

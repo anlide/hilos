@@ -25,7 +25,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @extends DbActions<SecondFactorReset, ObjectSecondFactorReset>
  * @property-read ObjectSecondFactorReset $object
  */
-final class SecondFactorResetActions extends DbActions
+class SecondFactorResetActions extends DbActions
 {
     /**
      * Cancels the request, if it still stands.

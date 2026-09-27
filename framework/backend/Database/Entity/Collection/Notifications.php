@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\Notification as EntityNotification;
  *
  * @extends EntityCollection<EntityNotification>
  */
-final class Notifications extends EntityCollection
+class Notifications extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityNotification::class;
 }

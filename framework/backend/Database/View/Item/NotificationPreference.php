@@ -24,7 +24,7 @@ use Hilos\HilosException;
  * @property-read string $createdAt
  * @property-read string $updatedAt
  */
-final class NotificationPreference extends DbItem
+class NotificationPreference extends DbItem
 {
     /**
      * Magic getter for notification preference properties.

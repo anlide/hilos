@@ -39,7 +39,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectSecondFactorBackupCode|null get(int|string $key)
  * @method ObjectSecondFactorBackupCode|null offsetGet(mixed $offset)
  */
-final class SecondFactorBackupCodes extends Objects
+class SecondFactorBackupCodes extends Objects
 {
     public const string OBJECT_CLASS = ObjectSecondFactorBackupCode::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySecondFactorBackupCodes::class;
@@ -66,7 +66,7 @@ final class SecondFactorBackupCodes extends Objects
 
         $now = TimeHelper::getSqlDateTime();
         foreach ($codes as $code) {
-            $row = ObjectSecondFactorBackupCode::create();
+            $row = static::OBJECT_CLASS::create();
             $row->userId = $userId;
             $row->createdAt = $now;
             $row->sync();
@@ -153,7 +153,7 @@ final class SecondFactorBackupCodes extends Objects
      */
     public function listByUser(int $userId): array
     {
-        $entities = EntitySecondFactorBackupCode::get(
+        $entities = static::entityClass()::get(
             [EntitySecondFactorBackupCode::user_id => $userId],
             orderBy: [EntitySecondFactorBackupCode::id => SqlSortDirection::ASC],
         );
@@ -164,7 +164,7 @@ final class SecondFactorBackupCodes extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectSecondFactorBackupCode::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }

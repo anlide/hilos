@@ -29,7 +29,7 @@ use Hilos\Database\Object\Objects;
  * @method ObjectAuthBlock|null get(int|string $key)
  * @method ObjectAuthBlock|null offsetGet(mixed $offset)
  */
-final class AuthBlocks extends Objects
+class AuthBlocks extends Objects
 {
     public const string OBJECT_CLASS = ObjectAuthBlock::class;
     public const string ENTITY_COLLECTION_CLASS = EntityAuthBlocks::class;
@@ -55,7 +55,7 @@ final class AuthBlocks extends Objects
             return null;
         }
 
-        $entityAuthBlock = EntityAuthBlock::get([
+        $entityAuthBlock = static::entityClass()::get([
             EntityAuthBlock::scope => $scope,
             EntityAuthBlock::identity => $identity,
             EntityAuthBlock::action => $action,
@@ -66,7 +66,7 @@ final class AuthBlocks extends Objects
         }
 
         if (!isset($this->objects[$entityAuthBlock->id])) {
-            $this->hydrate($entityAuthBlock->id, ObjectAuthBlock::fromEntity($entityAuthBlock));
+            $this->hydrate($entityAuthBlock->id, static::OBJECT_CLASS::fromEntity($entityAuthBlock));
         }
 
         return $this->objects[$entityAuthBlock->id];
@@ -89,13 +89,13 @@ final class AuthBlocks extends Objects
     {
         $blocks = [];
         $rawWhere = '`' . EntityAuthBlock::blocked_until . '` > ?';
-        foreach (EntityAuthBlock::get($rawWhere, [$now]) as $entityAuthBlock) {
+        foreach (static::entityClass()::get($rawWhere, [$now]) as $entityAuthBlock) {
             if ($entityAuthBlock->id === null) {
                 continue;
             }
 
             if (!isset($this->objects[$entityAuthBlock->id])) {
-                $this->hydrate($entityAuthBlock->id, ObjectAuthBlock::fromEntity($entityAuthBlock));
+                $this->hydrate($entityAuthBlock->id, static::OBJECT_CLASS::fromEntity($entityAuthBlock));
             }
 
             $blocks[] = $this->objects[$entityAuthBlock->id];
@@ -132,7 +132,7 @@ final class AuthBlocks extends Objects
 
         $block = $this->findByKey($scope, $identity, $action);
         if ($block === null) {
-            $block = ObjectAuthBlock::create();
+            $block = static::OBJECT_CLASS::create();
             $block->scope = $scope;
             $block->identity = $identity;
             $block->action = $action;
@@ -171,7 +171,7 @@ final class AuthBlocks extends Objects
         $column = '`' . EntityAuthBlock::blocked_until . '`';
         // The null half is garbage by the same rule: a row that names no moment is never replayed either.
         $rawWhere = "({$column} IS NULL OR {$column} < ?)";
-        foreach (EntityAuthBlock::get($rawWhere, [$before]) as $entityAuthBlock) {
+        foreach (static::entityClass()::get($rawWhere, [$before]) as $entityAuthBlock) {
             $this->forget($entityAuthBlock);
             $deleted++;
         }
@@ -201,7 +201,7 @@ final class AuthBlocks extends Objects
         }
 
         $deleted = 0;
-        $blocks = EntityAuthBlock::get([
+        $blocks = static::entityClass()::get([
             EntityAuthBlock::scope => $scope,
             EntityAuthBlock::identity => $identity,
         ]);
@@ -229,7 +229,7 @@ final class AuthBlocks extends Objects
     public function clearAll(): int
     {
         $deleted = 0;
-        foreach (EntityAuthBlock::getAll() as $entityAuthBlock) {
+        foreach (static::entityClass()::getAll() as $entityAuthBlock) {
             $this->forget($entityAuthBlock);
             $deleted++;
         }
@@ -249,7 +249,7 @@ final class AuthBlocks extends Objects
         $id = $entityAuthBlock->id;
         $block = $id !== null && isset($this->objects[$id])
             ? $this->objects[$id]
-            : ObjectAuthBlock::fromEntity($entityAuthBlock);
+            : static::OBJECT_CLASS::fromEntity($entityAuthBlock);
 
         $block->delete();
         if ($id !== null) {

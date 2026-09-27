@@ -21,7 +21,7 @@ use Hilos\Database\PhpType;
  * @method static EntityAccountDeletions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityAccountDeletions getAll()
  */
-final class AccountDeletion extends Entity
+class AccountDeletion extends Entity
 {
     public const string id = 'id';
     public const string user_id = 'user_id';

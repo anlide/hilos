@@ -26,7 +26,7 @@ use Hilos\HilosException;
  * @property ?string $storedName
  * @property ?int $sizeBytes
  */
-final class DataExport extends Object_
+class DataExport extends Object_
 {
     public const string ENTITY_CLASS = EntityDataExport::class;
     public const string id = 'id';

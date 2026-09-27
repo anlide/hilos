@@ -16,7 +16,7 @@ use IteratorAggregate;
  * @implements IteratorAggregate<int|string, EntityNotificationPreference>
  * @implements ArrayAccess<int|string, EntityNotificationPreference>
  */
-final class NotificationPreferences extends EntityCollection
+class NotificationPreferences extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityNotificationPreference::class;
 }

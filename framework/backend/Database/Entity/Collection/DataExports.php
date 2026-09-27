@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\DataExport as EntityDataExport;
  *
  * @extends EntityCollection<EntityDataExport>
  */
-final class DataExports extends EntityCollection
+class DataExports extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityDataExport::class;
 }

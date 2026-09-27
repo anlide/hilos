@@ -27,7 +27,7 @@ use Hilos\Database\View\Item\VerifierCircleMember;
  * @extends DbActions<VerifierCircleMember, ObjectVerifierCircleMember>
  * @property-read ObjectVerifierCircleMember $object
  */
-final class VerifierCircleMemberActions extends DbActions
+class VerifierCircleMemberActions extends DbActions
 {
     /**
      * Takes the named person out of the verifier circle.

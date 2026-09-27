@@ -11,6 +11,7 @@ use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\FrameworkOrmChainRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
@@ -218,6 +219,7 @@ final class CodeStyleGuardTest extends TestCase
             new RtStateMutationRule(),
             new ObjectStoreMutationRule(),
             new ViewWrapperBindingRule(),
+            new FrameworkOrmChainRule(),
             new ErrorSuppressionRule(),
             new FsSeamRule($kind),
             new RandomSourceRule(),

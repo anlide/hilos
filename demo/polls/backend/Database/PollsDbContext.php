@@ -16,6 +16,8 @@ use Demo\Polls\Database\View\Collection\Guests;
 use Demo\Polls\Database\View\Collection\UserRenames;
 use Demo\Polls\Database\View\Collection\Users;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Exception\CollectionAlreadyMountedException;
+use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Objects;
@@ -41,6 +43,8 @@ final class PollsDbContext extends HilosDbContext
      * Configures the database context with the user, user-rename and guest object
      * collections and their view representations.
      *
+     * @throws FrameworkExtensionException When a framework key is extended by a chain that does not extend it
+     * @throws CollectionAlreadyMountedException When a key is represented twice
      * @throws ObjectCollectionNotFoundException When a represented object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
      */

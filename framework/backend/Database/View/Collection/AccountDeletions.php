@@ -18,7 +18,7 @@ use Hilos\Database\View\Item\AccountDeletion;
  *
  * @extends DbCollection<AccountDeletion, ObjectAccountDeletions>
  */
-final class AccountDeletions extends DbCollection
+class AccountDeletions extends DbCollection
 {
     public const string DB_ITEM_CLASS = AccountDeletion::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectAccountDeletions::class;

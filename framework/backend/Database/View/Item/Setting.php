@@ -18,7 +18,7 @@ use Hilos\HilosException;
  * @property-read string $type
  * @property-read ?string $value
  */
-final class Setting extends DbItem
+class Setting extends DbItem
 {
     /**
      * Magic getter for entity properties.

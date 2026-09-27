@@ -26,7 +26,7 @@ use Hilos\HilosException;
  * @property-read string $updatedAt
  * @property-read ?string $deliveredAt
  */
-final class NotificationDelivery extends DbItem
+class NotificationDelivery extends DbItem
 {
     /**
      * Magic getter for notification-delivery properties.

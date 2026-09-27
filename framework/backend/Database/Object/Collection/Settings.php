@@ -23,7 +23,7 @@ use Hilos\Database\Object\Objects;
  * @method ObjectSetting|null get(int|string $key)
  * @method ObjectSetting|null offsetGet(mixed $offset)
  */
-final class Settings extends Objects
+class Settings extends Objects
 {
     public const string OBJECT_CLASS = ObjectSetting::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySettings::class;
@@ -43,14 +43,14 @@ final class Settings extends Objects
             return null;
         }
 
-        $entitySetting = EntitySetting::get([EntitySetting::key => $key])->first();
+        $entitySetting = static::entityClass()::get([EntitySetting::key => $key])->first();
 
         if ($entitySetting === null) {
             return null;
         }
 
         if (!isset($this->objects[$entitySetting->id])) {
-            $this->hydrate($entitySetting->id, ObjectSetting::fromEntity($entitySetting));
+            $this->hydrate($entitySetting->id, static::OBJECT_CLASS::fromEntity($entitySetting));
         }
 
         return $this->objects[$entitySetting->id];

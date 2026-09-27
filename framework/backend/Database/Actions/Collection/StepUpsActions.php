@@ -22,7 +22,7 @@ use Hilos\Database\View\Item\StepUp;
  * @property-read DbCollectionStepUps $collection
  * @property-read ObjectStepUps $objectCollection
  */
-final class StepUpsActions extends DbActions
+class StepUpsActions extends DbActions
 {
     /**
      * Creates or extends one browser's confirmation of one operation for a person.

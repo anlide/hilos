@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\AuthBlock as EntityAuthBlock;
  *
  * @extends EntityCollection<EntityAuthBlock>
  */
-final class AuthBlocks extends EntityCollection
+class AuthBlocks extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityAuthBlock::class;
 }

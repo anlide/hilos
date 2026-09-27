@@ -29,7 +29,7 @@ use Hilos\Files\ContentHash;
  * @method ObjectFile|null get(int|string $key)
  * @method ObjectFile|null offsetGet(mixed $offset)
  */
-final class Files extends Objects
+class Files extends Objects
 {
     public const string OBJECT_CLASS = ObjectFile::class;
     public const string ENTITY_COLLECTION_CLASS = EntityFiles::class;
@@ -46,7 +46,7 @@ final class Files extends Objects
      */
     public function findUnboundBefore(string $cutoffSql, int $limit): array
     {
-        return $this->hydrateAll(EntityFile::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntityFile::bound . '` = 0 AND `' . EntityFile::created_at . '` < ?',
             [$cutoffSql],
             [EntityFile::id => SqlSortDirection::ASC],
@@ -108,7 +108,7 @@ final class Files extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectFile::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }

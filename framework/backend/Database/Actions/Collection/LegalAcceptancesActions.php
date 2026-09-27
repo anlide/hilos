@@ -20,7 +20,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read DbCollectionLegalAcceptances $collection
  * @property-read ObjectLegalAcceptances $objectCollection
  */
-final class LegalAcceptancesActions extends DbActions
+class LegalAcceptancesActions extends DbActions
 {
     /**
      * @param int $userId Person accepting

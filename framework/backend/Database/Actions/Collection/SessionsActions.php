@@ -25,7 +25,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read DbCollectionSessions $collection
  * @property-read ObjectSessions $objectCollection
  */
-final class SessionsActions extends DbActions
+class SessionsActions extends DbActions
 {
     /**
      * Creates an anonymous session (no bound user) for a fresh cookie token.
@@ -46,7 +46,8 @@ final class SessionsActions extends DbActions
         }
 
         $now = TimeHelper::getSqlDateTime();
-        $session = ObjectSession::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $session = $objectClass::create();
         $session->token = $token;
         $session->userId = null;
         $session->createdAt = $now;
@@ -89,7 +90,8 @@ final class SessionsActions extends DbActions
             return null;
         }
 
-        $session = ObjectSession::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $session = $objectClass::create();
         $session->token = $token;
         $session->userId = $userId;
         $session->createdAt = $createdAt;

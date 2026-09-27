@@ -25,7 +25,7 @@ use Hilos\Database\View\Item\AccountDeletion;
  * @property-read DbCollectionAccountDeletions $collection
  * @property-read ObjectAccountDeletions $objectCollection
  */
-final class AccountDeletionsActions extends DbActions
+class AccountDeletionsActions extends DbActions
 {
     /**
      * Opens a request to delete a person's account.

@@ -45,7 +45,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read ?string $lastUsedAt
  * @property string $createdAt
  */
-final class PasskeyCredential extends Object_
+class PasskeyCredential extends Object_
 {
     public const string ENTITY_CLASS = EntityPasskeyCredential::class;
     public const string id = 'id';

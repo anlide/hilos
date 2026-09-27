@@ -34,7 +34,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectSecondFactor|null get(int|string $key)
  * @method ObjectSecondFactor|null offsetGet(mixed $offset)
  */
-final class SecondFactors extends Objects
+class SecondFactors extends Objects
 {
     public const string OBJECT_CLASS = ObjectSecondFactor::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySecondFactors::class;
@@ -66,7 +66,7 @@ final class SecondFactors extends Objects
             }
         }
 
-        $factor = ObjectSecondFactor::create();
+        $factor = static::OBJECT_CLASS::create();
         $factor->userId = $userId;
         $factor->label = $label;
         $factor->createdAt = TimeHelper::getSqlDateTime();
@@ -92,7 +92,7 @@ final class SecondFactors extends Objects
      */
     public function listByUser(int $userId): array
     {
-        $entities = EntitySecondFactor::get(
+        $entities = static::entityClass()::get(
             [EntitySecondFactor::user_id => $userId],
             orderBy: [EntitySecondFactor::id => SqlSortDirection::ASC],
         );
@@ -103,7 +103,7 @@ final class SecondFactors extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectSecondFactor::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }

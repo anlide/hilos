@@ -24,7 +24,7 @@ use Hilos\Database\View\Item\NotificationPreference;
  * @property-read DbCollectionNotificationPreferences $collection
  * @property-read ObjectNotificationPreferences $objectCollection
  */
-final class NotificationPreferencesActions extends DbActions
+class NotificationPreferencesActions extends DbActions
 {
     /**
      * Applies a recipient's opt in/out for one channel.

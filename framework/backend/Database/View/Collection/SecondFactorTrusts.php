@@ -17,7 +17,7 @@ use Hilos\Database\View\Item\SecondFactorTrust;
  *
  * @extends DbCollection<SecondFactorTrust, ObjectSecondFactorTrusts>
  */
-final class SecondFactorTrusts extends DbCollection
+class SecondFactorTrusts extends DbCollection
 {
     public const string DB_ITEM_CLASS = SecondFactorTrust::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactorTrusts::class;

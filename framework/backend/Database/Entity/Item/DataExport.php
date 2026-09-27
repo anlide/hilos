@@ -14,7 +14,7 @@ use Hilos\Database\PhpType;
  * @method static EntityDataExports get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityDataExports getAll()
  */
-final class DataExport extends Entity
+class DataExport extends Entity
 {
     public const string id = 'id';
     public const string user_id = 'user_id';

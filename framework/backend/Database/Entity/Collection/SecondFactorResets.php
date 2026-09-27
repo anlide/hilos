@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\SecondFactorReset as EntitySecondFactorReset;
  *
  * @extends EntityCollection<EntitySecondFactorReset>
  */
-final class SecondFactorResets extends EntityCollection
+class SecondFactorResets extends EntityCollection
 {
     public const string ENTITY_CLASS = EntitySecondFactorReset::class;
 }

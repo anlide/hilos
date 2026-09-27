@@ -38,7 +38,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read ?string $canceledAt
  * @property-read ?string $completedAt
  */
-final class AccountDeletion extends Object_
+class AccountDeletion extends Object_
 {
     public const string ENTITY_CLASS = EntityAccountDeletion::class;
     public const string id = 'id';

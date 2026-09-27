@@ -20,7 +20,7 @@ use Hilos\Database\View\Item\VerifierCircleMember;
  *
  * @extends DbCollection<VerifierCircleMember, ObjectVerifierCircleMembers>
  */
-final class VerifierCircleMembers extends DbCollection
+class VerifierCircleMembers extends DbCollection
 {
     public const string DB_ITEM_CLASS = VerifierCircleMember::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectVerifierCircleMembers::class;

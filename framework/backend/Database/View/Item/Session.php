@@ -38,7 +38,7 @@ use Hilos\HilosException;
  * @property-read ?int $blockedUserId Blocked account this browser lost or was refused, or null when it holds no such card
  * @property-read SessionActions $actions Actions for write operations on this session
  */
-final class Session extends DbItem
+class Session extends DbItem
 {
     /**
      * Property getter (read-only access).

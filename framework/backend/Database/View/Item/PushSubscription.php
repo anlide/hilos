@@ -28,7 +28,7 @@ use Hilos\HilosException;
  * @property-read string $createdAt
  * @property-read ?string $lastSeenAt
  */
-final class PushSubscription extends DbItem
+class PushSubscription extends DbItem
 {
     /**
      * Magic getter for push subscription properties.

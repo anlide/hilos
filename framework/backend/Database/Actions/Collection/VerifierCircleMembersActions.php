@@ -16,7 +16,6 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
-use Hilos\Database\Object\Item\VerifierCircleMember as ObjectVerifierCircleMember;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\View\Item\VerifierCircleMember;
 use Hilos\HilosException;
@@ -32,7 +31,7 @@ use Hilos\HilosException;
  * @property-read DbCollectionVerifierCircleMembers $collection
  * @property-read ObjectVerifierCircleMembers $objectCollection
  */
-final class VerifierCircleMembersActions extends DbActions
+class VerifierCircleMembersActions extends DbActions
 {
     /**
      * Names one identity pair as a member of the verifier circle.
@@ -65,7 +64,8 @@ final class VerifierCircleMembersActions extends DbActions
             throw new EmptyValueException('Verifier circle member identity type and identifier are required');
         }
 
-        $member = ObjectVerifierCircleMember::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $member = $objectClass::create();
         $member->identityType = $identityType;
         $member->identifier = $identifier;
         try {

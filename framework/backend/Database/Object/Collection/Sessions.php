@@ -24,7 +24,7 @@ use Hilos\Database\SqlSortDirection;
  * @method ObjectSession|null get(int|string $key)
  * @method ObjectSession|null offsetGet(mixed $offset)
  */
-final class Sessions extends Objects
+class Sessions extends Objects
 {
     public const string OBJECT_CLASS = ObjectSession::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySessions::class;
@@ -44,7 +44,7 @@ final class Sessions extends Objects
             return null;
         }
 
-        $entitySession = EntitySession::get([EntitySession::token => $token])->first();
+        $entitySession = static::entityClass()::get([EntitySession::token => $token])->first();
 
         if ($entitySession?->id === null) {
             return null;
@@ -68,7 +68,7 @@ final class Sessions extends Objects
      */
     public function findByUserId(int $userId): array
     {
-        return $this->hydrateAll(EntitySession::get([EntitySession::user_id => $userId]));
+        return $this->hydrateAll(static::entityClass()::get([EntitySession::user_id => $userId]));
     }
 
     /**
@@ -85,7 +85,7 @@ final class Sessions extends Objects
      */
     public function findByBlockedUserId(int $userId): array
     {
-        return $this->hydrateAll(EntitySession::get([EntitySession::blocked_user_id => $userId]));
+        return $this->hydrateAll(static::entityClass()::get([EntitySession::blocked_user_id => $userId]));
     }
 
     /**
@@ -102,7 +102,7 @@ final class Sessions extends Objects
      */
     public function findByImpersonator(int $userId): array
     {
-        return $this->hydrateAll(EntitySession::get([EntitySession::impersonator_user_id => $userId]));
+        return $this->hydrateAll(static::entityClass()::get([EntitySession::impersonator_user_id => $userId]));
     }
 
     /**
@@ -119,7 +119,7 @@ final class Sessions extends Objects
      */
     public function findTouchingUser(int $userId): array
     {
-        return $this->hydrateAll(EntitySession::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySession::user_id . '` = ? OR `' . EntitySession::impersonator_user_id . '` = ? OR `'
                 . EntitySession::pending_second_factor_user_id . '` = ?',
             [$userId, $userId, $userId],
@@ -147,7 +147,7 @@ final class Sessions extends Objects
         }
 
         return $this->hydrateAll(
-            EntitySession::get([EntitySession::pending_registration_identifier => $identifier]),
+            static::entityClass()::get([EntitySession::pending_registration_identifier => $identifier]),
         );
     }
 
@@ -164,7 +164,7 @@ final class Sessions extends Objects
      */
     public function findExpired(string $nowSql, int $limit): array
     {
-        return $this->hydrateAll(EntitySession::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySession::expires_at . '` IS NOT NULL AND `' . EntitySession::expires_at . '` <= ?',
             [$nowSql],
             [EntitySession::id => SqlSortDirection::ASC],
@@ -186,7 +186,7 @@ final class Sessions extends Objects
      */
     public function findNeverReturned(string $cutoffSql, int $limit): array
     {
-        return $this->hydrateAll(EntitySession::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySession::user_id . '` IS NULL'
                 . ' AND `' . EntitySession::last_seen_at . '` <= ?'
                 . ' AND `' . EntitySession::last_seen_at . '` = `' . EntitySession::created_at . '`',
@@ -216,7 +216,7 @@ final class Sessions extends Objects
      */
     public function releaseStalePendingRegistrations(string $cutoffSql): int
     {
-        $stale = $this->hydrateAll(EntitySession::get(
+        $stale = $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySession::pending_registration_since . '` <= ?',
             [$cutoffSql],
         ));
@@ -266,7 +266,7 @@ final class Sessions extends Objects
     private function hydrateSession(EntitySession $entitySession): ObjectSession
     {
         if (!isset($this->objects[$entitySession->id])) {
-            $this->hydrate($entitySession->id, ObjectSession::fromEntity($entitySession));
+            $this->hydrate($entitySession->id, static::OBJECT_CLASS::fromEntity($entitySession));
         }
 
         return $this->objects[$entitySession->id];

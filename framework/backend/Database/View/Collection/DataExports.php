@@ -14,7 +14,7 @@ use Hilos\HilosException;
  *
  * @extends DbCollection<DataExport, ObjectDataExports>
  */
-final class DataExports extends DbCollection
+class DataExports extends DbCollection
 {
     public const string DB_ITEM_CLASS = DataExport::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectDataExports::class;

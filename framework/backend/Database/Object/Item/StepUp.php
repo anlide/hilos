@@ -20,7 +20,7 @@ use Hilos\Database\Entity\Item\StepUp as EntityStepUp;
  * @property string $confirmedUntil
  * @property string $createdAt
  */
-final class StepUp extends Object_
+class StepUp extends Object_
 {
     public const string ENTITY_CLASS = EntityStepUp::class;
     public const string id = 'id';

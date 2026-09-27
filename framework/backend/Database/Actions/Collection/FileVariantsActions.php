@@ -6,7 +6,6 @@ namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Object\Collection\FileVariants as ObjectFileVariants;
-use Hilos\Database\Object\Item\FileVariant as ObjectFileVariant;
 use Hilos\Database\View\Collection\FileVariants as DbCollectionFileVariants;
 use Hilos\Database\View\Item\FileVariant;
 use Hilos\Files\Image\ImageVariant;
@@ -18,7 +17,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read DbCollectionFileVariants $collection
  * @property-read ObjectFileVariants $objectCollection
  */
-final class FileVariantsActions extends DbActions
+class FileVariantsActions extends DbActions
 {
     /**
      * Registers a copy after the files library has kept its bytes in storage.
@@ -60,7 +59,8 @@ final class FileVariantsActions extends DbActions
             throw new ValidationException('File variant needs a MIME type and a nonnegative size');
         }
 
-        $copy = ObjectFileVariant::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $copy = $objectClass::create();
         $copy->fileId = $fileId;
         $copy->variant = $variant;
         $copy->signature = $signature;

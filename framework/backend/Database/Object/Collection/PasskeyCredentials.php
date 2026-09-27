@@ -35,7 +35,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectPasskeyCredential|null get(int|string $key)
  * @method ObjectPasskeyCredential|null offsetGet(mixed $offset)
  */
-final class PasskeyCredentials extends Objects
+class PasskeyCredentials extends Objects
 {
     public const string OBJECT_CLASS = ObjectPasskeyCredential::class;
     public const string ENTITY_COLLECTION_CLASS = EntityPasskeyCredentials::class;
@@ -90,7 +90,7 @@ final class PasskeyCredentials extends Objects
             throw new DuplicateValueException('passkey credential already registered');
         }
 
-        $credential = ObjectPasskeyCredential::create();
+        $credential = static::OBJECT_CLASS::create();
         $credential->identityId = $identityId;
         $credential->userId = $userId;
         $credential->credentialId = $credentialId;
@@ -137,7 +137,7 @@ final class PasskeyCredentials extends Objects
             return null;
         }
 
-        $entity = EntityPasskeyCredential::get([
+        $entity = static::entityClass()::get([
             EntityPasskeyCredential::credential_id => $credentialId,
         ])->first();
 
@@ -146,7 +146,7 @@ final class PasskeyCredentials extends Objects
         }
 
         if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, ObjectPasskeyCredential::fromEntity($entity));
+            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];
@@ -167,7 +167,7 @@ final class PasskeyCredentials extends Objects
      */
     public function listByUser(int $userId): array
     {
-        $entities = EntityPasskeyCredential::get([EntityPasskeyCredential::user_id => $userId]);
+        $entities = static::entityClass()::get([EntityPasskeyCredential::user_id => $userId]);
 
         $result = [];
         foreach ($entities as $entity) {
@@ -175,7 +175,7 @@ final class PasskeyCredentials extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectPasskeyCredential::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }
@@ -208,14 +208,14 @@ final class PasskeyCredentials extends Objects
      */
     public function deleteByIdentity(int $identityId): void
     {
-        $entities = EntityPasskeyCredential::get([EntityPasskeyCredential::identity_id => $identityId]);
+        $entities = static::entityClass()::get([EntityPasskeyCredential::identity_id => $identityId]);
 
         foreach ($entities as $entity) {
             if ($entity->id === null) {
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectPasskeyCredential::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
 
             $this->objects[$entity->id]->delete();
@@ -243,7 +243,7 @@ final class PasskeyCredentials extends Objects
             return null;
         }
 
-        $entity = EntityPasskeyCredential::get([
+        $entity = static::entityClass()::get([
             EntityPasskeyCredential::user_handle => $userHandle,
         ])->first();
 
@@ -264,13 +264,13 @@ final class PasskeyCredentials extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        foreach (EntityPasskeyCredential::get([EntityPasskeyCredential::user_id => $userId]) as $entity) {
+        foreach (static::entityClass()::get([EntityPasskeyCredential::user_id => $userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectPasskeyCredential::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);

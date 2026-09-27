@@ -29,7 +29,7 @@ use Hilos\Files\FileVisibility;
  * @property bool $bound
  * @property string $createdAt
  */
-final class File extends Object_
+class File extends Object_
 {
     public const string ENTITY_CLASS = EntityFile::class;
     public const string id = 'id';

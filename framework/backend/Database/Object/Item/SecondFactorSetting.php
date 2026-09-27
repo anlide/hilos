@@ -23,7 +23,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property ?string $pendingResetWaitFrom
  * @property string $updatedAt
  */
-final class SecondFactorSetting extends Object_
+class SecondFactorSetting extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactorSetting::class;
     public const string userId = 'userId';

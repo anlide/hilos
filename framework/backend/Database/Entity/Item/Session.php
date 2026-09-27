@@ -52,7 +52,7 @@ use Hilos\Database\PhpType;
  * @method static EntitySessions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySessions getAll()
  */
-final class Session extends Entity
+class Session extends Entity
 {
     public const string id = 'id';
     public const string token = 'token';

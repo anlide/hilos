@@ -25,7 +25,7 @@ use Hilos\HilosException;
  * @property-read ?string $provider
  * @property-read bool $verified
  */
-final class Identity extends DbItem
+class Identity extends DbItem
 {
     /**
      * Magic getter for identity properties.

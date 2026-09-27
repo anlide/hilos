@@ -21,7 +21,7 @@ use Hilos\Database\PhpType;
  * @method static EntityNotificationDeliveries get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityNotificationDeliveries getAll()
  */
-final class NotificationDelivery extends Entity
+class NotificationDelivery extends Entity
 {
     public const string id = 'id';
     public const string notification_id = 'notification_id';

@@ -40,7 +40,7 @@ use Hilos\Database\SqlParamCollection;
  * @property ?string $clientId
  * @property ?string $scope
  */
-final class OAuthProvider extends Object_
+class OAuthProvider extends Object_
 {
     public const string ENTITY_CLASS = EntityOAuthProvider::class;
     public const string id = 'id';

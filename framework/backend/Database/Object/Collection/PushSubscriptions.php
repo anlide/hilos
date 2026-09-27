@@ -36,7 +36,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectPushSubscription|null get(int|string $key)
  * @method ObjectPushSubscription|null offsetGet(mixed $offset)
  */
-final class PushSubscriptions extends Objects
+class PushSubscriptions extends Objects
 {
     public const string OBJECT_CLASS = ObjectPushSubscription::class;
     public const string ENTITY_COLLECTION_CLASS = EntityPushSubscriptions::class;
@@ -70,7 +70,7 @@ final class PushSubscriptions extends Objects
         $subscription = $this->find($endpoint);
 
         if ($subscription === null) {
-            $subscription = ObjectPushSubscription::create();
+            $subscription = static::OBJECT_CLASS::create();
             $subscription->endpoint = $endpoint;
             $subscription->createdAt = $now;
         }
@@ -187,7 +187,7 @@ final class PushSubscriptions extends Objects
             return [];
         }
 
-        $entities = EntityPushSubscription::get([EntityPushSubscription::user_id => $userId]);
+        $entities = static::entityClass()::get([EntityPushSubscription::user_id => $userId]);
 
         $subscriptions = [];
         foreach ($entities as $entity) {
@@ -199,7 +199,7 @@ final class PushSubscriptions extends Objects
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectPushSubscription::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $subscriptions[] = $this->objects[$id];
         }
@@ -220,12 +220,12 @@ final class PushSubscriptions extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        $entities = EntityPushSubscription::get([EntityPushSubscription::user_id => $userId]);
+        $entities = static::entityClass()::get([EntityPushSubscription::user_id => $userId]);
         foreach ($entities as $entity) {
             $id = $entity->id;
             $subscription = $id !== null && isset($this->objects[$id])
                 ? $this->objects[$id]
-                : ObjectPushSubscription::fromEntity($entity);
+                : static::OBJECT_CLASS::fromEntity($entity);
             $subscription->delete();
             if ($id !== null) {
                 unset($this[$id]);
@@ -242,14 +242,14 @@ final class PushSubscriptions extends Objects
      */
     private function find(string $endpoint): ?ObjectPushSubscription
     {
-        $entity = EntityPushSubscription::get([EntityPushSubscription::endpoint => $endpoint])->first();
+        $entity = static::entityClass()::get([EntityPushSubscription::endpoint => $endpoint])->first();
 
         if ($entity === null || $entity->id === null) {
             return null;
         }
 
         if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, ObjectPushSubscription::fromEntity($entity));
+            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];

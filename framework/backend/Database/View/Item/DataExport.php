@@ -23,7 +23,7 @@ use Hilos\HilosException;
  * @property-read ?int $sizeBytes
  * @property-read DataExportActions $actions
  */
-final class DataExport extends DbItem
+class DataExport extends DbItem
 {
     /**
      * @param string $name Persisted property name

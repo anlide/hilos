@@ -38,7 +38,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectNotificationDelivery|null get(int|string $key)
  * @method ObjectNotificationDelivery|null offsetGet(mixed $offset)
  */
-final class NotificationDeliveries extends Objects
+class NotificationDeliveries extends Objects
 {
     public const string OBJECT_CLASS = ObjectNotificationDelivery::class;
     public const string ENTITY_COLLECTION_CLASS = EntityNotificationDeliveries::class;
@@ -73,7 +73,7 @@ final class NotificationDeliveries extends Objects
             throw new EmptyValueException('Notification delivery channel is required');
         }
 
-        $delivery = ObjectNotificationDelivery::create();
+        $delivery = static::OBJECT_CLASS::create();
         $delivery->notificationId = $notificationId;
         $delivery->channel = $channel;
         $delivery->status = DeliveryStatus::PENDING;
@@ -110,7 +110,7 @@ final class NotificationDeliveries extends Objects
     {
         $this->requireActivatedTable();
 
-        $entities = EntityNotificationDelivery::get(
+        $entities = static::entityClass()::get(
             [
                 EntityNotificationDelivery::notification_id => $notificationId,
                 EntityNotificationDelivery::channel => $channel,
@@ -124,7 +124,7 @@ final class NotificationDeliveries extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectNotificationDelivery::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
 
             return $this->objects[$entity->id];
@@ -193,12 +193,12 @@ final class NotificationDeliveries extends Objects
 
         $this->requireActivatedTable();
 
-        $entity = EntityNotificationDelivery::getById($id);
+        $entity = static::entityClass()::getById($id);
         if ($entity === null || $entity->id === null) {
             return null;
         }
 
-        $this->hydrate($entity->id, ObjectNotificationDelivery::fromEntity($entity));
+        $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
 
         return $this->objects[$entity->id];
     }
@@ -274,13 +274,13 @@ final class NotificationDeliveries extends Objects
 
         $where = '`' . EntityNotificationDelivery::notification_id . '` IN (SELECT `' . EntityNotification::id
             . '` FROM `' . EntityNotification::_table . '` WHERE `' . EntityNotification::user_id . '` = ?)';
-        foreach (EntityNotificationDelivery::get($where, [$userId]) as $entity) {
+        foreach (static::entityClass()::get($where, [$userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectNotificationDelivery::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);

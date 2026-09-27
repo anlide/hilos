@@ -43,7 +43,7 @@ use Hilos\Utils\Logger;
  * @method ObjectIdentity|null get(int|string $key)
  * @method ObjectIdentity|null offsetGet(mixed $offset)
  */
-final class Identities extends Objects
+class Identities extends Objects
 {
     public const string OBJECT_CLASS = ObjectIdentity::class;
     public const string ENTITY_COLLECTION_CLASS = EntityIdentities::class;
@@ -102,7 +102,7 @@ final class Identities extends Objects
             return null;
         }
 
-        $entityIdentity = EntityIdentity::get([
+        $entityIdentity = static::entityClass()::get([
             EntityIdentity::type => $type,
             EntityIdentity::identifier => $identifier,
         ])->first();
@@ -112,7 +112,7 @@ final class Identities extends Objects
         }
 
         if (!isset($this->objects[$entityIdentity->id])) {
-            $this->hydrate($entityIdentity->id, ObjectIdentity::fromEntity($entityIdentity));
+            $this->hydrate($entityIdentity->id, static::OBJECT_CLASS::fromEntity($entityIdentity));
         }
 
         return $this->objects[$entityIdentity->id];
@@ -195,7 +195,7 @@ final class Identities extends Objects
             throw new DuplicateValueException('account already has a password');
         }
 
-        $identity = ObjectIdentity::create();
+        $identity = static::OBJECT_CLASS::create();
         $identity->userId = $userId;
         $identity->type = IdentityType::PASSWORD;
         $identity->identifier = $identifier;
@@ -251,7 +251,7 @@ final class Identities extends Objects
             throw new DuplicateValueException('phone already used');
         }
 
-        $identity = ObjectIdentity::create();
+        $identity = static::OBJECT_CLASS::create();
         $identity->userId = $userId;
         $identity->type = IdentityType::SMS;
         $identity->identifier = $identifier;
@@ -301,7 +301,7 @@ final class Identities extends Objects
             throw new DuplicateValueException('oauth account already linked');
         }
 
-        $identity = ObjectIdentity::create();
+        $identity = static::OBJECT_CLASS::create();
         $identity->userId = $userId;
         $identity->type = IdentityType::OAUTH;
         $identity->identifier = $identifier;
@@ -350,7 +350,7 @@ final class Identities extends Objects
             throw new DuplicateValueException('passkey already registered');
         }
 
-        $identity = ObjectIdentity::create();
+        $identity = static::OBJECT_CLASS::create();
         $identity->userId = $userId;
         $identity->type = IdentityType::PASSKEY;
         $identity->identifier = $credentialId;
@@ -399,7 +399,7 @@ final class Identities extends Objects
             throw new DuplicateValueException('email already used');
         }
 
-        $identity = ObjectIdentity::create();
+        $identity = static::OBJECT_CLASS::create();
         $identity->userId = $userId;
         $identity->type = IdentityType::MAGIC_LINK;
         $identity->identifier = $identifier;
@@ -447,7 +447,7 @@ final class Identities extends Objects
      */
     public function deleteIdentity(int $userId, int $identityId): void
     {
-        $entityIdentity = EntityIdentity::get([EntityIdentity::id => $identityId])->first();
+        $entityIdentity = static::entityClass()::get([EntityIdentity::id => $identityId])->first();
         if ($entityIdentity === null) {
             return;
         }
@@ -458,7 +458,7 @@ final class Identities extends Objects
 
         if (
             $entityIdentity->type === IdentityType::PASSKEY
-            && EntityPasskeyCredential::get([EntityPasskeyCredential::identity_id => $identityId])->first() !== null
+            && EntityPasskeyCredential::countUpTo(1, [EntityPasskeyCredential::identity_id => $identityId]) > 0
         ) {
             throw new LogicException(
                 "cannot delete passkey identity {$identityId} directly: its passkey credential is still stored",
@@ -470,7 +470,7 @@ final class Identities extends Objects
         }
 
         if (!isset($this->objects[$identityId])) {
-            $this->hydrate($identityId, ObjectIdentity::fromEntity($entityIdentity));
+            $this->hydrate($identityId, static::OBJECT_CLASS::fromEntity($entityIdentity));
         }
 
         $this->objects[$identityId]->delete();
@@ -742,13 +742,13 @@ final class Identities extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        foreach (EntityIdentity::get([EntityIdentity::user_id => $userId]) as $entity) {
+        foreach (static::entityClass()::get([EntityIdentity::user_id => $userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectIdentity::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
@@ -857,7 +857,7 @@ final class Identities extends Objects
             return null;
         }
 
-        foreach (EntityIdentity::get([EntityIdentity::identifier => $identifier]) as $entityIdentity) {
+        foreach (static::entityClass()::get([EntityIdentity::identifier => $identifier]) as $entityIdentity) {
             if ($entityIdentity->verified && $entityIdentity->user_id !== null) {
                 return $entityIdentity;
             }
@@ -922,7 +922,7 @@ final class Identities extends Objects
             return null;
         }
 
-        $entityIdentities = EntityIdentity::get([EntityIdentity::identifier => $email]);
+        $entityIdentities = static::entityClass()::get([EntityIdentity::identifier => $email]);
         foreach ($entityIdentities as $entityIdentity) {
             if ($entityIdentity->user_id !== null) {
                 return $entityIdentity->user_id;
@@ -950,7 +950,7 @@ final class Identities extends Objects
      */
     public function findVerifiedEmailByUser(int $userId): ?string
     {
-        $entityIdentities = EntityIdentity::get([EntityIdentity::user_id => $userId]);
+        $entityIdentities = static::entityClass()::get([EntityIdentity::user_id => $userId]);
         foreach ($entityIdentities as $entityIdentity) {
             if (
                 $entityIdentity->verified
@@ -979,7 +979,7 @@ final class Identities extends Objects
      */
     public function findVerifiedSmsByUser(int $userId): ?string
     {
-        $entityIdentities = EntityIdentity::get([EntityIdentity::user_id => $userId]);
+        $entityIdentities = static::entityClass()::get([EntityIdentity::user_id => $userId]);
         foreach ($entityIdentities as $entityIdentity) {
             if ($entityIdentity->verified && $entityIdentity->type === IdentityType::SMS) {
                 return $entityIdentity->identifier;
@@ -999,7 +999,7 @@ final class Identities extends Objects
      */
     public function listByUser(int $userId): array
     {
-        $entityIdentities = EntityIdentity::get([EntityIdentity::user_id => $userId]);
+        $entityIdentities = static::entityClass()::get([EntityIdentity::user_id => $userId]);
 
         $result = [];
         foreach ($entityIdentities as $entityIdentity) {
@@ -1007,7 +1007,7 @@ final class Identities extends Objects
                 continue;
             }
             if (!isset($this->objects[$entityIdentity->id])) {
-                $this->hydrate($entityIdentity->id, ObjectIdentity::fromEntity($entityIdentity));
+                $this->hydrate($entityIdentity->id, static::OBJECT_CLASS::fromEntity($entityIdentity));
             }
             $result[] = $this->objects[$entityIdentity->id];
         }

@@ -22,7 +22,7 @@ use Hilos\HilosException;
  * @property-read string $identityType
  * @property-read string $identifier
  */
-final class VerifierCircleMember extends DbItem
+class VerifierCircleMember extends DbItem
 {
     /**
      * Magic getter for verifier circle member properties.

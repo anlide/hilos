@@ -27,7 +27,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property int $level
  * @property ?string $blockedUntil
  */
-final class AuthBlock extends Object_
+class AuthBlock extends Object_
 {
     public const string ENTITY_CLASS = EntityAuthBlock::class;
     public const string id = 'id';

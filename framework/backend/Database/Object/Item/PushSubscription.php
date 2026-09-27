@@ -32,7 +32,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $createdAt
  * @property ?string $lastSeenAt
  */
-final class PushSubscription extends Object_
+class PushSubscription extends Object_
 {
     public const string ENTITY_CLASS = EntityPushSubscription::class;
     public const string id = 'id';

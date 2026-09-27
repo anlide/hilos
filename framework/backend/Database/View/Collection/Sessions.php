@@ -28,7 +28,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method Session|null offsetGet(mixed $offset)
  * @property-read SessionsActions $actions Actions for write operations
  */
-final class Sessions extends DbCollection
+class Sessions extends DbCollection
 {
     public const string DB_ITEM_CLASS = Session::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectSessions::class;

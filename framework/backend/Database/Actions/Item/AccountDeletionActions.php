@@ -23,7 +23,7 @@ use Hilos\Database\View\Item\AccountDeletion;
  * @extends DbActions<AccountDeletion, ObjectAccountDeletion>
  * @property-read ObjectAccountDeletion $object
  */
-final class AccountDeletionActions extends DbActions
+class AccountDeletionActions extends DbActions
 {
     /**
      * Cancels the request, if it still stands.

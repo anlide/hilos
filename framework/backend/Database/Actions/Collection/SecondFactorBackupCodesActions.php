@@ -25,7 +25,7 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
  * @property-read DbCollectionSecondFactorBackupCodes $collection
  * @property-read ObjectSecondFactorBackupCodes $objectCollection
  */
-final class SecondFactorBackupCodesActions extends DbActions
+class SecondFactorBackupCodesActions extends DbActions
 {
     /**
      * Replaces a person's backup codes with a new set.

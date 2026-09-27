@@ -23,7 +23,7 @@ use Hilos\Database\View\Item\UserVerification;
  *
  * @extends DbCollection<UserVerification, ObjectUserVerifications>
  */
-final class UserVerifications extends DbCollection
+class UserVerifications extends DbCollection
 {
     public const string DB_ITEM_CLASS = UserVerification::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectUserVerifications::class;

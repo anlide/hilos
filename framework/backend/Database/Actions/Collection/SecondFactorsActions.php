@@ -27,7 +27,7 @@ use Hilos\Database\View\Item\SecondFactor;
  * @property-read DbCollectionSecondFactors $collection
  * @property-read ObjectSecondFactors $objectCollection
  */
-final class SecondFactorsActions extends DbActions
+class SecondFactorsActions extends DbActions
 {
     /**
      * Opens an enrolment: an unconfirmed authenticator holding a fresh secret.

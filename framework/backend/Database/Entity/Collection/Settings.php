@@ -12,7 +12,7 @@ use Hilos\Database\Entity\Item\Setting as EntitySetting;
  *
  * @extends EntityCollection<EntitySetting>
  */
-final class Settings extends EntityCollection
+class Settings extends EntityCollection
 {
     public const string ENTITY_CLASS = EntitySetting::class;
 }

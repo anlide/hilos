@@ -22,7 +22,7 @@ use Hilos\Database\View\Item\OAuthProvider;
  * @extends DbCollection<OAuthProvider, ObjectOAuthProviders>
  * @property-read OAuthProvidersActions $actions
  */
-final class OAuthProviders extends DbCollection
+class OAuthProviders extends DbCollection
 {
     public const string DB_ITEM_CLASS = OAuthProvider::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectOAuthProviders::class;

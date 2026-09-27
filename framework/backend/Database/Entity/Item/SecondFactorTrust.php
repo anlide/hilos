@@ -20,7 +20,7 @@ use Hilos\Database\PhpType;
  * @method static EntitySecondFactorTrusts get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySecondFactorTrusts getAll()
  */
-final class SecondFactorTrust extends Entity
+class SecondFactorTrust extends Entity
 {
     public const string id = 'id';
     public const string session_id = 'session_id';

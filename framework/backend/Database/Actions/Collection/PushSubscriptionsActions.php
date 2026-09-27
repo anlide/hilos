@@ -28,7 +28,7 @@ use Hilos\Database\View\Item\PushSubscription;
  * @property-read DbCollectionPushSubscriptions $collection
  * @property-read ObjectPushSubscriptions $objectCollection
  */
-final class PushSubscriptionsActions extends DbActions
+class PushSubscriptionsActions extends DbActions
 {
     /**
      * Registers a device's push subscription (upsert by endpoint).

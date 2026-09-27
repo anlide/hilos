@@ -44,7 +44,7 @@ use Hilos\Database\PhpType;
  * @method static EntityRegistrationReservations get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityRegistrationReservations getAll()
  */
-final class RegistrationReservation extends Entity
+class RegistrationReservation extends Entity
 {
     public const string id = 'id';
     public const string type = 'type';

@@ -20,7 +20,7 @@ use Hilos\HilosException;
  * @property-read string $confirmedUntil
  * @property-read string $createdAt
  */
-final class StepUp extends DbItem
+class StepUp extends DbItem
 {
     /**
      * @param string $name Property name (see class @property list)

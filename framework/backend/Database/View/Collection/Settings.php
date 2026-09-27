@@ -20,7 +20,7 @@ use Hilos\Database\View\Item\Setting;
  * @extends DbCollection<Setting, ObjectSettings>
  * @property-read SettingsActions $actions
  */
-final class Settings extends DbCollection
+class Settings extends DbCollection
 {
     public const string DB_ITEM_CLASS = Setting::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectSettings::class;

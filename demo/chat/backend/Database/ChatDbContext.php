@@ -33,6 +33,8 @@ use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\Users;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Exception\CollectionAlreadyMountedException;
+use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Objects;
@@ -73,6 +75,8 @@ final class ChatDbContext extends HilosDbContext
     /**
      * Configures database context with object collections and view representations.
      *
+     * @throws FrameworkExtensionException When a framework key is extended by a chain that does not extend it
+     * @throws CollectionAlreadyMountedException When a key is represented twice
      * @throws ObjectCollectionNotFoundException When a represented object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
      */

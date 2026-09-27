@@ -9,8 +9,10 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Hilos;
 use LogicException;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -197,6 +199,43 @@ final class EntitySchemaAudit
             dirname(__DIR__) . self::FRAMEWORK_ENTITY_DIR,
             self::FRAMEWORK_ENTITY_NAMESPACE,
         );
+    }
+
+    /**
+     * The Entity class mounted over an Entity's table, when a project extended it.
+     *
+     * A project's subclass of a framework Entity is mounted in place of the base, under the
+     * framework's key, and the live table then carries the project's columns as well - so the
+     * base audited against it would report columns it never declared, and the subclass is
+     * what the audit has to read ({@see EntitySchemaAudit::audit()}). The class is found the way
+     * the set-ownership guard finds it: through the object collections the context mounted,
+     * each of which names its Object, which names its Entity. What is answered is the mounted
+     * class over the same table when it is a subclass of the one asked about, and the class
+     * asked about otherwise - the framework's own, a project's own, or any Entity where no
+     * database context is built at all.
+     *
+     * @param class-string<Entity> $entityClass Entity to look the mounted class up for
+     * @return class-string<Entity> The mounted subclass over the same table, else `$entityClass` itself
+     */
+    public static function mountedClassOf(string $entityClass): string
+    {
+        $table = constant("{$entityClass}::" . Entity::META_TABLE);
+        foreach (Hilos::$db?->getObjectCollectionClasses() ?? [] as $collectionClass) {
+            $objectClass = $collectionClass::OBJECT_CLASS;
+            if (!is_subclass_of($objectClass, Object_::class)) {
+                continue;
+            }
+
+            $mountedClass = $objectClass::ENTITY_CLASS;
+            if (
+                is_subclass_of($mountedClass, $entityClass)
+                && constant("{$mountedClass}::" . Entity::META_TABLE) === $table
+            ) {
+                return $mountedClass;
+            }
+        }
+
+        return $entityClass;
     }
 
     /**

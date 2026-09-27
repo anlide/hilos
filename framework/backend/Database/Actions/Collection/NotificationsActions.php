@@ -23,7 +23,7 @@ use Hilos\HilosException;
  * @property-read DbCollectionNotifications $collection
  * @property-read ObjectNotifications $objectCollection
  */
-final class NotificationsActions extends DbActions
+class NotificationsActions extends DbActions
 {
     /**
      * Marks every unread notification of a recipient read.

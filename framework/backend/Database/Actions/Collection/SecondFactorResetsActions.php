@@ -26,7 +26,7 @@ use Hilos\Database\View\Item\SecondFactorReset;
  * @property-read DbCollectionSecondFactorResets $collection
  * @property-read ObjectSecondFactorResets $objectCollection
  */
-final class SecondFactorResetsActions extends DbActions
+class SecondFactorResetsActions extends DbActions
 {
     /**
      * Opens a delayed removal of a person's second factor.

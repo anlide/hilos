@@ -25,7 +25,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @extends DbActions<SecondFactor, ObjectSecondFactor>
  * @property-read ObjectSecondFactor $object
  */
-final class SecondFactorActions extends DbActions
+class SecondFactorActions extends DbActions
 {
     /**
      * Finishes the enrolment: the authenticator becomes part of the person's second factor.

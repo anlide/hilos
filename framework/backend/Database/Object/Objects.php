@@ -180,6 +180,21 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
+     * The Entity class this collection's rows are read as, reached through the link
+     * constants rather than named: OBJECT_CLASS names the object, and the object names
+     * its Entity. A concrete collection builds every row it reads through this and
+     * through static::OBJECT_CLASS, never by naming a framework class — a subclass chain
+     * mounted under the framework's key is then what gets built, and the row carries the
+     * project's columns (inheritance.md, ORM-CHAIN-OPEN).
+     *
+     * @return class-string<Entity> Entity class behind OBJECT_CLASS
+     */
+    protected static function entityClass(): string
+    {
+        return (static::OBJECT_CLASS)::ENTITY_CLASS;
+    }
+
+    /**
      * Lazy load object by key.
      *
      * @param int|string|null $key Object key (usually primary key), or null for a missing optional relation key

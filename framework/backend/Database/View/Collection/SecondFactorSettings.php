@@ -16,7 +16,7 @@ use Hilos\Database\View\Item\SecondFactorSetting;
  *
  * @extends DbCollection<SecondFactorSetting, ObjectSecondFactorSettings>
  */
-final class SecondFactorSettings extends DbCollection
+class SecondFactorSettings extends DbCollection
 {
     public const string DB_ITEM_CLASS = SecondFactorSetting::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactorSettings::class;

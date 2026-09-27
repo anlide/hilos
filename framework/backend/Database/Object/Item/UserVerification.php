@@ -39,7 +39,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property string $expiresAt
  * @property-read ?string $consumedAt
  */
-final class UserVerification extends Object_
+class UserVerification extends Object_
 {
     public const string ENTITY_CLASS = EntityUserVerification::class;
     public const string id = 'id';

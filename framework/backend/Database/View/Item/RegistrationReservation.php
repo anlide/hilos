@@ -22,7 +22,7 @@ use Hilos\HilosException;
  * @property-read string $sessionToken
  * @property-read string $expiresAt
  */
-final class RegistrationReservation extends DbItem
+class RegistrationReservation extends DbItem
 {
     /**
      * Magic getter for reservation properties.

@@ -28,7 +28,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property ?string $readAt
  * @property-read string $createdAt
  */
-final class Notification extends Object_
+class Notification extends Object_
 {
     public const string ENTITY_CLASS = EntityNotification::class;
     public const string id = 'id';

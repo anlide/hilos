@@ -22,7 +22,7 @@ use Hilos\Database\PhpType;
  * @method static EntityNotificationPreferences get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityNotificationPreferences getAll()
  */
-final class NotificationPreference extends Entity
+class NotificationPreference extends Entity
 {
     public const string id = 'id';
     public const string user_id = 'user_id';

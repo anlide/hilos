@@ -32,7 +32,7 @@ use Hilos\Database\SqlParamCollection;
  * @property-read ?string $codeAcceptedAt
  * @property string $expiresAt
  */
-final class RegistrationReservation extends Object_
+class RegistrationReservation extends Object_
 {
     public const string ENTITY_CLASS = EntityRegistrationReservation::class;
     public const string id = 'id';

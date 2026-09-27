@@ -21,7 +21,7 @@ use Hilos\Database\PhpType;
  * @method static EntitySecondFactorResets get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySecondFactorResets getAll()
  */
-final class SecondFactorReset extends Entity
+class SecondFactorReset extends Entity
 {
     public const string id = 'id';
     public const string user_id = 'user_id';

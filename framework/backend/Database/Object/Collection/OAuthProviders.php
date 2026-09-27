@@ -28,7 +28,7 @@ use Hilos\Database\Object\Objects;
  * @method ObjectOAuthProvider|null get(int|string $key)
  * @method ObjectOAuthProvider|null offsetGet(mixed $offset)
  */
-final class OAuthProviders extends Objects
+class OAuthProviders extends Objects
 {
     public const string OBJECT_CLASS = ObjectOAuthProvider::class;
     public const string ENTITY_COLLECTION_CLASS = EntityOAuthProviders::class;

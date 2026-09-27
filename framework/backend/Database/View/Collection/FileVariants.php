@@ -19,7 +19,7 @@ use Hilos\Database\View\Item\FileVariant;
  * @method FileVariant|null offsetGet(mixed $offset)
  * @property-read FileVariantsActions $actions
  */
-final class FileVariants extends DbCollection
+class FileVariants extends DbCollection
 {
     public const string DB_ITEM_CLASS = FileVariant::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectFileVariants::class;

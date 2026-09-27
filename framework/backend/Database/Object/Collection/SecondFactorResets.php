@@ -34,7 +34,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectSecondFactorReset|null get(int|string $key)
  * @method ObjectSecondFactorReset|null offsetGet(mixed $offset)
  */
-final class SecondFactorResets extends Objects
+class SecondFactorResets extends Objects
 {
     public const string OBJECT_CLASS = ObjectSecondFactorReset::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySecondFactorResets::class;
@@ -63,7 +63,7 @@ final class SecondFactorResets extends Objects
     public function request(int $userId, string $effectiveAt, string $cancelTokenHash): ObjectSecondFactorReset
     {
         $now = TimeHelper::getSqlDateTime();
-        $reset = ObjectSecondFactorReset::create();
+        $reset = static::OBJECT_CLASS::create();
         $reset->userId = $userId;
         $reset->requestedAt = $now;
         $reset->effectiveAt = $effectiveAt;
@@ -90,7 +90,7 @@ final class SecondFactorResets extends Objects
      */
     public function liveOf(int $userId): ?ObjectSecondFactorReset
     {
-        return $this->hydrateAll(EntitySecondFactorReset::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySecondFactorReset::user_id . '` = ? AND ' . self::LIVE_CONDITION,
             [$userId],
             [EntitySecondFactorReset::id => SqlSortDirection::DESC],
@@ -108,7 +108,7 @@ final class SecondFactorResets extends Objects
      */
     public function findLiveByTokenHash(string $cancelTokenHash): ?ObjectSecondFactorReset
     {
-        return $this->hydrateAll(EntitySecondFactorReset::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySecondFactorReset::cancel_token_hash . '` = ? AND ' . self::LIVE_CONDITION,
             [$cancelTokenHash],
             [],
@@ -126,7 +126,7 @@ final class SecondFactorResets extends Objects
      */
     public function dueBy(string $now): array
     {
-        return $this->hydrateAll(EntitySecondFactorReset::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySecondFactorReset::effective_at . '` <= ? AND ' . self::LIVE_CONDITION,
             [$now],
             [EntitySecondFactorReset::effective_at => SqlSortDirection::ASC],
@@ -144,7 +144,7 @@ final class SecondFactorResets extends Objects
      */
     public function reminderDueBy(string $now, string $notifiedBefore): array
     {
-        return $this->hydrateAll(EntitySecondFactorReset::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntitySecondFactorReset::effective_at . '` > ? AND `' . EntitySecondFactorReset::notified_at
                 . '` <= ? AND ' . self::LIVE_CONDITION,
             [$now, $notifiedBefore],
@@ -166,13 +166,13 @@ final class SecondFactorResets extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        foreach (EntitySecondFactorReset::get([EntitySecondFactorReset::user_id => $userId]) as $entity) {
+        foreach (static::entityClass()::get([EntitySecondFactorReset::user_id => $userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectSecondFactorReset::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
@@ -193,7 +193,7 @@ final class SecondFactorResets extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectSecondFactorReset::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }

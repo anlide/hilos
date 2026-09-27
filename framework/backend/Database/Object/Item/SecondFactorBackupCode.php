@@ -34,7 +34,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read ?string $usedAt
  * @property string $createdAt
  */
-final class SecondFactorBackupCode extends Object_
+class SecondFactorBackupCode extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactorBackupCode::class;
     public const string id = 'id';

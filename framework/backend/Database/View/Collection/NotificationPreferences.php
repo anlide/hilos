@@ -17,7 +17,7 @@ use Hilos\Database\View\Item\NotificationPreference;
  *
  * @extends DbCollection<NotificationPreference, ObjectNotificationPreferences>
  */
-final class NotificationPreferences extends DbCollection
+class NotificationPreferences extends DbCollection
 {
     public const string DB_ITEM_CLASS = NotificationPreference::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectNotificationPreferences::class;

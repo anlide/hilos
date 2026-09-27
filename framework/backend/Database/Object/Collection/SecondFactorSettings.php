@@ -30,7 +30,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectSecondFactorSetting|null get(int|string $key)
  * @method ObjectSecondFactorSetting|null offsetGet(mixed $offset)
  */
-final class SecondFactorSettings extends Objects
+class SecondFactorSettings extends Objects
 {
     public const string OBJECT_CLASS = ObjectSecondFactorSetting::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySecondFactorSettings::class;
@@ -56,7 +56,7 @@ final class SecondFactorSettings extends Objects
         $setting = $this->offsetGet($userId);
         $isNew = $setting === null;
         if ($setting === null) {
-            $setting = ObjectSecondFactorSetting::create();
+            $setting = static::OBJECT_CLASS::create();
             $setting->userId = $userId;
         }
 

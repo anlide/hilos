@@ -27,7 +27,7 @@ use Hilos\Files\Library\AbstractFilesLibraryAgent;
  * @method File|null offsetGet(mixed $offset)
  * @property-read FilesActions $actions Actions for write operations
  */
-final class Files extends DbCollection
+class Files extends DbCollection
 {
     public const string DB_ITEM_CLASS = File::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectFiles::class;

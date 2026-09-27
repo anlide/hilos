@@ -96,8 +96,7 @@ final class User extends Entity
 
 A project's subclass of a framework Entity declares the verdicts on its own
 columns and inherits the base's; the registry collects the mounted subclass, not
-the base (not in the code yet — HIL-1190). See
-[../orm/inheritance.md](../orm/inheritance.md).
+the base. See [../orm/inheritance.md](../orm/inheritance.md).
 
 **A table with no Entity declares both facts in a `TablesWithoutEntityProvider`** —
 which live tables are unmapped on purpose, and what of them is personal. The

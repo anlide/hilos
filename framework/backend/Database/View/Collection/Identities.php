@@ -31,7 +31,7 @@ use Hilos\Database\View\Item\Identity;
  *
  * @extends DbCollection<Identity, ObjectIdentities>
  */
-final class Identities extends DbCollection
+class Identities extends DbCollection
 {
     public const string DB_ITEM_CLASS = Identity::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectIdentities::class;

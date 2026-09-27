@@ -25,7 +25,7 @@ use Hilos\Database\PhpType;
  * @method static EntityAuthBlocks get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityAuthBlocks getAll()
  */
-final class AuthBlock extends Entity
+class AuthBlock extends Entity
 {
     public const string id = 'id';
     public const string scope = 'scope';

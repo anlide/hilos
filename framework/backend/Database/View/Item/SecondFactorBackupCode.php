@@ -22,7 +22,7 @@ use Hilos\HilosException;
  * @property-read string $createdAt
  * @property-read SecondFactorBackupCodeActions $actions
  */
-final class SecondFactorBackupCode extends DbItem
+class SecondFactorBackupCode extends DbItem
 {
     /**
      * Magic getter for backup code properties.

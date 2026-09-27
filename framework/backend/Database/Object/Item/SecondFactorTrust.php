@@ -23,7 +23,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $trustedUntil
  * @property string $createdAt
  */
-final class SecondFactorTrust extends Object_
+class SecondFactorTrust extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactorTrust::class;
     public const string id = 'id';

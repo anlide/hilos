@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\SecondFactorTrust as EntitySecondFactorTrust;
  *
  * @extends EntityCollection<EntitySecondFactorTrust>
  */
-final class SecondFactorTrusts extends EntityCollection
+class SecondFactorTrusts extends EntityCollection
 {
     public const string ENTITY_CLASS = EntitySecondFactorTrust::class;
 }

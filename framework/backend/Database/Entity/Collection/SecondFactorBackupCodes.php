@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\SecondFactorBackupCode as EntitySecondFactorBacku
  *
  * @extends EntityCollection<EntitySecondFactorBackupCode>
  */
-final class SecondFactorBackupCodes extends EntityCollection
+class SecondFactorBackupCodes extends EntityCollection
 {
     public const string ENTITY_CLASS = EntitySecondFactorBackupCode::class;
 }

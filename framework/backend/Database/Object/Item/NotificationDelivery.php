@@ -29,7 +29,7 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * @property string $updatedAt
  * @property ?string $deliveredAt
  */
-final class NotificationDelivery extends Object_
+class NotificationDelivery extends Object_
 {
     public const string ENTITY_CLASS = EntityNotificationDelivery::class;
     public const string id = 'id';

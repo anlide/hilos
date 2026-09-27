@@ -29,7 +29,7 @@ use Hilos\Database\PhpType;
  * @method static EntityIdentities get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityIdentities getAll()
  */
-final class Identity extends Entity
+class Identity extends Entity
 {
     public const string id = 'id';
     public const string user_id = 'user_id';

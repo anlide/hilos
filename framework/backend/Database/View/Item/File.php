@@ -28,7 +28,7 @@ use Hilos\HilosException;
  * @property-read bool $bound
  * @property-read string $createdAt
  */
-final class File extends DbItem
+class File extends DbItem
 {
     /**
      * Magic getter for file properties.

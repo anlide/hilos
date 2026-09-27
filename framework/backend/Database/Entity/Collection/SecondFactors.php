@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\SecondFactor as EntitySecondFactor;
  *
  * @extends EntityCollection<EntitySecondFactor>
  */
-final class SecondFactors extends EntityCollection
+class SecondFactors extends EntityCollection
 {
     public const string ENTITY_CLASS = EntitySecondFactor::class;
 }

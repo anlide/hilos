@@ -24,7 +24,7 @@ use Hilos\Legal\LegalDocument;
  *
  * @extends Objects<ObjectLegalAcceptance>
  */
-final class LegalAcceptances extends Objects
+class LegalAcceptances extends Objects
 {
     public const string OBJECT_CLASS = ObjectLegalAcceptance::class;
     public const string ENTITY_COLLECTION_CLASS = EntityLegalAcceptances::class;
@@ -45,7 +45,7 @@ final class LegalAcceptances extends Objects
      */
     public function record(int $userId, LegalDocument $document, string $revisionId, string $acceptedAt): ObjectLegalAcceptance
     {
-        $acceptance = ObjectLegalAcceptance::create();
+        $acceptance = static::OBJECT_CLASS::create();
         $acceptance->userId = $userId;
         $acceptance->document = $document->value;
         $acceptance->revisionId = $revisionId;
@@ -68,7 +68,7 @@ final class LegalAcceptances extends Objects
      */
     public function ofUser(int $userId): array
     {
-        return $this->hydrateAll(EntityLegalAcceptance::get(
+        return $this->hydrateAll(static::entityClass()::get(
             [EntityLegalAcceptance::user_id => $userId],
             [],
             [EntityLegalAcceptance::accepted_at => SqlSortDirection::ASC, EntityLegalAcceptance::id => SqlSortDirection::ASC],
@@ -85,7 +85,7 @@ final class LegalAcceptances extends Objects
      */
     public function findOne(int $userId, LegalDocument $document, string $revisionId): ?ObjectLegalAcceptance
     {
-        return $this->hydrateAll(EntityLegalAcceptance::get([
+        return $this->hydrateAll(static::entityClass()::get([
             EntityLegalAcceptance::user_id => $userId,
             EntityLegalAcceptance::document => $document->value,
             EntityLegalAcceptance::revision_id => $revisionId,
@@ -120,7 +120,7 @@ final class LegalAcceptances extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectLegalAcceptance::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $acceptances[] = $this->objects[$entity->id];
         }

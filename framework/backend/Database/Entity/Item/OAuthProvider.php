@@ -30,7 +30,7 @@ use Hilos\Database\PhpType;
  * @method static EntityOAuthProviders get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityOAuthProviders getAll()
  */
-final class OAuthProvider extends Entity
+class OAuthProvider extends Entity
 {
     public const string id = 'id';
     public const string provider_key = 'provider_key';

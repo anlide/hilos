@@ -19,7 +19,7 @@ use Hilos\HilosException;
  * @extends DbActions<File, ObjectFile>
  * @property-read ObjectFile $object
  */
-final class FileActions extends DbActions
+class FileActions extends DbActions
 {
     /**
      * Marks this file linked by the project, so the janitor never takes it.

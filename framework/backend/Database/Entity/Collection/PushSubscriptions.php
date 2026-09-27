@@ -16,7 +16,7 @@ use IteratorAggregate;
  * @implements IteratorAggregate<int|string, EntityPushSubscription>
  * @implements ArrayAccess<int|string, EntityPushSubscription>
  */
-final class PushSubscriptions extends EntityCollection
+class PushSubscriptions extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityPushSubscription::class;
 }

@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\StepUp as EntityStepUp;
  *
  * @extends EntityCollection<EntityStepUp>
  */
-final class StepUps extends EntityCollection
+class StepUps extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityStepUp::class;
 }

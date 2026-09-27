@@ -36,7 +36,7 @@ use Hilos\Database\PhpType;
  * @method static EntityUserVerifications get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityUserVerifications getAll()
  */
-final class UserVerification extends Entity
+class UserVerification extends Entity
 {
     public const string id = 'id';
     public const string user_id = 'user_id';

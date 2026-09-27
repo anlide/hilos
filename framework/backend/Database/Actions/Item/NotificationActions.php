@@ -22,7 +22,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @extends DbActions<Notification, ObjectNotification>
  * @property-read ObjectNotification $object
  */
-final class NotificationActions extends DbActions
+class NotificationActions extends DbActions
 {
     /**
      * Marks this notification read, stamping the read time.

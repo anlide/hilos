@@ -39,7 +39,7 @@ use Hilos\Database\SqlParamCollection;
  * @property ?string $deviceName
  * @property ?int $blockedUserId
  */
-final class Session extends Object_
+class Session extends Object_
 {
     public const string ENTITY_CLASS = EntitySession::class;
 

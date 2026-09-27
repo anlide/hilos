@@ -23,7 +23,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $identityType
  * @property string $identifier
  */
-final class VerifierCircleMember extends Object_
+class VerifierCircleMember extends Object_
 {
     public const string ENTITY_CLASS = EntityVerifierCircleMember::class;
     public const string id = 'id';

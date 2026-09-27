@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\SecondFactorSetting as EntitySecondFactorSetting;
  *
  * @extends EntityCollection<EntitySecondFactorSetting>
  */
-final class SecondFactorSettings extends EntityCollection
+class SecondFactorSettings extends EntityCollection
 {
     public const string ENTITY_CLASS = EntitySecondFactorSetting::class;
 }

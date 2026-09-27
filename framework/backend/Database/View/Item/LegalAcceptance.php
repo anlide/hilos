@@ -18,7 +18,7 @@ use Hilos\HilosException;
  * @property-read string $revisionId
  * @property-read string $acceptedAt
  */
-final class LegalAcceptance extends DbItem
+class LegalAcceptance extends DbItem
 {
     /**
      * @param string $name Scalar field

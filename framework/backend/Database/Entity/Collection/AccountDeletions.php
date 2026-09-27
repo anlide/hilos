@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\AccountDeletion as EntityAccountDeletion;
  *
  * @extends EntityCollection<EntityAccountDeletion>
  */
-final class AccountDeletions extends EntityCollection
+class AccountDeletions extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityAccountDeletion::class;
 }

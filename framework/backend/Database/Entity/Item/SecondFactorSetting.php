@@ -20,7 +20,7 @@ use Hilos\Database\PhpType;
  * @method static EntitySecondFactorSettings get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySecondFactorSettings getAll()
  */
-final class SecondFactorSetting extends Entity
+class SecondFactorSetting extends Entity
 {
     public const string user_id = 'user_id';
     public const string reset_wait_days = 'reset_wait_days';

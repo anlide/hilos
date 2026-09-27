@@ -28,9 +28,8 @@ One named case is designed for inheritance even while no subclass exists in the
 tree: the framework's ORM chain — every concrete Entity, Object, View item, their
 collections, and their actions. A project extends a framework table by
 subclassing that whole chain, so none of those classes is `final`, and their
-factories declare `: static` and build with `new static(...)` (not in the code
-yet — HIL-1190). The rule and the chain are in
-[../orm/inheritance.md](../orm/inheritance.md).
+factories declare `: static` and build with `new static(...)`. The rule and the
+chain are in [../orm/inheritance.md](../orm/inheritance.md).
 
 ## Workflow
 

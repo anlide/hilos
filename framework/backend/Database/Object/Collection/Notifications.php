@@ -43,7 +43,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectNotification|null get(int|string $key)
  * @method ObjectNotification|null offsetGet(mixed $offset)
  */
-final class Notifications extends Objects
+class Notifications extends Objects
 {
     public const string OBJECT_CLASS = ObjectNotification::class;
     public const string ENTITY_COLLECTION_CLASS = EntityNotifications::class;
@@ -85,7 +85,7 @@ final class Notifications extends Objects
             throw new EmptyValueException('Notification type and title are required');
         }
 
-        $notification = ObjectNotification::create();
+        $notification = static::OBJECT_CLASS::create();
         $notification->userId = $userId;
         $notification->type = $type;
         $notification->severity = $severity;
@@ -119,7 +119,7 @@ final class Notifications extends Objects
     {
         $this->requireActivatedTable();
 
-        $entities = EntityNotification::get(
+        $entities = static::entityClass()::get(
             [EntityNotification::user_id => $userId],
             [],
             [EntityNotification::id => SqlSortDirection::DESC],
@@ -131,7 +131,7 @@ final class Notifications extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectNotification::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
             if (count($result) >= $limit) {
@@ -235,13 +235,13 @@ final class Notifications extends Objects
     {
         $this->requireActivatedTable();
 
-        foreach (EntityNotification::get([EntityNotification::user_id => $userId]) as $entity) {
+        foreach (static::entityClass()::get([EntityNotification::user_id => $userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectNotification::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);

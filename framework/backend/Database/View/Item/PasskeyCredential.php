@@ -29,7 +29,7 @@ use Hilos\HilosException;
  * @property-read ?string $lastUsedAt
  * @property-read string $createdAt
  */
-final class PasskeyCredential extends DbItem
+class PasskeyCredential extends DbItem
 {
     /**
      * Magic getter for credential properties.

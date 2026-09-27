@@ -17,7 +17,6 @@ use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
-use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Database\Settings\Exception\SettingKeyInCatalogException;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
@@ -41,7 +40,7 @@ use Hilos\HilosException;
  * @property-read DbCollectionSettings $collection
  * @property-read ObjectSettings $objectCollection
  */
-final class SettingsActions extends DbActions
+class SettingsActions extends DbActions
 {
     /**
      * Adds a new setting. Key must exist in catalog.
@@ -78,7 +77,8 @@ final class SettingsActions extends DbActions
         $entry = $catalog[$key];
         $type = $entry[SettingsCatalogConstants::CATALOG_ENTRY_TYPE] ?? SettingsCatalogConstants::TYPE_STRING;
 
-        $setting = ObjectSetting::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $setting = $objectClass::create();
         $setting->key = $key;
         $setting->type = $type;
         $setting->value = $this->serializeValue($value, $type);
@@ -132,7 +132,8 @@ final class SettingsActions extends DbActions
             throw new DuplicateValueException("Orphan setting for key '{$key}' already exists");
         }
 
-        $setting = ObjectSetting::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $setting = $objectClass::create();
         $setting->key = $key;
         $setting->type = $type;
         $setting->value = $this->serializeValue($value, $type);

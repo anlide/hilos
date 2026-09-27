@@ -14,7 +14,7 @@ use Hilos\Database\PhpType;
  * @method static EntityStepUps get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityStepUps getAll()
  */
-final class StepUp extends Entity
+class StepUp extends Entity
 {
     public const string id = 'id';
     public const string session_token_hash = 'session_token_hash';

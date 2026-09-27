@@ -27,7 +27,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectStepUp|null get(int|string $key)
  * @method ObjectStepUp|null offsetGet(mixed $offset)
  */
-final class StepUps extends Objects
+class StepUps extends Objects
 {
     public const string OBJECT_CLASS = ObjectStepUp::class;
     public const string ENTITY_COLLECTION_CLASS = EntityStepUps::class;
@@ -52,7 +52,7 @@ final class StepUps extends Objects
         $stepUp = $this->find($tokenHash, $userId, $operation);
         $isNew = $stepUp === null;
         if ($stepUp === null) {
-            $stepUp = ObjectStepUp::create();
+            $stepUp = static::OBJECT_CLASS::create();
             $stepUp->sessionTokenHash = $tokenHash;
             $stepUp->userId = $userId;
             $stepUp->operation = $operation;
@@ -94,13 +94,13 @@ final class StepUps extends Objects
     public function deleteExpiredForUser(int $userId): void
     {
         $where = '`' . EntityStepUp::user_id . '` = ? AND `' . EntityStepUp::confirmed_until . '` <= ?';
-        foreach (EntityStepUp::get($where, [$userId, TimeHelper::getSqlDateTime()]) as $entity) {
+        foreach (static::entityClass()::get($where, [$userId, TimeHelper::getSqlDateTime()]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectStepUp::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
@@ -121,13 +121,13 @@ final class StepUps extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        foreach (EntityStepUp::get([EntityStepUp::user_id => $userId]) as $entity) {
+        foreach (static::entityClass()::get([EntityStepUp::user_id => $userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectStepUp::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
@@ -144,7 +144,7 @@ final class StepUps extends Objects
      */
     private function find(string $tokenHash, int $userId, string $operation): ?ObjectStepUp
     {
-        $entity = EntityStepUp::get([
+        $entity = static::entityClass()::get([
             EntityStepUp::session_token_hash => $tokenHash,
             EntityStepUp::user_id => $userId,
             EntityStepUp::operation => $operation,
@@ -153,7 +153,7 @@ final class StepUps extends Objects
             return null;
         }
         if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, ObjectStepUp::fromEntity($entity));
+            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];

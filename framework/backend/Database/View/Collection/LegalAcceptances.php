@@ -19,7 +19,7 @@ use Hilos\Legal\LegalDocument;
  * @extends DbCollection<LegalAcceptance, ObjectLegalAcceptances>
  * @property-read LegalAcceptancesActions $actions
  */
-final class LegalAcceptances extends DbCollection
+class LegalAcceptances extends DbCollection
 {
     public const string DB_ITEM_CLASS = LegalAcceptance::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectLegalAcceptances::class;

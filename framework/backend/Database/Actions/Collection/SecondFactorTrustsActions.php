@@ -24,7 +24,7 @@ use Hilos\Database\View\Item\SecondFactorTrust;
  * @property-read DbCollectionSecondFactorTrusts $collection
  * @property-read ObjectSecondFactorTrusts $objectCollection
  */
-final class SecondFactorTrustsActions extends DbActions
+class SecondFactorTrustsActions extends DbActions
 {
     /**
      * Trusts a browser for a person until a moment, writing the pair or moving its end.

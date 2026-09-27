@@ -36,7 +36,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectNotificationPreference|null get(int|string $key)
  * @method ObjectNotificationPreference|null offsetGet(mixed $offset)
  */
-final class NotificationPreferences extends Objects
+class NotificationPreferences extends Objects
 {
     public const string OBJECT_CLASS = ObjectNotificationPreference::class;
     public const string ENTITY_COLLECTION_CLASS = EntityNotificationPreferences::class;
@@ -82,7 +82,7 @@ final class NotificationPreferences extends Objects
         }
 
         $now = TimeHelper::getSqlDateTime();
-        $preference = ObjectNotificationPreference::create();
+        $preference = static::OBJECT_CLASS::create();
         $preference->userId = $userId;
         $preference->channel = $channel;
         $preference->enabled = false;
@@ -130,7 +130,7 @@ final class NotificationPreferences extends Objects
             return [];
         }
 
-        $entities = EntityNotificationPreference::get([EntityNotificationPreference::user_id => $userId]);
+        $entities = static::entityClass()::get([EntityNotificationPreference::user_id => $userId]);
 
         $muted = [];
         foreach ($entities as $entity) {
@@ -155,12 +155,12 @@ final class NotificationPreferences extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        $entities = EntityNotificationPreference::get([EntityNotificationPreference::user_id => $userId]);
+        $entities = static::entityClass()::get([EntityNotificationPreference::user_id => $userId]);
         foreach ($entities as $entity) {
             $id = $entity->id;
             $preference = $id !== null && isset($this->objects[$id])
                 ? $this->objects[$id]
-                : ObjectNotificationPreference::fromEntity($entity);
+                : static::OBJECT_CLASS::fromEntity($entity);
             $preference->delete();
             if ($id !== null) {
                 unset($this[$id]);
@@ -193,7 +193,7 @@ final class NotificationPreferences extends Objects
      */
     private function find(int $userId, string $channel): ?ObjectNotificationPreference
     {
-        $entity = EntityNotificationPreference::get([
+        $entity = static::entityClass()::get([
             EntityNotificationPreference::user_id => $userId,
             EntityNotificationPreference::channel => $channel,
         ])->first();
@@ -203,7 +203,7 @@ final class NotificationPreferences extends Objects
         }
 
         if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, ObjectNotificationPreference::fromEntity($entity));
+            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];

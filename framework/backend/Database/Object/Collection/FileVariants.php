@@ -19,7 +19,7 @@ use Hilos\Database\Object\Objects;
  * @extends Objects<ObjectFileVariant>
  * @method ObjectFileVariant|null offsetGet(mixed $offset)
  */
-final class FileVariants extends Objects
+class FileVariants extends Objects
 {
     public const string OBJECT_CLASS = ObjectFileVariant::class;
     public const string ENTITY_COLLECTION_CLASS = EntityFileVariants::class;
@@ -34,7 +34,7 @@ final class FileVariants extends Objects
      */
     public function findFor(int $fileId, string $variant): ?ObjectFileVariant
     {
-        return $this->hydrateAll(EntityFileVariant::get([
+        return $this->hydrateAll(static::entityClass()::get([
             EntityFileVariant::file_id => $fileId,
             EntityFileVariant::variant => $variant,
         ]))[0] ?? null;
@@ -50,7 +50,7 @@ final class FileVariants extends Objects
      */
     public function forFile(int $fileId): array
     {
-        return $this->hydrateAll(EntityFileVariant::get([EntityFileVariant::file_id => $fileId]));
+        return $this->hydrateAll(static::entityClass()::get([EntityFileVariant::file_id => $fileId]));
     }
 
     /**
@@ -65,7 +65,7 @@ final class FileVariants extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectFileVariant::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $variants[] = $this->objects[$entity->id];
         }

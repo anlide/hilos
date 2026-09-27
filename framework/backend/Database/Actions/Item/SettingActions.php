@@ -30,7 +30,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
  * @extends DbActions<Setting, ObjectSetting>
  * @property-read ObjectSetting $object
  */
-final class SettingActions extends DbActions
+class SettingActions extends DbActions
 {
     /**
      * Updates setting value.

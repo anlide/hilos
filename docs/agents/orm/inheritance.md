@@ -10,19 +10,22 @@ the leaf that lands it, and that leaf clears the marker in the same commit
 ## Core Rule
 
 Every concrete ORM class of the framework is designed for inheritance, and none
-of them is `final` (not in the code yet — HIL-1190). A project that needs
-something of its own on a framework table extends THAT table with its own
-columns — it does not open a side table of "additions" next to it (owner's
-decision B of the epic, 2026-09-24).
+of them is `final`; the `ORM-CHAIN-OPEN` guard refuses one that is
+([../code-style/automated-checks.md](../code-style/automated-checks.md)). A
+project that needs something of its own on a framework table extends THAT
+table with its own columns — it does not open a side table of "additions" next
+to it (owner's decision B of the epic, 2026-09-24).
 
 Extending a framework table means subclassing its whole chain, re-pointing the
 links between the layers at the subclasses, and mounting the chain under the
 framework's own collection key. One layer alone is not an extension; see
 *Anti-Patterns*.
 
-Two precedents already in the tree show the shape without deciding the mount
-point's form: the inheritable RT row — `HilosSessionConnection` is the framework
-base and the project adds its hooks
+The mount point is a method of the database context, overridden the way
+`processWideReadCollections()` is (owner's decision, 2026-09-27); see *Mounting
+Under The Framework Key*. Two precedents already in the tree show the shape of
+an inheritable framework class: the inheritable RT row — `HilosSessionConnection`
+is the framework base and the project adds its hooks
 ([../runtime/rt-state.md](../runtime/rt-state.md), *The base half of the row
 cannot be skipped*) — and the class swapped through a facade constant
 (`Hilos::ADMIN_AUDIENCE`, read through `static::appClass()`).
@@ -91,16 +94,43 @@ Factories on the inheritable classes return `static` and build with
 `new static(...)`, so an inherited factory constructs the subclass — the
 contract in [../code-style/static-factories.md](../code-style/static-factories.md).
 
+A framework class of the chain builds the rows of its own chain only through the
+link constants — `static::OBJECT_CLASS` for the object, and for the Entity behind
+it `static::entityClass()` on `Objects`, which reads `ENTITY_CLASS` off that
+object — never by naming the framework class. An inherited search that named it
+would hand a subclass the base object, which `Objects::offsetSet()` drops in
+silence and `DbCollection::createDbItem()` refuses, and the project's column
+would never reach a row. Reading a constant off the framework Entity —
+`EntityX::_table`, a column name — stays legal, since no row is built. The
+`ORM-CHAIN-OPEN` guard refuses both a `final` on a chain class and a row built by
+name, and it judges the framework alone: the lowest classes of a project's chain
+may be `final`, and a project builds its own chain as it likes.
+
 ## Metadata And Verdicts
 
 The Entity's metadata is read through `static::` (`_columns`, `_types` in the
 save paths), so a subclass's constants are what the base code sees. The subclass
 therefore COMPOSES its metadata from the base's rather than restating it:
 `_columns`, `_types`, `_indexes`, `_foreign`, `_pii`, `_piiNotPersonal` each
-start from the framework's declaration and add the project's columns. The exact
-spelling of that composition is introduced by the leaf that opens the classes
-(not in the code yet — HIL-1190); a subclass that copies the base's lists by
-hand drifts from them on the base's next migration.
+start from the framework's declaration and add the project's columns. The
+spelling is the constant expression's own unpacking:
+
+```php
+public const string note = 'note';
+
+public const array _columns = [...parent::_columns, self::note];
+public const array _types = [...parent::_types, self::note => PhpType::STRING->value];
+public const array _pii = [...parent::_pii, self::note => AnonymizationStrategy::NULLIFY];
+```
+
+and the same for `_indexes`, `_foreign` and `_piiNotPersonal` where the project
+adds to them. `_table`, `_primary` and the collection key are inherited and not
+restated. A table the framework purges whole (`_pii = AnonymizationStrategy::PURGE`)
+stays purged whole: the subclass restates neither `_pii` nor `_piiNotPersonal`,
+and the purge covers its column too. A subclass that copies the base's lists by
+hand drifts from them on the base's next migration. The test chain over the
+verifier circle, `framework/tests/Unit/Database/Fixtures/Extension/`, is the
+worked example of the whole chain.
 
 `_setVia` and `_setRoot` are inherited as they are: the table's set is a fact of
 the table, not of the project's columns.
@@ -114,18 +144,55 @@ classified, in the class it was added to. The base's verdicts are inherited.
 ## Mounting Under The Framework Key
 
 The subclass chain is mounted under the FRAMEWORK'S collection key — `identities`
-stays `identities` — through an explicit substitution point, not by overwriting
-the key after `parent::configure()` (not in the code yet — HIL-1190). Today
-`DbContext::setRepresent()` overwrites a key in silence; a mount done that way is
-one of the anti-patterns below. The name and the form of the substitution point
-are introduced by HIL-1190; this page does not name them.
+stays `identities` — through `HilosDbContext::frameworkExtensions()`, a method the
+project's context overrides the way it overrides `processWideReadCollections()`.
+It answers, per framework key, one `FrameworkExtension` naming the project's view
+collection and, where the framework registers them for that key, the project's
+collection actions and item actions. The view names the rest of the chain
+through its own constants, so nothing else is declared:
 
-Once mounted, the machine sees the subclass and not the base (not in the code
-yet — HIL-1190): the schema consistency audit checks the mounted subclass, so the
-project's columns are its columns; the anonymization registry collects the
-subclass's verdicts; the set-ownership guard reads the subclass's set
-declaration. A base class that kept answering for a mounted subclass would pass
-an unclassified project column through every one of those gates.
+```php
+protected function frameworkExtensions(): array
+{
+    return [
+        ...parent::frameworkExtensions(),
+        self::verifierCircle => new FrameworkExtension(
+            NotedMembers::class,
+            NotedMembersActions::class,
+            NotedMemberActions::class,
+        ),
+    ];
+}
+```
+
+`HilosDbContext::configure()` reads the declarations once and mounts every
+framework key with the chain that answers for it. The loading strategy stays the
+framework's whichever chain is mounted: how a table is read is its owner's
+decision, not the subclass's. The mount refuses, with
+`FrameworkExtensionException` and the node or CLI not starting, what the
+declaration got wrong on its own: a key the framework does not mount, a value
+that is not a `FrameworkExtension`, a class that does not extend the framework's
+class of the same layer under that key (the framework's own class included), and
+an action layer declared for a key the framework registers without one. An
+action layer left undeclared stays the framework's — a half-inherited chain,
+which the start guard refuses (HIL-1191), not the mount.
+
+Overwriting the key after `parent::configure()` no longer works at all:
+`DbContext::setRepresent()` refuses a second view under a mounted key with
+`CollectionAlreadyMountedException`, naming the substitution point.
+
+Once mounted, the machine sees the subclass and not the base. The anonymization
+registry and the set-ownership guard walk the mounted collections, so they read
+the subclass's verdicts and its set declaration with no step of their own; the
+schema consistency audit is handed the mounted class by
+`EntitySchemaAudit::mountedClassOf()` — the subclass mounted over the same table
+when there is one, the class asked about otherwise — which is how a demo's
+schema test audits a framework Entity the demo extended, and the project's
+columns are its columns. A base class that kept answering for a mounted
+subclass would pass an unclassified project column through every one of those
+gates. The framework's extension integration test writes a row through the
+framework's own action and reads it back through the framework's own finder,
+and asks all three gates over the test chain.
 
 ## What Refuses The Start
 
@@ -151,9 +218,10 @@ not decided here.
 - Subclassing one layer — an Entity with the project's column and nothing else.
   The object collection keeps building the base Object over the base Entity,
   and the column never reaches a page. Subclass the whole chain.
-- Mounting by overwriting the key after `parent::configure()`. It works by
-  accident of order and says nothing when the framework re-registers the key.
-  Mount through the substitution point.
+- Mounting by overwriting the key after `parent::configure()`. It used to hold
+  by accident of order and say nothing when the framework re-registered the key;
+  now `setRepresent()` refuses the second mount. Declare the chain in
+  `frameworkExtensions()`.
 - Restating the base's `_columns` / `_types` / `_pii` by hand in the subclass.
   The copy drifts from the base's next migration. Compose them from the base's
   constants.

@@ -9,6 +9,7 @@ use Hilos\Tests\CodeStyle\Rule\BlockingResolutionRule;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\FrameworkOrmChainRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
@@ -483,6 +484,48 @@ final class RuleFixtureTest extends TestCase
                 'DB-OBJECT-MUTATE Database/Object/Collection/ObjectStoreMutate.php:31 — $this->objects is '
                     . 'written directly outside Objects; go through $this[$id] = $object for a new row, or '
                     . 'hydrate() for a row read out of storage (see docs/agents/orm/object.md)',
+                'CODE-FQN Database/Object/Collection/OrmChainSamples.php:44 — '
+                    . '\Hilos\Database\Object\Item\AccountDeletion is written out in code; import it and use the '
+                    . 'short name (see docs/agents/code-style/qualified-names.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:23 — OrmChainSamples is final; a '
+                    . 'framework ORM class is designed for inheritance, and a project extends its table by '
+                    . 'subclassing the whole chain — drop final (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:34 — EntityAccountDeletion::getById() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:37 — ObjectAccountDeletion::create() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:38 — ObjectAccountDeletion::fromEntity() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:39 — EntityAccountDeletion::get() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:40 — EntityAccountDeletion::getAll() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:41 — EntityAccountDeletion::getEmpty() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:42 — EntityAccountDeletion::fromRow() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:43 — new EntityAccountDeletion() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
+                'ORM-CHAIN-OPEN Database/Object/Collection/OrmChainSamples.php:44 — \Hilos\Database\Object\Item\AccountDeletion::create() '
+                    . 'builds a framework chain class by name; build through the link '
+                    . 'constants — static::OBJECT_CLASS, static::entityClass() — so a subclass mounted under the '
+                    . 'framework key is what gets built (see docs/agents/orm/inheritance.md)',
                 // Storage first and signatures after, because the rule walks the file twice: the two
                 // halves are reported in the order they are checked, not in line order.
                 'VIEW-WRAPPER-BIND Database/View/Item/ByRefWrapperSamples.php:25 — $this->_object is bound to '
@@ -668,6 +711,7 @@ final class RuleFixtureTest extends TestCase
             new RtStateMutationRule(),
             new ObjectStoreMutationRule(),
             new ViewWrapperBindingRule(),
+            new FrameworkOrmChainRule(),
             new ErrorSuppressionRule(),
             new FsSeamRule(RootKind::Production),
             new RandomSourceRule(),

@@ -31,7 +31,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectSecondFactorTrust|null get(int|string $key)
  * @method ObjectSecondFactorTrust|null offsetGet(mixed $offset)
  */
-final class SecondFactorTrusts extends Objects
+class SecondFactorTrusts extends Objects
 {
     public const string OBJECT_CLASS = ObjectSecondFactorTrust::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySecondFactorTrusts::class;
@@ -60,7 +60,7 @@ final class SecondFactorTrusts extends Objects
             return;
         }
 
-        $trust = ObjectSecondFactorTrust::create();
+        $trust = static::OBJECT_CLASS::create();
         $trust->sessionId = $sessionId;
         $trust->userId = $userId;
         $trust->trustedUntil = $until;
@@ -99,13 +99,13 @@ final class SecondFactorTrusts extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        foreach (EntitySecondFactorTrust::get([EntitySecondFactorTrust::user_id => $userId]) as $entity) {
+        foreach (static::entityClass()::get([EntitySecondFactorTrust::user_id => $userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectSecondFactorTrust::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
@@ -123,7 +123,7 @@ final class SecondFactorTrusts extends Objects
      */
     private function find(int $sessionId, int $userId): ?ObjectSecondFactorTrust
     {
-        $entity = EntitySecondFactorTrust::get([
+        $entity = static::entityClass()::get([
             EntitySecondFactorTrust::session_id => $sessionId,
             EntitySecondFactorTrust::user_id => $userId,
         ])->first();
@@ -131,7 +131,7 @@ final class SecondFactorTrusts extends Objects
             return null;
         }
         if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, ObjectSecondFactorTrust::fromEntity($entity));
+            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];

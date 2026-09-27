@@ -13,7 +13,7 @@ use Hilos\Database\PhpType;
  * @method static EntityFileVariants get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityFileVariants getAll()
  */
-final class FileVariant extends Entity
+class FileVariant extends Entity
 {
     public const string id = 'id';
     public const string file_id = 'file_id';

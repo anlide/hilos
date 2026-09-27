@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\File as EntityFile;
  *
  * @extends EntityCollection<EntityFile>
  */
-final class Files extends EntityCollection
+class Files extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityFile::class;
 }

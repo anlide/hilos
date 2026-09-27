@@ -19,7 +19,7 @@ use Hilos\Database\View\Item\SecondFactor;
  *
  * @extends DbCollection<SecondFactor, ObjectSecondFactors>
  */
-final class SecondFactors extends DbCollection
+class SecondFactors extends DbCollection
 {
     public const string DB_ITEM_CLASS = SecondFactor::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactors::class;

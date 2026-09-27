@@ -28,7 +28,7 @@ use Hilos\HilosException;
  * @property-read string $createdAt
  * @property-read SecondFactorActions $actions
  */
-final class SecondFactor extends DbItem
+class SecondFactor extends DbItem
 {
     /**
      * Magic getter for authenticator properties.

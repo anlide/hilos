@@ -21,7 +21,7 @@ use Hilos\Database\Entity\Item\FileVariant as EntityFileVariant;
  * @property int $size
  * @property string $createdAt
  */
-final class FileVariant extends Object_
+class FileVariant extends Object_
 {
     public const string ENTITY_CLASS = EntityFileVariant::class;
     public const string id = 'id';

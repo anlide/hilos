@@ -17,7 +17,7 @@ use Hilos\Database\View\Item\PushSubscription;
  *
  * @extends DbCollection<PushSubscription, ObjectPushSubscriptions>
  */
-final class PushSubscriptions extends DbCollection
+class PushSubscriptions extends DbCollection
 {
     public const string DB_ITEM_CLASS = PushSubscription::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectPushSubscriptions::class;

@@ -20,7 +20,7 @@ use Hilos\Database\View\Item\RegistrationReservation;
  *
  * @extends DbCollection<RegistrationReservation, ObjectRegistrationReservations>
  */
-final class RegistrationReservations extends DbCollection
+class RegistrationReservations extends DbCollection
 {
     public const string DB_ITEM_CLASS = RegistrationReservation::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectRegistrationReservations::class;

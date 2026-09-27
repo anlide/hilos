@@ -18,7 +18,7 @@ use Hilos\Database\Entity\Item\LegalAcceptance as EntityLegalAcceptance;
  * @property string $revisionId
  * @property string $acceptedAt
  */
-final class LegalAcceptance extends Object_
+class LegalAcceptance extends Object_
 {
     public const string ENTITY_CLASS = EntityLegalAcceptance::class;
     public const string id = 'id';

@@ -19,7 +19,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $type
  * @property ?string $value
  */
-final class Setting extends Object_
+class Setting extends Object_
 {
     public const string ENTITY_CLASS = EntitySetting::class;
     public const string id = 'id';

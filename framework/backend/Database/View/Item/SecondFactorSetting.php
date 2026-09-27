@@ -19,7 +19,7 @@ use Hilos\HilosException;
  * @property-read ?string $pendingResetWaitFrom
  * @property-read string $updatedAt
  */
-final class SecondFactorSetting extends DbItem
+class SecondFactorSetting extends DbItem
 {
     /**
      * Magic getter for setting properties.

@@ -24,7 +24,7 @@ use Hilos\HilosException;
  * @property-read string $expiresAt
  * @property-read ?string $consumedAt
  */
-final class UserVerification extends DbItem
+class UserVerification extends DbItem
 {
     /**
      * Magic getter for verification properties.

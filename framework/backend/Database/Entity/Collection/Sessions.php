@@ -16,7 +16,7 @@ use IteratorAggregate;
  * @implements IteratorAggregate<int|string, EntitySession>
  * @implements ArrayAccess<int|string, EntitySession>
  */
-final class Sessions extends EntityCollection
+class Sessions extends EntityCollection
 {
     public const string ENTITY_CLASS = EntitySession::class;
 }

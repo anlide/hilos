@@ -16,7 +16,7 @@ use IteratorAggregate;
  * @implements IteratorAggregate<int|string, EntityVerifierCircleMember>
  * @implements ArrayAccess<int|string, EntityVerifierCircleMember>
  */
-final class VerifierCircleMembers extends EntityCollection
+class VerifierCircleMembers extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityVerifierCircleMember::class;
 }

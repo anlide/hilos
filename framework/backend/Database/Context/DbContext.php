@@ -15,6 +15,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
@@ -82,14 +83,27 @@ abstract class DbContext
     /**
      * Set representation for object collection.
      *
+     * A key is represented once. The second call for the same key used to overwrite the first
+     * in silence, which is what made re-mounting a framework key after `parent::configure()`
+     * look like a way to extend it; a framework key is extended through
+     * `HilosDbContext::frameworkExtensions()`, and this refusal is what makes the other road loud.
+     *
      * @param string $name Collection name (e.g. users)
      * @param class-string<DbCollection> $dbItemCollectionClass DB collection class name
      * @param ?class-string<DbActions> $actionsClass Collection actions class name (optional)
      * @param ?class-string<TableItemActions> $itemActionsClass Item actions class name (optional)
+     * @throws CollectionAlreadyMountedException When a view is already mounted under the key
      * @throws ObjectCollectionNotFoundException When object collection not found
      */
     public function setRepresent(string $name, string $dbItemCollectionClass, ?string $actionsClass = null, ?string $itemActionsClass = null): void
     {
+        if (isset($this->_dbItemCollections[$name])) {
+            throw new CollectionAlreadyMountedException(
+                "Db collection [{$name}] is already mounted; a framework key is extended through"
+                . ' HilosDbContext::frameworkExtensions(), not mounted over',
+            );
+        }
+
         $objectCollection = $this->_objectCollections[$name]
             ?? throw new ObjectCollectionNotFoundException(
                 "Object collection [{$name}] not found in _objectCollections. Create it before calling setRepresent()."

@@ -98,6 +98,10 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
      * provider because PHPUnit builds providers before setUp, with no database
      * to ask yet.
      *
+     * A framework Entity the demo extends is audited as the class mounted over its
+     * table, so the demo's own columns on that table are the mounted class's columns
+     * and not a divergence of the base's.
+     *
      * @param class-string<Entity> $entityClass Entity under test
      * @throws DatabaseException When an introspection query fails
      */
@@ -110,7 +114,7 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
         }
 
         $mismatches = array_values(array_filter(
-            EntitySchemaAudit::audit([$entityClass]),
+            EntitySchemaAudit::audit([EntitySchemaAudit::mountedClassOf($entityClass)]),
             static fn(EntitySchemaMismatch $mismatch): bool => $mismatch->axis !== EntitySchemaAxis::INDEX,
         ));
 

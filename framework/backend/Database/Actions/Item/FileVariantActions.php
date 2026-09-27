@@ -19,7 +19,7 @@ use Hilos\HilosException;
  * @extends DbActions<FileVariant, ObjectFileVariant>
  * @property-read ObjectFileVariant $object
  */
-final class FileVariantActions extends DbActions
+class FileVariantActions extends DbActions
 {
     /**
      * Replaces the copy's registration after its settings changed; storage is the caller's.

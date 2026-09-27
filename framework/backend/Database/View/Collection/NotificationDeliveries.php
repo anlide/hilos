@@ -16,7 +16,7 @@ use Hilos\Database\View\Item\NotificationDelivery;
  *
  * @extends DbCollection<NotificationDelivery, ObjectNotificationDeliveries>
  */
-final class NotificationDeliveries extends DbCollection
+class NotificationDeliveries extends DbCollection
 {
     public const string DB_ITEM_CLASS = NotificationDelivery::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectNotificationDeliveries::class;

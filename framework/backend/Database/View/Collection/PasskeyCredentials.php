@@ -33,7 +33,7 @@ use Hilos\Hilos;
  *
  * @extends DbCollection<PasskeyCredential, ObjectPasskeyCredentials>
  */
-final class PasskeyCredentials extends DbCollection
+class PasskeyCredentials extends DbCollection
 {
     public const string DB_ITEM_CLASS = PasskeyCredential::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectPasskeyCredentials::class;

@@ -17,7 +17,6 @@ use Hilos\Database\Actions\Item\OAuthProviderActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\OAuthProviders as ObjectOAuthProviders;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
-use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
 use Hilos\Database\View\Collection\OAuthProviders as DbCollectionOAuthProviders;
 use Hilos\Database\View\Item\OAuthProvider;
 use Hilos\HilosException;
@@ -35,7 +34,7 @@ use Hilos\HilosException;
  * @property-read DbCollectionOAuthProviders $collection
  * @property-read ObjectOAuthProviders $objectCollection
  */
-final class OAuthProvidersActions extends DbActions
+class OAuthProvidersActions extends DbActions
 {
     /**
      * Adds the empty row of one provider.
@@ -66,7 +65,8 @@ final class OAuthProvidersActions extends DbActions
             throw new DuplicateValueException("OAuth provider '{$providerKey}' already has a row");
         }
 
-        $provider = ObjectOAuthProvider::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $provider = $objectClass::create();
         $provider->providerKey = $providerKey;
         $provider->sync();
 

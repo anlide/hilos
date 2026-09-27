@@ -6,7 +6,6 @@ namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Object\Collection\Files as ObjectFiles;
-use Hilos\Database\Object\Item\File as ObjectFile;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Item\File;
 use Hilos\Files\ContentHash;
@@ -23,7 +22,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read DbCollectionFiles $collection
  * @property-read ObjectFiles $objectCollection
  */
-final class FilesActions extends DbActions
+class FilesActions extends DbActions
 {
     /**
      * Registers a published file, unbound, in the process of {@see AbstractFilesLibraryAgent}.
@@ -75,7 +74,8 @@ final class FilesActions extends DbActions
             throw new ValidationException('File owner_user_id must be a positive user id');
         }
 
-        $file = ObjectFile::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $file = $objectClass::create();
         $file->storedName = $storedName;
         $file->filename = $filename;
         $file->mimeType = $mimeType;

@@ -20,7 +20,7 @@ use Hilos\HilosException;
  *
  * @extends Objects<ObjectDataExport>
  */
-final class DataExports extends Objects
+class DataExports extends Objects
 {
     public const string OBJECT_CLASS = ObjectDataExport::class;
     public const string ENTITY_COLLECTION_CLASS = EntityDataExports::class;
@@ -34,7 +34,7 @@ final class DataExports extends Objects
      */
     public function order(int $userId, string $requestedAt): ObjectDataExport
     {
-        $request = ObjectDataExport::create();
+        $request = static::OBJECT_CLASS::create();
         $request->userId = $userId;
         $request->requestedAt = $requestedAt;
         $request->state = DataExportState::PREPARING;
@@ -55,7 +55,7 @@ final class DataExports extends Objects
      */
     public function ofUser(int $userId): ?ObjectDataExport
     {
-        return $this->hydrateAll(EntityDataExport::get([EntityDataExport::user_id => $userId]))[0] ?? null;
+        return $this->hydrateAll(static::entityClass()::get([EntityDataExport::user_id => $userId]))[0] ?? null;
     }
 
     /**
@@ -64,7 +64,7 @@ final class DataExports extends Objects
      */
     public function nextPreparing(): ?ObjectDataExport
     {
-        return $this->hydrateAll(EntityDataExport::get(
+        return $this->hydrateAll(static::entityClass()::get(
             [EntityDataExport::state => DataExportState::PREPARING],
             [],
             [EntityDataExport::requested_at => SqlSortDirection::ASC, EntityDataExport::id => SqlSortDirection::ASC],
@@ -79,7 +79,7 @@ final class DataExports extends Objects
      */
     public function expiredBy(string $now): array
     {
-        return $this->hydrateAll(EntityDataExport::get('`expires_at` <= ?', [$now]));
+        return $this->hydrateAll(static::entityClass()::get('`expires_at` <= ?', [$now]));
     }
 
     /**
@@ -88,7 +88,7 @@ final class DataExports extends Objects
      */
     public function allReady(): array
     {
-        return $this->hydrateAll(EntityDataExport::get([EntityDataExport::state => DataExportState::READY]));
+        return $this->hydrateAll(static::entityClass()::get([EntityDataExport::state => DataExportState::READY]));
     }
 
     /**
@@ -103,7 +103,7 @@ final class DataExports extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectDataExport::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }

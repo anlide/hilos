@@ -16,7 +16,7 @@ use Hilos\HilosException;
  * @extends DbActions<DataExport, ObjectDataExport>
  * @property-read ObjectDataExport $object
  */
-final class DataExportActions extends DbActions
+class DataExportActions extends DbActions
 {
     /**
      * @param string $storedName Finished archive basename

@@ -27,7 +27,7 @@ use Hilos\HilosException;
  * @property-read ?string $completedAt
  * @property-read SecondFactorResetActions $actions
  */
-final class SecondFactorReset extends DbItem
+class SecondFactorReset extends DbItem
 {
     /**
      * Magic getter for request properties.

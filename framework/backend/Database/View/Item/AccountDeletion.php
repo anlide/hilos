@@ -24,7 +24,7 @@ use Hilos\HilosException;
  * @property-read ?string $completedAt
  * @property-read AccountDeletionActions $actions
  */
-final class AccountDeletion extends DbItem
+class AccountDeletion extends DbItem
 {
     /**
      * Magic getter for request properties.

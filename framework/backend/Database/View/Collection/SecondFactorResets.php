@@ -18,7 +18,7 @@ use Hilos\Database\View\Item\SecondFactorReset;
  *
  * @extends DbCollection<SecondFactorReset, ObjectSecondFactorResets>
  */
-final class SecondFactorResets extends DbCollection
+class SecondFactorResets extends DbCollection
 {
     public const string DB_ITEM_CLASS = SecondFactorReset::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactorResets::class;

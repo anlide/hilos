@@ -39,7 +39,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read ?string $canceledAt
  * @property-read ?string $completedAt
  */
-final class SecondFactorReset extends Object_
+class SecondFactorReset extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactorReset::class;
     public const string id = 'id';

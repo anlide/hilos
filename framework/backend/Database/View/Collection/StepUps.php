@@ -14,7 +14,7 @@ use Hilos\Database\View\Item\StepUp;
  *
  * @extends DbCollection<StepUp, ObjectStepUps>
  */
-final class StepUps extends DbCollection
+class StepUps extends DbCollection
 {
     public const string DB_ITEM_CLASS = StepUp::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectStepUps::class;

@@ -26,7 +26,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @extends DbActions<Session, ObjectSession>
  * @property-read ObjectSession $object
  */
-final class SessionActions extends DbActions
+class SessionActions extends DbActions
 {
     /**
      * Binds this session to a durable user (login/register), refreshing its expiry.

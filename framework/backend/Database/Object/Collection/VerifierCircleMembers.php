@@ -28,7 +28,7 @@ use Hilos\Database\SqlSortDirection;
  * @method ObjectVerifierCircleMember|null get(int|string $key)
  * @method ObjectVerifierCircleMember|null offsetGet(mixed $offset)
  */
-final class VerifierCircleMembers extends Objects
+class VerifierCircleMembers extends Objects
 {
     public const string OBJECT_CLASS = ObjectVerifierCircleMember::class;
     public const string ENTITY_COLLECTION_CLASS = EntityVerifierCircleMembers::class;
@@ -53,7 +53,7 @@ final class VerifierCircleMembers extends Objects
             return null;
         }
 
-        $entity = EntityVerifierCircleMember::get([
+        $entity = static::entityClass()::get([
             EntityVerifierCircleMember::identity_type => $type,
             EntityVerifierCircleMember::identifier => $identifier,
         ])->first();
@@ -63,7 +63,7 @@ final class VerifierCircleMembers extends Objects
         }
 
         if (!isset($this->objects[$entity->id])) {
-            $this->hydrate($entity->id, ObjectVerifierCircleMember::fromEntity($entity));
+            $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
         }
 
         return $this->objects[$entity->id];
@@ -82,7 +82,7 @@ final class VerifierCircleMembers extends Objects
      */
     public function listAll(): array
     {
-        $entities = EntityVerifierCircleMember::get(
+        $entities = static::entityClass()::get(
             [],
             [],
             [EntityVerifierCircleMember::id => SqlSortDirection::ASC],
@@ -95,7 +95,7 @@ final class VerifierCircleMembers extends Objects
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectVerifierCircleMember::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $members[] = $this->objects[$id];
         }

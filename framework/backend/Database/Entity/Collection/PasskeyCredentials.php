@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
  *
  * @extends EntityCollection<EntityPasskeyCredential>
  */
-final class PasskeyCredentials extends EntityCollection
+class PasskeyCredentials extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityPasskeyCredential::class;
 }

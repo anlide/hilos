@@ -23,7 +23,7 @@ use Hilos\Database\PhpType;
  * @method static EntityFiles get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityFiles getAll()
  */
-final class File extends Entity
+class File extends Entity
 {
     public const string id = 'id';
     public const string stored_name = 'stored_name';

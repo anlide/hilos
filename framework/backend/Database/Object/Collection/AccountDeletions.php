@@ -32,7 +32,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectAccountDeletion|null get(int|string $key)
  * @method ObjectAccountDeletion|null offsetGet(mixed $offset)
  */
-final class AccountDeletions extends Objects
+class AccountDeletions extends Objects
 {
     public const string OBJECT_CLASS = ObjectAccountDeletion::class;
     public const string ENTITY_COLLECTION_CLASS = EntityAccountDeletions::class;
@@ -57,7 +57,7 @@ final class AccountDeletions extends Objects
      */
     public function request(int $userId, string $effectiveAt): ObjectAccountDeletion
     {
-        $deletion = ObjectAccountDeletion::create();
+        $deletion = static::OBJECT_CLASS::create();
         $deletion->userId = $userId;
         $deletion->requestedAt = TimeHelper::getSqlDateTime();
         $deletion->effectiveAt = $effectiveAt;
@@ -82,7 +82,7 @@ final class AccountDeletions extends Objects
      */
     public function liveOf(int $userId): ?ObjectAccountDeletion
     {
-        return $this->hydrateAll(EntityAccountDeletion::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntityAccountDeletion::user_id . '` = ? AND ' . self::LIVE_CONDITION,
             [$userId],
             [EntityAccountDeletion::id => SqlSortDirection::DESC],
@@ -100,7 +100,7 @@ final class AccountDeletions extends Objects
      */
     public function erasedOf(int $userId): ?ObjectAccountDeletion
     {
-        return $this->hydrateAll(EntityAccountDeletion::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntityAccountDeletion::user_id . '` = ? AND `' . EntityAccountDeletion::completed_at . '` IS NOT NULL',
             [$userId],
             [EntityAccountDeletion::id => SqlSortDirection::DESC],
@@ -118,7 +118,7 @@ final class AccountDeletions extends Objects
      */
     public function dueBy(string $now): array
     {
-        return $this->hydrateAll(EntityAccountDeletion::get(
+        return $this->hydrateAll(static::entityClass()::get(
             '`' . EntityAccountDeletion::effective_at . '` <= ? AND ' . self::LIVE_CONDITION,
             [$now],
             [EntityAccountDeletion::effective_at => SqlSortDirection::ASC],
@@ -139,7 +139,7 @@ final class AccountDeletions extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectAccountDeletion::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }

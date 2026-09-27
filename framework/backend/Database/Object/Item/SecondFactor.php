@@ -39,7 +39,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read ?string $lastUsedAt
  * @property string $createdAt
  */
-final class SecondFactor extends Object_
+class SecondFactor extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactor::class;
     public const string id = 'id';

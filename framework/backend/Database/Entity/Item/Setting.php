@@ -18,7 +18,7 @@ use Hilos\Database\PhpType;
  * @method static EntitySettings get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySettings getAll()
  */
-final class Setting extends Entity
+class Setting extends Entity
 {
     public const string id = 'id';
     public const string key = 'key';

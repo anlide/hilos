@@ -41,7 +41,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectUserVerification|null get(int|string $key)
  * @method ObjectUserVerification|null offsetGet(mixed $offset)
  */
-final class UserVerifications extends Objects
+class UserVerifications extends Objects
 {
     public const string OBJECT_CLASS = ObjectUserVerification::class;
     public const string ENTITY_COLLECTION_CLASS = EntityUserVerifications::class;
@@ -232,7 +232,7 @@ final class UserVerifications extends Objects
         }
 
         $now = time();
-        $verification = ObjectUserVerification::create();
+        $verification = static::OBJECT_CLASS::create();
         $verification->userId = $userId;
         $verification->type = $type;
         $verification->identifier = $identifier;
@@ -325,13 +325,13 @@ final class UserVerifications extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        foreach (EntityUserVerification::get([EntityUserVerification::user_id => $userId]) as $entity) {
+        foreach (static::entityClass()::get([EntityUserVerification::user_id => $userId]) as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectUserVerification::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
@@ -353,7 +353,7 @@ final class UserVerifications extends Objects
      */
     public function deleteForUserOfType(int $userId, string $type): void
     {
-        foreach (EntityUserVerification::get([
+        foreach (static::entityClass()::get([
             EntityUserVerification::user_id => $userId,
             EntityUserVerification::type => $type,
         ]) as $entity) {
@@ -362,7 +362,7 @@ final class UserVerifications extends Objects
                 continue;
             }
             if (!isset($this->objects[$id])) {
-                $this->hydrate($id, ObjectUserVerification::fromEntity($entity));
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
@@ -379,7 +379,7 @@ final class UserVerifications extends Objects
      */
     private function hydrateByIdentity(string $type, string $identifier): array
     {
-        $entities = EntityUserVerification::get([
+        $entities = static::entityClass()::get([
             EntityUserVerification::type => $type,
             EntityUserVerification::identifier => $identifier,
         ]);
@@ -390,7 +390,7 @@ final class UserVerifications extends Objects
                 continue;
             }
             if (!isset($this->objects[$entity->id])) {
-                $this->hydrate($entity->id, ObjectUserVerification::fromEntity($entity));
+                $this->hydrate($entity->id, static::OBJECT_CLASS::fromEntity($entity));
             }
             $result[] = $this->objects[$entity->id];
         }

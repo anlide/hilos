@@ -19,7 +19,7 @@ use Hilos\HilosException;
  * @property-read string $trustedUntil
  * @property-read string $createdAt
  */
-final class SecondFactorTrust extends DbItem
+class SecondFactorTrust extends DbItem
 {
     /**
      * Magic getter for trust properties.

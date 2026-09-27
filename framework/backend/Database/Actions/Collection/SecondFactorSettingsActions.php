@@ -26,7 +26,7 @@ use Hilos\Database\View\Item\SecondFactorSetting;
  * @property-read DbCollectionSecondFactorSettings $collection
  * @property-read ObjectSecondFactorSettings $objectCollection
  */
-final class SecondFactorSettingsActions extends DbActions
+class SecondFactorSettingsActions extends DbActions
 {
     /**
      * Stores a person's removal wait: the one in force and a shorter one parked until a moment.

@@ -25,7 +25,7 @@ use Hilos\HilosException;
  * @property-read int $size
  * @property-read string $createdAt
  */
-final class FileVariant extends DbItem
+class FileVariant extends DbItem
 {
     /**
      * @param string $name Scalar property or actions name

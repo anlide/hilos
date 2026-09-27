@@ -20,7 +20,7 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
  * @extends DbActions<SecondFactorBackupCode, ObjectSecondFactorBackupCode>
  * @property-read ObjectSecondFactorBackupCode $object
  */
-final class SecondFactorBackupCodeActions extends DbActions
+class SecondFactorBackupCodeActions extends DbActions
 {
     /**
      * Burns this code, if nobody burned it first.

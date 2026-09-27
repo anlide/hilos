@@ -24,7 +24,7 @@ use Hilos\Database\View\Item\OAuthProvider;
  * @extends DbActions<OAuthProvider, ObjectOAuthProvider>
  * @property-read ObjectOAuthProvider $object
  */
-final class OAuthProviderActions extends DbActions
+class OAuthProviderActions extends DbActions
 {
     /**
      * Updates the client id the administrator entered, or clears it with null.

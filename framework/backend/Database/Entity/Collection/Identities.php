@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\Identity as EntityIdentity;
  *
  * @extends EntityCollection<EntityIdentity>
  */
-final class Identities extends EntityCollection
+class Identities extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityIdentity::class;
 }

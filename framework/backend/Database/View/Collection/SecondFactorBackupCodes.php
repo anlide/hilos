@@ -20,7 +20,7 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
  *
  * @extends DbCollection<SecondFactorBackupCode, ObjectSecondFactorBackupCodes>
  */
-final class SecondFactorBackupCodes extends DbCollection
+class SecondFactorBackupCodes extends DbCollection
 {
     public const string DB_ITEM_CLASS = SecondFactorBackupCode::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactorBackupCodes::class;

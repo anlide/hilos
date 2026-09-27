@@ -32,8 +32,7 @@ class MyEntity extends Entity {
 
 - One MOUNTED Entity class = one DB table. A project's subclass of a framework
   Entity maps the same table and is mounted in place of the base, as one link of
-  the whole subclassed chain (not in the code yet — HIL-1190); see
-  [inheritance.md](inheritance.md)
+  the whole subclassed chain; see [inheritance.md](inheritance.md)
 - Field names match DB column names exactly
 - Types must be strict: `int`, `string`, `float`, `bool` (no mixed)
 - Do not add business logic to Entity — it's a data container only
@@ -117,8 +116,9 @@ whose table this project never creates is skipped against
 `EntitySchemaAudit::liveTables()`. `EntitySchemaAudit::discoverEntities()` takes a
 **project's** directory and refuses the framework namespace, naming
 `frameworkEntities()` as the replacement. A framework Entity the project has
-extended is audited as the mounted subclass, and the project's columns are its
-columns (not in the code yet — HIL-1190); see [inheritance.md](inheritance.md).
+extended is audited as the mounted subclass — `EntitySchemaAudit::mountedClassOf()`
+answers it — and the project's columns are its columns; see
+[inheritance.md](inheritance.md).
 
 The audit runs in **both directions**, and the second one is what a hand-written list
 cannot give. `EntitySchemaAudit::auditTableCoverage()` asks the opposite question: every
@@ -191,8 +191,8 @@ column is classified in the file the column was added to. Every column of the *l
 table belongs to one of the two lists — including a column outside `_columns`, which the
 ORM does not map but a restore still rewrites. A table with no Entity says the same two
 things in a `TablesWithoutEntityProvider`. A project's subclass of a framework Entity
-declares the verdicts on its own columns and inherits the base's (not in the code yet —
-HIL-1190); see [inheritance.md](inheritance.md).
+declares the verdicts on its own columns and inherits the base's; see
+[inheritance.md](inheritance.md).
 
 How to choose a strategy, and what the gates of a restore and of a startup refuse
 on:

@@ -20,7 +20,7 @@ use Hilos\HilosException;
  * @property-read int $level
  * @property-read ?string $blockedUntil
  */
-final class AuthBlock extends DbItem
+class AuthBlock extends DbItem
 {
     /**
      * Magic getter for auth block properties.

@@ -34,7 +34,7 @@ use Hilos\Database\SqlParamCollection;
  * @property ?string $provider
  * @property bool $verified
  */
-final class Identity extends Object_
+class Identity extends Object_
 {
     public const string ENTITY_CLASS = EntityIdentity::class;
     public const string id = 'id';

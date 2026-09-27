@@ -8,31 +8,12 @@ use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
-use Hilos\Database\Object\Collection\AccountDeletions as ObjectAccountDeletions;
-use Hilos\Database\Object\Collection\DataExports as ObjectDataExports;
-use Hilos\Database\Object\Collection\LegalAcceptances as ObjectLegalAcceptances;
-use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
-use Hilos\Database\Object\Collection\Files as ObjectFiles;
-use Hilos\Database\Object\Collection\FileVariants as ObjectFileVariants;
-use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
-use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
-use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
-use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
-use Hilos\Database\Object\Collection\OAuthProviders as ObjectOAuthProviders;
-use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
-use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
-use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
-use Hilos\Database\Object\Collection\SecondFactorBackupCodes as ObjectSecondFactorBackupCodes;
-use Hilos\Database\Object\Collection\SecondFactorResets as ObjectSecondFactorResets;
-use Hilos\Database\Object\Collection\SecondFactors as ObjectSecondFactors;
-use Hilos\Database\Object\Collection\SecondFactorSettings as ObjectSecondFactorSettings;
-use Hilos\Database\Object\Collection\SecondFactorTrusts as ObjectSecondFactorTrusts;
-use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
-use Hilos\Database\Object\Collection\Settings as ObjectSettings;
-use Hilos\Database\Object\Collection\StepUps as ObjectStepUps;
-use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
-use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
+use Hilos\Database\Actions\Collection\DbActions as CollectionDbActions;
+use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
+use Hilos\Database\Exception\CollectionAlreadyMountedException;
+use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
@@ -95,6 +76,11 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * verifications). Projects extend this class and add their own collections in
  * configure(); calling parent::configure() gives them the framework-owned
  * collections.
+ *
+ * A project that extends a framework table mounts its own chain under the framework's
+ * key through {@see self::frameworkExtensions()}, and narrows the @property-read of that
+ * key in its OWN context, the way a demo declares its own keys; the tags here stay the
+ * framework's, and stay true - the mounted class is a subclass of what they name.
  *
  * @property-read DbCollectionSettings $settings
  * @property-read DbCollectionIdentities $identities
@@ -171,6 +157,28 @@ abstract class HilosDbContext extends DbContext
     public const string fileVariants = 'fileVariants';
     public const string fileVariant = 'fileVariant';
 
+    /** The layer names a refusal of a framework extension calls the three classes by. */
+    private const string LAYER_COLLECTION = 'view collection';
+    private const string LAYER_ACTIONS = 'collection actions';
+    private const string LAYER_ITEM_ACTIONS = 'item actions';
+
+    /**
+     * What the project declared through frameworkExtensions(), read once at the start of
+     * configure() and consulted by every framework mount.
+     *
+     * @var array<string, FrameworkExtension>
+     */
+    private array $declaredExtensions = [];
+
+    /**
+     * The framework's own chain under each key configure() mounted, in the same three-class
+     * shape a project declares a replacement in. Its keys are what a declaration is judged
+     * against; what of it the start guard may read is the question of HIL-1191.
+     *
+     * @var array<string, FrameworkExtension>
+     */
+    private array $frameworkChains = [];
+
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
@@ -211,116 +219,203 @@ abstract class HilosDbContext extends DbContext
      * unbound rows, never as a full set, so it stays inert for projects that do not activate the
      * hilos_file table. Its image copies load by original file and stay inert without their table too (HIL-141).
      *
+     * A project's own chain over a framework table is mounted here too, under the framework's
+     * key: the declarations of {@see self::frameworkExtensions()} are read once, and each key is
+     * mounted with the chain that answers for it - the framework's, or the project's declared for
+     * that key (inheritance.md, *Mounting Under The Framework Key*). A declaration the mount
+     * cannot honor is refused before anything reads, so a node, a CLI and the project's own unit
+     * test all fail at this one place.
+     *
+     * @throws FrameworkExtensionException When a declared framework extension names a key the framework does not
+     *     mount, is not a FrameworkExtension, or does not extend the framework's chain of its key
+     * @throws CollectionAlreadyMountedException When a key is represented twice
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
      */
     public function configure(): void
     {
-        $this->_objectCollections[self::settings] = ObjectSettings::initDB(Objects::LAZY_STRATEGY_NONE);
-        $this->setRepresent(self::settings, DbCollectionSettings::class, SettingsActions::class, SettingActions::class);
+        $declared = $this->frameworkExtensions();
+        foreach ($declared as $key => $extension) {
+            if (!$extension instanceof FrameworkExtension) {
+                throw new FrameworkExtensionException("Framework extension for [{$key}] is not a FrameworkExtension");
+            }
+        }
+        $this->declaredExtensions = $declared;
 
-        $this->_objectCollections[self::identities] = ObjectIdentities::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::identities, DbCollectionIdentities::class);
-
-        $this->_objectCollections[self::verifications] = ObjectUserVerifications::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::verifications, DbCollectionUserVerifications::class);
-
-        $this->_objectCollections[self::registrationReservations] = ObjectRegistrationReservations::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::registrationReservations, DbCollectionRegistrationReservations::class);
-
-        $this->_objectCollections[self::passkeyCredentials] = ObjectPasskeyCredentials::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::passkeyCredentials, DbCollectionPasskeyCredentials::class);
-
-        $this->_objectCollections[self::sessions] = ObjectSessions::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::sessions, DbCollectionSessions::class, SessionsActions::class, SessionActions::class);
-
-        $this->_objectCollections[self::notifications] = ObjectNotifications::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::notifications, DbCollectionNotifications::class, NotificationsActions::class, NotificationActions::class);
-
-        $this->_objectCollections[self::notificationDeliveries] = ObjectNotificationDeliveries::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::notificationDeliveries, DbCollectionNotificationDeliveries::class);
-
-        $this->_objectCollections[self::notificationPreferences] = ObjectNotificationPreferences::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::notificationPreferences, DbCollectionNotificationPreferences::class, NotificationPreferencesActions::class);
-
-        $this->_objectCollections[self::pushSubscriptions] = ObjectPushSubscriptions::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::pushSubscriptions, DbCollectionPushSubscriptions::class, PushSubscriptionsActions::class);
-
-        $this->_objectCollections[self::verifierCircle] = ObjectVerifierCircleMembers::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(
+        $this->mountFramework(
+            self::settings,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionSettings::class,
+            SettingsActions::class,
+            SettingActions::class,
+        );
+        $this->mountFramework(self::identities, Objects::LAZY_STRATEGY_KEY, DbCollectionIdentities::class);
+        $this->mountFramework(self::verifications, Objects::LAZY_STRATEGY_KEY, DbCollectionUserVerifications::class);
+        $this->mountFramework(
+            self::registrationReservations,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionRegistrationReservations::class,
+        );
+        $this->mountFramework(
+            self::passkeyCredentials,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionPasskeyCredentials::class,
+        );
+        $this->mountFramework(
+            self::sessions,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionSessions::class,
+            SessionsActions::class,
+            SessionActions::class,
+        );
+        $this->mountFramework(
+            self::notifications,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionNotifications::class,
+            NotificationsActions::class,
+            NotificationActions::class,
+        );
+        $this->mountFramework(
+            self::notificationDeliveries,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionNotificationDeliveries::class,
+        );
+        $this->mountFramework(
+            self::notificationPreferences,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionNotificationPreferences::class,
+            NotificationPreferencesActions::class,
+        );
+        $this->mountFramework(
+            self::pushSubscriptions,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionPushSubscriptions::class,
+            PushSubscriptionsActions::class,
+        );
+        $this->mountFramework(
             self::verifierCircle,
+            Objects::LAZY_STRATEGY_KEY,
             DbCollectionVerifierCircleMembers::class,
             VerifierCircleMembersActions::class,
             VerifierCircleMemberActions::class,
         );
-
-        $this->_objectCollections[self::authBlocks] = ObjectAuthBlocks::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::authBlocks, DbCollectionAuthBlocks::class);
-
-        $this->_objectCollections[self::oauthProviders] = ObjectOAuthProviders::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(
+        $this->mountFramework(self::authBlocks, Objects::LAZY_STRATEGY_KEY, DbCollectionAuthBlocks::class);
+        $this->mountFramework(
             self::oauthProviders,
+            Objects::LAZY_STRATEGY_KEY,
             DbCollectionOAuthProviders::class,
             OAuthProvidersActions::class,
             OAuthProviderActions::class,
         );
-
-        $this->_objectCollections[self::secondFactors] = ObjectSecondFactors::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(
+        $this->mountFramework(
             self::secondFactors,
+            Objects::LAZY_STRATEGY_KEY,
             DbCollectionSecondFactors::class,
             SecondFactorsActions::class,
             SecondFactorActions::class,
         );
-
-        $this->_objectCollections[self::secondFactorBackupCodes] = ObjectSecondFactorBackupCodes::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(
+        $this->mountFramework(
             self::secondFactorBackupCodes,
+            Objects::LAZY_STRATEGY_KEY,
             DbCollectionSecondFactorBackupCodes::class,
             SecondFactorBackupCodesActions::class,
             SecondFactorBackupCodeActions::class,
         );
-
-        $this->_objectCollections[self::secondFactorTrusts] = ObjectSecondFactorTrusts::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::secondFactorTrusts, DbCollectionSecondFactorTrusts::class, SecondFactorTrustsActions::class);
-
-        $this->_objectCollections[self::secondFactorResets] = ObjectSecondFactorResets::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(
+        $this->mountFramework(
+            self::secondFactorTrusts,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionSecondFactorTrusts::class,
+            SecondFactorTrustsActions::class,
+        );
+        $this->mountFramework(
             self::secondFactorResets,
+            Objects::LAZY_STRATEGY_KEY,
             DbCollectionSecondFactorResets::class,
             SecondFactorResetsActions::class,
             SecondFactorResetActions::class,
         );
-
-        $this->_objectCollections[self::secondFactorSettings] = ObjectSecondFactorSettings::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(
+        $this->mountFramework(
             self::secondFactorSettings,
+            Objects::LAZY_STRATEGY_KEY,
             DbCollectionSecondFactorSettings::class,
             SecondFactorSettingsActions::class,
         );
-
-        $this->_objectCollections[self::stepUps] = ObjectStepUps::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::stepUps, DbCollectionStepUps::class, StepUpsActions::class);
-
-        $this->_objectCollections[self::legalAcceptances] = ObjectLegalAcceptances::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::legalAcceptances, DbCollectionLegalAcceptances::class, LegalAcceptancesActions::class);
-
-        $this->_objectCollections[self::accountDeletions] = ObjectAccountDeletions::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(
+        $this->mountFramework(
+            self::stepUps,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionStepUps::class,
+            StepUpsActions::class,
+        );
+        $this->mountFramework(
+            self::legalAcceptances,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionLegalAcceptances::class,
+            LegalAcceptancesActions::class,
+        );
+        $this->mountFramework(
             self::accountDeletions,
+            Objects::LAZY_STRATEGY_KEY,
             DbCollectionAccountDeletions::class,
             AccountDeletionsActions::class,
             AccountDeletionActions::class,
         );
+        $this->mountFramework(
+            self::dataExports,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionDataExports::class,
+            DataExportsActions::class,
+            DataExportActions::class,
+        );
+        $this->mountFramework(
+            self::files,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionFiles::class,
+            FilesActions::class,
+            FileActions::class,
+        );
+        $this->mountFramework(
+            self::fileVariants,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionFileVariants::class,
+            FileVariantsActions::class,
+            FileVariantActions::class,
+        );
 
-        $this->_objectCollections[self::dataExports] = ObjectDataExports::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::dataExports, DbCollectionDataExports::class, DataExportsActions::class, DataExportActions::class);
+        $unknown = array_keys(array_diff_key($this->declaredExtensions, $this->frameworkChains));
+        if ($unknown !== []) {
+            throw new FrameworkExtensionException(
+                'Framework extension declared for [' . implode(', ', $unknown) . '], which the framework does not mount;'
+                . ' a project extends a framework key here and mounts its own tables in configure()',
+            );
+        }
+    }
 
-        $this->_objectCollections[self::files] = ObjectFiles::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::files, DbCollectionFiles::class, FilesActions::class, FileActions::class);
-
-        $this->_objectCollections[self::fileVariants] = ObjectFileVariants::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::fileVariants, DbCollectionFileVariants::class, FileVariantsActions::class, FileVariantActions::class);
+    /**
+     * The project's chains over framework tables, keyed by the framework key each replaces.
+     *
+     * Overridden by a project the way {@see self::processWideReadCollections()} is, and composed
+     * from the parent's answer for the same reason - a context between the framework and the
+     * project may declare chains of its own:
+     *
+     *     protected function frameworkExtensions(): array
+     *     {
+     *         return [
+     *             ...parent::frameworkExtensions(),
+     *             self::verifierCircle => new FrameworkExtension(
+     *                 NotedMembers::class,
+     *                 NotedMembersActions::class,
+     *                 NotedMemberActions::class,
+     *             ),
+     *         ];
+     *     }
+     *
+     * The framework declares nothing here: every key of its own is its own chain.
+     *
+     * @return array<string, FrameworkExtension> Project chain per framework key, empty when the project extends none
+     */
+    protected function frameworkExtensions(): array
+    {
+        return [];
     }
 
     /**
@@ -367,5 +462,95 @@ abstract class HilosDbContext extends DbContext
             self::oauthProviders,
             self::verifierCircle,
         ];
+    }
+
+    /**
+     * Mounts one framework key with the chain that answers for it: the framework's own, or the
+     * project's declared for the key through frameworkExtensions().
+     *
+     * The object collection is the one the view collection names in OBJECT_COLLECTION_CLASS, for
+     * the framework's chain exactly as for a project's: the view is the one place the chain is
+     * named from, so there is no second list to fall behind. The loading strategy is the
+     * framework's whichever chain is mounted. A project's declaration replaces the view and the
+     * action layers it names; an action layer it leaves out stays the framework's, which the
+     * start guard (HIL-1191) refuses as a half-inherited chain rather than this mount.
+     *
+     * @param string $key Framework collection key
+     * @param int $strategy Loading strategy the framework reads the key by
+     * @param class-string<DbCollection> $collection The framework's view collection for the key
+     * @param ?class-string<CollectionDbActions> $actions The framework's collection actions, when it registers any
+     * @param ?class-string<ItemDbActions> $itemActions The framework's item actions, when it registers any
+     * @throws FrameworkExtensionException When the project's declaration for the key does not extend the framework's chain
+     * @throws CollectionAlreadyMountedException When a view is already mounted under the key
+     * @throws ObjectCollectionNotFoundException When the object collection is not there for the view to wrap
+     * @throws UnknownLazyStrategyException When the strategy is none initDB() knows
+     */
+    private function mountFramework(
+        string $key,
+        int $strategy,
+        string $collection,
+        ?string $actions = null,
+        ?string $itemActions = null,
+    ): void {
+        $this->frameworkChains[$key] = new FrameworkExtension($collection, $actions, $itemActions);
+
+        $extension = $this->declaredExtensions[$key] ?? null;
+        if ($extension !== null) {
+            $this->assertExtends($key, self::LAYER_COLLECTION, $extension->collection, $collection);
+            $actions = $this->extendedActions($key, self::LAYER_ACTIONS, $extension->actions, $actions);
+            $itemActions = $this->extendedActions($key, self::LAYER_ITEM_ACTIONS, $extension->itemActions, $itemActions);
+            $collection = $extension->collection;
+        }
+
+        $objectCollectionClass = $collection::OBJECT_COLLECTION_CLASS;
+        $this->_objectCollections[$key] = $objectCollectionClass::initDB($strategy);
+        $this->setRepresent($key, $collection, $actions, $itemActions);
+    }
+
+    /**
+     * The action layer a mount ends up with: the project's, once it is seen to extend the
+     * framework's, or the framework's where the project declared none.
+     *
+     * @param string $key Framework collection key
+     * @param string $layer Name of the layer, for the refusal
+     * @param ?string $declared The project's class for the layer, or null when it declared none
+     * @param ?string $base The framework's class for the layer, or null when the framework registers none
+     * @return ?string Class to mount for the layer
+     * @throws FrameworkExtensionException When the layer is declared where the framework registers none, or does
+     *     not extend the framework's
+     */
+    private function extendedActions(string $key, string $layer, ?string $declared, ?string $base): ?string
+    {
+        if ($declared === null) {
+            return $base;
+        }
+
+        if ($base === null) {
+            throw new FrameworkExtensionException(
+                "Framework extension for [{$key}] declares {$layer}, which the framework does not register under"
+                . ' that key; a subclass does not invent an action layer the base never had',
+            );
+        }
+
+        $this->assertExtends($key, $layer, $declared, $base);
+
+        return $declared;
+    }
+
+    /**
+     * @param string $key Framework collection key
+     * @param string $layer Name of the layer, for the refusal
+     * @param string $class The project's class for the layer
+     * @param string $base The framework's class for the layer
+     * @throws FrameworkExtensionException When the class is not a subclass of the base - the base itself included
+     */
+    private function assertExtends(string $key, string $layer, string $class, string $base): void
+    {
+        if (!is_subclass_of($class, $base)) {
+            throw new FrameworkExtensionException(
+                "Framework extension for [{$key}] names {$class} as its {$layer},"
+                . " which does not extend the framework's {$base}",
+            );
+        }
     }
 }

@@ -19,7 +19,7 @@ use Throwable;
  * @property-read DbCollectionDataExports $collection
  * @property-read ObjectDataExports $objectCollection
  */
-final class DataExportsActions extends DbActions
+class DataExportsActions extends DbActions
 {
     /**
      * @param int $userId Person requesting a copy

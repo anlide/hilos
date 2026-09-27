@@ -37,7 +37,7 @@ use Hilos\Database\PhpType;
  * @method static EntityVerifierCircleMembers get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityVerifierCircleMembers getAll()
  */
-final class VerifierCircleMember extends Entity
+class VerifierCircleMember extends Entity
 {
     public const string id = 'id';
     public const string identity_type = 'identity_type';

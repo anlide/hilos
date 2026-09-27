@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\RegistrationReservation as EntityRegistrationRese
  *
  * @extends EntityCollection<EntityRegistrationReservation>
  */
-final class RegistrationReservations extends EntityCollection
+class RegistrationReservations extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityRegistrationReservation::class;
 }

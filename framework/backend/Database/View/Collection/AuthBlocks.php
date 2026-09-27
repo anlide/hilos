@@ -23,7 +23,7 @@ use Hilos\Database\View\Item\AuthBlock;
  *
  * @extends DbCollection<AuthBlock, ObjectAuthBlocks>
  */
-final class AuthBlocks extends DbCollection
+class AuthBlocks extends DbCollection
 {
     public const string DB_ITEM_CLASS = AuthBlock::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectAuthBlocks::class;

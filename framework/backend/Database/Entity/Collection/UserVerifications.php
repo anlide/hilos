@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\UserVerification as EntityUserVerification;
  *
  * @extends EntityCollection<EntityUserVerification>
  */
-final class UserVerifications extends EntityCollection
+class UserVerifications extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityUserVerification::class;
 }

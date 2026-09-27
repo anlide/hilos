@@ -25,7 +25,7 @@ use Hilos\HilosException;
  * @property-read ?string $scope
  * @property-read OAuthProviderActions $actions
  */
-final class OAuthProvider extends DbItem
+class OAuthProvider extends DbItem
 {
     /**
      * Magic getter for entity properties.

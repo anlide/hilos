@@ -39,7 +39,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @method ObjectRegistrationReservation|null get(int|string $key)
  * @method ObjectRegistrationReservation|null offsetGet(mixed $offset)
  */
-final class RegistrationReservations extends Objects
+class RegistrationReservations extends Objects
 {
     public const string OBJECT_CLASS = ObjectRegistrationReservation::class;
     public const string ENTITY_COLLECTION_CLASS = EntityRegistrationReservations::class;
@@ -96,7 +96,7 @@ final class RegistrationReservations extends Objects
             $this->release($standing);
         }
 
-        $reservation = ObjectRegistrationReservation::create();
+        $reservation = static::OBJECT_CLASS::create();
         $reservation->type = $type;
         $reservation->identifier = $identifier;
         $reservation->sessionToken = $sessionToken;
@@ -267,7 +267,7 @@ final class RegistrationReservations extends Objects
             return null;
         }
 
-        $entities = EntityRegistrationReservation::get([
+        $entities = static::entityClass()::get([
             EntityRegistrationReservation::session_token => $sessionToken,
         ]);
 
@@ -295,7 +295,7 @@ final class RegistrationReservations extends Objects
             return [];
         }
 
-        $entities = EntityRegistrationReservation::get([
+        $entities = static::entityClass()::get([
             EntityRegistrationReservation::identifier => $identifier,
         ]);
 
@@ -319,7 +319,7 @@ final class RegistrationReservations extends Objects
      */
     private function hydrateExpired(string $nowSql): array
     {
-        $entities = EntityRegistrationReservation::get(
+        $entities = static::entityClass()::get(
             '`' . EntityRegistrationReservation::expires_at . '` <= ?',
             [$nowSql],
         );
@@ -358,7 +358,7 @@ final class RegistrationReservations extends Objects
     private function hydrateReservation(EntityRegistrationReservation $entity): ObjectRegistrationReservation
     {
         $id = (int)$entity->id;
-        $this->hydrate($id, ObjectRegistrationReservation::fromEntity($entity));
+        $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
 
         return $this->objects[$id];
     }
