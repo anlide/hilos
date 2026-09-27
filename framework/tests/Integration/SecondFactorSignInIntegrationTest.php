@@ -18,6 +18,7 @@ use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\SecondFactor\Totp;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\HilosSignalConstants;
@@ -39,6 +40,7 @@ use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -104,6 +106,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         RtTruthSourceRegistry::registerDaemon(StateHilosOAuthTrip::RT_COLLECTION);
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
+        RtTruthSourceRegistry::registerDaemon(StateHilosSessionToastStack::RT_COLLECTION);
         RtTruthSourceRegistry::registerDaemon(StateRecoveryWaiter::RT_COLLECTION);
 
         self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
@@ -118,6 +121,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     {
         RtTruthSourceRegistry::unregisterDaemon(StateHilosOAuthTrip::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateRecoveryWaiter::RT_COLLECTION);
         SourceChangeBus::reset();
         Hilos::$setting = $this->previousSetting;
@@ -257,8 +261,22 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $rotated = $this->lastStateFrame()?->sessionToken;
         $this->assertNotNull($rotated);
 
-        Hilos::$db->sessions->findByToken($rotated)?->actions->unbindUser();
-        $this->grant($rotated);
+        $sessionId = Hilos::$db->sessions->findByToken($rotated)->id;
+        $this->holder->onSignalAgent(
+            new AgentSignalData(data: new SessionRebindSignalData(
+                sessionToken: $rotated,
+                userId: null,
+                initiatorAcceptKey: self::ACCEPT_KEY,
+            )),
+            '',
+            HilosSignalConstants::HILOS_SESSION_REBIND,
+        );
+        $signedOut = $this->lastStateFrame();
+        $this->assertNotNull($signedOut);
+        $this->assertNotSame($rotated, $signedOut->sessionToken);
+        $this->assertSame($sessionId, $signedOut->sessionId);
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID));
+        $this->grant($signedOut->sessionToken);
 
         $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId, 'The trusted browser is signed in at once');
     }

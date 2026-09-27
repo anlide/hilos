@@ -269,8 +269,9 @@ $this->sendToGroup($signalName, $groupName, $data);
 
 What the frontend shows as a toast is addressed to a connection
 (`sendToUser()` — one socket, despite the name) or to a session
-(`sendToSession()` — every tab of one browser). Anything addressed to the user
-as a person goes out as a durable notification-center record, not a toast —
+(`sendToSession()` — every tab of one browser, for as long as the same person is
+in it: losing the person moves the session onto a new token, HIL-1126). Anything
+addressed to the user as a person goes out as a durable notification-center record, not a toast —
 the surface rule is [../frontend/toasts.md](../frontend/toasts.md).
 
 ## Per-page agent override

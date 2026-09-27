@@ -411,8 +411,8 @@ are never persisted (see [conflict-resolution.md](conflict-resolution.md)).
 
 ## Session-token rotation (HIL-582)
 
-A login rotates the session token, so a value planted in the browser beforehand
-stops naming the session the moment the login succeeds. The new token can only
+A login and any loss of the session's person rotate its token (HIL-1126), so its
+previous value stops naming the session at either boundary. The new token can only
 reach the browser through `Set-Cookie`, and the only frame that carries one is
 the 101 — so it is traded for, not pushed:
 
@@ -426,6 +426,14 @@ the 101 — so it is traded for, not pushed:
    token in the session `Set-Cookie`, erases the auxiliary cookie with a second
    one, burns the ticket, and drops the other connections of the old session,
    which come back into it carrying the new cookie.
+
+On sign-out, the requesting tab receives the ticket, or the first live tab when
+the session was ended remotely. Its siblings learn they are anonymous before
+that ticket leaves, and are dropped after the cookie exchange. With no live tab,
+the session changes token without issuing a ticket. At handshake, expiry or block
+gives the ticket to the arriving connection. A presented cookie naming no session
+is replaced there too, except when a ticket cookie accompanied it: a lost ticket
+must not create an endless replacement-ticket/reconnect loop.
 
 **The reconnect waits for the replies the socket is still owed.** The rotation
 signal is emitted from inside the action handler that logged in, so the action's

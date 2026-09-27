@@ -194,13 +194,11 @@ final class PollsAgent extends AbstractAgent
     }
 
     /**
-     * Hands the browser that just signed in the ticket it trades for its rotated cookie
-     * (HIL-582).
+     * Hands a browser its rotated-cookie ticket after sign-in, sign-out, remote session
+     * termination or replacement of a dead cookie (HIL-582, HIL-1126).
      *
-     * Nothing in this demo rotates a session today - the one bind it has comes from an
-     * operator's command, which names no initiating connection - but the frame is the
-     * framework's and may carry one, and a ticket dropped on the floor would cost the person
-     * their session. Sent from here so that it leaves behind the identity above.
+     * Sent from here so that it leaves behind the identity above: receiving the ticket
+     * immediately reconnects its one holder, so the browser must learn its identity first.
      *
      * @param SessionStateSignalData $frame Session state that may carry a rotation
      * @throws InvalidArgumentException When the rotation signal cannot be named

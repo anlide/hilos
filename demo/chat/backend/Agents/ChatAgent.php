@@ -216,13 +216,13 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Hands the browser that logged in the ticket it trades for its rotated cookie (HIL-582).
+     * Hands a browser its rotated-cookie ticket after sign-in, sign-out, remote session
+     * termination or replacement of a dead cookie (HIL-582, HIL-1126).
      *
      * Sent from this project rather than from the library that minted it, so that it leaves
      * behind the identity above: the browser reconnects the moment it holds the ticket, and a
      * ticket overtaking the response would drop the socket before it learned who it had
-     * become. A frame carrying a ticket names exactly one socket - the one that logged in -
-     * which is also the only rightful holder of a one-time value.
+     * become. A frame carrying a ticket names exactly one socket, its rightful holder.
      *
      * @param SessionStateSignalData $frame Session state that may carry a rotation
      * @throws InvalidArgumentException When the rotation signal cannot be named

@@ -22,6 +22,7 @@ use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -52,11 +53,13 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         Hilos::$rt->configure();
         Hilos::$rt->bindStateCollectionNames();
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionToastStack::RT_COLLECTION);
+        RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
     }
 
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
         Hilos::$sr = null;
         Hilos::$rt = null;
 

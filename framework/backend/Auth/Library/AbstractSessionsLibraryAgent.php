@@ -63,8 +63,10 @@ use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\Exception\SessionNotOnConnectionException;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
+use Hilos\Auth\Session\HandshakeSession;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionCarrier;
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Auth\Session\SessionRebindConstants;
 use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Auth\Session\SessionToastSeverity;
@@ -175,11 +177,12 @@ use Throwable;
  * its own mounts the command nowhere and inherits the refusing default.
  *
  * A session is anonymous (user id null) until {@see authenticateSession()} binds a user;
- * {@see deauthenticateSession()} is the symmetric downgrade that keeps the session row and
- * token alive. The session-expiry drop (HIL-398) is enforced in
- * {@see resolveHandshakeSession()}: a cookie that resolves to an authenticated but expired
+ * {@see deauthenticateSession()} is the symmetric downgrade that keeps the row and moves it
+ * onto a new token (HIL-1126). The session-expiry drop (HIL-398) is enforced in
+ * {@see resolveSession()}: a cookie that resolves to an authenticated but expired
  * session is downgraded to anonymous before it is handed back, so a stale cookie can never
- * resume an authenticated identity. The same door drops the session of a blocked person and
+ * resume an authenticated identity, and a cookie naming no session is replaced rather than
+ * adopted (HIL-1126). The same door drops the session of a blocked person and
  * leaves the "Access closed" card on it (HIL-289), catching a tab the block's own sign-out could
  * not reach. A session row is removed only by this library's sweep,
  * after its cookie lifetime ends or after an anonymous browser never returns.
@@ -1068,6 +1071,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * legitimate reader of it and starts its own countdown from the full time - it has only
      * now come into view.
      *
+     * If expiry, block or a dead cookie moves the session onto a new token (HIL-1126),
+     * this same handshake frame carries the ticket and the browser reconnects on its new cookie.
+     *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
@@ -1075,6 +1081,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @throws DuplicateValueException When a concurrent create already claimed a new token
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
+     * @throws EnvException When the installation's session cookie name cannot be resolved
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -1085,7 +1092,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $sessionToken = $data->sessionToken;
         SessionToken::ensureValid($sessionToken);
 
-        $session = $this->resolveHandshakeSession($sessionToken);
+        $cookieName = SessionCookieName::resolve();
+        $cookieReplaceable = ($data->cookies[$cookieName] ?? null) === $sessionToken
+            && !isset($data->cookies[SessionRotationTicket::cookieName($cookieName)]);
+        $resolved = $this->resolveSession($sessionToken, $cookieReplaceable, atHandshake: true);
+        $session = $resolved->session;
         $deviceName = DeviceName::fromUserAgent(
             HttpHeaderHelper::get($data->headers, HttpConstants::HEADER_USER_AGENT),
         );
@@ -1107,6 +1118,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             acceptKeys: [$data->acceptKey],
             pendingAck: $this->sessionPendingAck($session),
             pendingAuthStep: $pendingAuthStep,
+            rotationTicket: $resolved->rotationTicket,
         ));
         $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($session->token);
         $this->publishSessionToasts($sessionTokenHash);
@@ -1530,13 +1542,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * refused write - becomes exactly one error reply, because a CLI parked on the command
      * socket must learn the outcome rather than time out.
      *
-     * The session goes through {@see self::resolveHandshakeSession()}, the very door a
+     * The session goes through {@see self::resolveSession()}, the very door a
      * handshake uses, so an expired session named by an operator is dropped to anonymous by
      * the HIL-398 rule instead of being re-bound and slid forward: an expired access stays
      * expired, and the administrator becomes a NEW user rather than the one the stale cookie
      * still names. The operator learns it happened from
      * {@see AdminCommandConstants::FIELD_EXPIRED}, because the reply otherwise differs only
      * by a user id he has never seen.
+     *
+     * Since HIL-1126 an expiry also moves the row onto a new token. This command resolves
+     * without a connecting socket: a live tab receives the sign-out ticket, and the bind
+     * below names the resolved token so the new administrator is reachable on the new cookie.
      *
      * The plain lookup stays in FRONT of that door and is not redundant: the door mints an
      * anonymous session for a token it does not know, so without the lookup an operator's
@@ -1569,14 +1585,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // What the row carried BEFORE the door, which is the only thing that tells an
             // expiry drop from a session that was anonymous all along.
             $userIdBeforeDoor = $session->userId;
-            $session = $this->resolveHandshakeSession($sessionToken);
+            $session = $this->resolveSession($sessionToken, cookieReplaceable: false, atHandshake: false)->session;
 
             $created = $session->userId === null;
             // The door unbinds a user for exactly one reason - the expiry - so the two reads
             // around it name it without repeating the TTL comparison that lives inside.
             $expired = $userIdBeforeDoor !== null && $session->userId === null;
             $userId = $this->ensureAdminUser($session->userId);
-            $this->authenticateSession($sessionToken, $userId, null);
+            $this->authenticateSession($session->token, $userId, null);
         } catch (WiringRefusal $refusal) {
             // Answered rather than raised: the command socket parks its caller until a reply
             // arrives ({@see self::onSignalCommand()}), so a throw would hang the operator at
@@ -1812,30 +1828,56 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Resolves a handshake session token to a session row.
+     * Resolves a browser or operator's session token to a live session row.
      *
      * Finds the session for the daemon-carried cookie token, creating an anonymous
      * one when the cookie is new. An authenticated session that has outlived its
-     * expiry is downgraded to anonymous through {@see deauthenticateSession()} (the
-     * HIL-398 drop) before it is returned; otherwise the session is touched to
-     * refresh its last-seen and expiry. The caller (the project handshake handler)
-     * registers the connection and emits the handshake response.
+     * expiry is downgraded to anonymous (the HIL-398 drop) before it is returned;
+     * otherwise the session is touched to refresh its last-seen and expiry. A handshake
+     * then registers the connection and emits its response through the project.
      *
      * A session whose person at the keyboard is blocked is marked with the account and
      * dropped to anonymous the same way (HIL-289), and a mark whose account has been
      * unblocked since is lowered - both only in a project that enforces blocks.
      *
-     * @param string $sessionToken Daemon-resolved session cookie token (validated by the caller)
-     * @return Session Resolved session, anonymous or authenticated
+     * A presented cookie naming no row is replaced (HIL-1126). A handshake carrying a
+     * ticket cookie is exempt: a lost or raced ticket must not trigger another rotation
+     * and reconnect forever. Expiry and block keep the row on a new token; the ticket
+     * travels on this connection's handshake frame, after its siblings learn they are guests.
+     * Token or ticket mint failure keeps the old token and still removes the person.
+     * An operator has no arriving socket: its expiry or block uses the remote sign-out
+     * path, which hands a ticket to a live tab or rotates without one when none is alive.
+     *
+     * @param string $sessionToken Validated token presented by a browser or named by an operator
+     * @param bool $cookieReplaceable Whether a presented session cookie may be replaced when its row is gone
+     * @param bool $atHandshake Whether a connecting socket will carry the ticket in its handshake frame
+     * @return HandshakeSession Resolved session and any ticket owed to the connecting socket
      * @throws InvalidFormatException When a new token is not a 32-character hex string
      * @throws DuplicateValueException When a concurrent create already claimed the token
      * @throws HilosException On database or runtime failure
      */
-    private function resolveHandshakeSession(string $sessionToken): Session
+    private function resolveSession(string $sessionToken, bool $cookieReplaceable, bool $atHandshake): HandshakeSession
     {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
-            return Hilos::$db->sessions->actions->createAnonymous($sessionToken);
+            if ($cookieReplaceable) {
+                try {
+                    $ticket = SessionRotationTicket::mint();
+                    $fresh = $this->mintAnonymousSession();
+                    Hilos::$ac?->renameBrowserSession($sessionToken, $fresh->token);
+                    $this->logAgentInfo('session_cookie_replaced ' . json_encode([
+                        'event' => 'session_cookie_replaced',
+                        'session' => $fresh->id,
+                    ]));
+                    $this->registerRotation($ticket, $fresh->token, $this->sessionConnectionKeys($sessionToken));
+
+                    return new HandshakeSession($fresh, $ticket);
+                } catch (SessionTokenExhaustedException | RandomException $e) {
+                    $this->logAgentError('Dead session cookie kept: ' . $e->getMessage());
+                }
+            }
+
+            return new HandshakeSession(Hilos::$db->sessions->actions->createAnonymous($sessionToken), null);
         }
 
         $expiresAt = $session->expiresAt;
@@ -1845,19 +1887,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ) {
             // The cookie resolved to an authenticated session that has outlived its
             // expiry: drop it to anonymous before handing it back, then slide the row
-            // with the cookie already returned on this 101. Otherwise the sweep could
-            // delete a row that this browser will present again. A null expiry is open-ended.
+            // the replacement cookie will name. Otherwise the sweep could delete the row
+            // before this browser returns. A null expiry is open-ended.
             $this->logAgentInfo('session_expired ' . json_encode([
                 'event' => 'session_expired',
                 'session' => $session->id,
                 'user' => $session->userId,
             ]));
-            $this->deauthenticateSession($sessionToken);
+            $resolved = $this->vacateSession($session, $sessionToken, $atHandshake);
+            $resolved->session->actions->touch();
 
-            $session = Hilos::$db->sessions->findByToken($sessionToken) ?? $session;
-            $session->actions->touch();
-
-            return $session;
+            return $resolved;
         }
 
         if ($this->enforcesAccountBlock()) {
@@ -1875,8 +1915,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     'user' => $atKeyboard,
                     'sessions' => [$session->id],
                 ]));
-                $this->deauthenticateSession($sessionToken);
-                $session = Hilos::$db->sessions->findByToken($sessionToken) ?? $session;
+                $resolved = $this->vacateSession($session, $sessionToken, $atHandshake);
+                $resolved->session->actions->touch();
+
+                return $resolved;
             } elseif ($session->blockedUserId !== null && !$blockReader->isBlocked($session->blockedUserId)) {
                 // The account was unblocked while this browser was away: the card has nothing left to say.
                 $session->actions->releaseBlockedNotice();
@@ -1885,7 +1927,65 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $session->actions->touch();
 
-        return $session;
+        return new HandshakeSession($session, null);
+    }
+
+    /**
+     * Signs out a session found expired or blocked while resolving it. A handshake owes
+     * its ticket to the connecting socket; an operator uses the remote sign-out path.
+     * Both mints precede the write so their failure can still sign out on the old token.
+     *
+     * @param Session $session Authenticated session being resolved
+     * @param string $sessionToken Token the browser or operator named
+     * @param bool $atHandshake Whether a connecting socket will receive the ticket
+     * @return HandshakeSession Anonymous session and any ticket owed to the connecting socket
+     * @throws HilosException On database or runtime failure
+     * @throws InvalidArgumentException When the state frame cannot be named
+     */
+    private function vacateSession(Session $session, string $sessionToken, bool $atHandshake): HandshakeSession
+    {
+        if (!$atHandshake) {
+            $liveToken = $this->deauthenticateSession($sessionToken) ?? $sessionToken;
+
+            return new HandshakeSession(Hilos::$db->sessions->findByToken($liveToken) ?? $session, null);
+        }
+
+        $liveKeys = $this->sessionConnectionKeys($sessionToken);
+        $impersonatorId = $session->impersonatorUserId;
+        $vacatedUserId = $session->userId;
+        try {
+            $ticket = SessionRotationTicket::mint();
+            $newToken = $this->rotateSessionTokenAndUnbindUser($session);
+        } catch (SessionTokenExhaustedException | RandomException $e) {
+            $this->logAgentError('Sign-out kept the old session token: ' . $e->getMessage());
+            $this->signOutInPlace($sessionToken);
+
+            return new HandshakeSession(Hilos::$db->sessions->findByToken($sessionToken) ?? $session, null);
+        }
+
+        $this->forgetSessionToasts($sessionToken);
+        Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
+        if ($impersonatorId !== null) {
+            $this->logAgentInfo('impersonate_stop ' . json_encode([
+                'event' => 'impersonate_stop',
+                'admin' => $impersonatorId,
+                'restoredUser' => null,
+                'vacatedUser' => $vacatedUserId,
+                'session' => $session->id,
+            ]));
+        }
+        if ($liveKeys !== []) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $newToken,
+                sessionId: $session->id,
+                userId: null,
+                acceptKeys: $liveKeys,
+                pendingAck: $this->sessionPendingAck($session),
+            ));
+        }
+        $this->registerRotation($ticket, $newToken, $liveKeys);
+
+        return new HandshakeSession(Hilos::$db->sessions->findByToken($newToken) ?? $session, $ticket);
     }
 
     /**
@@ -2093,6 +2193,35 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Moves a session onto a fresh token and removes its person in one write (HIL-1126).
+     * The bounded retry follows the sign-in mint; its caller keeps a failed mint from
+     * preventing a sign-out.
+     *
+     * @param Session $session Live session to rotate
+     * @return string Token the session now answers to
+     * @throws HilosException On database or runtime failure
+     * @throws RandomException When the platform's secure random source refuses a mint
+     * @throws SessionTokenExhaustedException When every attempt hit a token already in use
+     */
+    private function rotateSessionTokenAndUnbindUser(Session $session): string
+    {
+        for ($attempt = 0; $attempt < self::TOKEN_MINT_ATTEMPTS; $attempt++) {
+            $candidate = SessionToken::mint();
+            try {
+                $session->actions->rotateTokenAndUnbindUser($candidate);
+
+                return $candidate;
+            } catch (DuplicateValueException) {
+                // Another session holds the minted value; mint again.
+            }
+        }
+
+        throw new SessionTokenExhaustedException(
+            'Session token rotation failed: ' . self::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
+        );
+    }
+
+    /**
      * Registers the pending rotation and returns the ticket the browser will trade for it.
      *
      * Order matters and is the mechanism, not a detail: the row has to exist before the
@@ -2115,46 +2244,131 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function announceRotation(string $newToken, array $keysToDrop): string
     {
         $ticket = SessionRotationTicket::mint();
+        $this->registerRotation($ticket, $newToken, $keysToDrop);
+
+        return $ticket;
+    }
+
+    /**
+     * Publishes a ticket minted before a sign-out writes its new token. Keeping the mint
+     * before that write lets a random-source failure still sign out on the old token.
+     *
+     * @param string $ticket One-time ticket already minted for the browser
+     * @param string $newToken Token the session was rotated onto
+     * @param list<string> $keysToDrop Accept keys to drop after the cookie exchange
+     * @throws HilosException On runtime failure
+     */
+    private function registerRotation(string $ticket, string $newToken, array $keysToDrop): void
+    {
         Hilos::$rt?->hilosSessionRotations->actions->register(
             $ticket,
             $newToken,
             $keysToDrop,
             SessionRotationTicket::expiryFromNow(),
         );
-
-        return $ticket;
     }
 
     /**
-     * Reverts a live session to anonymous and tells its sockets so. The inverse of
-     * {@see authenticateSession()}.
+     * Reverts a live session to anonymous on a new token and tells its sockets (HIL-1126).
+     * The row survives, but its old hash loses its sockets after the cookie exchange, so
+     * late frames addressed by sendToSession() cannot follow the person out.
      *
-     * The session row and token are kept — the session simply becomes anonymous
-     * again. A no-op when the token has no session row or is already anonymous.
-     * Presence follows the connection re-point the project makes on the frame: a user with
-     * no other authenticated connection drops offline through the standard connection sync.
+     * The shell sign-out, ending sessions remotely, password recovery and change, account
+     * block, merge and erasure all pass here. Expiry and block found at handshake use
+     * the same rotation with a ticket on that connection's handshake frame. A guest is a no-op.
+     * The requesting tab, or the first live tab when there is none, receives the ticket;
+     * its siblings learn they are anonymous first and reconnect after the cookie is set.
+     * With no live tab the row moves without a ticket. A failed token mint signs out in place.
      *
-     * This is also the one seam every way a live session loses its person passes
-     * through — the shell sign-out, the expiry drop above, the account-merge force-logout
-     * and the recovery drop of the other sessions — which is why every one of them ends in
-     * exactly one frame, and why the page re-decision of HIL-652 has exactly one place to
-     * stand on the far side of it.
+     * The pending ack (HIL-875) and impersonator marker (HIL-1061) leave with the person
+     * in the same write. No later sign-in can inherit the administrator behind a takeover.
+     * Its end is logged without restoring anyone. The toast stack under the OLD token is
+     * forgotten (HIL-916) while its sockets can still receive the empty list.
      *
-     * It is also where an announcement nobody read is taken down (HIL-875). The mark is
-     * lowered inside {@see SessionActions::unbindUser()}, so the frame below states null
-     * rather than restating a sentence about an account this session no longer has - which
-     * is what used to leave a logged-out tab holding a panel it could not answer.
+     * @param string $sessionToken Session cookie token to revert to anonymous
+     * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
+     * @param ?string $action Action name the state frame answers, or null when it answers none
+     * @param ?string $holderAcceptKey Tab to receive the ticket, or null to choose the first live tab
+     * @return ?string Token the session now answers to, or null when no authenticated session was named
+     * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws HilosException On database or runtime failure
+     */
+    private function deauthenticateSession(
+        string $sessionToken,
+        ?string $requestId = null,
+        ?string $action = null,
+        ?string $holderAcceptKey = null,
+    ): ?string {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null || $session->userId === null) {
+            return null;
+        }
+
+        $liveKeys = $this->sessionConnectionKeys($sessionToken);
+        $impersonatorId = $session->impersonatorUserId;
+        $vacatedUserId = $session->userId;
+        $holder = $holderAcceptKey ?? ($liveKeys[0] ?? null);
+        try {
+            $ticket = $holder === null ? null : SessionRotationTicket::mint();
+            $newToken = $this->rotateSessionTokenAndUnbindUser($session);
+        } catch (SessionTokenExhaustedException | RandomException $e) {
+            $this->logAgentError('Sign-out kept the old session token: ' . $e->getMessage());
+            $this->signOutInPlace($sessionToken, $requestId, $action);
+
+            return $sessionToken;
+        }
+
+        $this->forgetSessionToasts($sessionToken);
+        Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
+        if ($impersonatorId !== null) {
+            $this->logAgentInfo('impersonate_stop ' . json_encode([
+                'event' => 'impersonate_stop',
+                'admin' => $impersonatorId,
+                'restoredUser' => null,
+                'vacatedUser' => $vacatedUserId,
+                'session' => $session->id,
+            ]));
+        }
+
+        $siblings = array_values(array_filter(
+            $liveKeys,
+            static fn(string $acceptKey): bool => $acceptKey !== $holder,
+        ));
+        if ($siblings !== []) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $newToken,
+                sessionId: $session->id,
+                userId: null,
+                acceptKeys: $siblings,
+                pendingAck: $this->sessionPendingAck($session),
+            ));
+        }
+        if ($holder !== null && $ticket !== null) {
+            $this->registerRotation($ticket, $newToken, $siblings);
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $newToken,
+                sessionId: $session->id,
+                userId: null,
+                acceptKeys: [$holder],
+                pendingAck: $this->sessionPendingAck($session),
+                rotationTicket: $ticket,
+                requestId: $requestId,
+                action: $action,
+            ));
+        }
+
+        return $newToken;
+    }
+
+    /**
+     * Reverts a live session to anonymous WITHOUT moving it off its token.
+     * Browser erasure owns a replacement row and ticket, so it must not issue a second
+     * ticket here; a sign-out whose token mint failed uses this fallback as well.
      *
-     * This is where a takeover ends when its person leaves (HIL-1061): the marker is
-     * lowered inside {@see SessionActions::unbindUser()} with the person, and the end is
-     * logged as Stop logs it, with nobody restored. A sign-out keeps the token, and a
-     * marker left behind would let whoever uses that browser next press Stop into the
-     * administrator's account.
-     *
-     * It is also where the session's toast stack is taken down (HIL-916). A sign-out keeps
-     * the token, so the stack would otherwise be handed to whoever holds the browser next;
-     * every road that loses the person passes here, the erase of {@see eraseBrowser()} too.
-     * A session that is already anonymous returns above and keeps its stack.
+     * The pending ack (HIL-875) and impersonator marker (HIL-1061) leave with the person
+     * in unbindUser(). The old toast stack is forgotten (HIL-916), the takeover end is
+     * logged without restoring anyone, and one state frame tells every live socket.
+     * An already anonymous session keeps its stack and publishes nothing.
      *
      * @param string $sessionToken Session cookie token to revert to anonymous
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
@@ -2162,7 +2376,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    private function deauthenticateSession(
+    private function signOutInPlace(
         string $sessionToken,
         ?string $requestId = null,
         ?string $action = null,
@@ -2200,8 +2414,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Ends this browser's session and hands it a new one: the server half of the erase (HIL-839).
      *
-     * Three moves that already existed, in the order the leaf argues for. The sign-out first,
-     * through the one seam every other way of losing a person goes through. Then the
+     * Three moves: sign out in place first, because erasure replaces the row and issues its
+     * own ticket, and a browser has only one ticket cookie. Then the
      * half-finished registration this browser was holding, if it was holding one - and that
      * is two writes rather than the one the plan named, because the session's own memory of
      * the flow and the HOLD ON THE ADDRESS are separate records:
@@ -2232,7 +2446,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function eraseBrowser(string $sessionToken, string $acceptKey, ?string $requestId): void
     {
-        $this->deauthenticateSession($sessionToken);
+        $this->signOutInPlace($sessionToken);
 
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session !== null && $session->pendingRegistrationIdentifier !== null) {
@@ -2360,8 +2574,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * away the proof they just gave.
      *
      * Each session goes through {@see deauthenticateSession()}, the same seam logout
-     * and the merge force-logout use, so the session row and its cookie survive as
-     * anonymous and the live connections learn about it. The kept token does not have
+     * and the merge force-logout use, so the session row survives as
+     * anonymous on a new token and the live connections learn about it. The kept token does not have
      * to be one of the user's sessions - a token that is not among them simply keeps
      * nothing, which is the honest answer for a caller that has none.
      * Sessions carrying an impersonator are skipped as well: a person may not end the
@@ -3154,13 +3368,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * be a row waiting for a reader who, by the time they arrive, is being told about
      * something that finished long ago.
      *
-     * A card is for a PERSON and not for a browser, and a session keeps its token across a
-     * sign-out ({@see deauthenticateSession()} unbinds the person and keeps the row), so the
-     * hash alone is not an address: minutes after the press the same sockets may belong to
-     * whoever sat down next. The frame therefore names who it is for, and that name is
-     * compared against whoever is at the keyboard NOW; they differ and the card is dropped in
-     * silence - nothing written, nothing sent, nothing logged, because there is nobody to show
-     * it to and this happens on every sign-out that had a run in flight (HIL-1062).
+     * A card is for a PERSON and not for a browser. A sign-out abandons the token (HIL-1126),
+     * but a command-line takeover changes the person without rotating it. The frame therefore
+     * names who it is for and compares that name with whoever is at the keyboard NOW; a
+     * mismatch drops the card silently (HIL-1062).
      *
      * @param RaiseSessionToastSignalData $frame Session to tell, who it is for, and what to say
      * @throws HilosException On runtime failure
@@ -3455,7 +3666,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * late, and a marker cleared afterwards would announce it one frame too long.
      *
      * The marker is written only on a bind, and only when it actually changes. A sign-out
-     * lowers it with the person inside {@see SessionActions::unbindUser()} (HIL-1061), so
+     * lowers it with the person inside {@see SessionActions::rotateTokenAndUnbindUser()} (HIL-1061), so
      * whatever marker a sign-out frame names is not written - and must not be, because
      * signing out an already anonymous session is a no-op that would never lower it; a row
      * re-synced for nothing would fan out to every reader of it.
@@ -3492,7 +3703,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $liveToken = $frame->userId === null
-            ? $this->deauthenticateSessionAndKeepToken($frame->sessionToken)
+            ? $this->deauthenticateSessionAndNameToken($frame->sessionToken, $frame->initiatorAcceptKey)
             : $this->authenticateSession(
                 $frame->sessionToken,
                 $frame->userId,
@@ -3505,21 +3716,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Reverts a session to anonymous and names the token it still answers to.
-     *
-     * The sign-out half of {@see rebindSession()}, which needs a token to report back;
-     * signing out rotates nothing, so the token is the one that came in.
+     * Names the token a sign-out moved the session onto, for the rebind reply.
+     * An already anonymous session still answers to the token that came in.
      *
      * @param string $sessionToken Session cookie token to revert to anonymous
-     * @return string The token the session answers to, unchanged by a sign-out
+     * @param ?string $holderAcceptKey Tab to receive the ticket, or null to choose a live tab
+     * @return string Token the session answers to after the sign-out
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    private function deauthenticateSessionAndKeepToken(string $sessionToken): string
+    private function deauthenticateSessionAndNameToken(string $sessionToken, ?string $holderAcceptKey): string
     {
-        $this->deauthenticateSession($sessionToken);
-
-        return $sessionToken;
+        return $this->deauthenticateSession($sessionToken, holderAcceptKey: $holderAcceptKey) ?? $sessionToken;
     }
 
     /**
@@ -3616,7 +3824,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if (!$dto instanceof LogoutActionDTO) {
                     throw new InvalidActionPayloadException($action, LogoutActionDTO::class, $dto);
                 }
-                $this->deauthenticateSession($sessionToken, $this->currentActionRequestId(), $action);
+                $this->deauthenticateSession($sessionToken, $this->currentActionRequestId(), $action, $acceptKey);
 
                 return null;
 
@@ -4284,7 +4492,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * gone. Either way a second frame finds nothing left to do and writes nothing.
      *
      * The sign-out reaches the tabs of this node; a tab of another node is caught at its next
-     * handshake ({@see self::resolveHandshakeSession()}). {@see self::killUserSessions()} is left
+     * handshake ({@see self::resolveSession()}). {@see self::killUserSessions()} is left
      * as it is: a merged loser is not a punished person, and its tabs get the plain sign-in form.
      *
      * @param int $userId Person whose block flag was written

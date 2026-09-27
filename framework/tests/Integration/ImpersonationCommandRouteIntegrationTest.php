@@ -494,9 +494,12 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
             HilosSignalConstants::HILOS_LOGOUT,
             LogoutActionDTO::fromArray([]),
         );
+        $signedOut = $this->nextSessionState();
+        self::assertNotNull($signedOut);
+        self::assertNotSame(self::TOKEN, $signedOut->sessionToken);
         $agent->onSignalAgent(
             new AgentSignalData(data: new AuthSessionGrantSignalData(
-                sessionToken: self::TOKEN,
+                sessionToken: $signedOut->sessionToken,
                 userId: self::NEXT_USER_ID,
                 acceptKey: self::ACCEPT_KEY,
             )),

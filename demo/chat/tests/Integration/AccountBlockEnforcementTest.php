@@ -122,9 +122,13 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->sendBlockChanged($userId);
 
         foreach ([$first, $second] as $token) {
-            $session = Hilos::$db->sessions->findByToken($token);
-            $this->assertNull($session?->userId, 'Every session of the person is anonymous');
-            $this->assertSame($userId, $session?->blockedUserId, 'and remembers the account it lost');
+            $this->assertNull(Hilos::$db->sessions->findByToken($token), 'The old cookie no longer names a session');
+        }
+        foreach (['block-a1', 'block-a2'] as $acceptKey) {
+            $session = $this->sessionOf($acceptKey);
+            $this->assertNotNull($session);
+            $this->assertNull($session->userId, 'Every session of the person is anonymous');
+            $this->assertSame($userId, $session->blockedUserId, 'and remembers the account it lost');
         }
         $response = $this->lastHandshakeResponseFor('block-a1');
         $this->assertNotNull($response);
@@ -168,7 +172,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->block($adminId);
         $this->sendBlockChanged($adminId);
 
-        $session = Hilos::$db->sessions->findByToken($token);
+        $session = $this->sessionOf('admin-ak');
+        $this->assertNotNull($session);
+        $this->assertNotSame($token, $session->token);
         $this->assertNull($session?->userId);
         $this->assertNull($session?->impersonatorUserId);
         $this->assertSame($adminId, $session?->blockedUserId);
@@ -193,7 +199,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->unblock($userId);
         $this->sendBlockChanged($userId);
 
-        $this->assertNull(Hilos::$db->sessions->findByToken($token)?->blockedUserId);
+        $this->assertNotNull($this->sessionOf('unblock-ak'));
+        $this->assertNotSame($token, $this->sessionOf('unblock-ak')->token);
+        $this->assertNull($this->sessionOf('unblock-ak')->blockedUserId);
         $response = $this->lastHandshakeResponseFor('unblock-ak');
         $this->assertNotNull($response);
         $this->assertNull($response->accountBlocked);
@@ -216,10 +224,18 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
 
         $this->deliverHandshake($this->holder, $this->handshake('door-ak-2', $token));
 
-        $session = Hilos::$db->sessions->findByToken($token);
+        $session = $this->sessionOf('door-ak-2');
+        $this->assertNotNull($session);
+        $this->assertNotSame($token, $session->token);
         $this->assertNull($session?->userId);
         $this->assertSame($userId, $session?->blockedUserId);
         $this->assertNotNull($this->lastHandshakeResponseFor('door-ak-2')?->accountBlocked);
+
+        $sessionId = $session->id;
+        $this->deliverHandshake($this->holder, $this->handshake('door-ak-3', $session->token));
+        $this->assertSame($sessionId, $this->sessionOf('door-ak-3')?->id);
+        $this->assertSame($userId, $this->sessionOf('door-ak-3')?->blockedUserId);
+        $this->assertNotNull($this->lastHandshakeResponseFor('door-ak-3')?->accountBlocked);
     }
 
     /**
@@ -236,9 +252,11 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->unblock($userId);
         $this->drainSignals();
 
-        $this->deliverHandshake($this->holder, $this->handshake('stale-ak-2', $token));
+        $this->deliverHandshake($this->holder, $this->handshake('stale-ak-2', $this->sessionOf('stale-ak')->token));
 
-        $this->assertNull(Hilos::$db->sessions->findByToken($token)?->blockedUserId);
+        $this->assertNotNull($this->sessionOf('stale-ak-2'));
+        $this->assertNotSame($token, $this->sessionOf('stale-ak-2')->token);
+        $this->assertNull($this->sessionOf('stale-ak-2')->blockedUserId);
         $this->assertNull($this->lastHandshakeResponseFor('stale-ak-2')?->accountBlocked);
     }
 
@@ -356,13 +374,17 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->drainSignals();
 
         $answer = $this->dismiss('dismiss-ak');
-        $this->assertNull(Hilos::$db->sessions->findByToken($token)?->blockedUserId);
+        $this->assertNotNull($this->sessionOf('dismiss-ak'));
+        $this->assertNotSame($token, $this->sessionOf('dismiss-ak')->token);
+        $this->assertNull($this->sessionOf('dismiss-ak')->blockedUserId);
         $this->assertNotNull($answer, 'The press is answered on the tab that pressed');
         $this->assertNull($answer->accountBlocked);
 
         $again = $this->dismiss('dismiss-ak');
         $this->assertNotNull($again, 'A press with no card left is answered as well');
-        $this->assertNull(Hilos::$db->sessions->findByToken($token)?->blockedUserId);
+        $this->assertNotNull($this->sessionOf('dismiss-ak'));
+        $this->assertNotSame($token, $this->sessionOf('dismiss-ak')->token);
+        $this->assertNull($this->sessionOf('dismiss-ak')->blockedUserId);
     }
 
     /**
@@ -379,7 +401,8 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->sendBlockChanged($blockedId);
         $this->drainSignals();
 
-        $this->grant($token, $otherId, 'switch-ak');
+        $this->assertNull(Hilos::$db->sessions->findByToken($token));
+        $this->grant($this->sessionOf('switch-ak')->token, $otherId, 'switch-ak');
 
         $session = $this->sessionOf('switch-ak');
         $this->assertSame($otherId, $session?->userId);

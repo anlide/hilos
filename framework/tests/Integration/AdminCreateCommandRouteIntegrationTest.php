@@ -5,16 +5,25 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
@@ -67,8 +76,15 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     /** @var ?SignalRouter Signal router to restore after the test */
     private ?SignalRouter $previousSignalRouter = null;
 
+    /** @var ?RtContext Runtime to restore after the test */
+    private ?RtContext $previousRt = null;
+
+    /** @var list<SessionStateSignalData> State frames queued alongside the command reply */
+    private array $sessionFrames = [];
+
     /**
      * @throws DatabaseException When a stub statement fails
+     * @throws HilosException When the runtime cannot be mounted
      */
     protected function setUp(): void
     {
@@ -84,6 +100,13 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         $db->configure();
         Hilos::$db = $db;
         Hilos::$sr = new SignalRouter();
+        $this->previousRt = Hilos::$rt;
+        Hilos::$rt = new AdminCreateRouteTestRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
+        Hilos::$rt->configure();
+        Hilos::$rt->bindStateCollectionNames();
+        RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
+        RtTruthSourceRegistry::registerDaemon(StateHilosSessionToastStack::RT_COLLECTION);
     }
 
     /**
@@ -91,6 +114,9 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      */
     protected function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
+        Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
 
@@ -201,6 +227,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     public function testAnExpiredSessionLosesItsUserAndTheSeamMintsANewOne(): void
     {
         self::seedSession(self::TOKEN, self::EXISTING_USER_ID, self::PAST_EXPIRY);
+        $sessionId = Hilos::$db->sessions->findByToken(self::TOKEN)->id;
         $agent = new AdminCreateRouteTestAgent();
 
         $this->sendCommand($agent, self::TOKEN);
@@ -212,7 +239,47 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_EXPIRED]);
-        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, self::boundUserId(self::TOKEN));
+        self::assertNull(Hilos::$db->sessions->findByToken(self::TOKEN));
+        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, self::boundUserId(Hilos::$db->sessions[$sessionId]->token));
+        self::assertCount(0, Hilos::$rt->hilosSessionRotations, 'No live tab means no ticket to hand out');
+    }
+
+    /**
+     * An operator has no arriving socket to carry a ticket: expiry gives it to one of
+     * the browser's live tabs, and the new administrator is bound under the rotated token.
+     *
+     * @throws HilosException When a session or runtime fixture cannot be prepared
+     */
+    public function testExpiredCommandHandsOneLiveTabTheTicketForTheNewAdministrator(): void
+    {
+        self::seedSession(self::TOKEN, self::EXISTING_USER_ID, self::PAST_EXPIRY);
+        $sessionId = Hilos::$db->sessions->findByToken(self::TOKEN)->id;
+        self::assertInstanceOf(AdminCreateRouteTestRtContext::class, Hilos::$rt);
+        Hilos::$rt->addConnection(AdminCreateRouteTestConnection::create('first-tab', self::EXISTING_USER_ID, self::TOKEN));
+        Hilos::$rt->addConnection(AdminCreateRouteTestConnection::create('second-tab', self::EXISTING_USER_ID, self::TOKEN));
+
+        $this->sendCommand(new AdminCreateRouteTestAgent(), self::TOKEN);
+
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk());
+        self::assertTrue($reply->payload[AdminCommandConstants::FIELD_EXPIRED]);
+        self::assertNull(Hilos::$db->sessions->findByToken(self::TOKEN));
+        $tickets = array_values(array_filter(
+            $this->sessionFrames,
+            static fn(SessionStateSignalData $frame): bool => $frame->rotationTicket !== null,
+        ));
+        self::assertCount(1, $tickets, 'A command must not discard a ticket as if it could answer a handshake');
+        self::assertSame(['first-tab'], $tickets[0]->acceptKeys);
+        self::assertSame($sessionId, $tickets[0]->sessionId);
+        self::assertNotSame(self::TOKEN, $tickets[0]->sessionToken);
+        self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, self::boundUserId($tickets[0]->sessionToken));
+        $rotation = Hilos::$rt->hilosSessionRotations[$tickets[0]->rotationTicket];
+        self::assertNotNull($rotation);
+        self::assertSame(['second-tab'], $rotation->acceptKeysToDrop);
+        self::assertSame($tickets[0]->sessionToken, $rotation->sessionToken);
+        self::assertSame(['second-tab'], $this->sessionFrames[0]->acceptKeys);
+        self::assertNull($this->sessionFrames[0]->userId, 'The sibling learns it is a guest before the ticket leaves');
+        self::assertNull($this->sessionFrames[0]->rotationTicket);
     }
 
     /**
@@ -265,6 +332,8 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             if ($signal->data instanceof CommandReplyDTO) {
                 $replies[] = $signal->data;
+            } elseif ($signal->data instanceof AgentSignalData && $signal->data->data instanceof SessionStateSignalData) {
+                $this->sessionFrames[] = $signal->data->data;
             }
         }
 
@@ -389,4 +458,58 @@ final class AdminCreateRouteTestAgent extends AdminCreateRouteTestHost
  */
 final class AdminCreateRouteTestUnwiredAgent extends AdminCreateRouteTestHost
 {
+}
+
+/** Runtime supplying the live browser tabs an operator can name. */
+final class AdminCreateRouteTestRtContext extends RtContext
+{
+    private AdminCreateRouteTestConnections $connections;
+
+    /** Mounts an empty collection that the case can populate with live browser tabs. */
+    public function configure(): void
+    {
+        $this->connections = AdminCreateRouteTestConnections::init();
+        $this->_stateCollections[AdminCreateRouteTestConnections::RT_COLLECTION] = $this->connections;
+    }
+
+    /**
+     * @param AdminCreateRouteTestConnection $connection Fixture socket to expose to the library
+     * @throws HilosException When the fixture collection refuses the socket
+     */
+    public function addConnection(AdminCreateRouteTestConnection $connection): void
+    {
+        $this->connections->add($connection);
+    }
+}
+
+/** Session-stage fixture with no project-specific fields. */
+final class AdminCreateRouteTestConnections extends HilosSessionConnections
+{
+    public const string RT_COLLECTION = 'adminCreateRouteTestConnections';
+    public const string STATE_CLASS = AdminCreateRouteTestConnection::class;
+}
+
+/** Session-stage socket fixture. */
+final class AdminCreateRouteTestConnection extends HilosSessionConnection
+{
+    /** This fixture adds no fields to the session stage. */
+    protected function initOwn(): void
+    {
+    }
+
+    /** @param array<string, mixed> $row Serialized runtime row */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /** @return array<string, mixed> No project-owned fields */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /** @param array<string, mixed> $diff Incoming field changes */
+    protected function applyOwnDiff(array $diff): void
+    {
+    }
 }

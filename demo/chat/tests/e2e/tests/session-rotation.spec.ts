@@ -3,6 +3,7 @@ import { test, expect, type BrowserContext } from '@playwright/test'
 import {
   isRotateCookie,
   isSessionCookie,
+  logout,
   nameFromEmail,
   register,
   uniqueEmail,
@@ -94,6 +95,48 @@ test('a second tab of the same browser comes back into the rotated session', asy
   // new cookie. It reconnects carrying that cookie, lands in the same session, and only
   // then learns who it is. Nothing is clicked here: this is the whole point.
   await expect(tabB.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+
+  await tabB.close()
+  await tabA.close()
+})
+
+test('a sign-out moves the browser onto a new cookie, and a second tab comes back a guest on it', async ({
+  context,
+}) => {
+  const tabA = await context.newPage()
+  const tabB = await context.newPage()
+  await gotoPage(tabA, '/')
+  await gotoPage(tabB, '/')
+  await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+
+  const anonymousToken = await cookieValue(context, isSessionCookie)
+  expect(anonymousToken).not.toBe('')
+  const email = uniqueEmail()
+  await tabA.getByTestId('message-signin').click()
+  await register(tabA, email)
+  await expect(async () => {
+    expect(await cookieValue(context, isSessionCookie)).not.toBe(anonymousToken)
+    expect(await cookieValue(context, isRotateCookie)).toBe('')
+  }).toPass()
+  await expect(tabB.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  const signedInToken = await cookieValue(context, isSessionCookie)
+  expect(signedInToken).not.toBe('')
+
+  const siblingReconnect = tabB.waitForEvent('websocket')
+  await logout(tabA)
+
+  await expect(async () => {
+    const signedOutToken = await cookieValue(context, isSessionCookie)
+    expect(signedOutToken).not.toBe('')
+    expect(signedOutToken).not.toBe(signedInToken)
+    expect(await cookieValue(context, isRotateCookie)).toBe('')
+  }).toPass()
+  await siblingReconnect
+  await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
+  await expect(tabB.getByTestId('nav-profile')).toHaveCount(0)
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
 
   await tabB.close()

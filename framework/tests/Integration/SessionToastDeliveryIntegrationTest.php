@@ -8,6 +8,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
 use Hilos\Auth\Session\SessionToastSeverity;
@@ -181,6 +182,49 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
         $this->assertCount(1, $frame->data->toArray()['toasts'] ?? []);
     }
 
+    /**
+     * The sibling learns it is a guest before the requesting tab receives its ticket and reply.
+     *
+     * @throws HilosException When sign-in setup or the sign-out fails
+     */
+    public function testATrackedSignOutAnswersOnlyItsInitiatorAfterTellingTheSibling(): void
+    {
+        $this->signIn();
+        $agent = new SessionToastDeliveryTestAgent();
+        $this->drainSignals();
+        $agent->beginActionDispatch('logout-request');
+        try {
+            $agent->onAgentAction(self::TAB_B, HilosSignalConstants::HILOS_LOGOUT, LogoutActionDTO::fromArray([]));
+            $this->assertTrue($agent->actionReplyDeferred());
+        } finally {
+            $agent->endActionDispatch();
+        }
+
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof SessionStateSignalData) {
+                $frames[] = $signal->data->data;
+            }
+        }
+        $this->assertCount(2, $frames);
+        $this->assertSame([self::TAB_A], $frames[0]->acceptKeys);
+        $this->assertNull($frames[0]->userId);
+        $this->assertNull($frames[0]->rotationTicket);
+        $this->assertNull($frames[0]->requestId);
+        $this->assertNull($frames[0]->action);
+        $this->assertSame([self::TAB_B], $frames[1]->acceptKeys);
+        $this->assertNull($frames[1]->userId);
+        $this->assertSame('logout-request', $frames[1]->requestId);
+        $this->assertSame(HilosSignalConstants::HILOS_LOGOUT, $frames[1]->action);
+        $this->assertNotSame(self::SESSION_TOKEN, $frames[1]->sessionToken);
+        $this->assertSame($frames[0]->sessionToken, $frames[1]->sessionToken);
+        $this->assertNotNull($frames[1]->rotationTicket);
+        $rotation = Hilos::$rt->hilosSessionRotations[$frames[1]->rotationTicket];
+        $this->assertNotNull($rotation);
+        $this->assertSame($frames[1]->sessionToken, $rotation->sessionToken);
+        $this->assertSame([self::TAB_A], $rotation->acceptKeysToDrop);
+    }
+
     public function testARaiseForAPersonWhoHasSignedOutIsDroppedInSilence(): void
     {
         $this->signIn();
@@ -314,8 +358,8 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
 
         $agent->onAgentAction(self::TAB_A, HilosSignalConstants::HILOS_LOGOUT, LogoutActionDTO::fromArray([]));
 
-        // A sign-out keeps the token (HIL-916): left standing, the stack would be handed to
-        // whoever uses this browser next, on its very next frame.
+        // The old hash loses its sockets after rotation (HIL-1126); clear the stack
+        // and tell them while they can still receive its empty list (HIL-916).
         $frame = $this->lastToastFrame();
         $this->assertNotNull($frame);
         $this->assertSame($this->sessionHash(), $frame->targetSessionTokenHash);

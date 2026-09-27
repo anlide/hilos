@@ -160,6 +160,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             . ' `pending_second_factor_until` = ? WHERE `token` = ?',
             [self::USER_ID, SecondFactorPendingMode::VERIFY, self::FUTURE, self::WAITING_TOKEN],
         );
+        $signedInId = Hilos::$db->sessions->findByToken(self::SIGNED_IN_TOKEN)->id;
+        $takeoverId = Hilos::$db->sessions->findByToken(self::TAKEOVER_TOKEN)->id;
         $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
         $requestId = (int)$request->id;
 
@@ -174,13 +176,13 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertNotNull($row['completed_at'], 'The request stays behind, carried out');
         self::assertNull($row['canceled_at']);
 
-        $signedIn = self::sessionRow(self::SIGNED_IN_TOKEN);
-        self::assertNotNull($signedIn, 'The session stays, as a guest');
-        self::assertNull($signedIn['user_id']);
-        $takeover = self::sessionRow(self::TAKEOVER_TOKEN);
-        self::assertNotNull($takeover);
-        self::assertNull($takeover['user_id'], 'The takeover the person ran is ended');
-        self::assertNull($takeover['impersonator_user_id']);
+        self::assertNull(self::sessionRow(self::SIGNED_IN_TOKEN));
+        self::assertNull(self::sessionRow(self::TAKEOVER_TOKEN));
+        self::assertNotNull(Hilos::$db->sessions[$signedInId], 'The session stays, as a guest');
+        self::assertNull(Hilos::$db->sessions[$signedInId]->userId);
+        self::assertNotNull(Hilos::$db->sessions[$takeoverId]);
+        self::assertNull(Hilos::$db->sessions[$takeoverId]->userId, 'The takeover the person ran is ended');
+        self::assertNull(Hilos::$db->sessions[$takeoverId]->impersonatorUserId);
         self::assertNull(self::pendingSecondFactorOf(self::WAITING_TOKEN), 'The sign-in waiting on their factor is let go');
         self::assertSame(self::NEIGHBOUR_ID, self::userOf(self::NEIGHBOUR_TOKEN));
 
@@ -241,6 +243,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
         self::seedSession(self::TAKEOVER_TOKEN, self::NEIGHBOUR_ID, self::CREATED_AT, null, self::USER_ID);
+        $signedInId = Hilos::$db->sessions->findByToken(self::SIGNED_IN_TOKEN)->id;
+        $takeoverId = Hilos::$db->sessions->findByToken(self::TAKEOVER_TOKEN)->id;
         $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
         $requestId = (int)$request->id;
         $agent = new AccountErasureTestAgent();
@@ -270,8 +274,13 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertNotNull($row['completed_at']);
         self::assertLessThanOrEqual($row['completed_at'], $row['effective_at']);
         self::assertNull($row['canceled_at']);
-        self::assertNull(self::userOf(self::SIGNED_IN_TOKEN));
-        self::assertNull(self::userOf(self::TAKEOVER_TOKEN));
+        self::assertNull(self::sessionRow(self::SIGNED_IN_TOKEN));
+        self::assertNull(self::sessionRow(self::TAKEOVER_TOKEN));
+        self::assertNotNull(Hilos::$db->sessions[$signedInId], 'The session stays, as a guest');
+        self::assertNull(Hilos::$db->sessions[$signedInId]->userId);
+        self::assertNotNull(Hilos::$db->sessions[$takeoverId]);
+        self::assertNull(Hilos::$db->sessions[$takeoverId]->userId, 'The takeover the person ran is ended');
+        self::assertNull(Hilos::$db->sessions[$takeoverId]->impersonatorUserId);
         self::assertSame(self::NEIGHBOUR_ID, self::userOf(self::NEIGHBOUR_TOKEN));
     }
 

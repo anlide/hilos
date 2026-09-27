@@ -96,7 +96,8 @@ final class SessionActions extends DbActions
     }
 
     /**
-     * Reverts this session to anonymous (logout), keeping the token alive.
+     * Reverts this session to anonymous in place, for browser erasure and the fallback
+     * when a sign-out cannot mint a token. Ordinary sign-outs rotate the token (HIL-1126).
      *
      * The pending ack goes with the person, in this write and not beside it (HIL-875). The
      * mark is raised together with {@see bindUser()} and it is about the account, so a session
@@ -108,10 +109,9 @@ final class SessionActions extends DbActions
      * a fifth one written later.
      *
      * The impersonation marker goes with the person too, in the same write (HIL-1061). A
-     * sign-out keeps the token, so a marker left on the row would hand whoever uses that
-     * browser next the administrator behind it: the next sign-in carries the row's marker
-     * across the token rotation ({@see rotateTokenAndBindUser()}, unchanged), and Stop reads
-     * nothing but the marker. After this write an anonymous row never carries one.
+     * sign-out moves the row onto a new token, but a marker left on that row would still
+     * hand its next person the administrator behind it. Both this method and
+     * {@see rotateTokenAndUnbindUser()} lower it in the same write as the person.
      *
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
      * @throws HilosException On database error
@@ -124,6 +124,39 @@ final class SessionActions extends DbActions
             throw new ItemNotFoundForUpdateException('Session not found for unbindUser (id is null)');
         }
 
+        $this->object->userId = null;
+        $this->object->pendingAck = null;
+        $this->object->impersonatorUserId = null;
+        $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
+        $this->object->sync();
+    }
+
+    /**
+     * Moves the session onto a fresh token and removes its person in one write (HIL-1126).
+     * An anonymous row under the old token would leave the browser's former address alive.
+     * The pending ack and impersonator marker leave with the person, as in unbindUser().
+     *
+     * @param string $newToken Freshly minted session token to move the row onto
+     * @throws InvalidFormatException When the new token is not a 32-character lowercase hex string
+     * @throws DuplicateValueException When another session already holds the new token
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function rotateTokenAndUnbindUser(string $newToken): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for rotateTokenAndUnbindUser (id is null)');
+        }
+
+        SessionToken::ensureValid($newToken);
+        $sessions = $this->getObjectCollection();
+        if ($sessions instanceof ObjectSessions && $sessions->findByToken($newToken) !== null) {
+            throw new DuplicateValueException('Session with this token already exists');
+        }
+
+        $this->object->token = $newToken;
         $this->object->userId = null;
         $this->object->pendingAck = null;
         $this->object->impersonatorUserId = null;

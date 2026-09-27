@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
@@ -112,6 +113,65 @@ final class SessionsActionsTest extends IntegrationTestCase
 
         $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
         $this->assertNull(Hilos::$db->sessions->findByToken($token)?->impersonatorUserId);
+    }
+
+    /**
+     * Rotation removes the person, ack and takeover marker without replacing the row.
+     *
+     * @throws HilosException On database error
+     */
+    public function testRotateTokenAndUnbindUserMovesTheRowAndTakesThePersonAway(): void
+    {
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
+        $adminId = (int) Hilos::$db->users->actions->createWithName('Admin')->id;
+        $token = RandomHelper::hex(16);
+        $newToken = RandomHelper::hex(16);
+        $session = Hilos::$db->sessions->actions->createAnonymous($token);
+        $session->actions->bindUser($userId);
+        $session->actions->setImpersonator($adminId);
+        $session->actions->holdPendingAck(SessionAck::REGISTERED);
+        $sessionId = $session->id;
+        $createdAt = $session->createdAt;
+        $expiresAt = $session->expiresAt;
+
+        $session->actions->rotateTokenAndUnbindUser($newToken);
+
+        $this->assertNull(Hilos::$db->sessions->findByToken($token));
+        $rotated = Hilos::$db->sessions->findByToken($newToken);
+        $this->assertNotNull($rotated);
+        $this->assertSame($sessionId, $rotated->id);
+        $this->assertSame($createdAt, $rotated->createdAt);
+        $this->assertSame($expiresAt, $rotated->expiresAt);
+        $this->assertNull($rotated->userId);
+        $this->assertNull($rotated->pendingAck);
+        $this->assertNull($rotated->impersonatorUserId);
+    }
+
+    /**
+     * A collision refuses the rotation before any field on the session is changed.
+     *
+     * @throws HilosException On database error
+     */
+    public function testRotateTokenAndUnbindUserRefusesATakenToken(): void
+    {
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
+        $token = RandomHelper::hex(16);
+        $takenToken = RandomHelper::hex(16);
+        $session = Hilos::$db->sessions->actions->createAnonymous($token);
+        $session->actions->bindUser($userId);
+        $session->actions->setImpersonator($userId);
+        $session->actions->holdPendingAck(SessionAck::REGISTERED);
+        Hilos::$db->sessions->actions->createAnonymous($takenToken);
+
+        try {
+            $session->actions->rotateTokenAndUnbindUser($takenToken);
+            $this->fail('A token held by another session was accepted');
+        } catch (DuplicateValueException) {
+            $this->assertSame($token, $session->token);
+            $this->assertSame($userId, $session->userId);
+            $this->assertSame($userId, $session->impersonatorUserId);
+            $this->assertSame(SessionAck::REGISTERED, $session->pendingAck);
+        }
     }
 
     /**

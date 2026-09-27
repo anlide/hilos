@@ -9,7 +9,12 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\Session\DTO\SessionRotateSignalData;
+use Hilos\Auth\Session\SessionCookieName;
+use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
@@ -234,14 +239,20 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $this->deliverHandshake($agent, $this->handshake('logout-ak', $token));
         $this->authenticateSession($agent, $token, $userId, 'logout-ak');
         $rotated = $this->rotatedToken();
+        $sessionId = Hilos::$db->sessions->findByToken($rotated)?->id;
+        Hilos::$rt->hilosSessionRotations->actions->forget($this->rotation()->ticket);
         $this->assertSame($userId, Hilos::$rt->connections['logout-ak']->userId);
 
         try {
             $this->deauthenticateSession($agent, $rotated);
 
-            $this->assertNotNull(Hilos::$db->sessions->findByToken($rotated));
-            $this->assertNull(Hilos::$db->sessions->findByToken($rotated)?->userId);
+            $newToken = $this->rotatedToken();
+            $this->assertNotSame($rotated, $newToken);
+            $this->assertNull(Hilos::$db->sessions->findByToken($rotated));
+            $this->assertSame($sessionId, Hilos::$db->sessions->findByToken($newToken)?->id);
+            $this->assertNull(Hilos::$db->sessions[$sessionId]->userId);
             $this->assertNull(Hilos::$rt->connections['logout-ak']->userId);
+            $this->assertSame($newToken, Hilos::$rt->connections['logout-ak']->sessionToken);
         } finally {
             $this->reset();
         }
@@ -273,9 +284,8 @@ final class SessionAuthenticationTest extends IntegrationTestCase
     }
 
     /**
-     * Logout still reaches EVERY connection of the session (HIL-370, area 7). Unlike
-     * the login, it is not the initiator's alone: nothing is rotated on the way out, so
-     * every tab of a session that just became anonymous has to be told.
+     * Logout reaches EVERY connection before its ticket holder reconnects (HIL-1126).
+     * With no initiator, the first tab holds the ticket and the rest are queued for a drop.
      *
      * @throws HilosException When setup or agent signal handling fails
      */
@@ -289,6 +299,9 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         $this->authenticateSession($agent, $token, $userId, 'out-a-ak');
         $rotated = $this->rotatedToken();
 
+        $sessionId = Hilos::$db->sessions->findByToken($rotated)?->id;
+        Hilos::$rt->hilosSessionRotations->actions->forget($this->rotation()->ticket);
+
         // The second tab arrives after the rotation, so it names the session's live token.
         $this->deliverHandshake($agent, $this->handshake('out-b-ak', $rotated));
         $this->authenticateSession($agent, $rotated, $userId, null);
@@ -297,9 +310,217 @@ final class SessionAuthenticationTest extends IntegrationTestCase
         try {
             $this->deauthenticateSession($agent, $rotated);
 
-            $this->assertNull(Hilos::$db->sessions->findByToken($rotated)?->userId);
+            $newToken = $this->rotatedToken();
+            $this->assertNotSame($rotated, $newToken);
+            $this->assertNull(Hilos::$db->sessions->findByToken($rotated));
+            $this->assertSame($sessionId, Hilos::$db->sessions->findByToken($newToken)?->id);
+            $this->assertNull(Hilos::$db->sessions[$sessionId]->userId);
+            $this->assertSame($newToken, Hilos::$rt->connections['out-a-ak']->sessionToken);
+            $this->assertSame($newToken, Hilos::$rt->connections['out-b-ak']->sessionToken);
+            $this->assertSame(['out-b-ak'], $this->rotation()?->acceptKeysToDrop);
             $this->assertNull(Hilos::$rt->connections['out-a-ak']->userId);
             $this->assertNull(Hilos::$rt->connections['out-b-ak']->userId);
+        } finally {
+            $this->reset();
+        }
+    }
+
+    /**
+     * A sign-out abandons the old address and gives the ticket to the tab that asked,
+     * even when another tab was registered first (HIL-1126).
+     *
+     * @throws HilosException When setup or agent signal handling fails
+     */
+    public function testASignOutHandsTheTicketToTheTabThatAskedAndDropsTheRest(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
+        $session = Hilos::$db->sessions->actions->createAnonymous($token);
+        $session->actions->bindUser($userId);
+        $sessionId = $session->id;
+        $this->deliverHandshake($agent, $this->handshake('first-ak', $token));
+        $this->deliverHandshake($agent, $this->handshake('asking-ak', $token));
+
+        try {
+            $this->rebindSession($agent, new SessionRebindSignalData(
+                sessionToken: $token,
+                userId: null,
+                initiatorAcceptKey: 'asking-ak',
+            ));
+
+            $newToken = $this->rotatedToken();
+            $this->assertNotSame($token, $newToken);
+            $this->assertNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertSame($sessionId, Hilos::$db->sessions->findByToken($newToken)?->id);
+            $this->assertNull(Hilos::$db->sessions[$sessionId]->userId);
+            $this->assertSame(['first-ak'], $this->rotation()?->acceptKeysToDrop);
+            foreach (['first-ak', 'asking-ak'] as $acceptKey) {
+                $this->assertNull(Hilos::$rt->connections[$acceptKey]->userId);
+                $this->assertSame($newToken, Hilos::$rt->connections[$acceptKey]->sessionToken);
+            }
+        } finally {
+            $this->reset();
+        }
+    }
+
+    /**
+     * Ending a closed browser's session changes its token without issuing an
+     * undeliverable ticket (HIL-1126).
+     *
+     * @throws HilosException When setup or agent signal handling fails
+     */
+    public function testASignOutWithNoLiveTabRegistersNoRotation(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
+        $session = Hilos::$db->sessions->actions->createAnonymous($token);
+        $session->actions->bindUser($userId);
+        $sessionId = $session->id;
+
+        try {
+            $this->deauthenticateSession($agent, $token);
+
+            $this->assertNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertNotNull(Hilos::$db->sessions[$sessionId]);
+            $this->assertNotSame($token, Hilos::$db->sessions[$sessionId]->token);
+            $this->assertNull(Hilos::$db->sessions[$sessionId]->userId);
+            $this->assertNull($this->rotation());
+        } finally {
+            $this->reset();
+        }
+    }
+
+    /**
+     * A presented cookie whose row is gone is replaced, not adopted as a guest's address.
+     *
+     * @throws HilosException When setup or handshake handling fails
+     */
+    public function testAHandshakeWithADeadCookieIsServedOnANewToken(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+
+        try {
+            $this->deliverHandshake($agent, $this->handshake('dead-ak', $token, [SessionCookieName::resolve() => $token]));
+
+            $newToken = $this->rotatedToken();
+            $this->assertNotSame($token, $newToken);
+            $this->assertNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertNotNull(Hilos::$db->sessions->findByToken($newToken));
+            $this->assertNull(Hilos::$db->sessions->findByToken($newToken)->userId);
+            $this->assertSame($newToken, Hilos::$rt->connections['dead-ak']->sessionToken);
+            $this->assertSame([], $this->rotation()?->acceptKeysToDrop);
+            $this->assertSame(['dead-ak'], $this->rotationRecipients());
+        } finally {
+            $this->reset();
+        }
+    }
+
+    /**
+     * A lost ticket must not create a replacement-ticket/reconnect loop.
+     *
+     * @throws HilosException When setup or handshake handling fails
+     */
+    public function testAHandshakeThatCarriesATicketCookieIsNotReplaced(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $cookieName = SessionCookieName::resolve();
+
+        try {
+            $this->deliverHandshake($agent, $this->handshake('ticket-ak', $token, [
+                $cookieName => $token,
+                SessionRotationTicket::cookieName($cookieName) => 'lost-ticket',
+            ]));
+
+            $this->assertNotNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertNull(Hilos::$db->sessions->findByToken($token)->userId);
+            $this->assertSame($token, Hilos::$rt->connections['ticket-ak']->sessionToken);
+            $this->assertNull($this->rotation());
+            $this->assertSame([], $this->rotationRecipients());
+        } finally {
+            $this->reset();
+        }
+    }
+
+    /**
+     * A new browser uses the token the master just minted, without a second round trip.
+     *
+     * @throws HilosException When setup or handshake handling fails
+     */
+    public function testAHandshakeWithoutACookieIsNotReplaced(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+
+        try {
+            $this->deliverHandshake($agent, $this->handshake('new-ak', $token));
+
+            $this->assertNotNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertNull(Hilos::$db->sessions->findByToken($token)->userId);
+            $this->assertSame($token, Hilos::$rt->connections['new-ak']->sessionToken);
+            $this->assertNull($this->rotation());
+        } finally {
+            $this->reset();
+        }
+    }
+
+    /**
+     * A cookie the master did not adopt cannot turn its freshly issued token into a dead cookie.
+     *
+     * @throws HilosException When setup or handshake handling fails
+     */
+    public function testAHandshakeWithADifferentCookieKeepsTheMastersToken(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+
+        try {
+            $this->deliverHandshake($agent, $this->handshake('different-ak', $token, [
+                SessionCookieName::resolve() => RandomHelper::hex(16),
+            ]));
+
+            $this->assertNotNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertSame($token, Hilos::$rt->connections['different-ak']->sessionToken);
+            $this->assertNull($this->rotation());
+        } finally {
+            $this->reset();
+        }
+    }
+
+    /**
+     * Expiry gives the ticket to the arriving connection, not to an older live tab.
+     *
+     * @throws HilosException When setup or handshake handling fails
+     */
+    public function testAnExpiredSessionFoundAtHandshakeHandsThatConnectionTheTicket(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
+        $session = Hilos::$db->sessions->actions->createAnonymous($token);
+        $session->actions->bindUser($userId);
+        $sessionId = $session->id;
+        $this->deliverHandshake($agent, $this->handshake('old-ak', $token));
+        $session->actions->expire();
+        $this->drainSignals();
+
+        try {
+            $this->deliverHandshake($agent, $this->handshake('arriving-ak', $token, [SessionCookieName::resolve() => $token]));
+
+            $newToken = $this->rotatedToken();
+            $this->assertNotSame($token, $newToken);
+            $this->assertNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertSame($sessionId, Hilos::$db->sessions->findByToken($newToken)?->id);
+            $this->assertNull(Hilos::$db->sessions[$sessionId]->userId);
+            foreach (['old-ak', 'arriving-ak'] as $acceptKey) {
+                $this->assertNull(Hilos::$rt->connections[$acceptKey]->userId);
+                $this->assertSame($newToken, Hilos::$rt->connections[$acceptKey]->sessionToken);
+            }
+            $this->assertSame(['old-ak'], $this->rotation()?->acceptKeysToDrop);
+            $this->assertSame(['arriving-ak'], $this->rotationRecipients());
         } finally {
             $this->reset();
         }
@@ -344,6 +565,23 @@ final class SessionAuthenticationTest extends IntegrationTestCase
     }
 
     /**
+     * Drains the browser frames and names every socket handed a rotation ticket.
+     *
+     * @return list<string> Ticket recipients, in delivery order
+     */
+    private function rotationRecipients(): array
+    {
+        $recipients = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData && $signal->data->data instanceof SessionRotateSignalData) {
+                $recipients[] = $signal->data->targetAcceptKey;
+            }
+        }
+
+        return $recipients;
+    }
+
+    /**
      * Returns the single rotation the case under test announced, if any.
      *
      * @return ?HilosSessionRotation Announced rotation, or null when none was
@@ -365,7 +603,7 @@ final class SessionAuthenticationTest extends IntegrationTestCase
     private function rotatedToken(): string
     {
         $rotation = $this->rotation();
-        $this->assertNotNull($rotation, 'The login announced no rotation');
+        $this->assertNotNull($rotation, 'The transition announced no rotation');
 
         return $rotation->sessionToken;
     }
@@ -388,14 +626,15 @@ final class SessionAuthenticationTest extends IntegrationTestCase
      *
      * @param string $acceptKey WebSocket accept key
      * @param string $token Session cookie token
+     * @param array<string, string> $cookies Cookies presented by the browser
      * @return WebSocketHandshakeSignalDTO Handshake payload
      */
-    private function handshake(string $acceptKey, string $token): WebSocketHandshakeSignalDTO
+    private function handshake(string $acceptKey, string $token, array $cookies = []): WebSocketHandshakeSignalDTO
     {
         return new WebSocketHandshakeSignalDTO(
             headers: [],
             acceptKey: $acceptKey,
-            cookies: [],
+            cookies: $cookies,
             clientIp: '127.0.0.1',
             queryParams: RequestQueryParams::empty(),
             sessionToken: $token,

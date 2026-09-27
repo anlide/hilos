@@ -272,6 +272,7 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
     {
         $expiredAt = self::daysAgo(1);
         self::seedSession(self::EXPIRED_AUTHENTICATED, 13, self::daysAgo(2), $expiredAt);
+        $sessionId = Hilos::$db->sessions->findByToken(self::EXPIRED_AUTHENTICATED)->id;
 
         new SessionSweepTestAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
@@ -285,7 +286,8 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
             'handshake',
         );
 
-        $row = self::sessionRow(self::EXPIRED_AUTHENTICATED);
+        self::assertNull(self::sessionRow(self::EXPIRED_AUTHENTICATED));
+        $row = self::sessionRow(Hilos::$db->sessions[$sessionId]->token);
         self::assertNotNull($row);
         self::assertNull($row['user_id']);
         self::assertGreaterThan($expiredAt, (string)$row['expires_at']);

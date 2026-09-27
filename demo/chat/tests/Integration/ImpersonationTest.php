@@ -369,11 +369,13 @@ final class ImpersonationTest extends IntegrationTestCase
             $this->assertNull($afterSignOut->selfId);
             $this->assertNull($afterSignOut->impersonatorId);
 
+            $signedOutToken = $this->sessionOf('signout-ak')->token;
+            $this->assertNotSame($token, $signedOutToken);
             $nextId = $this->registerUser();
             $library = $this->sessionsLibrary();
             $this->underAgent($library, static fn () => $library->onSignalAgent(
                 new AgentSignalData(data: new AuthSessionGrantSignalData(
-                    sessionToken: $token,
+                    sessionToken: $signedOutToken,
                     userId: $nextId,
                     acceptKey: 'signout-ak',
                 )),

@@ -459,9 +459,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * admitted, or null when nobody was signed in there.
      *
      * Read at ADMISSION for the reason written over the hash above, and for a second one of its
-     * own: the card is for a human being, and a session keeps its token across a sign-out, so a
-     * hash read minutes later would still name the browser but no longer the person who pressed
-     * (HIL-1062).
+     * own: a sign-out abandons the hash (HIL-1126), but a command-line takeover changes the
+     * person without rotating the token, so the recipient still has to be checked (HIL-1062).
      */
     private ?int $currentInitiatorUserId = null;
 

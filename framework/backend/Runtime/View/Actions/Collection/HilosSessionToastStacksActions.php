@@ -306,9 +306,8 @@ final class HilosSessionToastStacksActions extends RtActions
      * Takes a session's whole stack away because the session has lost its person (HIL-916).
      *
      * Everything on the stack was addressed to that person, and nobody who uses the browser
-     * after them is owed any of it. A sign-out keeps the session and its token, so without
-     * this the stack would outlive the person and be handed to the next frame of the same
-     * browser - a reconnect, a tab opened later.
+     * after them is owed any of it. A sign-out moves the session onto a new token (HIL-1126),
+     * so the stack under the old hash has no future reader and must be removed.
      *
      * A row only exists while it holds cards, so a row taken away always changed the list.
      *
