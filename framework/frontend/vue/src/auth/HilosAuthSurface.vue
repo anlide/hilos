@@ -308,6 +308,7 @@ const auth = createAuthFlow({
   onSubmit: authActions.onSubmit,
   onMethodAction: authActions.onMethodAction,
   secondFactorPolicy: sessionSecondFactorPolicy(context.scopes),
+  codeDelivery: sessionCodeDelivery(context.scopes),
 })
 
 const gate = inject(hilosAuthGateKey, null)
@@ -1198,6 +1199,7 @@ watch(resumable, (step) => {
   applyReportedStep(step)
   auth.followReportedStep(step)
 })
+watch(codeDelivery, () => auth.followCodeDelivery())
 
 /**
  * Show the pending link the collision arm armed: pre-fill the colliding address

@@ -18,6 +18,7 @@ import {
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
   SIGNAL_SECOND_FACTOR_POLICY,
+  SIGNAL_CODE_DELIVERY,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
 import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
@@ -269,6 +270,33 @@ describe('sessionScope', () => {
     })
 
     expect(delivery.get()).toStrictEqual({ email: false, phone: false })
+  })
+
+  it('registers the delivery frame and shares its slot with every handshake (HIL-1102)', () => {
+    const schema = SESSION_SIGNAL_SCHEMAS[SIGNAL_CODE_DELIVERY]
+    expect(
+      schema.safeParse({ codeDelivery: { email: true, phone: false } }).success,
+    ).toBe(true)
+    expect(schema.safeParse({ codeDelivery: { email: true } }).success).toBe(
+      false,
+    )
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const delivery = sessionCodeDelivery(scopes)
+    connection.emitHandshakeResponse({
+      data: { codeDelivery: { email: true, phone: true } },
+    })
+
+    connection.emit(SIGNAL_CODE_DELIVERY, {
+      codeDelivery: { email: true, phone: false },
+    })
+    expect(delivery.get()).toStrictEqual({ email: true, phone: false })
+
+    connection.emitHandshakeResponse({
+      data: { codeDelivery: { email: false, phone: true } },
+    })
+    expect(delivery.get()).toStrictEqual({ email: false, phone: true })
   })
 
   it('falls back to everything deliverable when the answer is unreadable', () => {

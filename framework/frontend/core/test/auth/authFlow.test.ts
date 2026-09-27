@@ -2180,6 +2180,184 @@ describe('method-set-agnostic', () => {
   })
 })
 
+describe('a delivery change re-asks the held lookup (HIL-1102)', () => {
+  const phone = '+79991234567'
+  const available = { email: true, phone: true }
+  const unavailable = { email: true, phone: false }
+  const phoneReply = detected({
+    identifier: phone,
+    normalized: phone,
+    kind: 'phone',
+    status: 'none',
+    methods: [],
+    registerable: ['sms'],
+  })
+
+  it('holds the reply, blocks sending and asks immediately without moving the step', async () => {
+    const codeDelivery = createSignal(available)
+    let finish!: (reply: IdentifierDetection) => void
+    const onDetect = vi
+      .fn()
+      .mockResolvedValueOnce(phoneReply)
+      .mockImplementationOnce(
+        () =>
+          new Promise<IdentifierDetection>((resolve) => {
+            finish = resolve
+          }),
+      )
+    const onSubmit = vi.fn(async () => ({ ok: true }))
+    const flow = setup({ codeDelivery, onDetect, onSubmit })
+    await typeAndDetect(flow, phone)
+    expect(flow.primaryAction.get()).not.toBeNull()
+
+    codeDelivery.set(unavailable)
+    flow.followCodeDelivery()
+    expect(onDetect).toHaveBeenCalledTimes(2)
+    expect(onDetect).toHaveBeenLastCalledWith(phone, 'phone')
+    expect(flow.detection.get()).toEqual({
+      status: 'pending',
+      result: phoneReply,
+    })
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.submittable.get()).toBe(false)
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    finish({ ...phoneReply, registerable: [], registrationBlock: 'no_channel' })
+    await settleRefresh()
+    expect(flow.detection.get().result?.registrationBlock).toBe('no_channel')
+    expect(flow.primaryAction.get()).toBeNull()
+    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it('restores an offered action when delivery becomes available', async () => {
+    const codeDelivery = createSignal(unavailable)
+    const onDetect = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...phoneReply,
+        registerable: [],
+        registrationBlock: 'no_channel',
+      })
+      .mockResolvedValueOnce(phoneReply)
+    const flow = setup({ codeDelivery, onDetect })
+    await typeAndDetect(flow, phone)
+    expect(flow.primaryAction.get()).toBeNull()
+    codeDelivery.set(available)
+    flow.followCodeDelivery()
+    await settleRefresh()
+    expect(onDetect).toHaveBeenCalledTimes(2)
+    expect(flow.primaryAction.get()).not.toBeNull()
+  })
+
+  it('does not ask for a change to the other kind or an equivalent reconnect answer', async () => {
+    const codeDelivery = createSignal(available)
+    const onDetect = vi.fn(async () => phoneReply)
+    const flow = setup({ codeDelivery, onDetect })
+    await typeAndDetect(flow, phone)
+    codeDelivery.set({ email: false, phone: true })
+    flow.followCodeDelivery()
+    codeDelivery.set({ ...available })
+    flow.followCodeDelivery()
+    expect(onDetect).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-ask on the code step', async () => {
+    const codeDelivery = createSignal(available)
+    const onDetect = vi.fn(async () => phoneReply)
+    const flow = setup({ codeDelivery, onDetect })
+    await typeAndDetect(flow, phone)
+    flow.applyExternal({ step: 'code' })
+    codeDelivery.set(unavailable)
+    flow.followCodeDelivery()
+    expect(onDetect).toHaveBeenCalledTimes(1)
+    expect(flow.flow.get().step).toBe('code')
+  })
+
+  it('does nothing without the delivery option', async () => {
+    const onDetect = vi.fn(async () => phoneReply)
+    const flow = setup({ onDetect })
+    await typeAndDetect(flow, phone)
+    flow.followCodeDelivery()
+    expect(onDetect).toHaveBeenCalledTimes(1)
+  })
+
+  it('orphans a lookup still in flight under the old delivery answer', async () => {
+    const codeDelivery = createSignal(available)
+    let finishOld!: (reply: IdentifierDetection) => void
+    const onDetect = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<IdentifierDetection>((resolve) => {
+            finishOld = resolve
+          }),
+      )
+      .mockResolvedValueOnce({
+        ...phoneReply,
+        registerable: [],
+        registrationBlock: 'no_channel',
+      })
+    const flow = setup({ codeDelivery, onDetect })
+    await typeAndDetect(flow, phone)
+    codeDelivery.set(unavailable)
+    flow.followCodeDelivery()
+    flow.followCodeDelivery()
+    await settleRefresh()
+    finishOld(phoneReply)
+    await settleRefresh()
+    expect(onDetect).toHaveBeenCalledTimes(2)
+    expect(flow.detection.get().result?.registrationBlock).toBe('no_channel')
+  })
+
+  it('leaves an in-flight send to its own reply', async () => {
+    const codeDelivery = createSignal(available)
+    const onDetect = vi.fn(async () => ({
+      ...phoneReply,
+      status: 'active' as const,
+      methods: ['sms'],
+    }))
+    let finish!: (outcome: AuthFlowSubmitOutcome) => void
+    const flow = setup({
+      codeDelivery,
+      onDetect,
+      onSubmit: () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    })
+    await typeAndDetect(flow, phone)
+    const sending = flow.chooseChannel('sms')
+    expect(flow.pending.get()).toBe(true)
+    codeDelivery.set(unavailable)
+    flow.followCodeDelivery()
+    expect(onDetect).toHaveBeenCalledTimes(1)
+    finish({ ok: true, next: { step: 'code' } })
+    await sending
+  })
+
+  it('does not replace a debounce for a newly typed identifier with an old lookup snapshot', async () => {
+    const codeDelivery = createSignal(available)
+    const onDetect = vi.fn(async (identifier: string) => ({
+      ...phoneReply,
+      identifier,
+    }))
+    const flow = setup({ codeDelivery, onDetect })
+    await typeAndDetect(flow, phone)
+    flow.setField('identifier', '+79991234568')
+    codeDelivery.set(unavailable)
+    flow.followCodeDelivery()
+    expect(onDetect).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS)
+    expect(onDetect).toHaveBeenCalledTimes(2)
+    flow.followCodeDelivery()
+    expect(onDetect).toHaveBeenCalledTimes(2)
+    flow.reset()
+    codeDelivery.set(available)
+    flow.followCodeDelivery()
+    expect(onDetect).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('the live method set (HIL-427)', () => {
   it('builds the descriptors in the order the server sent, sms drawing none', () => {
     expect(authFlowMethodsFor(ALL_ENTRIES)).toEqual(ALL_METHODS)

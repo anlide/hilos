@@ -1545,3 +1545,41 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
     )
   })
 })
+
+describe('HilosAuthSurface follows delivery changes (HIL-1102)', () => {
+  it('re-asks a typed address only when its delivery changes', async () => {
+    vi.useFakeTimers()
+    const world = magicLinkWorld()
+    const dispatch = vi.spyOn(world.context.actions, 'dispatch')
+    const fixture = mountSurface(world)
+    const field = byId(fixture, 'auth-identifier') as HTMLInputElement
+    field.value = 'someone@example.com'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(fixture)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    world.context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: true,
+      phone: false,
+    })
+    await flush(fixture)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    world.context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: false,
+      phone: false,
+    })
+    await flush(fixture)
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(dispatch.mock.calls[1]?.slice(0, 2)).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      { identifier: 'someone@example.com' },
+    ])
+    fixture.destroy()
+    world.context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: true,
+      phone: true,
+    })
+    await Promise.resolve()
+    expect(dispatch).toHaveBeenCalledTimes(2)
+  })
+})

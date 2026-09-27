@@ -39,6 +39,7 @@ use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
+use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
@@ -1269,6 +1270,15 @@ final class HilosSignalConstants
      * code step redraw their bounds, note and checkbox. Carried by {@see SecondFactorPolicySignalData}.
      */
     public const string HILOS_SECOND_FACTOR_POLICY = 'hilos_second_factor_policy';
+
+    /**
+     * Server → client (all connected): code delivery availability changed (HIL-1102).
+     *
+     * Sent by the settings library after any write that moved it, including channel settings,
+     * the general table and presets. Carried by {@see CodeDeliverySignalData}; the handshake
+     * carries the same node for a connection that opens later.
+     */
+    public const string HILOS_CODE_DELIVERY = 'hilos_code_delivery';
 
     /**
      * Sessions library → every tab of one browser session: this is how the code is travelling

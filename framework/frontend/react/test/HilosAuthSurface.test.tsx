@@ -1189,6 +1189,46 @@ describe('HilosAuthSurface', () => {
     expect(byId('auth-identifier')).not.toBeNull()
   })
 
+  it('re-asks a typed address only when its delivery changes (HIL-1102)', async () => {
+    vi.useFakeTimers()
+    const context = freeIdentifierContext('no_channel')
+    const dispatch = vi.spyOn(context.actions, 'dispatch')
+    const mounted = render(<HilosAuthSurface context={context} />)
+    type('auth-identifier', 'nobody@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+        email: true,
+        phone: false,
+      })
+    })
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+        email: false,
+        phone: false,
+      })
+    })
+    await flush()
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(dispatch.mock.calls[1]?.slice(0, 2)).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      { identifier: 'nobody@example.com' },
+    ])
+    mounted.unmount()
+    await act(async () => {
+      context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+        email: true,
+        phone: true,
+      })
+    })
+    expect(dispatch).toHaveBeenCalledTimes(2)
+  })
+
   it('blames the missing channel rather than a decision nobody took', async () => {
     vi.useFakeTimers()
     render(<HilosAuthSurface context={freeIdentifierContext('no_channel')} />)

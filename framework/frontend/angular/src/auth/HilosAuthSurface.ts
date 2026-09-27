@@ -2016,6 +2016,7 @@ export class HilosAuthSurface {
       onSubmit: actions.onSubmit,
       onMethodAction: actions.onMethodAction,
       secondFactorPolicy: sessionSecondFactorPolicy(context.scopes),
+      codeDelivery: sessionCodeDelivery(context.scopes),
     })
   })
   // The two pending facts the surface resumes from are DERIVED from the session
@@ -2795,6 +2796,15 @@ export class HilosAuthSurface {
           this.applyReportedStep(auth, step)
           auth.followReportedStep(step)
         }),
+      )
+    })
+
+    effect((onCleanup) => {
+      const auth = this.auth()
+      onCleanup(
+        subscribeSignal(this.codeDeliverySignal(), () =>
+          auth.followCodeDelivery(),
+        ),
       )
     })
 

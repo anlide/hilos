@@ -25,7 +25,8 @@
 // the detection reply lives BELOW the identifier field; above it lives only the
 // empty-field zone (the icon row, which leaves with the first character). An
 // author adding a method keeps to that rule — a third place above the field
-// brings the jump back the moment the next method is added.
+// brings the jump back the moment the next method is added. A lookup asked under
+// different delivery availability is re-asked with the same holding (HIL-1102).
 //
 // This leaf ships the pure core only: no DOM, no wire, no UI strings — the
 // machine emits semantic keys ({@link AuthFlowScreen}, error codes) and the
@@ -46,6 +47,7 @@
 import { toLocal } from '../session/serverClock.js'
 import {
   type AuthMethodEntry,
+  type CodeDelivery,
   type PendingAuthStep,
   type SecondFactorPolicy,
 } from '../session/sessionScope.js'
@@ -540,6 +542,12 @@ export interface AuthFlowOptions {
    * screen keeps what its answer named.
    */
   secondFactorPolicy?: ReadonlySignal<SecondFactorPolicy | null>
+  /**
+   * Live installation delivery availability, as sessionCodeDelivery answers it.
+   * Each lookup remembers the answer it was asked under; without this option,
+   * delivery changes never re-ask a lookup (HIL-1102).
+   */
+  codeDelivery?: ReadonlySignal<CodeDelivery>
   /** Detection debounce in ms; defaults to {@link DEFAULT_DETECT_DEBOUNCE_MS}. */
   detectDebounceMs?: number
   /**
@@ -682,6 +690,15 @@ export interface AuthFlow {
    * @param pending The step the session reports, or `null` when it stands on none.
    */
   followReportedStep(pending: PendingAuthStep | null): void
+  /**
+   * Re-ask an existing identifier lookup when delivery for its kind changed.
+   * Holds the old reply while asking immediately, without moving the step.
+   * Nothing is asked during a send or after leaving the identifier step.
+   *
+   * The surface that holds the connection calls this on delivery changes:
+   * the machine owns neither a subscription nor its teardown (HIL-1102).
+   */
+  followCodeDelivery(): void
   /**
    * Put the server's reported send step on the code screen, or take the line
    * away with `null` (HIL-826).
@@ -1769,6 +1786,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   // in-flight lookups of the SAME text apart (type, edit away, retype), and
   // reset() must orphan in-flight replies, not only the debounce timer.
   let detectSeq = 0
+  let detectAskedUnder: CodeDelivery | null = null
   // The dispatch generation orphans stale submit/ceremony outcomes: without it
   // a slow onSubmit resolution would merge its `next` into whatever flow exists
   // by then, and its pending-clear would release a NEWER dispatch's guard.
@@ -1808,6 +1826,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     moveOnPending: boolean,
   ): void {
     cancelDetect()
+    detectAskedUnder = null
     // An empty or partial field rolls detection back to idle without spending a
     // lookup; a stale in-flight reply is dropped by the sequence+echo guards.
     if (!isIdentifierComplete(identifier, kind)) {
@@ -1839,6 +1858,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // Same roll-back to idle an empty or partial field gets from
     // scheduleDetect: there is nothing to ask about and nothing to reveal.
     if (!isIdentifierComplete(identifier, kind)) {
+      detectAskedUnder = null
       detectionSource.set(IDLE_DETECTION)
 
       return
@@ -1866,6 +1886,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     kind: IdentifierKind,
     moveOnPending: boolean,
   ): Promise<void> {
+    detectAskedUnder = options.codeDelivery?.get() ?? null
     try {
       const result = await options.onDetect(identifier, kind)
       // Replies are matched by the request ECHO, not by `normalized` — a
@@ -2371,6 +2392,29 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       }
       restore(pending)
     },
+    followCodeDelivery(): void {
+      if (
+        flow.get().step !== 'identifier' ||
+        pending.get() ||
+        detectAskedUnder === null ||
+        options.codeDelivery === undefined
+      ) {
+        return
+      }
+      const identifier = form.get().identifier
+      const kind = classifyIdentifier(identifier)
+      if (
+        kind === 'unknown' ||
+        !isIdentifierComplete(identifier, kind) ||
+        options.codeDelivery.get()[kind] === detectAskedUnder[kind]
+      ) {
+        return
+      }
+      cancelDetect()
+      const seq = detectSeq
+      detectionSource.set(pendingDetection(detectionSource.get().result))
+      void runDetect(seq, identifier, kind, false)
+    },
     followReportedStep(reported: PendingAuthStep | null): void {
       if (reported === null || pending.get()) {
         return
@@ -2794,6 +2838,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     },
     reset(): void {
       cancelDetect()
+      detectAskedUnder = null
       // A (re)mount forgets everything, so a ceremony still running under the old
       // surface is ENDED, not merely orphaned: leaving the controller alone would
       // keep the device dialog up, and leaving `ceremony` set would let a canceled

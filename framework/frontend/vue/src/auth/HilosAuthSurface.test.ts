@@ -1279,6 +1279,70 @@ describe('HilosAuthSurface', () => {
     expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
   })
 
+  it('re-asks a typed address only when its delivery changes (HIL-1102)', async () => {
+    vi.useFakeTimers()
+    const context = registrableIdentifierContext()
+    const dispatch = vi.spyOn(context.actions, 'dispatch')
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: true,
+      phone: false,
+    })
+    await flush(wrapper)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+
+    let finish!: (value: { reply: unknown }) => void
+    dispatch.mockReturnValueOnce({
+      requestId: 'delivery-refresh',
+      loading: createSignal(false),
+      done: new Promise((resolve) => {
+        finish = resolve
+      }),
+    } as unknown as ActionHandle)
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: false,
+      phone: false,
+    })
+    await flush(wrapper)
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(dispatch.mock.calls[1]?.slice(0, 2)).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      { identifier: 'newcomer@example.com' },
+    ])
+    expect(
+      (wrapper.find('[data-id="auth-submit"]').element as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+    finish({
+      reply: {
+        identifier: 'newcomer@example.com',
+        normalized: 'newcomer@example.com',
+        kind: 'email',
+        status: 'none',
+        methods: [],
+        registerable: [],
+        registrationBlock: 'no_channel',
+        signInBlock: null,
+      },
+    })
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-submit"]').exists()).toBe(false)
+    wrapper.unmount()
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: true,
+      phone: true,
+    })
+    await flush(wrapper)
+    expect(dispatch).toHaveBeenCalledTimes(2)
+  })
+
   it('blames the missing channel rather than a decision nobody took', async () => {
     vi.useFakeTimers()
     const context = freeIdentifierContext('no_channel')

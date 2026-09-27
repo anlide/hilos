@@ -66,9 +66,9 @@ use Hilos\Core\Router\SignalDataInterface;
  * It rides the handshake because the surface has to know it BEFORE anything is typed
  * — a deployment with nothing to send with should decline to offer registration
  * rather than walk somebody to a code screen for a letter that cannot be sent — and
- * because it is derived from env and the code-channel registry, neither of which
- * changes under a live process, so a fresh connection learns a new truth by itself and
- * no "configuration changed" signal exists. It reaches an anonymous session, which is
+ * gives each new connection the current answer. A channel may read settings that change
+ * under a live process; the settings library sends those changes to existing connections
+ * on hilos_code_delivery (HIL-1102). It reaches an anonymous session, which is
  * the only one it concerns, for the same reason the auth step does. A response that
  * carries it as null is one that never passed the framework's stamp; the surface reads
  * that as "everything is deliverable", which is what every deployment did before the
@@ -77,7 +77,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * `authMethods` is the installation's enabled sign-in methods (HIL-427), in the order
  * the surface draws them, each with the name a provider's button shows. It rides the
  * handshake for the reason `codeDelivery` does - the surface has to know it before
- * anything is typed - but unlike it the set DOES change under a live process: an
+ * anything is typed. The set also changes under a live process: an
  * administrator switches a method, and the settings library sends the new set to every
  * connection on its own frame. The handshake gives a new connection the set as it is
  * now; the frame keeps the old ones in step. Null means the stamp never ran.

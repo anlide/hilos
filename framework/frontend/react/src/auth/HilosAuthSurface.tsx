@@ -482,6 +482,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         onSubmit: authActions.onSubmit,
         onMethodAction: authActions.onMethodAction,
         secondFactorPolicy: sessionSecondFactorPolicy(context.scopes),
+        codeDelivery: sessionCodeDelivery(context.scopes),
       }),
     [context, authActions],
   )
@@ -1363,6 +1364,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     applyReportedStep(reportedStep)
     auth.followReportedStep(reportedStep)
   }, [applyReportedStep, auth, reportedStep])
+  useEffect(() => {
+    auth.followCodeDelivery()
+  }, [auth, codeDelivery])
 
   return (
     <section data-id="auth-surface" className="mx-auto" style={MAX_WIDTH}>

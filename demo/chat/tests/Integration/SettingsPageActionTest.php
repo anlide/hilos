@@ -12,6 +12,8 @@ use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
+use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -29,6 +31,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
+use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Tables\Settings\DTO\HilosSettingAddActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingDeleteActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingResetActionDTO;
@@ -303,7 +307,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingAddActionDTO(AuthMethodSettings::DISABLED_KEY, AuthMethodKey::SMS),
             ));
 
-            $frames = $this->methodSetFrames();
+            $frames = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_METHODS);
             $this->assertCount(1, $frames);
             $this->assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
             $this->assertInstanceOf(WebSocketSignalData::class, $frames[0]->data);
@@ -330,7 +334,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingAddActionDTO(PasskeyAddressPolicy::SETTING_KEY, false),
             ));
 
-            $frames = $this->methodSetFrames();
+            $frames = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_METHODS);
             $this->assertCount(1, $frames);
             $this->assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
             $this->assertInstanceOf(WebSocketSignalData::class, $frames[0]->data);
@@ -354,7 +358,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingAddActionDTO(PasskeyAddressPolicy::SETTING_KEY, true),
             ));
 
-            $this->assertSame([], $this->methodSetFrames());
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_METHODS));
         }, [PasskeyAddressPolicy::SETTING_KEY]);
     }
 
@@ -372,7 +376,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'not-a-method'),
             );
 
-            $this->assertSame([], $this->methodSetFrames());
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_METHODS));
         }, [self::CATALOG_KEY]);
     }
 
@@ -395,8 +399,68 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             $this->assertSame('At least one sign-in method must stay on', $error);
             $this->assertNull(Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value);
-            $this->assertSame([], $this->methodSetFrames());
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_METHODS));
         }, [AuthMethodSettings::DISABLED_KEY]);
+    }
+
+    /**
+     * A gateway setting written through the general table reaches every connection (HIL-1102).
+     */
+    public function testAWriteThatChangesDeliverySendsOneFrameToEveryConnection(): void
+    {
+        $key = DeliveryChannelSettings::fieldKey(SmsDeliveryChannel::NAME, SmsDeliveryChannel::FIELD_ENDPOINT_URL);
+        $previous = $this->overrideEnv([
+            EnvConstants::SMS_PROVIDER->name => '',
+            EnvConstants::SMS_ENDPOINT_URL->name => '',
+            EnvConstants::TELEGRAM_GATEWAY_TOKEN->name => '',
+        ]);
+
+        try {
+            $this->withSettingsWriter(function () use ($key): void {
+                $this->deleteSettingIfExists($key);
+                $this->assertFalse(CodeDeliverySignalData::current()->codeDelivery[CodeDeliverySignalData::phone]);
+
+                $this->assertNull($this->submit(
+                    'delivery-changed-ak',
+                    HilosSignalConstants::SETTING_ADD,
+                    new HilosSettingAddActionDTO($key, 'https://stand-gateway:18000/sms/send'),
+                ));
+
+                $frames = $this->framesNamed(HilosSignalConstants::HILOS_CODE_DELIVERY);
+                $this->assertCount(1, $frames);
+                $this->assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
+                $this->assertInstanceOf(WebSocketSignalData::class, $frames[0]->data);
+                $this->assertInstanceOf(CodeDeliverySignalData::class, $frames[0]->data->data);
+                $this->assertTrue($frames[0]->data->data->codeDelivery[CodeDeliverySignalData::phone]);
+                $this->assertSame(CodeDeliverySignalData::current()->toArray(), $frames[0]->data->data->toArray());
+
+                $this->assertNull($this->submit(
+                    'delivery-reset-ak',
+                    HilosSignalConstants::SETTING_RESET,
+                    new HilosSettingResetActionDTO($key),
+                ));
+                $frames = $this->framesNamed(HilosSignalConstants::HILOS_CODE_DELIVERY);
+                $this->assertCount(1, $frames);
+                $this->assertFalse($frames[0]->data->data->codeDelivery[CodeDeliverySignalData::phone]);
+            }, [$key]);
+        } finally {
+            $this->restoreEnv($previous);
+        }
+    }
+
+    /** A settings write unrelated to delivery owes no delivery frame. */
+    public function testAWriteThatLeavesDeliveryAloneSendsNoDeliveryFrame(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(self::CATALOG_KEY);
+            $this->assertNull($this->submit(
+                'delivery-unchanged-ak',
+                HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO(self::CATALOG_KEY, 'not-a-channel'),
+            ));
+
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_CODE_DELIVERY));
+        }, [self::CATALOG_KEY]);
     }
 
     /**
@@ -450,20 +514,50 @@ final class SettingsPageActionTest extends IntegrationTestCase
     }
 
     /**
-     * Takes every queued sign-in method set off the router, leaving nothing behind.
+     * Drains the queue once, selecting the frame being asserted even when other broadcasts follow the write.
      *
-     * @return list<SignalDTO> Queued method-set frames in the order they were sent
+     * @param string $name Signal name to collect
+     * @return list<SignalDTO> Matching frames in the order they were sent
      */
-    private function methodSetFrames(): array
+    private function framesNamed(string $name): array
     {
         $frames = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
-            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_AUTH_METHODS) {
+            if ($signal->signalName->getName() === $name) {
                 $frames[] = $signal;
             }
         }
 
         return $frames;
+    }
+
+    /**
+     * Sets process environment variables and returns what they held before.
+     *
+     * @param array<string, string> $values Variable name to the value this case needs
+     * @return array<string, string|false> Variable name to its previous value, false when it was unset
+     */
+    private function overrideEnv(array $values): array
+    {
+        $previous = [];
+        foreach ($values as $name => $value) {
+            $previous[$name] = getenv($name);
+            putenv($name . '=' . $value);
+        }
+
+        return $previous;
+    }
+
+    /**
+     * Puts back the process environment {@see self::overrideEnv()} changed.
+     *
+     * @param array<string, string|false> $previous Variable name to its previous value, false when it was unset
+     */
+    private function restoreEnv(array $previous): void
+    {
+        foreach ($previous as $name => $value) {
+            putenv($value === false ? $name : $name . '=' . $value);
+        }
     }
 
     /**

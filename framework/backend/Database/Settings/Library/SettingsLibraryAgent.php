@@ -8,6 +8,7 @@ use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
+use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
@@ -70,7 +71,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * key and the request id, and the receipt of the ask stamps them on the write this library
  * performs ({@see HandoverAskInterface}) - nothing here calls for the stamp.
  *
- * THE ONE THING IT SENDS BESIDES ITS ANSWERS: the sign-in method set (HIL-427). An
+ * BESIDES ITS ANSWERS IT SENDS three installation-wide frames. The sign-in method set
+ * (HIL-427) is one. An
  * administrator narrows the methods through one setting, and every open sign-in surface has
  * to rebuild itself when that setting moves - whichever door moved it: the sign-in methods
  * screen, the general settings table, a preset. This library is the only writer all three
@@ -80,7 +82,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * carries the passkey policy as well ({@see PasskeyAddressPolicy}, HIL-1105), so a write that
  * moved only the policy is sent the same way. A screen could not do it - the general table
  * knows nothing of sign-in - and a subscriber to the settings collection would fire once per
- * worker instead of once per write.
+ * worker instead of once per write. The second-factor policy (HIL-494) and code delivery
+ * availability (HIL-1102) travel separately: they have readers independent of the method
+ * set. Each is compared around the same write, whichever door requested it.
  *
  * WHY THE REPLY NAME RIDES IN THE ASK. There are three gatekeepers to this one scribe, and a
  * fixed pair of names would make it know each screen by name - the next screen that writes a
@@ -143,13 +147,14 @@ final class SettingsLibraryAgent extends AbstractAgent
     {
         $methodsBefore = $this->offeredMethods();
         $policyBefore = $this->secondFactorPolicy();
+        $deliveryBefore = CodeDeliverySignalData::current();
 
         switch ($name) {
             case HilosSignalConstants::HILOS_SETTING_WRITE:
                 if (!$data->data instanceof SettingWriteSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingWriteSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->storeValue($data->data), $methodsBefore, $policyBefore);
+                $this->settle($data->data, $this->storeValue($data->data), $methodsBefore, $policyBefore, $deliveryBefore);
 
                 return;
 
@@ -157,7 +162,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 if (!$data->data instanceof SettingResetSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingResetSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->resetToDefault($data->data), $methodsBefore, $policyBefore);
+                $this->settle($data->data, $this->resetToDefault($data->data), $methodsBefore, $policyBefore, $deliveryBefore);
 
                 return;
 
@@ -165,7 +170,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 if (!$data->data instanceof SettingDeleteSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingDeleteSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->dropOrphan($data->data), $methodsBefore, $policyBefore);
+                $this->settle($data->data, $this->dropOrphan($data->data), $methodsBefore, $policyBefore, $deliveryBefore);
 
                 return;
 
@@ -177,7 +182,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                         $data->data,
                     );
                 }
-                $this->settle($data->data, $this->applyPreset($data->data), $methodsBefore, $policyBefore);
+                $this->settle($data->data, $this->applyPreset($data->data), $methodsBefore, $policyBefore, $deliveryBefore);
 
                 return;
 
@@ -301,26 +306,31 @@ final class SettingsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Answers the ask, then tells every connection the new method set when the write changed it.
+     * Answers the ask, then announces each installation-wide frame the write changed.
      *
      * A refused write changed nothing and sends nothing. Neither does a write the method set
      * could not be read around: the set is then unknown on both sides of it, and the next write
      * that can be read will carry whatever this one changed.
      *
-     * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
-     * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
      * The second-factor settings travel the same way (HIL-494): a write that moved them is told to
      * every connection, so the profile section and the code step redraw without a reload.
      *
+     * Delivery is compared independently of both policies: an unreadable policy cannot hide
+     * a change of delivery availability, whose reader itself fails open (HIL-1102).
+     *
+     * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
+     * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
      * @param ?AuthMethodsSignalData $methodsBefore Method-set frame before the write, or null when unread
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
-     * @throws InvalidArgumentException When the answer, the new method set or the new policy cannot be named or queued
+     * @param CodeDeliverySignalData $deliveryBefore Delivery availability before the write
+     * @throws InvalidArgumentException When the answer or an installation-wide frame cannot be named or queued
      */
     private function settle(
         HandoverAskInterface $ask,
         ?ActionRefusal $refusal,
         ?AuthMethodsSignalData $methodsBefore,
         ?SecondFactorPolicy $policyBefore,
+        CodeDeliverySignalData $deliveryBefore,
     ): void {
         $this->answer($ask, $refusal);
         if ($refusal !== null) {
@@ -330,6 +340,11 @@ final class SettingsLibraryAgent extends AbstractAgent
         $methodsAfter = $methodsBefore === null ? null : $this->offeredMethods();
         if ($methodsAfter !== null && $methodsAfter->toArray() !== $methodsBefore->toArray()) {
             $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, $methodsAfter);
+        }
+
+        $deliveryAfter = CodeDeliverySignalData::current();
+        if ($deliveryAfter->toArray() !== $deliveryBefore->toArray()) {
+            $this->sendToAllConnected(HilosSignalConstants::HILOS_CODE_DELIVERY, $deliveryAfter);
         }
 
         $policyAfter = $policyBefore === null ? null : $this->secondFactorPolicy();

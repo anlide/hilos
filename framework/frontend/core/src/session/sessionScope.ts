@@ -52,7 +52,8 @@ const PENDING_AUTH_STEP_KEY = 'pendingAuthStep'
 /**
  * Plain session-scope key carrying what this installation can deliver a
  * one-time code to (HIL-830). Fixed for the same reason as the two keys above:
- * the backend writes it on every handshake and no project names it.
+ * written by every handshake and again by SIGNAL_CODE_DELIVERY whenever a
+ * setting moves it; no project names it.
  */
 const CODE_DELIVERY_KEY = 'codeDelivery'
 
@@ -130,6 +131,18 @@ export const authMethodsSchema = z.looseObject({
  * the code step its trust checkbox, without a reload.
  */
 export const SIGNAL_SECOND_FACTOR_POLICY = 'hilos_second_factor_policy'
+
+/**
+ * The settings library → every connection: what the installation can deliver a
+ * one-time code to, sent after a write that changed it (PHP HILOS_CODE_DELIVERY,
+ * HIL-1102).
+ */
+export const SIGNAL_CODE_DELIVERY = 'hilos_code_delivery'
+
+/** The complete delivery answer, in the same node the handshake carries. */
+export const codeDeliverySchema = z.looseObject({
+  codeDelivery: z.looseObject({ email: z.boolean(), phone: z.boolean() }),
+})
 
 /**
  * Plain session-scope key the last {@link SIGNAL_SECOND_FACTOR_POLICY} is kept
@@ -299,6 +312,7 @@ export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_CODE_SEND_PROGRESS]: codeSendProgressSchema,
   [SIGNAL_AUTH_METHODS]: authMethodsSchema,
   [SIGNAL_SECOND_FACTOR_POLICY]: secondFactorPolicySchema,
+  [SIGNAL_CODE_DELIVERY]: codeDeliverySchema,
 }
 
 /** Where the current user sits in the session scope, and which field names it. */
@@ -401,6 +415,13 @@ export function bindSessionScope(
           [AUTH_METHODS_KEY]: frame.authMethods,
           [PASSKEY_ALLOWS_UNPROVEN_KEY]: frame.passkeyAllowsUnproven === true,
         },
+      })
+    }
+    if (signal.type === SIGNAL_CODE_DELIVERY) {
+      // The handshake and the live frame share one slot (HIL-1102).
+      const frame = signal.data as z.infer<typeof codeDeliverySchema>
+      ingest(scopes.session, {
+        data: { [CODE_DELIVERY_KEY]: frame.codeDelivery },
       })
     }
     if (signal.type === SIGNAL_SECOND_FACTOR_POLICY) {
@@ -713,7 +734,8 @@ function readPendingSecondFactor(value: unknown): PendingSecondFactor | null {
  * What this installation can deliver a one-time code to (HIL-830). Read before
  * anything is typed, which is the whole point of it riding the handshake: a
  * deployment with nothing to send with declines to offer a registration instead
- * of walking somebody to a code screen that will never fill.
+ * of walking somebody to a code screen that will never fill. Every handshake
+ * writes it, and SIGNAL_CODE_DELIVERY rewrites it when a setting moves it.
  *
  * Deliberately NOT the null-on-garbage rule {@link sessionPendingAuthStep}
  * takes. A half-written auth step is better dropped, because the fallback is the
