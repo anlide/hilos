@@ -23,7 +23,7 @@ import {
   HilosPages,
   type AuthGate,
 } from '@hilos/core'
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext } from 'react'
 import type { ComponentType } from 'react'
 
 import AuthSurface from './auth/AuthSurface'
@@ -117,16 +117,6 @@ const pageSkeletons: Record<string, ComponentType> = {
   [PAGE_MAIN]: MainSkeleton,
 }
 
-// The framework sign-out action (HIL-710): signing out writes a session, so it is
-// the sessions library that owns the command and this demo declares nothing for
-// it. It is page-independent — the control lives in the shell — so it goes over
-// the agent action rather than a page action.
-const LOGOUT_ACTION = 'hilos_logout'
-
-// Releases the sign-out button if the broadcast never arrives, so the control can
-// never wedge on a dropped frame.
-const LOGOUT_FALLBACK_MS = 5000
-
 export interface AppProps {
   /**
    * The application's auth gate. Passed as well as provided: HilosView needs it
@@ -155,47 +145,6 @@ export default function App({ authGate }: AppProps) {
   }
   const currentPath = useSignal(router.currentPath)
 
-  // The clicker gets loading while sign-out is in flight: the button enters
-  // `loggingOut` on send and leaves it when the broadcast lands — the session
-  // downgrade drops `userName`, which both un-loads and (through its own
-  // condition) removes the control, the visible confirmation.
-  const [loggingOut, setLoggingOut] = useState(false)
-  // The fallback timer's handle, kept so it is cleared the moment the broadcast
-  // ends loading. Without clearing it, a stale timer from one sign-out could fire
-  // during a later one and drop its loading early.
-  const fallbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  )
-  // React to the broadcast: the downgrade clears the name, which ends loading and
-  // cancels the now-unnecessary fallback timer.
-  useEffect(() => {
-    if (userName) {
-      return
-    }
-    setLoggingOut(false)
-    if (fallbackTimer.current !== undefined) {
-      clearTimeout(fallbackTimer.current)
-      fallbackTimer.current = undefined
-    }
-  }, [userName])
-
-  const logout = (): void => {
-    if (loggingOut) {
-      return
-    }
-    setLoggingOut(true)
-    if (!connection.sendAction(LOGOUT_ACTION, {})) {
-      // Not sent (the socket is down): the action never left, so do not show
-      // loading for a broadcast that will never come.
-      setLoggingOut(false)
-
-      return
-    }
-    fallbackTimer.current = setTimeout(() => {
-      setLoggingOut(false)
-    }, LOGOUT_FALLBACK_MS)
-  }
-
   return (
     <HilosLayout
       connection={connection}
@@ -209,24 +158,6 @@ export default function App({ authGate }: AppProps) {
               <HilosAvatar name={userName} />
               <span className="visually-hidden">{userName}</span>
             </span>
-            <button
-              type="button"
-              className="btn btn-link nav-link d-inline-flex align-items-center p-0 ms-3"
-              data-id="nav-logout"
-              aria-label="Log out"
-              disabled={loggingOut}
-              onClick={logout}
-            >
-              {loggingOut ? (
-                <span
-                  className="spinner-border spinner-border-sm"
-                  role="status"
-                  aria-hidden="true"
-                />
-              ) : (
-                <i className="bi bi-box-arrow-right" aria-hidden="true" />
-              )}
-            </button>
           </>
         ) : (
           // A visitor gets neither bell nor gear — there is nothing to show — and

@@ -5,6 +5,7 @@ import {
   bindAccountBlocked,
   bindImpersonation,
   bindSessionScope,
+  bindSignOut,
   hilosToasts,
   IMPERSONATION_ACTION_STOP,
   PROTECTED_MODE_INACTIVE,
@@ -88,22 +89,29 @@ class ReplyingSource implements ActionLifecycleSource {
     return () => {}
   }
 
-  succeed(requestId: string | undefined): void {
+  succeed(
+    requestId: string | undefined,
+    action = IMPERSONATION_ACTION_STOP,
+  ): void {
     for (const listener of this.success) {
       listener({
         kind: 'actionSuccess',
-        action: IMPERSONATION_ACTION_STOP,
+        action,
         requestId,
         envelope: { type: 'action_success', data: {} },
       } as ActionSuccessSignal)
     }
   }
 
-  refuse(requestId: string | undefined, reason: string): void {
+  refuse(
+    requestId: string | undefined,
+    reason: string,
+    action = IMPERSONATION_ACTION_STOP,
+  ): void {
     for (const listener of this.error) {
       listener({
         kind: 'actionError',
-        action: IMPERSONATION_ACTION_STOP,
+        action,
         reason,
         requestId,
         envelope: { type: 'action_error', data: {} },
@@ -113,8 +121,8 @@ class ReplyingSource implements ActionLifecycleSource {
 }
 
 /**
- * Bind the strip's store the way bootHilos does, over a session scope fed by
- * handshakes this harness emits.
+ * Bind the shell's session controls the way bootHilos does, over a session
+ * scope fed by handshakes this harness emits.
  */
 function bindSession() {
   const projectListeners: ((signal: ProjectSignal) => void)[] = []
@@ -130,16 +138,18 @@ function bindSession() {
   const scopes = new ScopeManager()
   bindSessionScope(handshakes, scopes)
   const source = new ReplyingSource()
-  // One lifecycle for both, as bootHilos binds them: two would mint the same ids.
+  // One lifecycle for all, as bootHilos binds them: two would mint the same ids.
   const actions = new ActionLifecycle(source)
   const unbindStrip = bindImpersonation(scopes, actions)
   const unbindCard = bindAccountBlocked(scopes, actions, handshakes)
+  const unbindSignOut = bindSignOut(scopes, actions)
 
   return {
     source,
     unbind(): void {
       unbindStrip()
       unbindCard()
+      unbindSignOut()
     },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
@@ -297,6 +307,152 @@ describe('HilosLayout impersonation strip', () => {
 
     expect(up.find('[data-id="impersonation-banner"]').exists()).toBe(true)
     expect(up.element.querySelectorAll(live).length).toBe(liveWithout)
+  })
+})
+
+describe('HilosLayout sign-out', () => {
+  let unbind: (() => void) | undefined
+  let mounted: ReturnType<typeof mountShell> | undefined
+
+  function surface(container: Element, id: string): Element | null {
+    return container.querySelector(`[data-id="${id}"]`)
+  }
+
+  function renderSignOutShell(connection: HilosConnection): HTMLElement {
+    mounted = mountShell(connection)
+    return mounted.element as HTMLElement
+  }
+
+  afterEach(() => {
+    mounted?.unmount()
+    mounted = undefined
+    unbind?.()
+    unbind = undefined
+    hilosToasts.clear()
+  })
+
+  it('draws no control for an anonymous session', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake({ entities: { currentUser: null } })
+
+    expect(
+      surface(renderSignOutShell(shellConnection()), 'nav-logout'),
+    ).toBeNull()
+  })
+
+  it.each([{ entities: { currentUser: { id: 1, name: '' } } }, TAKEOVER])(
+    'draws the named control last, also while impersonated: %j',
+    (payload) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(payload)
+      const container = renderSignOutShell(shellConnection())
+      const button = surface(container, 'nav-logout') as HTMLButtonElement
+
+      expect(button.tagName).toBe('BUTTON')
+      expect(button.getAttribute('aria-label')).toBe('Sign out')
+      expect(button.title).toBe('Sign out')
+      expect(button.parentElement?.lastElementChild).toBe(button)
+      expect(button.previousElementSibling).toBe(
+        surface(container, 'conn-state'),
+      )
+      expect(
+        button
+          .querySelector('.bi-box-arrow-right')
+          ?.getAttribute('aria-hidden'),
+      ).toBe('true')
+    },
+  )
+
+  it('draws no control under the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+
+    expect(
+      surface(renderSignOutShell(shellConnection(FROZEN)), 'nav-logout'),
+    ).toBeNull()
+  })
+
+  it('draws no control during the held first frame', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const connection = shellConnection()
+    Object.defineProperty(connection, 'firstFrameHeld', { value: true })
+
+    expect(surface(renderSignOutShell(connection), 'nav-logout')).toBeNull()
+  })
+
+  it('sends sign-out tracked once and stays disabled until a silent success', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const container = renderSignOutShell(shellConnection())
+    const button = surface(container, 'nav-logout') as HTMLButtonElement
+
+    button.click()
+    await flushPromises()
+    expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-busy')).toBe('true')
+    expect(surface(container, 'loading-button-spinner')).toBeNull()
+    button.click()
+    await flushPromises()
+    expect(session.source.sent).toEqual([
+      { action: 'hilos_logout', data: {}, requestId: expect.any(String) },
+    ])
+    expect(session.source.sent[0]?.requestId).toBeTruthy()
+
+    session.source.succeed(session.source.sent[0]?.requestId, 'hilos_logout')
+    await flushPromises()
+
+    expect(button.disabled).toBe(false)
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('leaves the control ready on a refusal and toasts the server reason', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const container = renderSignOutShell(shellConnection())
+    const button = surface(container, 'nav-logout') as HTMLButtonElement
+
+    button.click()
+    await flushPromises()
+    session.source.refuse(
+      session.source.sent[0]?.requestId,
+      'Session not on connection',
+      'hilos_logout',
+    )
+    await flushPromises()
+
+    expect(surface(container, 'nav-logout')).toBe(button)
+    expect(button.disabled).toBe(false)
+    expect(surface(container, 'impersonation-banner')?.textContent).toContain(
+      'Bob',
+    )
+    expect(
+      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
+    ).toEqual([['error', 'Session not on connection']])
+  })
+
+  it('removes the control with the anonymous identity before its ack arrives', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(TAKEOVER)
+    const container = renderSignOutShell(shellConnection())
+    const button = surface(container, 'nav-logout') as HTMLButtonElement
+
+    button.click()
+    await flushPromises()
+    session.handshake({ entities: { currentUser: null, impersonatedBy: null } })
+    await flushPromises()
+    expect(surface(container, 'nav-logout')).toBeNull()
+
+    session.source.succeed(session.source.sent[0]?.requestId, 'hilos_logout')
+    await flushPromises()
+    expect(hilosToasts.toasts.get()).toEqual([])
   })
 })
 

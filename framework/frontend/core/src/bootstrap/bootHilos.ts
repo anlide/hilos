@@ -32,6 +32,7 @@ import {
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
 import { bindAccountBlocked } from '../session/accountBlocked.js'
 import { bindImpersonation } from '../session/impersonation.js'
+import { bindSignOut } from '../session/signOut.js'
 import {
   bindSessionToasts,
   clearToastsOnSignOut,
@@ -50,8 +51,9 @@ export interface BootHilosConfig {
   /**
    * The application's one action reply lifecycle (the `actions` created beside
    * the connection). The shell dispatches its own tracked controls on it — Stop
-   * on the impersonation strip — and a second lifecycle on the same connection
-   * would mint colliding request ids, since each counts its own.
+   * on the impersonation strip, Sign out in the navbar — and a second lifecycle
+   * on the same connection would mint colliding request ids, since each counts
+   * its own.
    */
   actions: ActionLifecycle
   /** The application's scope-partitioned stores. */
@@ -136,6 +138,11 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // and its Sign out runs on the application's own lifecycle. One behavior, no
   // option: a project that never blocks anybody is never sent a card.
   bindAccountBlocked(config.scopes, config.actions, config.connection)
+  // The sign-out control (HIL-1063) is the shell's, drawn in every SDK while a
+  // person stands behind the session, on the application's own lifecycle. One
+  // behavior, no option: a project without sign-in never has a person behind
+  // its sessions.
+  bindSignOut(config.scopes, config.actions, config.session)
   // One upload client follows the application connection for its whole life.
   // It uses the same action lifecycle as the shell: another lifecycle on the
   // same connection would mint the same request ids and mix up their replies.

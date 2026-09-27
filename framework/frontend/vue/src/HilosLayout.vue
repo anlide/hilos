@@ -2,8 +2,9 @@
 app frame a project fills rather than re-implements. It renders the top
 navigation bar carrying the project's brand, nav, and user slots, the framework admin
 entry (the gear linking to the Hilos dashboard), the live connection indicator
-the SDK owns (core-and-connection.md), a full-width banner region below the nav
-carrying, in this order, the framework's own protected-mode strip, its
+the SDK owns (core-and-connection.md), and, last, its tracked sign-out control
+while a person stands behind the session; a full-width banner region below the nav
+carrying the framework's own protected-mode strip, its
 impersonation strip (drawn from the session, with a Stop that waits for the
 server's answer), and the app-wide status strip a project fills (e.g. a trial
 notice) through the #banner slot — one live region for all, empty and
@@ -37,10 +38,13 @@ import {
   HilosPages,
   hilosAccountBlocked,
   hilosImpersonation,
+  hilosSignedIn,
   IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  signOut,
+  SIGN_OUT_COPY,
   stopImpersonation,
 } from '@hilos/core'
 import { computed, inject, watch } from 'vue'
@@ -123,6 +127,15 @@ const onImpersonationStop = (): void => {
     return
   }
   void runImpersonationStop(stopImpersonation())
+}
+
+const signedIn = useSignal(hilosSignedIn)
+const { busy: signOutBusy, run: runSignOut } = useTrackedAction()
+const onSignOut = (): void => {
+  if (signOutBusy.value) {
+    return
+  }
+  void runSignOut(signOut())
 }
 
 // Before any of that can be read there is a frame where nothing has been
@@ -296,6 +309,17 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             </span>
             <span class="visually-hidden">{{ connLabel }}</span>
           </span>
+          <LoadingButton
+            v-if="!underMaintenance && signedIn"
+            class="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
+            data-id="nav-logout"
+            :aria-label="SIGN_OUT_COPY.label"
+            :title="SIGN_OUT_COPY.label"
+            :loading="signOutBusy"
+            @click="onSignOut"
+          >
+            <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+          </LoadingButton>
         </div>
       </div>
     </nav>

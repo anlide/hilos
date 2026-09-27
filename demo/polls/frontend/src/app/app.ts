@@ -3,13 +3,7 @@
 // component mapped to the navigator's current page. The brand and the shell's
 // gear move between the main page and the framework dashboard with no refresh.
 // The live connection state is the shell's own indicator.
-import {
-  ChangeDetectionStrategy,
-  Component,
-  effect,
-  inject,
-  signal,
-} from '@angular/core'
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core'
 import type { Type } from '@angular/core'
 import {
   HILOS_AUTH_GATE,
@@ -59,16 +53,6 @@ import { Terms } from './views/terms/terms'
 import { User } from './views/hilos/users/user'
 import { Users } from './views/hilos/users/users'
 
-// The framework sign-out action (HIL-710): signing out writes a session, so it is
-// the sessions library that owns the command and this demo declares nothing for
-// it. It is page-independent — the control lives in the shell — so it goes over
-// the agent action rather than a page action.
-const LOGOUT_ACTION = 'hilos_logout'
-
-// Releases the sign-out button if the broadcast never arrives, so the control can
-// never wedge on a dropped frame.
-const LOGOUT_FALLBACK_MS = 5000
-
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -95,24 +79,6 @@ const LOGOUT_FALLBACK_MS = 5000
           <hilos-avatar [name]="userName()" />
           <span class="visually-hidden">{{ userName() }}</span>
         </span>
-        <button
-          type="button"
-          class="btn btn-link nav-link d-inline-flex align-items-center p-0 ms-3"
-          data-id="nav-logout"
-          aria-label="Log out"
-          [disabled]="loggingOut()"
-          (click)="logout()"
-        >
-          @if (loggingOut()) {
-            <span
-              class="spinner-border spinner-border-sm"
-              role="status"
-              aria-hidden="true"
-            ></span>
-          } @else {
-            <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
-          }
-        </button>
       } @else {
         <!-- A visitor gets neither bell nor gear — there is nothing to show —
         and one button that opens the surface over the page they are standing on
@@ -177,17 +143,6 @@ export class App {
   // The class, not an instance: HilosView mounts it through ngComponentOutlet.
   protected readonly authSurfaceType: Type<unknown> = AuthSurface
 
-  // The clicker gets loading while sign-out is in flight: the button enters
-  // `loggingOut` on send and leaves it when the broadcast lands — the session
-  // downgrade drops `userName`, which both un-loads and (through its own
-  // condition) removes the control, the visible confirmation.
-  protected readonly loggingOut = signal(false)
-
-  // The fallback timer's handle, kept so it is cleared the moment the broadcast
-  // ends loading. Without clearing it, a stale timer from one sign-out could fire
-  // during a later one and drop its loading early.
-  private fallbackTimer: ReturnType<typeof setTimeout> | undefined = undefined
-
   // The page-key → view map HilosView renders from. Pages without a mapped view
   // (other routes land later) render nothing.
   protected readonly pages: Record<string, Type<unknown>> = {
@@ -244,43 +199,5 @@ export class App {
   // first answer (HIL-983); every other page gets the outlet's default skeleton.
   protected readonly pageSkeletons: Record<string, Type<unknown>> = {
     [PAGE_MAIN]: MainSkeleton,
-  }
-
-  constructor() {
-    // React to the broadcast: the downgrade clears the name, which ends loading
-    // and cancels the now-unnecessary fallback timer.
-    effect(() => {
-      if (this.userName()) {
-        return
-      }
-      this.loggingOut.set(false)
-      this.clearFallbackTimer()
-    })
-  }
-
-  /** Sends the sign-out command and holds the control until the broadcast lands. */
-  protected logout(): void {
-    if (this.loggingOut()) {
-      return
-    }
-    this.loggingOut.set(true)
-    if (!this.connection.sendAction(LOGOUT_ACTION, {})) {
-      // Not sent (the socket is down): the action never left, so do not show
-      // loading for a broadcast that will never come.
-      this.loggingOut.set(false)
-
-      return
-    }
-    this.fallbackTimer = setTimeout(() => {
-      this.loggingOut.set(false)
-      this.fallbackTimer = undefined
-    }, LOGOUT_FALLBACK_MS)
-  }
-
-  private clearFallbackTimer(): void {
-    if (this.fallbackTimer !== undefined) {
-      clearTimeout(this.fallbackTimer)
-      this.fallbackTimer = undefined
-    }
   }
 }

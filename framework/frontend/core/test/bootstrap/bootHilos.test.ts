@@ -5,6 +5,7 @@ import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type NavigationEnvironment } from '../../src/routing/HilosRouter.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
 import { hilosImpersonation } from '../../src/session/impersonation.js'
+import { hilosSignedIn } from '../../src/session/signOut.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { hilosToasts } from '../../src/state/toasts.js'
 import {
@@ -251,6 +252,21 @@ describe('bootHilos', () => {
       entities: { currentUser: { id: 1, name: 'Ada' }, impersonatedBy: null },
     })
     expect(hilosImpersonation.get()).toBeNull()
+  })
+
+  it('binds the sign-out control so it follows the handshake', () => {
+    const connection = fakeConnection()
+    boot(connection)
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+    })
+    expect(hilosSignedIn.get()).toBe(true)
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: null },
+    })
+    expect(hilosSignedIn.get()).toBe(false)
   })
 
   it('binds the page scope so a page_response lands in the page scope', () => {

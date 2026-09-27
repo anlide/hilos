@@ -5,7 +5,7 @@ move between the main page and the framework dashboard with no refresh. The live
 connection state is the shell's own indicator (an extra status surface allowed
 by docs/agents/frontend/core-and-connection.md). -->
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject } from 'vue'
 import {
   HilosAvatar,
   HilosLayout,
@@ -169,52 +169,6 @@ const isSecondFactorCancelRoute = computed(
 const userName = useSignal(currentUserName)
 const isAdmin = useSignal(currentUserIsAdmin)
 const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
-
-// The shell logout control. Logout is page-independent, so it sends the
-// agent-owned `logout` action (PHP `ChatSignalConstants::LOGOUT`) rather than a
-// page action; the backend reverts the session to anonymous and broadcasts the
-// null handshake response, which clears the current user through the session
-// scope for every tab.
-//
-// The clicker gets loading while it is in flight: the button enters `loggingOut`
-// on send and leaves it when the broadcast lands — the session downgrade drops
-// `userName`, which both un-loads and (through its own `v-if`) removes the
-// control, the visible confirmation. A fallback timer releases loading if the
-// signal never arrives, so the control can never wedge.
-const LOGOUT_ACTION = 'hilos_logout'
-const LOGOUT_FALLBACK_MS = 5000
-const loggingOut = ref(false)
-// The fallback timer's handle, kept so it is cleared the moment the broadcast
-// ends loading. Without clearing it, a stale timer from one logout could fire
-// during a later one and drop its loading early.
-let fallbackTimer: ReturnType<typeof setTimeout> | undefined
-const logout = (): void => {
-  if (loggingOut.value) {
-    return
-  }
-  loggingOut.value = true
-  if (!connection.sendAction(LOGOUT_ACTION, {})) {
-    // Not sent (the socket is down): the action never left, so do not show
-    // loading for a broadcast that will never come.
-    loggingOut.value = false
-
-    return
-  }
-  fallbackTimer = setTimeout(() => {
-    loggingOut.value = false
-  }, LOGOUT_FALLBACK_MS)
-}
-// React to the broadcast: the downgrade clears the name, which ends loading and
-// cancels the now-unnecessary fallback timer.
-watch(userName, (name) => {
-  if (!name) {
-    loggingOut.value = false
-    if (fallbackTimer !== undefined) {
-      clearTimeout(fallbackTimer)
-      fallbackTimer = undefined
-    }
-  }
-})
 </script>
 
 <template>
@@ -232,23 +186,6 @@ watch(userName, (name) => {
         <HilosAvatar :name="userName" />
         <span class="visually-hidden">{{ userName }}</span>
       </HilosLink>
-      <button
-        v-if="userName"
-        type="button"
-        class="btn btn-link nav-link d-inline-flex align-items-center p-0 ms-3"
-        data-id="nav-logout"
-        aria-label="Log out"
-        :disabled="loggingOut"
-        @click="logout"
-      >
-        <span
-          v-if="loggingOut"
-          class="spinner-border spinner-border-sm"
-          role="status"
-          aria-hidden="true"
-        ></span>
-        <i v-else class="bi bi-box-arrow-right" aria-hidden="true"></i>
-      </button>
     </template>
     <HilosMagicLinkPage v-if="isMagicRoute" :context="hilosAuthContext" />
     <HilosOAuthCallbackPage

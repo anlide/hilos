@@ -3,8 +3,9 @@
 // regions are projected content and the routed page content is the default
 // slot. It renders the top navigation bar carrying the brand and nav, the
 // framework admin entry (the gear linking to the Hilos dashboard), the live
-// connection indicator the SDK owns (core-and-connection.md), a full-width
-// banner region below the nav carrying, in this order, the framework's own
+// connection indicator the SDK owns (core-and-connection.md), and, last,
+// its tracked sign-out control while a person stands behind the session;
+// a full-width banner region below the nav carrying the framework's own
 // protected-mode strip, its impersonation strip (drawn from the session, with a
 // Stop that waits for the server's answer), and the app-wide status strip a
 // project fills (e.g. a trial notice) through a projected [banner] node — one
@@ -53,10 +54,13 @@ import {
   HilosPages,
   hilosAccountBlocked,
   hilosImpersonation,
+  hilosSignedIn,
   IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  signOut,
+  SIGN_OUT_COPY,
   stopImpersonation,
 } from '@hilos/core'
 
@@ -177,6 +181,19 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 </span>
                 <span class="visually-hidden">{{ connLabel() }}</span>
               </span>
+              @if (!underMaintenance() && signedIn()) {
+                <button
+                  hilosLoadingButton
+                  class="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
+                  data-id="nav-logout"
+                  [attr.aria-label]="signOutCopy.label"
+                  [title]="signOutCopy.label"
+                  [loading]="signOutAction.busy()"
+                  (click)="onSignOut()"
+                >
+                  <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                </button>
+              }
             </div>
           </div>
         </nav>
@@ -343,6 +360,9 @@ export class HilosLayout {
   protected readonly impersonation = hilosSignal(hilosImpersonation)
   protected readonly impersonationStop = createHilosTrackedAction()
   protected readonly stripCopy = IMPERSONATION_STRIP_COPY
+  protected readonly signedIn = hilosSignal(hilosSignedIn)
+  protected readonly signOutAction = createHilosTrackedAction()
+  protected readonly signOutCopy = SIGN_OUT_COPY
   // The "Access closed" card (HIL-289): the session lost its account to a
   // block, so the content gives way to the card on every url - the header and
   // the footer stay, and whatever the content held, modals included, goes with
@@ -502,5 +522,13 @@ export class HilosLayout {
       return
     }
     void this.impersonationStop.run(stopImpersonation())
+  }
+
+  /** Sign out through the tracked driver; a second press while busy is dropped. */
+  protected onSignOut(): void {
+    if (this.signOutAction.busy()) {
+      return
+    }
+    void this.signOutAction.run(signOut())
   }
 }

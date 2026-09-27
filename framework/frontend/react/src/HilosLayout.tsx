@@ -3,8 +3,9 @@
 // slots, so the brand and nav regions are node props and the routed page
 // content is children. It renders the top navigation bar carrying the brand and
 // nav, the framework admin entry (the gear linking to the Hilos dashboard), the
-// live connection indicator the SDK owns (core-and-connection.md), a full-width
-// banner region below the nav carrying, in this order, the framework's own
+// live connection indicator the SDK owns (core-and-connection.md), and, last,
+// its tracked sign-out control while a person stands behind the session;
+// a full-width banner region below the nav carrying the framework's own
 // protected-mode strip, its impersonation strip (drawn from the session, with a
 // Stop that waits for the server's answer), and the app-wide status strip a
 // project fills (e.g. a trial notice) through the banner prop — one live region
@@ -42,10 +43,13 @@ import {
   createSignal,
   hilosAccountBlocked,
   hilosImpersonation,
+  hilosSignedIn,
   IMPERSONATION_STRIP_COPY,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
+  signOut,
+  SIGN_OUT_COPY,
   stopImpersonation,
 } from '@hilos/core'
 import { useContext, useEffect } from 'react'
@@ -90,8 +94,8 @@ export interface HilosLayoutProps {
   nav?: ReactNode
   /**
    * The right-aligned user region placed before the admin gear (the Vue shell's
-   * `#user` slot): the profile link, the notification bell, sign-out. Additive —
-   * omit it and the nav bar is unchanged.
+   * `#user` slot): the profile link, the notification bell, a guest's Sign in.
+   * Additive — omit it and the shell still draws its own sign-out control last.
    */
   user?: ReactNode
   /**
@@ -195,6 +199,15 @@ export function HilosLayout({
       return
     }
     void impersonationStop.run(stopImpersonation())
+  }
+
+  const signedIn = useSignal(hilosSignedIn)
+  const signOutAction = useTrackedAction()
+  const onSignOut = (): void => {
+    if (signOutAction.busy) {
+      return
+    }
+    void signOutAction.run(signOut())
   }
 
   // A live socket that is nonetheless showing part of a frozen replica
@@ -330,6 +343,18 @@ export function HilosLayout({
                   </span>
                   <span className="visually-hidden">{connLabel}</span>
                 </span>
+                {!underMaintenance && signedIn && (
+                  <LoadingButton
+                    className="btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
+                    data-id="nav-logout"
+                    aria-label={SIGN_OUT_COPY.label}
+                    title={SIGN_OUT_COPY.label}
+                    loading={signOutAction.busy}
+                    onClick={onSignOut}
+                  >
+                    <i className="bi bi-box-arrow-right" aria-hidden="true" />
+                  </LoadingButton>
+                )}
               </div>
             </div>
           </nav>
