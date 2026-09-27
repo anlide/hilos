@@ -2,10 +2,10 @@
 
 Read this before publishing a received upload, keeping a published file in a
 project, linking a project record to one, changing where the files are kept,
-serving a file to a browser, or changing how files nobody linked are cleaned up. The machinery is
-`framework/backend/Files/` (the library under `Library/`, the storage under
-`Storage/`); the rows are the framework table `hilos_file`, the collection
-`Hilos::$db->files`.
+serving a file to a browser, or changing how files nobody linked are cleaned up.
+The machinery is `framework/backend/Files/` (the library under `Library/`, the
+storage under `Storage/`); the rows are the framework table `hilos_file`, the
+collection `Hilos::$db->files`.
 
 ## Core Rule
 
@@ -42,10 +42,11 @@ public const array AGENTS = [
 ```
 
 `FilesLibraryAgent` and its daemon are empty subclasses of
-`AbstractFilesLibraryAgent` / `AbstractFilesLibraryAgentDaemon`: the registry has
-no project half. The project also copies the migration stubs
-`create_hilos_file.sql` and `create_hilos_file_variant.sql`, folds `FilesSettingsCatalog::getCatalog()` into its
-settings catalog, and registers the files directory in its FS context:
+`AbstractFilesLibraryAgent` / `AbstractFilesLibraryAgentDaemon`: the registry
+has no project half. The project also copies the migration stubs
+`create_hilos_file.sql` and `create_hilos_file_variant.sql`, folds
+`FilesSettingsCatalog::getCatalog()` into its settings catalog, and registers
+the files directory in its FS context:
 
 ```php
 $this->registerDirectory(FsContext::FILES, $path);
@@ -163,12 +164,13 @@ setting `files.unbound_ttl_hours` (default 24; zero or less switches the janitor
 off, read on every pass), oldest first, and for each one, in this order:
 
 1. removes its **copy rows**, collecting their storage names first;
-2. removes the **original row**. A foreign-key refusal means a project row links the file
-   and only its bind frame was lost: the row is marked bound instead, the file
-   stays, and a warning says so;
-3. removes the **copy files and original**, through the storage. An absent file is not an error. A
-   file that will not go is logged as an orphan, and the row is not brought
-   back: a spare file on disk is cheaper than a row pointing at nothing.
+2. removes the **original row**. A foreign-key refusal means a project row links
+   the file and only its bind frame was lost: the row is marked bound instead,
+   the file stays, and a warning says so;
+3. removes the **copy files and original**, through the storage. An absent file
+   is not an error. A file that will not go is logged as an orphan, and the row
+   is not brought back: a spare file on disk is cheaper than a row pointing at
+   nothing.
 
 Copy files are removed even when a project's foreign key keeps the original:
 their rows already went, and leaving the bytes would leave orphans. The next

@@ -2,11 +2,12 @@
 
 Read this before adding an HTTP address whose answer needs the database, the
 files, or anything else the master may not do — a download, a preview, a
-redirect decided by a row — or when a request to such an address hangs or answers 503. The
-machinery is `AbstractAgent::AGENT_HTTP_ROUTES`, `HttpRouter::addAgentRoute()`,
-`HttpClient`/`HttpServer` parking, and the `http_request` / `http_reply` signals
-(HIL-138). The first address built on it is the files library's
-`GET /_hilos/file` ([files-registry.md](files-registry.md)).
+redirect decided by a row — or when a request to such an address hangs or
+answers 503. The machinery is `AbstractAgent::AGENT_HTTP_ROUTES`,
+`HttpRouter::addAgentRoute()`, `HttpClient`/`HttpServer` parking, and the
+`http_request` / `http_reply` signals (HIL-138). The first address built on it
+is the files library's `GET /_hilos/file`
+([files-registry.md](files-registry.md)).
 
 ## Why
 

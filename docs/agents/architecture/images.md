@@ -199,7 +199,8 @@ entries alone do not guarantee it, just as for uploads and publication.
 ## Validation
 
 Run `composer run test:framework:unit` for declarations, DTO roundtrips and GD
-geometry; `composer run test:framework:integration -- --filter ImageVariantIntegrationTest`
+geometry;
+`composer run test:framework:integration -- --filter ImageVariantIntegrationTest`
 for the complete library–renderer trip and its failure recovery. The chat's
 `ChatTopologyRegistryTest` pins the library's incoming result frame even though
 chat does not activate the renderer yet.
