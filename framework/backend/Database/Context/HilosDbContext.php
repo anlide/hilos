@@ -13,6 +13,7 @@ use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
@@ -157,10 +158,13 @@ abstract class HilosDbContext extends DbContext
     public const string fileVariants = 'fileVariants';
     public const string fileVariant = 'fileVariant';
 
-    /** The layer names a refusal of a framework extension calls the three classes by. */
-    private const string LAYER_COLLECTION = 'view collection';
-    private const string LAYER_ACTIONS = 'collection actions';
-    private const string LAYER_ITEM_ACTIONS = 'item actions';
+    /**
+     * The layer names a refusal of a framework extension calls the three declared classes by;
+     * the start guard names the same layers by the same words, and reads them here.
+     */
+    public const string LAYER_COLLECTION = 'view collection';
+    public const string LAYER_ACTIONS = 'collection actions';
+    public const string LAYER_ITEM_ACTIONS = 'item actions';
 
     /**
      * What the project declared through frameworkExtensions(), read once at the start of
@@ -173,7 +177,7 @@ abstract class HilosDbContext extends DbContext
     /**
      * The framework's own chain under each key configure() mounted, in the same three-class
      * shape a project declares a replacement in. Its keys are what a declaration is judged
-     * against; what of it the start guard may read is the question of HIL-1191.
+     * against, and the start guard reads it whole through frameworkRegistrations().
      *
      * @var array<string, FrameworkExtension>
      */
@@ -391,6 +395,22 @@ abstract class HilosDbContext extends DbContext
     }
 
     /**
+     * The framework's own chain under each of its keys, in registration order.
+     *
+     * Read by {@see FrameworkExtensionGuard} to hold what is mounted under a key against what the
+     * framework itself registers there: the view collection, and the two action layers where it
+     * registers any. The answer does not depend on what a project declared - it is the record
+     * configure() keeps of its own registrations as it mounts, whichever chain answered for the
+     * key. Empty until configure() ran.
+     *
+     * @return array<string, FrameworkExtension> The framework's chain per framework key, in registration order
+     */
+    public function frameworkRegistrations(): array
+    {
+        return $this->frameworkChains;
+    }
+
+    /**
      * The project's chains over framework tables, keyed by the framework key each replaces.
      *
      * Overridden by a project the way {@see self::processWideReadCollections()} is, and composed
@@ -473,7 +493,7 @@ abstract class HilosDbContext extends DbContext
      * named from, so there is no second list to fall behind. The loading strategy is the
      * framework's whichever chain is mounted. A project's declaration replaces the view and the
      * action layers it names; an action layer it leaves out stays the framework's, which the
-     * start guard (HIL-1191) refuses as a half-inherited chain rather than this mount.
+     * start guard refuses as a half-inherited chain rather than this mount.
      *
      * @param string $key Framework collection key
      * @param int $strategy Loading strategy the framework reads the key by

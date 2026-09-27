@@ -31,15 +31,24 @@
    where that author will look for it. Here the reader is the operator of the stand.
    Only the daemon carries it: the worker inherits the decision, and the CLI is where
    a stand is repaired.
-3. `SetOwnershipGuard::assertMountedSetsDeclared()` refuses the start of a node whose
+3. `FrameworkExtensionGuard::assertMountedExtensionsWhole()` refuses the start of a node
+   whose chain of subclasses under a framework key is not whole, did not keep the base's
+   declaration, carries a column with two verdicts or a new one with none — in any project,
+   backup or not — or whose table is mounted by two chains; a framework key written over past the
+   substitution point is refused the same way. It reads class constants and the mounted
+   map only, and stands first of the guards: the three below read the MOUNTED Entity, and
+   over a half-extended chain they would judge the framework's class in the project's
+   place and say nothing. Only the daemon carries it; the worker inherits the decision and
+   the CLI is where a chain is repaired ([../orm/inheritance.md](../orm/inheritance.md)).
+4. `SetOwnershipGuard::assertMountedSetsDeclared()` refuses the start of a node whose
    mounted tables do not declare whose set their rows belong to. It reads class constants
-   only and stands before the other guards, so the cheapest and most basic wiring question
-   is answered first.
-4. `SessionStageStartupGuard::assertRosterCarriesSessions()` refuses the start of a node
+   only and stands right after the framework-extension guard and before the two others,
+   so the cheap wiring questions are answered first.
+5. `SessionStageStartupGuard::assertRosterCarriesSessions()` refuses the start of a node
    whose browser connections roster stands on the presence stage instead of carrying
    session tokens. It reads only the in-memory map of mounted runtime collections and
    stands between the constant-only set-ownership guard and the live-schema query.
-5. `AnonymizationStartupGuard::assertLiveSchemaClassified()` refuses the start of a node
+6. `AnonymizationStartupGuard::assertLiveSchemaClassified()` refuses the start of a node
    whose live schema is not classified for anonymization. Only a project declaring
    `HilosFeature::BACKUP` is asked at all — such a node keeps copies of a database it
    promises to be able to anonymize, and the promise is only as good as the verdict on the
@@ -50,10 +59,10 @@
    seen by no peer; and after `Logger::setLogFile()`, so the refusal lands in the daemon
    log where that author will look for it. In a container it therefore speaks on the very
    start whose migrations opened the gap — `docker.php` applies them before this runs.
-6. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
-7. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
-8. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
-9. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
+7. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
+8. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
+9. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
+10. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
 
 ## Container watchdog and crash recovery (HIL-450)
 

@@ -217,6 +217,8 @@ use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
+use Hilos\HilosException;
+use Hilos\Database\Schema\FrameworkExtensionGuard;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -1276,6 +1278,26 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatRtContext::class,
             ChatDbContext::class,
         );
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * @throws HilosException When the context refuses to configure, or the guard refuses a chain under a framework key
+     */
+    public function testFrameworkExtensionsAreWhole(): void
+    {
+        // The question the daemon asks first on its start, over this project's context and
+        // without a database: configure() reads nothing. No framework key is extended here yet;
+        // the first chain to be judged is this demo's own over the person table (HIL-1192).
+        $previous = Hilos::$db;
+        try {
+            Hilos::$db = new ChatDbContext();
+            Hilos::$db->configure();
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+        } finally {
+            Hilos::$db = $previous;
+        }
 
         $this->addToAssertionCount(1);
     }

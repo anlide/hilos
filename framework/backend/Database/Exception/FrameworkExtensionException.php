@@ -6,6 +6,7 @@ namespace Hilos\Database\Exception;
 
 use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\HilosException;
 
 /**
@@ -18,8 +19,9 @@ use Hilos\HilosException;
  * class that does not extend the framework's class of the same layer under that key (the
  * framework's own class included), and an action layer declared for a key the framework
  * registers without one. Whether the chain behind the declaration is whole - every link
- * re-pointed, every column of the base kept, one class over one table - is the start guard's
- * question (HIL-1191), not this one's: two places judging the chain would come to disagree.
+ * re-pointed, every column of the base kept, one class over one table - is the question of
+ * {@see FrameworkExtensionGuard}, not this one's: two places judging the chain would come to
+ * disagree.
  */
 final class FrameworkExtensionException extends HilosException
 {

@@ -11,7 +11,7 @@ use Hilos\Database\View\Collection\VerifierCircleMembers;
  * This is the class a project names in its FrameworkExtension: the rest of the chain is reached
  * from here.
  */
-final class NotedMembers extends VerifierCircleMembers
+class NotedMembers extends VerifierCircleMembers
 {
     public const string DB_ITEM_CLASS = NotedMemberItem::class;
     public const string OBJECT_COLLECTION_CLASS = NotedMemberObjects::class;

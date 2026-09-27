@@ -22,8 +22,12 @@ use Hilos\Database\View\Collection\DbCollection;
  * is read is the decision of the table's owner, not of the subclass.
  *
  * An action layer left null keeps the framework's class for that layer. A chain half-inherited
- * that way is what the start guard refuses (HIL-1191); the mount itself refuses only what the
- * declaration got wrong on its own - see FrameworkExtensionException.
+ * that way is what the start guard refuses; the mount itself refuses only what the declaration
+ * got wrong on its own - see FrameworkExtensionException.
+ *
+ * The framework names its OWN chain under each key by the same value: what
+ * {@see HilosDbContext::frameworkRegistrations()} answers is one of these per framework key, so
+ * the guard holds the mounted chain against the framework's in one shape.
  */
 final readonly class FrameworkExtension
 {

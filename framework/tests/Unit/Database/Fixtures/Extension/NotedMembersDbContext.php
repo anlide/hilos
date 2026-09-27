@@ -14,7 +14,7 @@ use Hilos\Database\Context\HilosDbContext;
  *
  * @property-read NotedMembers $verifierCircle
  */
-final class NotedMembersDbContext extends HilosDbContext
+class NotedMembersDbContext extends HilosDbContext
 {
     /**
      * @return array<string, FrameworkExtension> The framework's declarations plus the test chain over the verifier circle

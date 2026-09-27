@@ -211,6 +211,17 @@ supervisor runs the migrations that open the gap, and the CLI is where the gap g
 closed — a refusal there would be a dead end with no way out of it. A project that
 declares no `HilosFeature::BACKUP` is not asked at all.
 
+One question is asked of EVERY project, with or without backup: a column a project
+added to a framework table through a subclass chain carries a verdict, or the node
+does not start. `FrameworkExtensionGuard` asks it first of the startup guards, over
+constants alone — no column is in both `_pii` and `_piiNotPersonal`, and every column
+of the subclass's `_columns` beyond the base's is in one of them, unless the table is
+purged whole. The
+backup condition is left off because the framework keeps its own tables classified
+whole without one, and a subclass mounted under the framework's key is that table;
+and because the verdict has a reader past the backup, the administration's read-only
+view mode ([../orm/inheritance.md](../orm/inheritance.md), *What Refuses The Start*).
+
 ## Adding A Table Or A Column
 
 1. **Write the verdict where the table is declared.** A new table needs `_pii` on

@@ -32,7 +32,8 @@ class MyEntity extends Entity {
 
 - One MOUNTED Entity class = one DB table. A project's subclass of a framework
   Entity maps the same table and is mounted in place of the base, as one link of
-  the whole subclassed chain; see [inheritance.md](inheritance.md)
+  the whole subclassed chain, and a node refuses to start over two mounted chains
+  of one table; see [inheritance.md](inheritance.md), *What Refuses The Start*
 - Field names match DB column names exactly
 - Types must be strict: `int`, `string`, `float`, `bool` (no mixed)
 - Do not add business logic to Entity — it's a data container only

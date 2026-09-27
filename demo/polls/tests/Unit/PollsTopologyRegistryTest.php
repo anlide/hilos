@@ -86,6 +86,8 @@ use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\HilosException;
+use Hilos\Database\Schema\FrameworkExtensionGuard;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -661,6 +663,27 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsRtContext::class,
             PollsDbContext::class,
         );
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * @throws HilosException When the context refuses to configure, or the guard refuses a chain under a framework key
+     */
+    public function testFrameworkExtensionsAreWhole(): void
+    {
+        // The question the daemon asks first on its start, over this project's context and
+        // without a database: configure() reads nothing. No framework key is extended here
+        // today, so every key passes as the framework's own; the day one is, this names the
+        // refusal in seconds instead of a stand that did not come up.
+        $previous = Hilos::$db;
+        try {
+            Hilos::$db = new PollsDbContext();
+            Hilos::$db->configure();
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+        } finally {
+            Hilos::$db = $previous;
+        }
 
         $this->addToAssertionCount(1);
     }

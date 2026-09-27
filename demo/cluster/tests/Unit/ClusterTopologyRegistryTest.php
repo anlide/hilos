@@ -30,6 +30,8 @@ use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\HilosException;
+use Hilos\Database\Schema\FrameworkExtensionGuard;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
@@ -251,6 +253,27 @@ final class ClusterTopologyRegistryTest extends TestCase
             ClusterRtContext::class,
             ClusterDbContext::class,
         );
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * @throws HilosException When the context refuses to configure, or the guard refuses a chain under a framework key
+     */
+    public function testFrameworkExtensionsAreWhole(): void
+    {
+        // The question the daemon asks first on its start, over this project's context and
+        // without a database: configure() reads nothing. No framework key is extended here
+        // today, so every key passes as the framework's own; the day one is, this names the
+        // refusal in seconds instead of a node that did not come up.
+        $previous = Hilos::$db;
+        try {
+            Hilos::$db = new ClusterDbContext();
+            Hilos::$db->configure();
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+        } finally {
+            Hilos::$db = $previous;
+        }
 
         $this->addToAssertionCount(1);
     }

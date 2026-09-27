@@ -175,7 +175,7 @@ that is not a `FrameworkExtension`, a class that does not extend the framework's
 class of the same layer under that key (the framework's own class included), and
 an action layer declared for a key the framework registers without one. An
 action layer left undeclared stays the framework's — a half-inherited chain,
-which the start guard refuses (HIL-1191), not the mount.
+which the start guard refuses (*What Refuses The Start*), not the mount.
 
 Overwriting the key after `parent::configure()` no longer works at all:
 `DbContext::setRepresent()` refuses a second view under a mounted key with
@@ -196,22 +196,76 @@ and asks all three gates over the test chain.
 
 ## What Refuses The Start
 
-A node refuses to start over a half-extended framework entity, and says why
-(not in the code yet — HIL-1191). The start guard reads constants alone — no
-database, no Reflection — and refuses on each of:
+A node refuses to start over a half-extended framework entity, and says why:
+`FrameworkExtensionGuard::assertMountedExtensionsWhole()` throws
+`IncompleteFrameworkExtensionException` with every finding in one message,
+because the reader is the author of the chain and one edit answers all of them.
+The guard judges what is MOUNTED, not what was declared — the framework's own
+registration under each key, read through
+`HilosDbContext::frameworkRegistrations()`, is held against the chain the
+context mounted there — and it reads constants and the mounted map alone: no
+database, no Reflection. A key counts as extended when the view mounted under
+it is not the framework's. The refusals:
 
-- the chain is not inherited whole: a layer the framework registers for the key
-  is still the framework's class, and the refusal names which layer;
-- a link constant still names a framework class where the chain has a subclass
-  for that layer;
-- the subclass's table or collection key differs from the framework's;
-- the subclass lost a column or a type of the base;
-- two classes are mounted over one table.
+- the chain is not inherited whole: one of the eight layers is still the
+  framework's class — a mounted one (the view collection, and the action layers
+  where the framework registers them) or one of the five reached through the
+  link constants. The refusal names the layer, the constant and the class that
+  carries it, and asks for both steps at once — subclass it and point the
+  constant at the subclass — because without Reflection a subclass the constant
+  does not name is invisible, and the cure is the same either way;
+- the two constants naming the Entity disagree: `ENTITY_CLASS` on the entity
+  collection and `ENTITY_CLASS` on the Object have to name the one Entity of
+  the chain, or searches build one Entity and objects another;
+- a framework key is written over: the object collection mounted under the key
+  is not the one its view names, which is a mount that went around
+  `frameworkExtensions()`. Asked of every framework key, extended or not;
+- the subclass did not keep the base's declaration — one rule behind both "the
+  table and the collection key stay the framework's" and "no column or type of
+  the base is lost": `_table`, `_primary`, `_setVia`, `_setRoot`,
+  `_setShortPath` and a purge strategy in `_pii` keep their value; `_columns`
+  and `_piiNotPersonal` keep every element of the base's; `_types`, `_foreign`,
+  `_indexes` and a `_pii` map keep every key of the base's with the same value
+  under it; `Objects::COLLECTION_KEY` stays the same. Adding is allowed
+  anywhere but on the scalars, and the refusal names the constant and what was
+  lost or changed;
+- a column carries two verdicts, or a column the subclass added carries none:
+  no column is in both `_pii` and `_piiNotPersonal` — asked over the whole
+  verdict, so a base column the subclass adds to `_pii` while the inherited
+  `_piiNotPersonal` still lists it is caught — and every column of the
+  subclass's `_columns` beyond the base's is in one of the two; a table purged
+  whole covers them all and is not asked;
+- two chains are mounted over one table — asked over every collection the
+  context mounted and not only the framework's keys, so a subclass mounted
+  under a key of its own beside the framework's chain is caught here.
 
-On the verdicts of the project's new columns this page says only the general
-rule above — the subclass declares them. Whether the start guard checks that in
-a project that runs no backup is a question of HIL-1191's own interview and is
-not decided here.
+The verdict on a new column is asked in EVERY project, backup or not (owner's
+decision at the HIL-1191 interview, 2026-09-27). The framework keeps its own
+tables classified whole without any condition on backup —
+`FrameworkEntityPiiVerdictTest` holds every column of every framework Entity to
+a verdict — and a subclass mounted under the framework's key IS that table to
+the machine: one column without a verdict leaves it half-classified. The
+verdict also has a reader past the backup, the administration's read-only view
+mode (HIL-1248): it shows a column when `_piiNotPersonal` names it and hides
+one `_pii` names, and a column in neither is hidden even where its author would
+have called it harmless. The check costs nothing: constants only.
+
+Where it stands: `DaemonApplication::run()`, first of the startup guards,
+because the set-ownership guard, the anonymization registry and the schema
+audit all read the mounted Entity, and over a half-extended chain they would
+judge the framework's class in the project's place and say nothing
+([../architecture/daemon-lifecycle.md](../architecture/daemon-lifecycle.md)).
+Only the daemon carries it: the worker inherits the decision, and the CLI is
+where a chain is repaired. Each demo asks the same question in its topology
+unit test, `testFrameworkExtensionsAreWhole()`, over its own context and
+without a database, so a refused start is named in seconds rather than as a
+stand that did not come up.
+
+What it stays silent about: a framework key nobody extended, and a project's
+own tables, which are no chain over a framework key; a column the project's
+migration added to a framework table without mapping it in the subclass's
+`_columns` — only a live schema knows about it, and `AnonymizationStartupGuard`
+judges it where the project takes backups.
 
 ## Anti-Patterns
 

@@ -11,7 +11,7 @@ use Hilos\Database\Object\Collection\VerifierCircleMembers;
  * collection. COLLECTION_KEY stays the framework's: the chain is mounted under the framework's
  * key, and process-to-process sync finds it there.
  */
-final class NotedMemberObjects extends VerifierCircleMembers
+class NotedMemberObjects extends VerifierCircleMembers
 {
     public const string OBJECT_CLASS = NotedMemberObject::class;
     public const string ENTITY_COLLECTION_CLASS = NotedMemberEntities::class;

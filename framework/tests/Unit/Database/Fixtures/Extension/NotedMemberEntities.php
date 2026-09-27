@@ -9,7 +9,7 @@ use Hilos\Database\Entity\Collection\VerifierCircleMembers;
 /**
  * The Entity collection of the test chain, re-pointed at the project's Entity.
  */
-final class NotedMemberEntities extends VerifierCircleMembers
+class NotedMemberEntities extends VerifierCircleMembers
 {
     public const string ENTITY_CLASS = NotedMemberEntity::class;
 }

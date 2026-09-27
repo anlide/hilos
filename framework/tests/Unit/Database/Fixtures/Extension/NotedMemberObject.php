@@ -13,7 +13,7 @@ use Hilos\Database\Object\Item\VerifierCircleMember;
  *
  * @property ?string $note
  */
-final class NotedMemberObject extends VerifierCircleMember
+class NotedMemberObject extends VerifierCircleMember
 {
     public const string ENTITY_CLASS = NotedMemberEntity::class;
     public const string note = 'note';

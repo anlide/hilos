@@ -209,6 +209,22 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     }
 
     /**
+     * @return ?class-string<DbActions> Actions class registered for the collection, or null when none was
+     */
+    public function getActionsClass(): ?string
+    {
+        return $this->_actionsClass;
+    }
+
+    /**
+     * @return ?class-string<ItemDbActions> Item actions class registered for the items, or null when none was
+     */
+    public function getItemActionsClass(): ?string
+    {
+        return $this->_itemActionsClass;
+    }
+
+    /**
      * Get Actions instance
      * Creates Actions instance lazily on first access
      *

@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
+use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
 use Hilos\Hilos;
@@ -26,7 +27,8 @@ use Throwable;
  * manager class, and its persistence init. The spine runs the env prelude, checks the
  * environment against the project catalog and refuses to start naming every required value
  * that has no answer, claims the log directory so another daemon cannot share it, points the
- * logger at the daemon log, refuses a table that does not declare
+ * logger at the daemon log, refuses a framework entity a project extended by halves, refuses a
+ * table that does not declare
  * whose set it is part of, refuses a browser connections roster without its session stage, lets
  * a node carrying backup refuse a schema it could not anonymize, constructs the manager, hands it
  * a {@see DaemonContext} to
@@ -86,6 +88,13 @@ final class DaemonApplication
             // setting that overrides this. A worker tells it the real level once one registers,
             // and until then the node's own env is the honest answer.
             LogWriteLevelApplier::applyFromEnv();
+
+            // Before anything composes, and first of the guards: a project's chain under a
+            // framework key, inherited by halves, leaves the guards below judging the framework's
+            // class where the project's stands - and a column the chain never carried to its
+            // Object says nothing until the day somebody opens it. Constants and the mounted map
+            // alone, no query.
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
 
             // Before anything composes: a mounted table that does not say whose set its rows are
             // part of leaves "did all of them arrive" with nobody to answer it. Ahead of the

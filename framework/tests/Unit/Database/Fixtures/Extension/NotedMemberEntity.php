@@ -18,7 +18,7 @@ use Hilos\Database\PhpType;
  * The chain is what FrameworkExtensionMountTest mounts and the framework's extension integration
  * test writes through, and the green case the start guard's own test (HIL-1191) takes.
  */
-final class NotedMemberEntity extends VerifierCircleMember
+class NotedMemberEntity extends VerifierCircleMember
 {
     public const string note = 'note';
 
