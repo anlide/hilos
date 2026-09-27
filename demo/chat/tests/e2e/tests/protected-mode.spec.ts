@@ -12,10 +12,10 @@ import {
 } from '../helpers/page'
 import { signUpWithVerifiedEmail } from '../helpers/session'
 import {
-  addToCircle,
-  clearCircle,
+  addToMaintenanceCircle,
+  clearMaintenanceCircle,
   closeProtectedMode,
-  confirmCircleRemoval,
+  confirmMaintenanceCircleRemoval,
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
@@ -55,8 +55,11 @@ const OPERATION = 'e2e-freeze'
 // no route params.
 const ADMIN_URL = '/hilos'
 
-// The framework backup page, the one admin surface this leaf's block lives on.
+// The backup page still carries the verification-window block used above.
 const BACKUP_URL = '/hilos/backup'
+
+// The verifier circle is administered in the Maintenance section.
+const MAINTENANCE_URL = '/hilos/maintenance'
 
 // The two words of the circle's presence column. A case reads them as the node's own
 // answer to "is this person here", because the mark is computed from the very connections
@@ -765,9 +768,9 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // address against the confirmed identities, and plain registration leaves it
   // unverified, so an account made the short way could not be named at all.
   await signUpAdmin(page)
-  await gotoPage(page, BACKUP_URL)
-  await expect(page.getByTestId('hilos-backup-circle-panel')).toBeVisible()
-  await clearCircle(page)
+  await gotoPage(page, MAINTENANCE_URL)
+  await expect(page.getByTestId('hilos-maintenance-circle-panel')).toBeVisible()
+  await clearMaintenanceCircle(page)
   const operatorSession = await sessionTokenOf(page.context())
   expect(operatorSession).not.toBe('')
 
@@ -778,7 +781,7 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // Named through the modal, which is the only way an operator has: no test backdoor
   // writes this row, so a broken action surface fails here rather than silently
   // passing on a row nobody could have created.
-  await addToCircle(page, memberEmail)
+  await addToMaintenanceCircle(page, memberEmail)
   await expect(circleRow(page, memberEmail)).toBeVisible()
   await expect(circleOnline(page, memberEmail)).toHaveText(CIRCLE_ONLINE)
 
@@ -881,7 +884,7 @@ test('the named circle walks in with the tab it already had open, and nobody els
   await markDocument(page)
   expect(await openProtectedMode()).toBe('inactive')
   await expectSelfReload(page)
-  await gotoPage(page, BACKUP_URL)
+  await gotoPage(page, MAINTENANCE_URL)
   await expect(circleRow(page, memberEmail)).toBeVisible()
   await removeFromCircle(page, memberEmail)
   await expect(circleRow(page, memberEmail)).toHaveCount(0)
@@ -899,14 +902,14 @@ test('a circle member who was away when the node froze is named and still outsid
   // leaf could quietly start letting anybody named through on a later connection, which
   // is a session resolved against a database the restore has already replaced.
   await signUpAdmin(page)
-  await gotoPage(page, BACKUP_URL)
-  await clearCircle(page)
+  await gotoPage(page, MAINTENANCE_URL)
+  await clearMaintenanceCircle(page)
   const operatorSession = await sessionTokenOf(page.context())
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
   const { email: memberEmail } = await signUpWithVerifiedEmail(member)
-  await addToCircle(page, memberEmail)
+  await addToMaintenanceCircle(page, memberEmail)
   await expect(circleRow(page, memberEmail)).toBeVisible()
 
   // Away: the whole context goes, and then the case waits for the NODE to have noticed.
@@ -960,21 +963,21 @@ async function expectInsideMainPage(page: Page): Promise<void> {
  * names every row at once the moment a second person is in it, which is every run after
  * the first.
  *
- * @param page The operator's page, on the backup surface.
+ * @param page The operator's page, on the maintenance section.
  * @param identifier The address the member was named by.
  */
 function circleRow(page: Page, identifier: string) {
-  return page.getByTestId(`hilos-backup-circle-row-${identifier}`)
+  return page.getByTestId(`hilos-maintenance-circle-row-${identifier}`)
 }
 
 /**
  * The presence mark of one circle row, named by the handle its own cell carries.
  *
- * @param page The operator's page, on the backup surface.
+ * @param page The operator's page, on the maintenance section.
  * @param identifier The address the member was named by.
  */
 function circleOnline(page: Page, identifier: string) {
-  return page.getByTestId(`hilos-backup-circle-online-${identifier}`)
+  return page.getByTestId(`hilos-maintenance-circle-online-${identifier}`)
 }
 
 /**
@@ -988,9 +991,9 @@ function circleOnline(page: Page, identifier: string) {
  * Re-subscribed on every attempt: that was the only way while the mark was a photograph
  * taken when the row was drawn. The mark is live since HIL-1119, so the reload now only
  * re-reads what the closing connection already re-drew; the case moves to the maintenance
- * section with the rest of the circle's cases (HIL-1124).
+ * section with the rest of the circle's cases.
  *
- * @param page The operator's page, steered back to the backup surface on each attempt.
+ * @param page The operator's page, steered back to Maintenance on each attempt.
  * @param identifier The address the member was named by.
  */
 async function waitForCircleOffline(
@@ -998,7 +1001,7 @@ async function waitForCircleOffline(
   identifier: string,
 ): Promise<void> {
   await expect(async () => {
-    await gotoPage(page, BACKUP_URL)
+    await gotoPage(page, MAINTENANCE_URL)
     await expect(circleOnline(page, identifier)).toHaveText(CIRCLE_OFFLINE)
   }).toPass()
 }
@@ -1006,12 +1009,12 @@ async function waitForCircleOffline(
 /**
  * Takes one address out of the verifier circle through the row's own modal.
  *
- * @param page The operator's page, already on the backup surface.
+ * @param page The operator's page, already on the maintenance section.
  * @param identifier The address to remove.
  */
 async function removeFromCircle(page: Page, identifier: string): Promise<void> {
-  await page.getByTestId(`hilos-backup-circle-remove-${identifier}`).click()
-  await confirmCircleRemoval(page)
+  await page.getByTestId(`hilos-maintenance-circle-remove-${identifier}`).click()
+  await confirmMaintenanceCircleRemoval(page)
 }
 
 /**

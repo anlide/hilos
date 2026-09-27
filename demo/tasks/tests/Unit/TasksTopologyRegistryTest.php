@@ -449,8 +449,8 @@ final class TasksTopologyRegistryTest extends TestCase
     {
         // Backup is a configure-only framework feature with a monopoly agent behind it. It is
         // activated here so the React surface has a backup page to prove the reopen block on
-        // (HIL-911): the page answered by the index agent, the agent pair, and both tables the
-        // page draws - the archives and the verifier circle.
+        // (HIL-911): the page answered by the index agent, the agent pair, and its
+        // archive table. The verifier circle is drawn in Maintenance.
         $this->assertSame(BackupPage::class, Hilos::PAGES[BackupPage::PAGE]);
         $this->assertSame(AgentType::HILOS_INDEX, BackupPage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(BackupAgent::class, AgentRegistry::workerClass(
@@ -465,7 +465,7 @@ final class TasksTopologyRegistryTest extends TestCase
             Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
         ));
         $this->assertSame(
-            [TasksTableContext::hilosBackups => [], TasksTableContext::hilosVerifierCircle => []],
+            [TasksTableContext::hilosBackups => []],
             Hilos::PAGE_TABLES[BackupPage::PAGE],
         );
     }

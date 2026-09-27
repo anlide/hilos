@@ -15,6 +15,7 @@ import {
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
   createHilosBackupsActions,
+  HILOS_BACKUP_CIRCLE_POINTER_PATH,
   createHilosBackupsReopenGate,
   createHilosBackupsTable,
   hasBackupFailureDetail,
@@ -873,5 +874,11 @@ describe('hasBackupFailureDetail', () => {
 
   it('is false for a successful backup', () => {
     expect(hasBackupFailureDetail(row({ finished: true }))).toBe(false)
+  })
+})
+
+describe('HILOS_BACKUP_CIRCLE_POINTER_PATH', () => {
+  it('resolves the Maintenance address from the Hilos route map', () => {
+    expect(HILOS_BACKUP_CIRCLE_POINTER_PATH).toBe('/hilos/maintenance')
   })
 })

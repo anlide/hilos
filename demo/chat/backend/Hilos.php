@@ -677,7 +677,6 @@ final class Hilos extends HilosFacade
         ],
         BackupPage::PAGE => [
             ChatTableContext::hilosBackups => [],
-            ChatTableContext::hilosVerifierCircle => [],
         ],
         MaintenancePage::PAGE => [
             ChatTableContext::hilosVerifierCircle => [],

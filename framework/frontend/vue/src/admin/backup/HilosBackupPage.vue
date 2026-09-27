@@ -13,7 +13,8 @@ runs the addressed progress frames are the only live thing on the page — the
 node is frozen and the table sends nothing. Once it ends, the node stands in a
 verification window, and the one browser that started the restore is offered the
 block that closes it — the backend answers that personally in the page-data
-section, so a second admin looking at the same page sees nothing. All table logic,
+section, so a second admin looking at the same page sees nothing. A pointer leads
+to the verifier circle in Maintenance. All table logic,
 the row view-model, and what the list declares about its frame — columns, search,
 the scope and period filters, the create button as its main action, empty state —
 are the core headless's too; this view owns only the markup (and the create dialog
@@ -25,10 +26,7 @@ import {
   backupMigrationNotes,
   backupProgressPercent,
   createBackupProgressClock,
-  BACKUP_CIRCLE_IDENTIFIER_FIELD,
-  BACKUP_CIRCLE_ONLINE_FIELD,
   createHilosBackupsActions,
-  createHilosBackupsCircleTable,
   createHilosBackupsReopenGate,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
@@ -44,7 +42,8 @@ import {
   formatRestoreOutcomeLine,
   hasBackupFailureDetail,
   hasRestoreOutcome,
-  HILOS_BACKUP_CIRCLE_COPY,
+  HILOS_BACKUP_CIRCLE_POINTER_COPY,
+  HILOS_BACKUP_CIRCLE_POINTER_PATH,
   HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
   HilosPages,
@@ -57,15 +56,14 @@ import {
   isBackupRestorable,
   isBackupSubsystemBusy,
   offersBackupRestore,
-  type HilosBackupCircleRow,
   type HilosBackupRow,
   type HilosBackupsContext,
-  type HilosTableColumnOf,
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosLink from '../../HilosLink.vue'
 import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosSwitch from '../../HilosSwitch.vue'
@@ -84,18 +82,12 @@ const props = defineProps<{
 const createOpen = ref(false)
 const backups = createHilosBackupsTable(props.context, { openCreate })
 const backupsTable = backups.controller
-// The page's second table, on the same page scope under its own key: who the operator
-// named to check the system after a restore.
-const circle = createHilosBackupsCircleTable(props.context)
-const circleTable = circle.controller
 const {
   sendBackupCreate,
   sendBackupDelete,
   sendBackupSetKeep,
   sendBackupRestore,
   sendBackupReopen,
-  sendBackupCircleAdd,
-  sendBackupCircleRemove,
 } = createHilosBackupsActions(props.context)
 
 // What this installation offers for restoring, and the live frames a restore this
@@ -133,27 +125,13 @@ const subsystemBusy = computed(() =>
 // window, and unbind on unmount.
 onMounted(() => {
   backups.start()
-  circle.start()
   restoreProgress.start()
 })
 onUnmounted(() => {
   backups.dispose()
-  circle.dispose()
   restoreProgress.dispose()
   progressClock.dispose()
 })
-
-const circleColumns: HilosTableColumnOf<HilosBackupCircleRow>[] = [
-  { key: BACKUP_CIRCLE_IDENTIFIER_FIELD, label: 'Address', sortable: true },
-  { key: BACKUP_CIRCLE_ONLINE_FIELD, label: 'Signed in' },
-  {
-    key: 'actions',
-    label: '',
-    headerClass: 'text-end',
-    // The remove button and its confirmation name the address.
-    reads: [BACKUP_CIRCLE_IDENTIFIER_FIELD],
-  },
-]
 
 /**
  * Why an archive cannot be restored right now, or null when it can. The button
@@ -380,70 +358,6 @@ async function submitReopen(): Promise<void> {
   }
 }
 
-// Circle dialogs. Adding takes one field and removing takes a confirmation, because the
-// two mistakes are different: a mistyped address is refused by the server and costs a
-// second try, while a removal is silent and only noticed after the next restore.
-const circleAddOpen = ref(false)
-const circleAddIdentifier = ref('')
-const circleAddAction = useTrackedAction()
-const {
-  loading: circleAddLoading,
-  busy: circleAddBusy,
-  run: runCircleAddAction,
-  clearError: clearCircleAddError,
-} = circleAddAction
-
-function openCircleAdd(): void {
-  clearCircleAddError()
-  circleAddIdentifier.value = ''
-  circleAddOpen.value = true
-}
-
-function closeCircleAdd(): void {
-  circleAddOpen.value = false
-}
-
-async function submitCircleAdd(): Promise<void> {
-  if (circleAddBusy.value || circleAddIdentifier.value.trim() === '') {
-    return
-  }
-  if (
-    await runCircleAddAction(sendBackupCircleAdd(circleAddIdentifier.value))
-  ) {
-    closeCircleAdd()
-  }
-}
-
-const circleRemoveOpen = ref(false)
-const circleRemoveRow = ref<HilosBackupCircleRow | null>(null)
-const circleRemoveAction = useTrackedAction()
-const {
-  loading: circleRemoveLoading,
-  busy: circleRemoveBusy,
-  run: runCircleRemoveAction,
-  clearError: clearCircleRemoveError,
-} = circleRemoveAction
-
-function openCircleRemove(row: HilosBackupCircleRow): void {
-  clearCircleRemoveError()
-  circleRemoveRow.value = row
-  circleRemoveOpen.value = true
-}
-
-function closeCircleRemove(): void {
-  circleRemoveOpen.value = false
-}
-
-async function submitCircleRemove(): Promise<void> {
-  const row = circleRemoveRow.value
-  if (!row || circleRemoveBusy.value) {
-    return
-  }
-  if (await runCircleRemoveAction(sendBackupCircleRemove(row.memberId))) {
-    closeCircleRemove()
-  }
-}
-
 // CLI instruction dialog: what the production surface offers instead of a button.
 const cliOpen = ref(false)
 const cliRow = ref<HilosBackupRow | null>(null)
@@ -539,65 +453,24 @@ function openOutcome(row: HilosBackupRow): void {
       </button>
     </div>
 
-    <div class="card mb-3" data-id="hilos-backup-circle-panel">
-      <div class="card-body">
-        <div class="d-flex align-items-start justify-content-between gap-2">
-          <div>
-            <div class="fw-semibold">{{ HILOS_BACKUP_CIRCLE_COPY.title }}</div>
-            <div class="small text-body-secondary">
-              {{ HILOS_BACKUP_CIRCLE_COPY.rule }}
-            </div>
-            <div class="small text-body-secondary">
-              {{ HILOS_BACKUP_CIRCLE_COPY.volatile }}
-            </div>
+    <div class="card mb-3" data-id="hilos-backup-circle-pointer">
+      <div class="card-body d-flex flex-wrap align-items-start gap-3">
+        <i class="bi bi-people fs-3 text-body-secondary" aria-hidden="true"></i>
+        <div class="flex-grow-1">
+          <div class="fw-semibold">
+            {{ HILOS_BACKUP_CIRCLE_POINTER_COPY.title }}
           </div>
-          <button
-            type="button"
-            class="btn btn-outline-primary btn-sm text-nowrap"
-            data-id="hilos-backup-circle-add"
-            @click="openCircleAdd"
-          >
-            {{ HILOS_BACKUP_CIRCLE_COPY.addButton }}
-          </button>
+          <div class="small text-body-secondary">
+            {{ HILOS_BACKUP_CIRCLE_POINTER_COPY.body }}
+          </div>
         </div>
-        <div class="mt-3">
-          <HilosViewportTable
-            data-id="hilos-backup-circle-table"
-            :label="HILOS_BACKUP_CIRCLE_COPY.title"
-            :controller="circleTable"
-            :columns="circleColumns"
-            :empty-text="HILOS_BACKUP_CIRCLE_COPY.empty"
-          >
-            <template #row="{ row }">
-              <td :data-id="`hilos-backup-circle-row-${row.identifier}`">
-                {{ row.identifier }}
-              </td>
-              <td>
-                <span
-                  :class="row.online ? 'text-success' : 'text-body-secondary'"
-                  :data-id="`hilos-backup-circle-online-${row.identifier}`"
-                  >{{
-                    row.online
-                      ? HILOS_BACKUP_CIRCLE_COPY.online
-                      : HILOS_BACKUP_CIRCLE_COPY.offline
-                  }}</span
-                >
-              </td>
-              <td class="text-end">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  :title="HILOS_BACKUP_CIRCLE_COPY.removeTitle"
-                  :aria-label="HILOS_BACKUP_CIRCLE_COPY.removeTitle"
-                  :data-id="`hilos-backup-circle-remove-${row.identifier}`"
-                  @click="openCircleRemove(row)"
-                >
-                  <i class="bi bi-trash" aria-hidden="true"></i>
-                </button>
-              </td>
-            </template>
-          </HilosViewportTable>
-        </div>
+        <HilosLink
+          :to="HILOS_BACKUP_CIRCLE_POINTER_PATH"
+          class="btn btn-outline-primary btn-sm text-nowrap"
+          data-id="hilos-backup-circle-pointer-open"
+          >{{ HILOS_BACKUP_CIRCLE_POINTER_COPY.open
+          }}<i class="bi bi-box-arrow-up-right ms-1" aria-hidden="true"></i
+        ></HilosLink>
       </div>
     </div>
 
@@ -1054,89 +927,6 @@ function openOutcome(row: HilosBackupRow): void {
         <button type="button" class="btn btn-secondary" @click="requestClose">
           Close
         </button>
-      </template>
-    </HilosModal>
-
-    <HilosModal
-      v-model="circleAddOpen"
-      :title="HILOS_BACKUP_CIRCLE_COPY.addTitle"
-      :close-on-backdrop="!circleAddBusy"
-      :close-on-esc="!circleAddBusy"
-      @cancel="closeCircleAdd"
-    >
-      <HilosActionError
-        :action="circleAddAction"
-        :details-title="HILOS_BACKUP_CIRCLE_COPY.addRefusalTitle"
-      />
-      <label class="form-label" for="hilos-backup-circle-add-field">
-        {{ HILOS_BACKUP_CIRCLE_COPY.addField }}
-      </label>
-      <input
-        id="hilos-backup-circle-add-field"
-        v-model="circleAddIdentifier"
-        type="text"
-        class="form-control"
-        autocomplete="off"
-        :disabled="circleAddBusy"
-        data-id="hilos-backup-circle-add-field"
-        data-autofocus
-      />
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="circleAddBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="circleAddLoading"
-          :disabled="circleAddIdentifier.trim() === ''"
-          data-id="hilos-backup-circle-add-confirm"
-          @click="submitCircleAdd"
-        >
-          Add
-        </LoadingButton>
-      </template>
-    </HilosModal>
-
-    <HilosModal
-      v-model="circleRemoveOpen"
-      :title="HILOS_BACKUP_CIRCLE_COPY.removeTitle"
-      :close-on-backdrop="!circleRemoveBusy"
-      :close-on-esc="!circleRemoveBusy"
-      initial-focus="dialog"
-      @cancel="closeCircleRemove"
-    >
-      <HilosActionError
-        :action="circleRemoveAction"
-        :details-title="HILOS_BACKUP_CIRCLE_COPY.removeRefusalTitle"
-      />
-      <p class="mb-0 text-body-secondary">
-        {{ HILOS_BACKUP_CIRCLE_COPY.removeBody }}
-      </p>
-      <p v-if="circleRemoveRow" class="mb-0 mt-2">
-        <code>{{ circleRemoveRow.identifier }}</code>
-      </p>
-      <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="circleRemoveBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-danger"
-          :loading="circleRemoveLoading"
-          data-id="hilos-backup-circle-remove-confirm"
-          @click="submitCircleRemove"
-        >
-          Remove
-        </LoadingButton>
       </template>
     </HilosModal>
 

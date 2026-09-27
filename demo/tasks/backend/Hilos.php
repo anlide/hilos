@@ -315,7 +315,6 @@ final class Hilos extends HilosFacade
         ],
         BackupPage::PAGE => [
             TasksTableContext::hilosBackups => [],
-            TasksTableContext::hilosVerifierCircle => [],
         ],
         MaintenancePage::PAGE => [
             TasksTableContext::hilosVerifierCircle => [],

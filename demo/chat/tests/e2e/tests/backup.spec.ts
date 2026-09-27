@@ -289,6 +289,16 @@ test('opens the refused backup page the moment admin is granted', async ({
   await expect(page.getByTestId('hilos-table-main-action')).toBeVisible()
 })
 
+test('points to the verifier circle in Maintenance', async ({ page }) => {
+  await openBackups(page)
+  await expect(page.getByTestId('hilos-backup-circle-panel')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-backup-circle-pointer')).toBeVisible()
+
+  await page.getByTestId('hilos-backup-circle-pointer-open').click()
+  await expect(page).toHaveURL(/\/hilos\/maintenance$/)
+  await expect(page.getByTestId('hilos-maintenance-circle-panel')).toBeVisible()
+})
+
 test('creates a backup, shows it as a completed row, and deletes it', async ({
   page,
 }) => {

@@ -179,8 +179,8 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      * The membership goes by its key, not by the address printed beside it: the key names the
      * row the operator looked at, whatever the screen happened to display.
      *
-     * A key that names no row is refused, and that differs from the backup page on purpose
-     * (AbstractHilosBackupPage::handleCircleRemove() answers it with a silent success, HIL-643).
+     * A key that names no row is refused rather than answered with a silent success,
+     * which is what the backup page's block did until it left (HIL-643, HIL-1122).
      * The key is gone because somebody else took the membership out, or took it out and named the
      * same address again under a new key. A success would credit this operator with another's
      * work, and in the second case would call removed an address that stands in the circle. The

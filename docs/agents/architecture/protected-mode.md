@@ -433,7 +433,7 @@ no fourth way in.
 asked for the freeze, a verifier by producing a code. The circle is decided
 before the door exists: an operator names people to the circle and takes them
 out in the Maintenance section of the admin surface (`hilos_maintenance`) — the
-backup page only points there (not in the code yet — HIL-1122) — and at the
+backup page only points there — and at the
 moment the node freezes
 `VerifierCircleSnapshot::capture()` reads that list against the live connections
 and writes the session hashes of the members who were online onto the row.
@@ -451,10 +451,10 @@ gives a table one row mutation — the other catches up on the next draw), and
 signing out without closing the tab leaves the mark on until the tab closes,
 because the change carries only the new, empty binding and cannot name who left.
 The section refuses a second address of a person already standing in the
-circle (HIL-1120), so two rows of one person are left only two ways: two admin
+circle (HIL-1120), so two new rows of one person can now come from two admin
 tabs naming one person by two addresses in the same second, both past the
-read the refusal is decided by, and the backup page's own block while it lives
-(HIL-1122), which does not refuse it — for those rows the first limit holds.
+read the refusal is decided by. Rows named through the backup page block before
+it left (HIL-1122) may also remain — for all of these rows the first limit holds.
 No index closes the race: the circle stores no user id, because after a
 restore that id would name somebody else.
 

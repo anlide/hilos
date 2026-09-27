@@ -28,8 +28,8 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
  * Integration coverage for taking a verifier out from the maintenance section (HIL-1121).
  *
  * The action goes by the membership key the table handed out, and a key that names no row any
- * more is refused rather than answered with a silent success - the one place the section parts
- * with the backup page's remove. So the page is asked with a real database, and each case asserts
+ * more is refused rather than answered with a silent success. So the page is asked with a real
+ * database, and each case asserts
  * the rows the circle holds afterwards and the sentence the screen is handed - the success ack or
  * the refusal.
  */

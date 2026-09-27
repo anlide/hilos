@@ -13,7 +13,8 @@
 // is frozen and the table sends nothing. Once it ends, the node stands in a
 // verification window, and the one browser that started the restore is offered the
 // block that closes it — the backend answers that personally in the page-data section,
-// so a second admin looking at the same page sees nothing. All table logic, the row
+// so a second admin looking at the same page sees nothing. A pointer leads to the
+// verifier circle in Maintenance. All table logic, the row
 // view-model, and what the backup list declares about its frame — its search, the
 // scope and period filters, the create button as its main action, its columns — are
 // the core headless's too; this view owns only the markup (and the create dialog
@@ -21,14 +22,13 @@
 // Bootstrap classes only (styling-rules.md).
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  HILOS_BACKUP_CIRCLE_COPY,
+  HILOS_BACKUP_CIRCLE_POINTER_COPY,
+  HILOS_BACKUP_CIRCLE_POINTER_PATH,
   HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   BACKUP_CHECKSUM_STATE_FIELD,
-  BACKUP_CIRCLE_IDENTIFIER_FIELD,
-  BACKUP_CIRCLE_ONLINE_FIELD,
   BACKUP_CREATED_AT_FIELD,
   BACKUP_DURATION_SECONDS_FIELD,
   BACKUP_ENV_FIELD,
@@ -43,7 +43,6 @@ import {
   backupProgressPercent,
   createBackupProgressClock,
   createHilosBackupsActions,
-  createHilosBackupsCircleTable,
   createHilosBackupsReopenGate,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
@@ -70,15 +69,14 @@ import {
   offersBackupRestore,
 } from '@hilos/core'
 import type {
-  HilosBackupCircleRow,
   HilosBackupRow,
   HilosBackupsContext,
   HilosProgressAnchors,
-  HilosTableColumnOf,
 } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
@@ -92,18 +90,6 @@ export interface HilosBackupPageProps {
   /** The project context: scope stores, the connection, and the action lifecycle. */
   context: HilosBackupsContext
 }
-
-const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
-  { key: BACKUP_CIRCLE_IDENTIFIER_FIELD, label: 'Address', sortable: true },
-  { key: BACKUP_CIRCLE_ONLINE_FIELD, label: 'Signed in' },
-  {
-    key: 'actions',
-    label: '',
-    headerClass: 'text-end',
-    // The remove button and its confirmation name the address.
-    reads: [BACKUP_CIRCLE_IDENTIFIER_FIELD],
-  },
-]
 
 /**
  * The progress bar of a running restore: a determinate bar once the run can be
@@ -203,12 +189,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     () => createHilosBackupsTable(context, { openCreate }),
     [context, openCreate],
   )
-  // The page's second table, on the same page scope under its own key: who the operator
-  // named to check the system after a restore.
-  const circle = useMemo(
-    () => createHilosBackupsCircleTable(context),
-    [context],
-  )
   const actions = useMemo(() => createHilosBackupsActions(context), [context])
   const restoreProgress = useMemo(
     () => createHilosRestoreProgress(context.connection),
@@ -238,16 +218,14 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
   // connection and start arriving the moment it asks for a run.
   useEffect(() => {
     backups.start()
-    circle.start()
     restoreProgress.start()
 
     return () => {
       backups.dispose()
-      circle.dispose()
       restoreProgress.dispose()
       progressClock.dispose()
     }
-  }, [backups, circle, restoreProgress, progressClock])
+  }, [backups, restoreProgress, progressClock])
 
   function closeCreate(): void {
     setCreateOpen(false)
@@ -428,60 +406,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       : null
   }
 
-  // Circle dialogs. Adding takes one field and removing takes a confirmation, because the
-  // two mistakes are different: a mistyped address is refused by the server and costs a
-  // second try, while a removal is silent and only noticed after the next restore.
-  const [circleAddOpen, setCircleAddOpen] = useState(false)
-  const [circleAddIdentifier, setCircleAddIdentifier] = useState('')
-  const circleAdd = useTrackedAction()
-
-  function openCircleAdd(): void {
-    circleAdd.clearError()
-    setCircleAddIdentifier('')
-    setCircleAddOpen(true)
-  }
-
-  function closeCircleAdd(): void {
-    setCircleAddOpen(false)
-  }
-
-  async function submitCircleAdd(): Promise<void> {
-    if (circleAdd.busy || circleAddIdentifier.trim() === '') {
-      return
-    }
-    if (await circleAdd.run(actions.sendBackupCircleAdd(circleAddIdentifier))) {
-      closeCircleAdd()
-    }
-  }
-
-  const [circleRemoveOpen, setCircleRemoveOpen] = useState(false)
-  const [circleRemoveRow, setCircleRemoveRow] =
-    useState<HilosBackupCircleRow | null>(null)
-  const circleRemove = useTrackedAction()
-
-  function openCircleRemove(row: HilosBackupCircleRow): void {
-    circleRemove.clearError()
-    setCircleRemoveRow(row)
-    setCircleRemoveOpen(true)
-  }
-
-  function closeCircleRemove(): void {
-    setCircleRemoveOpen(false)
-  }
-
-  async function submitCircleRemove(): Promise<void> {
-    if (!circleRemoveRow || circleRemove.busy) {
-      return
-    }
-    if (
-      await circleRemove.run(
-        actions.sendBackupCircleRemove(circleRemoveRow.memberId),
-      )
-    ) {
-      closeCircleRemove()
-    }
-  }
-
   // CLI instruction dialog: what the production surface offers instead of a button.
   const [cliOpen, setCliOpen] = useState(false)
   const [cliRow, setCliRow] = useState<HilosBackupRow | null>(null)
@@ -570,69 +494,28 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         </div>
       ) : null}
 
-      <div className="card mb-3" data-id="hilos-backup-circle-panel">
-        <div className="card-body">
-          <div className="d-flex align-items-start justify-content-between gap-2">
-            <div>
-              <div className="fw-semibold">
-                {HILOS_BACKUP_CIRCLE_COPY.title}
-              </div>
-              <div className="small text-body-secondary">
-                {HILOS_BACKUP_CIRCLE_COPY.rule}
-              </div>
-              <div className="small text-body-secondary">
-                {HILOS_BACKUP_CIRCLE_COPY.volatile}
-              </div>
+      <div className="card mb-3" data-id="hilos-backup-circle-pointer">
+        <div className="card-body d-flex flex-wrap align-items-start gap-3">
+          <i
+            className="bi bi-people fs-3 text-body-secondary"
+            aria-hidden="true"
+          />
+          <div className="flex-grow-1">
+            <div className="fw-semibold">
+              {HILOS_BACKUP_CIRCLE_POINTER_COPY.title}
             </div>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm text-nowrap"
-              data-id="hilos-backup-circle-add"
-              onClick={openCircleAdd}
-            >
-              {HILOS_BACKUP_CIRCLE_COPY.addButton}
-            </button>
+            <div className="small text-body-secondary">
+              {HILOS_BACKUP_CIRCLE_POINTER_COPY.body}
+            </div>
           </div>
-          <div className="mt-3">
-            <HilosViewportTable
-              dataId="hilos-backup-circle-table"
-              label={HILOS_BACKUP_CIRCLE_COPY.title}
-              controller={circle.controller}
-              columns={CIRCLE_COLUMNS}
-              emptyText={HILOS_BACKUP_CIRCLE_COPY.empty}
-              row={(row) => (
-                <>
-                  <td data-id={`hilos-backup-circle-row-${row.identifier}`}>
-                    {row.identifier}
-                  </td>
-                  <td>
-                    <span
-                      className={
-                        row.online ? 'text-success' : 'text-body-secondary'
-                      }
-                      data-id={`hilos-backup-circle-online-${row.identifier}`}
-                    >
-                      {row.online
-                        ? HILOS_BACKUP_CIRCLE_COPY.online
-                        : HILOS_BACKUP_CIRCLE_COPY.offline}
-                    </span>
-                  </td>
-                  <td className="text-end">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-danger"
-                      title={HILOS_BACKUP_CIRCLE_COPY.removeTitle}
-                      aria-label={HILOS_BACKUP_CIRCLE_COPY.removeTitle}
-                      data-id={`hilos-backup-circle-remove-${row.identifier}`}
-                      onClick={() => openCircleRemove(row)}
-                    >
-                      <i className="bi bi-trash" aria-hidden="true" />
-                    </button>
-                  </td>
-                </>
-              )}
-            />
-          </div>
+          <HilosLink
+            to={HILOS_BACKUP_CIRCLE_POINTER_PATH}
+            className="btn btn-outline-primary btn-sm text-nowrap"
+            data-id="hilos-backup-circle-pointer-open"
+          >
+            {HILOS_BACKUP_CIRCLE_POINTER_COPY.open}
+            <i className="bi bi-box-arrow-up-right ms-1" aria-hidden="true" />
+          </HilosLink>
         </div>
       </div>
 
@@ -1157,96 +1040,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           text={outcomeRow?.restoreFailureReason || 'No failure recorded.'}
           dataId="hilos-backup-restore-outcome-text"
         />
-      </HilosModal>
-
-      <HilosModal
-        open={circleAddOpen}
-        title={HILOS_BACKUP_CIRCLE_COPY.addTitle}
-        closeOnBackdrop={!circleAdd.busy}
-        closeOnEsc={!circleAdd.busy}
-        onClose={closeCircleAdd}
-        actions={({ requestClose }) => (
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={circleAdd.busy}
-              onClick={requestClose}
-            >
-              Cancel
-            </button>
-            <LoadingButton
-              className="btn-primary"
-              loading={circleAdd.loading}
-              disabled={circleAddIdentifier.trim() === ''}
-              data-id="hilos-backup-circle-add-confirm"
-              onClick={() => void submitCircleAdd()}
-            >
-              Add
-            </LoadingButton>
-          </>
-        )}
-      >
-        <HilosActionError
-          action={circleAdd}
-          detailsTitle={HILOS_BACKUP_CIRCLE_COPY.addRefusalTitle}
-        />
-        <label className="form-label" htmlFor="hilos-backup-circle-add-field">
-          {HILOS_BACKUP_CIRCLE_COPY.addField}
-        </label>
-        <input
-          id="hilos-backup-circle-add-field"
-          type="text"
-          className="form-control"
-          autoComplete="off"
-          disabled={circleAdd.busy}
-          data-id="hilos-backup-circle-add-field"
-          data-autofocus
-          value={circleAddIdentifier}
-          onChange={(event) => setCircleAddIdentifier(event.target.value)}
-        />
-      </HilosModal>
-
-      <HilosModal
-        open={circleRemoveOpen}
-        title={HILOS_BACKUP_CIRCLE_COPY.removeTitle}
-        closeOnBackdrop={!circleRemove.busy}
-        closeOnEsc={!circleRemove.busy}
-        initialFocus="dialog"
-        onClose={closeCircleRemove}
-        actions={({ requestClose }) => (
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={circleRemove.busy}
-              onClick={requestClose}
-            >
-              Cancel
-            </button>
-            <LoadingButton
-              className="btn-danger"
-              loading={circleRemove.loading}
-              data-id="hilos-backup-circle-remove-confirm"
-              onClick={() => void submitCircleRemove()}
-            >
-              Remove
-            </LoadingButton>
-          </>
-        )}
-      >
-        <HilosActionError
-          action={circleRemove}
-          detailsTitle={HILOS_BACKUP_CIRCLE_COPY.removeRefusalTitle}
-        />
-        <p className="mb-0 text-body-secondary">
-          {HILOS_BACKUP_CIRCLE_COPY.removeBody}
-        </p>
-        {circleRemoveRow ? (
-          <p className="mb-0 mt-2">
-            <code>{circleRemoveRow.identifier}</code>
-          </p>
-        ) : null}
       </HilosModal>
 
       <HilosModal

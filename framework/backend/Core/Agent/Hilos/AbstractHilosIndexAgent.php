@@ -47,8 +47,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * other process reads them process-wide ({@see HilosDbContext::processWideReadCollections()}).
      *
      * The circle is written by the actions of the pages this agent serves too - a person is named
-     * and taken out in the maintenance section (HIL-1120, HIL-1121), and the circle block the
-     * backup page still carries does the same while it lives (HIL-1122) - and it is claimed here
+     * and taken out in the maintenance section (HIL-1120, HIL-1121) - and it is claimed here
      * rather than by each project because its table is in every installation that can freeze (HIL-1118):
      * a project that builds a runtime context is refused by its own unit test without the
      * migration, so there is nothing left to ask it before the claim is legal.
