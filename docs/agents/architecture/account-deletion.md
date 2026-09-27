@@ -73,9 +73,10 @@ transaction:
 Any failure rolls all of it back; the request stays live and due, and the next
 minute tries again. Half an erased account never exists.
 
-Tests can bring a request due with `test:account:force-purge <userId>`: the session
-holder moves its moment to now and erases it through this path, returning the
-project's tally. A failed erasure leaves the request due for the next sweep.
+Tests can bring a request due with `test:account:force-purge <userId>`: the
+session holder moves its moment to now and erases it through this path,
+returning the project's tally. A failed erasure leaves the request due for the
+next sweep.
 
 After the commit, outside the transaction: every session the person stands in
 is signed out — signed in as them, taking over somebody else's account, or
@@ -88,15 +89,16 @@ here because the notification feature is not mounted everywhere; a lost frame
 leaves rows of nobody. A failure after the commit is logged and not retried: the
 request is carried out, and no sweep comes back for it.
 
-`DataExportNotifier::forgetUser()` also queues `hilos_data_export_forget_user` to
-the export owner after the commit, removing the person's prepared copy. A builder
-checks the retained completed-erasure row before publishing; see
+`DataExportNotifier::forgetUser()` also queues `hilos_data_export_forget_user`
+to the export owner after the commit, removing the person's prepared copy. A
+builder checks the retained completed-erasure row before publishing; see
 [data-export.md](data-export.md).
 
 ## The Project's Seam
 
-`assertAdministratorMayDelete()` judges the admin card's target before scheduling:
-refuse an administrator and, where accounts merge, a merged account. Its default refuses.
+`assertAdministratorMayDelete()` judges the admin card's target before
+scheduling: refuse an administrator and, where accounts merge, a merged account.
+Its default refuses.
 
 `applyAccountErasure()` refuses by default (`NotImplementedException`), like the
 merge's seams: a project that forgot to erase its rows hears it when the first
