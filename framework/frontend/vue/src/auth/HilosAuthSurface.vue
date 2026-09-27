@@ -20,6 +20,7 @@ settings without touching this file.
 The password screen of a registration offers a passkey ending the mockup does
 not draw yet (HIL-1104): its place and its words are the owner's decision, kept
 in design debt D-132 until the mockup catches up.
+The empty-field passkey entry and the registered copy follow D-136 (HIL-1106).
 
 Bootstrap classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
@@ -52,6 +53,7 @@ import {
   formatCountdown,
   hilosCodeSendProgress,
   isPasskeySupported,
+  isPlatformPasskeyAvailable,
   MAGIC_LINK_FLOW_METHOD,
   oauthTrip,
   oauthTripMessage,
@@ -61,6 +63,7 @@ import {
   PASSWORD_MIN_LENGTH,
   sessionAuthMethods,
   sessionCodeDelivery,
+  sessionPasskeyAllowsUnproven,
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionSecondFactorPolicy,
@@ -332,6 +335,11 @@ const error = useSignal(auth.error)
 const submittable = useSignal(auth.submittable)
 const canFinishWithoutPassword = useSignal(auth.canFinishWithoutPassword)
 const canFinishWithPasskey = useSignal(auth.canFinishWithPasskey)
+const canCreateWithPasskey = useSignal(auth.canCreateWithPasskey)
+const passkeyAllowsUnproven = useSignal(
+  sessionPasskeyAllowsUnproven(context.scopes),
+)
+const platformPasskey = ref(false)
 const icons = useSignal(auth.icons)
 const methods = useSignal(auth.methods)
 const channels = useSignal(auth.channels)
@@ -423,6 +431,12 @@ const showFinishWithoutPassword = computed(
 // account has its confirmed address, so a phone or a security key serves too.
 const showFinishWithPasskey = computed(
   () => canFinishWithPasskey.value && isPasskeySupported(),
+)
+const showCreateWithPasskey = computed(
+  () =>
+    canCreateWithPasskey.value &&
+    passkeyAllowsUnproven.value &&
+    platformPasskey.value,
 )
 
 // The password screen says which of its endings this is. A recovery is
@@ -1243,8 +1257,13 @@ let stopWatchingConverge: (() => void) | null = null
 let stopWatchingHandshake: (() => void) | null = null
 let stopWatchingTrip: (() => void) | null = null
 let clock: ReturnType<typeof setInterval> | null = null
+let mounted = false
 
 onMounted(() => {
+  mounted = true
+  void isPlatformPasskeyAvailable().then((available) => {
+    if (mounted) platformPasskey.value = available
+  })
   // Start every mount clean: the surface may be re-shown for a new gated action.
   auth.reset()
   // Except for what the server is still saying (HIL-826): the reset empties the
@@ -1327,6 +1346,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  mounted = false
   stopWatchingChannels?.()
   stopWatchingChannels = null
   stopWatchingConverge?.()
@@ -1604,6 +1624,16 @@ onUnmounted(() => {
                 <i :class="methodIcon(method.key)" aria-hidden="true" />
               </LoadingButton>
             </div>
+            <button
+              v-if="showCreateWithPasskey"
+              type="button"
+              class="btn btn-link btn-sm w-100 mt-2"
+              data-id="auth-create-passkey"
+              :disabled="pending"
+              @click="auth.createWithPasskey()"
+            >
+              Create an account with a passkey
+            </button>
             <div class="d-flex align-items-center gap-2 my-3">
               <hr class="flex-grow-1 my-0" />
               <span class="small text-body-secondary">or</span>
@@ -1863,6 +1893,7 @@ onUnmounted(() => {
               class="form-check-input"
               type="checkbox"
               data-id="auth-consent-accept"
+              :disabled="pending"
               :checked="form.consentAccepted"
               @change="updateConsent($event)"
             />
@@ -2694,7 +2725,7 @@ onUnmounted(() => {
             />
             <p class="text-body-secondary small mb-4">
               <template v-if="screenKey === 'done_registered'">
-                Your address is confirmed and you are signed in.
+                You are signed in.
               </template>
               <template v-else-if="screenKey === 'done_password_changed'">
                 Your new password is saved. Codes left on other devices no

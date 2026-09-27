@@ -687,6 +687,7 @@ export {
   createPasskey,
   getPasskey,
   isPasskeySupported,
+  isPlatformPasskeyAvailable,
   base64UrlEncode,
   base64UrlDecode,
   type PasskeyDescriptor,

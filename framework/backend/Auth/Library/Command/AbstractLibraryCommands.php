@@ -362,12 +362,8 @@ abstract class AbstractLibraryCommands
     /**
      * Mints an account that holds no address at all, with the way in the caller writes (HIL-1104).
      *
-     * The ending of the passkey door's road without a code. Nobody proved the typed address,
-     * and the owner decided on 26.09.2026 that it is NOT stored: an unproven address is read by
-     * nothing - letters, recovery and step-up all go to a confirmed one only - and since an
-     * identity's (type, identifier) pair is unique, storing it would let anybody take a stranger's
-     * address, whose owner would later hear "this address is taken" when registering it. The
-     * typed address only labeled the key in the device prompt and named the account.
+     * The ending of the passkey door's road without a code. This road asks for no address;
+     * the caller supplies the generated account name and the identifier of its way in.
      *
      * So this is {@see landRegistration()} without the address. The mint and the way in go in ONE
      * transaction for the same reason the landing's do: an account without its key is an account
@@ -377,11 +373,10 @@ abstract class AbstractLibraryCommands
      * browser is no longer running.
      *
      * The sign-in is a grant rather than a landing: there is no address for the holder to settle
-     * and no loser to tell. It carries the same mark and the same answer the landing carries, so
-     * the surface ends on the same "account created" screen.
+     * and no loser to tell. It carries the same registered mark and done outcome as the landing.
      *
      * @param ActingSession $acting Browser that asked for the account
-     * @param string $identifier Normalized identifier that was typed, handed to the project's new-member bookkeeping
+     * @param string $identifier Sign-in method identifier, handed to the project's new-member bookkeeping
      * @param string $displayName Name the new account is created with
      * @param Closure(int): void $withAccount The way in the new account is written with, given its user id
      * @throws EmptyValueException When the display name is empty

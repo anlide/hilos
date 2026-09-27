@@ -126,13 +126,6 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
     public function testThePasskeyPolicySwitchWritesTheSetting(): void
     {
         $this->withSettingsWriter(function (): void {
-            $this->assertFalse(PasskeyAddressPolicy::allowsUnproven());
-
-            $this->assertNull($this->dispatch(
-                'passkey-policy-ak',
-                HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET,
-                new HilosPasskeyUnprovenSetActionDTO(true),
-            ));
             $this->assertTrue(PasskeyAddressPolicy::allowsUnproven());
 
             $this->assertNull($this->dispatch(
@@ -141,6 +134,13 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
                 new HilosPasskeyUnprovenSetActionDTO(false),
             ));
             $this->assertFalse(PasskeyAddressPolicy::allowsUnproven());
+
+            $this->assertNull($this->dispatch(
+                'passkey-policy-ak',
+                HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET,
+                new HilosPasskeyUnprovenSetActionDTO(true),
+            ));
+            $this->assertTrue(PasskeyAddressPolicy::allowsUnproven());
         });
     }
 

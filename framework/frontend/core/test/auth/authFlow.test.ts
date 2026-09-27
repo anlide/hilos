@@ -1395,12 +1395,13 @@ describe('the two return points and cancelMethod', () => {
 
   it('cancelMethod re-asks the lookup too — the ceremony left an old answer behind', async () => {
     let status: IdentifierDetection['status'] = 'none'
+    let settle: (outcome: AuthFlowSubmitOutcome) => void = () => undefined
     const onDetect = vi.fn(async (identifier: string) =>
       detected({
         identifier,
         status,
         methods: [],
-        registerable: ['passkey'],
+        registerable: [MAGIC_LINK_METHOD_KEY],
       }),
     )
     const flow = setup({
@@ -1408,18 +1409,22 @@ describe('the two return points and cancelMethod', () => {
       // The send the terms screen makes (HIL-417) is the very thing that
       // reserves the address, so the answer behind the field changes while the
       // person is parked on the ceremony.
-      onMethodAction: async () => {
+      onMethodAction: () => {
         status = 'pending'
 
-        return { ok: true }
+        return new Promise((resolve) => {
+          settle = resolve
+        })
       },
     })
     await typeAndDetect(flow, 'new@b.com')
-    await flow.chooseMethod('passkey')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
     flow.setField('consentAccepted', true)
-    await flow.submit()
-    expect(flow.flow.get().step).toBe('external')
+    const sending = flow.submit()
+    expect(flow.flow.get().step).toBe('consent')
     flow.cancelMethod()
+    settle({ ok: true })
+    await sending
     await settleRefresh()
     expect(onDetect).toHaveBeenCalledTimes(2)
     expect(flow.flow.get().step).toBe('identifier')
@@ -2998,5 +3003,165 @@ describe('the passkey ending of a registration (HIL-1104)', () => {
 
     expect(flow.flow.get().step).toBe('identifier')
     expect(flow.error.get()).toBeNull()
+  })
+})
+
+describe('a passkey account from an empty field (HIL-1106)', () => {
+  it('offers the entry only on an empty identifier step with live passkeys', () => {
+    const methods = enabledSet(['passkey'])
+    const flow = setup({ authMethods: methods })
+    expect(flow.canCreateWithPasskey.get()).toBe(true)
+    methods.set([])
+    expect(flow.canCreateWithPasskey.get()).toBe(false)
+    flow.createWithPasskey()
+    expect(flow.flow.get().step).toBe('identifier')
+    methods.set([{ key: 'passkey', name: null }])
+    flow.setField('identifier', 'a')
+    expect(flow.canCreateWithPasskey.get()).toBe(false)
+    flow.createWithPasskey()
+    expect(flow.flow.get().step).toBe('identifier')
+    flow.setField('identifier', '')
+    expect(flow.canCreateWithPasskey.get()).toBe(true)
+    flow.createWithPasskey()
+    expect(flow.canCreateWithPasskey.get()).toBe(false)
+  })
+
+  it('enters consent locally and returns to Sign in with the provider icons', () => {
+    const onSubmit = vi.fn<AuthFlowOptions['onSubmit']>()
+    const flow = setup({ onSubmit })
+    flow.createWithPasskey()
+    expect(flow.flow.get()).toMatchObject({
+      step: 'consent',
+      intent: 'register',
+      methodKey: 'passkey',
+    })
+    expect(onSubmit).not.toHaveBeenCalled()
+    flow.backToIdentifier()
+    expect(flow.screenKey.get()).toBe('sign_in')
+    expect(flow.flow.get().intent).toBe('login')
+    expect(flow.icons.get().map((method) => method.key)).toContain(
+      'oauth:github',
+    )
+  })
+
+  it('submits consent as an abortable account ceremony without parking on external', async () => {
+    const onSubmit = vi
+      .fn<AuthFlowOptions['onSubmit']>()
+      .mockResolvedValue({ ok: true })
+    const onMethodAction = vi.fn<AuthFlowOptions['onMethodAction']>()
+    const flow = setup({ onSubmit, onMethodAction })
+    flow.createWithPasskey()
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(onSubmit).toHaveBeenCalledWith(
+      'finish_with_passkey',
+      expect.objectContaining({ step: 'consent', intent: 'register' }),
+      expect.objectContaining({ identifier: '', consentAccepted: true }),
+      expect.any(AbortSignal),
+    )
+    expect(onMethodAction).not.toHaveBeenCalled()
+    expect(flow.flow.get().step).toBe('consent')
+  })
+
+  it.each(['back', 'cancel'] as const)(
+    'aborts through %s and drops a late account outcome',
+    async (action) => {
+      let received: AbortSignal | undefined
+      let settle: (outcome: AuthFlowSubmitOutcome) => void = () => undefined
+      const flow = setup({
+        onSubmit: (_action, _flow, _form, signal) => {
+          received = signal
+          return new Promise((resolve) => {
+            settle = resolve
+          })
+        },
+      })
+      flow.createWithPasskey()
+      flow.setField('consentAccepted', true)
+      const running = flow.submit()
+      expect(flow.pending.get()).toBe(true)
+      if (action === 'back') flow.backToIdentifier()
+      else flow.cancelMethod()
+      expect(received?.aborted).toBe(true)
+      expect(flow.pending.get()).toBe(false)
+      expect(flow.flow.get()).toMatchObject({
+        step: 'identifier',
+        intent: 'login',
+      })
+      settle({ ok: true, next: { step: 'done', intent: 'register' } })
+      await running
+      expect(flow.screenKey.get()).toBe('sign_in')
+    },
+  )
+
+  it('keeps the refusal on consent so the same submit can retry', async () => {
+    const onSubmit = vi
+      .fn<AuthFlowOptions['onSubmit']>()
+      .mockResolvedValueOnce({
+        ok: false,
+        message: 'The passkey request was canceled',
+      })
+      .mockResolvedValueOnce({ ok: true })
+    const flow = setup({ onSubmit })
+    flow.createWithPasskey()
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('consent')
+    expect(flow.error.get()?.message).toBe('The passkey request was canceled')
+    await flow.submit()
+    expect(onSubmit).toHaveBeenCalledTimes(2)
+    expect(flow.error.get()).toBeNull()
+  })
+
+  it('applies a disabled-policy refusal to the empty Sign in field', async () => {
+    const flow = setup({
+      onSubmit: async () => ({
+        ok: false,
+        code: 'passkey_address_unproven',
+        message: 'Confirm your address with a code first',
+        next: { step: 'identifier', intent: 'login' },
+      }),
+    })
+    flow.createWithPasskey()
+    await flow.submit()
+    expect(flow.screenKey.get()).toBe('sign_in')
+    expect(flow.error.get()?.code).toBe('passkey_address_unproven')
+    expect(flow.form.get().identifier).toBe('')
+    expect(flow.icons.get().map((method) => method.key)).toContain(
+      'oauth:github',
+    )
+  })
+
+  it('does not overwrite the registered mark when the action answers later', async () => {
+    let settle: (outcome: AuthFlowSubmitOutcome) => void = () => undefined
+    const flow = setup({
+      onSubmit: () =>
+        new Promise((resolve) => {
+          settle = resolve
+        }),
+    })
+    flow.createWithPasskey()
+    const running = flow.submit()
+    flow.applyExternal({ step: 'done', intent: 'register' })
+    settle({ ok: true })
+    await running
+    expect(flow.screenKey.get()).toBe('done_registered')
+  })
+
+  it('does not accept the entry while a submit is in flight', async () => {
+    let settle: (outcome: AuthFlowSubmitOutcome) => void = () => undefined
+    const flow = setup({
+      onSubmit: () =>
+        new Promise((resolve) => {
+          settle = resolve
+        }),
+    })
+    const running = flow.submit()
+    expect(flow.canCreateWithPasskey.get()).toBe(false)
+    flow.createWithPasskey()
+    expect(flow.flow.get().step).toBe('identifier')
+    settle({ ok: true })
+    await running
+    expect(flow.canCreateWithPasskey.get()).toBe(true)
   })
 })

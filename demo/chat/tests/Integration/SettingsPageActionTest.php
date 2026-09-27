@@ -327,7 +327,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertNull($this->submit(
                 'passkey-policy-changed-ak',
                 HilosSignalConstants::SETTING_ADD,
-                new HilosSettingAddActionDTO(PasskeyAddressPolicy::SETTING_KEY, true),
+                new HilosSettingAddActionDTO(PasskeyAddressPolicy::SETTING_KEY, false),
             ));
 
             $frames = $this->methodSetFrames();
@@ -335,7 +335,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
             $this->assertInstanceOf(WebSocketSignalData::class, $frames[0]->data);
             $this->assertInstanceOf(AuthMethodsSignalData::class, $frames[0]->data->data);
-            $this->assertTrue($frames[0]->data->data->passkeyAllowsUnproven);
+            $this->assertFalse($frames[0]->data->data->passkeyAllowsUnproven);
             $this->assertSame(EnabledAuthMethods::toWire(), $frames[0]->data->data->authMethods);
         }, [PasskeyAddressPolicy::SETTING_KEY]);
     }
@@ -351,7 +351,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->assertNull($this->submit(
                 'passkey-policy-unchanged-ak',
                 HilosSignalConstants::SETTING_ADD,
-                new HilosSettingAddActionDTO(PasskeyAddressPolicy::SETTING_KEY, false),
+                new HilosSettingAddActionDTO(PasskeyAddressPolicy::SETTING_KEY, true),
             ));
 
             $this->assertSame([], $this->methodSetFrames());

@@ -95,6 +95,7 @@ Keep these numbers stable: hand-overs refer to them.
 6. Windows or Mac, Chrome — "Sign in with a passkey" → use a phone → scan the QR with the iPhone → confirm on the phone: the sign-in completes on the computer.
 7. Sign-up — "Create it with a passkey" on "Choose a password" (HIL-1104): the OS window enrolls the key; the account exists and signs in by it.
 8. Step-up — an action that asks for confirmation, confirmed with the device key: the OS window appears and the action completes.
+9. Sign-up without an address — "Create an account with a passkey" on an empty field (HIL-1106), on a device with a platform key: the terms screen, then the OS window enrolls the key; the account is named User + six digits and signs in by the key. On a machine without a platform key the line is absent.
 
 ## Other surfaces — one line each until a change reaches them
 

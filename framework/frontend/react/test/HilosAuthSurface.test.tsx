@@ -2133,3 +2133,135 @@ describe('HilosAuthSurface offers the passkey ending of a registration (HIL-1104
     expect(byId('auth-complete-passkey-idle')).toBeNull()
   })
 })
+
+describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)', () => {
+  /** Install the browser half of the gate; each mount asks it once.
+   * @param available Whether the device offers a platform key.
+   */
+  function supportPlatformKey(available = true) {
+    const probe = vi.fn().mockResolvedValue(available)
+    ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      isUserVerifyingPlatformAuthenticatorAvailable: probe,
+    }
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: { create: vi.fn(), get: vi.fn() },
+    })
+    return probe
+  }
+
+  afterEach(() => {
+    cleanup()
+    delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+    delete (navigator as { credentials?: unknown }).credentials
+  })
+
+  it('waits for the device probe, enters consent, and leaves Back usable during the ceremony', async () => {
+    const probe = supportPlatformKey()
+    const { context, dispatched } = contextAnswering([])
+    context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    render(<HilosAuthSurface context={context} />)
+    expect(byId('auth-create-passkey')).toBeNull()
+    await flush()
+    expect(byId('auth-create-passkey')?.textContent).toBe(
+      'Create an account with a passkey',
+    )
+    fireEvent.click(byId('auth-create-passkey')!)
+    expect(document.body.textContent).toContain('Terms and privacy')
+    expect(dispatched).toEqual([])
+    fireEvent.click(byId('auth-consent-accept')!)
+    fireEvent.submit(byId('auth-submit')!.closest('form')!)
+    await flush()
+    expect(dispatched[0]?.payload).toEqual({})
+    expect((byId('auth-consent-accept') as HTMLInputElement).disabled).toBe(
+      true,
+    )
+    expect((byId('auth-restart') as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(byId('auth-restart')!)
+    await flush()
+    expect(byId('auth-identifier')).not.toBeNull()
+    expect(probe).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    {
+      reason: 'method absent',
+      methods: ['password'],
+      allowed: true,
+      platform: true,
+    },
+    {
+      reason: 'policy off',
+      methods: ['passkey'],
+      allowed: false,
+      platform: true,
+    },
+    {
+      reason: 'no platform key',
+      methods: ['passkey'],
+      allowed: true,
+      platform: false,
+    },
+  ])('hides the entry when $reason', async ({ methods, allowed, platform }) => {
+    supportPlatformKey(platform)
+    const { context } = contextAnswering([])
+    context.scopes.session.data.set(
+      'authMethods',
+      methods.map((key) => ({ key, name: null })),
+    )
+    context.scopes.session.data.set('passkeyAllowsUnproven', allowed)
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+    expect(byId('auth-create-passkey')).toBeNull()
+  })
+
+  it('follows the policy and the field without mounting or probing again', async () => {
+    const probe = supportPlatformKey()
+    const { context } = contextAnswering([])
+    context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+    expect(byId('auth-create-passkey')).toBeNull()
+    act(() => {
+      context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    })
+    expect(byId('auth-create-passkey')).not.toBeNull()
+    type('auth-identifier', 'a')
+    expect(byId('auth-create-passkey')).toBeNull()
+    type('auth-identifier', '')
+    expect(byId('auth-create-passkey')).not.toBeNull()
+    act(() => {
+      context.scopes.session.data.set('passkeyAllowsUnproven', false)
+    })
+    expect(byId('auth-create-passkey')).toBeNull()
+    expect(probe).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the entry absent when the browser probe rejects', async () => {
+    supportPlatformKey().mockRejectedValue(new Error('unavailable'))
+    const { context } = contextAnswering([])
+    context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+    expect(byId('auth-create-passkey')).toBeNull()
+  })
+
+  it('announces registration without claiming an address was confirmed', async () => {
+    const { context } = contextAnswering([])
+    context.scopes.session.data.set(PENDING_ACK_SLOT, SESSION_ACK_REGISTERED)
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+    expect(document.body.textContent).toContain('You are signed in.')
+    expect(document.body.textContent).not.toContain(
+      'Your address is confirmed and you are signed in.',
+    )
+  })
+})

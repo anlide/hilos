@@ -12,11 +12,8 @@ use Hilos\Utils\Logger;
 /**
  * PasskeyAddressPolicy - whether a passkey may be the only way into an account whose address is unproven (HIL-1105).
  *
- * One setting, yes or no, off by default: may a new account start with nothing but a passkey,
- * before its address is confirmed. The address is the email or the phone typed on the sign-in
- * surface - one setting answers for both - and on this road it is NOT stored (owner's decision,
- * 26.09.2026, HIL-1104): it labels the key in the device prompt and names the account, and the
- * account starts without a confirmed address, holding the passkey alone.
+ * One setting, yes or no, off by default: may a new account start with nothing but a passkey.
+ * This road asks for no address (HIL-1106); a generated name labels both the account and its key.
  *
  * IT DECIDES THE CREATION OF AN ACCOUNT, AND NOTHING ELSE (owner's decision, 24.09.2026). Turning
  * it off stops new accounts only: an account already created without a confirmed address goes
@@ -25,8 +22,8 @@ use Hilos\Utils\Logger;
  * those people out for good.
  *
  * Its readers on the server are the two submits of the door that registers an account by
- * passkey (HIL-1104), each at the moment it finds this browser's proven reservation on the typed
- * address or its absence: a proven reservation passes always, none only while this answers true.
+ * passkey (HIL-1104), only on the road without an address. A present address always requires
+ * this browser's proven reservation on it, independently of the setting.
  * The value also reaches every open tab with the sign-in method set ({@see AuthMethodsSignalData}),
  * because the surfaces read the two together.
  *

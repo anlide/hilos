@@ -1393,3 +1393,155 @@ describe('HilosAuthSurface offers the passkey ending of a registration (HIL-1104
     expect(byId(fixture, 'auth-complete-passkey-idle')).toBeNull()
   })
 })
+
+describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)', () => {
+  /** Install the browser half of the gate; each mount asks it once.
+   * @param available Whether the device offers a platform key.
+   */
+  function supportPlatformKey(available = true) {
+    const probe = vi.fn().mockResolvedValue(available)
+    ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      isUserVerifyingPlatformAuthenticatorAvailable: probe,
+    }
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: { create: vi.fn(), get: vi.fn() },
+    })
+    return probe
+  }
+
+  afterEach(() => {
+    TestBed.resetTestingModule()
+    delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+    delete (navigator as { credentials?: unknown }).credentials
+  })
+
+  it('waits for the device probe, enters consent, and leaves Back usable during the ceremony', async () => {
+    const probe = supportPlatformKey()
+    const dispatched: Array<{
+      action: string
+      payload: Record<string, unknown>
+    }> = []
+    const world = magicLinkWorld(dispatched)
+    world.context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    world.context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    const fixture = mountSurface(world)
+    expect(byId(fixture, 'auth-create-passkey')).toBeNull()
+    await flush(fixture)
+    expect(byId(fixture, 'auth-create-passkey')?.textContent?.trim()).toBe(
+      'Create an account with a passkey',
+    )
+    byId(fixture, 'auth-create-passkey')!.click()
+    await flush(fixture)
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'Terms and privacy',
+    )
+    expect(dispatched).toEqual([])
+    const consent = byId(fixture, 'auth-consent-accept') as HTMLInputElement
+    consent.checked = true
+    consent.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush(fixture)
+    byId(fixture, 'auth-submit')!
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush(fixture)
+    expect(dispatched[0]?.payload).toEqual({})
+    expect(consent.disabled).toBe(true)
+    expect((byId(fixture, 'auth-restart') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    byId(fixture, 'auth-restart')!.click()
+    await flush(fixture)
+    expect(byId(fixture, 'auth-identifier')).not.toBeNull()
+    expect(probe).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    {
+      reason: 'method absent',
+      methods: ['password'],
+      allowed: true,
+      platform: true,
+    },
+    {
+      reason: 'policy off',
+      methods: ['passkey'],
+      allowed: false,
+      platform: true,
+    },
+    {
+      reason: 'no platform key',
+      methods: ['passkey'],
+      allowed: true,
+      platform: false,
+    },
+  ])('hides the entry when $reason', async ({ methods, allowed, platform }) => {
+    supportPlatformKey(platform)
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set(
+      'authMethods',
+      methods.map((key) => ({ key, name: null })),
+    )
+    world.context.scopes.session.data.set('passkeyAllowsUnproven', allowed)
+    const fixture = mountSurface(world)
+    await flush(fixture)
+    expect(byId(fixture, 'auth-create-passkey')).toBeNull()
+  })
+
+  it('follows the policy and the field without mounting or probing again', async () => {
+    const probe = supportPlatformKey()
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    const fixture = mountSurface(world)
+    await flush(fixture)
+    expect(byId(fixture, 'auth-create-passkey')).toBeNull()
+    world.context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    await flush(fixture)
+    expect(byId(fixture, 'auth-create-passkey')).not.toBeNull()
+    const field = byId(fixture, 'auth-identifier') as HTMLInputElement
+    field.value = 'a'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush(fixture)
+    expect(byId(fixture, 'auth-create-passkey')).toBeNull()
+    field.value = ''
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush(fixture)
+    expect(byId(fixture, 'auth-create-passkey')).not.toBeNull()
+    world.context.scopes.session.data.set('passkeyAllowsUnproven', false)
+    await flush(fixture)
+    expect(byId(fixture, 'auth-create-passkey')).toBeNull()
+    expect(probe).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the entry absent when the browser probe rejects', async () => {
+    supportPlatformKey().mockRejectedValue(new Error('unavailable'))
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    world.context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    const fixture = mountSurface(world)
+    await flush(fixture)
+    expect(byId(fixture, 'auth-create-passkey')).toBeNull()
+  })
+
+  it('announces registration without claiming an address was confirmed', async () => {
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set(
+      PENDING_ACK_SLOT,
+      SESSION_ACK_REGISTERED,
+    )
+    const fixture = mountSurface(world)
+    await flush(fixture)
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'You are signed in.',
+    )
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain(
+      'Your address is confirmed and you are signed in.',
+    )
+  })
+})

@@ -155,6 +155,18 @@ export function isPasskeySupported(): boolean {
   )
 }
 
+/** Whether this device offers a platform authenticator with user verification. */
+export async function isPlatformPasskeyAvailable(): Promise<boolean> {
+  if (!isPasskeySupported()) {
+    return false
+  }
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+  } catch {
+    return false
+  }
+}
+
 /**
  * Decode one wire descriptor to the native shape (its base64url id to an
  * ArrayBuffer), preserving the type and transports hint.

@@ -456,6 +456,8 @@ export type AuthFlowScreen =
  * way in, and letting the held sign-in go when the person steps back from it.
  * What a second-factor screen SENDS is its submit, told apart by the step like
  * every other screen's.
+ * `finish_with_passkey` also submits consent for an account without an address;
+ * the step distinguishes that road from the password screen's ending (HIL-1106).
  */
 export type AuthSubmitAction =
   | 'submit'
@@ -588,6 +590,12 @@ export interface AuthFlow {
    * this browser can run WebAuthn at all, which the view asks beside this signal.
    */
   readonly canFinishWithPasskey: ReadonlySignal<boolean>
+  /**
+   * The machine's half of offering an account without an address: the identifier
+   * step, an empty field, passkeys in the live set, and nothing in flight.
+   * The view adds the session policy and the platform authenticator check.
+   */
+  readonly canCreateWithPasskey: ReadonlySignal<boolean>
   /** The icon methods currently visible against the identifier field. */
   readonly icons: ReadonlySignal<readonly AuthFlowMethodDescriptor[]>
   /** The code channels applicable to the current identifier kind. */
@@ -728,6 +736,8 @@ export interface AuthFlow {
    * is: a key made after that would create the account the person refused.
    */
   finishWithPasskey(): Promise<void>
+  /** Enter consent for an account without an address, without sending anything. */
+  createWithPasskey(): void
   /**
    * Re-send the active code. Blocked (a silent no-op) until
    * {@link resendAvailableAt}; the backend re-arms the gate via
@@ -1653,6 +1663,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       methods.get().some((descriptor) => descriptor.key === PASSKEY_METHOD_KEY)
     )
   })
+  const canCreateWithPasskey = computedSignal(
+    () =>
+      flow.get().step === 'identifier' &&
+      form.get().identifier.trim() === '' &&
+      methods
+        .get()
+        .some((descriptor) => descriptor.key === PASSKEY_METHOD_KEY) &&
+      !pending.get(),
+  )
   const primaryAction = computedSignal<AuthFlowPrimaryAction>(() => {
     const state = flow.get()
     switch (state.step) {
@@ -2052,6 +2071,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     flow.set({
       ...flow.get(),
       step: 'identifier',
+      intent: form.get().identifier.trim() === '' ? 'login' : flow.get().intent,
       methodKey: null,
       channelKey: null,
       sendProgress: null,
@@ -2293,6 +2313,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     flow.set({
       ...state,
       step: 'identifier',
+      intent: form.get().identifier.trim() === '' ? 'login' : state.intent,
       methodKey: null,
       sendProgress: null,
     })
@@ -2300,6 +2321,30 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // the step it belongs to; the lookup below never touches it.
     error.set(refusal)
     refreshDetect()
+  }
+
+  /** Register either passkey account road as a ceremony that Back can abort. */
+  async function submitPasskeyAccount(): Promise<void> {
+    const run: CeremonyRun = {
+      key: PASSKEY_METHOD_KEY,
+      controller: new AbortController(),
+      canceled: null,
+    }
+    ceremony = run
+    try {
+      await dispatch(() =>
+        options.onSubmit(
+          'finish_with_passkey',
+          flow.get(),
+          form.get(),
+          run.controller.signal,
+        ),
+      )
+    } finally {
+      if (ceremony === run) {
+        ceremony = null
+      }
+    }
   }
 
   return {
@@ -2312,6 +2357,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     submittable,
     canFinishWithoutPassword,
     canFinishWithPasskey,
+    canCreateWithPasskey,
     icons,
     channels,
     primaryAction,
@@ -2424,6 +2470,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       const methodKey = state.methodKey
+      if (
+        state.step === 'consent' &&
+        state.intent === 'register' &&
+        methodKey === PASSKEY_METHOD_KEY
+      ) {
+        await submitPasskeyAccount()
+
+        return
+      }
       if (state.step === 'consent' && methodKey !== null) {
         // A method chosen BEFORE the terms starts here, not where it was picked
         // (HIL-417): accepting the terms is what sends the magic link. Parking in
@@ -2490,29 +2545,19 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (pending.get() || !canFinishWithPasskey.get()) {
         return
       }
-      // Registered as the consent screen registers the send it starts, so a
-      // call-off reaches the device prompt and a late key is dropped by the
-      // generation guard (HIL-1104).
-      const run: CeremonyRun = {
-        key: PASSKEY_METHOD_KEY,
-        controller: new AbortController(),
-        canceled: null,
+      await submitPasskeyAccount()
+    },
+    createWithPasskey(): void {
+      if (!canCreateWithPasskey.get()) {
+        return
       }
-      ceremony = run
-      try {
-        await dispatch(() =>
-          options.onSubmit(
-            'finish_with_passkey',
-            flow.get(),
-            form.get(),
-            run.controller.signal,
-          ),
-        )
-      } finally {
-        if (ceremony === run) {
-          ceremony = null
-        }
-      }
+      error.set(null)
+      flow.set({
+        ...flow.get(),
+        step: 'consent',
+        intent: 'register',
+        methodKey: PASSKEY_METHOD_KEY,
+      })
     },
     async resend(): Promise<void> {
       if (pending.get() || isResendBlocked()) {

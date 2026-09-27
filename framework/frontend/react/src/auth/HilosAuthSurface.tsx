@@ -27,6 +27,7 @@
 // The password screen of a registration offers a passkey ending the mockup does
 // not draw yet (HIL-1104): its place and its words are the owner's decision,
 // kept in design debt D-132 until the mockup catches up.
+// The empty-field entry and registered copy follow D-136 (HIL-1106).
 //
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
 import {
@@ -57,6 +58,7 @@ import {
   formatCountdown,
   hilosCodeSendProgress,
   isPasskeySupported,
+  isPlatformPasskeyAvailable,
   handshakeResponseAck,
   MAGIC_LINK_FLOW_METHOD,
   oauthTrip,
@@ -67,6 +69,7 @@ import {
   PASSWORD_MIN_LENGTH,
   sessionAuthMethods,
   sessionCodeDelivery,
+  sessionPasskeyAllowsUnproven,
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionSecondFactorPolicy,
@@ -522,6 +525,22 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const submittable = useSignal(auth.submittable)
   const canFinishWithoutPassword = useSignal(auth.canFinishWithoutPassword)
   const canFinishWithPasskey = useSignal(auth.canFinishWithPasskey)
+  const canCreateWithPasskey = useSignal(auth.canCreateWithPasskey)
+  const passkeyAllowsUnprovenSignal = useMemo(
+    () => sessionPasskeyAllowsUnproven(context.scopes),
+    [context],
+  )
+  const passkeyAllowsUnproven = useSignal(passkeyAllowsUnprovenSignal)
+  const [platformPasskey, setPlatformPasskey] = useState(false)
+  useEffect(() => {
+    let mounted = true
+    void isPlatformPasskeyAvailable().then((available) => {
+      if (mounted) setPlatformPasskey(available)
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
   const icons = useSignal(auth.icons)
   const methods = useSignal(auth.methods)
   const channels = useSignal(auth.channels)
@@ -616,6 +635,8 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // the account has its confirmed address, so a phone or a security key serves
   // too.
   const showFinishWithPasskey = canFinishWithPasskey && isPasskeySupported()
+  const showCreateWithPasskey =
+    canCreateWithPasskey && passkeyAllowsUnproven && platformPasskey
 
   // The password screen says which of its endings this is. A recovery is
   // replacing a password that exists; a registration is about to create the
@@ -1573,6 +1594,17 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                         </LoadingButton>
                       ))}
                     </div>
+                    {showCreateWithPasskey ? (
+                      <button
+                        type="button"
+                        className="btn btn-link btn-sm w-100 mt-2"
+                        data-id="auth-create-passkey"
+                        disabled={pending}
+                        onClick={() => auth.createWithPasskey()}
+                      >
+                        Create an account with a passkey
+                      </button>
+                    ) : null}
                     <div className="d-flex align-items-center gap-2 my-3">
                       <hr className="flex-grow-1 my-0" />
                       <span className="small text-body-secondary">or</span>
@@ -1887,6 +1919,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                     className="form-check-input"
                     type="checkbox"
                     data-id="auth-consent-accept"
+                    disabled={pending}
                     checked={form.consentAccepted}
                     onChange={(event) =>
                       auth.setField('consentAccepted', event.target.checked)
@@ -2814,7 +2847,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                   />
                   <p className="text-body-secondary small mb-4">
                     {screenKey === 'done_registered'
-                      ? 'Your address is confirmed and you are signed in.'
+                      ? 'You are signed in.'
                       : screenKey === 'done_password_changed'
                         ? 'Your new password is saved. Codes left on other devices no longer work.'
                         : 'You are signed in.'}

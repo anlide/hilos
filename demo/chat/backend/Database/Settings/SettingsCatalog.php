@@ -9,6 +9,7 @@ use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
+use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
@@ -139,6 +140,11 @@ final class SettingsCatalog implements CatalogProviderInterface
             SecondFactorSettingsCatalog::getCatalog(),
             StepUpSettingsCatalog::getCatalog(),
             AccountDeletionSettingsCatalog::getCatalog(),
+            // Chat opts in to accounts without an address (owner, 26.09.2026).
+            [PasskeyAddressPolicy::SETTING_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
+            ]],
         );
     }
 }

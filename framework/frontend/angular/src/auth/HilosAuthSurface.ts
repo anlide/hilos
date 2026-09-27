@@ -27,13 +27,16 @@
 // The password screen of a registration offers a passkey ending the mockup does
 // not draw yet (HIL-1104): its place and its words are the owner's decision,
 // kept in design debt D-132 until the mockup catches up.
+// The empty-field entry and registered copy follow D-136 (HIL-1106).
 //
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
+  afterNextRender,
   computed,
   effect,
   inject,
@@ -61,6 +64,7 @@ import {
   formatCountdown,
   hilosCodeSendProgress,
   isPasskeySupported,
+  isPlatformPasskeyAvailable,
   handshakeResponseAck,
   oauthTrip,
   oauthTripMessage,
@@ -71,6 +75,7 @@ import {
   PASSWORD_MIN_LENGTH,
   sessionAuthMethods,
   sessionCodeDelivery,
+  sessionPasskeyAllowsUnproven,
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionSecondFactorPolicy,
@@ -662,6 +667,17 @@ const ERROR_DETAILS_TWIN_CLASS =
                     </button>
                   }
                 </div>
+                @if (showCreateWithPasskey()) {
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm w-100 mt-2"
+                    data-id="auth-create-passkey"
+                    [disabled]="pending()"
+                    (click)="createWithPasskey()"
+                  >
+                    Create an account with a passkey
+                  </button>
+                }
                 <div class="d-flex align-items-center gap-2 my-3">
                   <hr class="flex-grow-1 my-0" />
                   <span class="small text-body-secondary">or</span>
@@ -969,6 +985,7 @@ const ERROR_DETAILS_TWIN_CLASS =
                   class="form-check-input"
                   type="checkbox"
                   data-id="auth-consent-accept"
+                  [disabled]="pending()"
                   [checked]="form().consentAccepted"
                   (change)="updateConsent($event)"
                 />
@@ -1927,7 +1944,7 @@ const ERROR_DETAILS_TWIN_CLASS =
                 ></i>
                 <p class="text-body-secondary small mb-4">
                   @if (screenKey() === 'done_registered') {
-                    Your address is confirmed and you are signed in.
+                    You are signed in.
                   } @else if (screenKey() === 'done_password_changed') {
                     Your new password is saved. Codes left on other devices no
                     longer work.
@@ -2016,6 +2033,9 @@ export class HilosAuthSurface {
   private readonly codeDeliverySignal = computed(() =>
     sessionCodeDelivery(this.context().scopes),
   )
+  private readonly passkeyAllowsUnprovenSignal = computed(() =>
+    sessionPasskeyAllowsUnproven(this.context().scopes),
+  )
 
   // Taken at field-initializer time because DI is available at construction
   // where an input is not, and optional because the surface must work with no
@@ -2032,6 +2052,9 @@ export class HilosAuthSurface {
   protected readonly submittable = signal(false)
   protected readonly canFinishWithoutPassword = signal(false)
   protected readonly canFinishWithPasskey = signal(false)
+  protected readonly canCreateWithPasskey = signal(false)
+  private readonly passkeyAllowsUnproven = signal(false)
+  private readonly platformPasskey = signal(false)
   protected readonly icons = signal<readonly AuthFlowMethodDescriptor[]>([])
   private readonly methods = signal<readonly AuthFlowMethodDescriptor[]>([])
   protected readonly channels = signal<readonly CodeChannelDescriptor[]>([])
@@ -2204,6 +2227,12 @@ export class HilosAuthSurface {
   // too.
   protected readonly showFinishWithPasskey = computed(
     () => this.canFinishWithPasskey() && isPasskeySupported(),
+  )
+  protected readonly showCreateWithPasskey = computed(
+    () =>
+      this.canCreateWithPasskey() &&
+      this.passkeyAllowsUnproven() &&
+      this.platformPasskey(),
   )
 
   // The password screen says which of its endings this is. A recovery is
@@ -2546,6 +2575,12 @@ export class HilosAuthSurface {
   )
 
   constructor() {
+    const destroyRef = inject(DestroyRef)
+    afterNextRender(() => {
+      void isPlatformPasskeyAvailable().then((available) => {
+        if (!destroyRef.destroyed) this.platformPasskey.set(available)
+      })
+    })
     // The line the boot binding holds, handed to the machine at once and on every
     // change (HIL-826). Its own effect rather than a line in the mirroring one
     // below, because it runs the other way: that one copies the machine OUT, and
@@ -2583,6 +2618,8 @@ export class HilosAuthSurface {
         bind(auth.submittable, this.submittable),
         bind(auth.canFinishWithoutPassword, this.canFinishWithoutPassword),
         bind(auth.canFinishWithPasskey, this.canFinishWithPasskey),
+        bind(auth.canCreateWithPasskey, this.canCreateWithPasskey),
+        bind(this.passkeyAllowsUnprovenSignal(), this.passkeyAllowsUnproven),
         bind(auth.icons, this.icons),
         bind(auth.methods, this.methods),
         bind(auth.channels, this.channels),
@@ -3088,6 +3125,11 @@ export class HilosAuthSurface {
   // other two endings' do.
   protected completeWithPasskey(): void {
     void this.auth().finishWithPasskey()
+  }
+
+  /** Enter the terms screen before asking the device to create an account key. */
+  protected createWithPasskey(): void {
+    this.auth().createWithPasskey()
   }
 
   // The way back into a code this browser is already holding, offered by the

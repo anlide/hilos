@@ -9,6 +9,7 @@ import {
 import {
   clickSubmit,
   continueFromDone,
+  createAccountWithPasskey,
   finishWithPasskey,
   login,
   logout,
@@ -41,7 +42,7 @@ import { gotoPage } from '../helpers/page'
 // credential to the RP id and the server matches clientDataJSON's origin exactly,
 // so a mismatch fails the ceremony before its assertion is accepted.
 //
-// CDP cannot vary the authenticator's algorithms or show an OS chooser. Both
+// CDP cannot vary the authenticator's algorithms or show an OS chooser. All
 // creation legs judge the actual request against the promised platform table
 // (HIL-659), catching an ES256-only request that leaves Windows Hello out.
 // Real-device checks and the limits of this table live in docs/agents/manual-checks.md.
@@ -67,6 +68,8 @@ import { gotoPage } from '../helpers/page'
 // "Create it with a passkey" instead of choosing a password. The key the virtual
 // authenticator makes there is the account's way in, which is what the leg ends
 // on: signed out, the same key opens the account from an empty field.
+// HIL-1106 adds the road without an address: the empty-field entry, consent,
+// the key alone on the account, and a later discoverable sign-in with that key.
 
 test('signs in usernameless with a discoverable passkey — no email', async ({
   page,
@@ -165,6 +168,42 @@ test('creates an account on a passkey from the password screen and signs back in
 
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   await expect(page.getByTestId('profile-name')).toBeVisible()
+})
+
+test('creates a passkey account without an address from the empty field and signs back in', async ({
+  page,
+}) => {
+  await addVirtualAuthenticator(page)
+  await watchPasskeyCreation(page)
+  await gotoPage(page, '/profile')
+  // Chromium reports this CDP internal/UV authenticator as a platform key;
+  // this exercises the real browser half of the entry gate without a stub.
+  expect(
+    await page.evaluate(() =>
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+    ),
+  ).toBe(true)
+  await expect(page.getByTestId('auth-create-passkey')).toBeVisible()
+  await createAccountWithPasskey(page)
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
+  await continueFromDone(page)
+  await expect(page.getByTestId('profile-name')).toHaveText(/^User[1-9]\d{5}$/)
+  const name = await page.getByTestId('profile-name').innerText()
+  const creations = await readPasskeyCreations(page)
+  expect(creations).toHaveLength(1)
+  expect(platformsLeftOut(creations[0])).toEqual([])
+
+  await gotoPage(page, '/profile/sign-in')
+  await expect(page.getByTestId('profile-identity-item')).toHaveCount(1)
+  await expect(page.getByTestId('identity-passkey-added')).toHaveCount(1)
+  await expect(page.getByTestId('identity-identifier')).toHaveCount(0)
+
+  await logout(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await clickSubmit(page.getByTestId('auth-icon-passkey'))
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+  await expect(page.getByTestId('profile-name')).toHaveText(name)
 })
 
 test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {

@@ -319,6 +319,9 @@ function submitAuthFlow(
     case 'consent':
       // The terms screen is what sends: a registration dispatched NOTHING before
       // it, whichever way it is being made (HIL-417).
+      if (action === 'finish_with_passkey') {
+        return runPasskeyNewAccount(context, null, signal)
+      }
       return flow.identifierKind === 'phone'
         ? sendPhoneCode(context, flow, form)
         : dispatchFlow(context, AUTH_ACTION_REGISTER, {
@@ -332,6 +335,8 @@ function submitAuthFlow(
       // with it, for a registration, the hold this address was kept under.
       return startCodeFlow(context, flow, form)
     case 'set_password':
+      // The step picks the road: consent carries no address; this ending carries
+      // the address already proved with a code (HIL-1106).
       // The third ending, a key the device makes now (HIL-1104), is a ceremony
       // rather than one dispatch, and the machine may call it off. The address in
       // its payload does not choose an account: on this screen the server reads

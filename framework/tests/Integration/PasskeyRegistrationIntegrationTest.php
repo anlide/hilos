@@ -229,8 +229,8 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
     /**
      * The road without a code lands the key and no address, while the installation allows it.
      *
-     * The owner's decision (26.09.2026): the typed address is not stored. Nothing on the address -
-     * so its real owner can still register it - and this browser's own unproven hold on it is
+     * This road asks for no address; the account and the options carry the same generated name.
+     * No address identity is written, and this browser's own unproven hold is
      * dropped, because it names a registration the browser is no longer running. The sign-in is
      * a grant carrying the same "registered" mark.
      *
@@ -242,14 +242,19 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         $email = $this->uniqueEmail();
         $this->reservations()->createReservation(IdentityType::PASSWORD, self::SESSION_TOKEN, $email, self::LIVE_FOR_SECONDS);
 
-        $options = $this->askOptions($email);
-        $reply = $this->complete($email, $options, new WebAuthnTestVectors());
+        $options = $this->askOptions(null);
+        $reply = $this->complete(null, $options, new WebAuthnTestVectors());
         $this->assertNull($reply, 'A sign-in is answered by the session holder, not by the submit');
 
         $userId = $this->theOnlyUser();
-        $this->assertSame(strstr($email, '@', true), $this->displayNameOf($userId));
+        $name = $options->publicKeyOptions['user']['name'];
+        $this->assertMatchesRegularExpression('/^User[1-9]\d{5}$/', $name);
+        $this->assertSame($name, $options->publicKeyOptions['user']['displayName']);
+        $this->assertSame($name, $this->displayNameOf($userId));
         $this->assertCount(1, Hilos::$db->passkeyCredentials->listByUser($userId));
-        $this->assertNull(Hilos::$db->identities->findAccountIdByEmail($email), 'The typed address belongs to nobody');
+        Database::sql('SELECT `type` FROM `hilos_identity` WHERE `user_id` = ?', [$userId]);
+        $this->assertSame([IdentityType::PASSKEY], array_column(Database::rows(), 'type'));
+        $this->assertNull(Hilos::$db->identities->findAccountIdByEmail($email), 'The held address belongs to nobody');
         $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email));
         $this->assertNull(
             $this->reservations()->findActiveForSession(self::SESSION_TOKEN),
@@ -274,14 +279,13 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
     public function testAChallengeThatStartedAnAccountDoesNotStartASecond(): void
     {
         AuthMethodTestSettings::$passkeyAllowsUnproven = true;
-        $email = $this->uniqueEmail();
-        $options = $this->askOptions($email);
-        $this->assertNull($this->complete($email, $options, new WebAuthnTestVectors()));
+        $options = $this->askOptions(null);
+        $this->assertNull($this->complete(null, $options, new WebAuthnTestVectors()));
         $this->drainQueue();
 
         $refused = null;
         try {
-            $this->complete($email, $options, new WebAuthnTestVectors());
+            $this->complete(null, $options, new WebAuthnTestVectors());
         } catch (ValidationException $failure) {
             $refused = $failure;
         }
@@ -303,28 +307,26 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      */
     public function testTheRoadWithoutACodeIsRefusedOnBothSubmitsWhereItIsNotAllowed(): void
     {
-        $email = $this->uniqueEmail();
-
         $this->assertRefusal(
             $this->library->onAgentAction(
                 self::ACCEPT_KEY,
                 HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS,
-                new RegistrationPasskeyOptionsActionDTO($email),
+                new RegistrationPasskeyOptionsActionDTO(null),
             ),
             AuthFlowOutcome::CODE_PASSKEY_ADDRESS_UNPROVEN,
-            AuthFlowIntent::REGISTER,
+            AuthFlowIntent::LOGIN,
             AuthMessages::PASSKEY_ADDRESS_UNPROVEN,
         );
         $this->assertNull($this->queuedOptions(), 'No device prompt opens on a refusal');
 
         AuthMethodTestSettings::$passkeyAllowsUnproven = true;
-        $options = $this->askOptions($email);
+        $options = $this->askOptions(null);
         AuthMethodTestSettings::$passkeyAllowsUnproven = false;
 
         $this->assertRefusal(
-            $this->complete($email, $options, new WebAuthnTestVectors()),
+            $this->complete(null, $options, new WebAuthnTestVectors()),
             AuthFlowOutcome::CODE_PASSKEY_ADDRESS_UNPROVEN,
-            AuthFlowIntent::REGISTER,
+            AuthFlowIntent::LOGIN,
             AuthMessages::PASSKEY_ADDRESS_UNPROVEN,
         );
         $this->assertNothingWritten();
@@ -337,8 +339,8 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      */
     public function testATakenAddressIsSentToSignIn(): void
     {
-        AuthMethodTestSettings::$passkeyAllowsUnproven = true;
         $email = $this->uniqueEmail();
+        $this->seedProvenHold($email);
         $options = $this->askOptions($email);
         Hilos::$db->identities->createPasswordIdentity(self::RIVAL_USER_ID, $email, self::RIVAL_SECRET);
 
@@ -368,7 +370,6 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      */
     public function testATakenNumberIsSentToSignIn(): void
     {
-        AuthMethodTestSettings::$passkeyAllowsUnproven = true;
         self::seedIdentity(self::RIVAL_USER_ID, IdentityType::SMS, self::PHONE);
 
         $this->assertRefusal(
@@ -382,6 +383,56 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
             AuthMessages::PHONE_TAKEN,
         );
         $this->assertNothingWritten();
+    }
+
+    /**
+     * An address never switches to the road without a code, even where that road is allowed (HIL-1106).
+     *
+     * @throws HilosException When a command or a lookup fails
+     */
+    public function testAnAddressWithoutAProvenHoldAnswersExpiredBeforeThePrompt(): void
+    {
+        AuthMethodTestSettings::$passkeyAllowsUnproven = true;
+
+        $this->assertRefusal(
+            $this->library->onAgentAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS,
+                new RegistrationPasskeyOptionsActionDTO($this->uniqueEmail()),
+            ),
+            AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+            AuthFlowIntent::REGISTER,
+            AuthMessages::RESERVATION_EXPIRED,
+        );
+        $this->assertNull($this->queuedOptions(), 'No device prompt opens without the proven hold');
+        $this->assertNothingWritten();
+    }
+
+    /**
+     * Neither signed road accepts an address presence belonging to the other one (HIL-1106).
+     *
+     * @throws HilosException When a command or a lookup fails
+     */
+    public function testTheSecondSubmitMustCarryTheRoadOfTheFirst(): void
+    {
+        AuthMethodTestSettings::$passkeyAllowsUnproven = true;
+        $email = $this->uniqueEmail();
+        $this->seedProvenHold($email);
+        $provenOptions = $this->askOptions($email);
+        $unprovenOptions = $this->askOptions(null);
+
+        foreach ([[null, $provenOptions], [$email, $unprovenOptions]] as [$identifier, $options]) {
+            $refused = null;
+            try {
+                $this->complete($identifier, $options, new WebAuthnTestVectors());
+            } catch (ValidationException $failure) {
+                $refused = $failure;
+            }
+
+            $this->assertNotNull($refused, 'The second submit cannot change roads');
+            $this->assertSame(AuthMessages::INVALID_PASSKEY, $refused->getMessage());
+            $this->assertNothingWritten();
+        }
     }
 
     /**
@@ -503,11 +554,11 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
     /**
      * Asks the options of a key for a new account and returns what arrived on the signal.
      *
-     * @param string $identifier Identifier as typed
+     * @param ?string $identifier Address as typed, or null for the road without an address
      * @return PasskeyOptionsSignalData The options the browser was sent
      * @throws HilosException When the command fails
      */
-    private function askOptions(string $identifier): PasskeyOptionsSignalData
+    private function askOptions(?string $identifier): PasskeyOptionsSignalData
     {
         $reply = $this->library->onAgentAction(
             self::ACCEPT_KEY,
@@ -524,7 +575,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
     /**
      * Runs the device half with a real key and submits it.
      *
-     * @param string $identifier Identifier as typed
+     * @param ?string $identifier Address as typed, or null for the road without an address
      * @param PasskeyOptionsSignalData $options Options the first submit sent
      * @param WebAuthnTestVectors $vectors The authenticator
      * @param ?string $echoedChallenge Challenge the client data echoes, or null for the one the options named
@@ -533,7 +584,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      * @throws HilosException When the command fails
      */
     private function complete(
-        string $identifier,
+        ?string $identifier,
         PasskeyOptionsSignalData $options,
         WebAuthnTestVectors $vectors,
         ?string $echoedChallenge = null,

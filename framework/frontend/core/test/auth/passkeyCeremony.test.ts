@@ -15,6 +15,8 @@
 // module's constants would make any rewording pass green, and rewording is the one
 // thing this file is here to catch.
 import { afterEach, describe, expect, it } from 'vitest'
+import { createAuthActions } from '../../src/auth/authActions.js'
+import { createAuthFlow } from '../../src/auth/authFlow.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
   type ActionHandle,
@@ -372,6 +374,44 @@ const MADE_CREDENTIAL = {
 }
 
 describe('the passkey door of a new account (HIL-1104)', () => {
+  it('dispatches the no-address road from consent through the auth actions', async () => {
+    const world = newAccountWorld({
+      create: () => Promise.resolve(MADE_CREDENTIAL),
+    })
+    const actions = createAuthActions(world.context)
+    const flow = createAuthFlow({
+      authMethods: createSignal([{ key: 'passkey', name: null }]),
+      channels: [],
+      onDetect: actions.onDetect,
+      onSubmit: actions.onSubmit,
+      onMethodAction: actions.onMethodAction,
+    })
+    flow.createWithPasskey()
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+
+    expect(world.dispatched).toHaveLength(2)
+    expect(world.dispatched[0]?.payload).toEqual({})
+    expect(world.dispatched[1]?.payload).not.toHaveProperty('identifier')
+    expect(flow.flow.get().step).toBe('consent')
+  })
+
+  it('omits the identifier on both submits for an account without an address', async () => {
+    const world = newAccountWorld({
+      create: () => Promise.resolve(MADE_CREDENTIAL),
+    })
+
+    expect(await runPasskeyNewAccount(world.context, null)).toEqual({
+      ok: true,
+    })
+    expect(world.dispatched).toHaveLength(2)
+    expect(world.dispatched[0]?.payload).toEqual({})
+    expect(world.dispatched[1]?.payload).not.toHaveProperty('identifier')
+    expect(world.dispatched[1]?.payload).toMatchObject({
+      signedChallenge: 'signed',
+    })
+  })
+
   it('hands on a refusal the options action answered, and never opens the device prompt', async () => {
     const world = newAccountWorld({
       optionsReply: {

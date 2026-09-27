@@ -694,9 +694,8 @@ final class HilosSignalConstants
      * (public, anonymous-reachable, HIL-1104).
      *
      * The second submit of the guest's passkey door, after {@see HILOS_REGISTRATION_PASSKEY_OPTIONS}.
-     * Two roads lead here: an address this browser proved with a code - the third ending of the
-     * password screen - and, where the installation allows it, an address nobody proved, which
-     * is then not stored at all.
+     * The optional identifier must match the road sealed into the challenge: present for a
+     * proven address, absent for an account without an address where the installation allows it.
      */
     public const string HILOS_COMPLETE_REGISTRATION_PASSKEY = 'hilos_complete_registration_passkey';
 
@@ -912,13 +911,12 @@ final class HilosSignalConstants
     public const string HILOS_PASSKEY_REGISTER_CONFIRM = 'hilos_passkey_register_confirm';
 
     /**
-     * Client → server: request WebAuthn creation options for a NEW account, on the address typed
-     * into the surface (public, anonymous-reachable, HIL-1104).
+     * Client → server: request WebAuthn creation options for a NEW account, with an optional
+     * identifier (public, anonymous-reachable, HIL-1104).
      *
-     * The first submit of the guest's passkey door. The server picks the road - this browser's
-     * proven hold on exactly that address, or none - and seals it into the signed challenge that
-     * arrives on {@see HILOS_PASSKEY_OPTIONS}; a refusal is the action's own answer instead, and
-     * then no device prompt opens.
+     * A present identifier requires this browser's proven hold on that address; an absent one
+     * requires the installation to allow accounts without an address. The road is sealed into
+     * the signed challenge sent on {@see HILOS_PASSKEY_OPTIONS}; a refusal is the action's own answer.
      */
     public const string HILOS_REGISTRATION_PASSKEY_OPTIONS = 'hilos_registration_passkey_options';
 

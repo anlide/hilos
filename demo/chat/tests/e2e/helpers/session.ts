@@ -335,6 +335,18 @@ export async function finishWithPasskey(page: Page): Promise<void> {
 }
 
 /**
+ * Create an account without an address, through consent and the device key (HIL-1106).
+ *
+ * @param page The page with an empty sign-in field and a platform authenticator.
+ */
+export async function createAccountWithPasskey(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('auth-create-passkey'))
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await waitDoneSettled(page)
+}
+
+/**
  * Register an account with NO password end to end, the way somebody who means to
  * sign in by a mailed link does (HIL-1008): submit the address, confirm the code,
  * then take the exit instead of choosing a password.

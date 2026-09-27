@@ -64,8 +64,8 @@ use Random\RandomException;
  * The third is a guest's door too (HIL-1104): an account created on the key the device
  * just made, with no password. Two roads lead to it. An address this browser proved with a
  * code - the third ending of the password screen - lands as a confirmed address beside the
- * key. An address nobody proved is allowed only where the installation says so
- * ({@see PasskeyAddressPolicy}), and then the account holds the key and no address at all.
+ * key. The other road asks for no address and is allowed only where the installation says so
+ * ({@see PasskeyAddressPolicy}); a generated name labels both the account and its key.
  * The first submit picks the road and seals it into the signed challenge; the second reads
  * it back and does not pick again.
  */
@@ -87,6 +87,14 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * (HIL-1104), so it can never equal the handle derived from a user id.
      */
     private const string NEW_ACCOUNT_HANDLE_SCOPE = 'new-account:';
+
+    private const string NEW_ACCOUNT_NAME_PREFIX = 'User';
+
+    private const string NEW_ACCOUNT_NAME_SCOPE = 'passkey-account-name:';
+
+    private const int NEW_ACCOUNT_NAME_MIN_NUMBER = 100000;
+
+    private const int NEW_ACCOUNT_NAME_NUMBER_RANGE = 900000;
 
     /**
      * Mints WebAuthn registration options for the signed-in user (HIL-284).
@@ -208,11 +216,9 @@ final class PasskeyCommands extends AbstractLibraryCommands
     /**
      * Mints the creation options of a key that starts a new account, or refuses before the device prompt (HIL-1104).
      *
-     * The first submit of the guest's passkey door. It picks the road here, once: this browser's
-     * proven hold on exactly the typed address is the road with a code, which the installation's
-     * setting does not govern; anything else is the road without one, open only while
-     * {@see PasskeyAddressPolicy} says so. The road is sealed into the signed challenge, so the
-     * second submit reads it back instead of choosing again.
+     * A present address requires this browser's proven hold on exactly that address; an absent
+     * address asks for the road without a code, open only while the installation allows it.
+     * The road is sealed into the signed challenge and cannot change on the second submit.
      *
      * Every refusal is given HERE, as the action's own answer, before the browser opens the
      * device prompt: a refusal after navigator.credentials.create() would leave a key in the
@@ -220,12 +226,11 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * submit, because seconds pass between the two.
      *
      * A success answers nothing - the options travel on the PASSKEY_OPTIONS signal, as they do
-     * for the other two ceremonies. The key is labeled with the typed identifier and bound to a
-     * user handle derived from the challenge ({@see newAccountUserHandle()}), because the account
-     * it will belong to has no id yet.
+     * for the other two ceremonies. The key is labeled with the address or a generated account
+     * name, and bound to a user handle derived from the challenge because the account has no id yet.
      *
      * @param string $acceptKey Accept key the action arrived on
-     * @param RegistrationPasskeyOptionsActionDTO $dto Parsed options request payload (identifier as typed)
+     * @param RegistrationPasskeyOptionsActionDTO $dto Options request with an optional address
      * @return ?AuthFlowOutcome The refusal to answer with, or null when the options went out on the signal
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws InvalidFormatException When the identifier is neither an email address nor a phone number
@@ -237,20 +242,23 @@ final class PasskeyCommands extends AbstractLibraryCommands
     {
         $acting = $this->acting($acceptKey);
 
-        $kind = IdentifierDetector::kindOf($dto->identifier);
-        $normalized = IdentifierDetector::normalize($dto->identifier, $kind);
-        if ($this->identifierBelongsToAccount($kind, $normalized)) {
-            return $this->identifierTakenOutcome($kind);
-        }
-
-        $proven = new RegistrationReservationService()->findProvenForSession($acting->sessionToken)?->identifier === $normalized;
-        if (!$proven && !PasskeyAddressPolicy::allowsUnproven()) {
+        $normalized = null;
+        if ($dto->identifier !== null) {
+            $kind = IdentifierDetector::kindOf($dto->identifier);
+            $normalized = IdentifierDetector::normalize($dto->identifier, $kind);
+            if ($this->identifierBelongsToAccount($kind, $normalized)) {
+                return $this->identifierTakenOutcome($kind);
+            }
+            if (new RegistrationReservationService()->findProvenForSession($acting->sessionToken)?->identifier !== $normalized) {
+                return $this->reservationExpiredOutcome();
+            }
+        } elseif (!PasskeyAddressPolicy::allowsUnproven()) {
             return $this->addressUnprovenOutcome();
         }
 
         $config = WebAuthnConfig::fromEnv();
         $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
-            $proven ? WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_PROVEN : WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_UNPROVEN,
+            $normalized !== null ? WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_PROVEN : WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_UNPROVEN,
             $acting->sessionToken,
             null,
             $config->challengeTtlSeconds,
@@ -259,7 +267,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
         $publicKeyOptions = $this->buildRegistrationOptions(
             $config,
             $this->newAccountUserHandle($config, $challenge->challenge),
-            $normalized,
+            $normalized ?? $this->newAccountName($config, $challenge->challenge),
             $challenge->challenge,
             [],
         );
@@ -283,9 +291,8 @@ final class PasskeyCommands extends AbstractLibraryCommands
      *
      * The second submit of the guest's passkey door. The road is the one the first submit sealed
      * into the challenge ({@see WebAuthnChallengeSigner::verifyOneOf()}), never chosen again: the
-     * road with a code whose hold ran out while the device prompt was open answers "expired" and
-     * rolls the surface back to the address field, the way the two neighbouring endings of the
-     * password screen do, rather than quietly becoming the road without a code.
+     * payload must carry an address exactly when that road requires one. A proven hold that ran
+     * out answers "expired", rather than quietly becoming the road without a code.
      *
      * The first submit's refusals are asked once more, in the same words - the address may have
      * become somebody's, the hold may have gone, the setting may have been switched off - and
@@ -296,7 +303,8 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * provider registration lands it (HIL-405), with the key written inside the same
      * transaction. The race between browsers proving one address is settled there, as for the
      * password. The road without a code lands through
-     * {@see AbstractLibraryCommands::landAccountWithoutAddress()}: the key and no address.
+     * {@see AbstractLibraryCommands::landAccountWithoutAddress()}: the key and no address,
+     * with the same generated name the options gave the authenticator.
      *
      * The key is stored under the handle the options were minted with - the challenge is the
      * same on both submits, so is the handle derived from it. That makes a challenge that already
@@ -335,23 +343,21 @@ final class PasskeyCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_PASSKEY);
         }
 
-        $kind = IdentifierDetector::kindOf($dto->identifier);
-        $normalized = IdentifierDetector::normalize($dto->identifier, $kind);
-        if ($this->identifierBelongsToAccount($kind, $normalized)) {
-            return $this->identifierTakenOutcome($kind);
-        }
-
         $proven = $claims->purpose === WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_PROVEN;
-        if ($proven
-            && new RegistrationReservationService()->findProvenForSession($acting->sessionToken)?->identifier !== $normalized) {
-            return AuthFlowOutcome::rejectTo(
-                AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
-                AuthFlowStep::IDENTIFIER,
-                AuthFlowIntent::REGISTER,
-                AuthMessages::RESERVATION_EXPIRED,
-            );
+        if ($proven !== ($dto->identifier !== null)) {
+            throw new ValidationException(AuthMessages::INVALID_PASSKEY);
         }
-        if (!$proven && !PasskeyAddressPolicy::allowsUnproven()) {
+        $normalized = null;
+        if ($dto->identifier !== null) {
+            $kind = IdentifierDetector::kindOf($dto->identifier);
+            $normalized = IdentifierDetector::normalize($dto->identifier, $kind);
+            if ($this->identifierBelongsToAccount($kind, $normalized)) {
+                return $this->identifierTakenOutcome($kind);
+            }
+            if (new RegistrationReservationService()->findProvenForSession($acting->sessionToken)?->identifier !== $normalized) {
+                return $this->reservationExpiredOutcome();
+            }
+        } elseif (!PasskeyAddressPolicy::allowsUnproven()) {
             return $this->addressUnprovenOutcome();
         }
 
@@ -375,7 +381,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
             $userHandle,
         );
 
-        if ($proven) {
+        if ($normalized !== null) {
             return $this->landRegistration(
                 $acting,
                 $normalized,
@@ -387,8 +393,8 @@ final class PasskeyCommands extends AbstractLibraryCommands
 
         $this->landAccountWithoutAddress(
             $acting,
-            $normalized,
-            $kind === IdentifierDetection::KIND_EMAIL ? $this->displayNameFromEmail($normalized) : $normalized,
+            IdentityType::PASSKEY . ':' . $result->credentialId,
+            $this->newAccountName($config, $claims->challenge),
             $storeKey,
         );
 
@@ -641,7 +647,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * Builds the WebAuthn creation-options wire shape for a register ceremony.
      *
      * The caller names the account: the profile's enrollment has a user, and the passkey door
-     * of a new account has only what was typed and a handle derived from its challenge.
+     * of a new account has an address or a generated name and a handle derived from its challenge.
      *
      * @param WebAuthnConfig $config Resolved WebAuthn configuration
      * @param string $userHandle Raw WebAuthn user handle the key is bound to
@@ -791,6 +797,21 @@ final class PasskeyCommands extends AbstractLibraryCommands
     }
 
     /**
+     * Derives the same non-unique name for the options and the account, without storing a draft.
+     *
+     * @param WebAuthnConfig $config Resolved WebAuthn configuration (challenge secret)
+     * @param string $challenge Challenge shared by both submits
+     * @return string Account name with a six-digit suffix
+     */
+    private function newAccountName(WebAuthnConfig $config, string $challenge): string
+    {
+        $digest = hash_hmac('sha256', self::NEW_ACCOUNT_NAME_SCOPE . $challenge, $config->challengeSecret, true);
+
+        return self::NEW_ACCOUNT_NAME_PREFIX
+            . (self::NEW_ACCOUNT_NAME_MIN_NUMBER + unpack('N', $digest)[1] % self::NEW_ACCOUNT_NAME_NUMBER_RANGE);
+    }
+
+    /**
      * The answer to a new account asked on an identifier somebody already has: go and sign in.
      *
      * @param string $kind Classification of the identifier (see IdentifierDetection::KIND_*)
@@ -807,7 +828,20 @@ final class PasskeyCommands extends AbstractLibraryCommands
     }
 
     /**
-     * The answer to the road without a code where the installation does not allow it: prove the address first.
+     * @return AuthFlowOutcome Refusal when the address no longer has this browser's proven hold
+     */
+    private function reservationExpiredOutcome(): AuthFlowOutcome
+    {
+        return AuthFlowOutcome::rejectTo(
+            AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+            AuthFlowStep::IDENTIFIER,
+            AuthFlowIntent::REGISTER,
+            AuthMessages::RESERVATION_EXPIRED,
+        );
+    }
+
+    /**
+     * The road without an address is disabled; the next attempt must start by proving an address.
      *
      * @return AuthFlowOutcome Refusal that moves the surface back to the address step
      */
@@ -816,7 +850,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
         return AuthFlowOutcome::rejectTo(
             AuthFlowOutcome::CODE_PASSKEY_ADDRESS_UNPROVEN,
             AuthFlowStep::IDENTIFIER,
-            AuthFlowIntent::REGISTER,
+            AuthFlowIntent::LOGIN,
             AuthMessages::PASSKEY_ADDRESS_UNPROVEN,
         );
     }

@@ -2405,3 +2405,139 @@ describe('HilosAuthSurface offers the passkey ending of a registration (HIL-1104
     )
   })
 })
+
+describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)', () => {
+  /** Install the browser half of the gate; each mount asks it once.
+   * @param available Whether the device offers a platform key.
+   */
+  function supportPlatformKey(available = true) {
+    const probe = vi.fn().mockResolvedValue(available)
+    ;(globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      isUserVerifyingPlatformAuthenticatorAvailable: probe,
+    }
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: { create: vi.fn(), get: vi.fn() },
+    })
+    return probe
+  }
+
+  afterEach(() => {
+    delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential
+    delete (navigator as { credentials?: unknown }).credentials
+  })
+
+  it('waits for the device probe, enters consent, and leaves Back usable during the ceremony', async () => {
+    const probe = supportPlatformKey()
+    const { context, dispatched } = magicLinkContext()
+    context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    expect(wrapper.find('[data-id="auth-create-passkey"]').exists()).toBe(false)
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-create-passkey"]').text()).toBe(
+      'Create an account with a passkey',
+    )
+    await wrapper.find('[data-id="auth-create-passkey"]').trigger('click')
+    expect(wrapper.text()).toContain('Terms and privacy')
+    expect(dispatched).toEqual([])
+    await wrapper.find('[data-id="auth-consent-accept"]').setValue(true)
+    await wrapper.find('form').trigger('submit')
+    await flush(wrapper)
+    expect(dispatched[0]?.payload).toEqual({})
+    expect(
+      wrapper.find('[data-id="auth-consent-accept"]').attributes('disabled'),
+    ).toBeDefined()
+    expect(
+      wrapper.find('[data-id="auth-restart"]').attributes('disabled'),
+    ).toBeUndefined()
+    await wrapper.find('[data-id="auth-restart"]').trigger('click')
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    expect(probe).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it.each([
+    {
+      reason: 'method absent',
+      methods: ['password'],
+      allowed: true,
+      platform: true,
+    },
+    {
+      reason: 'policy off',
+      methods: ['passkey'],
+      allowed: false,
+      platform: true,
+    },
+    {
+      reason: 'no platform key',
+      methods: ['passkey'],
+      allowed: true,
+      platform: false,
+    },
+  ])('hides the entry when $reason', async ({ methods, allowed, platform }) => {
+    supportPlatformKey(platform)
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set(
+      'authMethods',
+      methods.map((key) => ({ key, name: null })),
+    )
+    context.scopes.session.data.set('passkeyAllowsUnproven', allowed)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-create-passkey"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('follows the policy and the field without mounting or probing again', async () => {
+    const probe = supportPlatformKey()
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-create-passkey"]').exists()).toBe(false)
+    context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-create-passkey"]').exists()).toBe(true)
+    await wrapper.find('[data-id="auth-identifier"]').setValue('a')
+    expect(wrapper.find('[data-id="auth-create-passkey"]').exists()).toBe(false)
+    await wrapper.find('[data-id="auth-identifier"]').setValue('')
+    expect(wrapper.find('[data-id="auth-create-passkey"]').exists()).toBe(true)
+    context.scopes.session.data.set('passkeyAllowsUnproven', false)
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-create-passkey"]').exists()).toBe(false)
+    expect(probe).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('keeps the entry absent when the browser probe rejects', async () => {
+    supportPlatformKey().mockRejectedValue(new Error('unavailable'))
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set('authMethods', [
+      { key: 'passkey', name: null },
+    ])
+    context.scopes.session.data.set('passkeyAllowsUnproven', true)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-create-passkey"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('announces registration without claiming an address was confirmed', async () => {
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set(PENDING_ACK_SLOT, SESSION_ACK_REGISTERED)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+    expect(wrapper.text()).toContain('You are signed in.')
+    expect(wrapper.text()).not.toContain(
+      'Your address is confirmed and you are signed in.',
+    )
+    wrapper.unmount()
+  })
+})
