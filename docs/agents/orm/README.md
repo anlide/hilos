@@ -12,6 +12,7 @@ documents by touched surface; it does not replace them.
 | Choosing between magic properties, `[]`, result accessors, and `findBy*()` | `accessor-contracts.md` |
 | Walking a collection with `foreach`, or adding/removing rows during a walk | `collection-iteration.md` |
 | Entity table mapping, persisted fields, primary keys, foreign keys, indexes, or row contracts | `entity.md` |
+| Extending a framework table with project columns, subclassing a framework ORM class, or mounting a subclass under a framework key | `inheritance.md` |
 | Object item mapping, object collection loading, object enrichment, or `getIdString()` | `object.md` |
 | Schema migrations, rollback files, seeds, or schema checks | `migrations.md` |
 
@@ -30,6 +31,8 @@ the project contract approval gate before implementation.
 - `collection-iteration.md` defines what a walk over a collection observes
   while the collection is being mutated.
 - `entity.md` describes raw persisted DB rows.
+- `inheritance.md` defines how a project extends a framework Entity: the whole
+  chain, the links, the mount, the start guard.
 - `object.md` describes object wrappers between entities and View items.
 - `migrations.md` describes schema change workflow and validation.
 

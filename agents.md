@@ -55,6 +55,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 | [architecture/second-factor.md](docs/agents/architecture/second-factor.md) | touching two-step verification: the gate every proof passes at the session holder, the wait on the session row and the tabs that follow it, who owns which of the five tables, why backup codes are not hashed, trust, and the delayed removal with its sweep and cancel link |
 | [architecture/step-up.md](docs/agents/architecture/step-up.md) | declaring or gating a protected operation, choosing its fresh proof, applying the no-double-code rule, or changing its browser-scoped confirmation window and admin narrowing |
 | [architecture/account-deletion.md](docs/agents/architecture/account-deletion.md) | touching a person's own account deletion: the request and its grace period, the window that starts and calls it off, the erasure when it falls due, or a project's `applyAccountErasure()` seam |
+| [architecture/people-table.md](docs/agents/architecture/people-table.md) | touching the person table `hilos_user`: extending it, renaming a person, a merged account, or a framework table that points at a person |
 | [architecture/legal-documents.md](docs/agents/architecture/legal-documents.md) | declaring legal revisions, computing acceptance coverage and deadlines, recording exact revision acceptances, or comparing and serving their text and history |
 | [architecture/data-export.md](docs/agents/architecture/data-export.md) | building personal data copies, the project export seam, blocked-card confirmation, archive cleanup or authenticated downloads |
 | [architecture/uploads.md](docs/agents/architecture/uploads.md) | receiving a file over frame_binary: declaring it, signed chunks, checks, the upload's state on the wire, the browser client, cleanup |
@@ -126,6 +127,9 @@ Minimum ORM rules before editing:
 - If a DB item key is known, update/delete through that item's `actions`.
 - Entity/Object layers keep persisted rows scalar; View items expose
   caller-facing relations and read shapes.
+- A framework table is extended by subclassing its whole chain and mounting it
+  under the framework key, never one layer
+  ([orm/inheritance.md](docs/agents/orm/inheritance.md)).
 - DB entity shape changes require the contract approval gate before editing.
 
 ## Runtime

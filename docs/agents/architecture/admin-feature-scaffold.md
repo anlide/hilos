@@ -24,8 +24,10 @@ the engine.
 inherits the `ADMIN` access level from `AbstractHilosPage` (HIL-441), and
 openness is an explicit declaration on the page class. The activation needs no
 per-page guard for that, but the project must wire identity —
-`resolveConnectionIdentity()` and `isAdmin()` on its `BrowserContext` — or the
-mounted feature denies everyone. See
+`resolveConnectionIdentity()` on its `BrowserContext` — or the mounted feature
+denies everyone. `isAdmin()` is answered by the framework from
+`hilos_user.admin` (not in the code yet — HIL-1198); until that leaf lands the
+project wires it on the same `BrowserContext`. See
 [page-access-control.md](page-access-control.md).
 
 ## Generate against the contract
@@ -43,14 +45,17 @@ for a project to clone. Two contract shapes recur:
   subclass — the base context delivers the table snapshot through the
   self-snapshot path), and a thin frontend context wrapper. "Configure-only"
   means no engine code, not zero project files.
-- **Project-owned data behind a framework contract (bound).** The framework owns
-  the merge engine and the row/presence contract; the project owns the data and
-  binds it. Hilos-users is this shape: `Hilos\Tables\Users\AbstractHilosUsersTable`
-  is abstract with five hooks, `AbstractHilosUserTableRow` fixes the base
-  `id`/`admin`/`block` fields, and presence flows through the
+- **Framework data with a project-bound presence source (bound).** The framework
+  owns the merge engine, the row contract, and the data — the people table
+  `hilos_user` (not in the code yet — HIL-1192); the project binds only its
+  presence. Hilos-users is this shape: `Hilos\Tables\Users\AbstractHilosUsersTable`
+  is abstract with five hooks, of which the two over the users source become
+  the framework's (not in the code yet — HIL-1201); `AbstractHilosUserTableRow`
+  fixes the base `id`/`admin`/`block` fields, and presence flows through the
   `Hilos\Runtime\View\Collection\HilosPresenceSource` interface returning a
   `Hilos\Runtime\View\DTO\HilosUserPresenceSummary`. Bound is not "inventing a
-  table" — it is implementing a framework contract.
+  table" — it is implementing a framework contract. The rules of the table
+  itself are in [people-table.md](people-table.md).
 
 ## Generation recipe
 
@@ -111,22 +116,26 @@ requires, in dependency order (the table merges sources that must exist first):
 1. **Declaration.** `HilosFeature::HILOS_USERS` in the project facade's
    `FEATURES` ([../app-topology.md](../app-topology.md#feature-declaration)).
    Both pages, their table bindings and the users table become required at
-   startup; the block source in step 2 and the presence source in step 3 are
-   checked by the project's topology test, since neither a database nor a runtime
-   collection is visible in the constants.
-2. **DB user entity.** Generate the project's panel-operator entity triad and
-   migration. `id`, `admin`, `block` are the framework-fixed base fields the
-   project persists; add project fields beside them. Register the collection on
-   the project `DbContext`. *(Contract Gate: entity fields.)*
-   The users view collection is also the **block source**: it
-   `implements Hilos\Database\View\Collection\HilosUserBlockSource`, answering
-   `blockedAmong(list<int>): array<int, bool>` by reading each requested row by key
-   (a missing row answers `false`; never load the whole table). The framework
-   reads the block fact through `Hilos\Users\AccountBlockReader`, in whatever
-   process asks, so the collection key must be named in the project
-   `DbContext::processWideReadCollections()` — the topology test refuses a source
-   left out of that list, because in a worker running no page and no agent of its
-   own the read would be refused rather than answered.
+   startup; the presence source in step 3 is checked by the project's topology
+   test, since a runtime collection is not visible in the constants. Today the
+   test also checks the block source of step 2, which the target structure
+   drops (not in the code yet — HIL-1198).
+2. **The people table.** Copy the framework's migration stub
+   `create_hilos_user.sql` among the project's migrations, like every framework
+   table's; no entity is generated — the person is the framework's `hilos_user`
+   (not in the code yet — HIL-1192). A project that needs columns of its own
+   adds them by subclassing the whole ORM chain and mounting it under the
+   framework's `users` key ([../orm/inheritance.md](../orm/inheritance.md));
+   *(Contract Gate: the subclass's columns.)* No block source and no line in
+   `processWideReadCollections()` is needed from the project: `block` is a
+   framework column and the framework reads it (not in the code yet —
+   HIL-1198). Until those leaves land, the recipe is today's: the project's
+   entity triad and migration with `id`/`admin`/`block` as the framework-fixed
+   fields, its users view collection implementing
+   `Hilos\Database\View\Collection\HilosUserBlockSource` — `blockedAmong(list<int>):
+   array<int, bool>` read row by key, a missing row answering `false` — and the
+   collection key named in `DbContext::processWideReadCollections()`, because
+   `Hilos\Users\AccountBlockReader` asks in whatever process runs the guard.
 3. **RT presence source.** Generate an RT connections collection that
    `implements Hilos\Runtime\View\Collection\HilosPresenceSource`, returning a
    `HilosUserPresenceSummary` from `summaryForUser(?int)`. Register it on the
@@ -134,11 +143,13 @@ requires, in dependency order (the table merges sources that must exist first):
    shape.)* Presence comes from this project RT collection — never framework
    analytics, which is process-local and not user-keyed.
 4. **Table.** Generate a subclass of `AbstractHilosUsersTable` implementing the
-   five hooks (`usersSourceKey`, `presenceSourceKey`, `presenceSource`,
-   `rowForUserId`, `resolveUserIdForPresence`) and a subclass of
-   `AbstractHilosUserTableRow` that folds the base fields via `baseFields()` and
-   adds the project columns. The merge dispatch is `final` in the base — do not
-   re-implement it.
+   presence hooks (`presenceSourceKey`, `presenceSource`,
+   `resolveUserIdForPresence`) and a subclass of `AbstractHilosUserTableRow`
+   that folds the base fields via `baseFields()` and adds the project columns.
+   The two hooks over the users source, `usersSourceKey` and `rowForUserId`,
+   are the framework's, since the source is the framework's table (not in the
+   code yet — HIL-1201); until that leaf lands the project implements all five.
+   The merge dispatch is `final` in the base — do not re-implement it.
 5. **Page.** Generate thin concrete pages — `extends Hilos\Pages\Users\AbstractHilosUsersPage`
    / `AbstractHilosUserPage`; the subscribe and the action lifecycle stay
    framework-owned.
@@ -550,16 +561,17 @@ final class AppBrowserContext extends Hilos\Core\Browser\Context\BrowserContext
 {
 }
 
-// bound: the generated subclass implements the hooks; the merge stays in the base.
+// bound: the generated subclass implements the presence hooks; the merge stays
+// in the base, and so do the hooks over the users source — usersSourceKey() and
+// rowForUserId() read the framework's own table (not in the code yet — HIL-1201).
 final class UsersTable extends Hilos\Tables\Users\AbstractHilosUsersTable
 {
-    protected function usersSourceKey(): string { return DbContext::users; }
     protected function presenceSourceKey(): string { return RtContext::connections; }
     protected function presenceSource(): Hilos\Runtime\View\Collection\HilosPresenceSource
     {
         return Hilos::$rt->connections;
     }
-    // rowForUserId(), resolveUserIdForPresence() — bind the sources, do not re-merge.
+    // resolveUserIdForPresence() — bind the source, do not re-merge.
 }
 ```
 
@@ -580,8 +592,9 @@ final class UsersTable extends Hilos\Tables\Users\AbstractHilosUsersTable
 A bound feature's generated entity and RT item are contract surfaces. Stop and
 ask for explicit confirmation, per the root `AGENTS.md` gate, before generating:
 
-- the DB entity fields or migration shape (for hilos-users, the framework-fixed
-  `id`/`admin`/`block` contract);
+- the DB entity fields or migration shape — for hilos-users, the columns a
+  project's subclass of `hilos_user` adds; the base fields are the framework's
+  and not the project's to change (not in the code yet — HIL-1192);
 - the RT connection/presence item shape consumed by the merge.
 
 Signals, action DTOs, and routing for a framework feature ship with the framework
@@ -590,7 +603,8 @@ base, not per project — they are not generated here.
 ## Validation
 
 Use `$hilos-testing-cli` to choose composer scripts. After generating, keep the
-target project's admin e2e green and add coverage for the project-owned entity
-and presence source of a bound feature. The framework base classes named above
+target project's admin e2e green and add coverage for the presence source of a
+bound feature and for the project's subclass of `hilos_user`, where it has one
+(not in the code yet — HIL-1192). The framework base classes named above
 are the contract the generated code binds to; do not modify them to make
 activation fit.

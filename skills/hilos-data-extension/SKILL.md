@@ -13,6 +13,8 @@ you choose.
 
 - DB-backed data, `DbContext`, `DbCollection`, entities, objects, actions, and
   migrations: use `$hilos-orm` and `docs/agents/orm/db-collection.md`.
+- A column of the project's own on a framework table:
+  `docs/agents/orm/inheritance.md`.
 - Runtime state, `RtContext`, `RtState`, runtime collections, sync, and actions:
   use `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.

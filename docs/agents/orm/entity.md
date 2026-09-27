@@ -30,7 +30,10 @@ class MyEntity extends Entity {
 
 ## Rules
 
-- One Entity class = one DB table
+- One MOUNTED Entity class = one DB table. A project's subclass of a framework
+  Entity maps the same table and is mounted in place of the base, as one link of
+  the whole subclassed chain (not in the code yet — HIL-1190); see
+  [inheritance.md](inheritance.md)
 - Field names match DB column names exactly
 - Types must be strict: `int`, `string`, `float`, `bool` (no mixed)
 - Do not add business logic to Entity — it's a data container only
@@ -113,7 +116,9 @@ listed by hand: `EntitySchemaAudit::frameworkEntities()` discovers them all, and
 whose table this project never creates is skipped against
 `EntitySchemaAudit::liveTables()`. `EntitySchemaAudit::discoverEntities()` takes a
 **project's** directory and refuses the framework namespace, naming
-`frameworkEntities()` as the replacement.
+`frameworkEntities()` as the replacement. A framework Entity the project has
+extended is audited as the mounted subclass, and the project's columns are its
+columns (not in the code yet — HIL-1190); see [inheritance.md](inheritance.md).
 
 The audit runs in **both directions**, and the second one is what a hand-written list
 cannot give. `EntitySchemaAudit::auditTableCoverage()` asks the opposite question: every
@@ -185,7 +190,9 @@ The verdict lives here rather than in a registry of its own so that a migration 
 column is classified in the file the column was added to. Every column of the *live*
 table belongs to one of the two lists — including a column outside `_columns`, which the
 ORM does not map but a restore still rewrites. A table with no Entity says the same two
-things in a `TablesWithoutEntityProvider`.
+things in a `TablesWithoutEntityProvider`. A project's subclass of a framework Entity
+declares the verdicts on its own columns and inherits the base's (not in the code yet —
+HIL-1190); see [inheritance.md](inheritance.md).
 
 How to choose a strategy, and what the gates of a restore and of a startup refuse
 on:
@@ -213,12 +220,19 @@ it, so a table whose owner column is nullable declares `SET_STANDALONE` —
 an account to belong to. The machine does not check this: nullability is a fact of the
 live schema, not of a constant, and the rule is applied by whoever writes the Entity.
 
-The declaration names the column and not the parent class, because the framework does not
-know the class of a project's `user` — the collection key is the project's to name, and it
-does so in the `OWNS_DB` of its own users library. Who stands behind the column is said by
-`_foreign` where there is one, and the right climbs along it to the top of the set tree;
-a soft reference is the top — framework Entities hang on the person that way, `user_id`
-staying soft while the person table belongs to the project.
+The declaration names the column and not the parent class, because the column is what the
+row carries; who stands behind it is said by `_foreign` where there is one, and the right
+climbs along it to the top of the set tree. Framework Entities hang on the person by a
+foreign key onto `hilos_user` (not in the code yet — HIL-1202). A soft reference — a
+column with no `_foreign` entry — is the top of its own tree, and it is kept only where it
+has a reason of its own: a delivery points softly at its notification because the two are
+pruned independently (`create_hilos_notification_delivery.sql`), and the verifier circle
+points softly at a way in because the pair is named before it has to exist
+(`create_hilos_verifier_circle.sql`). The rule "framework stubs never FK across the
+framework/project boundary" was revoked by the owner on 2026-09-24: it followed from the
+person table being the project's, and that premise is gone. Its sentence in the existing
+migration stubs is rewritten by the foreign-keys leaf (not in the code yet — HIL-1202); do
+not copy it into a new stub.
 
 Both constants are mandatory on every Entity of a mounted collection. A node refuses to
 start over a table missing either of them (`SetOwnershipGuard`), because the gap is born

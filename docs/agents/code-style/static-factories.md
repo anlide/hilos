@@ -24,6 +24,14 @@ If a class is not designed for inheritance, mark it `final`. With a `final`
 class `self` and `static` resolve to the same type; prefer `new static()` for
 consistency, or keep an intentional `self` value-object contract.
 
+One named case is designed for inheritance even while no subclass exists in the
+tree: the framework's ORM chain — every concrete Entity, Object, View item, their
+collections, and their actions. A project extends a framework table by
+subclassing that whole chain, so none of those classes is `final`, and their
+factories declare `: static` and build with `new static(...)` (not in the code
+yet — HIL-1190). The rule and the chain are in
+[../orm/inheritance.md](../orm/inheritance.md).
+
 ## Workflow
 
 1. Decide the contract: does the factory return a polymorphic subtype
@@ -36,7 +44,10 @@ consistency, or keep an intentional `self` value-object contract.
    the arguments the inherited factory passes. If `new static()` would break a
    subclass with a different constructor, stop and resolve that mismatch first.
 4. If the class has no subclasses and is not meant to be extended, mark it
-   `final` and keep the body, native return type, and `@return` aligned.
+   `final` and keep the body, native return type, and `@return` aligned. A
+   concrete class of the framework's ORM chain is meant to be extended even
+   with no subclass in the tree, so it stays open
+   ([../orm/inheritance.md](../orm/inheritance.md)).
 
 ## Preferred Shape
 

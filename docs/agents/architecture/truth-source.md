@@ -522,15 +522,18 @@ empty key, and a collection named by more than one of what are then three maps
 of the half. The runtime pair, `OWNS_RT_SET` and `ownedRtSetKey()`, is declared,
 asked and refused the same way. *A Claim Over A Set* has the width itself.
 
-**The collection's name is given by the project, not by the class.** The
-framework's `AbstractUsersLibraryAgent` needs the account table, under a name
-only the project knows. It used to ask for the name at run time through a seam,
-`usersCollection()`, and register the claim against the registry directly. The
-project subclass declares it now, since it is the one that knows its name, and
-the base declares only what it owns under names of its own — so the seam had no
-caller left and went with the claim (HIL-897). The operations are spelled out
-there rather than left to the kind: the library's default is adding and
-removing, and a project that renames somebody edits the row.
+**The people collection is the framework's, and the framework's library claims
+it.** The account table is the framework's `hilos_user`, mounted under the
+framework's own key `users` (not in the code yet — HIL-1192), and the claim on
+it is declared on `AbstractUsersLibraryAgent` itself, beside the ways in and the
+codes it already owns (not in the code yet — HIL-1194). Today the project
+subclass declares that claim, because the table is still the project's — the
+base used to ask for the collection's name at run time through a seam,
+`usersCollection()`, and that seam went with the claim it registered (HIL-897).
+The operations are spelled out rather than left to the kind: the library's
+default is adding and removing, and renaming somebody is an operation of the
+framework's people library, not a row edit by a project (not in the code yet —
+HIL-1195; [people-table.md](people-table.md)).
 
 **The claimant is not an agent at all.** A test-fixture CLI command such as
 `UserTestSeedCommand` mutates a table from a process that has no agent, and the

@@ -74,6 +74,8 @@ requirement** wherever a framework checkout is used.
   catalog provider constants when only metadata changes.
 - Project subclasses customize behavior by overriding the factory and returning
   `new ProjectThing();`.
+- A framework ORM table is extended by subclassing its whole chain — see
+  [orm/inheritance.md](orm/inheritance.md).
 - Do not make project code initialize framework metadata by passing DB, catalog,
   or facade objects through constructors when the framework can resolve them
   from its own facade contract.

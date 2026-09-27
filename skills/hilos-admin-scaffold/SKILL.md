@@ -1,6 +1,6 @@
 ---
 name: hilos-admin-scaffold
-description: Generate the activation of a framework-owned admin feature — settings, hilos-users, backup, the maintenance section, or a future one like roles — in a Hilos project. Use when wiring settings, hilos-users, backup, or the maintenance section into a project, generating the project-side binding a framework admin feature requires (catalog, user entity, presence source, table subclass, thin page, SDK view mount; for backup, the backup catalog, env values, agent/CLI registration, and RT-index binding), or stepping through the per-feature activation order. This covers framework-owned features only; a project's own divergent admin table is Mode-2 authoring — use $hilos-admin-features for that.
+description: Generate the activation of a framework-owned admin feature — settings, hilos-users, backup, the maintenance section, or a future one like roles — in a Hilos project. Use when wiring settings, hilos-users, backup, or the maintenance section into a project, generating the project-side binding a framework admin feature requires (catalog, presence source, table subclass, thin page, SDK view mount; for backup, the backup catalog, env values, agent/CLI registration, and RT-index binding), or stepping through the per-feature activation order. This covers framework-owned features only; a project's own divergent admin table is Mode-2 authoring — use $hilos-admin-features for that.
 ---
 
 # Hilos Admin Scaffold
@@ -13,6 +13,11 @@ the recipe before generating code.
 - Per-feature generation recipe + the contract shapes:
   `docs/agents/architecture/admin-feature-scaffold.md`
 - Normative boundary + the two modes: `docs/agents/architecture/admin-features.md`
+- The people table `hilos_user` hilos-users draws over — what the framework owns
+  of a person and what stays the project's: `docs/agents/architecture/people-table.md`
+- Adding the project's own columns to `hilos_user` — the whole ORM chain
+  subclassed and mounted under the framework key: `docs/agents/orm/inheritance.md`
+  (that work is `$hilos-orm`'s, not this recipe's)
 - The personal-data verdict every table must carry, and the restore gates that
   demand it: `docs/agents/architecture/backup-anonymization.md`
 - Offering a section's settings as presets — declaring the group, why a preset
@@ -28,8 +33,8 @@ the recipe before generating code.
 ## Workflow
 
 1. Identify the framework feature and its contract shape: framework-owned data
-   source (settings — configure-only), project-owned data behind a framework
-   contract (hilos-users — bound), or a configure-only engine with a monopoly
+   source (settings — configure-only), framework data with a project-bound
+   presence source (hilos-users — bound), or a configure-only engine with a monopoly
    agent (backup — a catalog carrying the reference and PII registries, env
    values, and agent/CLI/RT-index binding; the verifier circle's table is not
    backup's to activate — it belongs to the freeze, and the recipe says where it
@@ -45,16 +50,18 @@ the recipe before generating code.
    `SettingsLibraryAgentDaemon` in `AGENTS` with `PLACEMENT => POLICY` (the single
    writer of the settings collection; one entry, shared with the `LOGS` and
    `NOTIFICATION_DELIVERY` features), mount the SDK view.
-4. Bound: generate in dependency order — DB entity with its users collection as
-   the block source (implements `HilosUserBlockSource`, named in
-   `processWideReadCollections()`) → RT presence source (implements
-   `HilosPresenceSource`) → table subclass (the abstract hooks) → thin page →
-   topology + SDK view mount.
+4. Bound: generate in dependency order — the `create_hilos_user.sql` stub copied
+   among the project's migrations (no entity, no block source: the person is the
+   framework's table) → RT presence source (implements `HilosPresenceSource`) →
+   table subclass (the presence hooks) → thin page → topology + SDK view mount.
+   The recipe names which of these steps are still today's project code until
+   their leaves land; follow the recipe, not this summary.
 5. The admin surface is closed by default: every framework admin page inherits
    the `ADMIN` access level from `AbstractHilosPage`. Wire the project identity
-   seams — `resolveConnectionIdentity()` and `isAdmin()` on the project
-   `BrowserContext` — or the mounted feature denies everyone
-   (`docs/agents/architecture/page-access-control.md`).
+   seam — `resolveConnectionIdentity()` on the project `BrowserContext` — or the
+   mounted feature denies everyone; `isAdmin()` is the framework's answer from
+   `hilos_user.admin` (`docs/agents/architecture/page-access-control.md`, and the
+   recipe for what the project still wires today).
 6. Pass every DB-entity / RT-item change through the contract gate before writing.
 7. Validate with composer scripts via `$hilos-testing-cli`; keep the project's
    admin e2e green. Registering the feature's page / agent / table in the
@@ -69,9 +76,10 @@ the recipe before generating code.
   merge/mutation or the page `onAction` lifecycle.
 - Back presence with a project RT collection implementing `HilosPresenceSource`,
   not framework analytics (process-local, not user-keyed).
-- Back the account block fact with the project's DB users collection implementing
-  `HilosUserBlockSource`, read process-wide; the block source and the presence
-  source are required together by `HILOS_USERS`.
+- The account block fact is the framework's: `block` is a column of `hilos_user`
+  and the framework reads it. Do not generate a project block source unless the
+  recipe says the project still carries one today.
 - Scaffold framework-owned features only; a project's own divergent table is
   Mode-2 authoring — do not generate it with this recipe.
-- Stop and ask before generating hilos-user DB fields or the RT presence item shape.
+- Stop and ask before adding columns to `hilos_user` in a project subclass or
+  changing the RT presence item shape.

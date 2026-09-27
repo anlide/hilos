@@ -1,6 +1,6 @@
 ---
 name: hilos-orm
-description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, accessor contracts, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, collection access, or persistence behavior. Use it too when a new Entity has to say which column cuts its table into sets — the same declaration decides which rows an agent may own as its set, so ask who will own them before naming the column.
+description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, accessor contracts, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, collection access, or persistence behavior. Use it too when a new Entity has to say which column cuts its table into sets — the same declaration decides which rows an agent may own as its set, so ask who will own them before naming the column. Use it too when a project needs its own column on a framework table or subclasses any framework ORM class — the whole chain is subclassed and mounted under the framework key.
 ---
 
 # Hilos ORM
@@ -21,6 +21,8 @@ touched ORM surfaces.
 - Magic, array, result, and finder selection:
   `docs/agents/orm/accessor-contracts.md` or `$hilos-accessor-contracts`
 - Entity classes and DB table mapping: `docs/agents/orm/entity.md`
+- Extending a framework Entity (the whole chain, the links, the mount, the start
+  guard): `docs/agents/orm/inheritance.md`
 - Database table names (entity-first, bridge ordering):
   `docs/agents/code-style/table-names.md`
 - Object layer and view transformations: `docs/agents/orm/object.md`

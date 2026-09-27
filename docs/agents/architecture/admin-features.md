@@ -43,8 +43,10 @@ The project:
 - declares the feature in `Hilos::FEATURES` — the single on-switch, and what the
   activation check reads; see
   [app-topology.md](../app-topology.md#feature-declaration);
-- declares the content — a catalog (settings), or extra fields on the base
-  entity (hilos-users), or the collection it binds;
+- declares the content — a catalog (settings), or, for hilos-users, a subclass
+  chain of the people table `hilos_user` when the project needs columns of its
+  own (not in the code yet — HIL-1192; see [people-table.md](people-table.md)),
+  or the collection it binds;
 - sets one `SUBSCRIPTION_AGENT_TYPE`;
 - ships a `BrowserContext` so the table's snapshot reaches the browser — an empty
   subclass suffices (the framework default is `null`); see *Browser delivery* below;
@@ -143,7 +145,7 @@ than needing its own.
 | Browser table | the merge/query/mutation engine + base row contract | the row's extra fields, the declared sources, the field map |
 | Page | subscribe + the action lifecycle (ack/error) | `SUBSCRIPTION_AGENT_TYPE`, registration |
 | Actions | the add/update/delete dispatch over `Hilos::$table` | nothing for a framework feature; the entity's actions for a Mode-2 one |
-| Data | settings collection (`HilosDbContext`); the hilos-user base entity | a project entity (Mode 2), extra hilos-user fields, the settings catalog |
+| Data | settings collection (`HilosDbContext`); the people table `hilos_user` (not in the code yet — HIL-1192) | a project entity (Mode 2), a subclass chain of `hilos_user` when the project adds columns, the settings catalog |
 | Browser delivery | snapshot + reactive push, incl. the self-snapshot path for catalog tables | a `BrowserContext` (an empty subclass suffices for a framework feature) |
 | Frontend | the view + the headless controller (`@hilos/core/admin/*`) | a thin typed context + a wrapper |
 
@@ -191,12 +193,13 @@ Follow the framework extension contract in
   online/presence summary; the framework owns the merge, the project binds its
   own RT connections collection as the presence source rather than the framework
   hard-coding a project RT key.
-- Abstract the block source the same way, one layer down. The account `block`
-  column stays the project's; the project's DB users collection implements
-  `HilosUserBlockSource`, and framework code asks through `AccountBlockReader`
-  (bulk and single read off the one project method). The collection must be a
-  process-wide read, because the question is asked wherever a guard runs; a
-  missing source is refused, never answered `false`. Whoever writes `block`
+- The account `block` column and its reading are the framework's: `block` is a
+  column of the people table `hilos_user`, and the framework reads it itself
+  wherever a guard runs, so the project implements no block source (not in the
+  code yet — HIL-1198). Today the project's DB users collection implements
+  `HilosUserBlockSource` and framework code asks through `AccountBlockReader`,
+  as a process-wide read; what becomes of those two seams is that leaf's
+  question, not this page's. Whoever writes `block`
   sends the sessions library `hilos_account_block_changed` {userId}; the library
   reads the flag itself, signs the person out, refuses their sign-in and leaves
   the "Access closed" card the shell draws (HIL-289). A missed frame is caught at
@@ -205,11 +208,13 @@ Follow the framework extension contract in
 
 ## hilos-users base
 
-The framework owns the base hilos-user entity: `id`, `admin`, `block`, plus the
-computed presence/online summary. A project extends it with whatever it needs
-(name, last-activity, e-mail, …) through the field-extension point above. This
-matches the frontend `User` type, which already carries the mandatory RBAC
-`superadmin`/`blocked` flags.
+The framework owns the people table `hilos_user` whole — `id`, `name`, `admin`,
+`block`, `last_activity` (not in the code yet — HIL-1192) — plus the computed
+presence/online summary. A project that needs more extends it by subclassing the
+whole ORM chain and mounting it under the framework key; the rules of the table
+are in [people-table.md](people-table.md). The frontend `User` type carries the
+mandatory RBAC flags `admin`/`block` today, and gains `name` and `lastActivity`
+(not in the code yet — HIL-1193).
 
 `admin_users` is NOT a hilos-users extension — it is a separate, project-owned
 table (Mode 2). Keep the two distinct; the framework feature is the panel
@@ -218,6 +223,10 @@ operators, the project table is the project's own.
 The account card requires `applyAccountBlock()` on the sessions library,
 `assertAdministratorMayDelete()` on the users library, and `ADMIN_AUDIENCE`.
 That audience judges the requesting administrator and protects the last active one.
+All three are the framework's implementation on the target structure, since the
+columns they read are the framework's: `applyAccountBlock()` (not in the code
+yet — HIL-1197), `assertAdministratorMayDelete()` (not in the code yet —
+HIL-1194), `ADMIN_AUDIENCE` (not in the code yet — HIL-1198).
 
 ## Preferred Shape
 

@@ -94,6 +94,11 @@ final class User extends Entity
 - No connection index is written: a verdict on an Entity lands on the primary
   connection, which is the only one an Entity knows.
 
+A project's subclass of a framework Entity declares the verdicts on its own
+columns and inherits the base's; the registry collects the mounted subclass, not
+the base (not in the code yet — HIL-1190). See
+[../orm/inheritance.md](../orm/inheritance.md).
+
 **A table with no Entity declares both facts in a `TablesWithoutEntityProvider`** —
 which live tables are unmapped on purpose, and what of them is personal. The
 framework's own are `FrameworkTablesWithoutEntity`; a project with such tables
