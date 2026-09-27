@@ -5,9 +5,10 @@
 #   docker compose -f docker-compose.local.yml -f docker-compose.preview.yml up -d
 # The framework/docker/preview script does this for you.
 #
-# The local lane points VITE_WS_URL at ws://localhost:8100, which only works on
-# the host itself — another device (a phone) would dial its own localhost, and a
-# plain ws:// is blocked as mixed content under the https preview. Point the
+# The local lane sets no VITE_WS_URL since HIL-1085: the page opens the
+# same-origin /ws route and its Vite dev server proxies it to the daemon
+# (vite.config.ts). The preview keeps the socket on a host of its own, over TLS
+# — a plain ws:// is blocked as mixed content under the https preview. Point the
 # browser at wss://ws.tasks.hilos instead, which Caddy terminates and proxies to
 # the daemon's WebSocket. HMR is turned off because its own socket can't traverse
 # the TLS proxy cleanly and the preview shows finished work, not live edits.
