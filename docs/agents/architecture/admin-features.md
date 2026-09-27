@@ -195,16 +195,16 @@ Follow the framework extension contract in
   hard-coding a project RT key.
 - The account `block` column and its reading are the framework's: `block` is a
   column of the people table `hilos_user`, and the framework reads it itself
-  wherever a guard runs, so the project implements no block source (not in the
-  code yet — HIL-1198). Today the project's DB users collection implements
-  `HilosUserBlockSource` and framework code asks through `AccountBlockReader`,
-  as a process-wide read; what becomes of those two seams is that leaf's
-  question, not this page's. Whoever writes `block`
-  sends the sessions library `hilos_account_block_changed` {userId}; the library
-  reads the flag itself, signs the person out, refuses their sign-in and leaves
-  the "Access closed" card the shell draws (HIL-289). A missed frame is caught at
-  the next handshake. The admin card is the exception to sending that frame:
-  the sessions library calls `applyAccountBlock()` and enforces the flag directly.
+  wherever a guard runs, so the project implements no block source
+  (not in the code yet — HIL-1198). Today the project's DB users collection
+  implements `HilosUserBlockSource` and framework code asks through
+  `AccountBlockReader`, as a process-wide read; what becomes of those two seams
+  is that leaf's question, not this page's. Whoever writes `block` sends the
+  sessions library `hilos_account_block_changed` {userId}; the library reads the
+  flag itself, signs the person out, refuses their sign-in and leaves the
+  "Access closed" card the shell draws (HIL-289). A missed frame is caught at
+  the next handshake. The admin card is the exception to sending that frame: the
+  sessions library calls `applyAccountBlock()` and enforces the flag directly.
 
 ## hilos-users base
 

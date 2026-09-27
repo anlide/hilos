@@ -26,11 +26,12 @@ nobody's set and is the root other tables hang their sets on — and the verdict
 The three demos, each of which carries a copy of a `user` table of its own today,
 move onto it (not in the code yet — HIL-1192).
 
-The owner's frame (2026-09-24, the HIL-1111 interview), in the owner's words rendered in
-English: *it has to be framework-level, and a project inherits it and extends it
-as needed.* The occasion: asking why a passkey carries no foreign key onto its
-way in, the interview found the stub rule "framework stubs never FK across the
-framework/project boundary" standing on the person table being the project's.
+The owner's frame (2026-09-24, the HIL-1111 interview), in the owner's words
+rendered in English: *it has to be framework-level, and a project inherits it
+and extends it as needed.* The occasion: asking why a passkey carries no foreign
+key onto its way in, the interview found the stub rule "framework stubs never FK
+across the framework/project boundary" standing on the person table being the
+project's.
 
 ## Extending It
 
@@ -100,9 +101,9 @@ HIL-1195's to introduce; this page does not name them.
 
 The tombstone of an account folded into another is a framework table, one row
 per folded account — who, into whom, when — and not a column on `hilos_user`
-(not in the code yet — HIL-1199). The owner's decision D (2026-09-24), in the owner's words rendered
-in English: *I do not want to spend a whole column on a rare operation; let us
-plan a 1:1 table for it.*
+(not in the code yet — HIL-1199). The owner's decision D (2026-09-24), in the
+owner's words rendered in English: *I do not want to spend a whole column on a
+rare operation; let us plan a 1:1 table for it.*
 
 With the table, "is this account already folded" and the tombstone itself are
 framework code; the project moves only its own rows. The table's name and columns
@@ -121,11 +122,11 @@ notification because the two are pruned independently, and the verifier circle
 points softly at a way in because the pair is named before it has to exist.
 
 The rule "framework stubs never FK across the framework/project boundary" was
-revoked by the owner on 2026-09-24 — decision E, in the owner's words: *let us revoke this
-rule.* It followed from the person table being the project's, and that premise
-is gone. Its sentence in the existing migration stubs is rewritten by the
-foreign-keys leaf (not in the code yet — HIL-1202); do not copy it into a new
-stub.
+revoked by the owner on 2026-09-24 — decision E, in the owner's words:
+*let us revoke this rule.* It followed from the person table being the
+project's, and that premise is gone. Its sentence in the existing migration
+stubs is rewritten by the foreign-keys leaf (not in the code yet — HIL-1202); do
+not copy it into a new stub.
 
 ## Anti-Patterns
 
