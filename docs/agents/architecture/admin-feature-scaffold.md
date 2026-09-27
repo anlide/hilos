@@ -524,9 +524,9 @@ project-bound contract. Pick the recipe by which one it is:
   - `TABLES` — `HilosVerifierCircleTable::TABLE` under the project's
     `TableContext` key, bound to `HilosVerifierCircleTable`;
   - `PAGE_TABLES` — the page → the circle table;
-  - the mount — `@hilos/vue`'s `HilosMaintenancePage` with the project's
-    `{ connection, scopes, actions }` context under `HilosPages.MAINTENANCE` (the React
-    and Angular twins are not in the code yet — HIL-1123);
+  - the mount — `HilosMaintenancePage` from `@hilos/vue`, `@hilos/react` or
+    `@hilos/angular` with the project's `{ connection, scopes, actions }` context
+    under `HilosPages.MAINTENANCE`;
   - no line in `FEATURES`, and nothing more to migrate: the circle's table is
     already required of every installation that can freeze (HIL-1118).
   A project that registers no page for the section answers its address with a

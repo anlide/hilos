@@ -16,8 +16,8 @@ describe('hilosUnbuiltPages', () => {
     expect(vue.has(HilosPages.DAEMON)).toBe(true)
     expect(vue.has(HilosPages.SECURITY)).toBe(false)
     expect(vue.has(HilosPages.MAINTENANCE)).toBe(false)
-    expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE)).toBe(true)
-    expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE)).toBe(false)
+    expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE)).toBe(false)
   })
 
   it('removes project views only from this result and ignores unrelated keys', () => {

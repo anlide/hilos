@@ -16,7 +16,6 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.ANALYTICS]: ['vue', 'react', 'angular'],
   [HilosPages.ROLES]: ['vue', 'react', 'angular'],
   [HilosPages.OPERATIONS]: ['vue', 'react', 'angular'],
-  [HilosPages.MAINTENANCE]: ['react', 'angular'],
   [HilosPages.GUARDIAN]: ['vue', 'react', 'angular'],
   [HilosPages.GUARDIAN_AGENT]: ['vue', 'react', 'angular'],
   [HilosPages.I18N]: ['vue', 'react', 'angular'],

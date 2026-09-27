@@ -89,6 +89,10 @@ export {
   type HilosBackupPageProps,
 } from './admin/backup/HilosBackupPage.js'
 export {
+  HilosMaintenancePage,
+  type HilosMaintenancePageProps,
+} from './admin/maintenance/HilosMaintenancePage.js'
+export {
   HilosCommunicationsPage,
   type HilosCommunicationsPageProps,
 } from './admin/communications/HilosCommunicationsPage.js'

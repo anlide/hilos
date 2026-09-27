@@ -7,9 +7,9 @@
 // bootHilos projectViews. HILOS_UNBUILT_PAGES hides pages the layer has not built:
 // the router answers 404 and no card links to them.
 //
-// The users / user / settings / backup and communications hub / channel pages are
-// intentionally absent: they are real framework pages (HilosUsersPage / HilosUserPage /
-// HilosSettingsPage / HilosBackupPage / HilosCommunicationsPage /
+// The users / user / settings / backup / maintenance and communications hub / channel
+// pages are intentionally absent: they are real framework pages (HilosUsersPage / HilosUserPage /
+// HilosSettingsPage / HilosBackupPage / HilosMaintenancePage / HilosCommunicationsPage /
 // HilosCommunicationsChannelPage) that require a project-supplied context, so a
 // project mounts them directly rather than through this default map. The dashboard
 // is the real HilosDashboardPage (self-contained, no project context), reused here

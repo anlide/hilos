@@ -37,6 +37,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Polls\Pages\Hilos\PrivacyPage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\TermsPage;
@@ -86,6 +87,7 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
@@ -147,6 +149,7 @@ final class Hilos extends HilosFacade
         LogsRotationsPage::PAGE => LogsRotationsPage::class,
         LogsViewPage::PAGE => LogsViewPage::class,
         LogsSettingsPage::PAGE => LogsSettingsPage::class,
+        MaintenancePage::PAGE => MaintenancePage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -277,6 +280,7 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         PollsTableContext::settings => HilosSettingsTable::class,
         PollsTableContext::hilosUsers => HilosUsersTable::class,
+        PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
         PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
@@ -295,6 +299,9 @@ final class Hilos extends HilosFacade
     public const array PAGE_TABLES = [
         SettingsPage::PAGE => [
             PollsTableContext::settings => [],
+        ],
+        MaintenancePage::PAGE => [
+            PollsTableContext::hilosVerifierCircle => [],
         ],
         LogsKeysPage::PAGE => [
             PollsTableContext::hilosLogKeys => [],

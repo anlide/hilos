@@ -28,6 +28,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Polls\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
@@ -42,6 +43,7 @@ use Demo\Polls\Tables\PollsTableContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
@@ -55,6 +57,7 @@ use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
@@ -375,6 +378,7 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame([
             PollsTableContext::settings => HilosSettingsTable::class,
             PollsTableContext::hilosUsers => HilosUsersTable::class,
+            PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
             PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
             PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
@@ -394,6 +398,7 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(
             [
                 SettingsPage::PAGE,
+                MaintenancePage::PAGE,
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
@@ -420,6 +425,25 @@ final class PollsTopologyRegistryTest extends TestCase
             UserPage::PAGE,
             Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
                 [HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE],
+        );
+    }
+
+    /** Maintenance has no feature switch: page and table registration activate it for Angular (HIL-1123). */
+    public function testMaintenanceSectionIsActivated(): void
+    {
+        $this->assertSame(MaintenancePage::class, Hilos::PAGES[MaintenancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, MaintenancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            [PollsTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
         );
     }
 

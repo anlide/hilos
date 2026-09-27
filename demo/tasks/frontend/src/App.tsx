@@ -38,6 +38,7 @@ import HilosLogsRotations from './views/Hilos/Logs/Rotations'
 import HilosLogsSettings from './views/Hilos/Logs/Settings'
 import HilosLogsView from './views/Hilos/Logs/View'
 import HilosLogsWorkers from './views/Hilos/Logs/Workers'
+import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.js'
 import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth'
 import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider'
 import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods'
@@ -76,6 +77,9 @@ const pages: Record<string, ComponentType> = {
   // round-trips and the monopoly agent; the project binds its context
   // (views/Hilos/Backup) and, on its backend, the catalog, the page and the table.
   [HilosPages.BACKUP]: HilosBackup,
+  // Maintenance has no feature switch: the framework owns the circle and both
+  // actions; the project binds its context and registers the page and table.
+  [HilosPages.MAINTENANCE]: HilosMaintenance,
   // The framework logs section, activated whole: the framework owns the six
   // screens, their tables and every phrase on them; the project binds its
   // connection, scope stores and action lifecycle (views/Hilos/Logs) and, on its

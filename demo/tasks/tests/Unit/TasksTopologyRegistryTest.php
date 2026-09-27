@@ -29,6 +29,7 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
@@ -45,6 +46,7 @@ use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
@@ -413,6 +415,7 @@ final class TasksTopologyRegistryTest extends TestCase
             [
                 SettingsPage::PAGE,
                 BackupPage::PAGE,
+                MaintenancePage::PAGE,
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
@@ -464,6 +467,25 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             [TasksTableContext::hilosBackups => [], TasksTableContext::hilosVerifierCircle => []],
             Hilos::PAGE_TABLES[BackupPage::PAGE],
+        );
+    }
+
+    /** Maintenance has no feature switch: page and table registration activate it for React (HIL-1123). */
+    public function testMaintenanceSectionIsActivated(): void
+    {
+        $this->assertSame(MaintenancePage::class, Hilos::PAGES[MaintenancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, MaintenancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            [TasksTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
         );
     }
 

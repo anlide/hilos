@@ -10,6 +10,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
@@ -23,12 +24,13 @@ use Hilos\Tables\Security\HilosSecurityStepUpTable;
  *
  * Registers the framework settings and log tables (as-is) and the project's Hilos
  * users table activation; accessed via Hilos::$table->settings /
- * Hilos::$table->hilosUsers.
+ * Hilos::$table->hilosUsers. Also binds the maintenance section's verifier circle table.
  *
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
  * @property-read HilosUsersTable $hilosUsers
+ * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSettingsTable $settings
  * @property-read HilosSecurityOAuthProvidersTable $hilosSecurityOauthProviders
  * @property-read HilosSecurityOAuthProviderFieldsTable $hilosSecurityOauthProviderFields
@@ -43,6 +45,7 @@ final class PollsTableContext extends TableContext
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
+    public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosSecurityOauthProviders = HilosSecurityOAuthProvidersTable::TABLE;
     public const string hilosSecurityOauthProviderFields = HilosSecurityOAuthProviderFieldsTable::TABLE;

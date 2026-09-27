@@ -43,6 +43,7 @@ import { LogSettings } from './views/hilos/logs/settings'
 import { LogViewer } from './views/hilos/logs/view'
 import { LogWorkers } from './views/hilos/logs/workers'
 import { LogsOverview } from './views/hilos/logs/overview'
+import { Maintenance } from './views/hilos/maintenance/maintenance.js'
 import { Main } from './views/main/main'
 import { MainSkeleton } from './views/main/main-skeleton'
 import { Privacy } from './views/privacy/privacy'
@@ -226,6 +227,9 @@ export class App {
     [HilosPages.LOGS_ROTATIONS]: LogRotations,
     [HilosPages.LOGS_SETTINGS]: LogSettings,
     [HilosPages.LOGS_VIEW]: LogViewer,
+    // Maintenance has no feature switch: the framework owns the circle and both
+    // actions; the project binds its context and registers the page and table.
+    [HilosPages.MAINTENANCE]: Maintenance,
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,
