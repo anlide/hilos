@@ -24,6 +24,7 @@ use Hilos\Database\Entity\Collection\Identities as EntityIdentities;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
+use Hilos\Database\Identity\IdentityExportEntry;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
@@ -53,6 +54,34 @@ final class Identities extends Objects
 
     /** Logged reason: a `magic_link` for that address is already there to carry it */
     private const string DELETE_REASON_LINK_EXISTS = 'magic_link_exists';
+
+    /**
+     * Reads the DB-only creation stamp alongside an explicit list of portable fields.
+     *
+     * @param int $userId Person whose sign-in methods are exported
+     * @return list<IdentityExportEntry> Metadata in creation order, without secrets
+     * @throws DatabaseException When the query fails
+     */
+    public function exportEntries(int $userId): array
+    {
+        Database::sql(
+            'SELECT `type`, `identifier`, `provider`, `verified`, `created_at` FROM `'
+            . EntityIdentity::_table . '` WHERE `user_id` = ? ORDER BY `created_at`, `id`',
+            [$userId],
+        );
+        $entries = [];
+        foreach (Database::rows() as $row) {
+            $entries[] = new IdentityExportEntry(
+                $row[EntityIdentity::type],
+                $row[EntityIdentity::type] === IdentityType::PASSWORD ? null : $row[EntityIdentity::identifier],
+                $row[EntityIdentity::provider],
+                (bool)$row[EntityIdentity::verified],
+                $row[EntityIdentity::created_at],
+            );
+        }
+
+        return $entries;
+    }
 
     /**
      * Finds the identity for a (type, identifier) pair.

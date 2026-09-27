@@ -1098,6 +1098,7 @@ abstract class Hilos implements TruthSourceOwner
             static::$fs?->configure();
             static::refuseUploadsWithoutTmp();
             static::refuseFilesWithoutDirectory();
+            static::refuseDataExportWithoutDirectory();
         }
 
         SourceChangeBus::reset();
@@ -1222,6 +1223,23 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['HilosFeature::FILES keeps published files in the files directory, but the FS context registers none'],
+        );
+    }
+
+    /**
+     * @throws IncompleteFeatureActivationException When AUTH has no directory for its data exports
+     */
+    protected static function refuseDataExportWithoutDirectory(): void
+    {
+        if (!in_array(HilosFeature::AUTH, static::FEATURES, true)
+            || static::$fs?->hasDirectory(FsContext::DATA_EXPORT) === true
+        ) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            ['HilosFeature::AUTH keeps data-export archives in the data_export directory, but the FS context registers none'],
         );
     }
 

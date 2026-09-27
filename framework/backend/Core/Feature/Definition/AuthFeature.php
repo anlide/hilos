@@ -11,6 +11,7 @@ use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\AccountDeletion;
+use Hilos\Database\Entity\Item\DataExport;
 use Hilos\Database\Entity\Item\Identity;
 use Hilos\Database\Entity\Item\PasskeyCredential;
 use Hilos\Database\Entity\Item\RegistrationReservation;
@@ -44,7 +45,7 @@ use Hilos\Runtime\View\Context\RtContext;
 /**
  * The sign-in surface: its commands, the library that owns them, and the tables they write.
  *
- * The project owes this feature two library agent pairs, and nothing else. One is
+ * The project owes this feature two library agent pairs and a data-export agent. One library is
  * {@see AbstractUsersLibraryAgent}, which owns the user set and executes every command of
  * the surface; the other is {@see AbstractSessionsLibraryAgent}, which owns the sessions
  * those commands end in. Both are named by agent type like every other obligation in the
@@ -79,12 +80,12 @@ final class AuthFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The two library agent pairs and the tables the set lives in
+     * @return FeatureRequirements The library and export agents and the tables they use
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
-            requiredAgents: [HilosAgentType::HILOS_USERS_LIBRARY],
+            requiredAgents: [HilosAgentType::HILOS_USERS_LIBRARY, HilosAgentType::HILOS_DATA_EXPORT],
             // Required as strictly, owned less so: a session is not a sign-in, and the two
             // demos with no login carry sessions without ever declaring this feature.
             requiredSharedAgents: [HilosAgentType::HILOS_SESSIONS_LIBRARY],
@@ -100,6 +101,7 @@ final class AuthFeature extends FeatureDefinition
                 SecondFactorSetting::_table,
                 StepUp::_table,
                 AccountDeletion::_table,
+                DataExport::_table,
             ],
         );
     }

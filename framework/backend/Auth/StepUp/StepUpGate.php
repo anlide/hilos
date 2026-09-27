@@ -67,6 +67,9 @@ final class StepUpGate
         }
 
         $target = new StepUpMethodResolver()->resolve($userId);
+        if ($target === null && $declaredOperation->passesWithNothingToConfirm) {
+            return self::VERDICT_PASS;
+        }
         if ($declaredOperation->opensWithAddressCode && ($target?->method === StepUpMethod::EMAIL_CODE
             || $target?->method === StepUpMethod::SMS_CODE)) {
             return self::VERDICT_PASS;

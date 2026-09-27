@@ -4,6 +4,11 @@
 // and the current-user selector live once
 // (docs/agents/frontend/bootstrap-structure.md).
 import {
+  dataExportNodeSchema,
+  type DataExportNode,
+} from '../profile/dataExport.js'
+
+import {
   SIGNAL_CODE_SEND_PROGRESS,
   codeSendProgressSchema,
 } from '../auth/authSendProgress.js'
@@ -270,6 +275,8 @@ export interface PendingAuthStep {
 export interface AccountBlockedNotice {
   /** The account's confirmed address, or `null` when it had none the server could name. */
   readonly identifier: string | null
+  /** Archive node carried with the card, still in server time. */
+  readonly dataExport: DataExportNode | null
 }
 
 /** What a sign-in held on its second factor carries into the step it is restored to (HIL-494). */
@@ -867,10 +874,14 @@ export function sessionAccountBlocked(
       return null
     }
     const identifier = (value as { identifier?: unknown }).identifier
+    const dataExport = dataExportNodeSchema
+      .nullable()
+      .safeParse((value as { dataExport?: unknown }).dataExport)
 
     return {
       identifier:
         typeof identifier === 'string' && identifier !== '' ? identifier : null,
+      dataExport: dataExport.success ? dataExport.data : null,
     }
   })
 }

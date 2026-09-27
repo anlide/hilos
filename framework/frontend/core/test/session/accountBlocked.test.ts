@@ -76,7 +76,11 @@ function bind() {
   const scopes = new ScopeManager()
   bindSessionScope(connection as unknown as HilosConnection, scopes)
   const source = recordingSource()
-  const unbind = bindAccountBlocked(scopes, new ActionLifecycle(source))
+  const unbind = bindAccountBlocked(
+    scopes,
+    new ActionLifecycle(source),
+    connection as unknown as HilosConnection,
+  )
 
   return { connection, source, unbind }
 }
@@ -113,6 +117,7 @@ describe('hilosAccountBlocked', () => {
 
     expect(hilosAccountBlocked.get()).toEqual({
       identifier: 'maria@example.com',
+      dataExport: null,
     })
   })
 
@@ -124,7 +129,10 @@ describe('hilosAccountBlocked', () => {
       data: { accountBlocked: { identifier: null } },
     })
 
-    expect(hilosAccountBlocked.get()).toEqual({ identifier: null })
+    expect(hilosAccountBlocked.get()).toEqual({
+      identifier: null,
+      dataExport: null,
+    })
   })
 
   it('goes back to null when a handshake carries no card', () => {

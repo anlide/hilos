@@ -2,6 +2,8 @@
 // every framework signal schema already merged, the action-error store
 // attached, and the stale-build welcome wired to a reload. Lifted from every
 // project's connection bootstrap (docs/agents/frontend/bootstrap-structure.md).
+import { DATA_EXPORT_SIGNAL_SCHEMAS } from '../profile/dataExport.js'
+
 import { BACKUP_SIGNAL_SCHEMAS } from '../admin/backup/hilosBackups.js'
 import { LOGS_KEYS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogKeys.js'
 import { LOGS_SETTINGS_SIGNAL_SCHEMAS } from '../admin/logs/hilosLogSettings.js'
@@ -176,6 +178,7 @@ export function createHilosConnection(
       ...NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,
       ...SECOND_FACTOR_SIGNAL_SCHEMAS,
       ...ACCOUNT_DELETION_SIGNAL_SCHEMAS,
+      ...DATA_EXPORT_SIGNAL_SCHEMAS,
       ...PROFILE_PASSWORD_SIGNAL_SCHEMAS,
       ...UPLOAD_SIGNAL_SCHEMAS,
       ...AUTH_CONVERGE_SIGNAL_SCHEMAS,

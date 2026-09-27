@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Polls;
 
+use Demo\Polls\Agents\Hilos\DataExportAgent;
 use Demo\Polls\Agents\Hilos\DemoHilosAgent;
 use Demo\Polls\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Polls\Agents\Hilos\NotificationsLibraryAgent;
@@ -27,6 +28,7 @@ use Demo\Polls\Core\Agent\Daemon\PollsAgentDaemon;
 use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Database\Settings\PollsSettingsCatalog;
 use Demo\Polls\Environment\PollsEnvCatalog;
+use Demo\Polls\Fs\PollsFsContext;
 use Demo\Polls\Legal\PollsLegalCatalog;
 use Demo\Polls\Pages\Hilos\AboutPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
@@ -68,11 +70,13 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
+use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogAggregatorAgentDaemon;
@@ -172,6 +176,11 @@ final class Hilos extends HilosFacade
     ];
 
     public const array AGENTS = [
+        DataExportAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DataExportAgent::class,
+            AgentRegistryKey::DAEMON => DataExportAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         PollsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => PollsAgent::class,
             AgentRegistryKey::DAEMON => PollsAgentDaemon::class,
@@ -262,6 +271,10 @@ final class Hilos extends HilosFacade
      * the person an agent of their own, and the auth libraries are parted with it.
      */
     public const array SHARED_DB_OWNERS = [
+        HilosDbContext::stepUps => [
+            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
         PollsDbContext::users => [
             SharedOwnersKey::OWNERS => [PollsAgent::class, SessionsLibraryAgent::class, UsersLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',
@@ -380,5 +393,13 @@ final class Hilos extends HilosFacade
     protected static function createBrowser(): ?BrowserContext
     {
         return new PollsBrowserContext();
+    }
+
+    /**
+     * @return ?PollsFsContext Project filesystem bindings
+     */
+    protected static function createFs(): ?FsContext
+    {
+        return new PollsFsContext();
     }
 }

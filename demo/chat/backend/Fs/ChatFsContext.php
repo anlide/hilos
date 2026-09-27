@@ -53,5 +53,6 @@ final class ChatFsContext extends FsContext
         $publishedDirectory = $publishedPath !== '' ? $publishedPath : $base . DIRECTORY_SEPARATOR . self::published;
         $this->registerDirectory(self::published, $publishedDirectory);
         $this->registerDirectory(FsContext::FILES, $publishedDirectory);
+        $this->registerDirectory(FsContext::DATA_EXPORT, dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/data_export');
     }
 }

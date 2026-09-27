@@ -235,3 +235,8 @@ export {
   HilosProfilePasswordChange,
   type HilosProfilePasswordChangeProps,
 } from './profile/HilosProfilePasswordChange.js'
+
+export {
+  HilosDataExport,
+  type HilosDataExportProps,
+} from './profile/HilosDataExport.js'

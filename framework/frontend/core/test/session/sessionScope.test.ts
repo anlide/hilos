@@ -413,13 +413,16 @@ describe('sessionScope', () => {
     connection.emitHandshakeResponse({
       data: { accountBlocked: { identifier: 'maria@example.com' } },
     })
-    expect(card.get()).toEqual({ identifier: 'maria@example.com' })
+    expect(card.get()).toEqual({
+      identifier: 'maria@example.com',
+      dataExport: null,
+    })
 
     // A card is a card without an address, and an empty address names nobody.
     connection.emitHandshakeResponse({
       data: { accountBlocked: { identifier: '' } },
     })
-    expect(card.get()).toEqual({ identifier: null })
+    expect(card.get()).toEqual({ identifier: null, dataExport: null })
 
     // The next handshake without a card takes it down by overwriting the key.
     connection.emitHandshakeResponse({ data: { accountBlocked: null } })

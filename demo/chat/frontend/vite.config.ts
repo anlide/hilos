@@ -49,6 +49,10 @@ export default defineConfig(({ mode }) => {
       // localhost-dev default.
       hmr: env.VITE_DISABLE_HMR ? false : undefined,
       proxy: {
+        '/_hilos/data-export': {
+          target: env.VITE_DATA_EXPORT_TARGET || 'http://chat-local:8090',
+          changeOrigin: true,
+        },
         // Same-origin WebSocket: serving the page and the socket from the same
         // origin lets the session cookie (SameSite=Strict) and rotation ticket
         // ride the connection without cross-site issues; in test/prod nginx does the same.

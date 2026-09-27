@@ -38,6 +38,20 @@ final class AccountDeletions extends DbCollection
     }
 
     /**
+     * Reads the database even while the export worker has not consumed deletion sync frames.
+     *
+     * @param int $userId Person whose erasure is checked
+     * @return ?AccountDeletion A completed erasure, or null when none exists
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the query or object type is invalid
+     * @throws LogicException When collection class constants are not configured
+     */
+    public function erasedOf(int $userId): ?AccountDeletion
+    {
+        return $this->itemFor($this->objectCollection->erasedOf($userId));
+    }
+
+    /**
      * The standing requests whose erasure time has come.
      *
      * @param string $now Current moment (SQL datetime)

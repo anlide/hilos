@@ -15,10 +15,14 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
 import {
   ACCOUNT_BLOCKED_COPY,
+  HILOS_DATA_EXPORT_COPY,
+  hilosAccountBlockedDataExport,
   dismissAccountBlocked,
   type AccountBlockedNotice,
 } from '@hilos/core'
 
+import { HilosDataExport } from './profile/HilosDataExport.js'
+import { hilosSignal } from './hilosSignal.js'
 import { LoadingButton } from './LoadingButton.js'
 import { createHilosTrackedAction } from './hilosTrackedAction.js'
 
@@ -26,7 +30,7 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
 @Component({
   selector: 'hilos-account-blocked',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [LoadingButton],
+  imports: [LoadingButton, HilosDataExport],
   template: `
     <div class="row justify-content-center" data-id="account-blocked">
       <section
@@ -67,6 +71,13 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
           <div class="small text-body-secondary">{{ copy.reasonText }}</div>
         </div>
         <p class="small text-body-secondary mb-3">{{ copy.contact }}</p>
+        @if (exportModel(); as model) {
+          <hilos-data-export
+            [store]="model.store"
+            [flow]="model.flow"
+            [lead]="exportCopy.blockedLead"
+          />
+        }
         <button
           hilosLoadingButton
           class="btn-outline-secondary w-100"
@@ -84,6 +95,8 @@ export class HilosAccountBlocked {
   /** The card the session holds: whose account it lost, when the server knows. */
   readonly notice = input.required<AccountBlockedNotice>()
 
+  protected readonly exportModel = hilosSignal(hilosAccountBlockedDataExport)
+  protected readonly exportCopy = HILOS_DATA_EXPORT_COPY
   protected readonly copy = ACCOUNT_BLOCKED_COPY
   protected readonly signOut = createHilosTrackedAction()
 

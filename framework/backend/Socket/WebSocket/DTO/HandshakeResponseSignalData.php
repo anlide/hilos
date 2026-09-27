@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\WebSocket\DTO;
 
+use Hilos\DataExport\DTO\DataExportStateSignalData;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
@@ -96,8 +97,8 @@ use Hilos\Core\Router\SignalDataInterface;
  * step still names both.
  *
  * `accountBlocked` is the "Access closed" card (HIL-289): the blocked account this browser lost
- * or was refused, named by its confirmed address - `{identifier: null}` when it has none - or
- * null when the session holds no card. It rides every response, the anonymous one above all,
+ * or was refused, named by its confirmed address (null when it has none) and carrying its
+ * nullable dataExport state. The whole node is null when the session holds no card. It rides every response, the anonymous one above all,
  * because the browser that lost an account is anonymous by then; a response carrying null takes
  * the card down, so a stamp that forgot it would too, which is why the framework stamps it
  * ({@see withAccountBlocked()}) rather than the project.
@@ -162,7 +163,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     or null before the session context is stamped
      * @param ?bool $passkeyAllowsUnproven Whether a passkey may start an account on an unconfirmed address,
      *     or null before the session context is stamped
-     * @param ?array{identifier: ?string} $accountBlocked Blocked account the session lost, or null when it holds no card
+     * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
+     *     Blocked account the session lost, or null when it holds no card
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -216,7 +218,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * mark on the session row, which the project does not read, so it arrives on the state frame
      * and the framework stamps it here on every send path.
      *
-     * @param ?array{identifier: ?string} $accountBlocked Blocked account the session lost, or null when it holds no card
+     * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
+     *     Blocked account the session lost, or null when it holds no card
      * @return self The same response carrying that card
      */
     public function withAccountBlocked(?array $accountBlocked): self
@@ -382,10 +385,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *
      * Shared with {@see SessionStateSignalData}, which carries the same node under the same key, so
      * the two ends of the seam cannot read it differently. A present node always comes back with its
-     * one member, the address being optional: an account with no confirmed address is still a card.
+     * address and dataExport members, both nullable: an account with no confirmed address is still a card.
      *
      * @param array<string, mixed> $section Map holding the node under `accountBlocked`
-     * @return ?array{identifier: ?string} Node, or null when the session holds no card
+     * @return ?array{identifier: ?string, dataExport: ?array<string, mixed>} Node, or null when the session holds no card
      * @throws InvalidFormatException When the node or its address is not of the declared type
      */
     public static function readAccountBlocked(array $section): ?array
@@ -395,7 +398,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             return null;
         }
 
-        return [self::identifier => self::optionalString($node, self::identifier)];
+        return [
+            self::identifier => self::optionalString($node, self::identifier),
+            DataExportStateSignalData::dataExport => DataExportStateSignalData::fromArray($node)->dataExport,
+        ];
     }
 
     /**

@@ -131,6 +131,7 @@ services:
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
+      - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
@@ -250,6 +251,7 @@ services:
     container_name: polls-nginx-test
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
+      - ../data/data_export:/data_export:ro
       - nginx-ssl-test:/etc/nginx/ssl
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTP_PORT:-8088}:80"

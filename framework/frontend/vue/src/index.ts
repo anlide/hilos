@@ -100,3 +100,5 @@ export { default as HilosLogsWorkersPage } from './admin/logs/HilosLogsWorkersPa
 export { default as HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.vue'
 
 export { default as HilosProfilePasswordChange } from './profile/HilosProfilePasswordChange.vue'
+
+export { default as HilosDataExport } from './profile/HilosDataExport.vue'

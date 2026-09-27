@@ -133,7 +133,7 @@ function bindSession() {
   // One lifecycle for both, as bootHilos binds them: two would mint the same ids.
   const actions = new ActionLifecycle(source)
   const unbindStrip = bindImpersonation(scopes, actions)
-  const unbindCard = bindAccountBlocked(scopes, actions)
+  const unbindCard = bindAccountBlocked(scopes, actions, handshakes)
 
   return {
     source,
@@ -324,6 +324,7 @@ describe('HilosLayout account blocked card', () => {
 
     const card = wrapper.find('[data-id="account-blocked"]')
     expect(card.exists()).toBe(true)
+    expect(card.find('[data-id="data-export-prepare"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="page-body"]').exists()).toBe(false)
     expect(wrapper.find('[data-id="app-footer"]').exists()).toBe(true)
     expect(wrapper.find('nav').exists()).toBe(true)

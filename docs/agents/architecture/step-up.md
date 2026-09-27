@@ -10,6 +10,9 @@ appends its operations to `parent::operations()`, and points its Hilos facade's
 `STEP_UP_OPERATION_DIRECTORY` at that subclass. Each `StepUpOperation` carries a
 stable key, an administration label, a phrase completing “To …”, and whether the
 operation itself opens by proving the account's email or phone number.
+`opensOnBlockedCard` also admits the blocked person held by the browser's session;
+`passesWithNothingToConfirm` passes an account for which no proof is available.
+Both default to false. `export_data` declares both (see [data-export.md](data-export.md)).
 
 Declaring an operation does not protect it by itself. Every server action that
 belongs to the operation calls `requireStepUp($acceptKey, $operation)` before it
@@ -28,7 +31,8 @@ the current session signed in and not from a menu offered to the person:
 5. a registered device key.
 
 A provider login is not a step-up method. When none of the methods is available,
-the operation is refused before its own form begins.
+the operation is refused before its own form begins unless it declares
+`passesWithNothingToConfirm`.
 
 If the chosen method is an address code and the operation declares that its own
 first step proves that same account address, the separate confirmation step is

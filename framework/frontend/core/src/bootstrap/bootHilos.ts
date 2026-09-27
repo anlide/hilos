@@ -135,7 +135,7 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // server stamps it on the handshake of a browser whose account was blocked,
   // and its Sign out runs on the application's own lifecycle. One behavior, no
   // option: a project that never blocks anybody is never sent a card.
-  bindAccountBlocked(config.scopes, config.actions)
+  bindAccountBlocked(config.scopes, config.actions, config.connection)
   // One upload client follows the application connection for its whole life.
   // It uses the same action lifecycle as the shell: another lifecycle on the
   // same connection would mint the same request ids and mix up their replies.

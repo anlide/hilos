@@ -302,6 +302,8 @@ export {
 export {
   bindAccountBlocked,
   hilosAccountBlocked,
+  hilosAccountBlockedDataExport,
+  type AccountBlockedDataExport,
   dismissAccountBlocked,
   ACCOUNT_BLOCKED_ACTION_DISMISS,
   ACCOUNT_BLOCKED_COPY,
@@ -1398,3 +1400,5 @@ export {
   type HilosProfilePasswordChangeOpening,
   type HilosProfilePasswordChangeStep,
 } from './profile/passwordChange.js'
+
+export * from './profile/dataExport.js'

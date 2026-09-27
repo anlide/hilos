@@ -91,6 +91,24 @@ final class AccountDeletions extends Objects
     }
 
     /**
+     * Reads the database even while the export worker has not consumed deletion sync frames.
+     *
+     * @param int $userId Person whose erasure is checked
+     * @return ?ObjectAccountDeletion A completed erasure, or null when none exists
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the query or object type is invalid
+     */
+    public function erasedOf(int $userId): ?ObjectAccountDeletion
+    {
+        return $this->hydrateAll(EntityAccountDeletion::get(
+            '`' . EntityAccountDeletion::user_id . '` = ? AND `' . EntityAccountDeletion::completed_at . '` IS NOT NULL',
+            [$userId],
+            [EntityAccountDeletion::id => SqlSortDirection::DESC],
+            1,
+        ))[0] ?? null;
+    }
+
+    /**
      * The standing requests whose erasure time has come.
      *
      * @param string $now Current moment (SQL datetime)

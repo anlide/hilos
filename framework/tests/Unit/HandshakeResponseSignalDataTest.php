@@ -423,22 +423,22 @@ final class HandshakeResponseSignalDataTest extends TestCase
 
     public function testTheBlockedCardTravelsInTheDataSectionOfAnAnonymousResponse(): void
     {
-        $data = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => 'maria@example.com']);
+        $data = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => 'maria@example.com', 'dataExport' => null]);
 
         $this->assertNull($data->toArray()['entities']['currentUser']);
-        $this->assertSame(['identifier' => 'maria@example.com'], $data->toArray()['data']['accountBlocked']);
+        $this->assertSame(['identifier' => 'maria@example.com', 'dataExport' => null], $data->toArray()['data']['accountBlocked']);
     }
 
     public function testTheBlockedCardSurvivesTheRoundtripWithAndWithoutAnAddress(): void
     {
-        $named = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => '+380501234567']);
-        $unnamed = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => null]);
+        $named = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => '+380501234567', 'dataExport' => null]);
+        $unnamed = new HandshakeResponseSignalData()->withAccountBlocked(['identifier' => null, 'dataExport' => null]);
 
         $this->assertSame(
-            ['identifier' => '+380501234567'],
+            ['identifier' => '+380501234567', 'dataExport' => null],
             HandshakeResponseSignalData::fromArray($named->toArray())->accountBlocked,
         );
-        $this->assertSame(['identifier' => null], HandshakeResponseSignalData::fromArray($unnamed->toArray())->accountBlocked);
+        $this->assertSame(['identifier' => null, 'dataExport' => null], HandshakeResponseSignalData::fromArray($unnamed->toArray())->accountBlocked);
         $this->assertNull(HandshakeResponseSignalData::fromArray(new HandshakeResponseSignalData()->toArray())->accountBlocked);
     }
 
@@ -446,11 +446,11 @@ final class HandshakeResponseSignalDataTest extends TestCase
     {
         // The card is stamped after the session context and the ack, and neither may take it off again.
         $data = new HandshakeResponseSignalData()
-            ->withAccountBlocked(['identifier' => 'maria@example.com'])
+            ->withAccountBlocked(['identifier' => 'maria@example.com', 'dataExport' => null])
             ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
             ->withPendingAck(null);
 
-        $this->assertSame(['identifier' => 'maria@example.com'], $data->accountBlocked);
+        $this->assertSame(['identifier' => 'maria@example.com', 'dataExport' => null], $data->accountBlocked);
     }
 
     public function testRoundtripRejectsABlockedCardThatIsNotANode(): void

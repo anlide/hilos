@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Tests\Unit;
 
+use Hilos\DataExport\DataExportHttp;
+use Hilos\Constants\HttpConstants;
+use Hilos\DataExport\DataExportAgentDaemon;
+use Demo\Tasks\Agents\Hilos\DataExportAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
@@ -77,6 +81,24 @@ use PHPUnit\Framework\TestCase;
  */
 final class TasksTopologyRegistryTest extends TestCase
 {
+    /** The archive address is answered by the export owner. */
+    public function testDataExportHttpRoute(): void
+    {
+        self::assertSame([
+            HttpConstants::METHOD_GET => [DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT],
+        ], Hilos::getHttpAgentRoutes());
+    }
+
+    /** The export runs once on the policy-selected node and has a worker of its own. */
+    public function testDataExportAgentIsPolicyPlacedAndMonopolistic(): void
+    {
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_DATA_EXPORT];
+        self::assertSame(DataExportAgent::class, AgentRegistry::workerClass($entry));
+        self::assertSame(DataExportAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        self::assertTrue((new DataExportAgentDaemon())->requiresMonopolisticProcess());
+    }
+
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
     {
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
@@ -171,6 +193,7 @@ final class TasksTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [
+                HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::TASKS,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::TASKS,
                 // The other half of the seam, and the eight endings the users library hands
@@ -307,6 +330,7 @@ final class TasksTopologyRegistryTest extends TestCase
         );
 
         $this->assertSame([
+            HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => HilosAgentType::HILOS_DATA_EXPORT,
             // Signing out, dismissing an ack and leaving a takeover all write a session, so
             // the sessions library owns them (HIL-710, HIL-729) - this demo adds an action of
             // its own for none of them. STARTING a takeover is not among them since HIL-824:

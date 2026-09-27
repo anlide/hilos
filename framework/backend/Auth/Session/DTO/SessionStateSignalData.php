@@ -59,7 +59,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name to answer, or null when this ending finished none
      * @param ?array<string, mixed> $outcome Reply the answer carries ({@see AuthFlowOutcome::toArray()}), or null
-     * @param ?array{identifier: ?string} $accountBlocked Blocked account the session lost, named by its confirmed
+     * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked Blocked account the session lost, named by its confirmed
      *     address or not at all, or null when the session holds no such card
      */
     public function __construct(
@@ -80,7 +80,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * Returns the same frame stamped with the blocked account the session lost (HIL-289).
      *
-     * @param ?array{identifier: ?string} $accountBlocked Blocked account the session lost, or null when it holds no card
+     * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
+     *     Blocked account the session lost, or null when it holds no card
      * @return self The same frame carrying that card
      */
     public function withAccountBlocked(?array $accountBlocked): self

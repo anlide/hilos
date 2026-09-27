@@ -10,7 +10,7 @@ use Hilos\Hilos;
 /**
  * The code-side directory of operations a project protects with step-up (HIL-495).
  *
- * The framework declares its three account operations. A project points
+ * The framework declares its account operations. A project points
  * {@see Hilos::STEP_UP_OPERATION_DIRECTORY} at a subclass and appends its own entries.
  * The order is the order of the administration table.
  */
@@ -40,6 +40,14 @@ abstract class StepUpOperationDirectory
                 'Delete account',
                 'delete your account',
                 true,
+            ),
+            StepUpOperationKey::EXPORT_DATA => new StepUpOperation(
+                StepUpOperationKey::EXPORT_DATA,
+                'Export your data',
+                'export your data',
+                false,
+                opensOnBlockedCard: true,
+                passesWithNothingToConfirm: true,
             ),
         ];
     }

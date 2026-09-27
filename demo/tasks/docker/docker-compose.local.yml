@@ -250,6 +250,7 @@ services:
     container_name: tasks-nginx-local
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
+      - ../data/data_export:/data_export:ro
       - nginx-ssl-local:/etc/nginx/ssl
     ports:
       # HTTPS only. The container's own :80 vhost stays unpublished on purpose —

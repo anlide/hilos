@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Collection;
 
+use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
 use Demo\Chat\Database\Actions\Collection\EventMessagesActions;
 use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
 use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
@@ -30,6 +31,16 @@ final class EventMessages extends DbCollection
 {
     public const string DB_ITEM_CLASS = EventMessage::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectEventMessages::class;
+
+    /**
+     * @param int $userId Person whose records are requested
+     * @return static Complete matching set, including rows not cached in this worker
+     * @throws HilosException When the query or collection assembly fails
+     */
+    public function byAuthor(int $userId): static
+    {
+        return $this->whereColumnIs(ObjectEventMessage::authorUserId, $userId);
+    }
 
     /**
      * The event ids of every message a person wrote (HIL-302).

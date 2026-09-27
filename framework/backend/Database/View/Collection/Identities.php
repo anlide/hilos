@@ -15,6 +15,7 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
+use Hilos\Database\Identity\IdentityExportEntry;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
@@ -34,6 +35,16 @@ final class Identities extends DbCollection
 {
     public const string DB_ITEM_CLASS = Identity::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectIdentities::class;
+
+    /**
+     * @param int $userId Person whose sign-in methods are exported
+     * @return list<IdentityExportEntry> Portable metadata including DB-only creation stamps
+     * @throws DatabaseException When the query fails
+     */
+    public function exportEntries(int $userId): array
+    {
+        return $this->objectCollection->exportEntries($userId);
+    }
 
     /**
      * Finds the identity for a (type, identifier) pair.

@@ -14,10 +14,14 @@
 // view packages. Bootstrap classes only, no CSS of its own (styling-rules.md).
 import {
   ACCOUNT_BLOCKED_COPY,
+  HILOS_DATA_EXPORT_COPY,
+  hilosAccountBlockedDataExport,
   dismissAccountBlocked,
   type AccountBlockedNotice,
 } from '@hilos/core'
 
+import { HilosDataExport } from './profile/HilosDataExport.js'
+import { useSignal } from './useSignal.js'
 import { LoadingButton } from './LoadingButton.js'
 import { useTrackedAction } from './useTrackedAction.js'
 
@@ -33,6 +37,7 @@ export interface HilosAccountBlockedProps {
  * @param props The card the session holds.
  */
 export function HilosAccountBlocked({ notice }: HilosAccountBlockedProps) {
+  const exportModel = useSignal(hilosAccountBlockedDataExport)
   const signOut = useTrackedAction()
   const onSignOut = (): void => {
     if (signOut.busy) {
@@ -87,6 +92,13 @@ export function HilosAccountBlocked({ notice }: HilosAccountBlockedProps) {
         <p className="small text-body-secondary mb-3">
           {ACCOUNT_BLOCKED_COPY.contact}
         </p>
+        {exportModel ? (
+          <HilosDataExport
+            store={exportModel.store}
+            flow={exportModel.flow}
+            lead={HILOS_DATA_EXPORT_COPY.blockedLead}
+          />
+        ) : null}
         <LoadingButton
           className="btn-outline-secondary w-100"
           data-id="account-blocked-sign-out"

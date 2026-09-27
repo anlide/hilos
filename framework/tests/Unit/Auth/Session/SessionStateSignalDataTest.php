@@ -31,19 +31,19 @@ final class SessionStateSignalDataTest extends TestCase
     public function testRoundtripKeepsTheBlockedCard(): void
     {
         $frame = new SessionStateSignalData('token', 17, null, ['accept-key'])
-            ->withAccountBlocked(['identifier' => 'maria@example.com']);
+            ->withAccountBlocked(['identifier' => 'maria@example.com', 'dataExport' => null]);
 
         $read = SessionStateSignalData::fromArray($frame->toArray());
 
-        self::assertSame(['identifier' => 'maria@example.com'], $read->accountBlocked);
+        self::assertSame(['identifier' => 'maria@example.com', 'dataExport' => null], $read->accountBlocked);
         self::assertEquals($frame, $read);
     }
 
     public function testBlockedCardWithoutAnAddressSurvivesTheRoundtrip(): void
     {
-        $frame = new SessionStateSignalData('token', 17, null, ['accept-key'])->withAccountBlocked(['identifier' => null]);
+        $frame = new SessionStateSignalData('token', 17, null, ['accept-key'])->withAccountBlocked(['identifier' => null, 'dataExport' => null]);
 
-        self::assertSame(['identifier' => null], SessionStateSignalData::fromArray($frame->toArray())->accountBlocked);
+        self::assertSame(['identifier' => null, 'dataExport' => null], SessionStateSignalData::fromArray($frame->toArray())->accountBlocked);
     }
 
     public function testFrameWithoutACardCarriesNull(): void

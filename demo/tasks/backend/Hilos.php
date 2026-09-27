@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Tasks;
 
+use Demo\Tasks\Agents\Hilos\DataExportAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Tasks\Agents\Hilos\NotificationsLibraryAgent;
@@ -28,6 +29,7 @@ use Demo\Tasks\Core\Agent\Daemon\TasksAgentDaemon;
 use Demo\Tasks\Database\Settings\TasksSettingsCatalog;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Environment\TasksEnvCatalog;
+use Demo\Tasks\Fs\TasksFsContext;
 use Demo\Tasks\Legal\TasksLegalCatalog;
 use Demo\Tasks\Pages\Hilos\AboutPage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
@@ -72,11 +74,13 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
+use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogAggregatorAgentDaemon;
@@ -179,6 +183,11 @@ final class Hilos extends HilosFacade
     ];
 
     public const array AGENTS = [
+        DataExportAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DataExportAgent::class,
+            AgentRegistryKey::DAEMON => DataExportAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         TasksAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TasksAgent::class,
             AgentRegistryKey::DAEMON => TasksAgentDaemon::class,
@@ -274,6 +283,10 @@ final class Hilos extends HilosFacade
      * the person an agent of their own, and the auth libraries are parted with it.
      */
     public const array SHARED_DB_OWNERS = [
+        HilosDbContext::stepUps => [
+            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
         TasksDbContext::users => [
             SharedOwnersKey::OWNERS => [TasksAgent::class, SessionsLibraryAgent::class, UsersLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',
@@ -396,5 +409,13 @@ final class Hilos extends HilosFacade
     protected static function createBrowser(): ?BrowserContext
     {
         return new TasksBrowserContext();
+    }
+
+    /**
+     * @return ?TasksFsContext Project filesystem bindings
+     */
+    protected static function createFs(): ?FsContext
+    {
+        return new TasksFsContext();
     }
 }

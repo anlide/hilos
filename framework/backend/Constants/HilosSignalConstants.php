@@ -1275,6 +1275,15 @@ final class HilosSignalConstants
      */
     public const string HILOS_ACCOUNT_DELETION_STATE = 'hilos_account_deletion_state';
 
+    /** Server → client (WS_GROUP): {dataExport: {state, requestedAt, finishedAt, expiresAt, sizeBytes} | null}. */
+    public const string HILOS_DATA_EXPORT_STATE = 'hilos_data_export_state';
+
+    /** Client → server: order this person's copy; empty payload and acknowledgement. */
+    public const string HILOS_DATA_EXPORT_ORDER = 'hilos_data_export_order';
+
+    /** Agent → agent: the account was erased; remove its export row and file ({userId}). */
+    public const string HILOS_DATA_EXPORT_FORGET_USER = 'hilos_data_export_forget_user';
+
     /**
      * Server → client (all connected): the administrator's second-factor settings changed (HIL-494).
      *

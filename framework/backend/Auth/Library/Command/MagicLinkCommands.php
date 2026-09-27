@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
@@ -222,6 +223,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
                 $userId,
                 SessionAck::SIGNED_IN,
                 AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::LOGIN),
+                provenBy: StepUpMethod::EMAIL_CODE,
             );
 
             return null;

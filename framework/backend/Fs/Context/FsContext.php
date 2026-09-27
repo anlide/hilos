@@ -29,6 +29,9 @@ abstract class FsContext
      */
     public const string FILES = 'files';
 
+    /** Ready data-export archives; only the export agent writes this shared directory (HIL-303). */
+    public const string DATA_EXPORT = 'data_export';
+
     /** @var FsTmpDirectory|null */
     protected ?FsTmpDirectory $_tmp = null;
 

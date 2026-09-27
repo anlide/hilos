@@ -39,6 +39,7 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
      * @param bool $secondFactorProven Whether the second factor was shown on the way here, so the holder lets the
      *     sign-in through without asking again (HIL-494)
      * @param bool $trustDevice Whether the person asked not to be asked again on this browser (HIL-494)
+     * @param ?string $provenBy Step-up method proved by this sign-in, or null for an ineligible proof
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -51,6 +52,7 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
         public readonly ?string $tripKeyHash = null,
         public readonly bool $secondFactorProven = false,
         public readonly bool $trustDevice = false,
+        public readonly ?string $provenBy = null,
     ) {
     }
 
@@ -72,6 +74,7 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
             'tripKeyHash' => $this->tripKeyHash,
             'secondFactorProven' => $this->secondFactorProven,
             'trustDevice' => $this->trustDevice,
+            'provenBy' => $this->provenBy,
         ];
     }
 
@@ -95,6 +98,7 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
             tripKeyHash: self::optionalString($data, 'tripKeyHash'),
             secondFactorProven: self::requireBool($data, 'secondFactorProven'),
             trustDevice: self::requireBool($data, 'trustDevice'),
+            provenBy: self::optionalString($data, 'provenBy'),
         );
     }
 }

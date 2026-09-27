@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowIntent;
@@ -550,7 +551,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_PASSKEY);
         }
 
-        $this->library->grantSession($acting, $credential->userId);
+        $this->library->grantSession($acting, $credential->userId, provenBy: StepUpMethod::PASSKEY);
     }
 
     /**

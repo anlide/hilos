@@ -128,6 +128,18 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
+     * An account with no available proof can still export, but ordinary operations keep their refusal.
+     *
+     * @throws HilosException When the opening cannot be read
+     */
+    public function testExportPassesWithNothingToConfirm(): void
+    {
+        self::assertFalse($this->start(StepUpOperationKey::EXPORT_DATA)->required);
+        $this->expectExceptionMessage(StepUpMessages::NOTHING_TO_CONFIRM_WITH);
+        $this->start(self::OPERATION);
+    }
+
+    /**
      * A password takes priority over address codes.
      *
      * @throws HilosException When an identity cannot be written or read

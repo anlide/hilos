@@ -21,6 +21,7 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::CHANGE_PASSWORD,
             StepUpOperationKey::CHANGE_EMAIL,
             StepUpOperationKey::DELETE_ACCOUNT,
+            StepUpOperationKey::EXPORT_DATA,
             StepUpTestDirectory::PROJECT_OPERATION,
         ], StepUpTestDirectory::keys());
     }
@@ -33,6 +34,10 @@ final class StepUpOperationDirectoryTest extends TestCase
         self::assertSame('change your email', $operation->purpose);
         self::assertTrue($operation->opensWithAddressCode);
         self::assertFalse(StepUpTestDirectory::get(StepUpTestDirectory::PROJECT_OPERATION)->opensWithAddressCode);
+        self::assertTrue(StepUpTestDirectory::get(StepUpOperationKey::EXPORT_DATA)->opensOnBlockedCard);
+        self::assertTrue(StepUpTestDirectory::get(StepUpOperationKey::EXPORT_DATA)->passesWithNothingToConfirm);
+        self::assertFalse($operation->opensOnBlockedCard);
+        self::assertFalse($operation->passesWithNothingToConfirm);
     }
 
     public function testFrameworkOwnershipDoesNotIncludeProjectOperations(): void

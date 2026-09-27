@@ -12,6 +12,14 @@
 // off the session state frame that carries the card away, so by the time the
 // reply settles the card has already gone by itself; pressing it where another
 // tab already closed the card is a quiet success, never a refusal.
+import { type HilosConnection } from '../connection/HilosConnection.js'
+import {
+  createHilosDataExportStore,
+  createHilosDataExportFlow,
+  type HilosDataExportStore,
+  type HilosDataExportFlow,
+} from '../profile/dataExport.js'
+
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -19,6 +27,7 @@ import {
 import { type ScopeManager } from '../state/ScopeManager.js'
 import {
   createSignal,
+  computedSignal,
   type ReadonlySignal,
   subscribeSignal,
 } from '../state/signal.js'
@@ -47,6 +56,15 @@ export const ACCOUNT_BLOCKED_COPY = {
 
 const accountBlocked = createSignal<AccountBlockedNotice | null>(null)
 
+/** The same bound export state and actions are consumed by every SDK shell. */
+export interface AccountBlockedDataExport {
+  readonly store: HilosDataExportStore
+  readonly flow: HilosDataExportFlow
+}
+const dataExport = createSignal<AccountBlockedDataExport | null>(null)
+export const hilosAccountBlockedDataExport: ReadonlySignal<AccountBlockedDataExport | null> =
+  dataExport
+
 /** The lifecycle Sign out is dispatched on; set by {@link bindAccountBlocked}. */
 let boundActions: ActionLifecycle | null = null
 
@@ -73,23 +91,39 @@ export const hilosAccountBlocked: ReadonlySignal<AccountBlockedNotice | null> =
  *
  * @param scopes The application's scope-partitioned stores.
  * @param actions The application's one action reply lifecycle.
+ * @param connection Connection carrying export-state frames.
  * @returns Unbind: stops following the session and forgets the lifecycle.
  */
 export function bindAccountBlocked(
   scopes: ScopeManager,
   actions: ActionLifecycle,
+  connection: Pick<HilosConnection, 'on'>,
 ): () => void {
+  boundRelease?.()
   const card = sessionAccountBlocked(scopes)
+  const store = createHilosDataExportStore(
+    connection,
+    computedSignal(() => card.get()?.dataExport ?? null),
+  )
+  const flow = createHilosDataExportFlow(actions, store)
+  store.start()
+  dataExport.set({ store, flow })
   boundActions = actions
   accountBlocked.set(card.get())
-  const unsubscribe = subscribeSignal(card, (next) => accountBlocked.set(next))
+  const unsubscribe = subscribeSignal(card, (next) => {
+    accountBlocked.set(next)
+    if (next === null) flow.close()
+  })
   const release = (): void => {
     unsubscribe()
+    flow.dispose()
+    store.dispose()
     if (boundRelease !== release) {
       return
     }
     boundRelease = null
     boundActions = null
+    dataExport.set(null)
     accountBlocked.set(null)
   }
   boundRelease = release

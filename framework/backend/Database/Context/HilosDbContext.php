@@ -9,6 +9,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\AccountDeletions as ObjectAccountDeletions;
+use Hilos\Database\Object\Collection\DataExports as ObjectDataExports;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\Files as ObjectFiles;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
@@ -31,6 +32,7 @@ use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerification
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
+use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
@@ -52,6 +54,7 @@ use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
+use Hilos\Database\Actions\Collection\DataExportsActions;
 use Hilos\Database\Actions\Collection\FilesActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
@@ -67,6 +70,7 @@ use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
+use Hilos\Database\Actions\Item\DataExportActions;
 use Hilos\Database\Actions\Item\FileActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
@@ -104,6 +108,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionSecondFactorResets $secondFactorResets
  * @property-read DbCollectionSecondFactorSettings $secondFactorSettings
  * @property-read DbCollectionStepUps $stepUps
+ * @property-read DbCollectionDataExports $dataExports Data export requests
  * @property-read DbCollectionAccountDeletions $accountDeletions
  * @property-read DbCollectionFiles $files
  */
@@ -148,6 +153,8 @@ abstract class HilosDbContext extends DbContext
     public const string stepUp = 'stepUp';
     public const string accountDeletions = 'accountDeletions';
     public const string accountDeletion = 'accountDeletion';
+    public const string dataExports = 'dataExports';
+    public const string dataExport = 'dataExport';
     public const string files = 'files';
     public const string file = 'file';
 
@@ -289,6 +296,9 @@ abstract class HilosDbContext extends DbContext
             AccountDeletionsActions::class,
             AccountDeletionActions::class,
         );
+
+        $this->_objectCollections[self::dataExports] = ObjectDataExports::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::dataExports, DbCollectionDataExports::class, DataExportsActions::class, DataExportActions::class);
 
         $this->_objectCollections[self::files] = ObjectFiles::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::files, DbCollectionFiles::class, FilesActions::class, FileActions::class);

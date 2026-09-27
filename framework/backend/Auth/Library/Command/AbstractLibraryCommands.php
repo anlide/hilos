@@ -205,6 +205,31 @@ abstract class AbstractLibraryCommands
     }
 
     /**
+     * Resolves a signed-in person, or the person of a block notice for an operation that permits it.
+     *
+     * @param string $acceptKey Connection asking for confirmation
+     * @param string $operation Operation whose declaration chooses the allowed identity source
+     * @return ActingSession Browser and person entitled to confirm the operation
+     * @throws HilosException When the session is missing, the operation is unknown, or the session lookup fails
+     */
+    protected function actingPerson(string $acceptKey, string $operation): ActingSession
+    {
+        $acting = $this->acting($acceptKey);
+        if ($acting->userId !== null) {
+            return $acting;
+        }
+        $directory = Hilos::stepUpOperationDirectoryClass();
+        if ($directory::get($operation)->opensOnBlockedCard) {
+            $blockedUserId = Hilos::$db->sessions->findByToken($acting->sessionToken)?->blockedUserId;
+            if ($blockedUserId !== null) {
+                return new ActingSession($acceptKey, $acting->sessionToken, $blockedUserId);
+            }
+        }
+
+        throw new ItemNotFoundForUpdateException('User session not found');
+    }
+
+    /**
      * Whether an email already belongs to an account, by any method.
      *
      * The question the identifier-first surface asks before reserving: not "is there a

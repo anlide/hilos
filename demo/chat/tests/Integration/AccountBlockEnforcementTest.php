@@ -4,6 +4,18 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Hilos\Fs\Context\FsContext;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\DataExport\DataExportState;
+use Hilos\DataExport\DataExportGroup;
+use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
+use Hilos\DataExport\DTO\DataExportOrderActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
+use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
+use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Auth\StepUp\StepUpMethod;
+use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -133,7 +145,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $response = $this->lastHandshakeResponseFor('block-a1');
         $this->assertNotNull($response);
         $this->assertNull($response->selfId);
-        $this->assertSame(['identifier' => $email], $response->accountBlocked);
+        $this->assertSame(['identifier' => $email, 'dataExport' => null], $response->accountBlocked);
     }
 
     /**
@@ -205,6 +217,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $response = $this->lastHandshakeResponseFor('unblock-ak');
         $this->assertNotNull($response);
         $this->assertNull($response->accountBlocked);
+        self::assertNull(Hilos::$sr->groupSubscriptionName('unblock-ak', DataExportGroup::NAME));
 
         $this->sendBlockChanged($userId);
         $this->assertSame([], $this->stateFrames(), 'A repeated unblock frame sends nothing');
@@ -282,13 +295,16 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertNotNull($session, 'Nothing rotated: nobody was signed in');
         $this->assertNull($session->userId);
         $this->assertNull($session->pendingSecondFactorUserId, 'The second factor does not hold a refused sign-in');
+        self::assertFalse(Hilos::$db->stepUps->isConfirmed(
+            StateProtectedModeRuntime::hashSessionToken($token), $userId, StepUpOperationKey::EXPORT_DATA,
+        ));
         $this->assertSame($userId, $session->blockedUserId);
         $this->assertNotNull($outcome);
         $this->assertFalse($outcome->ok);
         $this->assertSame(AuthFlowOutcome::CODE_ACCOUNT_BLOCKED, $outcome->code);
         $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
         $this->assertSame(AuthFlowIntent::LOGIN, $outcome->intent);
-        $this->assertSame(['identifier' => $email], $this->lastHandshakeResponseFor('grant-ak')?->accountBlocked);
+        $this->assertSame(['identifier' => $email, 'dataExport' => null], $this->lastHandshakeResponseFor('grant-ak')?->accountBlocked);
     }
 
     /**
@@ -320,6 +336,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
 
         $this->assertSame(OAuthResultSignalData::REASON_ACCOUNT_BLOCKED, Hilos::$rt->hilosOAuthTrips[$tripKeyHash]?->ending);
         $this->assertSame(OAuthResultSignalData::REASON_ACCOUNT_BLOCKED, $this->lastOAuthResultReason('trip-ak'));
+        self::assertFalse(Hilos::$db->stepUps->isConfirmed(
+            StateProtectedModeRuntime::hashSessionToken($token), $userId, StepUpOperationKey::EXPORT_DATA,
+        ));
         $session = Hilos::$db->sessions->findByToken($token);
         $this->assertNull($session?->userId);
         $this->assertSame($userId, $session?->blockedUserId);
@@ -408,6 +427,108 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertSame($otherId, $session?->userId);
         $this->assertNull($session?->blockedUserId);
         $this->assertNull($this->lastHandshakeResponseFor('switch-ak')?->accountBlocked);
+    }
+
+    /**
+     * A refused password login credits export, and the copy owner accepts only that browser's person.
+     *
+     * @throws HilosException When a fixture, order or forget frame fails
+     */
+    public function testBlockedPasswordCreditsExportAndOrderReplacesItsCopy(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->block($userId);
+        $token = $this->anonymousSession('export-credit-ak');
+        $this->grant($token, $userId, 'export-credit-ak');
+        self::assertTrue(Hilos::$db->stepUps->isConfirmed(
+            StateProtectedModeRuntime::hashSessionToken($token), $userId, StepUpOperationKey::EXPORT_DATA,
+        ));
+        $opening = $this->usersLibrary()->onAgentAction(
+            'export-credit-ak', HilosSignalConstants::HILOS_STEP_UP_START,
+            new StepUpStartActionDTO(StepUpOperationKey::EXPORT_DATA),
+        );
+        self::assertInstanceOf(StepUpOpeningReplyDTO::class, $opening);
+        self::assertFalse($opening->required);
+        self::assertSame(DataExportGroup::forUser($userId), Hilos::$sr->groupSubscriptionName('export-credit-ak', DataExportGroup::NAME));
+
+        $path = sys_get_temp_dir() . '/hil303-order-' . bin2hex(random_bytes(8));
+        $previousFs = Hilos::$fs;
+        Hilos::$fs = new class($path) extends FsContext {
+            /** @param string $path Private archive directory */
+            public function __construct(private readonly string $path) { }
+            /** Registers only the directory this order test needs. */
+            public function configure(): void { $this->registerDirectory(self::DATA_EXPORT, $this->path); }
+        };
+        Hilos::$fs->configure();
+        $agent = new DataExportAgent();
+        try {
+            $this->startAgent($agent);
+            $order = static fn () => $agent->onAgentAction(
+                'export-credit-ak', HilosSignalConstants::HILOS_DATA_EXPORT_ORDER, new DataExportOrderActionDTO(),
+            );
+            $this->underAgent($agent, $order);
+            $first = Hilos::$db->dataExports->ofUser($userId);
+            self::assertNotNull($first);
+            self::assertSame(DataExportState::PREPARING, $first->state);
+            $this->underAgent($agent, $order);
+            self::assertSame($first->id, Hilos::$db->dataExports->ofUser($userId)?->id);
+            // WorkerManager flushes the order's ack only after this first tick returns.
+            $this->underAgent($agent, static fn () => $agent->onTick());
+            self::assertSame(DataExportState::PREPARING, $first->state, 'The reply must leave before archive assembly starts');
+            self::assertSame([], glob($path . '/*'), 'No archive I/O before the worker can flush the reply');
+            $this->underAgent($agent, static fn () => $agent->onTick());
+            self::assertSame(DataExportState::READY, $first->state, 'The next worker turn builds the request');
+            $readyPath = $path . '/' . $first->storedName;
+            self::assertFileExists($readyPath);
+            $this->underAgent($agent, $order);
+            self::assertFileDoesNotExist($readyPath);
+            self::assertNotSame($first->id, Hilos::$db->dataExports->ofUser($userId)?->id);
+            $this->underAgent($agent, static fn () => $agent->onSignalAgent(
+                new AgentSignalData(new DataExportForgetUserSignalData($userId)), '',
+                HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER,
+            ));
+            self::assertNull(Hilos::$db->dataExports->ofUser($userId));
+            self::assertSame([], glob($path . '/*'));
+        } finally {
+            Hilos::$fs = $previousFs;
+            foreach (glob($path . '/*') as $file) { unlink($file); }
+            if (is_dir($path)) { rmdir($path); }
+            TruthSourceRegistry::unregisterAgent($agent->getId());
+        }
+    }
+
+    /**
+     * A card raised by session loss asks for proof and cannot open a different operation.
+     *
+     * @throws HilosException When the fixture or confirmation fails
+     */
+    public function testLostSessionCardAsksForProofOnlyForExport(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->signedInSession('export-ask-ak', $userId);
+        $this->block($userId);
+        $this->sendBlockChanged($userId);
+        $opening = $this->usersLibrary()->onAgentAction(
+            'export-ask-ak', HilosSignalConstants::HILOS_STEP_UP_START,
+            new StepUpStartActionDTO(StepUpOperationKey::EXPORT_DATA),
+        );
+        self::assertInstanceOf(StepUpOpeningReplyDTO::class, $opening);
+        self::assertTrue($opening->required);
+        self::assertSame(StepUpMethod::PASSWORD, $opening->method);
+        $this->usersLibrary()->onAgentAction(
+            'export-ask-ak', HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
+            new StepUpConfirmActionDTO(StepUpOperationKey::EXPORT_DATA, StepUpMethod::PASSWORD, '', false,
+                'a long enough passphrase', null),
+        );
+        self::assertTrue(Hilos::$db->stepUps->isConfirmed(
+            StateProtectedModeRuntime::hashSessionToken($this->sessionOf('export-ask-ak')->token),
+            $userId, StepUpOperationKey::EXPORT_DATA,
+        ));
+        $this->expectException(ItemNotFoundForUpdateException::class);
+        $this->usersLibrary()->onAgentAction(
+            'export-ask-ak', HilosSignalConstants::HILOS_STEP_UP_START,
+            new StepUpStartActionDTO(StepUpOperationKey::CHANGE_PASSWORD),
+        );
     }
 
     /**
@@ -511,6 +632,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
             acceptKey: $acceptKey,
             requestId: self::REQUEST_ID,
             action: HilosSignalConstants::HILOS_LOGIN,
+            provenBy: StepUpMethod::PASSWORD,
         ));
     }
 

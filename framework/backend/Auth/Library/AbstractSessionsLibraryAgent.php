@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\DataExport\DTO\DataExportStateSignalData;
+use Hilos\DataExport\DataExportNotifier;
+use Hilos\DataExport\DataExportStateProjector;
+use Hilos\DataExport\DataExportGroup;
+use Hilos\Auth\StepUp\StepUpSettings;
+use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Auth\StepUp\StepUpMethodResolver;
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
@@ -196,6 +203,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public const string ACCOUNT_MERGE_PASSWORD_FATE_REQUIRED_MESSAGE =
         'Both accounts have a password: choose which one stays';
 
+    public const array READS_DB = [...parent::READS_DB, HilosDbContext::dataExports];
+
     /**
      * The session set, plus the identity rows an account merge moves.
      *
@@ -254,8 +263,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
         HilosDbContext::secondFactorSettings => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
-        HilosDbContext::stepUps => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): also credited by the sign-in the block refused (HIL-303); shared with the users library.
+        HilosDbContext::stepUps => TruthSourceOperation::ALL,
     ];
 
     /**
@@ -1152,9 +1161,26 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function publishSessionState(SessionStateSignalData $state): void
     {
+        $card = $this->accountBlockedNotice($state->sessionToken);
+        if ($card === null) {
+            foreach ($state->acceptKeys as $acceptKey) {
+                $held = Hilos::$sr?->groupSubscriptionName($acceptKey, DataExportGroup::NAME);
+                if ($held !== null && ($state->userId === null || $held !== DataExportGroup::forUser($state->userId))) {
+                    DataExportGroup::leave($acceptKey, $this->getAgentSignalSource());
+                }
+            }
+        }
+        if ($card !== null) {
+            $blockedUserId = Hilos::$db->sessions->findByToken($state->sessionToken)?->blockedUserId;
+            if ($blockedUserId !== null) {
+                foreach ($state->acceptKeys as $acceptKey) {
+                    DataExportGroup::join($acceptKey, $blockedUserId, $this->getAgentSignalSource());
+                }
+            }
+        }
         $this->sendToAgent(
             HilosSignalConstants::HILOS_SESSION_STATE,
-            $state->withAccountBlocked($this->accountBlockedNotice($state->sessionToken)),
+            $state->withAccountBlocked($card),
         );
         if ($state->requestId !== null) {
             $this->deferActionReply();
@@ -1170,7 +1196,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * it only cannot say whose account it was. A project that enforces no block reads nothing.
      *
      * @param string $sessionToken Session cookie token the frame is about
-     * @return ?array{identifier: ?string} Card, or null when the session holds none
+     * @return ?array{identifier: ?string, dataExport: ?array<string, mixed>} Card, or null when the session holds none
      * @throws HilosException When the session or the identity lookup fails
      */
     private function accountBlockedNotice(string $sessionToken): ?array
@@ -1187,6 +1213,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         return [
             HandshakeResponseSignalData::identifier => Hilos::$db->identities->findVerifiedEmailByUser($blockedUserId)
                 ?? Hilos::$db->identities->findVerifiedSmsByUser($blockedUserId),
+            DataExportStateSignalData::dataExport => DataExportStateProjector::nodeFor(Hilos::$db->dataExports->ofUser($blockedUserId)),
         ];
     }
 
@@ -4759,6 +4786,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->killUserSessions($userId);
             $this->removeErasedFiles($erasure->publishedFiles);
             Hilos::$notify?->forgetUser($userId);
+            DataExportNotifier::forgetUser($userId);
         } catch (HilosException | RandomException $e) {
             // The account is gone and the request carried out, so no sweep comes back for it.
             $this->logAgentError("Account of user {$userId} erased, but what follows the commit failed: {$e->getMessage()}");
@@ -5054,6 +5082,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
      * @param ?string $requestId Request id of the submit waiting on the answer, or null
      * @param ?string $action Action name the answer is for, or null
+     * @param ?string $provenBy Fresh sign-in proof eligible to credit export confirmation
      * @return bool True when the sign-in was refused, false when the account is not blocked
      * @throws HilosException When the flag, the session or the identities cannot be read or written
      * @throws InvalidArgumentException When a state frame cannot be named
@@ -5064,12 +5093,24 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ?string $initiatorAcceptKey,
         ?string $requestId,
         ?string $action,
+        ?string $provenBy = null,
     ): bool {
         if (!$this->enforcesAccountBlock() || !new AccountBlockReader()->isBlocked($userId)) {
             return false;
         }
 
         $session->actions->holdBlockedNotice($userId);
+        if ($provenBy !== null && StepUpSettings::isEnabled(StepUpOperationKey::EXPORT_DATA)
+            && (new StepUpMethodResolver())->resolve($userId)?->method === $provenBy
+        ) {
+            Hilos::$db->stepUps->actions->deleteExpiredForUser($userId);
+            Hilos::$db->stepUps->actions->confirm(
+                StateProtectedModeRuntime::hashSessionToken($session->token),
+                $userId,
+                StepUpOperationKey::EXPORT_DATA,
+                date('Y-m-d H:i:s', time() + Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int()),
+            );
+        }
         if ($session->pendingSecondFactorUserId !== null) {
             $session->actions->releasePendingSecondFactor();
         }
@@ -5509,6 +5550,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $frame->acceptKey,
             $frame->requestId,
             $frame->action,
+            $frame->provenBy,
         )) {
             return;
         }

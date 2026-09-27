@@ -46,14 +46,14 @@ final class StepUpCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key of the connection that submitted
      * @param StepUpStartActionDTO $dto Protected operation to open
      * @return StepUpOpeningReplyDTO Opening state for the operation modal
-     * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
+     * @throws ItemNotFoundForUpdateException When the acting connection holds neither a signed-in person nor an allowed block notice
      * @throws ValidationException When the operation is unknown, impersonated, has no proof, or reaches the send cap
      * @throws RandomException When a verification code or WebAuthn challenge cannot be drawn
      * @throws HilosException When settings, account proofs, verification delivery, or WebAuthn configuration fails
      */
     public function start(string $acceptKey, StepUpStartActionDTO $dto): StepUpOpeningReplyDTO
     {
-        $acting = $this->actingUser($acceptKey);
+        $acting = $this->actingPerson($acceptKey, $dto->operation);
         $directory = Hilos::stepUpOperationDirectoryClass();
         if (!$directory::has($dto->operation)) {
             throw new ValidationException(StepUpMessages::UNKNOWN_OPERATION);
@@ -106,13 +106,13 @@ final class StepUpCommands extends AbstractLibraryCommands
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param StepUpConfirmActionDTO $dto Protected operation and proof returned by its opening
-     * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
+     * @throws ItemNotFoundForUpdateException When the acting connection holds neither a signed-in person nor an allowed block notice
      * @throws ValidationException When the operation, method, or proof is no longer valid
      * @throws HilosException When account proofs, verification, WebAuthn, env, or confirmation storage fails
      */
     public function confirm(string $acceptKey, StepUpConfirmActionDTO $dto): void
     {
-        $acting = $this->actingUser($acceptKey);
+        $acting = $this->actingPerson($acceptKey, $dto->operation);
         $directory = Hilos::stepUpOperationDirectoryClass();
         if (!$directory::has($dto->operation)) {
             throw new ValidationException(StepUpMessages::UNKNOWN_OPERATION);

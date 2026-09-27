@@ -46,6 +46,7 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
         'hilos_second_factor_setting',
         'hilos_step_up',
         'hilos_account_deletion',
+        'hilos_data_export',
     ];
 
     /** @var ?DbContext Database context to restore after the test */

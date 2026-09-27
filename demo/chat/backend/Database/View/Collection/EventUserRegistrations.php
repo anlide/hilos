@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Collection;
 
+use Demo\Chat\Database\Object\Item\EventUserRegistration as ObjectEventUserRegistration;
 use Demo\Chat\Database\Actions\Collection\EventUserRegistrationsActions;
 use Demo\Chat\Database\Object\Collection\EventUserRegistrations as ObjectEventUserRegistrations;
 use Demo\Chat\Database\View\Item\EventUserRegistration;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\HilosException;
 
 /**
  * EventUserRegistrations - Db collection of registration event detail items.
@@ -27,4 +29,14 @@ final class EventUserRegistrations extends DbCollection
 {
     public const string DB_ITEM_CLASS = EventUserRegistration::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectEventUserRegistrations::class;
+
+    /**
+     * @param int $userId Person whose records are requested
+     * @return static Complete matching set, including rows not cached in this worker
+     * @throws HilosException When the query or collection assembly fails
+     */
+    public function byTarget(int $userId): static
+    {
+        return $this->whereColumnIs(ObjectEventUserRegistration::targetUserId, $userId);
+    }
 }

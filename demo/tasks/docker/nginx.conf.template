@@ -56,6 +56,17 @@ http {
         }
 
         # WebSocket upgrade proxy for Docker E2E and HTTPS deployments.
+        # Session authorization stays in the agent; only nginx reads the archive body.
+        location = /_hilos/data-export {
+            proxy_pass http://${FRONTEND_HTML_UPSTREAM}:8090;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+        location ^~ /__hilos_data_export/ {
+            internal;
+            alias /data_export/;
+        }
+
         location /ws {
             proxy_pass http://${FRONTEND_HTML_UPSTREAM}:8092;
             proxy_http_version 1.1;

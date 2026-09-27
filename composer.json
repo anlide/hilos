@@ -20,6 +20,7 @@
         "ext-mysqli": "*",
         "ext-ctype": "*",
         "ext-fileinfo": "*",
+        "ext-phar": "*",
         "ext-openssl": "*",
         "ext-curl": "*",
         "minishlink/web-push": "^11.0",

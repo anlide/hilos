@@ -7,6 +7,7 @@ namespace Demo\Chat;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\ChatContextAnalyzerAgent;
+use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
@@ -174,6 +175,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
@@ -373,6 +375,11 @@ final class Hilos extends HilosFacade
     ];
 
     public const array AGENTS = [
+        DataExportAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DataExportAgent::class,
+            AgentRegistryKey::DAEMON => DataExportAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         ChatAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => ChatAgent::class,
             AgentRegistryKey::DAEMON => ChatAgentDaemon::class,
@@ -506,6 +513,10 @@ final class Hilos extends HilosFacade
      * person an agent of their own, and the auth libraries are parted with it.
      */
     public const array SHARED_DB_OWNERS = [
+        HilosDbContext::stepUps => [
+            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
         ChatDbContext::users => [
             SharedOwnersKey::OWNERS => [ChatAgent::class, UsersLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',

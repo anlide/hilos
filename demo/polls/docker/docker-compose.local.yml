@@ -252,6 +252,7 @@ services:
     container_name: polls-nginx-local
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
+      - ../data/data_export:/data_export:ro
       - nginx-ssl-local:/etc/nginx/ssl
     ports:
       # HTTPS only, on a high port. The former 443+n scheme (this demo had 445)

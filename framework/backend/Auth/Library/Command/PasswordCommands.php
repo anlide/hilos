@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -99,7 +100,7 @@ final class PasswordCommands extends AbstractLibraryCommands
 
         $identity->rehashPasswordIfNeeded($dto->password);
 
-        $this->library->grantSession($acting, $userId);
+        $this->library->grantSession($acting, $userId, provenBy: StepUpMethod::PASSWORD);
     }
 
     /**

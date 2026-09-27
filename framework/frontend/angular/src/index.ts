@@ -111,3 +111,5 @@ export { HilosProfileSignInPage } from './profile/HilosProfileSignInPage.js'
 export { HilosProfileNotificationsPage } from './profile/HilosProfileNotificationsPage.js'
 
 export { HilosProfilePasswordChange } from './profile/HilosProfilePasswordChange.js'
+
+export { HilosDataExport } from './profile/HilosDataExport.js'

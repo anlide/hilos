@@ -15,10 +15,14 @@ classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
 import {
   ACCOUNT_BLOCKED_COPY,
+  HILOS_DATA_EXPORT_COPY,
+  hilosAccountBlockedDataExport,
   dismissAccountBlocked,
   type AccountBlockedNotice,
 } from '@hilos/core'
 
+import HilosDataExport from './profile/HilosDataExport.vue'
+import { useSignal } from './useSignal.js'
 import LoadingButton from './LoadingButton.vue'
 import { useTrackedAction } from './useTrackedAction.js'
 
@@ -27,6 +31,7 @@ defineProps<{
   notice: AccountBlockedNotice
 }>()
 
+const exportModel = useSignal(hilosAccountBlockedDataExport)
 const { busy, run } = useTrackedAction()
 const onSignOut = (): void => {
   if (busy.value) {
@@ -81,6 +86,12 @@ const onSignOut = (): void => {
       <p class="small text-body-secondary mb-3">
         {{ ACCOUNT_BLOCKED_COPY.contact }}
       </p>
+      <HilosDataExport
+        v-if="exportModel"
+        :store="exportModel.store"
+        :flow="exportModel.flow"
+        :lead="HILOS_DATA_EXPORT_COPY.blockedLead"
+      />
       <LoadingButton
         class="btn-outline-secondary w-100"
         data-id="account-blocked-sign-out"

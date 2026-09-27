@@ -380,9 +380,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * The commands that add to an account rather than open one, and so need a signed-in
      * session. Everything else here is a guest's way in and must stay open to one. The
      * profile's second-factor commands are here whole (HIL-494): they act on the person the
-     * session belongs to and on nobody else. The two step-up actions are authenticated for
-     * the same reason: they prove and open an operation of the signed-in person. So are the
-     * profile's own ways in and the email change, whole (HIL-1137): each reads its person
+     * session belongs to and on nobody else. Step-up start and confirm stay outside this list:
+     * actingPerson also admits a blocked card for an operation that declares that entrance (HIL-303).
+     * The profile's own ways in and the email change are here whole (HIL-1137): each reads its person
      * from the acting session, which an anonymous one has none of. So are the four submits of
      * account deletion (HIL-302) and password change (HIL-300), for the same reason.
      */
@@ -398,8 +398,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL,
-        HilosSignalConstants::HILOS_STEP_UP_START,
-        HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
         HilosSignalConstants::PROFILE_SET_PASSWORD,
         HilosSignalConstants::PROFILE_UNLINK_IDENTITY,
         HilosSignalConstants::PROFILE_ADD_SMS_REQUEST,
@@ -724,6 +722,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param bool $secondFactorProven Whether the second factor was just shown, so the holder does not ask for it
      *     again (HIL-494); every first proof leaves it false and meets the holder's second-factor gate
      * @param bool $trustDevice Whether the person asked not to be asked again on this browser (HIL-494)
+     * @param ?string $provenBy Step-up method just proved, or null when it cannot credit an operation
      * @throws InvalidArgumentException When the frame cannot be named or queued
      */
     public function grantSession(
@@ -734,6 +733,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         ?string $tripKeyHash = null,
         bool $secondFactorProven = false,
         bool $trustDevice = false,
+        ?string $provenBy = null,
     ): void {
         $this->handOff(
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT,
@@ -748,6 +748,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 $tripKeyHash,
                 $secondFactorProven,
                 $trustDevice,
+                $provenBy,
             ),
         );
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendOrderReplyDTO;
@@ -165,6 +166,7 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
                 $identity->userId,
                 null,
                 AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::LOGIN),
+                provenBy: StepUpMethod::SMS_CODE,
             );
 
             return null;

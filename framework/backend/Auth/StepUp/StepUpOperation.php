@@ -23,6 +23,8 @@ final readonly class StepUpOperation
      * @param string $label Administration-screen label
      * @param string $purpose Phrase completing "To ..."
      * @param bool $opensWithAddressCode Whether the operation itself first proves the account address
+     * @param bool $opensOnBlockedCard Whether a browser holding the person's block notice may confirm this operation
+     * @param bool $passesWithNothingToConfirm Whether an account with no available proof passes without a step
      * @throws InvalidArgumentException When the operation key is empty or malformed
      */
     public function __construct(
@@ -30,6 +32,8 @@ final readonly class StepUpOperation
         public string $label,
         public string $purpose,
         public bool $opensWithAddressCode,
+        public bool $opensOnBlockedCard = false,
+        public bool $passesWithNothingToConfirm = false,
     ) {
         if (preg_match(self::KEY_PATTERN, $key) !== 1) {
             throw new InvalidArgumentException("Invalid step-up operation key: {$key}");

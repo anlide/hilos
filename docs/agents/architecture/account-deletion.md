@@ -88,6 +88,11 @@ here because the notification feature is not mounted everywhere; a lost frame
 leaves rows of nobody. A failure after the commit is logged and not retried: the
 request is carried out, and no sweep comes back for it.
 
+`DataExportNotifier::forgetUser()` also queues `hilos_data_export_forget_user` to
+the export owner after the commit, removing the person's prepared copy. A builder
+checks the retained completed-erasure row before publishing; see
+[data-export.md](data-export.md).
+
 ## The Project's Seam
 
 `assertAdministratorMayDelete()` judges the admin card's target before scheduling:

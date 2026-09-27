@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Hilos\DataExport\DataExportHttp;
+use Hilos\DataExport\DTO\DataExportOrderActionDTO;
+use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
+use Hilos\DataExport\DataExportAgentDaemon;
+use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Closure;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Browser\ChatBrowserContext;
@@ -202,6 +207,16 @@ use ReflectionClass;
  */
 final class ChatTopologyRegistryTest extends TestCase
 {
+    /** The export runs once on the policy-selected node and has a worker of its own. */
+    public function testDataExportAgentIsPolicyPlacedAndMonopolistic(): void
+    {
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_DATA_EXPORT];
+        self::assertSame(DataExportAgent::class, AgentRegistry::workerClass($entry));
+        self::assertSame(DataExportAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        self::assertTrue((new DataExportAgentDaemon())->requiresMonopolisticProcess());
+    }
+
     protected function tearDown(): void
     {
         Hilos::resetBrowser();
@@ -307,6 +322,7 @@ final class ChatTopologyRegistryTest extends TestCase
         // of its archives. The aggregator is placed so that one holder of the merged log picture
         // survives a re-election instead of dying with the term.
         $this->assertSame([
+            HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
@@ -524,6 +540,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedAgentSignalRoutesMatchChatAgentOwnership(): void
     {
         $this->assertSame([
+            HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             HilosSignalConstants::HILOS_SESSION_STATE => AgentType::CHAT,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -636,7 +653,10 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedHttpRoutesMatchChatAgentOwnership(): void
     {
         $this->assertSame([
-            HttpConstants::METHOD_GET => [HilosFiles::DOWNLOAD_PATH => HilosAgentType::HILOS_FILES_LIBRARY],
+            HttpConstants::METHOD_GET => [
+                DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT,
+                HilosFiles::DOWNLOAD_PATH => HilosAgentType::HILOS_FILES_LIBRARY,
+            ],
         ], Hilos::getHttpAgentRoutes());
     }
 
@@ -687,6 +707,7 @@ final class ChatTopologyRegistryTest extends TestCase
         }
 
         $this->assertSame([
+            HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => DataExportForgetUserSignalData::class,
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
@@ -763,6 +784,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedAgentActionRoutesMatchChatAgentOwnership(): void
     {
         $this->assertSame([
+            HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => HilosAgentType::HILOS_DATA_EXPORT,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGIN => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_REGISTER => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -856,6 +878,7 @@ final class ChatTopologyRegistryTest extends TestCase
         }
 
         $this->assertSame([
+            HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
             HilosSignalConstants::HILOS_LOGIN => LoginActionDTO::class,
             HilosSignalConstants::HILOS_REGISTER => RegisterActionDTO::class,
