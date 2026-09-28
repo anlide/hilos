@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\AdminViewMode\AdminViewModeStartup;
+
 /**
  * EnvConstants - Environment variable name constants.
  *
@@ -258,6 +260,17 @@ enum EnvConstants
      * When PROD or STAGING: database seeds are disabled.
      */
     case APP_ENV;
+
+    /**
+     * Whether a non-admin may open the admin section to look and change nothing (HIL-1249).
+     *
+     * The mode works in production: it was made for the demos, and the demos live in
+     * production. Off by default. A production node that starts with it off closes it on the
+     * installation for good - a file in the node's log directory and a row in the database
+     * ({@see AdminViewModeStartup}) - and from then on the value is overruled, with an ERROR
+     * line on every start.
+     */
+    case HILOS_ADMIN_VIEW_MODE_ENABLED;
 
     /**
      * Build timestamp carried in the WebSocket handshake welcome frame.

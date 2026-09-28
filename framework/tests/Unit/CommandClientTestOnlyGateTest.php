@@ -79,6 +79,7 @@ final class CommandClientTestOnlyGateTest extends TestCase
             [CliCommands::CONNECTION_TEST_DROP],
             [CliCommands::TABLE_TEST_LAG],
             [CliCommands::TABLE_TEST_REFUSE],
+            [CliCommands::ADMIN_VIEW_MODE_TEST],
         ];
     }
 

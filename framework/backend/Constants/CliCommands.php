@@ -155,6 +155,9 @@ final class CliCommands
     /** @var string Command: Refuse the windows of one table, as if they could not be built (test-only) */
     public const string TABLE_TEST_REFUSE = 'test:table:refuse';
 
+    /** @var string Command: Turn the admin view mode of this node on or off until it restarts (test-only) */
+    public const string ADMIN_VIEW_MODE_TEST = 'test:admin-view-mode';
+
     /** @var string Command: Resolve an LLM profile and optionally probe its endpoint */
     public const string LLM_PING = 'llm:ping';
 

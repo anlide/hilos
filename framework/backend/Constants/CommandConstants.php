@@ -56,6 +56,9 @@ final class CommandConstants
     /** @var string Payload key: wire key of the table whose windows the test-only table refusal refuses; empty when off */
     public const string FIELD_TABLE_KEY = 'tableKey';
 
+    /** @var string Payload key: whether the test-only admin view mode lever turns the mode on (request and reply) */
+    public const string FIELD_ENABLED = 'enabled';
+
     /** @var string Reply status: command handled successfully */
     public const string STATUS_OK = 'ok';
 

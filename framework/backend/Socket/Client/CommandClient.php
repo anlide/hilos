@@ -298,6 +298,15 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CliCommands::ADMIN_VIEW_MODE_TEST) {
+                // Test-only: turn this node's admin view mode on or off until it restarts (HIL-1249).
+                // Answered here rather than parked, because the mode is a row of the master's own
+                // runtime state and no agent owns it.
+                $reply = $this->answerAdminViewMode($request);
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             // Async: park, then route to the owning agent; the reply returns via writeReply().
             $this->heldCorrelationId = $request->correlationId;
             $this->heldSince = microtime(true);
@@ -426,6 +435,43 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_TABLE_KEY => $row->tableKey,
+        ]);
+    }
+
+    /**
+     * Writes the admin view mode this request names and answers with the row as written (HIL-1249).
+     *
+     * The request must say on or off outright: a mode it leaves out or names as anything but a
+     * boolean is refused and the row is left as it was, since guessing a direction would flip a
+     * stand's mode under the case that asked. The latch is not touched - a stand has none, and
+     * the socket refuses this command on production. The reply is read back from the row rather
+     * than echoed from the request, so what the caller is told is what the workers of this node
+     * will read.
+     *
+     * @param CommandRequestDTO $request Mode request naming on or off
+     * @return CommandReplyDTO Reply carrying the mode after the write, or the error to answer instead
+     */
+    private function answerAdminViewMode(CommandRequestDTO $request): CommandReplyDTO
+    {
+        // external-boundary: a test harness's command line, checked on the very next line
+        $enabled = $request->payload[CommandConstants::FIELD_ENABLED] ?? null;
+        if (!is_bool($enabled)) {
+            return CommandReplyDTO::error($request->correlationId, 'enabled must be true or false');
+        }
+
+        $row = Hilos::$rt?->hilosAdminViewModeRuntime;
+        if ($row === null) {
+            return CommandReplyDTO::error($request->correlationId, 'This node holds no runtime state for the admin view mode');
+        }
+
+        try {
+            $row->actions->set($enabled);
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_ENABLED => $row->enabled,
         ]);
     }
 

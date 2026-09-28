@@ -23,6 +23,12 @@ use PHPUnit\Framework\TestCase;
  * anchors - so a service is judged by the union of its own lines and those of every anchor it
  * merges. Without that union the same five nodes would fail five times over values they do have.
  *
+ * The same reader holds the production stacks to one more value, the admin view mode
+ * (HIL-1249): the demos are shown with it on, and a production node that starts with it off
+ * closes it on that installation for good. So the line is not a preference a stack may drop -
+ * the first start without it would take the mode away from the demo forever, and a new demo
+ * with a production stack cannot land without saying it.
+ *
  * A demo arrives through the glob and a demo without a `docker/` directory is skipped in
  * silence, the way the code-style guard treats a root that is not there: the framework also
  * ships without the demos.
@@ -43,6 +49,12 @@ final class DemoStackComposeGuardTest extends TestCase
 
     /** The address a service dials to reach the daemon inside its own container. */
     private const string LOOPBACK = '127.0.0.1';
+
+    /** Name of the value that turns the admin view mode on. */
+    private const string ADMIN_VIEW_MODE = 'HILOS_ADMIN_VIEW_MODE_ENABLED';
+
+    /** Path ending of a demo's production compose file. */
+    private const string PRODUCTION_COMPOSE = '/docker/docker-compose.prod.yml';
 
     /**
      * A daemon service names its own address and its command channel in full.
@@ -146,6 +158,41 @@ final class DemoStackComposeGuardTest extends TestCase
                 }
             }
         }
+    }
+
+    /**
+     * Every production daemon of every demo turns the admin view mode on (HIL-1249).
+     *
+     * Production, not every stack: the mode is what the demos are shown with, and production is
+     * the one place where a start without it is irreversible - a stand decides from the variable
+     * again on every start and has the test lever besides.
+     *
+     * @return void
+     */
+    public function testEveryProductionDaemonTurnsTheAdminViewModeOn(): void
+    {
+        $daemons = 0;
+
+        foreach ($this->composeFiles() as $relativePath => $path) {
+            if (!str_ends_with($relativePath, self::PRODUCTION_COMPOSE)) {
+                continue;
+            }
+
+            foreach ($this->servicesOf($path) as $service => $lines) {
+                if (!$this->isDaemon($lines)) {
+                    continue;
+                }
+
+                $daemons++;
+                $this->assertSame(
+                    'true',
+                    $this->valueOf($lines, self::ADMIN_VIEW_MODE),
+                    "{$relativePath}: the daemon service {$service} does not set " . self::ADMIN_VIEW_MODE . '=true'
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $daemons, 'no production daemon service was found at all - the reader stopped seeing them');
     }
 
     /**

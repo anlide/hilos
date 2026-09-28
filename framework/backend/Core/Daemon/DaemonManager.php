@@ -8,6 +8,7 @@ use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\API\Router\HttpRouter;
+use Hilos\AdminViewMode\AdminViewModeStartup;
 use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\Exception\BackupScheduleException;
@@ -138,6 +139,7 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\State\Item\AdminViewModeRuntime as StateAdminViewModeRuntime;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -555,6 +557,8 @@ abstract class DaemonManager extends BaseManager implements
      * rely on the core servers already being present. Finally it registers the
      * daemon-mechanism backup cron rules ({@see registerBackupCronRules()}). A hook or module
      * failure propagates to the entrypoint, which logs it and exits (the daemon refuses to start).
+     * Last of all it decides the admin view mode of this node ({@see applyAdminViewMode()}) - the
+     * one step here that never refuses the start.
      *
      * @param DaemonContext $context Resolved path context passed to every hook
      * @throws BackupScheduleException When the project backup schedule is malformed
@@ -612,9 +616,11 @@ abstract class DaemonManager extends BaseManager implements
         $this->registerProtectedModeTruthSource();
         $this->registerTableLagTruthSource();
         $this->registerTableRefusalTruthSource();
+        $this->registerAdminViewModeTruthSource();
         $this->registerSessionRotationTruthSource();
         $this->registerClusterNodesTruthSource();
         $this->restoreProtectedModeFreeze();
+        $this->applyAdminViewMode();
     }
 
     /**
@@ -6797,6 +6803,25 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Registers the daemon master as the non-agent truth source for the admin view mode singleton
+     * (HIL-1249).
+     *
+     * The master writes the row twice over and no agent stands behind either write: once at the end
+     * of {@see boot()} with what the start decided, and in answer to `test:admin-view-mode` on a
+     * stand. The row is node-local: it says what this node decided, and a replica of it would be one
+     * node's decision overwriting another's. The early return means Hilos::$rt is null - the
+     * framework mounts the row for every project that has an RT context.
+     */
+    private function registerAdminViewModeTruthSource(): void
+    {
+        if (Hilos::$rt?->hilosAdminViewModeRuntime === null) {
+            return;
+        }
+
+        RtTruthSourceRegistry::registerDaemon(StateAdminViewModeRuntime::RT_ITEM);
+    }
+
+    /**
      * Puts back the freeze this node went down under, before a single socket is bound.
      *
      * Runtime state is memory only, so without this a daemon restarted in the middle of a restore
@@ -6839,6 +6864,29 @@ abstract class DaemonManager extends BaseManager implements
             . ($row->operation ?? self::UNNAMED_FROZEN_OPERATION)
             . "' on phase '{$row->phase}'; the operation behind it did not survive the restart",
         );
+    }
+
+    /**
+     * Decides the admin view mode of this node and puts it on the node's runtime row (HIL-1249).
+     *
+     * Here, at the end of composition, because the decision reads the log directory and on
+     * production the database, and this is the last moment before {@see run()} binds a server or
+     * starts a worker: a one-time bootstrap read, which the master is allowed before its loop. Every
+     * worker is handed the row by the master when it comes up - every mounted singleton is read
+     * process-wide - so none of them ever reads the mode before it is decided. It has to run
+     * after {@see registerAdminViewModeTruthSource()}: the write is refused until this master is
+     * the row's registered writer.
+     *
+     * {@see AdminViewModeStartup::run()} never refuses the start, so neither does this: a latch it
+     * cannot read keeps the mode off with an ERROR line, and the node comes up.
+     *
+     * @throws RtActionsCollectionNameNullException When the mode row has no collection name to sync under
+     * @throws RtTruthSourceWriteNotAllowedException When this master may not write the mode row
+     */
+    private function applyAdminViewMode(): void
+    {
+        $enabled = AdminViewModeStartup::run();
+        Hilos::$rt?->hilosAdminViewModeRuntime?->actions->set($enabled);
     }
 
     /**

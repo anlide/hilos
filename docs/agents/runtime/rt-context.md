@@ -132,7 +132,7 @@ owning `RtCollection` or `RtItem` only when they are reusable model contracts.
 
 ### Framework-Owned Singleton Aliases
 
-Four aliases exist on every `RtContext` without any project registration:
+Five aliases exist on every `RtContext` without any project registration:
 
 | Alias | View item | Backing state |
 |---|---|---|
@@ -140,6 +140,7 @@ Four aliases exist on every `RtContext` without any project registration:
 | `hilosProtectedModeRuntime` | `Runtime/View/Item/ProtectedModeRuntime` | `Runtime/State/Item/ProtectedModeRuntime` |
 | `hilosTableLagRuntime` | `Runtime/View/Item/TableLagRuntime` | `Runtime/State/Item/TableLagRuntime` |
 | `hilosTableRefusalRuntime` | `Runtime/View/Item/TableRefusalRuntime` | `Runtime/State/Item/TableRefusalRuntime` |
+| `hilosAdminViewModeRuntime` | `Runtime/View/Item/AdminViewModeRuntime` | `Runtime/State/Item/AdminViewModeRuntime` |
 
 The framework declares their representation in the base `RtContext` constructor,
 because it owns these rows and every caller that reads them; the project decides
@@ -181,6 +182,14 @@ refuses every `test:` command there — so it stays at zero for good.
 the same way: it is the test lever `test:table:refuse` pulls to make every window
 of one named table fail to build, so the table's "List unavailable" state can be
 seen on a stand. On production it stays empty for good.
+
+`hilosAdminViewModeRuntime` is mounted for every project the same way (HIL-1249),
+but it is not a test lever: it is the admin view mode of the node, and on
+production it may well be on. The master writes it at the end of its start with
+what the variable and the latch decided, and on a stand again when
+`test:admin-view-mode` pulls the lever; the workers read it. It stays inert
+(`false`) while the mode is off
+([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)).
 
 ## Backing-State Boundary
 
@@ -428,7 +437,7 @@ inside its scope that the owner does not send is a row that no longer exists.
 
 **What travels is what an agent owns.** The node announces a write only for the
 collections its own agents registered, so a project's collection is replicated
-by having an owner, and nothing else has to be declared. Four framework
+by having an owner, and nothing else has to be declared. Five framework
 keys stand outside that rule, because the daemon master registers them on every
 node and no agent stands behind them:
 
@@ -442,6 +451,11 @@ node and no agent stands behind them:
 - **`hilosTableRefusalRuntime` is node-local and never travels, for the same
   reason.** The master answering `test:table:refuse` writes its own node's
   refusal, and only that node's workers refuse the table's windows.
+- **`hilosAdminViewModeRuntime` is node-local and never travels.** Each master
+  writes what its own start decided, or what the lever told it, and that node's
+  workers read it; a replica would be one node's decision overwriting another's.
+  Whether every node of a cluster decides the same is HIL-1274's question, not
+  the sync's.
 - **`hilosSessionRotations` travels both ways.** One cluster-wide store with a
   second writer by act: the agent owning the session seam announces a rotation
   from a worker, and whichever master receives the handshake that spends the
@@ -450,7 +464,7 @@ node and no agent stands behind them:
   as a split — or the spent ticket would survive there and buy a second
   handshake inside its lifetime.
 
-All four are framework-owned and all four are named in `DaemonManager`; an
+All five are framework-owned and all five are named in `DaemonManager`; an
 application collection has no such case, and adding one is not a knob that exists.
 
 **Ownership is claimed on two axes: which rows, and which operations.** A claim

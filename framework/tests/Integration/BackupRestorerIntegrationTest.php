@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\AdminViewMode\AdminViewModeLatchFile;
+use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Backup\ArchiveMigrationMarker;
 use Hilos\Backup\BackupConnectionMeta;
@@ -184,6 +186,37 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
 
         $this->assertSame([['1', 'alpha'], ['2', 'beta']], $this->probeRows());
+    }
+
+    /**
+     * The row half of the admin view mode latch against a restore from an archive taken before the
+     * latch existed (HIL-1249): the dump does not carry its table, and a table outside the dump is
+     * left as it was, so the live latch survives. The file half lives in the log directory and a
+     * restore touches no such thing.
+     *
+     * @throws DatabaseException When the latch row cannot be written, read or removed
+     */
+    public function testALiveAdminViewModeLatchSurvivesARestoreOfAnArchiveWithoutItsTable(): void
+    {
+        Migration::initialize();
+        Database::sql('DELETE FROM `' . AdminViewModeLatchTable::TABLE . '`');
+        AdminViewModeLatchTable::close('prod', 'latch-node', 1700000000);
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]));
+
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+            $this->assertSame(
+                [
+                    AdminViewModeLatchFile::KEY_ENVIRONMENT => 'prod',
+                    AdminViewModeLatchFile::KEY_NODE => 'latch-node',
+                    AdminViewModeLatchFile::KEY_CLOSED_AT => 1700000000,
+                ],
+                AdminViewModeLatchTable::read(),
+            );
+        } finally {
+            Database::sql('DELETE FROM `' . AdminViewModeLatchTable::TABLE . '`');
+        }
     }
 
     public function testCorruptedArchiveIsRefusedBeforeAnythingDestructive(): void

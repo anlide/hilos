@@ -66,8 +66,17 @@
    start whose migrations opened the gap — `docker.php` applies them before this runs.
 7. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
 8. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
-9. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
-10. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
+9. The end of `DaemonManager::boot()` decides the admin view mode of the node
+   (`AdminViewModeStartup`, HIL-1249) and writes it into the node-local runtime row
+   `hilosAdminViewModeRuntime` — before the first socket is bound and the first worker
+   started, so the snapshot every worker is handed when it comes up already carries the
+   answer ([../runtime/rt-context.md](../runtime/rt-context.md)). On production it
+   reads and writes the two halves of the latch, the file in the log root and the row in
+   the database: a one-time bootstrap read, which the master is allowed before its loop.
+   It never refuses the start: a latch it cannot read keeps the mode off with an ERROR
+   ([admin-view-mode.md](admin-view-mode.md), *The Switch And Its Prod Latch*).
+10. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
+11. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
 
 ## Container watchdog and crash recovery (HIL-450)
 

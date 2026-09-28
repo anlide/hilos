@@ -44,6 +44,11 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
+      # The admin view mode of the demo: a non-admin may open the admin section to
+      # look and change nothing (HIL-1249). On production this line is required by
+      # DemoStackComposeGuardTest - a production node started without it closes the
+      # mode on the installation for good.
+      - HILOS_ADMIN_VIEW_MODE_ENABLED=true
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     ports:

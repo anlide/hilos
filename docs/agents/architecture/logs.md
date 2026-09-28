@@ -53,6 +53,14 @@ environment, so two daemons write the same files. Rotation, staging and the
 archive walk the directory as a whole: one environment's carrier takes the
 other's batches.
 
+The directory holds one more file of the node's own:
+`.hilos-admin-view-mode-latch.json`, the half of the admin view mode latch a
+production node writes when it starts with the mode off (HIL-1249). It is not
+`*.log`, so no walk, count or rotation sees it. Delete it only on purpose, to
+lift the latch: the next start writes it back from the row in the database
+unless that row is deleted too ([admin-view-mode.md](admin-view-mode.md),
+*The Switch And Its Prod Latch*).
+
 Inside the container the path is always the same
 (`DAEMON_LOG_FILE=/var/log/hilos/daemon.log`), so only the compose mount can
 separate directories, and a marker in the directory is what guarantees it. The

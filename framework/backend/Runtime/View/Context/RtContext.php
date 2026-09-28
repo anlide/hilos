@@ -27,6 +27,7 @@ use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Collection\HilosSessionRotations as StateHilosSessionRotations;
 use Hilos\Runtime\State\Collection\HilosSessionToastStacks as StateHilosSessionToastStacks;
 use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Item\AdminViewModeRuntime as StateAdminViewModeRuntime;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
@@ -40,6 +41,7 @@ use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionToastStacksActions;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
+use Hilos\Runtime\View\Actions\Item\AdminViewModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
@@ -60,6 +62,7 @@ use Hilos\Runtime\View\Collection\HilosUploads;
 use Hilos\Runtime\View\Collection\RecoveryWaiters;
 use Hilos\Runtime\View\Collection\RegistrationWaiters;
 use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Runtime\View\Item\AdminViewModeRuntime;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RestoreRuntime;
@@ -89,6 +92,7 @@ use OutOfBoundsException;
  * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted
  * @property-read ?TableLagRuntime $hilosTableLagRuntime Test-only table lag singleton, or null when unmounted
  * @property-read ?TableRefusalRuntime $hilosTableRefusalRuntime Test-only table refusal singleton, or null when unmounted
+ * @property-read ?AdminViewModeRuntime $hilosAdminViewModeRuntime Admin view mode of this node, or null when unmounted
  */
 abstract class RtContext
 {
@@ -184,6 +188,10 @@ abstract class RtContext
             'itemClass' => TableRefusalRuntime::class,
             'itemActionsClass' => TableRefusalRuntimeActions::class,
         ];
+        $this->_rtItems[StateAdminViewModeRuntime::RT_ITEM] = [
+            'itemClass' => AdminViewModeRuntime::class,
+            'itemActionsClass' => AdminViewModeRuntimeActions::class,
+        ];
     }
 
     /**
@@ -214,7 +222,7 @@ abstract class RtContext
      * declaration the only switch: a project cannot forget a row of a feature it declared, and
      * cannot quietly replace one either - the check names the key and the line to delete.
      *
-     * Six of these are mounted unconditionally and before any feature, because none is an
+     * Seven of these are mounted unconditionally and before any feature, because none is an
      * opt-in surface. The protected mode singleton is there because a node freezing itself for
      * a destructive operation is a data-integrity guarantee: every project that can run such an
      * operation must be able to freeze. The session rotations are there because the login token
@@ -235,6 +243,9 @@ abstract class RtContext
      * writes it, in answer to a `test:` command the command socket refuses there.
      * The table refusal (HIL-1131) is there for the same reason and is inert in the same way: it
      * is the test lever that makes the windows of one of those tables fail to build.
+     * The admin view mode (HIL-1249) is there because it is a mark of the node, not a feature a
+     * project declares: only the master writes it - at its start and by the stand's lever - and
+     * the workers read it. It is inert (false) while the mode is off.
      *
      * A project whose createRuntime() returns null has no context to mount into; declaring a
      * feature that brings runtime state there is refused by the facade instead, since there is
@@ -248,6 +259,7 @@ abstract class RtContext
         $this->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
         $this->mountFeatureItem(StateTableLagRuntime::RT_ITEM, StateTableLagRuntime::create());
         $this->mountFeatureItem(StateTableRefusalRuntime::RT_ITEM, StateTableRefusalRuntime::create());
+        $this->mountFeatureItem(StateAdminViewModeRuntime::RT_ITEM, StateAdminViewModeRuntime::create());
         $this->mountFeatureCollection(StateHilosSessionRotation::RT_COLLECTION, StateHilosSessionRotations::init());
         $this->setRepresent(
             StateHilosSessionRotation::RT_COLLECTION,

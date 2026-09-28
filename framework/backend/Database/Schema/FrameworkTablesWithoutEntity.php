@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Schema;
 
+use Hilos\AdminViewMode\AdminViewModeLatchTable;
+use Hilos\AdminViewMode\AdminViewModeStartup;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
@@ -22,6 +24,8 @@ use Hilos\Database\MigrationClaim;
  *
  * - **`migration`** and **`hilos_migration_claim`** are created by {@see Migration}
  *   itself, before any migration has run and therefore before any Entity's table exists.
+ *   **`hilos_admin_view_mode_latch`** is created there too, and is written by the start of
+ *   a daemon ({@see AdminViewModeStartup}), before any agent exists.
  * - **The change-log tables** record what changed in the other tables; a row of theirs
  *   is written by the log, not loaded as a domain object.
  * - **The analytics tables** are append-only facts and their dictionaries, written in
@@ -58,9 +62,10 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
      * Returns the personal-data verdict of the framework's tables outside the ORM.
      *
      * Kept in step with the DDL the framework ships:
-     * {@see Migration::initialize()} for `migration` and `hilos_migration_claim`, and the
-     * `create_hilos_analytics.sql` / `create_hilos_change_log.sql` stubs for the rest.
-     * Applied on every database in the registry because those two are created on every
+     * {@see Migration::initialize()} for `migration`, `hilos_migration_claim` and
+     * `hilos_admin_view_mode_latch`, and the `create_hilos_analytics.sql` /
+     * `create_hilos_change_log.sql` stubs for the rest.
+     * Applied on every database in the registry because those three are created on every
      * migrated database; a table a project does not create on a given database is simply
      * never seen by the gates, so the framework may classify everything it ships.
      *
@@ -80,6 +85,8 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             'migration' => [],
             // The rollout claim holds a node or process name and a time: nothing personal.
             MigrationClaim::TABLE => [],
+            // The admin view mode latch holds an environment, a node and a time: nothing personal.
+            AdminViewModeLatchTable::TABLE => [],
 
             'hilos_change_log' => [
                 'old_value' => AnonymizationStrategy::MASK,
@@ -160,6 +167,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             'migration' => ['index', 'failed'],
             // The holder is a node id or a host name with a process id: a machine, not a person.
             MigrationClaim::TABLE => ['id', 'holder', 'claimed_at'],
+            AdminViewModeLatchTable::TABLE => ['id', 'environment', 'node', 'closed_at'],
 
             'hilos_change_log' => [
                 'id',

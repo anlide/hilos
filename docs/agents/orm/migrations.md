@@ -39,7 +39,10 @@ that start together on one database race for the same DDL. The race is settled i
 database itself: whoever changes the schema first takes the **schema rollout claim**, one row
 of the framework table `hilos_migration_claim`, which `Migration::initialize()` creates beside
 `migration`. The insert of that row is the only arbiter — a duplicate key on one server, a
-certification conflict on Galera.
+certification conflict on Galera. `Migration::initialize()` creates one more framework table
+there, `hilos_admin_view_mode_latch`, the row half of the admin view mode latch the start of a
+daemon reads ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)); unlike
+the claim's, a restore does not empty it.
 
 - **A row, not `GET_LOCK`.** The server's named lock would be released by the server when its
   holder dies, but MariaDB Galera refuses `GET_LOCK` outright (since 10.6.13 / 10.11.3), and a

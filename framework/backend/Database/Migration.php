@@ -2,6 +2,8 @@
 
 namespace Hilos\Database;
 
+use Hilos\AdminViewMode\AdminViewModeLatchTable;
+use Hilos\AdminViewMode\AdminViewModeStartup;
 use Hilos\Database\Exception\MigrationMarkedFailedException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
@@ -59,10 +61,16 @@ class Migration
     }
 
     /**
-     * Ensures both tables the migration track runs on: `migration` and the rollout claim's.
+     * Ensures the three framework tables every migrated database carries: `migration`, the
+     * rollout claim's and the admin view mode latch's.
      *
-     * Each is probed on its own: an installation migrated before the claim existed already
-     * has `migration`, and stopping at it would leave the claim table uncreated there.
+     * The first two are what the migration track runs on. The latch is read by the start of a
+     * daemon ({@see AdminViewModeStartup}), and it lives here because a project's own migrations
+     * know nothing about it: a table the framework needs on every database is created by the
+     * framework, the way the claim's is.
+     *
+     * Each is probed on its own: an installation migrated before the claim or the latch existed
+     * already has `migration`, and stopping at it would leave the later tables uncreated there.
      *
      * @throws DatabaseException When connection fails or a migration table cannot be created
      */
@@ -87,6 +95,16 @@ class Migration
                 `id` tinyint(3) UNSIGNED NOT NULL,
                 `holder` varchar(255) NOT NULL,
                 `claimed_at` datetime NOT NULL,
+                PRIMARY KEY (`id`)
+            ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
+        );
+        self::ensureTable(
+            AdminViewModeLatchTable::TABLE,
+            'CREATE TABLE IF NOT EXISTS `' . AdminViewModeLatchTable::TABLE . '` (
+                `id` tinyint(3) UNSIGNED NOT NULL,
+                `environment` varchar(32) NOT NULL,
+                `node` varchar(255) NOT NULL,
+                `closed_at` int(10) UNSIGNED NOT NULL,
                 PRIMARY KEY (`id`)
             ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );

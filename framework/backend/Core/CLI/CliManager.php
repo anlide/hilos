@@ -13,6 +13,7 @@ use Hilos\Core\CLI\Commands\AccountTestForcePurgeCommand;
 use Hilos\Core\CLI\Commands\AdminCreateCommand;
 use Hilos\Core\CLI\Commands\AdminGrantCommand;
 use Hilos\Core\CLI\Commands\AdminRevokeCommand;
+use Hilos\Core\CLI\Commands\AdminViewModeTestCommand;
 use Hilos\Core\CLI\Commands\BackupTestAgeCommand;
 use Hilos\Core\CLI\Commands\BackupTestPruneCommand;
 use Hilos\Core\CLI\Commands\BackupTestShipCommand;
@@ -197,6 +198,7 @@ class CliManager
         $this->commands[CliCommands::CONNECTION_TEST_DROP] = new ConnectionTestDropCommand();
         $this->commands[CliCommands::TABLE_TEST_LAG] = new TableTestLagCommand();
         $this->commands[CliCommands::TABLE_TEST_REFUSE] = new TableTestRefuseCommand();
+        $this->commands[CliCommands::ADMIN_VIEW_MODE_TEST] = new AdminViewModeTestCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_ENTER] = new ProtectedModeTestEnterCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_LEAVE] = new ProtectedModeTestLeaveCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_OPEN] = new ProtectedModeTestOpenCommand();

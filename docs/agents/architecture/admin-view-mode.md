@@ -11,17 +11,19 @@ This page is the target structure of epic HIL-1168, written ahead of its code.
 Every sentence about a mechanism that does not exist yet carries a marker
 naming the leaf that lands it, and that leaf clears the marker in the same
 commit ([../rule-authoring.md](../rule-authoring.md), *A Rule Written Ahead Of
-Its Code*). The leaves introduce their own names — the variable, the latch
-file, the verdict, the wire form, the words on the screen; this page states
-each requirement and the key of the leaf, never the name.
+Its Code*). The leaves introduce their own names — the verdict, the wire form,
+the words on the screen; this page states each requirement and the key of the
+leaf, never the name. The names HIL-1249 introduced — the variable, the latch
+file and table, the node's runtime row and the lever — are in the code now and
+are named below.
 
 ## Core Rule
 
 The switch is the framework's, not a demo's: every project that mounts the
-admin section gets the mode, and a demo only turns it on
-(not in the code yet — HIL-1249). With the mode on, every viewer opens every
-`ADMIN` page — framework-owned and project-owned alike — sees everything that
-is not personal, and changes nothing (not in the code yet — HIL-1251). The
+admin section gets the mode, and a demo only turns it on. With the mode on,
+every viewer opens every `ADMIN` page — framework-owned and project-owned
+alike — sees everything that is not personal, and changes nothing
+(not in the code yet — HIL-1251). The
 server decides and the screen only follows: a button that cannot be clicked
 is a courtesy, the server's refusal is the rule.
 
@@ -50,38 +52,86 @@ change the body of that question, not the mode around it.
 
 ## The Switch And Its Prod Latch
 
-- The switch is a framework environment variable in the framework's variable
-  catalog, off by default, and present in every `.env.example` as a commented
-  line (not in the code yet — HIL-1249). Its name is HIL-1249's to introduce.
-- It works in production, and the code says so outright
-  (not in the code yet — HIL-1249): the mode is made for demos, and the demos
-  live in production.
+- The switch is the framework variable `HILOS_ADMIN_VIEW_MODE_ENABLED` in the
+  framework's variable catalog (`EnvCatalogStub`), off by default, and present
+  as a commented line in the `.env.example` of the root and of chat, tasks,
+  polls and cluster.
+- It works in production, and the code says so outright — in the variable's
+  PHPDoc and in `AdminViewModeStartupVerdict`, whose production branch with the
+  variable on and no latch turns the mode on: the mode is made for demos, and
+  the demos live in production.
 - The production compose of every demo — the ones that exist and the ones to
-  come — has it on, and the compose guard refuses a demo whose production
-  compose lacks it (not in the code yet — HIL-1249). The owner's word
-  (2026-09-27), rendered in English: *in all of them — the current demos and
-  the new ones that will be made.*
-- The latch: a production node that starts with the mode off writes a file
-  into its log root, next to the owner marker `.hilos-log-root-owner.json`
-  ([logs.md](logs.md), *One Daemon Per Log Directory*), and a node carrying
-  that file does not turn the mode on, whatever the variable says
-  (not in the code yet — HIL-1249). What the node does when the latch is there
-  and the variable is on, what counts as production, and the file's name are
-  HIL-1249's; this page does not name them.
-- A file and not a row in the database: a restore from an old archive and
-  `test:db:reset` touch only the database, so neither wipes the latch.
-- The latch is released by deleting the file the refusal names; there is no
+  come — has it `true` in the daemon service, and `DemoStackComposeGuardTest`
+  refuses a demo whose `docker/docker-compose.prod.yml` lacks it. The owner's
+  word (2026-09-27), rendered in English: *in all of them — the current demos
+  and the new ones that will be made.* The code and the production compose
+  landed in one commit: the first start of the new code in a demo's production
+  had to find the variable on, or it would have closed the demo for good.
+- Production is `NonProductionGate` answering no — `prod`, `staging`, and any
+  value of `APP_ENV` nobody recognizes. It is the same verdict that refuses
+  every `test:*` command, so a node is either a stand (the lever works, no
+  latch is read) or production (the latch works, no lever); a typo in
+  `APP_ENV` does not switch the latch off.
+- The mode is decided once, by the master, at the end of
+  `DaemonManager::boot()` (`AdminViewModeStartup`) — before the first socket
+  is bound and the first worker started
+  ([daemon-lifecycle.md](daemon-lifecycle.md), *Startup sequence*). On a stand
+  the mode is what the variable says, and the latch is neither read nor
+  written.
+- The latch has two halves, and either one closes the mode: the file
+  `.hilos-admin-view-mode-latch.json` in the node's log root, next to the
+  owner marker `.hilos-log-root-owner.json` ([logs.md](logs.md), *One Daemon
+  Per Log Directory*), and the row of the framework table
+  `hilos_admin_view_mode_latch`, which `Migration::initialize()` creates beside
+  `migration` on every migrated database
+  ([../orm/migrations.md](../orm/migrations.md)). A production node that
+  starts with the mode off and finds neither half writes both, with a WARNING
+  that the mode is closed on the installation for good.
+- A file and a row, because each alone can be lost by an ordinary operation: a
+  restore from an old archive can take the row (the table is replayed as the
+  archive had it, or left alone when the archive does not carry it), and a
+  sweep of the log directory or a move to another machine takes the file.
+  Every start of a production node writes the missing half back from the one
+  that survived, with a WARNING, so the mode reopens only when both are lost
+  between two starts. `test:db:reset` never meets the latch: it refuses in
+  exactly the environments the latch lives in. The environment is no third
+  half — the node only reads it, and a copied compose would carry it along.
+- A latch with the variable on: the node comes up, the mode stays off, and an
+  ERROR on every start names the file, the table and how to lift the latch.
+  The node is not refused: with the mode closed the admin section is closed
+  anyway, and a refusal would only take the whole site down (the owner's
+  decision, 2026-09-28).
+- A latch that cannot be read or written — no table on a database nothing
+  migrated, a log root the node cannot write — keeps the mode off with an
+  ERROR, and the node comes up: the mode is never opened on the strength of a
+  half-read latch. A file that is there but cannot be understood is a latch
+  all the same; its contents are for the person who finds it.
+- The latch is lifted only on purpose and only by hand: stop every node,
+  delete the file on each node and the row
+  (`DELETE FROM hilos_admin_view_mode_latch`), start again with the variable
+  on. Delete one half only and the next start writes it back. There is no
   command and no switch for it (decision of the decomposition, 2026-09-27 —
   the same rule as for the log-root owner marker).
 - Why a latch at all: a real project starts production with the mode off, and
-  that first start closes the mode on that node for good — a typo in the
-  environment later on does not open the admin section to strangers.
-- On a stand a `test:*` lever turns the mode on and off; in a production-like
-  environment the lever is refused, like every `test:*` command
-  (not in the code yet — HIL-1249).
-- In a cluster the latch is each node's own — a node's log root is its own —
-  while the mode has to be the same on every node, and a node with a different
-  value does not diverge silently (not in the code yet — HIL-1274).
+  that first start closes the mode on that installation for good — a typo in
+  the environment later on does not open the admin section to strangers.
+- The node's answer lives in the framework runtime row
+  `hilosAdminViewModeRuntime`
+  ([../runtime/rt-context.md](../runtime/rt-context.md)): node-local, written
+  only by the master — at its start and by the lever — and read by the node's
+  workers, each handed the row when it comes up and kept current through the
+  RT sync. The environment of a living process cannot change, so the row, not
+  the variable, is the node's mode; the one place that asks "is this viewer in
+  the mode?" is built on it (not in the code yet — HIL-1250).
+- On a stand the lever `test:admin-view-mode on|off` turns the mode on and off
+  until the daemon restarts, and touches no latch; the next start decides from
+  the variable again. In a production-like environment the lever is refused,
+  like every `test:*` command.
+- In a cluster the file is each node's own — a node's log root is its own —
+  and the row is the whole cluster's, the database being one: a new node of a
+  production cluster that closed the mode finds it closed. The mode has to be
+  the same on every node, and a node with a different value does not diverge
+  silently (not in the code yet — HIL-1274).
 
 ## The View Verdict
 
@@ -262,8 +312,8 @@ framework (HIL-345, after HIL-1270).
 
 ## Tests
 
-A viewer's e2e runs with the mode on (the lever — HIL-1249); the scenarios
-that expect a non-admin to be refused run with it off. How the viewer's e2e is
+A viewer's e2e runs with the mode on (the lever `test:admin-view-mode on`);
+the scenarios that expect a non-admin to be refused run with it off. How the viewer's e2e is
 laid out across the three frontends is HIL-1273's
 (not in the code yet — HIL-1273).
 
@@ -290,9 +340,9 @@ laid out across the three frontends is HIL-1273's
 - Sending a frame of an admin page through `sendToUser` past the bridge.
 - Asking whether the mode is on by reading the variable on the page.
 - Putting `getMessage()` into a frame.
-- Naming here what a neighbouring leaf introduces — the variable, the latch
-  file, the verdict's value, the wire form of the hidden mark, the words on
-  the screen. This page states the rule; the leaf states the name.
+- Naming here what a neighbouring leaf introduces — the verdict's value, the
+  wire form of the hidden mark, the words on the screen. This page states the
+  rule; the leaf states the name.
 
 ## Related
 
@@ -304,7 +354,9 @@ laid out across the three frontends is HIL-1273's
   reads.
 - [entity-libraries.md](entity-libraries.md) — why an admin mutation keeps its
   name on the page.
-- [logs.md](logs.md) — the log root the latch lives in.
+- [logs.md](logs.md) — the log root the latch file lives in.
+- [daemon-lifecycle.md](daemon-lifecycle.md) — where in the start the mode is
+  decided.
 - [command-server.md](command-server.md) — why the CLI has no viewer.
 - [protected-mode.md](protected-mode.md) — the freeze that closes a viewer
   like everyone.
