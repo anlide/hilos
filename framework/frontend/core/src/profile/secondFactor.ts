@@ -47,6 +47,9 @@ export const SIGNAL_SECOND_FACTOR_STATE = 'hilos_second_factor_state'
  */
 export const PROFILE_SECOND_FACTOR_SECTION = 'secondFactor'
 
+/** The step-up operation connecting an app belongs to (PHP `StepUpOperationKey::ADD_AUTHENTICATOR_APP`). */
+export const ADD_AUTHENTICATOR_APP_OPERATION = 'add_authenticator_app'
+
 // Client→server profile actions (PHP `HilosSignalConstants::PROFILE_SECOND_FACTOR_*`).
 const ACTION_ENROLL_START = 'profile_second_factor_enroll_start'
 const ACTION_ENROLL_CONFIRM = 'profile_second_factor_enroll_confirm'

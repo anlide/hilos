@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 
 import { gotoPage } from './page'
-import { clickSubmit, typeInto } from './session'
+import { PASSWORD, clickSubmit, typeInto } from './session'
 import { nextTotpCode, totpStep } from './totp'
 
 /** What connecting an app leaves behind: its secret, spent step, and backup codes. */
@@ -14,7 +14,11 @@ export interface ConnectedApp {
 /**
  * Connect the first authenticator app and close the enrollment modal.
  *
- * @param page A signed-in page.
+ * Connecting the first app is a protected operation (HIL-1138): the dialog
+ * opens on the confirmation step, and every account these scenarios start from
+ * holds a password, so the password is what it asks for.
+ *
+ * @param page A signed-in page whose account holds a password.
  * @returns The connected app proof material used by later scenarios.
  */
 export async function connectFirstApp(page: Page): Promise<ConnectedApp> {
@@ -22,6 +26,8 @@ export async function connectFirstApp(page: Page): Promise<ConnectedApp> {
   await expect(page.getByTestId('profile-2fa-off')).toBeVisible()
 
   await clickSubmit(page.getByTestId('profile-2fa-add'))
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
   await typeInto(page.getByTestId('profile-2fa-enroll-label'), 'Work phone')
   await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
 

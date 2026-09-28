@@ -3,6 +3,7 @@ import { readRegisterCode, waitForMailCode } from './mail'
 import { gotoPage } from './page'
 import {
   uniquePhone,
+  waitForAnotherSmsCode,
   waitForSmsCode,
 } from '../../../../../framework/frontend/scripts/standSms.mjs'
 
@@ -413,8 +414,10 @@ export async function login(
  *
  * @param page The page with the auth surface mounted.
  * @param phone The fresh number to mint an account for.
+ * @returns The code the sign-in was proven with, for a later wait on this
+ *          number that has to pass this one over.
  */
-export async function signInByPhone(page: Page, phone: string): Promise<void> {
+export async function signInByPhone(page: Page, phone: string): Promise<string> {
   await typeInto(page.getByTestId('auth-identifier'), phone)
   await clickSubmit(page.getByTestId('auth-channel-sms'))
   await page.getByTestId('auth-consent-accept').check()
@@ -425,10 +428,13 @@ export async function signInByPhone(page: Page, phone: string): Promise<void> {
   // really went out. So the code field appearing is what says the code has been
   // issued — and only then is there an artifact to read.
   await expect(page.getByTestId('auth-code')).toBeVisible()
-  await typeInto(page.getByTestId('auth-code'), await waitForSmsCode(phone))
+  const code = await waitForSmsCode(phone)
+  await typeInto(page.getByTestId('auth-code'), code)
   await clickSubmit(page.getByTestId('auth-submit'))
   await waitDoneSettled(page)
   await continueFromDone(page)
+
+  return code
 }
 
 /** Log out through the shell control and wait for the anonymous state to settle
@@ -554,7 +560,7 @@ export async function signUpWithVerifiedEmail(
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.getByTestId('message-signin').click()
-  await signInByPhone(page, phone)
+  const loginCode = await signInByPhone(page, phone)
 
   await expect(page.getByTestId('self-user')).toHaveText(phone)
   const userId = Number(await page.getByTestId('self-user-id').textContent())
@@ -565,6 +571,17 @@ export async function signUpWithVerifiedEmail(
   const email = uniqueEmail()
   await gotoPage(page, '/profile/sign-in')
   await clickSubmit(page.getByTestId('profile-sign-in-add'))
+
+  // Adding a way in is a protected operation (HIL-1138), and the strongest proof
+  // this account holds is its phone: the dialog opens on a code step, and the
+  // code is the SECOND text to this number - the sign-in's still sits in the
+  // mailbox, so the wait passes that one over.
+  await expect(page.getByTestId('step-up-code')).toBeVisible()
+  await typeInto(
+    page.getByTestId('step-up-code'),
+    await waitForAnotherSmsCode(phone, loginCode),
+  )
+  await clickSubmit(page.getByTestId('profile-sign-in-add-step-up-confirm'))
   await clickSubmit(page.getByTestId('profile-sign-in-choose-password'))
   await typeInto(page.getByTestId('profile-add-password-email'), email)
   await clickSubmit(page.getByTestId('profile-add-password-request'))

@@ -74,6 +74,10 @@ final class StepUpGate
             || $target?->method === StepUpMethod::SMS_CODE)) {
             return self::VERDICT_PASS;
         }
+        // The operation's own step asks the app code (HIL-1138).
+        if ($declaredOperation->opensWithSecondFactorProof && $target?->method === StepUpMethod::SECOND_FACTOR) {
+            return self::VERDICT_PASS;
+        }
 
         return self::VERDICT_ASK;
     }

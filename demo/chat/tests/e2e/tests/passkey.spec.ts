@@ -7,6 +7,7 @@ import {
   watchPasskeyCreation,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
+  PASSWORD,
   clickSubmit,
   continueFromDone,
   createAccountWithPasskey,
@@ -16,6 +17,7 @@ import {
   signUp,
   submitRegistration,
   submitRegistrationCode,
+  typeInto,
   uniqueEmail,
 } from '../helpers/session'
 import { readRegisterCode } from '../helpers/mail'
@@ -81,6 +83,9 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   await signUp(page)
   await gotoPage(page, '/profile/sign-in')
   await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  // Adding a way in asks the password first (HIL-1138).
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-sign-in-add-step-up-confirm'))
   await clickSubmit(page.getByTestId('profile-passkey-add'))
   await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(
@@ -212,6 +217,9 @@ test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {
 
   await gotoPage(page, '/profile/sign-in')
   await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  // Adding a way in asks the password first (HIL-1138).
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-sign-in-add-step-up-confirm'))
   await clickSubmit(page.getByTestId('profile-passkey-add'))
   await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(

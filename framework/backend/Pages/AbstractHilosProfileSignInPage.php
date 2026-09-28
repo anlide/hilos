@@ -13,6 +13,8 @@ use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\OAuth\OAuthStateSigner;
+use Hilos\Auth\StepUp\StepUpGate;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -26,6 +28,7 @@ use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Random\RandomException;
@@ -40,6 +43,9 @@ use Random\RandomException;
  *
  * The project's provider wiring comes through oauthService(), shared with its users library
  * so the signer on the start and on the return agree.
+ *
+ * Starting a link is the first step of the add-a-way-in operation (HIL-1138): the gate is asked
+ * here, before the URL is minted, and the users library asks it again on the return.
  */
 abstract class AbstractHilosProfileSignInPage extends AbstractPage
 {
@@ -65,6 +71,20 @@ abstract class AbstractHilosProfileSignInPage extends AbstractPage
     ];
 
     /**
+     * What the link start reads before it writes nothing (HIL-1138): the gate's session row
+     * and confirmation, and the proofs the resolver weighs. A project's page that declares
+     * reads of its own keeps these with `[...parent::READS_DB, ...]` - a reading list replaces
+     * its parent's rather than adding to it.
+     */
+    public const array READS_DB = [
+        HilosDbContext::sessions,
+        HilosDbContext::stepUps,
+        HilosDbContext::identities,
+        HilosDbContext::secondFactors,
+        HilosDbContext::passkeyCredentials,
+    ];
+
+    /**
      * Routes the profile's action to its handler.
      *
      * @param string $acceptKey WebSocket accept key for the client
@@ -73,11 +93,11 @@ abstract class AbstractHilosProfileSignInPage extends AbstractPage
      * @return ?ActionReplyDTO Always null: the link start answers with a signal, not a reply
      * @throws AgentUnknownActionException When the action is not supported by this page
      * @throws InvalidActionPayloadException When the action payload does not match the action name
-     * @throws ItemNotFoundForUpdateException When the connection has no session
-     * @throws ValidationException When the provider is switched off, unknown, or the project wires no providers
+     * @throws ItemNotFoundForUpdateException When the connection has no session or is anonymous
+     * @throws ValidationException When the add is not confirmed, the provider is switched off, unknown, or the project wires no providers
      * @throws InvalidArgumentException When the authorize-URL signal cannot be named or queued
      * @throws RandomException When minting the link state cannot draw from the CSPRNG
-     * @throws HilosException When the provider registry or the sign-in method setting cannot be read
+     * @throws HilosException When the confirmation, the provider registry or the sign-in method setting cannot be read
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -124,23 +144,29 @@ abstract class AbstractHilosProfileSignInPage extends AbstractPage
      * refuses it (HIL-427). The URL rides the OAUTH_AUTHORIZE signal to this tab (an action
      * reply carries no domain payload); the browser navigates there.
      *
+     * The add-a-way-in confirmation is asked first (HIL-1138), so a refusal is answered here and
+     * the browser never leaves for the provider.
+     *
      * @param string $acceptKey Accept key of the tab that asked
      * @param LinkOAuthStartActionDTO $dto Parsed link-start payload (provider, trip id)
-     * @throws ItemNotFoundForUpdateException When the connection has no session
-     * @throws ValidationException When the provider is switched off, unknown, or the project wires no providers
+     * @throws ItemNotFoundForUpdateException When the connection has no session or is anonymous
+     * @throws ValidationException When the add is not confirmed, the provider is switched off, unknown, or the project wires no providers
      * @throws InvalidArgumentException When the authorize-URL signal cannot be named or queued
      * @throws RandomException When the platform CSPRNG cannot produce a state nonce
-     * @throws HilosException When the provider registry or the sign-in method setting cannot be read
+     * @throws HilosException When the confirmation, the provider registry or the sign-in method setting cannot be read
      */
     private function handleLinkOAuthStart(string $acceptKey, LinkOAuthStartActionDTO $dto): void
     {
-        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken
-            ?? throw new ItemNotFoundForUpdateException('User session not found');
+        $connection = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey);
+        if ($connection?->sessionToken === null || $connection->userId === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        new StepUpGate()->require($connection->sessionToken, $connection->userId, StepUpOperationKey::ADD_SIGN_IN_METHOD);
         AuthMethodGate::assertProviderOpen($dto->provider);
 
         $service = $this->oauthService() ?? throw new ValidationException(AuthMessages::UNKNOWN_PROVIDER);
         try {
-            $authorizeUrl = $service->beginAuthorization($dto->provider, $sessionToken, OAuthStateSigner::MODE_LINK);
+            $authorizeUrl = $service->beginAuthorization($dto->provider, $connection->sessionToken, OAuthStateSigner::MODE_LINK);
         } catch (OAuthUnknownProviderException) {
             throw new ValidationException(AuthMessages::UNKNOWN_PROVIDER);
         }

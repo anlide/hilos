@@ -5,7 +5,10 @@
 // you lose access" — the removal wait and the delayed removal itself. Every
 // mutation is a modal (the modal-only editing rule), and every one but the first
 // connection, the wait and the removal starts with a code from an app or a
-// backup code: a stolen live session must not strip or copy the factor.
+// backup code: a stolen live session must not strip or copy the factor. The
+// first connection is the protected operation "Add an authenticator app"
+// (HIL-1138): its modal opens on the server's word, at the confirmation step or
+// straight at the name.
 // The section, its live copy and the actions are the core's; this view owns only
 // the markup. The page is drawn from text — the mockup's node is a debt (D-113).
 // Bootstrap classes only (styling-rules.md).
@@ -22,10 +25,14 @@ import {
   viewChild,
 } from '@angular/core'
 import {
+  ADD_AUTHENTICATOR_APP_OPERATION,
   createHilosSecondFactorActions,
   createHilosSecondFactorStore,
+  createHilosStepUpActions,
+  createHilosStepUpStep,
   focusInitial,
   formatCalendarDate,
+  HILOS_STEP_UP_COPY,
   subscribeSignal,
 } from '@hilos/core'
 import type {
@@ -37,6 +44,7 @@ import type {
   HilosSecondFactorState,
 } from '@hilos/core'
 
+import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'
 import { HilosModal } from '../HilosModal.js'
@@ -48,10 +56,21 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
 /** One day in ms — the unit of the removal wait. */
 const DAY_MS = 86_400_000
 
-type EnrollStep = 'name' | 'proof' | 'scan' | 'codes' | 'more'
+type EnrollStep =
+  | 'opening'
+  | 'step-up'
+  | 'refused'
+  | 'name'
+  | 'proof'
+  | 'scan'
+  | 'codes'
+  | 'more'
 type CodesStep = 'proof' | 'list' | 'renew' | 'new'
 
 const ENROLL_SUBMIT: Record<EnrollStep, string> = {
+  opening: 'Next',
+  'step-up': HILOS_STEP_UP_COPY.confirm,
+  refused: HILOS_STEP_UP_COPY.confirm,
   name: 'Next',
   proof: 'Next',
   scan: 'Connect',
@@ -90,6 +109,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
     HilosModal,
     HilosPageHeading,
     HilosQrCode,
+    HilosStepUpStep,
     LoadingButton,
     NgTemplateOutlet,
   ],
@@ -197,8 +217,11 @@ function focusStep(form: HTMLFormElement | undefined): void {
           }
         </ul>
         <button
+          hilosLoadingButton
           type="button"
           class="btn btn-sm btn-outline-primary mb-4"
+          [loading]="enrollStep() === 'opening'"
+          [disabled]="enrollStep() === 'opening'"
           data-id="profile-2fa-add"
           (click)="openEnroll()"
         >
@@ -279,14 +302,23 @@ function focusStep(form: HTMLFormElement | undefined): void {
 
       <hilos-modal
         [open]="enrollOpen()"
-        (openChange)="enrollOpen.set($event)"
-        title="Add an authenticator app"
+        (openChange)="closeEnroll($event)"
+        [title]="enrollTitle()"
         [confirmOnClose]="enrollStep() === 'codes' && !issuedSaved()"
         confirmTitle="Close before saving the codes?"
         confirmMessage="You have not marked these codes as saved. You can still show them later with a code from your app."
         confirmOkText="Close"
         confirmCancelText="Back to the codes"
       >
+        <div
+          class="visually-hidden"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          data-id="profile-2fa-enroll-live"
+        >
+          {{ enrollStepUpRefusal() }}
+        </div>
         <hilos-action-error
           [action]="enrollAction"
           detailsTitle="Couldn't add the authenticator app"
@@ -297,6 +329,12 @@ function focusStep(form: HTMLFormElement | undefined): void {
           (submit)="enrollSubmit($event)"
         >
           @switch (enrollStep()) {
+            @case ('step-up') {
+              <hilos-step-up-step [controller]="enrollStepUp()" />
+            }
+            @case ('refused') {
+              <hilos-step-up-step [controller]="enrollStepUp()" />
+            }
             @case ('name') {
               <label class="form-label" for="profile-2fa-enroll-label"
                 >Name of this app</label
@@ -366,7 +404,7 @@ function focusStep(form: HTMLFormElement | undefined): void {
                 (savedChange)="issuedSaved.set($event)"
               />
             }
-            @default {
+            @case ('more') {
               <p class="small mb-0" data-id="profile-2fa-enroll-more">
                 The app is connected. A second app is the quickest way back in
                 if you lose this one — connect another now?
@@ -383,16 +421,18 @@ function focusStep(form: HTMLFormElement | undefined): void {
           >
             {{ enrollStep() === 'more' ? 'Not now' : 'Cancel' }}
           </button>
-          <button
-            hilosLoadingButton
-            class="btn-primary"
-            [loading]="enrollAction.loading()"
-            [disabled]="enrollAction.busy() || enrollDisabled()"
-            data-id="profile-2fa-enroll-submit"
-            (click)="enrollSubmit()"
-          >
-            {{ enrollSubmitLabel() }}
-          </button>
+          @if (enrollStep() !== 'refused') {
+            <button
+              hilosLoadingButton
+              class="btn-primary"
+              [loading]="enrollAction.loading() || enrollStepUpBusy()"
+              [disabled]="enrollAction.busy() || enrollDisabled()"
+              data-id="profile-2fa-enroll-submit"
+              (click)="enrollSubmit()"
+            >
+              {{ enrollSubmitLabel() }}
+            </button>
+          }
         </ng-template>
       </hilos-modal>
 
@@ -647,8 +687,18 @@ export class HilosProfileSecurityPage {
   protected readonly proofBackup = signal(false)
 
   // Connect an app.
+  protected readonly enrollStepUp = computed(() =>
+    createHilosStepUpStep(createHilosStepUpActions(this.context().actions)),
+  )
+  protected readonly enrollStepUpRefusal = signal<string | null>(null)
+  protected readonly enrollStepUpBusy = signal(false)
   protected readonly enrollOpen = signal(false)
   protected readonly enrollStep = signal<EnrollStep>('name')
+  protected readonly enrollTitle = computed(() =>
+    this.enrollStep() === 'step-up' || this.enrollStep() === 'refused'
+      ? HILOS_STEP_UP_COPY.title
+      : 'Add an authenticator app',
+  )
   protected readonly enrollLabel = signal('')
   protected readonly enrollCode = signal('')
   protected readonly enrollment = signal<HilosSecondFactorEnrollment | null>(
@@ -664,6 +714,11 @@ export class HilosProfileSecurityPage {
   )
   protected readonly enrollDisabled = computed(() => {
     switch (this.enrollStep()) {
+      case 'opening':
+      case 'refused':
+        return true
+      case 'step-up':
+        return this.enrollStepUpBusy()
       case 'proof':
         return this.proofCode().trim() === ''
       case 'scan':
@@ -765,6 +820,21 @@ export class HilosProfileSecurityPage {
         store.dispose()
       })
     })
+    effect((onCleanup) => {
+      const stepUp = this.enrollStepUp()
+      this.enrollStepUpRefusal.set(stepUp.refusal.get())
+      this.enrollStepUpBusy.set(stepUp.busy.get())
+      onCleanup(
+        subscribeSignal(stepUp.refusal, (value) =>
+          this.enrollStepUpRefusal.set(value),
+        ),
+      )
+      onCleanup(
+        subscribeSignal(stepUp.busy, (value) =>
+          this.enrollStepUpBusy.set(value),
+        ),
+      )
+    })
     // The step a modal moves to takes the focus once it is drawn.
     afterRenderEffect(() => {
       this.enrollStep()
@@ -817,7 +887,15 @@ export class HilosProfileSecurityPage {
     return { code: this.proofCode().trim(), backupCode: this.proofBackup() }
   }
 
-  protected openEnroll(): void {
+  /**
+   * Ask the server whether connecting an app needs a confirmation, and open the
+   * modal on its answer: at the confirmation step, at the name, or on a
+   * refusal. A second click while the answer is out sends nothing.
+   */
+  protected async openEnroll(): Promise<void> {
+    if (this.enrollStep() === 'opening') {
+      return
+    }
     this.enrollAction.clearError()
     this.resetProof()
     this.enrollLabel.set('')
@@ -825,8 +903,39 @@ export class HilosProfileSecurityPage {
     this.enrollment.set(null)
     this.issuedCodes.set([])
     this.issuedSaved.set(false)
-    this.enrollStep.set('name')
+    this.enrollStep.set('opening')
+    const verdict = await this.enrollStepUp().open(
+      ADD_AUTHENTICATOR_APP_OPERATION,
+    )
+    if (this.enrollStep() !== 'opening') {
+      return
+    }
+    this.enrollStep.set(
+      verdict === 'skip' ? 'name' : verdict === 'ask' ? 'step-up' : 'refused',
+    )
     this.enrollOpen.set(true)
+  }
+
+  /**
+   * A modal closed while its opening is out drops the answer when it comes.
+   *
+   * @param open Whether the modal asked to be open.
+   */
+  protected closeEnroll(open: boolean): void {
+    this.enrollOpen.set(open)
+    if (!open && this.enrollStep() === 'opening') {
+      this.enrollStep.set('name')
+    }
+  }
+
+  /** Send the confirmation step's proof; the name follows a success. */
+  private async confirmEnrollStepUp(): Promise<void> {
+    if (
+      (await this.enrollStepUp().confirm()) &&
+      this.enrollStep() === 'step-up'
+    ) {
+      this.enrollStep.set('name')
+    }
   }
 
   protected async enrollSubmit(event?: Event): Promise<void> {
@@ -836,6 +945,11 @@ export class HilosProfileSecurityPage {
       return
     }
     const step = this.enrollStep()
+    if (step === 'step-up') {
+      await this.confirmEnrollStepUp()
+
+      return
+    }
     if (step === 'name' && this.factorOn()) {
       this.enrollStep.set('proof')
 
@@ -876,7 +990,7 @@ export class HilosProfileSecurityPage {
 
       return
     }
-    this.openEnroll()
+    await this.openEnroll()
   }
 
   protected openCodes(): void {

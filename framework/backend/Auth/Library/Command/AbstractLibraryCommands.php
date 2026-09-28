@@ -15,6 +15,7 @@ use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Session\SessionAck;
+use Hilos\Auth\StepUp\StepUpGate;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Auth\Verification\VerificationSendOutcome;
 use Hilos\Constants\HilosSignalConstants;
@@ -23,6 +24,7 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Database;
 use Hilos\Database\Identity\IdentityType;
@@ -200,6 +202,32 @@ abstract class AbstractLibraryCommands
         if ($acting->userId === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
+
+        return $acting;
+    }
+
+    /**
+     * Resolves the signed-in person behind one accept key and requires their live confirmation of an operation.
+     *
+     * The prologue of every command that opens a protected operation (HIL-1138): the acting user,
+     * then the gate before a line of the operation's own work - and again at the start of every
+     * later step of it, because a confirmation can run out while a dialog stands open. What the
+     * gate lets through without a confirmation is its own decision: an operation the administrator
+     * switched off, an account with nothing to confirm with where the operation admits it, a proof
+     * the operation's own step is about to ask for.
+     *
+     * @param string $acceptKey Accept key the action arrived on
+     * @param string $operation Declared operation key the command belongs to
+     * @return ActingSession The socket, its browser session, and the user signed in on it
+     * @throws ItemNotFoundForUpdateException When no live connection carries the key, it has no session, or it is anonymous
+     * @throws ValidationException When impersonation is active or the confirmation is absent or expired
+     * @throws InvalidArgumentException When the operation is not declared
+     * @throws HilosException When settings, account proofs, or confirmation storage cannot be read
+     */
+    protected function confirmedUser(string $acceptKey, string $operation): ActingSession
+    {
+        $acting = $this->actingUser($acceptKey);
+        new StepUpGate()->require($acting->sessionToken, (int)$acting->userId, $operation);
 
         return $acting;
     }

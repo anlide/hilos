@@ -30,6 +30,7 @@ use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorResetWait;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Auth\SecondFactor\Totp;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
@@ -426,17 +427,22 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     /**
      * Starts connecting an authenticator app from the profile, answering the secret once.
      *
+     * Connecting an app is the operation 'add_authenticator_app' (HIL-1138): the first app needs
+     * a live confirmation, while a second one proves itself with a code from a connected app,
+     * which the gate takes for the confirmation. That code is asked here whether or not an
+     * administrator switched the operation off.
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorEnrollStartActionDTO $dto Proof, when an app is already connected
      * @return SecondFactorProfileReplyDTO The enrolment, its secret and otpauth address
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the proof is missing or wrong
+     * @throws ValidationException When the first app is not confirmed, or the proof for another is missing or wrong
      * @throws RandomException When the secret cannot be drawn
      * @throws HilosException When a lookup or a write fails
      */
     public function profileEnrollStart(string $acceptKey, ProfileSecondFactorEnrollStartActionDTO $dto): SecondFactorProfileReplyDTO
     {
-        $userId = (int)$this->actingUser($acceptKey)->userId;
+        $userId = (int)$this->confirmedUser($acceptKey, StepUpOperationKey::ADD_AUTHENTICATOR_APP)->userId;
         if (Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
             $this->assertProof($userId, (string)$dto->proofCode, $dto->proofBackup);
         }
@@ -449,11 +455,14 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     /**
      * Confirms an app being connected from the profile with its first code.
      *
+     * The second step of the same operation (HIL-1138): the confirmation is asked again, since
+     * it may have run out while the person was scanning the code.
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorEnrollConfirmActionDTO $dto Enrolment, first code and name
      * @return SecondFactorProfileReplyDTO The backup codes when this is the first app, else nothing
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the enrolment ran out or the code is wrong
+     * @throws ValidationException When the add is not confirmed, the enrolment ran out or the code is wrong
      * @throws RandomException When the backup codes cannot be drawn
      * @throws HilosException When a lookup or a write fails
      */
@@ -461,7 +470,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
         string $acceptKey,
         ProfileSecondFactorEnrollConfirmActionDTO $dto,
     ): SecondFactorProfileReplyDTO {
-        $userId = (int)$this->actingUser($acceptKey)->userId;
+        $userId = (int)$this->confirmedUser($acceptKey, StepUpOperationKey::ADD_AUTHENTICATOR_APP)->userId;
         if (Hilos::$db->secondFactors->unconfirmedOf($userId)?->id !== $dto->authenticatorId) {
             throw new ValidationException(SecondFactorMessages::SETUP_EXPIRED);
         }

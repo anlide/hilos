@@ -22,6 +22,8 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::CHANGE_EMAIL,
             StepUpOperationKey::DELETE_ACCOUNT,
             StepUpOperationKey::EXPORT_DATA,
+            StepUpOperationKey::ADD_AUTHENTICATOR_APP,
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
             StepUpTestDirectory::PROJECT_OPERATION,
         ], StepUpTestDirectory::keys());
     }
@@ -38,6 +40,32 @@ final class StepUpOperationDirectoryTest extends TestCase
         self::assertTrue(StepUpTestDirectory::get(StepUpOperationKey::EXPORT_DATA)->passesWithNothingToConfirm);
         self::assertFalse($operation->opensOnBlockedCard);
         self::assertFalse($operation->passesWithNothingToConfirm);
+        self::assertFalse($operation->opensWithSecondFactorProof);
+    }
+
+    /**
+     * The two adding operations pass an account with nothing to confirm with, and only the app
+     * one takes a code from a connected app for its confirmation (HIL-1138).
+     */
+    public function testAddingOperationsCarryTheirCopyAndTheirPasses(): void
+    {
+        $app = StepUpTestDirectory::get(StepUpOperationKey::ADD_AUTHENTICATOR_APP);
+        $wayIn = StepUpTestDirectory::get(StepUpOperationKey::ADD_SIGN_IN_METHOD);
+
+        self::assertSame('Add an authenticator app', $app->label);
+        self::assertSame('add an authenticator app', $app->purpose);
+        self::assertSame('Add a way to sign in', $wayIn->label);
+        self::assertSame('add a way to sign in', $wayIn->purpose);
+        self::assertFalse($app->opensWithAddressCode);
+        self::assertFalse($wayIn->opensWithAddressCode);
+        self::assertTrue($app->passesWithNothingToConfirm);
+        self::assertTrue($wayIn->passesWithNothingToConfirm);
+        self::assertTrue($app->opensWithSecondFactorProof);
+        self::assertFalse($wayIn->opensWithSecondFactorProof);
+        self::assertFalse($app->opensOnBlockedCard);
+        self::assertFalse($wayIn->opensOnBlockedCard);
+        self::assertTrue(StepUpTestDirectory::isFramework(StepUpOperationKey::ADD_AUTHENTICATOR_APP));
+        self::assertTrue(StepUpTestDirectory::isFramework(StepUpOperationKey::ADD_SIGN_IN_METHOD));
     }
 
     public function testFrameworkOwnershipDoesNotIncludeProjectOperations(): void

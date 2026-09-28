@@ -5,17 +5,24 @@ with Remove; the backup codes left of the set, with Show; Add an app; and "If
 you lose access" — the removal wait and the delayed removal itself. Every
 mutation is a modal (the modal-only editing rule), and every one but the first
 connection, the wait and the removal starts with a code from an app or a backup
-code: a stolen live session must not strip or copy the factor.
+code: a stolen live session must not strip or copy the factor. The first
+connection is the protected operation "Add an authenticator app" (HIL-1138): its
+modal opens on the server's word, at the confirmation step or straight at the
+name.
 The section, its live copy and the actions are the core's
 (createHilosSecondFactorStore / createHilosSecondFactorActions); this view owns
 only the markup. The page is drawn from text — the mockup's node is a debt
 (D-113). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  ADD_AUTHENTICATOR_APP_OPERATION,
   createHilosSecondFactorActions,
   createHilosSecondFactorStore,
+  createHilosStepUpActions,
+  createHilosStepUpStep,
   focusInitial,
   formatCalendarDate,
+  HILOS_STEP_UP_COPY,
   type HilosBackupCodeEntry,
   type HilosSecondFactorAuthenticator,
   type HilosSecondFactorContext,
@@ -32,6 +39,7 @@ import {
   type Ref,
 } from 'vue'
 
+import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
 import HilosActionError from '../HilosActionError.vue'
 import HilosBackupCodes from '../HilosBackupCodes.vue'
 import HilosModal from '../HilosModal.vue'
@@ -103,11 +111,35 @@ function proof(): HilosSecondFactorProof {
   return { code: proofCode.value.trim(), backupCode: proofBackup.value }
 }
 
-// ---- Connect an app: name → (a code, when one is connected) → scan and confirm
-// → the backup codes, for the first app only → "connect another?" ----
-type EnrollStep = 'name' | 'proof' | 'scan' | 'codes' | 'more'
+// ---- Connect an app: the server's word on the confirmation → (the
+// confirmation step, for the first app) → name → (a code, when one is
+// connected) → scan and confirm → the backup codes, for the first app only →
+// "connect another?" ----
+type EnrollStep =
+  | 'opening'
+  | 'step-up'
+  | 'refused'
+  | 'name'
+  | 'proof'
+  | 'scan'
+  | 'codes'
+  | 'more'
+const enrollStepUp = createHilosStepUpStep(
+  createHilosStepUpActions(props.context.actions),
+)
+const enrollStepUpRefusal = useSignal(enrollStepUp.refusal)
+const enrollStepUpBusy = useSignal(enrollStepUp.busy)
 const enrollOpen = ref(false)
 const enrollStep = ref<EnrollStep>('name')
+const enrollTitle = computed(() =>
+  enrollStep.value === 'step-up' || enrollStep.value === 'refused'
+    ? HILOS_STEP_UP_COPY.title
+    : 'Add an authenticator app',
+)
+// A modal closed while its opening is out drops the answer when it comes.
+watch(enrollOpen, (open) => {
+  if (!open && enrollStep.value === 'opening') enrollStep.value = 'name'
+})
 const enrollLabel = ref('')
 const enrollCode = ref('')
 const enrollment = ref<HilosSecondFactorEnrollment | null>(null)
@@ -121,7 +153,15 @@ const enrollCodesUnsaved = computed(
   () => enrollStep.value === 'codes' && !issuedSaved.value,
 )
 
-function openEnroll(): void {
+/**
+ * Ask the server whether connecting an app needs a confirmation, and open the
+ * modal on its answer: at the confirmation step, at the name, or on a refusal.
+ * A second click while the answer is out sends nothing.
+ */
+async function openEnroll(): Promise<void> {
+  if (enrollStep.value === 'opening') {
+    return
+  }
   enrollAction.clearError()
   resetProof()
   enrollLabel.value = ''
@@ -129,8 +169,21 @@ function openEnroll(): void {
   enrollment.value = null
   issuedCodes.value = []
   issuedSaved.value = false
-  enrollStep.value = 'name'
+  enrollStep.value = 'opening'
+  const verdict = await enrollStepUp.open(ADD_AUTHENTICATOR_APP_OPERATION)
+  if (enrollStep.value !== 'opening') {
+    return
+  }
+  enrollStep.value =
+    verdict === 'skip' ? 'name' : verdict === 'ask' ? 'step-up' : 'refused'
   enrollOpen.value = true
+}
+
+/** Send the confirmation step's proof; the name follows a success. */
+async function confirmEnrollStepUp(): Promise<void> {
+  if ((await enrollStepUp.confirm()) && enrollStep.value === 'step-up') {
+    enrollStep.value = 'name'
+  }
 }
 
 async function enrollNext(): Promise<void> {
@@ -171,6 +224,9 @@ async function enrollConfirm(): Promise<void> {
 const enrollSubmitLabel = computed(
   () =>
     ({
+      opening: 'Next',
+      'step-up': HILOS_STEP_UP_COPY.confirm,
+      refused: HILOS_STEP_UP_COPY.confirm,
       name: 'Next',
       proof: 'Next',
       scan: 'Connect',
@@ -181,6 +237,11 @@ const enrollSubmitLabel = computed(
 
 const enrollSubmitDisabled = computed(() => {
   switch (enrollStep.value) {
+    case 'opening':
+    case 'refused':
+      return true
+    case 'step-up':
+      return enrollStepUpBusy.value
     case 'proof':
       return proofCode.value.trim() === ''
     case 'scan':
@@ -198,6 +259,10 @@ function enrollSubmit(): void {
     return
   }
   switch (enrollStep.value) {
+    case 'step-up':
+      void confirmEnrollStepUp()
+
+      return
     case 'name':
     case 'proof':
       void enrollNext()
@@ -212,7 +277,7 @@ function enrollSubmit(): void {
 
       return
     case 'more':
-      openEnroll()
+      void openEnroll()
   }
 }
 
@@ -469,15 +534,16 @@ function cancelReset(): void {
           on.
         </li>
       </ul>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline-primary mb-4"
+      <LoadingButton
+        class="btn-sm btn-outline-primary mb-4"
+        :loading="enrollStep === 'opening'"
+        :disabled="enrollStep === 'opening'"
         data-id="profile-2fa-add"
         @click="openEnroll()"
       >
         <i class="bi bi-plus-lg me-1" aria-hidden="true" />
         Add an authenticator app
-      </button>
+      </LoadingButton>
 
       <h2 class="h6 text-uppercase text-body-secondary mb-2">
         If you lose access
@@ -549,13 +615,22 @@ function cancelReset(): void {
     <!-- Connect an app. -->
     <HilosModal
       v-model="enrollOpen"
-      title="Add an authenticator app"
+      :title="enrollTitle"
       :confirm-on-close="enrollCodesUnsaved"
       confirm-title="Close before saving the codes?"
       confirm-message="You have not marked these codes as saved. You can still show them later with a code from your app."
       confirm-ok-text="Close"
       confirm-cancel-text="Back to the codes"
     >
+      <div
+        class="visually-hidden"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+        data-id="profile-2fa-enroll-live"
+      >
+        {{ enrollStepUpRefusal }}
+      </div>
       <HilosActionError
         :action="enrollAction"
         details-title="Couldn't add the authenticator app"
@@ -565,7 +640,11 @@ function cancelReset(): void {
         data-id="profile-2fa-enroll"
         @submit.prevent="enrollSubmit()"
       >
-        <template v-if="enrollStep === 'name'">
+        <HilosStepUpStep
+          v-if="enrollStep === 'step-up' || enrollStep === 'refused'"
+          :controller="enrollStepUp"
+        />
+        <template v-else-if="enrollStep === 'name'">
           <label class="form-label" for="profile-2fa-enroll-label"
             >Name of this app</label
           >
@@ -645,7 +724,11 @@ function cancelReset(): void {
             @update:saved="issuedSaved = $event"
           />
         </template>
-        <p v-else class="small mb-0" data-id="profile-2fa-enroll-more">
+        <p
+          v-else-if="enrollStep === 'more'"
+          class="small mb-0"
+          data-id="profile-2fa-enroll-more"
+        >
           The app is connected. A second app is the quickest way back in if you
           lose this one — connect another now?
         </p>
@@ -660,8 +743,9 @@ function cancelReset(): void {
           {{ enrollStep === 'more' ? 'Not now' : 'Cancel' }}
         </button>
         <LoadingButton
+          v-if="enrollStep !== 'refused'"
           class="btn-primary"
-          :loading="enrollAction.loading.value"
+          :loading="enrollAction.loading.value || enrollStepUpBusy"
           :disabled="enrollAction.busy.value || enrollSubmitDisabled"
           data-id="profile-2fa-enroll-submit"
           @click="enrollSubmit()"

@@ -14,11 +14,14 @@ use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorProfileReplyDTO;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStateSignalData;
+use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\SecondFactorNotificationType;
 use Hilos\Auth\SecondFactor\SecondFactorResetNotifier;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\SecondFactor\Totp;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -30,6 +33,7 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -37,6 +41,7 @@ use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -49,6 +54,11 @@ use Hilos\Runtime\View\Context\RtContext;
  * app takes the factor with it, that a removal waits the person's own wait and is canceled by its
  * link once, that the sweep carries a due removal out and reminds of a waiting one, and that a
  * shorter wait waits for the one in force.
+ *
+ * Connecting an app is the operation 'add_authenticator_app' (HIL-1138). The person of most cases
+ * holds no proof, so the gate passes them; the two cases that give the person a password pin what
+ * the gate asks of the first app and lets a second one prove on its own. The device-key table is
+ * raised beside the session tables because the gate's proof resolver reads it for every person.
  */
 final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -59,6 +69,12 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     private const string ACCEPT_KEY = 'accept-profile';
 
     private const int USER_ID = 88;
+
+    /** Address of the password the person holds where a case gives them a proof. */
+    private const string EMAIL = 'second-factor@example.test';
+
+    /** Seconds a seeded confirmation has left. */
+    private const int CONFIRMED_FOR_SECONDS = 900;
 
     private ?SignalRouter $previousSignalRouter = null;
 
@@ -80,6 +96,8 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     protected function setUp(): void
     {
         parent::setUp();
+        self::runPasskeyStub(down: true);
+        self::runPasskeyStub(down: false);
 
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousRt = Hilos::$rt;
@@ -109,6 +127,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         Hilos::$setting = $this->previousSetting;
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
+        self::runPasskeyStub(down: true);
 
         parent::tearDown();
     }
@@ -143,6 +162,76 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
             new ProfileSecondFactorEnrollStartActionDTO(null, false),
         );
+    }
+
+    /**
+     * The first app needs a live confirmation on both of its steps, and neither writes without it (HIL-1138).
+     *
+     * @throws HilosException When a command fails for another reason
+     */
+    public function testTheFirstAppNeedsAConfirmationOnBothSteps(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::PASSWORD, self::EMAIL);
+
+        $this->assertRefusedAsExpired(
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+            new ProfileSecondFactorEnrollStartActionDTO(null, false),
+        );
+        $this->assertNull(Hilos::$db->secondFactors->unconfirmedOf(self::USER_ID), 'A refused start opens no enrolment');
+
+        $this->confirmAddingAnApp(self::CONFIRMED_FOR_SECONDS);
+        $start = $this->library->onAgentAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+            new ProfileSecondFactorEnrollStartActionDTO(null, false),
+        );
+        $this->assertInstanceOf(SecondFactorProfileReplyDTO::class, $start);
+
+        // The confirmation ran out while the person was scanning the code.
+        $this->confirmAddingAnApp(-1);
+        $this->assertRefusedAsExpired(
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM,
+            new ProfileSecondFactorEnrollConfirmActionDTO(
+                (int)$start->authenticatorId,
+                Totp::codeAt((string)Base32::decode((string)$start->secret), Totp::stepAt(time())),
+                'Phone',
+            ),
+        );
+        $this->assertSame([], Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
+        $this->assertSame([], Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
+    }
+
+    /**
+     * A second app is let through by the gate on its own code: the connected app is the proof the
+     * operation's own step asks for, so nothing is asked twice - and that code is still asked (HIL-1138).
+     *
+     * @throws HilosException When a command fails for another reason
+     */
+    public function testASecondAppIsLetThroughOnItsOwnCode(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::PASSWORD, self::EMAIL);
+        $this->confirmAddingAnApp(self::CONFIRMED_FOR_SECONDS);
+        $secret = $this->connectFirstAppSecret();
+        $this->confirmAddingAnApp(-1);
+
+        try {
+            $this->library->onAgentAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+                new ProfileSecondFactorEnrollStartActionDTO(null, false),
+            );
+            self::fail('A second app without a code from the first must be refused');
+        } catch (ValidationException $exception) {
+            $this->assertSame(SecondFactorMessages::INVALID_CODE, $exception->getMessage(), 'The gate passed; the app code is asked');
+        }
+
+        $start = $this->library->onAgentAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+            new ProfileSecondFactorEnrollStartActionDTO($this->nextCodeOf($secret), false),
+        );
+        $this->assertInstanceOf(SecondFactorProfileReplyDTO::class, $start);
+        $this->assertNotNull($start->secret);
     }
 
     /**
@@ -313,12 +402,64 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
+     * Submits one profile action and asserts the gate refused it as unconfirmed.
+     *
+     * @param string $action Action wire name
+     * @param ProfileSecondFactorEnrollStartActionDTO|ProfileSecondFactorEnrollConfirmActionDTO $dto Action payload
+     * @throws HilosException When the command fails for another reason
+     */
+    private function assertRefusedAsExpired(
+        string $action,
+        ProfileSecondFactorEnrollStartActionDTO|ProfileSecondFactorEnrollConfirmActionDTO $dto,
+    ): void {
+        try {
+            $this->library->onAgentAction(self::ACCEPT_KEY, $action, $dto);
+        } catch (ValidationException $exception) {
+            $this->assertSame(StepUpMessages::EXPIRED, $exception->getMessage());
+
+            return;
+        }
+
+        self::fail("{$action} must be refused without a confirmation");
+    }
+
+    /**
+     * Seeds this browser's confirmation of connecting an app, live for or expired since the given seconds.
+     *
+     * @param int $secondsLeft Seconds the confirmation has left; negative for one that ran out
+     * @throws HilosException When the confirmation row cannot be written
+     */
+    private function confirmAddingAnApp(int $secondsLeft): void
+    {
+        Hilos::$db->stepUps->actions->confirm(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            self::USER_ID,
+            StepUpOperationKey::ADD_AUTHENTICATOR_APP,
+            date('Y-m-d H:i:s', time() + $secondsLeft),
+        );
+    }
+
+    /**
      * @param string $secret Base32 secret
      * @return string The code of the step after the current one, which the replay guard has not seen
      */
     private function nextCodeOf(string $secret): string
     {
         return Totp::codeAt((string)Base32::decode($secret), Totp::stepAt(time()) + 1);
+    }
+
+    /**
+     * Raises or drops the device-key table the session integration base does not otherwise need.
+     *
+     * @param bool $down Drop the table when true, create it when false
+     * @throws DatabaseException When the stub statement fails
+     */
+    private static function runPasskeyStub(bool $down): void
+    {
+        // external-boundary: the up stub has no suffix in its file name
+        $suffix = $down ? '_down' : '';
+        $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_hilos_passkey_credential{$suffix}.sql";
+        Database::sqlRun((string)file_get_contents($stub));
     }
 
     /**

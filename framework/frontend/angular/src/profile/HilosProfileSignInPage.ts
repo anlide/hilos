@@ -20,6 +20,7 @@ import {
   hilosProfileSignInSubtitle,
   hilosProfileSignInTitle,
   HILOS_PROFILE_SIGN_IN_COPY,
+  HILOS_STEP_UP_COPY,
   hilosToasts,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
@@ -33,6 +34,7 @@ import {
   type HilosProfileSignInMethod,
 } from '@hilos/core'
 import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
+import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -60,6 +62,7 @@ let signInSequence = 0
     HilosFormError,
     HilosModal,
     HilosPageHeading,
+    HilosStepUpStep,
     LoadingButton,
   ],
   template: `
@@ -136,8 +139,11 @@ let signInSequence = 0
         }
       </div>
       <button
+        hilosLoadingButton
         class="btn btn-sm btn-outline-primary mt-3"
         type="button"
+        [loading]="step() === 'opening'"
+        [disabled]="step() === 'opening'"
         data-id="profile-sign-in-add"
         (click)="openAdd()"
       >
@@ -188,9 +194,9 @@ let signInSequence = 0
       <hilos-profile-password-change [flow]="passwordFlow()" />
 
       <hilos-modal
-        [open]="step() !== 'closed'"
+        [open]="step() !== 'closed' && step() !== 'opening'"
         (openChange)="closeAdd($event)"
-        title="Add a way to sign in"
+        [title]="addTitle()"
         initialFocus="dialog"
         [confirmOnClose]="addDirty()"
       >
@@ -202,7 +208,7 @@ let signInSequence = 0
             aria-atomic="true"
             data-id="profile-sign-in-add-live"
           >
-            {{ refusal() }}
+            {{ step() === 'step-up' ? stepUpRefusal() : refusal() }}
           </div>
           <div class="hilos-stack">
             <div class="invisible" aria-hidden="true" inert>
@@ -278,7 +284,18 @@ let signInSequence = 0
                 >
               }
             </div>
-            @if (step() === 'choose') {
+            @if (step() === 'step-up') {
+              <form
+                [id]="baseId + '-step-up'"
+                class="align-self-start"
+                data-id="profile-sign-in-add-step-up"
+                (submit)="$event.preventDefault(); flow().confirmStepUp()"
+              >
+                <hilos-step-up-step [controller]="flow().stepUp" />
+              </form>
+            } @else if (step() === 'refused') {
+              <div class="align-self-start"></div>
+            } @else if (step() === 'choose') {
               <div class="d-flex flex-column gap-2 align-self-start">
                 @if (!passwordState().hasPassword) {
                   <button
@@ -415,7 +432,19 @@ let signInSequence = 0
           >
             Cancel
           </button>
-          @if (step() !== 'choose') {
+          @if (step() === 'step-up') {
+            <button
+              hilosLoadingButton
+              type="submit"
+              [attr.form]="baseId + '-step-up'"
+              class="btn btn-primary"
+              [loading]="stepUpBusy()"
+              [disabled]="stepUpBusy()"
+              data-id="profile-sign-in-add-step-up-confirm"
+            >
+              {{ stepUpCopy.confirm }}
+            </button>
+          } @else if (step() !== 'choose' && step() !== 'refused') {
             <button
               type="button"
               class="btn btn-outline-secondary"
@@ -465,6 +494,7 @@ export class HilosProfileSignInPage {
   )
   protected readonly baseId = `hilos-profile-sign-in-${signInSequence++}`
   protected readonly copy = HILOS_PROFILE_SIGN_IN_COPY
+  protected readonly stepUpCopy = HILOS_STEP_UP_COPY
   protected readonly subtitle = hilosProfileSignInSubtitle
   protected readonly unlinkKey = signal<string | null>(null)
   protected readonly unlinkMethod = computed(() =>
@@ -495,7 +525,15 @@ export class HilosProfileSignInPage {
   protected readonly step = signal<HilosProfileAddSignInStep>('closed')
   protected readonly busy = signal(false)
   protected readonly refusal = signal<string | null>(null)
+  protected readonly stepUpRefusal = signal<string | null>(null)
+  protected readonly stepUpBusy = signal(false)
   protected readonly pendingProvider = signal<string | null>(null)
+  /** The dialog's title: the confirmation step names itself. */
+  protected readonly addTitle = computed(() =>
+    this.step() === 'step-up' || this.step() === 'refused'
+      ? this.stepUpCopy.title
+      : 'Add a way to sign in',
+  )
   protected readonly draft = signal(emptyDraft())
   private readonly addBody = viewChild<ElementRef<HTMLElement>>('addBody')
   protected readonly addDirty = computed(() =>
@@ -614,11 +652,19 @@ export class HilosProfileSignInPage {
       this.step.set(flow.step.get())
       this.busy.set(flow.busy.get())
       this.refusal.set(flow.refusal.get())
+      this.stepUpRefusal.set(flow.stepUp.refusal.get())
+      this.stepUpBusy.set(flow.stepUp.busy.get())
       this.pendingProvider.set(flow.provider.get())
       const stops = [
         subscribeSignal(flow.step, (value) => this.step.set(value)),
         subscribeSignal(flow.busy, (value) => this.busy.set(value)),
         subscribeSignal(flow.refusal, (value) => this.refusal.set(value)),
+        subscribeSignal(flow.stepUp.refusal, (value) =>
+          this.stepUpRefusal.set(value),
+        ),
+        subscribeSignal(flow.stepUp.busy, (value) =>
+          this.stepUpBusy.set(value),
+        ),
         subscribeSignal(flow.provider, (value) =>
           this.pendingProvider.set(value),
         ),
@@ -676,7 +722,7 @@ export class HilosProfileSignInPage {
   }
   protected openAdd(): void {
     this.draft.set(emptyDraft())
-    this.flow().open()
+    void this.flow().open()
   }
   protected closeAdd(open: boolean): void {
     if (!open) this.flow().close()

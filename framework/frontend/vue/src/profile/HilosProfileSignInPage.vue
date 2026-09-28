@@ -11,6 +11,7 @@ import {
   hilosProfileSignInSubtitle,
   hilosProfileSignInTitle,
   HILOS_PROFILE_SIGN_IN_COPY,
+  HILOS_STEP_UP_COPY,
   hilosToasts,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
@@ -22,6 +23,7 @@ import {
 import { computed, nextTick, onUnmounted, ref, useId, watch } from 'vue'
 
 import HilosProfilePasswordChange from './HilosProfilePasswordChange.vue'
+import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
 import HilosActionError from '../HilosActionError.vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
@@ -110,7 +112,17 @@ const flow = createHilosProfileAddSignInFlow(props.context, methodsSignal)
 const step = useSignal(flow.step)
 const busy = useSignal(flow.busy)
 const refusal = useSignal(flow.refusal)
+const stepUpRefusal = useSignal(flow.stepUp.refusal)
+const stepUpBusy = useSignal(flow.stepUp.busy)
 const pendingProvider = useSignal(flow.provider)
+/** The dialog opens on the server's answer, never on the click. */
+const addOpening = computed(() => step.value === 'opening')
+const onStepUp = computed(
+  () => step.value === 'step-up' || step.value === 'refused',
+)
+const addTitle = computed(() =>
+  onStepUp.value ? HILOS_STEP_UP_COPY.title : 'Add a way to sign in',
+)
 const addDraft = ref({
   email: '',
   phone: '',
@@ -120,7 +132,7 @@ const addDraft = ref({
 })
 const addBody = ref<HTMLElement | null>(null)
 const addOpen = computed({
-  get: () => step.value !== 'closed',
+  get: () => step.value !== 'closed' && step.value !== 'opening',
   set: (open) => {
     if (!open) flow.close()
   },
@@ -136,7 +148,7 @@ function openAdd(): void {
     newPassword: '',
     confirm: '',
   }
-  flow.open()
+  void flow.open()
 }
 watch(step, () => {
   void nextTick(() => {
@@ -340,14 +352,14 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-    <button
-      class="btn btn-sm btn-outline-primary mt-3"
-      type="button"
+    <LoadingButton
+      class="btn-sm btn-outline-primary mt-3"
+      :loading="addOpening"
+      :disabled="addOpening"
       data-id="profile-sign-in-add"
       @click="openAdd"
+      >Add a way to sign in</LoadingButton
     >
-      Add a way to sign in
-    </button>
 
     <HilosModal
       v-model="unlinkOpen"
@@ -393,7 +405,7 @@ onUnmounted(() => {
 
     <HilosModal
       v-model="addOpen"
-      title="Add a way to sign in"
+      :title="addTitle"
       initial-focus="dialog"
       :confirm-on-close="addDirty"
     >
@@ -405,7 +417,7 @@ onUnmounted(() => {
           aria-atomic="true"
           data-id="profile-sign-in-add-live"
         >
-          {{ refusal }}
+          {{ step === 'step-up' ? stepUpRefusal : refusal }}
         </div>
         <div class="hilos-stack">
           <div class="invisible" aria-hidden="true" inert>
@@ -478,8 +490,18 @@ onUnmounted(() => {
               ></span
             >
           </div>
+          <form
+            v-if="step === 'step-up'"
+            :id="`${baseId}-step-up`"
+            class="align-self-start"
+            data-id="profile-sign-in-add-step-up"
+            @submit.prevent="flow.confirmStepUp()"
+          >
+            <HilosStepUpStep :controller="flow.stepUp" />
+          </form>
+          <div v-else-if="step === 'refused'" class="align-self-start"></div>
           <div
-            v-if="step === 'choose'"
+            v-else-if="step === 'choose'"
             class="d-flex flex-column gap-2 align-self-start"
           >
             <button
@@ -605,30 +627,40 @@ onUnmounted(() => {
         >
           Cancel
         </button>
-        <button
-          v-if="step !== 'choose'"
-          type="button"
-          class="btn btn-outline-secondary"
-          :disabled="busy"
-          data-id="profile-sign-in-add-back"
-          @click="flow.back"
-        >
-          Back
-        </button>
         <LoadingButton
-          v-if="step !== 'choose'"
+          v-if="step === 'step-up'"
           type="submit"
-          :form="`${baseId}-add`"
+          :form="`${baseId}-step-up`"
           class="btn btn-primary"
-          :loading="busy"
-          :disabled="!addValid || busy"
-          :data-id="submitId"
-          >{{
-            step === 'password-email' || step === 'phone-number'
-              ? 'Send code'
-              : 'Save'
-          }}</LoadingButton
+          :loading="stepUpBusy"
+          :disabled="stepUpBusy"
+          data-id="profile-sign-in-add-step-up-confirm"
+          >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
         >
+        <template v-else-if="step !== 'choose' && step !== 'refused'">
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            :disabled="busy"
+            data-id="profile-sign-in-add-back"
+            @click="flow.back"
+          >
+            Back
+          </button>
+          <LoadingButton
+            type="submit"
+            :form="`${baseId}-add`"
+            class="btn btn-primary"
+            :loading="busy"
+            :disabled="!addValid || busy"
+            :data-id="submitId"
+            >{{
+              step === 'password-email' || step === 'phone-number'
+                ? 'Send code'
+                : 'Save'
+            }}</LoadingButton
+          >
+        </template>
       </template>
     </HilosModal>
   </section>

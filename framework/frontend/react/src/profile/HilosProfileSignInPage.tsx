@@ -10,6 +10,7 @@ import {
   hilosProfileSignInSubtitle,
   hilosProfileSignInTitle,
   HILOS_PROFILE_SIGN_IN_COPY,
+  HILOS_STEP_UP_COPY,
   hilosToasts,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
@@ -19,6 +20,7 @@ import {
   type HilosProfileSignInMethod,
 } from '@hilos/core'
 import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
+import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -118,7 +120,12 @@ export function HilosProfileSignInPage({
   const step = useSignal(flow.step)
   const busy = useSignal(flow.busy)
   const refusal = useSignal(flow.refusal)
+  const stepUpRefusal = useSignal(flow.stepUp.refusal)
+  const stepUpBusy = useSignal(flow.stepUp.busy)
   const pendingProvider = useSignal(flow.provider)
+  // The dialog opens on the server's answer, never on the click.
+  const addOpening = step === 'opening'
+  const onStepUp = step === 'step-up' || step === 'refused'
   const [draft, setDraft] = useState(emptyDraft)
   const addBody = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -127,7 +134,7 @@ export function HilosProfileSignInPage({
   }, [step])
   function openAdd(): void {
     setDraft(emptyDraft())
-    flow.open()
+    void flow.open()
   }
   const passwordFields = [
     {
@@ -304,14 +311,15 @@ export function HilosProfileSignInPage({
           </div>
         ))}
       </div>
-      <button
-        className="btn btn-sm btn-outline-primary mt-3"
-        type="button"
+      <LoadingButton
+        className="btn-sm btn-outline-primary mt-3"
+        loading={addOpening}
+        disabled={addOpening}
         data-id="profile-sign-in-add"
         onClick={openAdd}
       >
         Add a way to sign in
-      </button>
+      </LoadingButton>
       <HilosModal
         open={unlinkKey !== null}
         onClose={() => {
@@ -361,9 +369,9 @@ export function HilosProfileSignInPage({
       <HilosProfilePasswordChange flow={passwordFlow} />
 
       <HilosModal
-        open={step !== 'closed'}
+        open={step !== 'closed' && step !== 'opening'}
         onClose={flow.close}
-        title="Add a way to sign in"
+        title={onStepUp ? HILOS_STEP_UP_COPY.title : 'Add a way to sign in'}
         initialFocus="dialog"
         confirmOnClose={Object.values(draft).some((value) => value !== '')}
         actions={({ requestClose }) => (
@@ -376,7 +384,18 @@ export function HilosProfileSignInPage({
             >
               Cancel
             </button>
-            {step !== 'choose' ? (
+            {step === 'step-up' ? (
+              <LoadingButton
+                type="submit"
+                form={`${baseId}-step-up`}
+                className="btn btn-primary"
+                loading={stepUpBusy}
+                disabled={stepUpBusy}
+                data-id="profile-sign-in-add-step-up-confirm"
+              >
+                {HILOS_STEP_UP_COPY.confirm}
+              </LoadingButton>
+            ) : step !== 'choose' && step !== 'refused' ? (
               <>
                 <button
                   type="button"
@@ -412,7 +431,7 @@ export function HilosProfileSignInPage({
             aria-atomic="true"
             data-id="profile-sign-in-add-live"
           >
-            {refusal}
+            {step === 'step-up' ? stepUpRefusal : refusal}
           </div>
           <div className="hilos-stack">
             <div className="invisible" aria-hidden="true" inert>
@@ -492,7 +511,21 @@ export function HilosProfileSignInPage({
                 </span>
               ) : null}
             </div>
-            {step === 'choose' ? (
+            {step === 'step-up' ? (
+              <form
+                id={`${baseId}-step-up`}
+                className="align-self-start"
+                data-id="profile-sign-in-add-step-up"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void flow.confirmStepUp()
+                }}
+              >
+                <HilosStepUpStep controller={flow.stepUp} />
+              </form>
+            ) : step === 'refused' ? (
+              <div className="align-self-start"></div>
+            ) : step === 'choose' ? (
               <div className="d-flex flex-column gap-2 align-self-start">
                 {!passwordState.hasPassword ? (
                   <button

@@ -34,11 +34,20 @@ const methods = resolveHilosProfileSignInMethods(
   ],
   [],
 )
-function setup() {
+/** The server's answer to the add-a-way-in confirmation start. */
+const NO_STEP = { required: false, purpose: 'add a way to sign in' }
+const PASSWORD_STEP = {
+  required: true,
+  purpose: 'add a way to sign in',
+  method: 'password',
+}
+function setup(opening: object = NO_STEP) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
-  const dispatch = vi.fn(() => ({
+  const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
-    done: Promise.resolve({}),
+    done: Promise.resolve(
+      action === 'hilos_step_up_start' ? { reply: opening } : {},
+    ),
   }))
   const context = {
     scopes: new ScopeManager(),
@@ -141,6 +150,7 @@ describe('profile sign-in page dialogs', () => {
   it('moves from phone to code in one dialog and focuses the new field', async () => {
     const world = setup()
     await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
     byId('profile-sign-in-choose-phone').click()
     await flushPromises()
     expect(document.activeElement).toBe(byId('profile-add-sms-phone'))
@@ -157,6 +167,74 @@ describe('profile sign-in page dialogs', () => {
     })
     expect(
       document.querySelector('[data-id="profile-sign-in-add-modal"]'),
+    ).toBeNull()
+  })
+  it('asks the server before opening and starts at the chooser when no step is needed', async () => {
+    const world = setup()
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    expect(world.dispatch).toHaveBeenCalledWith(
+      'hilos_step_up_start',
+      { operation: 'add_sign_in_method' },
+      expect.anything(),
+    )
+    expect(byId('profile-sign-in-choose-phone')).toBeDefined()
+    expect(document.querySelector('[data-id="step-up"]')).toBeNull()
+    expect(document.querySelector('.modal-title')?.textContent).toBe(
+      'Add a way to sign in',
+    )
+  })
+  it('opens at the confirmation step, confirms with Enter in the password field, then shows the chooser', async () => {
+    const world = setup(PASSWORD_STEP)
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('.modal-title')?.textContent).toBe(
+      "Confirm it's you",
+    )
+    expect(
+      document.querySelector('[data-id="profile-sign-in-choose-phone"]'),
+    ).toBeNull()
+    expect(
+      document.querySelector('[data-id="profile-sign-in-add-back"]'),
+    ).toBeNull()
+    expect(byId('profile-sign-in-add-step-up-confirm')).toBeDefined()
+    await fill('step-up-password', 'secret')
+    byId('profile-sign-in-add-step-up').dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    )
+    await flushPromises()
+    expect(world.dispatch).toHaveBeenLastCalledWith('hilos_step_up_confirm', {
+      operation: 'add_sign_in_method',
+      method: 'password',
+      code: '',
+      backupCode: false,
+      password: 'secret',
+      passkey: null,
+    })
+    expect(byId('profile-sign-in-choose-phone')).toBeDefined()
+    expect(document.querySelector('.modal-title')?.textContent).toBe(
+      'Add a way to sign in',
+    )
+  })
+  it('shows a refused opening as a line with Cancel alone', async () => {
+    const world = setup()
+    world.dispatch.mockImplementationOnce(() => ({
+      loading: createSignal(false),
+      done: Promise.reject(
+        new ActionError('step-up', 'fail', 'Too many codes'),
+      ),
+    }))
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    expect(byId('profile-sign-in-add-error').textContent).toContain(
+      'Too many codes',
+    )
+    expect(byId('profile-sign-in-add-cancel')).toBeDefined()
+    expect(
+      document.querySelector('[data-id="profile-sign-in-add-step-up-confirm"]'),
+    ).toBeNull()
+    expect(
+      document.querySelector('[data-id="profile-sign-in-choose-phone"]'),
     ).toBeNull()
   })
   it('leaves Change enabled for a sole password and explains its disabled removal', async () => {

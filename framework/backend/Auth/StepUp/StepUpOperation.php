@@ -11,7 +11,9 @@ use Hilos\Core\Exception\InvalidArgumentException;
  *
  * The key is stable storage and wire vocabulary. The label names the operation on the
  * administration screen, while the purpose completes the confirmation copy. An operation
- * whose own first step proves the account address may suppress an identical step-up code.
+ * whose own first step proves the account address may suppress an identical step-up code, and
+ * one whose own first step asks a code from a connected authenticator app may suppress the
+ * step-up that would ask that same code (HIL-1138).
  */
 final readonly class StepUpOperation
 {
@@ -25,6 +27,8 @@ final readonly class StepUpOperation
      * @param bool $opensWithAddressCode Whether the operation itself first proves the account address
      * @param bool $opensOnBlockedCard Whether a browser holding the person's block notice may confirm this operation
      * @param bool $passesWithNothingToConfirm Whether an account with no available proof passes without a step
+     * @param bool $opensWithSecondFactorProof Whether the operation itself first asks a code from a connected
+     *     authenticator app, so an account with one is not asked twice
      * @throws InvalidArgumentException When the operation key is empty or malformed
      */
     public function __construct(
@@ -34,6 +38,7 @@ final readonly class StepUpOperation
         public bool $opensWithAddressCode,
         public bool $opensOnBlockedCard = false,
         public bool $passesWithNothingToConfirm = false,
+        public bool $opensWithSecondFactorProof = false,
     ) {
         if (preg_match(self::KEY_PATTERN, $key) !== 1) {
             throw new InvalidArgumentException("Invalid step-up operation key: {$key}");

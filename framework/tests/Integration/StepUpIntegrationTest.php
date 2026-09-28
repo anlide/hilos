@@ -399,6 +399,55 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
+     * Connecting an app skips the step when a connected app would be the proof: the operation's own
+     * step asks that code (HIL-1138). Without an app the strongest other proof is asked.
+     *
+     * @throws HilosException When a proof row or the opening cannot be written or read
+     */
+    public function testAddAuthenticatorAppSkipsTheStepOnlyWhereTheAppWouldBeTheProof(): void
+    {
+        $this->addPassword();
+        $opening = $this->start(StepUpOperationKey::ADD_AUTHENTICATOR_APP);
+        self::assertTrue($opening->required);
+        self::assertSame(StepUpMethod::PASSWORD, $opening->method);
+
+        Hilos::$db->secondFactors->actions
+            ->startEnrolment(self::USER_ID, 'Phone', Base32::encode(self::SECRET_BYTES))
+            ->actions->confirm('Phone');
+
+        self::assertFalse($this->start(StepUpOperationKey::ADD_AUTHENTICATOR_APP)->required);
+        self::assertTrue($this->start(StepUpOperationKey::ADD_SIGN_IN_METHOD)->required, 'Adding a way in has no step of its own');
+    }
+
+    /**
+     * Both adding operations pass an account with nothing to confirm with: refusing would leave
+     * the account unable to ever gain a proof (HIL-1138).
+     *
+     * @throws HilosException When the opening cannot be read
+     */
+    public function testAddingOperationsPassWithNothingToConfirm(): void
+    {
+        self::assertFalse($this->start(StepUpOperationKey::ADD_AUTHENTICATOR_APP)->required);
+        self::assertFalse($this->start(StepUpOperationKey::ADD_SIGN_IN_METHOD)->required);
+    }
+
+    /**
+     * Impersonation refuses adding an app before the connected-app pass is considered.
+     *
+     * @throws HilosException When the session update, the factor or the opening fails
+     */
+    public function testImpersonationRefusesAddingAnAppBeforeTheConnectedAppPass(): void
+    {
+        Database::sqlRun('UPDATE `hilos_session` SET `impersonator_user_id` = ? WHERE `token` = ?', [7, self::SESSION_TOKEN]);
+        Hilos::$db->secondFactors->actions
+            ->startEnrolment(self::USER_ID, 'Phone', Base32::encode(self::SECRET_BYTES))
+            ->actions->confirm('Phone');
+
+        $this->expectExceptionMessage(StepUpMessages::IMPERSONATED);
+        $this->start(StepUpOperationKey::ADD_AUTHENTICATOR_APP);
+    }
+
+    /**
      * An administrator-disabled operation opens without confirmation.
      *
      * @throws HilosException When the setting, identity, or opening cannot be read

@@ -1,8 +1,15 @@
 // The one add-method dialog: choosing a method and proving its address stay in
 // this flow. A closed or superseded round never consumes a late action outcome.
+// Adding a way in is a protected operation (HIL-1138): the dialog opens on the
+// server's word, at the confirmation step or straight at the chooser.
 import { type HilosAuthContext } from '../auth/authContext.js'
 import { createOAuthLogin, describeOAuthError } from '../auth/oauthLogin.js'
 import { createPasskeyCeremony } from '../auth/passkeyCeremony.js'
+import {
+  createHilosStepUpActions,
+  createHilosStepUpStep,
+  type HilosStepUpStep,
+} from '../auth/stepUp.js'
 import {
   ActionError,
   type ActionHandle,
@@ -16,9 +23,19 @@ import {
 } from './profileSignInMethods.js'
 import { createHilosProfileSignInActions } from './signInMethods.js'
 
-/** The ordinary screens of the add-method dialog. */
+/** The step-up operation every add of a way in belongs to (PHP `StepUpOperationKey::ADD_SIGN_IN_METHOD`). */
+export const ADD_SIGN_IN_METHOD_OPERATION = 'add_sign_in_method'
+
+/**
+ * The screens of the add-method dialog. It opens on the server's answer to the
+ * confirmation start: `opening` while that answer is out, then `step-up`,
+ * `refused` or straight to `choose`.
+ */
 export type HilosProfileAddSignInStep =
   | 'closed'
+  | 'opening'
+  | 'step-up'
+  | 'refused'
   | 'choose'
   | 'password-new'
   | 'password-email'
@@ -29,12 +46,17 @@ export type HilosProfileAddSignInStep =
 /** The dialog's state and commands, shared by the three view layers. */
 export interface HilosProfileAddSignInFlow {
   readonly step: ReadonlySignal<HilosProfileAddSignInStep>
+  /** The confirmation step the dialog opens on when the server asks for one. */
+  readonly stepUp: HilosStepUpStep
   readonly busy: ReadonlySignal<boolean>
   readonly refusal: ReadonlySignal<string | null>
   readonly provider: ReadonlySignal<string | null>
   readonly email: ReadonlySignal<string>
   readonly phone: ReadonlySignal<string>
-  open(): void
+  /** Ask the server whether a confirmation is needed and open on its answer. */
+  open(): Promise<void>
+  /** Send the confirmation step's proof; the chooser follows a success. */
+  confirmStepUp(): Promise<void>
   choosePassword(): void
   choosePhone(): void
   chooseProvider(key: string): Promise<void>
@@ -77,6 +99,9 @@ export function createHilosProfileAddSignInFlow(
   const actions = createHilosProfileSignInActions(context)
   const oauth = createOAuthLogin(context)
   const passkeys = createPasskeyCeremony(context)
+  const stepUp = createHilosStepUpStep(
+    createHilosStepUpActions(context.actions),
+  )
   const step = createSignal<HilosProfileAddSignInStep>('closed')
   const busy = createSignal(false)
   const refusal = createSignal<string | null>(null)
@@ -139,12 +164,13 @@ export function createHilosProfileAddSignInFlow(
 
   return {
     step,
+    stepUp,
     busy,
     refusal,
     provider,
     email,
     phone,
-    open() {
+    async open() {
       if (step.get() !== 'closed') return
       stopPassword = watchHilosProfilePasswordUpdated(
         context.connection,
@@ -159,7 +185,29 @@ export function createHilosProfileAddSignInFlow(
       )
 
       refusal.set(null)
-      step.set('choose')
+      step.set('opening')
+      busy.set(true)
+      const started = round
+      const verdict = await stepUp.open(ADD_SIGN_IN_METHOD_OPERATION)
+      if (round !== started) return
+      busy.set(false)
+      if (verdict === 'refused') refusal.set(stepUp.refusal.get())
+      step.set(
+        verdict === 'skip'
+          ? 'choose'
+          : verdict === 'ask'
+            ? 'step-up'
+            : 'refused',
+      )
+    },
+    async confirmStepUp() {
+      if (busy.get() || step.get() !== 'step-up') return
+      busy.set(true)
+      const started = round
+      const confirmed = await stepUp.confirm()
+      if (round !== started) return
+      busy.set(false)
+      if (confirmed) step.set('choose')
     },
     choosePassword() {
       if (hilosProfilePasswordState(methods.get()).hasPassword) return
@@ -271,7 +319,15 @@ export function createHilosProfileAddSignInFlow(
       )
     },
     back() {
-      if (busy.get() || step.get() === 'closed') return
+      if (
+        busy.get() ||
+        step.get() === 'closed' ||
+        step.get() === 'opening' ||
+        step.get() === 'step-up' ||
+        step.get() === 'refused' ||
+        step.get() === 'choose'
+      )
+        return
       round += 1
       refusal.set(null)
       step.set(

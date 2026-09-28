@@ -176,16 +176,17 @@ final class StepUpCommands extends AbstractLibraryCommands
     /**
      * Applies the server-side gate at the start of a protected operation action.
      *
+     * The project's door to the one prologue every framework command of a protected operation
+     * takes ({@see AbstractLibraryCommands::confirmedUser()}, HIL-1138).
+     *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $operation Protected operation key
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
      * @throws ValidationException When impersonation is active or confirmation is absent or expired
-     * @throws HilosException When settings, account proofs, or confirmation storage cannot be read
+     * @throws HilosException When the operation is not declared, or settings, account proofs, or confirmation storage cannot be read
      */
     public function require(string $acceptKey, string $operation): void
     {
-        $acting = $this->actingUser($acceptKey);
-
-        new StepUpGate()->require($acting->sessionToken, $acting->userId, $operation);
+        $this->confirmedUser($acceptKey, $operation);
     }
 }

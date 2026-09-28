@@ -1,7 +1,8 @@
 // Covers what the profile's security page view owns rather than the core store
 // (HIL-494): a form sent again while its action is out dispatches nothing, the
 // step a modal moves to takes the focus, and backup codes shown once ask before
-// the modal closes.
+// the modal closes. Connecting an app is a protected operation (HIL-1138): the
+// modal opens on the server's word, at the confirmation step or at the name.
 import {
   createSignal,
   ScopeManager,
@@ -46,8 +47,17 @@ const SECTION_OFF = {
   reset: null,
 }
 
+/** The section with one app connected, as the group frame carries it. */
+const SECTION_ON = {
+  ...SECTION_OFF,
+  authenticators: [{ id: 1, label: 'Phone', createdAt: 0, lastUsedAt: null }],
+  backupCodesLeft: 10,
+  backupCodesTotal: 10,
+}
+
 /** The replies the server gives, by action name. */
 const REPLIES: Record<string, unknown> = {
+  hilos_step_up_start: { required: false, purpose: 'add an authenticator app' },
   profile_second_factor_enroll_start: {
     authenticatorId: 3,
     secret: 'JBSWY3DPEHPK3PXP',
@@ -59,8 +69,14 @@ const REPLIES: Record<string, unknown> = {
 /**
  * A mounted page whose section says no app is connected, over an action
  * lifecycle that records every dispatch and answers from {@link REPLIES}.
+ *
+ * @param replies The server's answers by action name.
+ * @param section The section the group frame carries.
  */
-function pageWorld(): { dispatched: string[]; wrapper: VueWrapper } {
+function pageWorld(
+  replies: Record<string, unknown> = REPLIES,
+  section: object = SECTION_OFF,
+): { dispatched: string[]; wrapper: VueWrapper } {
   const dispatched: string[] = []
   const listeners: Array<(signal: ProjectSignal) => void> = []
   const connection = {
@@ -79,7 +95,7 @@ function pageWorld(): { dispatched: string[]; wrapper: VueWrapper } {
       return {
         requestId: `req-${dispatched.length}`,
         loading: createSignal(false),
-        done: Promise.resolve({ reply: REPLIES[action] }),
+        done: Promise.resolve({ reply: replies[action] }),
       } as unknown as ActionHandle
     },
   } as unknown as ActionLifecycle
@@ -93,7 +109,7 @@ function pageWorld(): { dispatched: string[]; wrapper: VueWrapper } {
     listener({
       kind: 'project',
       type: 'hilos_second_factor_state',
-      data: SECTION_OFF,
+      data: section,
     } as unknown as ProjectSignal)
   }
 
@@ -125,11 +141,67 @@ function submit(id: string): void {
 /** Open "Add an app" and name the app. */
 async function openEnrolment(wrapper: VueWrapper): Promise<void> {
   await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+  await flushPromises()
   await nextTick()
   typeInto('profile-2fa-enroll-label', 'Work phone')
 }
 
 describe('HilosProfileSecurityPage', () => {
+  it('asks the server before the modal opens and starts at the name when no step is needed', async () => {
+    const { dispatched, wrapper } = pageWorld()
+    await nextTick()
+    await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+    expect(dispatched).toEqual(['hilos_step_up_start'])
+    await flushPromises()
+    await nextTick()
+
+    expect(byId('profile-2fa-enroll-label')).toBeTruthy()
+    expect(document.querySelector('[data-id="step-up"]')).toBeNull()
+  })
+
+  it('opens at the confirmation step for the first app and moves to the name once confirmed', async () => {
+    const { dispatched, wrapper } = pageWorld({
+      ...REPLIES,
+      hilos_step_up_start: {
+        required: true,
+        purpose: 'add an authenticator app',
+        method: 'password',
+      },
+    })
+    await nextTick()
+    await wrapper.find('[data-id="profile-2fa-add"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect(document.querySelector('.modal-title')?.textContent).toBe(
+      "Confirm it's you",
+    )
+    expect(
+      document.querySelector('[data-id="profile-2fa-enroll-label"]'),
+    ).toBeNull()
+
+    typeInto('step-up-password', 'secret')
+    submit('profile-2fa-enroll')
+    await flushPromises()
+    await nextTick()
+
+    expect(dispatched.at(-1)).toBe('hilos_step_up_confirm')
+    expect(byId('profile-2fa-enroll-label')).toBeTruthy()
+    expect(document.querySelector('.modal-title')?.textContent).toBe(
+      'Add an authenticator app',
+    )
+  })
+
+  it('asks a second app for a code from the connected one after the name, as before', async () => {
+    const { dispatched, wrapper } = pageWorld(REPLIES, SECTION_ON)
+    await nextTick()
+    await openEnrolment(wrapper)
+    submit('profile-2fa-enroll')
+    await nextTick()
+
+    expect(byId('profile-2fa-proof')).toBeTruthy()
+    expect(dispatched).toEqual(['hilos_step_up_start'])
+  })
+
   it('starts one enrolment however often Enter sends the form', async () => {
     const { dispatched, wrapper } = pageWorld()
     await nextTick()

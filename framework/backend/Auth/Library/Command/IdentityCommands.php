@@ -14,6 +14,7 @@ use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\PhoneNumber;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
@@ -48,6 +49,12 @@ use Random\RandomException;
  * The order inside {@see unlink()} is the whole of what it promises. It is the one place a
  * passkey stops existing, so a project reaches it the way it reaches the register and login
  * ceremonies: through the library agent that owns it.
+ *
+ * Every add here is the operation 'add_sign_in_method' (HIL-1138): a browser left open must not
+ * be enough for a stranger to give themselves a way in, so each step of an add takes the person
+ * through {@see AbstractLibraryCommands::confirmedUser()} first, and a two-step add asks again on
+ * its second step. Taking a way off is no operation, by the owner's decision: once every add is
+ * confirmed, whatever is left to remove is the owner's own.
  */
 final class IdentityCommands extends AbstractLibraryCommands
 {
@@ -63,13 +70,13 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @throws PasswordTooCommonException When the password is in the common-password list
      * @throws FsException When the framework password list cannot be read
      * @throws PasswordUnchangedException When the password policy refuses a reused password
-     * @throws ValidationException When the account already has a password or has no confirmed email
+     * @throws ValidationException When the add is not confirmed, or the account already has a password or has no confirmed email
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
      * @throws HilosException When an identity read or write fails
      */
     public function setPassword(string $acceptKey, ProfileSetPasswordActionDTO $dto): void
     {
-        $userId = $this->actingUser($acceptKey)->userId;
+        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
         if (Hilos::$db->identities->findPasswordByUser($userId) !== null) {
             throw new ValidationException(AuthMessages::ALREADY_HAS_PASSWORD);
         }
@@ -98,14 +105,14 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileAddSmsRequestActionDTO $dto Phone to send the code to
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValidationException When the phone is not a valid number
+     * @throws ValidationException When the add is not confirmed, or the phone is not a valid number
      * @throws EmptyValueException When the normalized identifier is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When the verification query fails
      */
     public function requestSmsAdd(string $acceptKey, ProfileAddSmsRequestActionDTO $dto): void
     {
-        $userId = $this->actingUser($acceptKey)->userId;
+        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
 
         $phone = PhoneNumber::normalize($dto->phone);
         if ($phone === null) {
@@ -131,12 +138,12 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileAddSmsConfirmActionDTO $dto Phone and the code it received
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValidationException When the phone or code is invalid or the phone is already in use
+     * @throws ValidationException When the add is not confirmed, the phone or code is invalid, or the phone is already in use
      * @throws HilosException When a verification or identity query fails
      */
     public function confirmSmsAdd(string $acceptKey, ProfileAddSmsConfirmActionDTO $dto): void
     {
-        $userId = $this->actingUser($acceptKey)->userId;
+        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
 
         $phone = PhoneNumber::normalize($dto->phone);
         $verifiedUserId = $phone === null
@@ -170,14 +177,14 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileAddPasswordRequestActionDTO $dto Address to send the code to
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValidationException When the email is malformed or already verified by another account
+     * @throws ValidationException When the add is not confirmed, or the email is malformed or already verified by another account
      * @throws EmptyValueException When the normalized identifier is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When a verification or identity query fails
      */
     public function requestPasswordAdd(string $acceptKey, ProfileAddPasswordRequestActionDTO $dto): void
     {
-        $userId = $this->actingUser($acceptKey)->userId;
+        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
 
         $email = strtolower($dto->email);
         if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
@@ -216,14 +223,14 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @throws ValueTooShortException When the password is shorter than the policy minimum
      * @throws PasswordTooCommonException When the new password is in the common-password list
      * @throws FsException When the framework password list cannot be read
-     * @throws ValidationException When the account already has a password, the code is
+     * @throws ValidationException When the add is not confirmed, the account already has a password, the code is
      *     invalid or expired, or the email is already in use
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
      * @throws HilosException When a verification or identity query fails
      */
     public function confirmPasswordAdd(string $acceptKey, ProfileAddPasswordConfirmActionDTO $dto): void
     {
-        $userId = $this->actingUser($acceptKey)->userId;
+        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
 
         // Nothing to be unchanged from: this flow only ever adds a password to an account
         // that has none, which is what the refusal below it enforces.

@@ -19,7 +19,6 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Template\EmailChangedMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * The profile email change, run by the framework's users library (HIL-299, HIL-495, HIL-1137).
@@ -72,7 +71,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
      */
     public function testStepOneRefusesAnAccountWithoutAConfirmedAddress(): void
     {
-        $this->confirmStepUp();
+        $this->confirmStepUp(StepUpOperationKey::CHANGE_EMAIL);
 
         $this->assertRefused(
             AuthMessages::CONFIRM_EMAIL_FIRST,
@@ -252,7 +251,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
     public function testStepFourMovesTheAccountAndNotifiesBothAddresses(): void
     {
         $this->seedPasswordAccount();
-        $this->confirmStepUp();
+        $this->confirmStepUp(StepUpOperationKey::CHANGE_EMAIL);
         $this->seedBothCodes();
 
         $this->submit(
@@ -367,20 +366,5 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
     {
         $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
         $this->seedCode(VerificationType::EMAIL_CHANGE, self::NEW_EMAIL, self::USER_ID, self::NEW_CODE);
-    }
-
-    /**
-     * Seeds the operation confirmation the real confirmation command would write for the tab.
-     *
-     * @throws HilosException When the confirmation cannot be written
-     */
-    private function confirmStepUp(): void
-    {
-        Hilos::$db->stepUps->actions->confirm(
-            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
-            self::USER_ID,
-            StepUpOperationKey::CHANGE_EMAIL,
-            date('Y-m-d H:i:s', time() + self::TTL_SECONDS),
-        );
     }
 }

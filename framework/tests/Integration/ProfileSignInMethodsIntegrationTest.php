@@ -13,10 +13,16 @@ use Hilos\Auth\Library\DTO\ProfileAddSmsRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -25,6 +31,10 @@ use Hilos\Mail\Template\MailTemplateCatalogConstants;
 /**
  * Profile sign-in methods: first password, code-proven additions and unlink (HIL-1137, HIL-300).
  * Existing passwords are refused here; PasswordChangeIntegrationTest covers their change.
+ *
+ * Every add is the operation 'add_sign_in_method' (HIL-1138): a case whose person has a proof to
+ * be asked for seeds the confirmation the step would have written, and the cases at the end pin
+ * what the gate does without it, without a proof, and switched off.
  */
 final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCase
 {
@@ -44,6 +54,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testSetPasswordOnAnAccountWithAPasswordIsRefused(): void
     {
         $this->seedPassword();
+        $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
         $this->assertRefused(
             AuthMessages::ALREADY_HAS_PASSWORD,
             HilosSignalConstants::PROFILE_SET_PASSWORD,
@@ -62,6 +73,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testAddPasswordOnAConfirmedAddressCreatesAConfirmedIdentity(): void
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+        $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
         $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
 
@@ -86,6 +98,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testAddCommonPasswordOnAConfirmedAddressIsRefused(): void
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+        $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
         try {
             $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO('12345678'));
@@ -208,6 +221,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testAddPasswordConfirmRefusesASecondPasswordWithoutSpendingTheCode(): void
     {
         $this->seedPassword();
+        $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
         $this->seedCode(VerificationType::EMAIL_ADD, self::OTHER_EMAIL, self::USER_ID, self::CODE);
 
         $this->assertRefused(
@@ -401,7 +415,8 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     }
 
     /**
-     * An unlink takes the named way in off and leaves the other.
+     * An unlink takes the named way in off and leaves the other, and asks no confirmation: the
+     * person holds a proof here, and taking a way off is no operation (HIL-1138).
      *
      * @throws HilosException When the seed or the command fails
      */
@@ -417,10 +432,142 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     }
 
     /**
+     * Every add refuses without a live confirmation, first thing, and writes nothing (HIL-1138): no
+     * identity, no code issued, a seeded code not spent, no letter, no signal.
+     *
+     * @throws HilosException When the seed fails
+     */
+    public function testEveryAddWithoutAConfirmationIsRefusedAndWritesNothing(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+        $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
+        $this->seedCode(VerificationType::EMAIL_ADD, self::EMAIL, self::USER_ID, self::CODE);
+
+        $this->assertRefused(
+            StepUpMessages::EXPIRED,
+            HilosSignalConstants::PROFILE_SET_PASSWORD,
+            new ProfileSetPasswordActionDTO(self::NEW_PASSWORD),
+        );
+        $this->assertRefused(
+            StepUpMessages::EXPIRED,
+            HilosSignalConstants::PROFILE_ADD_SMS_REQUEST,
+            new ProfileAddSmsRequestActionDTO('+1 555 123 1139'),
+        );
+        $this->assertRefused(
+            StepUpMessages::EXPIRED,
+            HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM,
+            new ProfileAddSmsConfirmActionDTO(self::PHONE, self::CODE),
+        );
+        $this->assertRefused(
+            StepUpMessages::EXPIRED,
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST,
+            new ProfileAddPasswordRequestActionDTO(self::OTHER_EMAIL),
+        );
+        $this->assertRefused(
+            StepUpMessages::EXPIRED,
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
+            new ProfileAddPasswordConfirmActionDTO(self::EMAIL, self::CODE, self::NEW_PASSWORD),
+        );
+
+        self::assertSame([[IdentityType::MAGIC_LINK, self::EMAIL, true]], self::rowsOf(self::USER_ID));
+        self::assertNull($this->verifications()->findActive(VerificationType::SMS_ADD, '+15551231139', self::MAX_ATTEMPTS));
+        self::assertNull($this->verifications()->findActive(VerificationType::EMAIL_ADD, self::OTHER_EMAIL, self::MAX_ATTEMPTS));
+        self::assertNotNull($this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS));
+        self::assertNotNull($this->verifications()->findActive(VerificationType::EMAIL_ADD, self::EMAIL, self::MAX_ATTEMPTS));
+        self::assertSame([], $this->mailer->sent);
+        self::assertSame([], $this->passwordUpdates());
+    }
+
+    /**
+     * One confirmation opens every add in this browser for its lifetime, and none in another
+     * browser of the same person (HIL-1138).
+     *
+     * @throws HilosException When the seed or a command fails
+     */
+    public function testOneConfirmationOpensSeveralAddsInThisBrowserOnly(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+        $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
+
+        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
+        $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
+        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::PHONE, self::CODE));
+        $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
+
+        self::assertSame(
+            [
+                [IdentityType::MAGIC_LINK, self::EMAIL, true],
+                [IdentityType::SMS, self::PHONE, true],
+                [IdentityType::PASSWORD, self::EMAIL, true],
+            ],
+            self::rowsOf(self::USER_ID),
+        );
+        $this->assertRefused(
+            StepUpMessages::EXPIRED,
+            HilosSignalConstants::PROFILE_ADD_SMS_REQUEST,
+            new ProfileAddSmsRequestActionDTO('+1 555 123 1139'),
+            self::OTHER_ACCEPT_KEY,
+        );
+    }
+
+    /**
+     * An account with nothing to confirm with adds without a step: refusing it would leave the
+     * account unable to ever gain a proof (HIL-1138, decision (a)).
+     *
+     * @throws HilosException When a command fails
+     */
+    public function testAnAccountWithNothingToConfirmWithAddsWithoutAStep(): void
+    {
+        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
+        self::assertNotNull($this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS));
+
+        $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
+        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::PHONE, self::CODE));
+
+        self::assertSame([[IdentityType::SMS, self::PHONE, true]], self::rowsOf(self::USER_ID));
+    }
+
+    /**
+     * An administrator who switched the operation off takes the step away, not the add (HIL-1138).
+     *
+     * @throws HilosException When the seed or the command fails
+     */
+    public function testASwitchedOffAddOperationAsksNoConfirmation(): void
+    {
+        Hilos::$setting = new SettingsAccessor(ProfileSignInMethodsDisabledSettingsCatalog::class);
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+
+        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
+
+        self::assertSame(
+            self::USER_ID,
+            $this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS)?->userId,
+        );
+    }
+
+    /**
      * @throws HilosException When the identity cannot be written
      */
     private function seedPassword(): void
     {
         Hilos::$db->identities->createPasswordIdentity(self::USER_ID, self::EMAIL, self::PASSWORD)->markVerified();
+    }
+}
+
+/**
+ * The profile catalog with adding a way in switched off by default.
+ */
+final class ProfileSignInMethodsDisabledSettingsCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> Fixture settings catalog
+     */
+    public static function getCatalog(): array
+    {
+        $catalog = ProfileIntegrationSettingsCatalog::getCatalog();
+        $catalog[StepUpSettings::DISABLED_KEY][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]
+            = StepUpOperationKey::ADD_SIGN_IN_METHOD;
+
+        return $catalog;
     }
 }

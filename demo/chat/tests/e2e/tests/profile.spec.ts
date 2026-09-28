@@ -154,6 +154,9 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-identities-list')).toBeVisible()
   await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  // Adding a way in asks the password first (HIL-1138); the link start is
+  // refused without it, so the provider window never opens.
+  await confirmStepUp(page, 'profile-sign-in-add-step-up-confirm')
   const loadsBeforeLink = fullLoads
 
   // A fresh password account offers GitHub to link and has no oauth identity yet.
@@ -427,6 +430,7 @@ test('updates the sign-in summary when another tab adds a device key', async ({
   await addVirtualAuthenticator(other)
   await gotoPage(other, '/profile/sign-in')
   await clickSubmit(other.getByTestId('profile-sign-in-add'))
+  await confirmStepUp(other, 'profile-sign-in-add-step-up-confirm')
   await clickSubmit(other.getByTestId('profile-passkey-add'))
   await expect(other.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(other.getByTestId('identity-passkey-added')).toHaveCount(1)

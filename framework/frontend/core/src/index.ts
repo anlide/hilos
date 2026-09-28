@@ -371,6 +371,7 @@ export {
   type HilosNotificationPreferencesStore,
 } from './notifications/notificationPreferences.js'
 export {
+  ADD_AUTHENTICATOR_APP_OPERATION,
   createHilosSecondFactorActions,
   createHilosSecondFactorStore,
   readHilosSecondFactorState,
@@ -466,6 +467,7 @@ export {
   type HilosProfileSignInPasskeySource,
 } from './profile/profileSignInMethods.js'
 export {
+  ADD_SIGN_IN_METHOD_OPERATION,
   createHilosProfileAddSignInFlow,
   HILOS_PROFILE_SIGN_IN_COPY,
   type HilosProfileAddSignInFlow,

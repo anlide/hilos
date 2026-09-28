@@ -21,6 +21,7 @@ use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
 use Hilos\Auth\StepUp\DTO\StepUpPasskeyAnswer;
 use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\AttestationResult;
 use Hilos\Auth\WebAuthn\AttestationVerifier;
@@ -108,16 +109,20 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * `action_success` carries no domain payload — hands them to the browser on the
      * PASSKEY_OPTIONS signal for navigator.credentials.create().
      *
+     * Enrolling is the add-a-way-in operation (HIL-1138): the confirmation is asked before the
+     * options are minted, so a refusal reaches the browser before the device prompt opens.
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param PasskeyRegisterOptionsActionDTO $dto Parsed options request payload (no fields)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
+     * @throws ValidationException When the add is not confirmed
      * @throws InvalidArgumentException When the options signal cannot be named or queued
      * @throws RandomException When the platform CSPRNG cannot produce a challenge
      * @throws HilosException When WebAuthn env config or credential lookup fails
      */
     public function registerOptions(string $acceptKey, PasskeyRegisterOptionsActionDTO $dto): void
     {
-        $acting = $this->actingUser($acceptKey);
+        $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
         $config = WebAuthnConfig::fromEnv();
         $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
@@ -165,15 +170,19 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * macOS" instead of a credential id (HIL-418). An unrecognized agent labels
      * nothing — the row simply reads "Passkey".
      *
+     * The second step of the add-a-way-in operation (HIL-1138): the confirmation is asked again
+     * before the ceremony is read, since seconds pass between the two submits.
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param PasskeyRegisterConfirmActionDTO $dto Parsed confirm payload (signed challenge, attestation object, client data, transports, user agent)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValidationException When the challenge, payload, or ceremony is invalid, or the passkey is already registered
+     * @throws ValidationException When the add is not confirmed, the challenge, payload, or ceremony is invalid, or the passkey
+     *     is already registered
      * @throws HilosException When WebAuthn env config, identity creation, or credential storage fails
      */
     public function registerConfirm(string $acceptKey, PasskeyRegisterConfirmActionDTO $dto): void
     {
-        $acting = $this->actingUser($acceptKey);
+        $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
         $config = WebAuthnConfig::fromEnv();
         try {

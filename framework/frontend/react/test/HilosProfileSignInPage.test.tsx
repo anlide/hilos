@@ -13,11 +13,22 @@ import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 afterEach(cleanup)
-it('adds a password under StrictMode and removes every listener on unmount', async () => {
+
+/** The server's answer to the add-a-way-in confirmation start. */
+const NO_STEP = { required: false, purpose: 'add a way to sign in' }
+const PASSWORD_STEP = {
+  required: true,
+  purpose: 'add a way to sign in',
+  method: 'password',
+}
+
+function setup(opening: object = NO_STEP) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
-  const dispatch = vi.fn(() => ({
+  const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
-    done: Promise.resolve({}),
+    done: Promise.resolve(
+      action === 'hilos_step_up_start' ? { reply: opening } : {},
+    ),
   }))
   const context = {
     actions: { dispatch },
@@ -61,7 +72,14 @@ it('adds a password under StrictMode and removes every listener on unmount', asy
   )
   const node = (id: string) =>
     document.querySelector(`[data-id="${id}"]`) as HTMLElement
-  fireEvent.click(node('profile-sign-in-add'))
+  return { dispatch, listeners, node, unmount }
+}
+
+it('adds a password under StrictMode and removes every listener on unmount', async () => {
+  const { dispatch, listeners, node, unmount } = setup()
+  await act(async () => {
+    fireEvent.click(node('profile-sign-in-add'))
+  })
   fireEvent.click(node('profile-sign-in-choose-password'))
   fireEvent.change(node('profile-add-password-new'), {
     target: { value: 'new-secret' },
@@ -86,4 +104,38 @@ it('adds a password under StrictMode and removes every listener on unmount', asy
   expect(node('profile-sign-in-add-modal')).toBeNull()
   unmount()
   expect(listeners.size).toBe(0)
+})
+
+it('opens at the confirmation step when the server asks, and shows the chooser once confirmed', async () => {
+  const { dispatch, node } = setup(PASSWORD_STEP)
+  await act(async () => {
+    fireEvent.click(node('profile-sign-in-add'))
+  })
+  expect(dispatch).toHaveBeenCalledWith(
+    'hilos_step_up_start',
+    { operation: 'add_sign_in_method' },
+    expect.anything(),
+  )
+  expect(document.querySelector('.modal-title')?.textContent).toBe(
+    "Confirm it's you",
+  )
+  expect(node('profile-sign-in-choose-phone')).toBeNull()
+  expect(node('profile-sign-in-add-back')).toBeNull()
+  expect(node('profile-sign-in-add-step-up-confirm')).not.toBeNull()
+  fireEvent.change(node('step-up-password'), { target: { value: 'secret' } })
+  await act(async () => {
+    fireEvent.submit(node('profile-sign-in-add-step-up'))
+  })
+  expect(dispatch).toHaveBeenLastCalledWith('hilos_step_up_confirm', {
+    operation: 'add_sign_in_method',
+    method: 'password',
+    code: '',
+    backupCode: false,
+    password: 'secret',
+    passkey: null,
+  })
+  expect(node('profile-sign-in-choose-phone')).not.toBeNull()
+  expect(document.querySelector('.modal-title')?.textContent).toBe(
+    'Add a way to sign in',
+  )
 })

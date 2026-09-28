@@ -88,6 +88,41 @@ export async function waitForAnyMailTo(address) {
 }
 
 /**
+ * Wait until the interceptor holds a message for this recipient that the caller
+ * accepts, and return it.
+ *
+ * The read for a SECOND message on one channel address (HIL-1138): a code asked
+ * while an earlier one still sits in the mailbox cannot be told from it by "the
+ * newest", because the newest is the earlier one until the later lands. The
+ * caller says what makes a message the one it waits for; every held message is
+ * offered, newest first, so the first accepted is the newest accepted.
+ *
+ * @param {string} address Recipient address, as the gateway addressed it.
+ * @param {(mail: InterceptedMail) => boolean} accept Whether a held message is the one waited for.
+ * @returns {Promise<InterceptedMail>} The newest accepted message's subject and plain-text body.
+ * @throws {Error} When the runner names no mailbox, when no accepted message
+ *   arrives within the wait, or when the interceptor answers anything but 2xx.
+ */
+export async function waitForMailToMatching(address, accept) {
+  const mailbox = mailboxUrl()
+  const deadline = Date.now() + MAIL_WAIT_TIMEOUT
+
+  for (let attempt = 0; ; attempt += 1) {
+    for (const entry of await entriesTo(mailbox, address)) {
+      const mail = await readMessage(mailbox, entry.ID)
+      if (accept(mail)) {
+        return mail
+      }
+    }
+    const pause = POLL_INTERVALS[Math.min(attempt, POLL_INTERVALS.length - 1)]
+    if (Date.now() + pause >= deadline) {
+      throw new Error(`no accepted mail to ${address} reached the interceptor`)
+    }
+    await new Promise((resolve) => globalThis.setTimeout(resolve, pause))
+  }
+}
+
+/**
  * The runner's address of the stand's mailbox, read at the call rather than at
  * load: nearly every spec loads this module through a demo helper, and one that
  * reads no mail must not fail for a mailbox it never opens.

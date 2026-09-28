@@ -4,7 +4,10 @@
 // operation list. Mail codes are read from the stand mailbox, never a backdoor.
 import { expect, test, type Page } from '@playwright/test'
 
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  addVirtualAuthenticator,
+  shownByTestId,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailCode } from '../helpers/mail'
@@ -18,7 +21,7 @@ import {
   signUp,
   typeInto,
 } from '../helpers/session'
-import { nextTotpCode } from '../helpers/totp'
+import { nextTotpCode, totpStep } from '../helpers/totp'
 
 /** Complete the rename after its confirmation step has passed or been skipped. */
 async function rename(page: Page): Promise<string> {
@@ -85,6 +88,87 @@ test('does not ask twice when email change starts with its own address code', as
 
   await expect(page.getByTestId('step-up')).toHaveCount(0)
   await expect(page.getByTestId('profile-email-send-current')).toBeVisible()
+})
+
+test('confirms adding a way in once and lets the next add through without a step', async ({
+  page,
+}) => {
+  await addVirtualAuthenticator(page)
+  await signUp(page)
+  await gotoPage(page, '/profile/sign-in')
+
+  // Adding a way in is a protected operation (HIL-1138): the dialog opens on
+  // the confirmation step, and the device key is offered only past it.
+  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await expect(page.getByTestId('profile-passkey-add')).toHaveCount(0)
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-sign-in-add-step-up-confirm'))
+  await clickSubmit(page.getByTestId('profile-passkey-add'))
+  await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-toasts').getByText('Passkey added.'),
+  ).toBeVisible()
+
+  // The confirmation lives on the operation for its lifetime: the next add in
+  // this browser opens straight at the chooser.
+  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await expect(page.getByTestId('profile-sign-in-choose-phone')).toBeVisible()
+  await expect(page.getByTestId('step-up')).toHaveCount(0)
+})
+
+test('confirms the first authenticator app with the password and lets a second prove itself', async ({
+  page,
+}) => {
+  await signUp(page)
+  await gotoPage(page, '/profile/security')
+
+  // The first app is the operation's own step (HIL-1138): the password first,
+  // then the name.
+  await clickSubmit(page.getByTestId('profile-2fa-add'))
+  await expect(page.getByTestId('profile-2fa-enroll-label')).toHaveCount(0)
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await typeInto(page.getByTestId('profile-2fa-enroll-label'), 'Work phone')
+  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  const secret = (
+    await page.getByTestId('profile-2fa-enroll-secret').textContent()
+  )?.trim()
+  const { code } = await nextTotpCode(secret ?? '', totpStep() - 1)
+  await typeInto(page.getByTestId('profile-2fa-enroll-code'), code)
+  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await page.getByTestId('backup-codes-saved').check()
+  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await expect(page.getByTestId('profile-2fa-enroll-more')).toBeVisible()
+
+  // "Connect another": the app just connected is the proof the operation's own
+  // step asks for, so no confirmation stands before the name - and after the
+  // name comes that app's code, as before.
+  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await expect(page.getByTestId('profile-2fa-enroll-label')).toBeVisible()
+  await expect(page.getByTestId('step-up')).toHaveCount(0)
+  await typeInto(page.getByTestId('profile-2fa-enroll-label'), 'Tablet')
+  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
+  await expect(page.getByTestId('profile-2fa-proof')).toBeVisible()
+})
+
+test('opens the add-a-way-in dialog at the chooser once an administrator switched its operation off', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/security/2fa')
+  await expect(page.getByTestId('hilos-step-up-table')).toHaveCount(1)
+  const operation = shownByTestId(
+    page,
+    'hilos-step-up-switch-add_sign_in_method',
+  )
+  await expect(operation).toBeChecked()
+  await operation.click()
+  await expect(operation).not.toBeChecked()
+
+  await gotoPage(page, '/profile/sign-in')
+  await clickSubmit(page.getByTestId('profile-sign-in-add'))
+  await expect(page.getByTestId('profile-sign-in-choose-phone')).toBeVisible()
+  await expect(page.getByTestId('step-up')).toHaveCount(0)
 })
 
 test('skips a protected operation disabled by an administrator', async ({

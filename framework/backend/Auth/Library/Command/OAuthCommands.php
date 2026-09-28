@@ -19,6 +19,8 @@ use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\OAuth\OAuthStateSigner;
+use Hilos\Auth\StepUp\StepUpGate;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
@@ -106,13 +108,17 @@ final class OAuthCommands extends AbstractLibraryCommands
      * keeps them in this order. Only the hash of the tab's key goes along; the key stays with
      * the tab, for the one presentation after a reconnect.
      *
+     * A link-mode return asks the add-a-way-in confirmation again (HIL-1138): the return is the
+     * second step of that operation, and the confirmation may have run out while the person was at
+     * the provider. A login-mode return has no account to add to and asks nothing.
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param OAuthCallbackActionDTO $dto Parsed callback payload (provider, code, state)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValidationException When the provider is switched off, the project has no OAuth wiring, the provider is unknown,
-     *     or the state is invalid
+     *     the state is invalid, or a link-mode return is not confirmed
      * @throws InvalidArgumentException When the hand-off to the OAuth agent cannot be named or queued
-     * @throws HilosException When the provider registry or the sign-in method setting cannot be read
+     * @throws HilosException When the provider registry, the sign-in method setting, or the confirmation cannot be read
      */
     public function callbackOAuth(string $acceptKey, OAuthCallbackActionDTO $dto): void
     {
@@ -138,6 +144,7 @@ final class OAuthCommands extends AbstractLibraryCommands
                 throw new ValidationException(AuthMessages::OAUTH_VERIFICATION_FAILED);
             }
             $linkUserId = $acting->userId;
+            new StepUpGate()->require($acting->sessionToken, $linkUserId, StepUpOperationKey::ADD_SIGN_IN_METHOD);
         }
 
         $tripKeyHash = HilosOAuthTrip::hashKey($dto->tripKey);

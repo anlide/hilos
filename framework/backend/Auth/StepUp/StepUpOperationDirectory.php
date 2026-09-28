@@ -49,6 +49,21 @@ abstract class StepUpOperationDirectory
                 opensOnBlockedCard: true,
                 passesWithNothingToConfirm: true,
             ),
+            StepUpOperationKey::ADD_AUTHENTICATOR_APP => new StepUpOperation(
+                StepUpOperationKey::ADD_AUTHENTICATOR_APP,
+                'Add an authenticator app',
+                'add an authenticator app',
+                false,
+                passesWithNothingToConfirm: true,
+                opensWithSecondFactorProof: true,
+            ),
+            StepUpOperationKey::ADD_SIGN_IN_METHOD => new StepUpOperation(
+                StepUpOperationKey::ADD_SIGN_IN_METHOD,
+                'Add a way to sign in',
+                'add a way to sign in',
+                false,
+                passesWithNothingToConfirm: true,
+            ),
         ];
     }
 

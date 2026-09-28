@@ -15,6 +15,9 @@ use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordRequestActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
+use Hilos\Auth\StepUp\StepUpMethod;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -572,6 +575,22 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email));
 
             ExecutionContext::setCurrentAcceptKey('profile-ak');
+            // Adding a way in is a protected operation (HIL-1138), and the address the link
+            // proved is the proof the gate asks for: the confirmation is passed with a mailed
+            // code before the add, as the profile's dialog does.
+            $this->seedKnownStepUpCode($email, $userId);
+            $this->usersLibrary()->onAgentAction(
+                'profile-ak',
+                HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
+                new StepUpConfirmActionDTO(
+                    StepUpOperationKey::ADD_SIGN_IN_METHOD,
+                    StepUpMethod::EMAIL_CODE,
+                    self::EMAIL_ADD_CODE,
+                    false,
+                    '',
+                    null,
+                ),
+            );
             $this->usersLibrary()->onAgentAction(
                 'profile-ak',
                 HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST,
@@ -1102,6 +1121,25 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $this->verifications()->voidActive(VerificationType::EMAIL_ADD, $email, $this->maxAttempts());
         $this->verifications()->createChallenge(
             VerificationType::EMAIL_ADD,
+            $email,
+            $userId,
+            self::EMAIL_ADD_CODE,
+            self::TTL_SECONDS,
+        );
+    }
+
+    /**
+     * Seeds the confirmation challenge the add-a-way-in step verifies, for one user (HIL-1138).
+     *
+     * @param string $email Confirmed address the code goes to
+     * @param int $userId Session user the challenge is minted for
+     * @throws HilosException When the challenge insert fails
+     */
+    private function seedKnownStepUpCode(string $email, int $userId): void
+    {
+        $this->verifications()->voidActive(VerificationType::STEP_UP, $email, $this->maxAttempts());
+        $this->verifications()->createChallenge(
+            VerificationType::STEP_UP,
             $email,
             $userId,
             self::EMAIL_ADD_CODE,

@@ -14,7 +14,7 @@
 // of them from an earlier run were once mistaken for the code a person had just
 // asked for — which is the whole reason the recipient now names the channel.
 
-import { waitForAnyMailTo } from './standMailbox.mjs'
+import { waitForAnyMailTo, waitForMailToMatching } from './standMailbox.mjs'
 
 /** The mail domain the gateway re-addresses a caught SMS under. */
 const SMS_MAIL_DOMAIN = 'sms.stand'
@@ -50,11 +50,56 @@ export function uniquePhone() {
  * @throws {Error} When the delivered message carries no code.
  */
 export async function waitForSmsCode(phone) {
-  const mail = await waitForAnyMailTo(`${phone}@${SMS_MAIL_DOMAIN}`)
-  const code = /(\d{4,})/.exec(mail.subject)?.[1]
+  const code = codeOf(await waitForAnyMailTo(`${phone}@${SMS_MAIL_DOMAIN}`))
   if (code === undefined) {
     throw new Error(`the SMS to ${phone} carried no code`)
   }
 
   return code
+}
+
+/**
+ * Wait for a code the stand texted to one number AFTER the one already read, and
+ * return it.
+ *
+ * A second code on one number - a confirmation asked right after a sign-in
+ * (HIL-1138) - lands under the same address as the first, and the first stays
+ * the newest until the second arrives. The code already read is what tells
+ * them apart; a message carrying no code, or the same one again, is passed over.
+ *
+ * @param {string} phone Recipient number in canonical E.164, as `uniquePhone` produces it.
+ * @param {string} previous The code already read from this number.
+ * @returns {Promise<string>} The plaintext verification code that is not the previous one.
+ * @throws {Error} When no later message with a code reaches the interceptor.
+ */
+export async function waitForAnotherSmsCode(phone, previous) {
+  const mail = await waitForMailToMatching(
+    `${phone}@${SMS_MAIL_DOMAIN}`,
+    (held) => {
+      const code = codeOf(held)
+
+      return code !== undefined && code !== previous
+    },
+  )
+  const code = codeOf(mail)
+  if (code === undefined) {
+    throw new Error(`the later SMS to ${phone} carried no code`)
+  }
+
+  return code
+}
+
+/**
+ * The code a caught text carries, read off its subject.
+ *
+ * The subject is the message text itself, which is what a person reads out of
+ * the mailbox list without opening anything. The body cannot be matched on
+ * loosely: it names the recipient and the time above the text, and a bare
+ * digit-run would answer with the phone number.
+ *
+ * @param {import('./standMailbox.mjs').InterceptedMail} mail A caught text.
+ * @returns {string | undefined} The digit-run of the code, or undefined when the text carries none.
+ */
+function codeOf(mail) {
+  return /(\d{4,})/.exec(mail.subject)?.[1]
 }

@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
+use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Constants\EnvConstants;
@@ -32,6 +33,7 @@ use Hilos\Mail\EmailMessage;
 use Hilos\Mail\HilosMailer;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\Users\AdminAudience;
@@ -191,6 +193,26 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     }
 
     /**
+     * Seeds a live confirmation of one operation for the person, in one browser (HIL-1138).
+     *
+     * What the confirmation step would have written, without the step: the case is about what
+     * the operation does once it is open, not about the proof.
+     *
+     * @param string $operation Declared operation key
+     * @param string $token Session token of the browser the confirmation belongs to
+     * @throws HilosException When the confirmation row cannot be written
+     */
+    protected function confirmStepUp(string $operation, string $token = self::SESSION_TOKEN): void
+    {
+        Hilos::$db->stepUps->actions->confirm(
+            ProtectedModeRuntime::hashSessionToken($token),
+            self::USER_ID,
+            $operation,
+            date('Y-m-d H:i:s', time() + self::TTL_SECONDS),
+        );
+    }
+
+    /**
      * @return ObjectUserVerifications Verification persistence primitives
      * @throws HilosException When the collection is unavailable
      */
@@ -326,6 +348,9 @@ final class ProfileIntegrationLibrary extends AbstractUsersLibraryAgent
 {
     public array $messages = [];
 
+    /** OAuth wiring a case hands the library, or null for a project that links no provider. */
+    public ?OAuthService $oauthService = null;
+
     /**
      * @param string $displayName Unused display name
      * @return int Never returns
@@ -355,6 +380,14 @@ final class ProfileIntegrationLibrary extends AbstractUsersLibraryAgent
     protected function logAgentInfo(string $message): void
     {
         $this->messages[] = $message;
+    }
+
+    /**
+     * @return ?OAuthService The service a case handed over, or null when it handed none
+     */
+    protected function buildOAuthService(): ?OAuthService
+    {
+        return $this->oauthService;
     }
 }
 
