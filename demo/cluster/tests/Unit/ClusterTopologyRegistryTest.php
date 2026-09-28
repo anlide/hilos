@@ -251,7 +251,6 @@ final class ClusterTopologyRegistryTest extends TestCase
             __DIR__ . '/../../backend/Database/Migration/Schema',
             CliManager::class,
             ClusterRtContext::class,
-            ClusterDbContext::class,
         );
 
         $this->addToAssertionCount(1);

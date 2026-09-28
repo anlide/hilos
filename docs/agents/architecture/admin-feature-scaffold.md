@@ -26,8 +26,7 @@ openness is an explicit declaration on the page class. The activation needs no
 per-page guard for that, but the project must wire identity —
 `resolveConnectionIdentity()` on its `BrowserContext` — or the mounted feature
 denies everyone. `isAdmin()` is answered by the framework from
-`hilos_user.admin` (not in the code yet — HIL-1198); until that leaf lands the
-project wires it on the same `BrowserContext`. See
+`hilos_user.admin`; the project wires nothing for it. See
 [page-access-control.md](page-access-control.md).
 
 ## Generate against the contract
@@ -117,9 +116,8 @@ requires, in dependency order (the table merges sources that must exist first):
    `FEATURES` ([../app-topology.md](../app-topology.md#feature-declaration)).
    Both pages, their table bindings and the users table become required at
    startup; the presence source in step 3 is checked by the project's topology
-   test, since a runtime collection is not visible in the constants. Today the
-   test also checks the block source of step 2, which the target structure
-   drops (not in the code yet — HIL-1198).
+   test, since a runtime collection is not visible in the constants. The test
+   checks no block source: there is none to check.
 2. **The people table.** Copy the framework's migration stub
    `create_hilos_user.sql` among the project's migrations, like every framework
    table's; no entity is generated — the person is the framework's `hilos_user`.
@@ -128,12 +126,8 @@ requires, in dependency order (the table merges sources that must exist first):
    framework's `users` key ([../orm/inheritance.md](../orm/inheritance.md));
    *(Contract Gate: the subclass's columns.)* No block source and no line in
    `processWideReadCollections()` is needed from the project: `block` is a
-   framework column and the framework reads it (not in the code yet —
-   HIL-1198). Until that leaf lands, the framework's `users` collection already
-   supplies `Hilos\Database\View\Collection\HilosUserBlockSource`; the project
-   generates neither a person entity nor a block source. It still names `users`
-   in `DbContext::processWideReadCollections()`, because
-   `Hilos\Users\AccountBlockReader` asks in whatever process runs the guard.
+   framework column the framework reads itself, and `users` is among the
+   framework's own process-wide reads.
 3. **RT presence source.** Generate an RT connections collection that
    `implements Hilos\Runtime\View\Collection\HilosPresenceSource`, returning a
    `HilosUserPresenceSummary` from `summaryForUser(?int)`. Register it on the

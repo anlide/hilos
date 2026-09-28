@@ -60,8 +60,7 @@ the recipe before generating code.
    the `ADMIN` access level from `AbstractHilosPage`. Wire the project identity
    seam — `resolveConnectionIdentity()` on the project `BrowserContext` — or the
    mounted feature denies everyone; `isAdmin()` is the framework's answer from
-   `hilos_user.admin` (`docs/agents/architecture/page-access-control.md`, and the
-   recipe for what the project still wires today).
+   `hilos_user.admin` (`docs/agents/architecture/page-access-control.md`).
 6. Pass every DB-entity / RT-item change through the contract gate before writing.
 7. Validate with composer scripts via `$hilos-testing-cli`; keep the project's
    admin e2e green. Registering the feature's page / agent / table in the
@@ -77,8 +76,7 @@ the recipe before generating code.
 - Back presence with a project RT collection implementing `HilosPresenceSource`,
   not framework analytics (process-local, not user-keyed).
 - The account block fact is the framework's: `block` is a column of `hilos_user`
-  and the framework reads it. Do not generate a project block source unless the
-  recipe says the project still carries one today.
+  and the framework reads it. Do not generate a project block source.
 - Scaffold framework-owned features only; a project's own divergent table is
   Mode-2 authoring — do not generate it with this recipe.
 - Stop and ask before adding columns to `hilos_user` in a project subclass or

@@ -8,7 +8,6 @@ use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\EnvConstants;
-use Hilos\Users\AccountBlockReader;
 use Hilos\DataExport\DTO\DataExportOrderActionDTO;
 use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -272,7 +271,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         $person = $connection->userId;
         if ($person === null) {
             $person = Hilos::$db->sessions->findByToken($connection->sessionToken)?->blockedUserId;
-            if ($person === null || !(new AccountBlockReader())->isBlocked($person)) {
+            if ($person === null || Hilos::$db->users[$person]?->block !== true) {
                 throw new ValidationException(DataExportMessages::NOBODY);
             }
         }

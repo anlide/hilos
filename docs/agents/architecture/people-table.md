@@ -64,7 +64,7 @@ where it is today — a hook the project implements.
 | Creating a person, the name shown for one, "an administrator is not deleted" (`assertAdministratorMayDelete()`) | (not in the code yet — HIL-1194) |
 | Renaming a person — the write, the journal row, the notification | (not in the code yet — HIL-1195) |
 | Creating the first administrator, granting rights, blocking (`applyAccountBlock()`), the replacement check before a grant is taken away | (not in the code yet — HIL-1197) |
-| The `ADMIN` gate (`isAdmin()`), reading `block`, the circle of administrators (`ADMIN_AUDIENCE`), the "me" the handshake answers with | (not in the code yet — HIL-1198) |
+| The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
 | The tombstone of a merged account and "is this account already folded" | (not in the code yet — HIL-1199) |
 | Erasing a person — the framework deletes the person's row last, after the project's rows ([account-deletion.md](account-deletion.md)) | (not in the code yet — HIL-1200) |
 | The people table and the merge-candidates table in the admin section | (not in the code yet — HIL-1201) |

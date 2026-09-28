@@ -71,7 +71,6 @@ use Demo\Tasks\Pages\Hilos\Users\UsersPage;
 use Demo\Tasks\Pages\MainPage;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Demo\Tasks\Tables\HilosUser\HilosUsersTable;
-use Demo\Tasks\Users\TasksAdminAudience;
 use Demo\Tasks\Tables\TasksTableContext;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\AuthCodeAgentDaemon;
@@ -152,8 +151,6 @@ final class Hilos extends HilosFacade
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
 
     protected const ?string LEGAL_CATALOG = TasksLegalCatalog::class;
-
-    protected const string ADMIN_AUDIENCE = TasksAdminAudience::class;
 
     protected const array FEATURES = [
         HilosFeature::SETTINGS,

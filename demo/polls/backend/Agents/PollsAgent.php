@@ -26,9 +26,7 @@ use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
-use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
 /**
@@ -96,10 +94,8 @@ final class PollsAgent extends AbstractAgent
         $userId = $frame->userId;
         // One identity for the whole frame: every socket it reaches belongs to the one session
         // it is about - the ones it names and the rest of the session's, which only this
-        // register knows of yet. A session with nobody in it needs no lookup to be described.
-        $identity = $this->handshakeResponseFor(
-            $userId === null ? null : Hilos::$db->sessions->findByToken($frame->sessionToken),
-        );
+        // register knows of yet.
+        $identity = $this->handshakeIdentity($frame);
 
         foreach (
             Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken)
@@ -287,40 +283,6 @@ final class PollsAgent extends AbstractAgent
             default:
                 throw new AgentUnknownSignalException($name);
         }
-    }
-
-    /**
-     * Builds the identity half of a handshake response, reading the display name from this
-     * demo's own user table - the whole of what stayed behind when the sessions left
-     * (HIL-710). The clock is NOT filled here: the framework stamps it on the way out.
-     *
-     * The impersonator slots stay null: this demo has no impersonation, so the
-     * only identity a session can carry is its own. A session with no user - the
-     * ordinary state of a visitor since HIL-611 - yields the anonymous response,
-     * which leaves the frontend without a current user; the guest name it shows
-     * instead travels on its own signal and is not an identity.
-     *
-     * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return HandshakeResponseSignalData Handshake response for the session
-     * @throws HilosException When the user lookup fails
-     */
-    private function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
-    {
-        $userId = $session?->userId;
-        if ($userId === null) {
-            return new HandshakeResponseSignalData();
-        }
-
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            return new HandshakeResponseSignalData();
-        }
-
-        return new HandshakeResponseSignalData(
-            selfId: (int)$user->id,
-            selfName: $user->name,
-            selfAdmin: $user->admin,
-        );
     }
 
     /**

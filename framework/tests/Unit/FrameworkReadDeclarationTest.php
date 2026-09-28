@@ -190,6 +190,13 @@ final class FrameworkReadDeclarationTest extends TestCase
             SourceChange::KIND_DB,
             HilosDbContext::verifierCircle,
         ));
+        // Who a person is: the ADMIN gate, the block guards and the handshake's identity ask it
+        // wherever they stand, a worker serving a page with no subscription of its own included
+        // (HIL-750, HIL-1198).
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::users,
+        ));
     }
 
     /**

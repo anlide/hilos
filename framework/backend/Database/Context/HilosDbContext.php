@@ -6,6 +6,7 @@ namespace Hilos\Database\Context;
 
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Actions\Collection\DbActions as CollectionDbActions;
@@ -38,6 +39,7 @@ use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
+use Hilos\Users\AdminAudience;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
@@ -457,7 +459,7 @@ abstract class HilosDbContext extends DbContext
     /**
      * Names the framework collections read from any process at all.
      *
-     * Six, and each for its own seam. Sessions and identities answer "whose session is this",
+     * Seven, and each for its own seam. Sessions and identities answer "whose session is this",
      * which {@see SessionCarrier} asks in every process a frame arrives in - outside any agent
      * and before any page subscription, so nothing else declares them. Settings is read by seams
      * everywhere and is the one eager collection of the three, so a worker holding it unaddressed
@@ -482,6 +484,15 @@ abstract class HilosDbContext extends DbContext
      * parent's; declared by one agent, the read was refused in every other worker, the
      * initiator's own included (HIL-1096).
      *
+     * People are read wherever the framework asks who a person is, and it asks in more places
+     * than any one list of readers holds. The ADMIN gate ({@see BrowserContext::isAdmin()})
+     * answers in whatever worker serves a gated page, a page that subscribes to nothing of its
+     * own included (HIL-750); the account block is read by each guard where it stands - the
+     * sign-in, the handshake, the block change, the copy handed to a blocked person; the
+     * handshake's identity ({@see AbstractAgent::handshakeIdentity()}) is built in the agent that
+     * holds the sockets; and the administrators' circle ({@see AdminAudience}) is asked by whatever
+     * has to reach them. The collection loads by key, so the entry stays inert where nobody signs in.
+     *
      * Named rather than counted: what is here is what the framework is known to read that way,
      * and a seam this list forgets shows up as a refused read rather than as a stale row.
      *
@@ -497,6 +508,7 @@ abstract class HilosDbContext extends DbContext
             self::notifications,
             self::oauthProviders,
             self::verifierCircle,
+            self::users,
         ];
     }
 

@@ -26,7 +26,7 @@ Every page class declares (or inherits) `ACCESS_LEVEL`, a `PageAccessLevel`:
 - `PUBLIC` — no identity check. The `AbstractPage` default, so project pages
   keep the anonymous-read model unless they declare otherwise.
 - `AUTHENTICATED` — the connection must resolve to a user, else 401.
-- `ADMIN` — the user must also pass the project's `isAdmin()` seam, else 403
+- `ADMIN` — the user must also pass the `isAdmin()` seam, else 403
   (401 when anonymous). The `AbstractHilosPage` default: every framework admin
   page is closed unless it explicitly relaxes its level.
 
@@ -65,8 +65,9 @@ mandatory — silence would open the profile to guests.
 
 Identity comes from two `BrowserContext` seams (see the identity hook below):
 `resolveActionUserId()` answers "which user", and `isAdmin(int $userId): bool` —
-framework default `false` — answers "is that user an admin". A project without a
-mounted browser context fails **closed**: nothing resolves, the surface denies.
+answered by the framework from `hilos_user.admin` — answers "is that user an
+admin". A project without a mounted browser context fails **closed**: nothing
+resolves, the surface denies.
 
 ## The view verdict (the admin view mode)
 
@@ -173,12 +174,15 @@ seam (`->userId`), not an override point, so a project has one identity source
 and not two that can disagree.
 
 The **page access level** uses a second seam next to it: `isAdmin(int $userId):
-bool`, framework default `false` (deny). The project answers it from its own
-user storage (e.g. the chat demo reads `Hilos::$db->users[$userId]?->admin`),
-defensively — any storage failure denies. Unlike a declarative `ACCESS` guard,
-the seam runs in whatever worker serves the page, so it must read a source that
-is readable there; when a central authorization hook lands (HIL-309), only this
-method's body changes.
+bool`. The framework answers it from its own person table — the admin flag of the
+user's `hilos_user` row; a missing row, or a process with no database layer,
+denies, while a failed read is thrown rather than turned into a denial
+(HIL-575). The block is not looked at: a blocked account holds no session to ask
+with (HIL-289). Unlike a declarative `ACCESS` guard, the seam runs in whatever
+worker serves the page, so it reads a source readable there — the framework
+declares `users` in `HilosDbContext::processWideReadCollections()` (HIL-750). A
+project may override the seam when it decides otherwise; when a central
+authorization hook lands (HIL-309), only this method's body changes.
 
 ## Error codes
 

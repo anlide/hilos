@@ -118,8 +118,8 @@ the silence visible.
 page and both make it re-decidable; they read identity from different places:
 
 - the **level** resolves through the `isAdmin()` seam, which runs in whatever
-  worker serves the page and reads the project's own user storage. This is what
-  the framework admin surface itself uses, across agents.
+  worker serves the page and reads the framework's person table `hilos_user`.
+  This is what the framework admin surface itself uses, across agents.
 - an **`ACCESS` browser guard** is re-checked by the reactive fan-out inside the
   page's own agent, so it may only sit on a page whose `SUBSCRIPTION_AGENT_TYPE`
   agent OWNS the identity sources it reads — the cross-agent guard rule in
@@ -219,11 +219,9 @@ Follow the framework extension contract in
   hard-coding a project RT key.
 - The account `block` column and its reading are the framework's: `block` is a
   column of the people table `hilos_user`, and the framework reads it itself
-  wherever a guard runs, so the project implements no block source
-  (not in the code yet — HIL-1198). Today the framework's people collection
-  (`users`) implements `HilosUserBlockSource` and framework code asks through
-  `AccountBlockReader`, as a process-wide read; what becomes of those two seams
-  is that leaf's question, not this page's. Whoever writes `block` sends the
+  wherever a guard runs, as any column of its own collection — there is no
+  block source to implement and no door to ask through, and the framework
+  declares `users` a process-wide read of its own. Whoever writes `block` sends the
   sessions library `hilos_account_block_changed` {userId}; the library reads the
   flag itself, signs the person out, refuses their sign-in and leaves the
   "Access closed" card the shell draws (HIL-289). A missed frame is caught at
@@ -250,7 +248,10 @@ That audience judges the requesting administrator and protects the last active o
 All three are the framework's implementation on the target structure, since the
 columns they read are the framework's: `applyAccountBlock()` (not in the code
 yet — HIL-1197), `assertAdministratorMayDelete()` (not in the code yet —
-HIL-1194), `ADMIN_AUDIENCE` (not in the code yet — HIL-1198).
+HIL-1194). `ADMIN_AUDIENCE` already is: its default `AdminAudience` answers the
+unblocked `hilos_user` rows that say admin, and a project points the constant at
+a subclass only to narrow that circle — the chat leaves out merged accounts
+until the merge has a framework table (HIL-1199).
 
 ## Preferred Shape
 

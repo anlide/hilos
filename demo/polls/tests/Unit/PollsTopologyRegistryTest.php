@@ -662,7 +662,6 @@ final class PollsTopologyRegistryTest extends TestCase
             __DIR__ . '/../../backend/Database/Migration/Schema',
             CliManager::class,
             PollsRtContext::class,
-            PollsDbContext::class,
         );
 
         $this->addToAssertionCount(1);

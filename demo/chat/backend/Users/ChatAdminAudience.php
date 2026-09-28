@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Users;
 
-use Demo\Chat\Browser\ChatBrowserContext;
+use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Hilos;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -14,15 +14,20 @@ use Hilos\Users\AdminAudience;
 /**
  * ChatAdminAudience - the chat demo's administrators (HIL-279).
  *
- * Answers from the durable user rows, by the same admin flag the page-level gate reads
- * ({@see ChatBrowserContext::isAdmin()}), so a person who can open the admin surface and a
- * person who hears from it are the same person.
+ * Who says admin and who is blocked is the framework's answer, by the same `hilos_user` flags
+ * the page-level gate reads. The chat adds one thing on top: an account merged into a survivor
+ * is no reader either. Merging lives in the chat's own column until it has a framework table of
+ * its own (HIL-1199), and so does this narrowing.
  */
 final class ChatAdminAudience extends AdminAudience
 {
     /**
-     * Blocked accounts and accounts merged into a survivor are left out: both keep a row
-     * that still says admin, and neither is a reader who can act on what arrives.
+     * The framework's administrators, less the accounts merged into a survivor.
+     *
+     * A merged account already carries a block ({@see UserActions::tombstone()}), which keeps it
+     * out of the framework's answer; it is left out here as well because an administrator may
+     * lift that block, and the row would then say admin again for a person who is somebody else
+     * by now.
      *
      * @return list<int> Durable user ids of the unblocked, unmerged admins
      * @throws DatabaseException When loading the user collection fails
@@ -32,15 +37,10 @@ final class ChatAdminAudience extends AdminAudience
     protected static function userIds(): array
     {
         $userIds = [];
-        foreach (Hilos::$db->users->listAll() as $user) {
-            if ($user->id === null || $user->admin !== true) {
-                continue;
+        foreach (parent::userIds() as $userId) {
+            if (Hilos::$db->users[$userId]?->mergedInto === null) {
+                $userIds[] = $userId;
             }
-            if ($user->block === true || $user->mergedInto !== null) {
-                continue;
-            }
-
-            $userIds[] = $user->id;
         }
 
         return $userIds;

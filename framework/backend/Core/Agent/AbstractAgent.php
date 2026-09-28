@@ -491,9 +491,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     /**
      * Sends one socket the handshake response describing its session, stamped by the framework.
      *
-     * The project answers who the session is - the display names come from its own user
-     * store, and while impersonating, the administrator behind the takeover - and this
-     * stamps on what no project can know: the server clock the browser measures its own
+     * Who the session is comes built by {@see handshakeIdentity()} - the person's name and
+     * admin flag, and while impersonating, the administrator behind the takeover - and the
+     * project only hands it over, once per frame. This stamps on what the identity does not say: the server clock the browser measures its own
      * offset against, the registration step the session left unfinished, whether this
      * installation can deliver a one-time code at all, the sign-in methods it offers and
      * whether a passkey may start an account on an unconfirmed address, the success ack
@@ -502,13 +502,13 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *
      * It lives here, and every send path goes through it, so that no project can ship a
      * response without the stamp. That guarantee used to come from a final method on the
-     * session-host trait; when sessions became a library of their own the identity stayed
+     * session-host trait; when sessions became a library of their own the sending stayed
      * with the project (HIL-710), and the guarantee had to move to where the project sends
      * from rather than be lost with the trait.
      *
      * @param string $signalName Project handshake-response signal name the frontend routes on
      * @param string $acceptKey Accept key of the connection being told
-     * @param HandshakeResponseSignalData $identity Who the session is, as the project builds it
+     * @param HandshakeResponseSignalData $identity Who the session is, as handshakeIdentity() builds it
      * @param SessionStateSignalData $state Session state frame the response answers
      * @throws InvalidArgumentException When the signal name is empty
      * @throws DatabaseException When the sign-in method setting cannot be read
@@ -533,6 +533,56 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                 )
                 ->withPendingAck($state->pendingAck)
                 ->withAccountBlocked($state->accountBlocked),
+        );
+    }
+
+    /**
+     * Builds who a session is, for the handshake response: the identity half, unstamped.
+     *
+     * The framework answers it from its own tables - the session row the frame names, and the
+     * `hilos_user` row of the person behind it - so a project that holds the sockets hands the
+     * frame over and sends what comes back through {@see sendHandshakeResponse()}, once per
+     * frame and to every socket of it. A frame with nobody in it, a session that is gone or
+     * holds no user, and a person whose row is gone all answer the anonymous response, which
+     * clears the frontend's current user. An impersonated session also names the administrator
+     * behind the takeover when that row is there; a project without impersonation never marks
+     * a session with one, so its impersonator slots stay null.
+     *
+     * The clock, the unfinished registration step, the ack and the "Access closed" card are
+     * NOT filled here: the framework stamps them on the way out, from the same frame.
+     *
+     * @param SessionStateSignalData $state Session state frame the response answers
+     * @return HandshakeResponseSignalData Identity of the session, unstamped
+     * @throws DatabaseException When the session or a person cannot be read
+     * @throws LogicException When the session or user collection is not configured
+     * @throws InvalidArgumentException When a loaded session or user object does not match its collection
+     */
+    protected function handshakeIdentity(SessionStateSignalData $state): HandshakeResponseSignalData
+    {
+        if ($state->userId === null) {
+            return new HandshakeResponseSignalData();
+        }
+
+        $session = Hilos::$db->sessions->findByToken($state->sessionToken);
+        $userId = $session?->userId;
+        if ($session === null || $userId === null) {
+            return new HandshakeResponseSignalData();
+        }
+
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            return new HandshakeResponseSignalData();
+        }
+
+        $impersonatorId = $session->impersonatorUserId;
+        $impersonator = $impersonatorId !== null ? (Hilos::$db->users[$impersonatorId] ?? null) : null;
+
+        return new HandshakeResponseSignalData(
+            selfId: (int)$user->id,
+            selfName: $user->name,
+            selfAdmin: $user->admin,
+            impersonatorId: $impersonator !== null ? (int)$impersonator->id : null,
+            impersonatorName: $impersonator?->name,
         );
     }
 

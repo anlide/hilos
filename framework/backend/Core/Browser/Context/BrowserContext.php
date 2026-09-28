@@ -31,7 +31,7 @@ use Hilos\Core\Browser\DTO\BrowserTableWindow;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\DTO\TableFacetCountsSignalData;
 use Hilos\Core\Table\DTO\TableFacetsDTO;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -107,7 +107,6 @@ use Throwable;
 use ArrayAccess;
 use Closure;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\HilosException;
 
 /**
  * Base browser-facing context.
@@ -5524,32 +5523,36 @@ abstract class BrowserContext
     }
 
     /**
-     * Whether the authenticated user holds the project's admin privilege.
+     * Whether the authenticated user holds the admin privilege.
      *
      * The identity seam the page access gate ({@see PageAccessGate}) asks for
-     * ADMIN-level pages. The framework cannot read a project's user storage from
-     * this worker, so the default denies: a project that has not wired admin
-     * identity closes its admin surface to everyone rather than opening it. A
-     * project overrides this from its own runtime or database source. When a
-     * central authorization hook lands (HIL-309), only this method's body
-     * changes — no page declaration moves.
+     * ADMIN-level pages. The framework answers it from its own person table: the
+     * admin flag of the user's `hilos_user` row, the same flag admin:grant writes.
+     * A missing row denies, and so does a process with no database layer at all:
+     * nobody is an administrator there. A read that failed is not a denial — it
+     * passes through (HIL-575). The block is not looked at: a blocked account holds
+     * no session to ask with (HIL-289). A project overrides this only when it
+     * decides otherwise; when a central authorization hook lands (HIL-309), only
+     * this method's body changes — no page declaration moves.
      *
-     * An override reading the DATABASE must name what it reads in
-     * {@see DbContext::processWideReadCollections()}, and nowhere else (HIL-750).
+     * The read of the person table is named in
+     * {@see HilosDbContext::processWideReadCollections()}, and nowhere else (HIL-750).
      * The gate answers for every gated page, in whatever worker serves it,
      * including pages that declare nothing of their own — so no page's topology
-     * and no {@see AbstractPage::READS_DB} ever covers this read. Left
-     * undeclared it does not fail loudly either: an override reads defensively
-     * and turns the refusal into a denial, which reaches a person as their own
-     * admin surface being forbidden to them.
+     * and no {@see AbstractPage::READS_DB} ever covers this read. An override
+     * reading anything else from the DATABASE names it there too: left undeclared
+     * it is refused, and the refusal reaches a person as their own admin surface
+     * being forbidden to them.
      *
      * @param int $userId Authenticated durable user id
      * @return bool Whether this user may access ADMIN-level pages and actions
-     * @throws HilosException When the project's administrator lookup fails
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     public function isAdmin(int $userId): bool
     {
-        return false;
+        return (Hilos::$db?->users[$userId] ?? null)?->admin === true;
     }
 
     /**

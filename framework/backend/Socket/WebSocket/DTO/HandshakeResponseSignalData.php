@@ -9,6 +9,7 @@ use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -17,8 +18,8 @@ use Hilos\Core\Router\SignalDataInterface;
  * HandshakeResponseSignalData - Signal data for the session handshake response.
  *
  * Framework-owned (HIL-361): the payload is entirely session-generic, so every
- * project reuses it and resolves the display names through its own
- * `handshakeResponseFor(session)` hook. Carries the session-scope payload in the
+ * project reuses it, and who the session is comes built by the framework
+ * ({@see AbstractAgent::handshakeIdentity()}). Carries the session-scope payload in the
  * `{entities: {currentUser: {...}, impersonatedBy: null|{...}}}` wire form: the
  * frontend normalizer upserts the current-user (and, when impersonating, the
  * impersonating admin) entity fragment into the session entity store and places

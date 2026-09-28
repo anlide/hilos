@@ -31,7 +31,8 @@ final class AdminAudienceLsbResolutionTest extends TestCase
 
     public function testBareBaseAccessorResolvesProjectAudienceAfterInit(): void
     {
-        // Sanity: without a project facade captured, the base accessor sees the empty base.
+        // Sanity: without a project facade captured, the base accessor sees the framework base,
+        // which names nobody in a process with no database layer.
         self::assertSame(AdminAudience::class, Hilos::adminAudienceClass());
         self::assertSame([], Hilos::adminAudienceClass()::all());
 

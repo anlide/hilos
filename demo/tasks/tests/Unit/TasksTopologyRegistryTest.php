@@ -703,7 +703,6 @@ final class TasksTopologyRegistryTest extends TestCase
             __DIR__ . '/../../backend/Database/Migration/Schema',
             CliManager::class,
             TasksRtContext::class,
-            TasksDbContext::class,
         );
 
         $this->addToAssertionCount(1);

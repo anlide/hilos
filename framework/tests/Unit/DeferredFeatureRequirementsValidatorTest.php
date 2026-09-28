@@ -13,14 +13,7 @@ use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
-use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Object\Item\Object_;
-use Hilos\Database\Object\Objects;
-use Hilos\Database\View\Collection\DbCollection;
-use Hilos\Database\View\Collection\HilosUserBlockSource;
-use Hilos\Database\View\Item\DbItem;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosConnections;
@@ -39,10 +32,9 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for the feature requirements that startup cannot check.
  *
  * The features are synthetic, as in {@see FeatureActivationValidatorTest}: the registry seam
- * hands the validator three definitions of its own, so what is under test is how a requirement is
- * answered - a migration, a registered command, a mounted presence source, a block source read in
- * every process - rather than what the real features ask for, which each demo's own topology test
- * asserts against its own layout.
+ * hands the validator two definitions of its own, so what is under test is how a requirement is
+ * answered - a migration, a registered command, a mounted presence source - rather than what the
+ * real features ask for, which each demo's own topology test asserts against its own layout.
  *
  * The migrations are real files in a temporary directory, because the thing being verified is
  * exactly that a directory of SQL is read correctly.
@@ -70,7 +62,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         }
 
         $this->migrationPaths = [];
-        SourceInterestRegistry::readsWhatItMounts();
     }
 
     public function testProjectThatOwesNothingElsePasses(): void
@@ -79,7 +70,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
 
         $this->addToAssertionCount(1);
@@ -98,7 +88,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $path,
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
     }
 
@@ -118,7 +107,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $path,
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
     }
 
@@ -138,7 +126,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $path,
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
     }
 
@@ -154,7 +141,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             CliManager::class,
             DeferredRequirementsPresentContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
     }
 
@@ -170,7 +156,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsAbsentContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
     }
 
@@ -186,7 +171,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             null,
-            DeferredRequirementsTestDbContext::class,
         );
     }
 
@@ -196,7 +180,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsConnectedContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
 
         $this->addToAssertionCount(1);
@@ -214,7 +197,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
     }
 
@@ -226,7 +208,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
-            DeferredRequirementsTestDbContext::class,
         );
 
         $this->addToAssertionCount(1);
@@ -235,13 +216,12 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
     public function testProjectWithoutFeaturesReadsNothingAtAll(): void
     {
         // Nothing declared and no runtime context means nothing owed: no directory is scanned, no
-        // CLI manager is built and no runtime or database context is constructed - which is why the
-        // arguments below can be junk.
+        // CLI manager is built and no runtime context is constructed - which is why the arguments
+        // below can be junk.
         DeferredRequirementsEmptyHilos::validateDeferredFeatureRequirements(
             '/nonexistent/migrations',
             'NoSuchCliManagerClass',
             null,
-            'NoSuchDbContextClass',
         );
 
         $this->addToAssertionCount(1);
@@ -265,7 +245,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $path,
             'NoSuchCliManagerClass',
             DeferredRequirementsPresentContext::class,
-            'NoSuchDbContextClass',
         );
     }
 
@@ -275,7 +254,6 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
             $this->migrationsPath(self::CIRCLE_MIGRATION),
             'NoSuchCliManagerClass',
             DeferredRequirementsPresentContext::class,
-            'NoSuchDbContextClass',
         );
 
         $this->addToAssertionCount(1);
@@ -285,92 +263,13 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
     {
         // No runtime context, no freeze row: the node cannot freeze, so migrations that create
         // other tables but not the circle are not held against it.
-        DeferredRequirementsBlockHilos::validateDeferredFeatureRequirements(
+        DeferredRequirementsEmptyHilos::validateDeferredFeatureRequirements(
             $this->migrationsPath(['001_create_other.sql' => 'CREATE TABLE `unrelated` (`id` INT);']),
             'NoSuchCliManagerClass',
             null,
-            DeferredRequirementsBlockReadDbContext::class,
         );
 
         $this->addToAssertionCount(1);
-    }
-
-    /**
-     * Asked where a worker would ask it - no reader interest registered anywhere - and still
-     * answered: the check finds the source by what is mounted, not by reading it, or it would
-     * refuse every project in the unit test it runs in.
-     */
-    public function testProcessWideBlockSourcePassesWithoutAnyReaderInterest(): void
-    {
-        SourceInterestRegistry::readsWhatIsDelivered();
-
-        DeferredRequirementsBlockHilos::validateDeferredFeatureRequirements(
-            '/nonexistent/migrations',
-            'NoSuchCliManagerClass',
-            null,
-            DeferredRequirementsBlockReadDbContext::class,
-        );
-
-        $this->addToAssertionCount(1);
-    }
-
-    public function testDatabaseContextWithoutABlockSourceIsReported(): void
-    {
-        try {
-            DeferredRequirementsBlockHilos::validateDeferredFeatureRequirements(
-                '/nonexistent/migrations',
-                'NoSuchCliManagerClass',
-                null,
-                DeferredRequirementsBlockAbsentDbContext::class,
-            );
-            $this->fail('A project without a block source was expected to be refused.');
-        } catch (IncompleteFeatureActivationException $exception) {
-            $this->assertStringContainsString(
-                'HilosFeature::BACKUP is declared but no database collection of '
-                . DeferredRequirementsBlockAbsentDbContext::class . ' implements ' . HilosUserBlockSource::class,
-                $exception->getMessage(),
-            );
-            // Naming a process-wide read for a collection that does not exist would be noise.
-            $this->assertStringNotContainsString('processWideReadCollections()', $exception->getMessage());
-        }
-    }
-
-    public function testProjectWithoutADatabaseContextCannotSatisfyTheBlockSource(): void
-    {
-        $this->expectException(IncompleteFeatureActivationException::class);
-        $this->expectExceptionMessage(
-            'HilosFeature::BACKUP is declared but no database collection of a project without'
-            . ' a database context implements ' . HilosUserBlockSource::class,
-        );
-
-        DeferredRequirementsBlockHilos::validateDeferredFeatureRequirements(
-            '/nonexistent/migrations',
-            'NoSuchCliManagerClass',
-            null,
-            null,
-        );
-    }
-
-    /**
-     * The failure that would never surface on its own: the source is there, the interface is
-     * implemented, and a worker that runs no page and no agent is simply not a reader of it.
-     */
-    public function testBlockSourceLeftOutOfProcessWideReadsIsReported(): void
-    {
-        $this->expectException(IncompleteFeatureActivationException::class);
-        $this->expectExceptionMessage(
-            'HilosFeature::BACKUP is declared and ' . DeferredRequirementsBlockUsers::class
-            . ' implements ' . HilosUserBlockSource::class . ', but ' . DeferredRequirementsBlockUnreadDbContext::class
-            . " does not name '" . DeferredRequirementsBlockReadDbContext::users . "' in processWideReadCollections(),"
-            . ' so the block fact would read stale in every worker that runs no page and no agent',
-        );
-
-        DeferredRequirementsBlockHilos::validateDeferredFeatureRequirements(
-            '/nonexistent/migrations',
-            'NoSuchCliManagerClass',
-            null,
-            DeferredRequirementsBlockUnreadDbContext::class,
-        );
     }
 
     /**
@@ -396,19 +295,18 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
 }
 
 /**
- * Registry of the three synthetic features the deferred requirement tests exercise.
+ * Registry of the two synthetic features the deferred requirement tests exercise.
  */
 final class DeferredRequirementsTestRegistry extends FeatureRegistry
 {
     /**
-     * @return list<FeatureDefinition> The synthetic migrated, presence and block-source features
+     * @return list<FeatureDefinition> The synthetic migrated and presence features
      */
     protected function buildDefinitions(): array
     {
         return [
             new DeferredRequirementsMigratedFeature(),
             new DeferredRequirementsPresenceFeature(),
-            new DeferredRequirementsBlockFeature(),
         ];
     }
 }
@@ -461,28 +359,6 @@ final class DeferredRequirementsPresenceFeature extends FeatureDefinition
 }
 
 /**
- * Synthetic feature that owes a database collection reporting account blocks, read process-wide.
- */
-final class DeferredRequirementsBlockFeature extends FeatureDefinition
-{
-    /**
-     * @return HilosFeature Case standing in for a feature needing the block fact
-     */
-    public function feature(): HilosFeature
-    {
-        return HilosFeature::BACKUP;
-    }
-
-    /**
-     * @return FeatureRequirements A block source and nothing else
-     */
-    public function requirements(): FeatureRequirements
-    {
-        return new FeatureRequirements(requiresUserBlockSource: true);
-    }
-}
-
-/**
  * Facade declaring the migrated and the presence synthetic features over the synthetic registry.
  */
 class DeferredRequirementsValidHilos extends HilosFacade
@@ -530,149 +406,6 @@ final class DeferredRequirementsTestDbContext extends HilosDbContext
     public function configure(): void
     {
     }
-}
-
-/**
- * Facade declaring only the block-source feature, over the same synthetic registry.
- *
- * Kept apart from the facade above so the block cases need no migration, command or runtime
- * context, and the cases above need no database context.
- */
-final class DeferredRequirementsBlockHilos extends DeferredRequirementsValidHilos
-{
-    protected const array FEATURES = [HilosFeature::BACKUP];
-}
-
-/**
- * Database context whose users collection reports blocks and is read in every process.
- */
-class DeferredRequirementsBlockReadDbContext extends HilosDbContext
-{
-    public const string users = 'deferredBlockUsers';
-
-    /**
-     * Mounts the users collection lazily by key; nothing is read from a database.
-     */
-    public function configure(): void
-    {
-        $this->_objectCollections[self::users] = DeferredRequirementsBlockObjects::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::users, DeferredRequirementsBlockUsers::class);
-    }
-
-    /**
-     * @return list<string> The users collection, read process-wide
-     */
-    protected function processWideReadCollections(): array
-    {
-        return [...parent::processWideReadCollections(), self::users];
-    }
-}
-
-/**
- * Database context with the same block source, left out of the process-wide reads.
- */
-final class DeferredRequirementsBlockUnreadDbContext extends DeferredRequirementsBlockReadDbContext
-{
-    /**
-     * @return list<string> Nothing read process-wide
-     */
-    protected function processWideReadCollections(): array
-    {
-        return [];
-    }
-}
-
-/**
- * Database context whose users collection says nothing about blocks.
- */
-final class DeferredRequirementsBlockAbsentDbContext extends HilosDbContext
-{
-    public const string users = 'deferredBlockUsers';
-
-    /**
-     * Mounts a users collection that does not report blocks.
-     */
-    public function configure(): void
-    {
-        $this->_objectCollections[self::users] = DeferredRequirementsBlockObjects::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::users, DeferredRequirementsPlainUsers::class);
-    }
-
-    /**
-     * @return list<string> The users collection, read process-wide
-     */
-    protected function processWideReadCollections(): array
-    {
-        return [...parent::processWideReadCollections(), self::users];
-    }
-}
-
-/**
- * Users view reporting blocks; the validator never asks it anything.
- */
-final class DeferredRequirementsBlockUsers extends DbCollection implements HilosUserBlockSource
-{
-    /**
-     * @param list<int> $userIds User ids to report on
-     * @return array<int, bool> Nobody blocked
-     */
-    public function blockedAmong(array $userIds): array
-    {
-        return array_fill_keys($userIds, false);
-    }
-
-    protected function createDbItem(Object_ $object): DbItem
-    {
-        return new DeferredRequirementsBlockDbItem($object);
-    }
-}
-
-/**
- * Users view of a project that supplies no block source.
- */
-final class DeferredRequirementsPlainUsers extends DbCollection
-{
-    protected function createDbItem(Object_ $object): DbItem
-    {
-        return new DeferredRequirementsBlockDbItem($object);
-    }
-}
-
-/**
- * Minimal stored user row; never loaded.
- */
-final class DeferredRequirementsBlockObject extends Object_
-{
-    public const string ENTITY_CLASS = DeferredRequirementsBlockEntity::class;
-}
-
-/**
- * Minimal single-column entity behind that row.
- */
-final class DeferredRequirementsBlockEntity extends Entity
-{
-    public const string _table = 'deferred_block_test';
-    public const string _primary = 'id';
-    public const array _columns = ['id'];
-    public const array _types = ['id' => 'integer'];
-
-    public ?int $id = null;
-}
-
-/**
- * @extends Objects<DeferredRequirementsBlockObject>
- */
-final class DeferredRequirementsBlockObjects extends Objects
-{
-    public const string OBJECT_CLASS = DeferredRequirementsBlockObject::class;
-    public const string COLLECTION_KEY = DeferredRequirementsBlockReadDbContext::users;
-}
-
-/**
- * Minimal view item, never built by these cases.
- */
-final class DeferredRequirementsBlockDbItem extends DbItem
-{
 }
 
 /**

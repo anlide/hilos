@@ -120,26 +120,6 @@ final class ChatBrowserContext extends BrowserContext
     }
 
     /**
-     * Answers the ADMIN page-level gate from the chat user storage: the durable
-     * user row's admin flag — the same flag the admin ACCESS guard and the
-     * setAdmin grant flow use. Runs in whatever worker serves the gated page
-     * (the framework admin surface is served by the hilos index agent). A missing row
-     * denies, as before; a read that failed no longer does (HIL-575). It answered 403 to an
-     * administrator whose only problem was that this worker had not been declared a reader of
-     * the collection, and it left nothing behind to say so.
-     *
-     * @param int $userId Authenticated durable user id
-     * @return bool Whether this user may access ADMIN-level pages and actions
-     * @throws DatabaseException When reading the user collection fails
-     * @throws InvalidArgumentException When a loaded user object does not match the collection
-     * @throws LogicException When the user collection is not configured
-     */
-    public function isAdmin(int $userId): bool
-    {
-        return (Hilos::$db->users[$userId] ?? null)?->admin === true;
-    }
-
-    /**
      * Computes runtime connection summary fields for user-shaped rows.
      *
      * @param string $field Summary field name

@@ -13,7 +13,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 
 /**
- * Framework people, addressed by primary id. This collection supplies the account block flags.
+ * Framework people, addressed by primary id.
  *
  * @extends DbCollection<User, ObjectUsers>
  * @method ObjectUsers|null getObjectCollection()
@@ -23,7 +23,7 @@ use Hilos\Database\DatabaseException;
  * @method User|null offsetGet(mixed $offset)
  * @property-read UsersActions $actions Actions for write operations
  */
-class Users extends DbCollection implements HilosUserBlockSource
+class Users extends DbCollection
 {
     public const string DB_ITEM_CLASS = User::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectUsers::class;
@@ -54,28 +54,5 @@ class Users extends DbCollection implements HilosUserBlockSource
         }
 
         return $users;
-    }
-
-    /**
-     * Reports the block flag of each requested user, reading each row by key.
-     *
-     * The collection is lazy by key ({@see HilosDbContext::configure()}), and a guard asking
-     * about one person must not pull the whole table in to answer, so no row beyond the
-     * requested ones is loaded.
-     *
-     * @param list<int> $userIds User ids to report on
-     * @return array<int, bool> Block flag per requested id; every requested id present, a row that is gone answers false
-     * @throws DatabaseException When lazy-loading a user row fails
-     * @throws LogicException When the collection class constants are not configured
-     * @throws InvalidArgumentException When a loaded object type does not match the collection
-     */
-    public function blockedAmong(array $userIds): array
-    {
-        $blocked = [];
-        foreach ($userIds as $userId) {
-            $blocked[$userId] = $this[$userId]?->block ?? false;
-        }
-
-        return $blocked;
     }
 }

@@ -20,7 +20,6 @@ use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
-use Demo\Tasks\Users\TasksAdminAudience;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -83,8 +82,8 @@ final class UserPageActionTest extends IntegrationTestCase
         $targetId = (int) Hilos::$db->users->actions->createWithName('Target administrator')->id;
         Hilos::$db->users[$targetId]->actions->setAdmin(true);
         Hilos::$rt->connections->actions->register('lifecycle-admin', $adminId);
-        self::assertContains($adminId, TasksAdminAudience::all());
-        self::assertContains($targetId, TasksAdminAudience::all());
+        self::assertContains($adminId, Hilos::adminAudienceClass()::all());
+        self::assertContains($targetId, Hilos::adminAudienceClass()::all());
         $library = $this->sessionsLibrary();
 
         foreach ([true, false] as $block) {
@@ -105,7 +104,7 @@ final class UserPageActionTest extends IntegrationTestCase
             self::assertNotNull($reply);
             self::assertNull($reply->error);
             self::assertSame($block, Hilos::$db->users[$targetId]->block);
-            self::assertSame(!$block, in_array($targetId, TasksAdminAudience::all(), true));
+            self::assertSame(!$block, in_array($targetId, Hilos::adminAudienceClass()::all(), true));
         }
     }
 

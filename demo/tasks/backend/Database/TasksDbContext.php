@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Database;
 
-use Demo\Tasks\Browser\TasksBrowserContext;
 use Demo\Tasks\Database\Actions\Collection\GuestsActions;
 use Demo\Tasks\Database\Actions\Collection\UserRenamesActions;
 use Demo\Tasks\Database\Object\Collection\Guests as ObjectGuests;
@@ -50,25 +49,5 @@ final class TasksDbContext extends HilosDbContext
 
         $this->setRepresent(self::userRenames, UserRenames::class, UserRenamesActions::class);
         $this->setRepresent(self::guests, Guests::class, GuestsActions::class);
-    }
-
-    /**
-     * Names what this demo reads from any process at all: the user rows the admin gate is
-     * decided against (HIL-750).
-     *
-     * {@see TasksBrowserContext::isAdmin()} answers the ADMIN level for every gated page, and it
-     * runs in whatever worker serves that page - including a page that declares nothing of its
-     * own, like the framework dashboard. So the read is behind no subscription and no agent, and
-     * neither the topology nor a READS_DB can reach it.
-     *
-     * Its refusal would not even look like one: the gate reads defensively and turns any failure
-     * into a denial, so an undeclared collection here shows up as a person who is an
-     * administrator being told the admin surface is forbidden.
-     *
-     * @return list<string> Collection keys read process-wide
-     */
-    protected function processWideReadCollections(): array
-    {
-        return [...parent::processWideReadCollections(), self::users];
     }
 }

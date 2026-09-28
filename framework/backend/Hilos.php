@@ -224,9 +224,9 @@ abstract class Hilos implements TruthSourceOwner
      * Admin audience class (HIL-279).
      *
      * Framework code that must notify the administrators from outside a browser request
-     * reads them through this class. The framework default is the empty base, so a project
-     * that declares nothing is notified about nothing; a project points this at its own
-     * subclass to name its administrators.
+     * reads them through this class. The framework default answers from its own person
+     * table - the unblocked `hilos_user` rows that say admin - so a project declares nothing
+     * to be heard; it points this at its own subclass only to narrow that circle further.
      *
      * @var class-string<AdminAudience>
      */
@@ -1276,33 +1276,29 @@ abstract class Hilos implements TruthSourceOwner
      * check or not at all. Each project's own unit test calls this instead - one place where the
      * whole layout is knowable and nothing is running.
      *
-     * The four arguments are exactly what the facade does not own: its migration directory, the
-     * CLI manager its entry point passes to {@see CliApplication}, the runtime context class
-     * behind {@see createRuntime()}, and the database context class behind {@see createDb()}.
+     * The three arguments are exactly what the facade does not own: its migration directory, the
+     * CLI manager its entry point passes to {@see CliApplication}, and the runtime context class
+     * behind {@see createRuntime()}.
      *
      * @param string $migrationsPath Directory holding this project's schema migrations
      * @param class-string<CliManager> $cliManagerClass CLI manager this project's entry point runs
      * @param ?class-string<RtContext> $rtContextClass Runtime context this project builds, or null when it builds none
-     * @param ?class-string<HilosDbContext> $dbContextClass Database context this project builds, or null when it builds none
-     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command, a presence
-     *     source or a process-wide block source, when a project that serves pages keeps its connections off the
-     *     framework base, or when a project that can freeze migrates no verifier circle table
+     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence
+     *     source, when a project that serves pages keeps its connections off the framework base, or when a project
+     *     that can freeze migrates no verifier circle table
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
-     * @throws HilosException When building the database context fails to register the project's collections
      */
     public static function validateDeferredFeatureRequirements(
         string $migrationsPath,
         string $cliManagerClass,
         ?string $rtContextClass,
-        ?string $dbContextClass,
     ): void {
         static::createDeferredFeatureRequirementsValidator()->validate(
             static::class,
             $migrationsPath,
             $cliManagerClass,
             $rtContextClass,
-            $dbContextClass,
         );
     }
 

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Browser;
 
-use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Database\DatabaseException;
 use Demo\Polls\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
@@ -27,26 +24,6 @@ use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
  */
 final class PollsBrowserContext extends BrowserContext
 {
-    /**
-     * Answers the ADMIN page-level gate from the demo's user storage: the durable
-     * user row's admin flag, the same flag the admin:grant command writes. Runs in
-     * whatever worker serves the gated page (the framework admin surface is served
-     * by the hilos index agent). A missing row denies, as it always did; a read that failed no
-     * longer does (HIL-575). It answered 403 to an administrator whose only problem was that
-     * this worker had not been declared a reader of the collection, and it left nothing behind
-     * to say so.
-     *
-     * @param int $userId Authenticated durable user id
-     * @return bool Whether this user may access ADMIN-level pages and actions
-     * @throws DatabaseException When reading the user collection fails
-     * @throws InvalidArgumentException When a loaded user object does not match the collection
-     * @throws LogicException When the user collection is not configured
-     */
-    public function isAdmin(int $userId): bool
-    {
-        return (Hilos::$db->users[$userId] ?? null)?->admin === true;
-    }
-
     /**
      * Computes the demo's browser fields named by page/table configs.
      *

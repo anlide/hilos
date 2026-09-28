@@ -574,9 +574,12 @@ most of them. The process-wide list is where a layer says so:
 `DbContext::processWideReadCollections()` names them, and
 `DbContext::declareProcessWideReads()` registers an interest for each under a
 feature consumer. The framework's own entries are in `HilosDbContext` —
-settings, identities, sessions, notifications, OAuth providers and the
-verifier circle — and a project adds to the list by
-overriding the method and calling the parent. The circle is here because the
+settings, identities, sessions, notifications, OAuth providers, the verifier
+circle and the people — and a project adds to the list by
+overriding the method and calling the parent. The people are here because the
+`ADMIN` gate, the block guards and the handshake's identity ask who a person is
+wherever they stand, a worker serving a page with no subscription of its own
+included (HIL-750, HIL-1198). The circle is here because the
 freeze photographs it in the initiator's worker and any agent that asks for a
 freeze is an initiator: the read runs in whichever process asked, and naming
 it per initiator is the silent trap of `AbstractAgent::READS_DB` — a subclass

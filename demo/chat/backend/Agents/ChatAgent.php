@@ -26,10 +26,8 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Runtime\View\Collection\HilosSessionConnections;
-use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
 /**
@@ -38,8 +36,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
  * On start, registers chat database tables and runtime collections as truth sources.
  *
  * It no longer holds this project's sessions: they went into {@see SessionsLibraryAgent}
- * whole (HIL-710). What stayed is the half a project cannot give away - who is on the wire,
- * what that person is called, and the tab that has to be told - so the two speak in frames.
+ * whole (HIL-710). What stayed is the half a project cannot give away - who is on the wire and
+ * the tab that has to be told; who that person is, the framework builds from the frame
+ * ({@see self::handshakeIdentity()}) - so the two speak in frames.
  * {@see HilosSignalConstants::HILOS_SESSION_STATE} arrives saying what a session has become
  * and is answered by {@see self::applySessionState()}.
  *
@@ -140,10 +139,8 @@ final class ChatAgent extends AbstractAgent
 
         // One identity for the whole frame: every socket it reaches belongs to the one session
         // it is about, so the user, the name and the administrator behind them are the same
-        // for all of them. A session with nobody in it needs no lookup to be described.
-        $identity = $this->handshakeResponseFor(
-            $userId === null ? null : Hilos::$db->sessions->findByToken($frame->sessionToken),
-        );
+        // for all of them.
+        $identity = $this->handshakeIdentity($frame);
 
         foreach (
             Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken)
@@ -270,45 +267,6 @@ final class ChatAgent extends AbstractAgent
             $action,
             $requestId,
             $outcome === null ? null : AuthFlowOutcome::fromArray($outcome),
-        );
-    }
-
-    /**
-     * Builds the identity half of a handshake response: who the session is, as this project
-     * knows it, with the impersonatedBy slot filled from the session's impersonator marker.
-     *
-     * The whole of what stayed behind when the sessions left (HIL-710) - it reads the display
-     * names from the chat user store and, while impersonating, the admin behind the takeover.
-     * An anonymous or missing session yields the anonymous response that clears the frontend
-     * current user; an impersonated session additionally carries the impersonating admin, so
-     * the shell shows its banner, while a plain authenticated session leaves the impersonator
-     * fields null. The clock and the unfinished registration step are NOT filled here: the
-     * framework stamps them on the way out, from the frame the library sent.
-     *
-     * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return HandshakeResponseSignalData Identity of the session, unstamped
-     */
-    private function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
-    {
-        $userId = $session?->userId;
-        if ($session === null || $userId === null) {
-            return new HandshakeResponseSignalData();
-        }
-
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            return new HandshakeResponseSignalData();
-        }
-
-        $impersonatorId = $session->impersonatorUserId;
-        $impersonator = $impersonatorId !== null ? (Hilos::$db->users[$impersonatorId] ?? null) : null;
-
-        return new HandshakeResponseSignalData(
-            selfId: (int)$user->id,
-            selfName: $user->name,
-            selfAdmin: $user->admin,
-            impersonatorId: $impersonator !== null ? (int)$impersonator->id : null,
-            impersonatorName: $impersonator?->name,
         );
     }
 

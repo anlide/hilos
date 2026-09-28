@@ -91,7 +91,6 @@ use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\HilosSmsSender;
-use Hilos\Users\AccountBlockReader;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
@@ -1513,7 +1512,7 @@ final class HilosSignalConstants
      * Sent by an external flag writer - the operator command (HIL-98), the test command
      * (HIL-324) or a project's own writer. The admin card's write is already inside the library
      * and calls enforcement directly. The frame names only whom to look at;
-     * the library reads the flag itself through {@see AccountBlockReader}, so a false or repeated
+     * the library reads the `hilos_user` block column itself, so a false or repeated
      * frame is harmless - it can neither sign out an account that is not blocked nor leave a blocked
      * one signed in. Blocked, every session of the person goes and shows the "Access closed" card;
      * not blocked, every card the person's block left behind comes down. Carried by

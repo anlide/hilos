@@ -84,13 +84,13 @@ final readonly class SecondFactorPolicy
     /**
      * Whether this person has to use a second factor.
      *
-     * "Administrators" is the project's own answer ({@see AdminAudience}): the framework does
-     * not know what makes a user an administrator, and a project that declares nobody requires
-     * nobody under that setting.
+     * "Administrators" is the administrators' circle ({@see AdminAudience}): the unblocked
+     * people whose `hilos_user` row says admin, narrowed further by a project that points the
+     * facade at a circle of its own.
      *
      * @param int $userId Person asking to be let in
      * @return bool True when the policy requires a second factor of this person
-     * @throws HilosException When the project cannot say who its administrators are
+     * @throws HilosException When the storage cannot say who the administrators are
      */
     public function requiresFor(int $userId): bool
     {

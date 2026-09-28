@@ -69,7 +69,6 @@ use Demo\Polls\Pages\Hilos\Users\UsersPage;
 use Demo\Polls\Pages\MainPage;
 use Demo\Polls\Runtime\View\Context\PollsRtContext;
 use Demo\Polls\Tables\HilosUser\HilosUsersTable;
-use Demo\Polls\Users\PollsAdminAudience;
 use Demo\Polls\Tables\PollsTableContext;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\AuthCodeAgentDaemon;
@@ -145,8 +144,6 @@ final class Hilos extends HilosFacade
     protected const string OAUTH_PROVIDER_DIRECTORY = PollsOAuthProviderDirectory::class;
 
     protected const ?string LEGAL_CATALOG = PollsLegalCatalog::class;
-
-    protected const string ADMIN_AUDIENCE = PollsAdminAudience::class;
 
     // TODO(HIL-1090): switch HilosFeature::BACKUP on in polls once more than six demos are implemented.
     // Until then, its page answers 404 and has no dashboard card.

@@ -38,7 +38,7 @@ final class PageAccessGate
      * @param string $acceptKey Acting connection accept key
      * @throws PageUnauthorizedException When the level requires a user and the session is anonymous (or no browser context is mounted)
      * @throws PageForbiddenException When the level is ADMIN and the authenticated user lacks the admin privilege
-     * @throws HilosException When the project's administrator lookup fails
+     * @throws HilosException When the administrator lookup fails
      */
     public static function assert(string $pageClass, string $acceptKey): void
     {

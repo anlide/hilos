@@ -1279,7 +1279,6 @@ final class ChatTopologyRegistryTest extends TestCase
             __DIR__ . '/../../backend/Database/Migration/Schema',
             ChatCliManager::class,
             ChatRtContext::class,
-            ChatDbContext::class,
         );
 
         $this->addToAssertionCount(1);

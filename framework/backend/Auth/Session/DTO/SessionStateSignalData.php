@@ -8,6 +8,7 @@ use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\BaseDTO;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -16,9 +17,10 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  * Sessions library → project agent: this is what the session is now, tell its sockets.
  *
  * The library's whole half of the seam (HIL-710). It owns the session row and the parked
- * sign-in surfaces; the project owns the connection rows and knows the person's name, so
- * every ending the library reaches - a handshake, a sign-in, a sign-out, an impersonation,
- * an ack raised or dismissed - is said in this one frame and finished by the project.
+ * sign-in surfaces; the project owns the connection rows, and who the person on them is the
+ * framework builds from this frame ({@see AbstractAgent::handshakeIdentity()}), so every
+ * ending the library reaches - a handshake, a sign-in, a sign-out, an impersonation, an ack
+ * raised or dismissed - is said in this one frame and finished by the project.
  *
  * It names a LIST of sockets rather than one, because the mechanics behind it are
  * per-session: signing out, marking an ack and clearing it bring every live socket of one

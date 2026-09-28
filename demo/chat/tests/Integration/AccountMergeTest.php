@@ -121,6 +121,29 @@ final class AccountMergeTest extends IntegrationTestCase
     }
 
     /**
+     * A merged administrator stays out of the administrators' circle once an administrator lifts
+     * the block the merge left: the row still says admin, and the person it named is the
+     * survivor now. The chat narrows the framework's circle this way until the merge has a
+     * framework table of its own (HIL-1199).
+     *
+     * @throws HilosException When setup or the merge fails
+     */
+    public function testAMergedAdministratorStaysOutOfTheCircleOnceUnblocked(): void
+    {
+        $survivorId = (int) Hilos::$db->users->actions->createWithName('Survivor')->id;
+        $loserId = (int) Hilos::$db->users->actions->createWithName('Merged administrator')->id;
+        Hilos::$db->users[$loserId]->actions->setAdmin(true);
+        $standingId = (int) Hilos::$db->users->actions->registerAdmin()->id;
+
+        $this->mergeOk($survivorId, $loserId);
+        Hilos::$db->users[$loserId]->actions->setBlock(false);
+
+        $circle = Hilos::adminAudienceClass()::all();
+        $this->assertContains($standingId, $circle);
+        $this->assertNotContains($loserId, $circle);
+    }
+
+    /**
      * Merging a user into itself is rejected before any write.
      *
      * @throws HilosException When setup fails

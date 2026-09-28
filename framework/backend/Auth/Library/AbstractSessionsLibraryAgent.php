@@ -139,7 +139,6 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
-use Hilos\Users\AccountBlockReader;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
@@ -651,11 +650,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Whether this project enforces account blocks at all (HIL-289).
      *
-     * Only a project that declares {@see HilosFeature::HILOS_USERS} carries the fact: activating
-     * that feature is what requires a block source ({@see AccountBlockReader}, HIL-944). Without
-     * it nothing is read and nothing is refused - a project with no users administration has no
-     * way to block anybody - and the missing source is never asked about, rather than asked and
-     * caught.
+     * Only a project that declares {@see HilosFeature::HILOS_USERS} carries the fact: the block is
+     * written by that feature's people section alone. Without it nothing is read and nothing is
+     * refused - a project with no users administration has no way to block anybody - and the
+     * block column of `hilos_user` is never asked about.
      *
      * @return bool True when {@see HilosFeature::HILOS_USERS} is declared by this project
      */
@@ -1963,9 +1961,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // The person asked about is whoever is at the keyboard - an administrator taking over a
             // blocked account is not the blocked person, and a blocked administrator taking over
             // somebody else is.
-            $blockReader = new AccountBlockReader();
             $atKeyboard = $session->userAtKeyboard();
-            if ($atKeyboard !== null && $blockReader->isBlocked($atKeyboard)) {
+            if ($atKeyboard !== null && Hilos::$db->users[$atKeyboard]?->block === true) {
                 $session->actions->holdBlockedNotice($atKeyboard);
                 $this->logAgentInfo('account_block_enforced ' . json_encode([
                     'event' => 'account_block_enforced',
@@ -1976,7 +1973,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $resolved->session->actions->touch();
 
                 return $resolved;
-            } elseif ($session->blockedUserId !== null && !$blockReader->isBlocked($session->blockedUserId)) {
+            } elseif ($session->blockedUserId !== null && Hilos::$db->users[$session->blockedUserId]?->block !== true) {
                 // The account was unblocked while this browser was away: the card has nothing left to say.
                 $session->actions->releaseBlockedNotice();
             }
@@ -4574,7 +4571,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return 0;
         }
 
-        if (!new AccountBlockReader()->isBlocked($userId)) {
+        if (Hilos::$db->users[$userId]?->block !== true) {
             foreach (Hilos::$db->sessions->findByBlockedUserId($userId) as $session) {
                 $session->actions->releaseBlockedNotice();
                 $this->publishBlockedCardState($session, null, null, null, null);
@@ -5103,7 +5100,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ?string $action,
         ?string $provenBy = null,
     ): bool {
-        if (!$this->enforcesAccountBlock() || !new AccountBlockReader()->isBlocked($userId)) {
+        if (!$this->enforcesAccountBlock() || Hilos::$db->users[$userId]?->block !== true) {
             return false;
         }
 

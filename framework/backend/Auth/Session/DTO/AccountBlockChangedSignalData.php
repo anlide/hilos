@@ -7,13 +7,12 @@ namespace Hilos\Auth\Session\DTO;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Users\AccountBlockReader;
 
 /**
  * Block writer → sessions library: look at this person's block flag again (HIL-289).
  *
  * It names whom to look at and nothing else. Whether the person is blocked is read by the
- * library itself through {@see AccountBlockReader} at the moment the frame arrives, so the frame
+ * library itself, from the `hilos_user` block column, at the moment the frame arrives, so the frame
  * cannot be wrong about it: a false frame finds nothing to do, a repeated one finds it done, and
  * a frame that overtook a later write reads that later write.
  */

@@ -16,7 +16,7 @@ use Hilos\Hilos;
  *
  * The session carry-over (HIL-479) is a database mechanism end to end - it reads rows written
  * before a restore and writes rows into the database that replaced it - so it cannot be pinned
- * without a real one. This base raises the two framework tables it touches from their migration
+ * without a real one. This base raises the framework tables it touches from their migration
  * stubs, mounts a framework database context over them, and takes both down again, so the shared
  * framework test database is left as it was found.
  */
@@ -32,9 +32,12 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *     tables join for the same kind of reason (HIL-494): every sign-in the holder grants
      *     asks first whether the person has a factor to show. The account deletion requests
      *     join because the holder is the one that erases an account when its request falls due
-     *     (HIL-302).
+     *     (HIL-302). The people join because the framework asks who the administrators are
+     *     from its own table (HIL-1198), and a restore announces its outcome to them beside
+     *     the person who asked for it; the table has to be there to be empty.
      */
     private const array TABLES = [
+        'hilos_user',
         'hilos_session',
         'hilos_identity',
         'hilos_setting',
