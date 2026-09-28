@@ -6,7 +6,6 @@ import {
   createHilosUserDetail,
   createHilosUserLifecycle,
   resolveHilosMergeCandidateRow,
-  type HilosUserProfile,
   type HilosUsersContext,
 } from '../../../src/admin/users/hilosUsers.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
@@ -15,6 +14,7 @@ import {
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
 import { entityCollection } from '../../../src/state/EntityCollection.js'
+import { USER_ENTITY_TYPE, userFromFields } from '../../../src/state/entity.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { applyServerTime } from '../../../src/session/serverClock.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
@@ -26,17 +26,7 @@ function userStore(): {
 } {
   const scopes = new ScopeManager()
   scopes.openPage('hilos_user')
-  const users = entityCollection<HilosUserProfile>(
-    scopes,
-    'user',
-    (fields) => ({
-      id: Number(fields.id),
-      admin: fields.admin === true,
-      block: fields.block === true,
-      name: String(fields.name ?? ''),
-      lastActivity: (fields.lastActivity as string | null) ?? null,
-    }),
-  )
+  const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
 
   return { scopes, users }
 }

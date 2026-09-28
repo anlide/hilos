@@ -5,11 +5,12 @@ import {
   ScopeManager,
   createSignal,
   entityCollection,
+  USER_ENTITY_TYPE,
+  userFromFields,
 } from '@hilos/core'
 import type {
   ActionLifecycleSource,
   HilosRouter,
-  HilosUserProfile,
   HilosUsersContext,
   PageRouteMatch,
 } from '@hilos/core'
@@ -115,17 +116,7 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
       return () => windowListeners.delete(listener)
     },
   }
-  const collection = entityCollection<HilosUserProfile>(
-    scopes,
-    'user',
-    (fields) => ({
-      id: Number(fields.id),
-      admin: fields.admin === true,
-      block: fields.block === true,
-      name: String(fields.name ?? ''),
-      lastActivity: (fields.lastActivity as string | null) ?? null,
-    }),
-  )
+  const collection = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
 
   return {
     scopes,

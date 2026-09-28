@@ -12,10 +12,11 @@ import {
   ScopeManager,
   createSignal,
   entityCollection,
+  USER_ENTITY_TYPE,
+  userFromFields,
 } from '@hilos/core'
 import type {
   HilosRouter,
-  HilosUserProfile,
   HilosUsersContext,
   PageRouteMatch,
 } from '@hilos/core'
@@ -69,17 +70,7 @@ function userContext(accountMerge = false): {
     users: { type: 'user', id: 1 },
     connections: { presence: 'online', onlineSessionCount: 1 },
   })
-  const users = entityCollection<HilosUserProfile>(
-    scopes,
-    'user',
-    (fields) => ({
-      id: Number(fields.id),
-      admin: fields.admin === true,
-      block: fields.block === true,
-      name: String(fields.name ?? ''),
-      lastActivity: (fields.lastActivity as string | null) ?? null,
-    }),
-  )
+  const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
   const connection = new HilosConnection({ url: 'ws://test/ws' })
   const sent: Array<{ action: string; data: unknown }> = []
   vi.spyOn(connection, 'sendAction').mockImplementation((action, data) => {

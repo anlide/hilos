@@ -6,6 +6,8 @@
 // entity wherever it appears — the `bot` type lets the event stream resolve a
 // message author against the bot the `mainBots` list delivered. The binder
 // (`bindPageScope`) applies this to every page payload's slots.
+import { USER_ENTITY_TYPE } from '@hilos/core'
+
 import {
   BOT_TYPE,
   EVENT_ATTACHMENT_TYPE,
@@ -15,12 +17,11 @@ import {
   PASSKEY_CREDENTIAL_TYPE,
   PUSH_SUBSCRIPTION_TYPE,
   SESSION_TYPE,
-  USER_TYPE,
 } from '../types'
 
 /** Per-slot canonical entity types for the chat's page payloads. */
 export const pageEntityTypes: Record<string, string> = {
-  users: USER_TYPE,
+  users: USER_ENTITY_TYPE,
   bots: BOT_TYPE,
   events: EVENT_TYPE,
   eventAttachments: EVENT_ATTACHMENT_TYPE,

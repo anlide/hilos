@@ -211,7 +211,7 @@ Follow the framework extension contract in
   catalog.
 - Bind a collection through a generic, so the framework never imports the
   project entity type. This is the backend twin of the frontend
-  `HilosUsersContext<TUser extends HilosUserProfile>`: the project passes its
+  `HilosUsersContext<TUser extends User>`: the project passes its
   collection in; the framework code stays type-agnostic.
 - Abstract the presence source. The hilos-users table merges DB users with an
   online/presence summary; the framework owns the merge, the project binds its
@@ -234,9 +234,10 @@ The framework owns the people table `hilos_user` whole — `id`, `name`, `admin`
 `block`, `last_activity` — plus the computed
 presence/online summary. A project that needs more extends it by subclassing the
 whole ORM chain and mounting it under the framework key; the rules of the table
-are in [people-table.md](people-table.md). The frontend `User` type carries the
-mandatory RBAC flags `admin`/`block` today, and gains `name` and `lastActivity`
-(not in the code yet — HIL-1193).
+are in [people-table.md](people-table.md). The frontend `User` of `@hilos/core`
+carries `id`, `admin`, `block`, `name`, `lastActivity`; with it `@hilos/core`
+ships `userFromFields` and `USER_ENTITY_TYPE`, so a project binds only its
+collection and extends the type only with a field of its own.
 
 `admin_users` is NOT a hilos-users extension — it is a separate, project-owned
 table (Mode 2). Keep the two distinct; the framework feature is the panel

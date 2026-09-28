@@ -48,7 +48,12 @@ export {
   type EntityRef,
   type EntitySnapshot,
 } from './state/EntityStore.js'
-export { type Entity, type User } from './state/entity.js'
+export {
+  type Entity,
+  type User,
+  USER_ENTITY_TYPE,
+  userFromFields,
+} from './state/entity.js'
 export {
   entityCollection,
   type EntityCollection,
@@ -954,7 +959,6 @@ export {
   type HilosPasswordFate,
   type HilosPresence,
   type HilosUserDetailRow,
-  type HilosUserProfile,
   type HilosUserRow,
   type HilosUsersContext,
   type HilosUsersTable,

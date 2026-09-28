@@ -69,7 +69,7 @@ where it is today — a hook the project implements.
 | Erasing a person — the framework deletes the person's row last, after the project's rows ([account-deletion.md](account-deletion.md)) | (not in the code yet — HIL-1200) |
 | The people table and the merge-candidates table in the admin section | (not in the code yet — HIL-1201) |
 | Foreign keys onto the person from every framework table that points at one | (not in the code yet — HIL-1202) |
-| `name` and `lastActivity` on the frontend `User` entity | (not in the code yet — HIL-1193) |
+| `name` and `lastActivity` on the frontend `User` entity | HIL-1193 |
 
 What stays the project's: hooks over its own columns and its own rows — the chat
 messages a merge re-attributes, the project's own tables an erasure clears. The

@@ -15,11 +15,12 @@ import {
   ScopeManager,
   createSignal,
   entityCollection,
+  USER_ENTITY_TYPE,
+  userFromFields,
 } from '@hilos/core'
 import type {
   HilosConnection,
   HilosRouter,
-  HilosUserProfile,
   HilosUsersContext,
   PageRouteMatch,
 } from '@hilos/core'
@@ -82,17 +83,7 @@ function userContext(
     identities: { hasPassword: options.detailHasPassword ?? false },
   })
   scopes.session.data.set('currentUser', { type: 'user', id: 99 })
-  const users = entityCollection<HilosUserProfile>(
-    scopes,
-    'user',
-    (fields) => ({
-      id: Number(fields.id),
-      admin: fields.admin === true,
-      block: fields.block === true,
-      name: String(fields.name ?? ''),
-      lastActivity: (fields.lastActivity as string | null) ?? null,
-    }),
-  )
+  const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
   const listeners = new Map<
     string,
     Set<(payload: { data?: unknown } & Record<string, unknown>) => void>

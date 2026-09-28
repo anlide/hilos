@@ -18,6 +18,7 @@ import {
   scopePayloadSchema,
   type ScopePayloadWire,
 } from '../protocol/scopePayload.js'
+import { USER_ENTITY_TYPE } from '../state/entity.js'
 import { type EntityRef } from '../state/EntityStore.js'
 import { readString } from '../state/fieldReaders.js'
 import { ingest } from '../state/normalizer.js'
@@ -34,7 +35,7 @@ import { SIGNAL_SESSION_TOASTS, sessionToastsSchema } from './sessionToasts.js'
 export const SIGNAL_HANDSHAKE_RESPONSE = 'handshake_response'
 
 const DEFAULT_CURRENT_USER_SLOT = 'currentUser'
-const DEFAULT_CURRENT_USER_ENTITY_TYPE = 'user'
+const DEFAULT_CURRENT_USER_ENTITY_TYPE = USER_ENTITY_TYPE
 const DEFAULT_CURRENT_USER_NAME_FIELD = 'name'
 const DEFAULT_CURRENT_USER_ADMIN_FIELD = 'admin'
 const DEFAULT_IMPERSONATED_BY_SLOT = 'impersonatedBy'

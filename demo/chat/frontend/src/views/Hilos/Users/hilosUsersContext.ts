@@ -8,10 +8,10 @@ import { type HilosUsersContext } from '@hilos/core'
 
 import { actions, connection } from '../../../bootstrap/connection'
 import { scopes } from '../../../bootstrap/session'
-import { type User, Users } from '../../../types'
+import { Users } from '../../../types'
 
 /** This project's context for the framework users/user admin pages. */
-export const hilosUsersContext: HilosUsersContext<User> = {
+export const hilosUsersContext: HilosUsersContext = {
   scopes,
   connection,
   actions,

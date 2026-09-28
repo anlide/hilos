@@ -64,18 +64,6 @@ export function toHilosPresence(value: unknown): HilosPresence {
     : 'offline'
 }
 
-/**
- * The user-entity contract the users admin needs: a project's user entity must
- * resolve to at least these fields for the row resolver to build its view-model.
- * The project's own entity (e.g. the chat `User`) extends this with more.
- */
-export interface HilosUserProfile extends User {
-  /** Display name. */
-  readonly name: string
-  /** Last activity timestamp, or null when never recorded. */
-  readonly lastActivity: string | null
-}
-
 /** One row of the Hilos users table — the framework users view-model. */
 export interface HilosUserRow {
   /** User id; also the table row key. */
@@ -200,9 +188,7 @@ const HILOS_USER_DELETION_SET_ACTION = 'hilos_user_deletion_set'
  * over, and the typed user collection. Everything else (the table keys, slot
  * names, view-model, and behavior) is the framework's.
  */
-export interface HilosUsersContext<
-  TUser extends HilosUserProfile = HilosUserProfile,
-> {
+export interface HilosUsersContext<TUser extends User = User> {
   /** The scope manager that owns the page-scoped table rows. */
   readonly scopes: ScopeManager
   /** The live connection the rename action and its fail ack ride. */
@@ -279,7 +265,7 @@ function recordSlot(slot: unknown): Record<string, unknown> | undefined {
  * @param row The raw table row from the page-scoped table store.
  * @param users The project's user collection resolving the `users` entity slot.
  */
-export function resolveHilosUserRow<TUser extends HilosUserProfile>(
+export function resolveHilosUserRow<TUser extends User>(
   row: TableRow,
   users: EntityCollection<TUser>,
 ): HilosUserRow {
@@ -321,7 +307,7 @@ function resolveMergeIdentity(
  * @param row The raw table row from the page-scoped table store.
  * @param users The project's user collection resolving the `users` entity slot.
  */
-export function resolveHilosMergeCandidateRow<TUser extends HilosUserProfile>(
+export function resolveHilosMergeCandidateRow<TUser extends User>(
   row: TableRow,
   users: EntityCollection<TUser>,
 ): HilosMergeCandidateRow {
@@ -450,7 +436,7 @@ const MERGE_CANDIDATES_FRAME: HilosTableFrame = {
  *
  * @param context The project context (connection, scopes, and user collection).
  */
-export function createHilosUsersTable<TUser extends HilosUserProfile>(
+export function createHilosUsersTable<TUser extends User>(
   context: HilosUsersContext<TUser>,
 ): HilosUsersTable {
   const controller = new TableViewportController<HilosUserRow>({
@@ -499,7 +485,7 @@ export function createHilosUsersTable<TUser extends HilosUserProfile>(
  *
  * @param context The project context (connection, scopes, and user collection).
  */
-export function createHilosMergeCandidates<TUser extends HilosUserProfile>(
+export function createHilosMergeCandidates<TUser extends User>(
   context: HilosUsersContext<TUser>,
 ): HilosMergeCandidates {
   const initialFilter = { [USER_MERGE_SURVIVOR_FILTER]: 0 }
@@ -552,7 +538,7 @@ export function createHilosMergeCandidates<TUser extends HilosUserProfile>(
  *
  * @param context The project context (scopes + user collection).
  */
-export function createHilosUserDetail<TUser extends HilosUserProfile>(
+export function createHilosUserDetail<TUser extends User>(
   context: HilosUsersContext<TUser>,
 ): ReadonlySignal<HilosUserDetailRow | undefined> {
   const detailRows = context.scopes.pageTableSignal(USER_DETAIL_TABLE)
