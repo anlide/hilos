@@ -83,6 +83,9 @@ there. Which files are error streams is the filename answer from
 `LogStoreReader::isErrorStream()`, shared with the recent-failures reader, so
 existing live and archived files read correctly without being rewritten
 (HIL-1025).
+The worker's own PHP error, exception and shutdown handlers write through the
+same `Logger::error()` as the master's, so their line is stamped in the worker's
+`.error.log`, with an `ERROR:` twin in its ordinary stream (HIL-1149).
 
 A line written through `Logger::logAgent*()` by code that runs IN the master (the
 protected-mode watchdog, its alert notifier, the agent manager's stop-hook
@@ -873,10 +876,10 @@ Remember the outcome, speak on its change, clear on recovery.
   — `composer run test:log-streams`, the `log-streams` step of the full run:
   `demo/tasks` stood up, each source provoked on purpose, and every line of
   `scripts/log-streams.php` asserted where it landed and where it must not be
-  (HIL-1018). It covers rows 1, 2, 3, 5, 6, 8, 10, 11, 13, 14, 15, 17, 19 and
-  23 of the HIL-872 map, and it does not cover rows 4, 7, 9, 12, 16, 18, 20, 21
+  (HIL-1018). It covers rows 1, 2, 3, 5, 6, 8, 9, 10, 11, 13, 14, 15, 17, 19,
+  20 and 23 of the HIL-872 map, and it does not cover rows 4, 7, 12, 16, 18, 21
   and 22 — row 18 because its only live lever was the defect HIL-1045 removed,
   a refused `rename()` reaching the watchdog's error handler, and the rest
   because each needs a lever the check does not have yet: a stand whose env
-  does not name the log addresses, a real error out of a live worker or agent,
+  does not name the log addresses, a real error out of a live agent,
   `daemon:monitor` under the probe, the daemon run without a watchdog.

@@ -21,8 +21,8 @@ declare(strict_types=1);
  *   alive             stand up, wait for the daemon over its command socket, ask it for one line.
  *   crash             one SIGKILL of the master, on the same stand.
  *   master-error      the probe (`scripts/log-stream-probe.php`) installed into the container's
- *                     own layer, the master restarted under it, then a real warning and a real
- *                     fatal by signal.
+ *                     own layer, the master restarted under it, then a real warning in a regular
+ *                     worker before the master's warning and fatal by signal.
  *   agent-in-master   a daemon container of its own, with the freeze silence timeout lowered and
  *                     nobody to alert; a freeze entered through the live initiator and left idle
  *                     until the master's own watchdog writes an agent line.
@@ -105,6 +105,12 @@ const LOG_STREAMS_MONOPOLISTIC_MIN_VAR = 'WORKER_MIN_MONOPOLISTIC';
  */
 const LOG_STREAMS_DAEMON_CMDLINE = 'Bootstrap/daemon[.]php';
 
+/** A worker bootstrap in /proc; the bracket keeps the searching shell from matching itself. */
+const LOG_STREAMS_WORKER_CMDLINE = 'Bootstrap/worker[.]php';
+
+/** The argument carried by monopolistic workers, which are excluded from this probe. */
+const LOG_STREAMS_MONOPOLISTIC_ARG = '--monopolistic';
+
 /** The probe, relative to the repository root. */
 const LOG_STREAMS_PROBE_SOURCE = 'scripts/log-stream-probe.php';
 
@@ -179,6 +185,9 @@ const LOG_STREAMS_WORKER_INDEX_ROW = 10;
 
 /** The map row the warning record of master-error proves; polled before the fatal is provoked. */
 const LOG_STREAMS_WARNING_ROW = 19;
+
+/** The map row whose two worker warning records are awaited before the master's warning. */
+const LOG_STREAMS_WORKER_WARNING_ROW = 20;
 
 /** The map row of rotation-refused, whose living-node half is asserted over the daemon, not by a record. */
 const LOG_STREAMS_ROTATION_ROW = 3;
@@ -343,12 +352,13 @@ function runCrashScenario(array $box, array $records): array
 }
 
 /**
- * The probe into the container's layer, the master restarted under it, a warning, a fatal.
+ * The probe into the container's layer, the master restarted under it, a regular worker
+ * warning followed by the master's warning and fatal.
  *
  * The marks are taken after the restart: the SIGKILL that restarts the master is a death that
  * printed nothing, and the scenario's own `never` says a death here must not be reported so.
- * The warning is awaited on its own record before the fatal is provoked — the fatal's records
- * cannot land yet, and waiting on them would only spend the deadline.
+ * The worker's warning is awaited before the master is warned, then the master's warning is
+ * awaited on its own record before the fatal is provoked. Later records cannot land yet.
  *
  * The probe and its ini are removed whatever happened, before the outcome is returned.
  *
@@ -395,6 +405,21 @@ function provokeMasterErrors(array $box, array $records): array
         return ['failures' => [], 'harness' => 'after the restart under the probe: ' . $ready];
     }
     $marks = markStreams($box, LOG_STREAMS_DAEMON_SERVICE);
+
+    $workerWarningRecords = array_values(array_filter(
+        $records,
+        static fn(array $record): bool => in_array(LOG_STREAMS_WORKER_WARNING_ROW, $record['rows'], true),
+    ));
+    $workerWarned = signalRegularWorker(LOG_STREAMS_DAEMON_SERVICE, LOG_STREAMS_SIGNAL_WARNING);
+    if ($workerWarned !== null) {
+        return ['failures' => [], 'harness' => $workerWarned];
+    }
+    awaitLandings($box, LOG_STREAMS_DAEMON_SERVICE, $marks, $workerWarningRecords);
+
+    $ready = waitDaemonReady(LOG_STREAMS_DAEMON_SERVICE);
+    if ($ready !== null) {
+        return ['failures' => [], 'harness' => 'after the worker warning: ' . $ready];
+    }
 
     $warningRecords = array_values(array_filter(
         $records,
@@ -760,6 +785,27 @@ function daemonPid(string $container): ?int
 }
 
 /**
+ * Find one regular worker inside its container, excluding the monopolistic worker argument.
+ *
+ * @param string $container The daemon container.
+ * @return int|null A regular worker pid, or null when none runs.
+ */
+function regularWorkerPid(string $container): ?int
+{
+    $walk = 'for p in /proc/[0-9]*; do cmdline=$(tr "\0" " " <"$p/cmdline" 2>/dev/null); '
+        . 'if printf "%s" "$cmdline" | grep -q ' . escapeshellarg(LOG_STREAMS_WORKER_CMDLINE)
+        . ' && ! printf "%s" "$cmdline" | grep -Fq -- ' . escapeshellarg(LOG_STREAMS_MONOPOLISTIC_ARG)
+        . '; then echo "${p#/proc/}"; fi; done';
+    $found = containerExec($container, $walk);
+    $lines = artifactLines($found['output']);
+    if ($lines === [] || preg_match('/^\d+$/', $lines[0]) !== 1) {
+        return null;
+    }
+
+    return (int)$lines[0];
+}
+
+/**
  * Send one signal to the master.
  *
  * @param string $container The daemon container.
@@ -771,6 +817,28 @@ function signalDaemon(string $container, string $signal): ?string
     $pid = daemonPid($container);
     if ($pid === null) {
         return 'no daemon.php is running in ' . $container . ' to send SIG' . $signal . ' to';
+    }
+    $sent = containerExec($container, 'kill -' . $signal . ' ' . $pid);
+    if (!$sent['ok']) {
+        return 'SIG' . $signal . ' to pid ' . $pid . ' in ' . $container . ' failed: ' . $sent['note'] . "\n" . $sent['output'];
+    }
+    fwrite(STDOUT, sprintf("    SIG%s -> pid %d in %s\n", $signal, $pid, $container));
+
+    return null;
+}
+
+/**
+ * Send one signal to a regular worker.
+ *
+ * @param string $container The daemon container.
+ * @param string $signal The signal, by the name the container's `kill` takes.
+ * @return string|null What went wrong, or null.
+ */
+function signalRegularWorker(string $container, string $signal): ?string
+{
+    $pid = regularWorkerPid($container);
+    if ($pid === null) {
+        return 'no regular worker.php is running in ' . $container . ' to send SIG' . $signal . ' to';
     }
     $sent = containerExec($container, 'kill -' . $signal . ' ' . $pid);
     if (!$sent['ok']) {

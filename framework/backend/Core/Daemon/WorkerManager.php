@@ -3479,33 +3479,33 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Logs a worker error message.
+     * Logs a stamped worker error to its stdout and stderr pipes, as the master does.
      *
      * @param string $message Error message
      */
     protected function logError(string $message): void
     {
-        Logger::errorLog($message);
+        Logger::error($message);
     }
 
     /**
-     * Logs a worker exception message.
+     * Logs a stamped worker exception to its stdout and stderr pipes, as the master does.
      *
      * @param string $message Exception message
      */
     protected function logException(string $message): void
     {
-        Logger::errorLog($message);
+        Logger::error($message);
     }
 
     /**
-     * Logs a worker shutdown message.
+     * Logs a stamped worker shutdown line to its stdout and stderr pipes, as the master does.
      *
      * @param string $message Shutdown message
      */
     protected function logShutdown(string $message): void
     {
-        Logger::errorLog($message);
+        Logger::error($message);
     }
 
     /**

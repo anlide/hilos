@@ -187,6 +187,33 @@ return [
     ],
     // ---------------------------------------------------------------- master-error
     [
+        'rows' => [20, 9],
+        'scenario' => 'master-error',
+        'source' => 'a regular worker\'s PHP error handler files its warning, stamped, into the worker\'s error stream (HIL-1149)',
+        // framework/backend/Core/Daemon/BaseManager.php errorHandler(): "WARNING in <basename>:<line> - <message>".
+        // Logger::error writes "[stamp] ERROR: ..." in stdout and "[stamp] ..." in stderr;
+        // the master files those pipes in worker-regular-<n>.log and .error.log.
+        // The stamp anchor is the point of this leaf: an unstamped handler line cannot satisfy it.
+        'pattern' => '/^\[[^\]]+\] WARNING in hilos-log-stream-probe\.php:\d+ - fopen\(\/nonexistent\/hilos-log-stream-probe-worker-warning\)/',
+        'lands' => ['worker-regular-*.error.log'],
+        'never' => ['daemon.log', 'daemon-error.log', 'daemon-raw.log', 'container-log', 'container-log-stderr'],
+        'nowhere' => false,
+        'empty' => [],
+        'supersedes' => 'map row 20 files the handler line into the error stream alone and without a stamp;'
+            . ' since HIL-1149 it goes through Logger::error, stamped, with an ERROR: twin in the worker\'s ordinary stream',
+    ],
+    [
+        'rows' => [20, 9],
+        'scenario' => 'master-error',
+        'source' => 'the same warning, with its ERROR prefix, in the worker\'s ordinary stream (HIL-1149)',
+        'pattern' => '/^\[[^\]]+\] ERROR: WARNING in hilos-log-stream-probe\.php:\d+ - '
+            . 'fopen\(\/nonexistent\/hilos-log-stream-probe-worker-warning\)/',
+        'lands' => ['worker-regular-*.log'],
+        'never' => ['daemon.log', 'daemon-error.log', 'daemon-raw.log', 'container-log', 'container-log-stderr'],
+        'nowhere' => false,
+        'empty' => [],
+    ],
+    [
         'rows' => [19, 6],
         'scenario' => 'master-error',
         'source' => 'the master\'s PHP error handler files a warning into both Logger files and nowhere raw',
