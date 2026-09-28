@@ -246,10 +246,11 @@ tables classified whole without any condition on backup —
 `FrameworkEntityPiiVerdictTest` holds every column of every framework Entity to
 a verdict — and a subclass mounted under the framework's key IS that table to
 the machine: one column without a verdict leaves it half-classified. The
-verdict also has a reader past the backup, the administration's read-only view
-mode (HIL-1248): it shows a column when `_piiNotPersonal` names it and hides
-one `_pii` names, and a column in neither is hidden even where its author would
-have called it harmless. The check costs nothing: constants only.
+verdict also has a reader past the backup, the admin view mode
+([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)): it
+shows a column when `_piiNotPersonal` names it and hides one `_pii` names, and
+a column in neither is hidden even where its author would have called it
+harmless. The check costs nothing: constants only.
 
 Where it stands: `DaemonApplication::run()`, first of the startup guards,
 because the set-ownership guard, the anonymization registry and the schema

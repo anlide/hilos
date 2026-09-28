@@ -23,6 +23,8 @@ the canonical rules below. Every edit surface is a modal — never an inline for
 - Where the edit view and its files live: `docs/agents/frontend/page-module-structure.md`
 - Row-payload key ownership — the constant a field is read and rendered by:
   `docs/agents/code-style/wire-key-ownership.md`
+- An edit dialog on an admin page in the admin view mode — Cancel stays, Save
+  gives way to the view-mode mark: `docs/agents/architecture/admin-view-mode.md`
 - How the edit view itself must look: `$hilos-code-style-typescript` (and its
   `-vue` / `-react` / `-angular` wrapper)
 

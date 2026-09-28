@@ -34,6 +34,15 @@ rather than hiding inside the first. There is no bypass flag and none is to be
 added. The cost was accepted knowingly — a new table breaks anonymized restores
 until somebody classifies it.
 
+The verdict has a second reader: the admin view mode
+([admin-view-mode.md](admin-view-mode.md)). A non-admin viewer of the admin
+section is shown the hidden mark for a column in `_pii`, the value for a column
+in `_piiNotPersonal`, and the hidden mark for a column in neither; the strategy
+does not travel to the browser — no fake, no mask, only hidden
+(not in the code yet — HIL-1250). For the author of a verdict this means
+`_piiNotPersonal` now also opens a column to a non-admin: name a column there
+only because it holds nothing personal, never so that a viewer may see it.
+
 ## Anonymization Belongs To The Restore, Not To The Archive
 
 A production archive is written raw and stays raw. That is deliberate: the

@@ -14,7 +14,10 @@ mechanism that enforces "does this resource exist" (404) also enforces "may this
 connection see this page" (403).
 
 This is the low-level mechanism. A future role/permission system (RBAC) sits on
-top of it; it does not replace these layers.
+top of it; it does not replace these layers. The admin view mode relaxes the
+first layer for looking, not for acting: with the mode on, a non-admin on an
+`ADMIN` page is shown the page and refused its actions
+(not in the code yet — HIL-1251) — [admin-view-mode.md](admin-view-mode.md).
 
 ## Page access levels (the closed-by-default gate)
 
@@ -64,6 +67,21 @@ Identity comes from two `BrowserContext` seams (see the identity hook below):
 `resolveActionUserId()` answers "which user", and `isAdmin(int $userId): bool` —
 framework default `false` — answers "is that user an admin". A project without a
 mounted browser context fails **closed**: nothing resolves, the surface denies.
+
+## The view verdict (the admin view mode)
+
+With the admin view mode on, the gate answers an `ADMIN` page with a third
+verdict for a connection that did not prove an admin — *view*, beside allow and
+refuse (not in the code yet — HIL-1251). The subscription, its update and every
+delivery are let through, and each frame that leaves for such a viewer passes
+the personal-data bridge (not in the code yet — HIL-1250). An action is refused
+with the view mode as the reason, except the ones the page declares reading
+(not in the code yet — HIL-1251); the error text of a failed action goes by the
+actor, not by the page's level (not in the code yet — HIL-1251). With the mode
+off, everything below in this document holds without a qualification. The mode
+whole — the switch and its production latch, who a viewer is, the bridge, the
+browser side, what a new admin section owes — is
+[admin-view-mode.md](admin-view-mode.md).
 
 ## Declaring a guard
 

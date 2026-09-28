@@ -22,6 +22,8 @@ writing a verdict.
   `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php`
 - The test every project with backup keeps:
   `demo/chat/tests/Integration/PiiRegistryCoverageTest.php`
+- What the same verdict shows a non-admin viewer of the admin view mode:
+  `docs/agents/architecture/admin-view-mode.md`
 - Strategy semantics and the SQL each one becomes: the PHPDoc of
   `framework/backend/Backup/Anonymization/AnonymizationStrategy.php` and
   `framework/backend/Backup/Anonymization/AnonymizationSqlBuilder.php`
@@ -56,6 +58,8 @@ writing a verdict.
   its daemon refuses to start until one of them names it.
 - Never treat an empty column map as a gap to fill later; it is the declaration
   that the table holds nothing personal.
+- Never name a column in `_piiNotPersonal` so that a view-mode viewer may see it:
+  the verdict judges the data, and a person's data stays personal whoever looks.
 - Never name one column in both `_pii` and `_piiNotPersonal`, and never declare
   `_piiNotPersonal` on a table purged whole: neither survives the collection.
 - Never declare `AnonymizationStrategy::PURGE` on a table with an incoming

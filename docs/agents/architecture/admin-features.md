@@ -138,6 +138,30 @@ onto the page anonymously must take the grant first (`signUpAdmin` in the chat
 demo), and a second tab of the same browser context inherits the session rather
 than needing its own.
 
+## The view mode: what every admin page owes
+
+A Mode-1 page and a Mode-2 page alike are born in the admin view mode
+([admin-view-mode.md](admin-view-mode.md)): with the mode on, a non-admin
+viewer opens the page, is shown what is not personal, and changes nothing. The
+page is safe by default — its fields are hidden until declared, its actions
+refused until declared reading — and it owes the viewer five things to be
+useful:
+
+- declare its reading actions (not in the code yet — HIL-1251);
+- declare the not-personal fields of its rows and frames, by the verdict of the
+  column or by a declaration on the field, and never declare a column holding
+  a person's data not-personal for the viewer's sake
+  (not in the code yet — HIL-1250);
+- build every mutation out of the controls of the mode
+  (not in the code yet — HIL-1261);
+- put no exception text into a frame by itself
+  (not in the code yet — HIL-1251);
+- send its frames by the page's path, never past the personal-data bridge
+  (not in the code yet — HIL-1250).
+
+An integration test under a viewer — frames without anything personal, a
+writing action refused — travels with the section, not as a leaf of its own.
+
 ## The framework/project boundary
 
 | Layer | Framework owns | Project supplies |

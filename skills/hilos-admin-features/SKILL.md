@@ -1,6 +1,6 @@
 ---
 name: hilos-admin-features
-description: Graduate or build a Hilos admin feature — an admin page backed by a browser table and its actions (settings, hilos-users, roles, or a project's own admin table). Use when moving admin table/page/action code between framework and project, deciding the framework/project boundary, choosing framework-owned (activate/configure/use) vs project-owned-by-pattern, abstracting a presence source, or designing extension points for an admin entity, or when an action of the feature changes an entity the page does not own and you need to know what closes it.
+description: Graduate or build a Hilos admin feature — an admin page backed by a browser table and its actions (settings, hilos-users, roles, or a project's own admin table). Use when moving admin table/page/action code between framework and project, deciding the framework/project boundary, choosing framework-owned (activate/configure/use) vs project-owned-by-pattern, abstracting a presence source, or designing extension points for an admin entity, or when an action of the feature changes an entity the page does not own and you need to know what closes it. Use it too when an admin page, table, or action must hold up in the admin view mode — what a non-admin viewer is shown and may not do.
 ---
 
 # Hilos Admin Features
@@ -34,6 +34,8 @@ read the canonical spec before editing.
   refusal instead of an empty list when no holder answers:
   `docs/agents/architecture/table-agents.md`
 - Who owns the verifier circle: `docs/agents/architecture/protected-mode.md`
+- The admin view mode — what a non-admin viewer sees and may not do, and what
+  every admin page owes it: `docs/agents/architecture/admin-view-mode.md`
 
 ## Workflow
 
@@ -83,5 +85,9 @@ read the canonical spec before editing.
   straight onto it: an agent action is closed by `AUTH_ACTIONS` alone. An action
   closed by more than AUTHENTICATED keeps its name on the page; the page forwards
   the write and answers the client after the owner confirms.
+- An admin page is born in the admin view mode. What it owes a viewer — reading
+  actions, not-personal fields, the view-mode controls, no exception text in a
+  frame — is in `docs/agents/architecture/admin-view-mode.md`; parts of it are
+  not in the code yet, and the doc marks which.
 - Stop and ask before changing hilos-user DB fields, RT presence shape, signals,
   action DTOs, or declarative routing.
