@@ -180,7 +180,10 @@ browser on another node. Rendering still requires access to the original's
 storage, and handing the result over requires a shared temporary directory.
 With local directories this means the images agent and the library must run
 on the same node. Their automatic co-placement is not implemented; POLICY
-entries alone do not guarantee it, just as for uploads and publication.
+entries alone do not guarantee it, just as for uploads and publication. The
+hand-over of a drawn copy goes through a cluster directory, so the images agent
+and the library may live on different nodes (not in the code yet — HIL-1241);
+whose the directories are — [filesystem.md](filesystem.md).
 
 ## What Is Not Here
 

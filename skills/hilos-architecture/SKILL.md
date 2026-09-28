@@ -1,6 +1,6 @@
 ---
 name: hilos-architecture
-description: Work with Hilos daemon, worker, agent lifecycle, event loop, cron, startup, shutdown, server registration, sockets, I/O, and blocking behavior. Use when modifying process boundaries, lifecycle hooks, event-loop code, worker forking, daemon registration, cron handling, or cross-process behavior in a Hilos project, and when deciding how many nodes of a cluster run a given agent and which of them holds an entity.
+description: Work with Hilos daemon, worker, agent lifecycle, event loop, cron, startup, shutdown, server registration, sockets, I/O, and blocking behavior. Use when modifying process boundaries, lifecycle hooks, event-loop code, worker forking, daemon registration, cron handling, or cross-process behavior in a Hilos project, and when deciding how many nodes of a cluster run a given agent and which of them holds an entity, and when registering a `$fs` directory or passing a file to an agent that may run on another node.
 ---
 
 # Hilos Architecture
@@ -20,6 +20,8 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
   on another node may read: `docs/agents/architecture/entity-libraries.md`
 - Who owns a node's log directory, and how a file on another node is read
   through the agent of the node that holds it: `docs/agents/architecture/logs.md`
+- Whose a `$fs` directory is — its node's or the cluster's — and why only
+  names travel between nodes: `docs/agents/architecture/filesystem.md`
 - Blocking risks in handlers or ticks: `docs/agents/antipatterns/blocking-in-ontick.md`
 - Moving long or blocking work out of an agent, and why a child process is not the way: `docs/agents/antipatterns/child-process-for-long-work.md`
 - Where a client presents a session token, key or signed state, and reading a query parameter: `docs/agents/antipatterns/secret-in-query.md`
@@ -37,7 +39,10 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
    apart: how many instances exist, and who picks the node they run on.
    A node that does not hold a set reads it from its holder or from the
    database, never from its own memory.
-7. If the change affects tests or CLI commands, use `$hilos-testing-cli`.
+7. When registering a `$fs` directory or handing a file to another agent,
+   declare whose the directory is — the node's or the cluster's — and pass
+   the directory's name and the file's name, never a path.
+8. If the change affects tests or CLI commands, use `$hilos-testing-cli`.
 
 ## Hard Rules
 

@@ -57,7 +57,8 @@ start refuses the feature without the library pair (and the pair without the
 feature), without the settings library or the catalog fragment, and — once the
 FS context is configured — without the files directory. The chat demo
 registers its published-attachments directory under this name too, so moving
-attachments onto the registry moves no file.
+attachments onto the registry moves no file. The files directory is the
+cluster's: every node and its nginx see it ([filesystem.md](filesystem.md)).
 
 ## Publishing
 
@@ -134,7 +135,10 @@ files directory, asked for on every call, because the facade creates the door
 before the FS context is configured. It renames the temporary file, and when the
 rename cannot cross to the volume the files directory sits on, it copies and
 deletes. A project keeps its files elsewhere by overriding the facade's
-`createFilesStorage()`.
+`createFilesStorage()`. It is the only storage of this version; S3-compatible
+storages and Azure Blob wait as a TODO at this seam —
+[filesystem.md](filesystem.md), "Other Storages Later"
+(not in the code yet — HIL-1240).
 
 ## The Content Fingerprint
 
@@ -251,5 +255,5 @@ location ^~ /_files_internal/ { internal; alias /path/to/files/; }
 - One copy shared by several links, and a quota per person.
 - Placing the uploads agent and the library on one node: the temporary
   directory is local, so on two nodes the library does not find the file and
-  answers `Cannot keep the file`.
+  answers `Cannot keep the file` — HIL-1241.
 - Backing up the files themselves: a backup carries the database only.

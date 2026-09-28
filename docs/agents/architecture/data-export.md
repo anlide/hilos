@@ -113,9 +113,13 @@ subsystem's 4 MiB ceiling; above that it returns 500 and logs which env value to
 configure. The demos configure nginx for test/prod and direct same-origin
 proxies for dev.
 
-`data_export` is one directory shared by every node and its nginx. A
-multi-machine installation supplies a shared volume; the framework does not copy
-archives between nodes. A node without that shared storage may return 404.
+`data_export` is a cluster directory ([filesystem.md](filesystem.md)): every
+node and its nginx see it — one machine, or a shared volume the installation
+supplies; the framework does not carry archives between nodes. Startup drops
+ready rows whose files it cannot see (the restart rule above), so on a node's
+own directory a move of the agent wipes every ready copy. A node whose
+`data_export` is not the one its neighbors see is not admitted into the cluster
+(not in the code yet — HIL-1242).
 
 ## What Is Not Here
 
