@@ -37,11 +37,12 @@ use Hilos\Users\AdminCommandConstants;
  * fake instead of the path an operator walks. The two framework tables that path reads are
  * raised from their migration stubs here.
  *
- * What is pinned is everything the framework owns: that a token naming no session and an
- * unwired project each become exactly one error reply, that the project seam is reached with
- * the user the session carries (or with null when it carries none, expiry included), that
- * `created` tells a mint from a grant and `expired` tells why the user changed (HIL-700).
- * The row the seam writes belongs to a project and is exercised by the demo runs.
+ * What is pinned is the route: that a token naming no session and a failing write each become
+ * exactly one error reply, that the write is reached with the user the session carries (or
+ * with null when it carries none, expiry included), that `created` tells a mint from a grant
+ * and `expired` tells why the user changed (HIL-700). The write itself is the framework's over
+ * `hilos_user` since HIL-1197 and is replaced here, so the route is pinned apart from the
+ * table; {@see SessionsLibraryPersonIntegrationTest} pins the row it writes.
  */
 final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -138,7 +139,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
         self::assertStringContainsString('No session', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-        self::assertFalse($agent->called, 'A token nobody holds never reaches the project write');
+        self::assertFalse($agent->called, 'A token nobody holds never reaches the write');
     }
 
     /**
@@ -157,23 +158,9 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     }
 
     /**
-     * @throws DatabaseException When the seed fails
-     */
-    public function testAnUnwiredProjectRefusesAsAnErrorReply(): void
-    {
-        self::seedSession(self::TOKEN, self::EXISTING_USER_ID);
-
-        $this->sendCommand(new AdminCreateRouteTestUnwiredAgent(), self::TOKEN);
-
-        $reply = $this->consumeReply();
-        self::assertFalse($reply->isOk());
-        self::assertStringContainsString('not wired', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-    }
-
-    /**
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testASessionCarryingAUserReachesTheSeamWithThatId(): void
+    public function testASessionCarryingAUserReachesTheWriteWithThatId(): void
     {
         self::seedSession(self::TOKEN, self::EXISTING_USER_ID);
         $agent = new AdminCreateRouteTestAgent();
@@ -193,7 +180,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     /**
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testASessionCarryingNoUserReachesTheSeamWithNullAndIsBoundToWhatItMints(): void
+    public function testASessionCarryingNoUserReachesTheWriteWithNullAndIsBoundToWhatItMints(): void
     {
         self::seedSession(self::TOKEN, null);
         $agent = new AdminCreateRouteTestAgent();
@@ -203,7 +190,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk());
         self::assertTrue($agent->called);
-        self::assertNull($agent->seenUserId, 'A session with no user asks the seam to mint one');
+        self::assertNull($agent->seenUserId, 'A session with no user asks the write to mint one');
         self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_EXPIRED], 'It carried nobody to lose');
@@ -218,13 +205,13 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      * The point of HIL-700. The command used to find the row with a plain lookup, so a
      * cookie whose expiry had passed was re-bound and slid forward - an expired access
      * became an administrator. It now goes through the same door a handshake uses, which
-     * drops it to anonymous first (HIL-398), so the seam is asked to mint rather than handed
+     * drops it to anonymous first (HIL-398), so the write is asked to mint rather than handed
      * the stale user, and `expired` is what tells the operator why the reply names a user id
      * he has never seen.
      *
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testAnExpiredSessionLosesItsUserAndTheSeamMintsANewOne(): void
+    public function testAnExpiredSessionLosesItsUserAndTheWriteMintsANewOne(): void
     {
         self::seedSession(self::TOKEN, self::EXISTING_USER_ID, self::PAST_EXPIRY);
         $sessionId = Hilos::$db->sessions->findByToken(self::TOKEN)->id;
@@ -235,7 +222,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk());
         self::assertTrue($agent->called);
-        self::assertNull($agent->seenUserId, 'The expired user is gone before the seam is asked');
+        self::assertNull($agent->seenUserId, 'The expired user is gone before the write is asked');
         self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_EXPIRED]);
@@ -285,7 +272,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     /**
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testAFailingSeamAnswersAsAnErrorReply(): void
+    public function testAFailingWriteAnswersAsAnErrorReply(): void
     {
         self::seedSession(self::TOKEN, self::EXISTING_USER_ID);
         $agent = new AdminCreateRouteTestAgent();
@@ -404,40 +391,31 @@ final class AdminCreateRouteTestDbContext extends HilosDbContext
 }
 
 /**
- * The framework half of the sessions library, standing in for a project's concrete subclass:
- * it inherits the command route whole and holds no connections of its own.
- *
- * A base rather than two copies because the case needs the SAME library twice - once with
- * the minting seam wired and once without - and the difference is exactly the seam.
+ * The sessions library with the framework's administrator write replaced, so the route is
+ * pinned apart from the person table: it inherits the command route whole, holds no connections
+ * of its own, and records what the write was asked and names a user instead of writing a row.
+ * The write itself is pinned by {@see SessionsLibraryPersonIntegrationTest}.
  */
-abstract class AdminCreateRouteTestHost extends AbstractSessionsLibraryAgent
+final class AdminCreateRouteTestAgent extends AbstractSessionsLibraryAgent
 {
-}
-
-/**
- * Sessions library with the minting seam wired, standing in for a project binding: it
- * records what the seam was asked and names a user instead of writing a row.
- */
-final class AdminCreateRouteTestAgent extends AdminCreateRouteTestHost
-{
-    /** @var int User id this seam reports having minted for a session that carried none */
+    /** @var int User id this write reports having minted for a session that carried none */
     public const int MINTED_USER_ID = 42;
 
-    /** @var bool Whether the seam was reached at all */
+    /** @var bool Whether the write was reached at all */
     public bool $called = false;
 
-    /** @var ?int User id the seam was handed, meaningful only once called */
+    /** @var ?int User id the write was handed, meaningful only once called */
     public ?int $seenUserId = null;
 
-    /** @var ?ItemNotFoundForUpdateException Failure the seam raises instead of naming a user */
+    /** @var ?ItemNotFoundForUpdateException Failure the write raises instead of naming a user */
     public ?ItemNotFoundForUpdateException $refuseWith = null;
 
     /**
-     * Records the call and names the user, or fails the way a project refuses an unknown one.
+     * Records the call and names the user, or fails the way the framework refuses an unknown one.
      *
      * @param ?int $userId User the session carries, or null when it carries none
      * @return int Id of the user that is now an administrator
-     * @throws ItemNotFoundForUpdateException When the test asked this seam to refuse
+     * @throws ItemNotFoundForUpdateException When the test asked this write to refuse
      */
     protected function ensureAdminUser(?int $userId): int
     {
@@ -450,14 +428,6 @@ final class AdminCreateRouteTestAgent extends AdminCreateRouteTestHost
 
         return $userId ?? self::MINTED_USER_ID;
     }
-}
-
-/**
- * Sessions library of a project that never wired the minting seam - the framework default,
- * unchanged.
- */
-final class AdminCreateRouteTestUnwiredAgent extends AdminCreateRouteTestHost
-{
 }
 
 /** Runtime supplying the live browser tabs an operator can name. */

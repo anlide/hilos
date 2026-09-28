@@ -545,8 +545,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * frame and to every socket of it. A frame with nobody in it, a session that is gone or
      * holds no user, and a person whose row is gone all answer the anonymous response, which
      * clears the frontend's current user. An impersonated session also names the administrator
-     * behind the takeover when that row is there; a project without impersonation never marks
-     * a session with one, so its impersonator slots stay null.
+     * behind the takeover when that row is there; a session nobody took over carries no marker,
+     * so its impersonator slots stay null.
      *
      * The clock, the unfinished registration step, the ack and the "Access closed" card are
      * NOT filled here: the framework stamps them on the way out, from the same frame.

@@ -45,15 +45,15 @@ use Hilos\Users\AdminCommandConstants;
  * at `Hilos::$db->sessions->findByToken()` and the two that succeed end in a real rebind, so a
  * case that faked the session would pin its own fake instead of the path an operator walks.
  *
- * What is pinned is everything the FRAMEWORK owns, which is all of it but one question. The
- * guards that need no project - a token nobody holds, a session carrying nobody, a session
- * already inside a takeover, a session naming its own user - and the write itself, marker and
- * bind, live here since HIL-729; before that they were copied into whichever project wanted
- * the feature. The one question left to a project is whether the asker may take the target
- * over ({@see AbstractSessionsLibraryAgent::assertImpersonationAllowed()}), and what is pinned
- * about it is the shape of the seam rather than any answer: it is reached with both ids, it is
- * NOT reached once a cheaper guard has refused, and a project that never wired it refuses
- * every takeover instead of writing one.
+ * What is pinned is the route: the guards that need no person - a token nobody holds, a
+ * session carrying nobody, a session already inside a takeover, a session naming its own
+ * user - and the write itself, marker and bind, live here since HIL-729; before that they were
+ * copied into whichever project wanted the feature. Whether the asker may take the target over
+ * is the framework's check over `hilos_user` since HIL-1197
+ * ({@see AbstractSessionsLibraryAgent::assertImpersonationAllowed()}), and it is replaced here so
+ * the route is pinned apart from the table: what is pinned about it is where it stands rather
+ * than any answer - it is reached with both ids, and it is NOT reached once a cheaper guard has
+ * refused. Its answers are pinned by {@see SessionsLibraryPersonIntegrationTest}.
  *
  * The browser half is the same core through another door, so it is driven here too - one case
  * each way, enough to pin that the door leads to the same place and answers with no reply of
@@ -75,7 +75,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     /** Token no session row carries. */
     private const string UNKNOWN_TOKEN = '00112233445566778899aabbccddeeff';
 
-    /** User the acting session carries - an administrator, as far as the wired seam is concerned. */
+    /** User the acting session carries - an administrator, as far as the replaced check is concerned. */
     private const int ADMIN_USER_ID = 7;
 
     /** User the acting session asks to act as. */
@@ -169,7 +169,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     /**
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testAStartReachesTheSeamAndWritesTheMarkerWithTheBind(): void
+    public function testAStartReachesTheCheckAndWritesTheMarkerWithTheBind(): void
     {
         self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
         $agent = new ImpersonationRouteTestAgent();
@@ -197,7 +197,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         self::assertTrue($reply->isOk());
         self::assertSame(self::ADMIN_USER_ID, self::boundUserId(self::TOKEN));
         self::assertNull(self::impersonatorUserId(self::TOKEN));
-        self::assertNull($agent->asked, 'Ending a takeover asks the project nothing');
+        self::assertNull($agent->asked, 'Ending a takeover asks the check nothing');
     }
 
     /**
@@ -213,14 +213,14 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
         self::assertStringContainsString('No such session', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-        self::assertNull($agent->asked, 'A token nobody holds never reaches the project seam');
+        self::assertNull($agent->asked, 'A token nobody holds never reaches the check');
         self::assertSame(self::ADMIN_USER_ID, self::boundUserId(self::TOKEN));
     }
 
     /**
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testAnAnonymousSessionIsRefusedBeforeTheSeamIsAsked(): void
+    public function testAnAnonymousSessionIsRefusedBeforeTheCheckIsAsked(): void
     {
         self::seedSession(self::TOKEN, null);
         $agent = new ImpersonationRouteTestAgent();
@@ -230,8 +230,8 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
         self::assertStringContainsString('admin session', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-        // A session carrying nobody has no id to ask the seam about, so the framework has to
-        // answer this one itself rather than hand a project a null it cannot judge.
+        // A session carrying nobody has no id to ask the check about, so the route answers this
+        // one itself rather than hand the check a null it cannot judge.
         self::assertNull($agent->asked);
         self::assertNull(self::boundUserId(self::TOKEN));
     }
@@ -239,22 +239,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     /**
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testAnUnwiredProjectRefusesEveryTakeover(): void
-    {
-        self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
-
-        $this->sendStart(new ImpersonationRouteTestUnwiredAgent(), self::TOKEN, self::TARGET_USER_ID);
-
-        $reply = $this->consumeReply();
-        self::assertFalse($reply->isOk());
-        self::assertStringContainsString('not wired', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-        self::assertSame(self::ADMIN_USER_ID, self::boundUserId(self::TOKEN));
-    }
-
-    /**
-     * @throws DatabaseException When the seed or the read-back fails
-     */
-    public function testASeamRefusalBecomesOneErrorReplyAndWritesNothing(): void
+    public function testACheckRefusalBecomesOneErrorReplyAndWritesNothing(): void
     {
         self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
         $agent = new ImpersonationRouteTestAgent();
@@ -275,7 +260,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     public function testASecondStartIsRefusedWhileAlreadyInsideATakeover(): void
     {
         // The marker is what makes this reachable at all: a session already impersonating a
-        // NON-admin fails the project seam first, because the user it carries is the target.
+        // NON-admin fails the check first, because the user it carries is the target.
         self::seedSession(self::TOKEN, self::ADMIN_USER_ID, self::ADMIN_USER_ID);
         $agent = new ImpersonationRouteTestAgent();
 
@@ -350,8 +335,8 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
      *
      * The guards run outside a page now, where the dispatcher's exception hook does not reach,
      * so a throw would leave the admin's deferred submit waiting for its own timeout. The
-     * refusal chosen is the project's seam, because it is the one this file already owns a
-     * fixture for - and it proves the sentence survives the whole way back.
+     * refusal chosen is the check's, because it is the one this file already owns a fixture
+     * for - and it proves the sentence survives the whole way back.
      *
      * @throws DatabaseException When the seed or the read-back fails
      * @throws HilosException When the frame fails
@@ -361,7 +346,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
         $this->mountLiveConnection();
         $agent = new ImpersonationRouteTestAgent();
-        $agent->refuseWith = new ValidationException('This project says no');
+        $agent->refuseWith = new ValidationException('The check says no');
 
         $this->sendStartFrame($agent);
 
@@ -369,7 +354,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         $done = $this->lastDoneFrame();
         self::assertNotNull($done);
         self::assertSame(self::ACCEPT_KEY, $done->acceptKey);
-        self::assertSame('This project says no', $done->error);
+        self::assertSame('The check says no', $done->error);
     }
 
     /**
@@ -880,33 +865,24 @@ final class ImpersonationRouteTestDbContext extends HilosDbContext
 }
 
 /**
- * The framework half of the sessions library, standing in for a project's concrete subclass.
- *
- * A base rather than two copies because the case needs the SAME library twice - once with the
- * seam wired and once without - and the difference is exactly the seam.
+ * The sessions library with the framework's takeover check replaced, so the route is pinned
+ * apart from the person table: it records what the check was asked instead of reading the
+ * asker's admin flag. The check itself is pinned by {@see SessionsLibraryPersonIntegrationTest}.
  */
-abstract class ImpersonationRouteTestHost extends AbstractSessionsLibraryAgent
+final class ImpersonationRouteTestAgent extends AbstractSessionsLibraryAgent
 {
-}
-
-/**
- * Sessions library with the impersonation seam wired, standing in for a project binding: it
- * records what the seam was asked instead of reading a project's own admin flag.
- */
-final class ImpersonationRouteTestAgent extends ImpersonationRouteTestHost
-{
-    /** @var ?array{int, int} Ids the seam was asked about, or null when it was not asked */
+    /** @var ?array{int, int} Ids the check was asked about, or null when it was not asked */
     public ?array $asked = null;
 
-    /** @var ?ValidationException Refusal the seam raises instead of allowing the takeover */
+    /** @var ?ValidationException Refusal the check raises instead of allowing the takeover */
     public ?ValidationException $refuseWith = null;
 
     /**
-     * Records the question, or refuses the way a project refuses a non-administrator.
+     * Records the question, or refuses the way the framework refuses a non-administrator.
      *
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
-     * @throws ValidationException When the test asked this seam to refuse
+     * @throws ValidationException When the test asked this check to refuse
      */
     protected function assertImpersonationAllowed(int $adminUserId, int $targetUserId): void
     {
@@ -916,13 +892,6 @@ final class ImpersonationRouteTestAgent extends ImpersonationRouteTestHost
 
         $this->asked = [$adminUserId, $targetUserId];
     }
-}
-
-/**
- * Sessions library of a project that never wired the seam - the framework default, unchanged.
- */
-final class ImpersonationRouteTestUnwiredAgent extends ImpersonationRouteTestHost
-{
 }
 
 /**

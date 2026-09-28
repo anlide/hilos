@@ -27,31 +27,24 @@ use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
- * The chat demo's sessions library - five seams wide, and every one of them a chat column
- * the framework cannot see (HIL-710, HIL-729, HIL-302).
+ * The chat demo's sessions library - the merge, the erasure, and a merged account's refusal
+ * on top of the framework's writes (HIL-710, HIL-729, HIL-302, HIL-1197).
  *
  * Everything a session is went into {@see AbstractSessionsLibraryAgent} whole: resolving a
- * handshake cookie, rotating a token, raising a session to a person and reverting it. Six
- * seams a project can be asked to answer stand on it, and this demo answers five.
+ * handshake cookie, rotating a token, raising a session to a person and reverting it. So did
+ * the operations over the person (HIL-1197): {@see CliCommands::ADMIN_CREATE}, the grant pair,
+ * the block and the takeover check write and read `hilos_user` in the framework, the same in
+ * this demo as in the other two. Before that this demo refused admin:create, and it was the one
+ * way out of an installation whose every sign-in method is switched off.
  *
- * {@see CliCommands::ADMIN_CREATE} is the one it does not - the mount stands on the abstract
- * class, so every subclass inherits it - and an operator who types it at this installation
- * gets the refusing default. That refusal is the point rather than a gap: it is the honest
- * answer to a command aimed at a demo that mints its administrators through its own sign-in.
+ * What stays here on top of them is one refusal: an account merged into another one gets no
+ * rights and no block, because `mergedInto` is a chat column the framework cannot see. It is
+ * checked before the parent writes, until the merge table takes it over (HIL-1199).
  *
- * {@see CliCommands::ADMIN_GRANT} is one this demo does answer, because it names a user that
- * already exists and chat keeps its own user rows. All the seam does is write the flag:
- * telling the person's open tabs is the library's, and used to be three project copies of one
- * broadcast (HIL-729).
- *
- * The impersonation pair is where a project's answer is smallest: the library writes the
- * takeover and asks only whether it is allowed
- * ({@see AbstractSessionsLibraryAgent::assertImpersonationAllowed()}). Before HIL-729 the
- * whole operation lived in {@see ChatAgent} for the sake of that one question.
- *
- * The merge pair is where it is largest, and it is still not the operation: the framework
- * moves the ways in and signs the loser out, and asks this demo the two things only it knows
- * - whether these two accounts may be merged at all, and what a chat keeps for a person.
+ * The merge pair is where this demo's answer is largest, and it is still not the operation:
+ * the framework moves the ways in and signs the loser out, and asks this demo the two things
+ * only it knows - whether these two accounts may be merged at all, and what a chat keeps for a
+ * person.
  *
  * The erasure is the merge's opposite and asks the same second question the other way round
  * (HIL-302): when a person's account deletion falls due, the framework erases the ways in and
@@ -86,9 +79,9 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        // TODO(HIL-630): borrowed claim - the users library owns the account set. What this
-        // library does to a chat user is set the admin flag, tombstone the loser of a merge and
-        // delete the row of an erased account (HIL-302).
+        // TODO(HIL-630): borrowed claim - the users library owns the account set. Beside the
+        // framework's share, this library tombstones the loser of a merge (HIL-1199) and deletes
+        // the row of an erased account (HIL-1200).
         ChatDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // TODO(HIL-626): borrowed claim - the chat agent owns the message rows. A merge
         // re-points the loser's messages onto the survivor; an erasure deletes the person's.
@@ -134,83 +127,48 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     ];
 
     /**
-     * Writes the admin flag of one chat user - and nothing else.
+     * Refuses a merged account before the framework writes its admin flag.
      *
-     * The claim behind the write is the one {@see self::onStart()} makes.
-     *
-     * The announcement that used to follow the write here is the framework's now: the library
-     * states the session and {@see ChatAgent} says it out loud, which is the one path every
-     * other identity change already travels.
+     * The framework's write refuses a missing account on its own; only a row that exists is
+     * asked here whether it was folded into another one, and the refusal comes before the
+     * parent because the parent writes.
      *
      * @param int $userId Target user id, already validated as positive
      * @param bool $admin New admin flag
      * @throws ValidationException When the account was merged into another one
      * @throws ItemNotFoundForUpdateException When no user carries that id
-     * @throws HilosException On database failure while writing the flag
+     * @throws HilosException On database failure while reading or writing the flag
      */
     protected function applyAdminGrant(int $userId, bool $admin): void
     {
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-
-        if ($user->mergedInto !== null) {
+        // TODO(HIL-1199): the merge table takes this refusal over, and this override goes.
+        if (Hilos::$db->users[$userId]?->mergedInto !== null) {
             throw new ValidationException('This account was merged into another one');
         }
 
-        $user->actions->setAdmin($admin);
+        parent::applyAdminGrant($userId, $admin);
     }
 
     /**
+     * Refuses a merged account before the framework writes its block flag.
+     *
+     * The same shape as {@see self::applyAdminGrant()}: a missing account is the parent's to
+     * refuse, a merged one is refused here before the parent writes.
+     *
      * @param int $userId Target account id
      * @param bool $block Requested block flag
-     * @throws ItemNotFoundForUpdateException When the account does not exist
      * @throws ValidationException When the account was merged into another one
+     * @throws ItemNotFoundForUpdateException When the account does not exist
      * @throws HilosException On database or truth-source failure
      */
     protected function applyAccountBlock(int $userId, bool $block): void
     {
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-        if ($user->mergedInto !== null) {
+        // TODO(HIL-1199): the merge table takes this refusal over, and this override goes.
+        if (Hilos::$db->users[$userId]?->mergedInto !== null) {
             throw new ValidationException('This account was merged into another one');
         }
 
-        $user->actions->setBlock($block);
-    }
-
-    /**
-     * Decides whether one chat user may take another over.
-     *
-     * Both halves are refused by throwing, in the order the guards used to run in
-     * {@see ChatAgent} so the refusals a caller can see are unchanged: the asker must carry
-     * the chat `admin` flag, and only then is the target looked up at all. An unprivileged
-     * caller therefore never learns from this whether the id it named exists.
-     *
-     * Nothing here says the target may not be an administrator too. Admin-on-admin takeover
-     * was allowed before the move and stays allowed; what the library refuses on its own is
-     * the degenerate case of a session naming its own user.
-     *
-     * @param int $adminUserId User the acting session currently carries
-     * @param int $targetUserId User that session asks to act as
-     * @throws ValidationException When the asker is not an administrator or the target is unknown
-     * @throws DatabaseException When reading the user collection fails
-     * @throws InvalidArgumentException When a loaded user object does not match the collection
-     * @throws LogicException When the user collection is not configured
-     */
-    protected function assertImpersonationAllowed(int $adminUserId, int $targetUserId): void
-    {
-        $admin = Hilos::$db->users[$adminUserId] ?? null;
-        if ($admin === null || !$admin->admin) {
-            throw new ValidationException('Session is not an admin session');
-        }
-
-        if ((Hilos::$db->users[$targetUserId] ?? null) === null) {
-            throw new ValidationException("No such user: {$targetUserId}");
-        }
+        parent::applyAccountBlock($userId, $block);
     }
 
     /**

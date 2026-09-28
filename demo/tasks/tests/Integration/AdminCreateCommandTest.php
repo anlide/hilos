@@ -15,15 +15,15 @@ use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Proves this demo's half of admin:create: the row it mints and the row it flags (HIL-609).
+ * Proves admin:create over this demo's people: the row it mints and the row it flags (HIL-609).
  *
- * The framework owns the command, the lookup and the session bind, and pins them over its
- * own tables; what belongs here is the project seam - that a session carrying a user has
- * THAT user flagged and no second one appears, and that a session carrying none leaves with
- * an administrator bound to it. Both go through the command the daemon really routes rather
- * than through the seam directly, because the mount is part of what is being proven - and
- * since HIL-710 that mount is the sessions library, which is where the command ends up
- * because it ends in a session bind.
+ * The framework owns the command, the lookup, the session bind and, since HIL-1197, the write
+ * itself over the people table this demo mounts; what belongs here is that the write lands in
+ * this demo - a session carrying a user has THAT user flagged and no second one appears, and a
+ * session carrying none leaves with an administrator bound to it. Both go through the command
+ * the daemon really routes rather than through the write directly, because the mount is part
+ * of what is being proven - and since HIL-710 that mount is the sessions library, which is
+ * where the command ends up because it ends in a session bind.
  *
  * Requires the test DB reset (composer run test:db-reset).
  */

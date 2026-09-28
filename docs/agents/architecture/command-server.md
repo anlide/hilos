@@ -168,21 +168,21 @@ is the one copy of it, and the wait budget is not a thing a command has an opini
 
 ## Worked example — `admin:grant` / `admin:revoke`
 
-The grant itself is an **ordinary user action**, not a bespoke signal: the project
-seam `applyAdminGrant()` calls its own `setAdmin($bool)`, which persists and
-`sync()`s, and the existing browser source fan-out pushes the changed user to
-everyone viewing the users list. The command channel only carries the request and
-the outcome (success / "no such user" / already-set). The two
-`AbstractSetAdminCommand` subclasses (`admin:grant`, `admin:revoke`) are real
-operator commands — not `TestOnlyCommand`. `admin:revoke` refuses to remove the
-last active administrator, using the same guard as the admin account card.
+The grant itself is an **ordinary user action**, not a bespoke signal: the sessions
+library's `applyAdminGrant()` calls `setAdmin($bool)` on the person's `hilos_user`
+row, which persists and `sync()`s, and the existing browser source fan-out pushes
+the changed user to everyone viewing the users list. The command channel only
+carries the request and the outcome (success / "no such user" / already-set). The
+two `AbstractSetAdminCommand` subclasses (`admin:grant`, `admin:revoke`) are real
+operator commands — not `TestOnlyCommand`. `admin:revoke` refuses to remove the last
+active administrator, using the same guard as the admin account card.
 
 It is answered by the **sessions library**, beside `admin:create` and for the same
-reason (HIL-729): the flag changes what a browser may open, so every live session
-of that user has to be told, and the sessions are the library's. The framework
-does the telling — one `hilos_session_state` frame per live session — and the
-project seam writes nothing but the flag. Before that merge each demo carried its
-own copy of the re-greeting, and the two that were not chat had lost fields from it.
+reason (HIL-729): the flag changes what a browser may open, so every live session of
+that user has to be told, and the sessions are the library's. The framework does the
+telling — one `hilos_session_state` frame per live session — and `applyAdminGrant()`
+writes nothing but the flag. Before that merge each demo carried its own copy of the
+re-greeting, and the two that were not chat had lost fields from it.
 
 This is what makes a `BrowserGuardType::ACCESS` gate usable against guest auth:
 identity is a persistent httpOnly cookie, so **one browser is a stable user**.
@@ -203,11 +203,12 @@ row when the session carries none. The cookie's name is the installation's own
 name, unless `HILOS_SESSION_COOKIE_NAME` sets it), and the command's help prints it. Its two halves are
 `AdminCreateCommand` on the CLI and
 `AbstractSessionsLibraryAgent::handleAdminCreateCommand()` on the agent, with
-`ensureAdminUser()` as the project seam that writes the row.
+`ensureAdminUser()` writing the `hilos_user` row — the framework's in every
+project since HIL-1197.
 
 A session whose expiry has passed is dropped by the same door a handshake goes
 through (`resolveHandshakeSession()`, the HIL-398 rule), so the user it carried is
-unbound before the seam is asked: the administrator is a NEW user rather than the
+unbound before the write is asked: the administrator is a NEW user rather than the
 one a stale cookie still names, and the reply carries `expired` so the operator
 knows why the id is one he has never seen (HIL-700).
 
@@ -218,17 +219,18 @@ library's. That is also why no reconnect is needed — the bind ends in a
 re-points the session's live sockets and re-sends them the handshake response, so
 the admin entry appears in the open tab.
 
-**Every project that registers the library answers this command,** because the
-mount stands on the abstract class (`AGENT_COMMANDS`) rather than being named per
-project. One with nobody to mint — the chat demo, which has a login of its own —
-answers the refusing default of `ensureAdminUser()`, and that refusal is the point:
-an operator who typed the command at the wrong installation gets a no rather than a
-command socket that never answers, which reads as a hang. Before HIL-710 the name
-was carried by whichever agent chose to, so a project that did not carry it left
-the socket silent.
+**Every project that registers the library answers this command, and answers it
+the same way,** because the mount stands on the abstract class (`AGENT_COMMANDS`)
+rather than being named per project and the write is the framework's over
+`hilos_user` (HIL-1197). The chat demo is no exception although it has a login of
+its own: the command is the one way out of an installation whose every sign-in
+method is switched off (`AuthMethodsDisabledRule`), so no project may be without
+it. Until HIL-1197 the chat answered a refusing default instead, and before HIL-710
+the name was carried by whichever agent chose to, so a project that did not carry
+it left the socket silent, which reads as a hang.
 
 Since HIL-730 the daemon closes that gap from its own side as well: a name no agent of the
-installation owns is refused by the master rather than left to the client's timeout. So a
-project seam answering `no` is no longer the only thing between an operator and a hang —
-but it is still the better answer of the two, because the seam knows WHY and the master
-only knows that nobody is there.
+installation owns is refused by the master rather than left to the client's timeout. So an
+agent answering `no` is no longer the only thing between an operator and a hang — but it
+is still the better answer of the two, because the agent knows WHY and the master only
+knows that nobody is there.

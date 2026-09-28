@@ -18,6 +18,7 @@ use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Tests\Integration\SessionsLibraryPersonIntegrationTest;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Users\AdminAudience;
 use PHPUnit\Framework\TestCase;
@@ -29,9 +30,10 @@ use PHPUnit\Framework\TestCase;
  * and is answered by whatever reaches the unauthenticated command socket - the CLI class that
  * normally sends it is not on the path. What needs pinning here is everything the framework
  * owns: that both wire names land on the handler, that the payload is validated before the
- * project seam is called, and that the seam's outcome - refusal, failure, success - always
- * becomes exactly one reply. The write itself belongs to a project and is exercised by the
- * demo runs.
+ * write is called, and that the write's outcome - refusal, failure, success - always becomes
+ * exactly one reply. The write itself is the framework's over `hilos_user` since HIL-1197 and is
+ * replaced here, so the route is pinned apart from the table; its row is pinned by
+ * {@see SessionsLibraryPersonIntegrationTest}.
  *
  * A write that lands is ANNOUNCED, and the announcement is what moving the route bought: one
  * session state frame per live session of the person, ahead of the reply. The project handler
@@ -135,18 +137,6 @@ final class AdminGrantCommandRouteTest extends TestCase
         self::assertNull($agent->applied);
     }
 
-    public function testAnUnwiredProjectRefusesAsAnErrorReply(): void
-    {
-        $this->sendCommand(new AdminGrantRouteTestUnwiredAgent(), CliCommands::ADMIN_GRANT, [
-            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
-            AdminCommandConstants::FIELD_ADMIN => true,
-        ]);
-
-        $reply = $this->consumeReply();
-        self::assertFalse($reply->isOk());
-        self::assertStringContainsString('not wired', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-    }
-
     public function testAnUnknownUserAnswersAsAnErrorReply(): void
     {
         $agent = new AdminGrantRouteTestAgent();
@@ -174,7 +164,7 @@ final class AdminGrantCommandRouteTest extends TestCase
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
         self::assertStringContainsString('positive userId', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-        self::assertNull($agent->applied, 'A rejected payload never reaches the project write');
+        self::assertNull($agent->applied, 'A rejected payload never reaches the write');
     }
 
     public function testAMissingUserIdIsRefusedRatherThanReadAsZero(): void
@@ -270,17 +260,18 @@ final class AdminGrantCommandRouteTest extends TestCase
 }
 
 /**
- * Sessions library with the grant wired, standing in for a project binding: it records the
- * call instead of writing a row, and can be told to fail the way a project refuses an unknown
- * user. The announcement is stubbed too - reading a person's sessions needs a database this
- * suite deliberately does not have, so the fixture states the one session it pretends to hold.
+ * Sessions library with the framework's grant replaced, so the route is pinned apart from the
+ * person table: it records the call instead of writing a row, and can be told to fail the way
+ * the framework refuses an unknown user. The announcement is stubbed too - reading a person's
+ * sessions needs a database this suite deliberately does not have, so the fixture states the
+ * one session it pretends to hold.
  */
 final class AdminGrantRouteTestAgent extends AbstractSessionsLibraryAgent
 {
-    /** @var ?array{int, bool} Arguments the seam was called with, or null when it was not */
+    /** @var ?array{int, bool} Arguments the write was called with, or null when it was not */
     public ?array $applied = null;
 
-    /** @var ?ItemNotFoundForUpdateException Failure the seam raises instead of writing */
+    /** @var ?ItemNotFoundForUpdateException Failure the write raises instead of writing */
     public ?ItemNotFoundForUpdateException $refuseWith = null;
 
     public function onStop(): void
@@ -288,11 +279,11 @@ final class AdminGrantRouteTestAgent extends AbstractSessionsLibraryAgent
     }
 
     /**
-     * Records the grant, or fails the way a project refuses an unknown user.
+     * Records the grant, or fails the way the framework refuses an unknown user.
      *
      * @param int $userId Target user id
      * @param bool $admin New admin flag
-     * @throws ItemNotFoundForUpdateException When the test asked this seam to refuse
+     * @throws ItemNotFoundForUpdateException When the test asked this write to refuse
      */
     protected function applyAdminGrant(int $userId, bool $admin): void
     {
@@ -301,16 +292,6 @@ final class AdminGrantRouteTestAgent extends AbstractSessionsLibraryAgent
         }
 
         $this->applied = [$userId, $admin];
-    }
-}
-
-/**
- * Sessions library of a project that never wired the grant - the framework default, unchanged.
- */
-final class AdminGrantRouteTestUnwiredAgent extends AbstractSessionsLibraryAgent
-{
-    public function onStop(): void
-    {
     }
 }
 

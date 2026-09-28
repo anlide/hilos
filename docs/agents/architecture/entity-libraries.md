@@ -468,13 +468,13 @@ deletion actions use the same handover: the sessions library writes rights and b
 and the users library schedules or cancels deletion; the ADMIN page answers each press.
 
 **An operation with two entrances: the gatekeeper's lock closes the browser one
-only.** The writer keeps its own seam for the entrance that has no page. The
+only.** The writer keeps its own check for the entrance that has no page. The
 impersonation is the case: `AbstractSessionsLibraryAgent::assertImpersonationAllowed()`
-stays exactly as it was after the page took the name, because
-`CliCommands::IMPERSONATE_START` reaches the same core from a command socket, where
-there is no level to check and the seam is the only judge. A seam that duplicates a
-page level for the browser is not a redundancy to clean up — it is the other
-entrance's whole lock.
+— the framework's check over `hilos_user` since HIL-1197 — stayed where it was after
+the page took the name, because `CliCommands::IMPERSONATE_START` reaches the same core
+from a command socket, where there is no level to check and the check is the only
+judge. A check that duplicates a page level for the browser is not a redundancy to
+clean up — it is the other entrance's whole lock.
 
 **The deviation this leaf repaired, so the next session operation copies the rule
 and not the exception.** `hilos_impersonate_start` sat in the sessions library's

@@ -6,6 +6,7 @@ namespace Hilos\Notification\Library;
 
 use DateTimeImmutable;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
@@ -99,10 +100,10 @@ use Throwable;
  * {@see HilosSignalConstants::HILOS_NOTIFICATION_EMIT} here and the write happens in one
  * place.
  *
- * It is NOT abstract by necessity, unlike {@see AbstractSessionsLibraryAgent}, whose
- * `ensureAdminUser()` needs a project's own user table: notifications have no project half at
- * all. It is abstract by convention alone - every Hilos agent is mounted through a concrete
- * class in the project's registry - so a subclass usually adds nothing but its name.
+ * It is abstract by convention alone, like {@see AbstractSessionsLibraryAgent} and
+ * {@see AbstractUsersLibraryAgent}: every Hilos agent is mounted through a concrete class in the
+ * project's registry. Unlike theirs, its project half is empty - no claim over a project's own
+ * tables, no rows of its own to add - so a subclass usually adds nothing but its name.
  *
  * WHAT IT DOES NOT OWN: the delivery journal outright. A channel agent
  * ({@see AbstractDeliveryChannelAgent}) edits the row of its own attempt, so the journal is

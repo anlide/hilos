@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\WorkerManager;
@@ -137,6 +138,23 @@ final class AgentTruthSourceOperationsTest extends TestCase
         $this->assertTrue($claims[HilosDbContext::users]->isComplete());
     }
 
+    /**
+     * The sessions library holds a share of the person row and not the row: it adds and edits.
+     *
+     * It mints the first administrator and writes the admin and block flags (HIL-1197); removing
+     * a person stays with its owner. Read off an empty subclass, so what answers is the base's
+     * own declaration and no project's addition to it.
+     */
+    public function testSessionsLibraryMayAddAndEditThePersonRowButNotRemoveIt(): void
+    {
+        $claims = OwnershipDeclaration::dbCollectionsOf(AgentTruthSourceOperationsTestSessionsLibrary::class);
+
+        $this->assertArrayHasKey(HilosDbContext::users, $claims);
+        $this->assertTrue($claims[HilosDbContext::users]->allows(TruthSourceOperation::Add));
+        $this->assertTrue($claims[HilosDbContext::users]->allows(TruthSourceOperation::Update));
+        $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Remove));
+    }
+
     public function testLibraryAgentMayNotEditWhatIsAlreadyWritten(): void
     {
         $agent = new AgentTruthSourceOperationsTestLibrary();
@@ -231,4 +249,13 @@ final class AgentTruthSourceOperationsTestLibrary extends AbstractUsersLibraryAg
 
     public const string AGENT_TYPE = 'unit_truth_source_operations_library';
     public const string RT_COLLECTION = 'unit_truth_source_operations_library_rt';
+}
+
+/**
+ * The framework's sessions library base class under a test name, and nothing else - so its
+ * claims are the base's declaration and no project's.
+ */
+final class AgentTruthSourceOperationsTestSessionsLibrary extends AbstractSessionsLibraryAgent
+{
+    public const string AGENT_TYPE = 'unit_truth_source_operations_sessions_library';
 }

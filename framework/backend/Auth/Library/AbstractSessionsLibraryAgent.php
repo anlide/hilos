@@ -100,6 +100,8 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
@@ -115,6 +117,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
@@ -126,6 +129,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
@@ -180,10 +184,15 @@ use Throwable;
  * which is what makes the order in that answer hold: it writes the connection row and sends
  * the identity from one queue.
  *
- * It is ABSTRACT for one reason: {@see CliCommands::ADMIN_CREATE} ends in a user row, and
- * the framework does not know the shape of a project's users table. The project supplies
- * that step through {@see ensureAdminUser()} and nothing else - a project with a login of
- * its own mounts the command nowhere and inherits the refusing default.
+ * It is ABSTRACT by convention alone, like {@see AbstractNotificationsLibraryAgent} and
+ * {@see AbstractUsersLibraryAgent}: every Hilos agent is mounted through a concrete class in the
+ * project's registry. The operations over the person are the framework's over `hilos_user` in
+ * every project (HIL-1197) - minting the first administrator ({@see ensureAdminUser()}), the
+ * admin flag ({@see applyAdminGrant()}), the block ({@see applyAccountBlock()}) and whether one
+ * person may take another over ({@see assertImpersonationAllowed()}). What a project adds is the
+ * claims over its own way in - the sign-in waits and the registration holds, declared where a
+ * sign-in surface exists - and its own rows in a merge ({@see assertMergeable()},
+ * {@see applyAccountMerge()}) and an erasure ({@see applyAccountErasure()}).
  *
  * A session is anonymous (user id null) until {@see authenticateSession()} binds a user;
  * {@see deauthenticateSession()} is the symmetric downgrade that keeps the row and moves it
@@ -220,6 +229,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * one is lazy. Unconditional because the writer is a method of this class, not a project seam:
      * a project that wires the merge inherits it.
      *
+     * The person table is the users library's too, and this library holds a narrower share of it:
+     * adding and editing, nothing else (HIL-1197). It mints the first administrator
+     * ({@see ensureAdminUser()}) and writes the admin and block flags ({@see applyAdminGrant()},
+     * {@see applyAccountBlock()}). The share may add, so the start does not wait for it the way it
+     * waits for a borrowed claim; nothing here reads a person at start, which is what a co-owner
+     * that may add owes (docs/agents/architecture/truth-source.md). Unconditional for the reason
+     * the identity entry is: the writers are methods of this class, not a project seam.
+     *
      * The registration holds are NOT here. They are the users library's row and are claimed only
      * where a sign-in surface exists, which a class constant cannot ask - so the project subclass
      * that has one declares them itself, under the same condition that arms the hold sweep.
@@ -246,6 +263,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public const array OWNS_DB = [
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
+        // TODO(HIL-630): borrowed claim - the users library owns the person row; this library mints an
+        // administrator and writes the admin and block flags (HIL-1197).
+        HilosDbContext::users => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         // TODO(HIL-630): borrowed claim - the identity table belongs to the users library.
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns it; carried out with the account here (HIL-302).
@@ -393,9 +413,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Its start left in HIL-824 for failing the FIRST half: only an administrator may take a
      * person over, which is more than "you have a session". It now stands on
      * {@see AbstractHilosUsersPage} and the write comes back here on
-     * {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}. The seam
+     * {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}. The check
      * {@see self::assertImpersonationAllowed()} stays either way: the command line is a second
-     * entrance with no page at all, and there the seam is the only judge.
+     * entrance with no page at all, and there the check is the only judge.
      *
      * The last three are the tabs of one session answering about the toasts the server raised
      * for it (HIL-768): closed, counted down, being read. They sit here for the plainest
@@ -469,13 +489,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the command socket's non-production gate refuses it on production. This holder
      * already has the request's update right and owns the erasure and session sign-out.
      *
-     * Every project that registers the library answers all seven, and one that wires no
-     * seam answers a REFUSAL ({@see ensureAdminUser()}, {@see applyAdminGrant()},
-     * {@see assertImpersonationAllowed()}, {@see assertMergeable()}) rather than nothing at
-     * all. That is the honest outcome for an operator who typed it into the wrong
-     * installation: before the move the name was carried by whichever agent chose to, so a
-     * project that did not left the command socket silent - which reads as a hang, not as a
-     * no.
+     * Every project that registers the library answers all seven. The first five are the
+     * framework's code over `hilos_user` in every one of them ({@see ensureAdminUser()},
+     * {@see applyAdminGrant()}, {@see assertImpersonationAllowed()}, HIL-1197); only the merge
+     * still answers a REFUSAL by default, in a project that never wired it
+     * ({@see assertMergeable()}), rather than nothing at all. That is the honest outcome for an
+     * operator who typed it into the wrong installation: before the move the name was carried by
+     * whichever agent chose to, so a project that did not left the command socket silent - which
+     * reads as a hang, not as a no.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::ADMIN_CREATE,
@@ -1571,11 +1592,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * tab, so a fresh administrator is shown the way in without a reload. Re-binding the
      * same user changes nothing else, so the repeat costs nothing.
      *
-     * Whether a row was minted is read BEFORE the seam is called: once the session is bound
+     * Whether a row was minted is read BEFORE the write is called: once the session is bound
      * nothing tells a mint from a grant, and that is the one thing the operator cannot infer
      * for himself.
      *
-     * Any failure - a project that never wired the seam, a token of the wrong shape, a
+     * Any failure - a session naming a user with no row behind it, a token of the wrong shape, a
      * refused write - becomes exactly one error reply, because a CLI parked on the command
      * socket must learn the outcome rather than time out.
      *
@@ -1657,32 +1678,38 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Makes one user an administrator, minting the row when there is no user yet - the
-     * project's half of {@see self::handleAdminCreateCommand()}.
+     * Makes one user an administrator, minting the `hilos_user` row when there is no user yet -
+     * the write behind {@see self::handleAdminCreateCommand()}.
      *
-     * A seam with a refusing default rather than an abstract method, the shape
-     * {@see self::applyAdminGrant()} uses: {@see self::AGENT_COMMANDS}
-     * stands on this class, so every project subclassing it mounts the command whether or
-     * not it has anybody to mint - the chat demo, which has a login of its own, is one. An
-     * abstract method would make each of them write a body for a command they never expect
-     * to be typed; the refusal reaches the operator as the command's error reply instead,
-     * which is the honest answer to a command aimed at the wrong installation.
+     * The framework's in every project, the chat demo included (owner's decision 2026-09-28,
+     * HIL-1197): the command is the one way out of an installation whose every sign-in method
+     * is switched off, so no project may be left without it. One method rather than two,
+     * because the caller's question is one question: make this session's person an
+     * administrator.
      *
-     * One seam rather than two, because the caller's question is one question: make this
-     * session's person an administrator. A project that answered "flag" and "mint" apart
-     * would own two ways of writing the same flag.
-     *
-     * The session bind is NOT the implementation's to do - the framework does it around this
-     * call. An implementation writes the row and nothing else.
+     * Not final, for the reason {@see AbstractUsersLibraryAgent::createUser()} gives: the
+     * framework's test stands replace it to pin the command route apart from the table. The
+     * session bind is not done here - the command does it around this call.
      *
      * @param ?int $userId User the session carries, or null when it carries none
      * @return int Id of the user that is now an administrator
-     * @throws NotImplementedException When the project has not wired the minting seam
-     * @throws HilosException Whatever the project's implementation raises, an unknown user among it
+     * @throws ItemNotFoundForUpdateException When the session names a user with no row behind it
+     * @throws HilosException On database failure while minting or flagging
      */
     protected function ensureAdminUser(?int $userId): int
     {
-        throw new NotImplementedException('Admin minting is not wired in this project');
+        if ($userId === null) {
+            return (int)Hilos::$db->users->actions->registerAdmin()->id;
+        }
+
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+
+        $user->actions->setAdmin(true);
+
+        return $userId;
     }
 
     /**
@@ -1694,13 +1721,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * but the boolean, and a second copy of the lookup would be a second place to get it
      * wrong.
      *
-     * The write itself belongs to the project ({@see self::applyAdminGrant()}), which is
-     * also where an unknown user is refused: the framework does not know the collection the
-     * project keeps its users in. Any failure from there - an unwired project, an unknown
-     * user, a database error - becomes one error reply, because a CLI parked on the command
-     * socket must learn the outcome rather than time out.
+     * The write is {@see self::applyAdminGrant()}, where an unknown user is refused. Any
+     * failure from there - an unknown user, a project's own refusal, a database error -
+     * becomes one error reply, because a CLI parked on the command socket must learn the
+     * outcome rather than time out.
      *
-     * The ANNOUNCEMENT is not the project's, and that is what the move to this library
+     * The ANNOUNCEMENT is not the write's, and that is what the move to this library
      * bought (HIL-729): a flag written in silence reaches the browser only on the next
      * reload, and until then a fresh administrator is shown no way in. Saying it out loud
      * needs the person's sockets and the session behind each of them, which is exactly what
@@ -1846,40 +1872,48 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Writes the admin flag of one user - the project's half of the grant pair.
+     * Writes the admin flag of one user's `hilos_user` row, and nothing else.
      *
-     * A seam with a refusing default rather than an abstract method, the shape
-     * {@see self::ensureAdminUser()} uses and for the same reason: the mount stands on this
-     * class, so every project subclassing it answers the command whether or not it keeps a
-     * flag of its own to write. The refusal reaches the operator as the command's error
-     * reply, which is the honest answer to a command aimed at the wrong installation.
-     *
-     * An implementation writes the row and NOTHING else. Telling the person's browsers is
-     * the framework's ({@see self::announceAdminGrant()}); before HIL-729 it was part of
-     * this seam, and each of the three demos wrote its own version of the announcement.
-     * An unknown user is the implementation's to refuse, by throwing.
+     * Telling the person's browsers is {@see self::announceAdminGrant()}; before HIL-729 it was
+     * part of this write, and each of the three demos wrote its own version of the announcement.
+     * A project with a refusal of its own overrides this and refuses BEFORE calling the parent,
+     * because the parent writes - the chat refuses a merged account until the merge table takes
+     * that over (HIL-1199). Not final, for the reason {@see self::ensureAdminUser()} gives.
      *
      * @param int $userId Target user id, already validated as positive
      * @param bool $admin New admin flag
-     * @throws NotImplementedException When the project has not wired the grant
-     * @throws HilosException Whatever the project's grant implementation raises, an unknown user among it
+     * @throws ItemNotFoundForUpdateException When no user carries that id
+     * @throws HilosException On database failure while writing the flag
      */
     protected function applyAdminGrant(int $userId, bool $admin): void
     {
-        throw new NotImplementedException('Admin grant is not wired in this project');
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+
+        $user->actions->setAdmin($admin);
     }
 
     /**
-     * Writes only the project's block flag; the library enforces it after the write.
+     * Writes the block flag of one user's `hilos_user` row; the library enforces it after the write.
+     *
+     * The same shape as {@see self::applyAdminGrant()}: a project with a refusal of its own
+     * overrides this and refuses before calling the parent.
      *
      * @param int $userId Target account id
      * @param bool $block Requested block flag
-     * @throws NotImplementedException When the project has not wired account blocking
-     * @throws HilosException When the project refuses the account or cannot write the flag
+     * @throws ItemNotFoundForUpdateException When no user carries that id
+     * @throws HilosException On database or truth-source failure while writing the flag
      */
     protected function applyAccountBlock(int $userId, bool $block): void
     {
-        throw new NotImplementedException('Account block is not wired in this project');
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+
+        $user->actions->setBlock($block);
     }
 
     /**
@@ -4038,7 +4072,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * session answers to afterwards - a rotated one, when the bind rotated it. Answering
      * "accepted" from here instead would make a mistyped token look like a success.
      *
-     * Every failure is caught, including the project's own from
+     * Every failure is caught, including the refusal of
      * {@see self::assertImpersonationAllowed()}: a command failure that reached the worker
      * loop would leave the operator parked on the socket with nothing coming back.
      *
@@ -4096,8 +4130,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * A refusal comes back on the answering frame rather than as a throw. Outside a page there
      * is no dispatcher hook to turn a throw into an ack, so a throw here would leave the admin's
      * deferred submit waiting for its own timeout with nothing to show. Everything is caught for
-     * that reason, the project's unwired seam among it - the one failure that is not a guard
-     * refusing and would otherwise be the silent case. A guard's sentence travels whole; any
+     * that reason, a database failure among it - the one failure that is not a guard refusing
+     * and would otherwise be the silent case. A guard's sentence travels whole; any
      * other failure travels as the placeholder with its class and text beside it, through the
      * same door a page action's failure passes, and is logged here.
      *
@@ -4147,12 +4181,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Makes one admin session act as another user - the core behind both ways in (HIL-166).
      *
      * Guards, in order: the session must exist; it must carry a user at all; that user must
-     * be allowed to take the target over, which is the project's answer
+     * be allowed to take the target over, which is the framework's check
      * ({@see self::assertImpersonationAllowed()}); the session must not already be
      * impersonating (no nesting); and the target must differ from the person asking.
      *
      * The order is what keeps the refusals honest rather than an accident of writing. The
-     * project seam stands where the admin check stood before the move, so a session that is
+     * check stands where the admin check stood before the move, so a session that is
      * already impersonating still fails as "not an admin session" - its current user is the
      * non-admin target, not the administrator behind it - and never gets far enough to learn
      * whether some other user id exists.
@@ -4168,7 +4202,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param ?string $initiatorAcceptKey Accept key of the admin's connection, or null for the CLI path
      * @param ?string $correlationId Command correlation id to answer the operator on, or null for a browser
      * @throws ValidationException When a guard rejects the request
-     * @throws NotImplementedException When the project has not wired the impersonation seam
      * @throws InvalidArgumentException When the state frame or the reply cannot be named
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws HilosException On database or runtime failure
@@ -4276,30 +4309,36 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Decides whether one user may take another over - the project's half of the
-     * impersonation pair.
+     * Decides whether one user may take another over, from their `hilos_user` rows.
      *
-     * A seam with a refusing default rather than an abstract method, the shape
-     * {@see self::applyAdminGrant()} uses and for the same reason: the mount stands on this
-     * class, so every project subclassing it offers the control whether or not it keeps a
-     * privilege of its own to judge. The refusal reaches an operator as the command's error
-     * reply and a browser as the action's fail ack.
+     * Both halves are refused by throwing, in the order the chat demo ran them before the check
+     * moved here (HIL-1197), so the refusals a caller can see are unchanged: the asker must be
+     * an administrator, and only then is the target looked up at all. An unprivileged caller
+     * therefore never learns from this whether the id it named exists. The refusal reaches an
+     * operator as the command's error reply and a browser as the action's fail ack.
      *
-     * BOTH questions are the project's and both are answered by throwing: whether the asker
-     * is privileged - the flag that says so is a project column no framework library can see
-     * - and whether the target exists at all, since the users are the project's collection.
-     * The framework asks them together because a caller allowed to take over a user it
-     * cannot name has learned nothing, and one that may not is owed the same answer whatever
-     * it named.
+     * Nothing here says the target may not be an administrator too: admin-on-admin takeover is
+     * allowed, and what the library refuses on its own is a session naming its own user. Who may
+     * be taken over and what a takeover may do is the policy of HIL-1170, not a project hook.
+     * Not final, for the reason {@see self::ensureAdminUser()} gives.
      *
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
-     * @throws NotImplementedException When the project has not wired the impersonation seam
-     * @throws HilosException Whatever the project's implementation raises, an unknown user among it
+     * @throws ValidationException When the asker is not an administrator or the target is unknown
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     protected function assertImpersonationAllowed(int $adminUserId, int $targetUserId): void
     {
-        throw new NotImplementedException('Impersonation is not wired in this project');
+        $admin = Hilos::$db->users[$adminUserId] ?? null;
+        if ($admin === null || !$admin->admin) {
+            throw new ValidationException('Session is not an admin session');
+        }
+
+        if ((Hilos::$db->users[$targetUserId] ?? null) === null) {
+            throw new ValidationException("No such user: {$targetUserId}");
+        }
     }
 
     /**
@@ -4611,9 +4650,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Decides whether these two accounts may be merged at all - the project's first half of
      * the merge pair.
      *
-     * A seam with a refusing default, the shape {@see self::assertImpersonationAllowed()}
-     * uses and for the same reason: the mount stands on this class, so an operator who typed
-     * the command into a project that wires nothing hears a refusal rather than silence.
+     * A seam with a refusing default rather than an abstract method: the mount stands on this
+     * class, so an operator who typed the command into a project that wires nothing hears a
+     * refusal rather than silence.
      *
      * BOTH accounts are the project's to vouch for: whether a user id names anybody is
      * answered by its own collection, and so is whether that account has already been folded

@@ -2,11 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Polls\Tests\Integration;
+namespace Demo\Chat\Tests\Integration;
 
-use Demo\Polls\Hilos;
+use Demo\Chat\Hilos;
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\CommandConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -15,15 +14,15 @@ use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Proves admin:create over this demo's people: the row it mints and the row it flags (HIL-609).
+ * Proves admin:create works in this demo too: the framework's write over this demo's people (HIL-1197).
  *
- * The framework owns the command, the lookup, the session bind and, since HIL-1197, the write
- * itself over the people table this demo mounts; what belongs here is that the write lands in
- * this demo - a session carrying a user has THAT user flagged and no second one appears, and a
- * session carrying none leaves with an administrator bound to it. Both go through the command
- * the daemon really routes rather than through the write directly, because the mount is part
- * of what is being proven - and since HIL-710 that mount is the sessions library, which is
- * where the command ends up because it ends in a session bind.
+ * Until HIL-1197 this demo refused the command, because it mints its people through its own
+ * sign-in; the command is also the one way out of an installation whose every sign-in method
+ * is switched off, so the owner had it work the same in all three demos. The framework owns the
+ * command, the lookup, the bind and the write, and pins them over its own tables; what belongs
+ * here is that the write lands in this demo's extended person chain - a session carrying a user
+ * has THAT user flagged and no second one appears, and a session carrying none leaves with an
+ * administrator bound to it whose chat column says it was never merged.
  *
  * Requires the test DB reset (composer run test:db-reset).
  */
@@ -48,39 +47,27 @@ final class AdminCreateCommandTest extends IntegrationTestCase
     /**
      * A session that already carries a user has that user flagged, and nothing is minted.
      *
-     * The operator pointing the command at a browser that is already signed in must not end
-     * up with a second account he never asked for. Since HIL-611 a visitor's browser is not
-     * that case - it carries no user at all - but an account's browser still is, and so is
-     * the second run of the command on the same one.
-     *
      * @throws HilosException On database failure
      */
     public function testASessionCarryingAUserHasThatUserFlagged(): void
     {
         $sessionToken = RandomHelper::hex(16);
-        $visitor = Hilos::$db->users->actions->registerAdmin();
-        // Flagging is what is under test, so the row has to start without the flag; the
-        // only mint this demo has sets it (HIL-609).
-        $visitor->actions->setAdmin(false);
+        $member = Hilos::$db->users->actions->createWithName('Member');
         Hilos::$db->sessions->actions->createAnonymous($sessionToken);
-        Hilos::$db->sessions->findByToken($sessionToken)?->actions->bindUser((int)$visitor->id);
+        Hilos::$db->sessions->findByToken($sessionToken)?->actions->bindUser((int)$member->id);
         $usersBefore = count(Hilos::$db->users->listAll());
 
         $reply = $this->sendAdminCreate($sessionToken);
 
         self::assertTrue($reply->isOk(), var_export($reply->payload, true));
-        self::assertSame((int)$visitor->id, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
+        self::assertSame((int)$member->id, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_CREATED]);
-        self::assertTrue(Hilos::$db->users[(int)$visitor->id]?->admin);
+        self::assertTrue(Hilos::$db->users[(int)$member->id]?->admin);
         self::assertCount($usersBefore, Hilos::$db->users->listAll(), 'Flagging a user mints none');
     }
 
     /**
-     * A session with no user leaves with a minted administrator bound to it.
-     *
-     * The ordinary case since HIL-611 - a visitor's browser carries no user - and the whole
-     * reason the command exists: on a fresh installation there is no row to flag and no
-     * login to make one.
+     * A session with no user leaves with a minted administrator bound to it, in this demo's chain.
      *
      * @throws HilosException On database failure
      */
@@ -96,36 +83,20 @@ final class AdminCreateCommandTest extends IntegrationTestCase
 
         $mintedId = $reply->payload[AdminCommandConstants::FIELD_USER_ID];
         self::assertIsInt($mintedId);
-        self::assertTrue(Hilos::$db->users[$mintedId]?->admin);
+        $minted = Hilos::$db->users[$mintedId];
+        self::assertTrue($minted?->admin);
+        self::assertNull($minted?->mergedInto);
         // The bind is what makes the mint usable: without it the operator owns an
         // administrator and no browser that is one.
         self::assertSame($mintedId, Hilos::$db->sessions->findByToken($sessionToken)?->userId);
     }
 
     /**
-     * A wire name this agent does not mount is refused rather than met with silence.
-     *
-     * The command socket parks the caller until an answer comes back, so a handler that
-     * ignored an unknown name would hang the CLI instead of failing it.
-     */
-    public function testAnUnknownCommandIsAnsweredWithAnError(): void
-    {
-        $this->sessionsLibrary()->onSignalCommand(
-            new CommandRequestDTO(correlationId: 'corr-unknown', command: 'admin:nonsense', payload: []),
-            '',
-            '',
-        );
-
-        $reply = $this->consumeReply();
-        self::assertFalse($reply->isOk());
-        self::assertStringContainsString('Unknown command', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-    }
-
-    /**
-     * Drives one admin:create through the agent, the way the daemon routes it.
+     * Drives one admin:create through the library, the way the daemon routes it.
      *
      * @param string $sessionToken Session cookie token to send
-     * @return CommandReplyDTO The reply the agent queued
+     * @return CommandReplyDTO The reply the library queued
+     * @throws HilosException When the library cannot be started
      */
     private function sendAdminCreate(string $sessionToken): CommandReplyDTO
     {
@@ -143,7 +114,7 @@ final class AdminCreateCommandTest extends IntegrationTestCase
     }
 
     /**
-     * Takes the one reply the agent queued and fails the test when it queued none or two.
+     * Takes the one reply the library queued and fails the test when it queued none or two.
      *
      * The whole queue is drained rather than read once because the writes this command makes
      * are announced to the other workers as DB-sync signals, so the reply is not alone in

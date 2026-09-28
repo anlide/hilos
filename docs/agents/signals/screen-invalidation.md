@@ -80,7 +80,7 @@ then runs `PageAccessReassessment::sweepThisWorker()` over its own live page
 subscriptions and queues one `page_access_reassess` frame per page that person
 has open there. Its one call site is the project's, and a grant reaches it the way
 every other identity change does: `AbstractSessionsLibraryAgent` writes the flag
-through the project's `applyAdminGrant` seam and then restates each live session of
+through `applyAdminGrant()` and then restates each live session of
 that person (HIL-729).
 A session losing its person is the same obligation with the other criterion:
 `forConnections()` / `sweepThisWorkerConnections()` name the accept keys instead,

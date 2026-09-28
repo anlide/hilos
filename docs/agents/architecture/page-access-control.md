@@ -281,7 +281,7 @@ user's tabs are TOLD who they now are, next to the handshake re-send that alread
 tells them what they may now show — the project's handler of the
 `hilos_session_state` frame, described in full below. A rights change gets there
 the way every other identity change does: `AbstractSessionsLibraryAgent` answers
-the grant command, writes the flag through the project's `applyAdminGrant` seam
+the grant command, writes the flag through `applyAdminGrant()`
 and then restates every live session of that person (`announceAdminGrant`). So a
 project mounting the framework grant gets the re-decision by inheritance and has
 no call site of its own to start (HIL-729).

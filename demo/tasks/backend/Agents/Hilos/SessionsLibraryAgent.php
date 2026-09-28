@@ -22,16 +22,15 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Users\AccountErasure;
 
 /**
- * The tasks demo's sessions library - and the three seams a project can be asked to answer.
+ * The tasks demo's sessions library - its own way in, and its own rows in an erasure.
  *
- * Everything a session is lives in {@see AbstractSessionsLibraryAgent} (HIL-710). What this
- * demo has to say for itself is the end of the two operator paths to an administrator:
- * {@see CliCommands::ADMIN_CREATE}, which has to be able to mint the first account because
- * this demo has no login of its own, and {@see CliCommands::ADMIN_GRANT}, which names a user
- * that already exists. The framework resolves the session, binds it and tells the tabs; the
- * rows are this demo's. The third is the erasure of an account whose deletion fell due
- * (HIL-302): the framework erases the ways in and signs the person out, and the rename audit
- * and the user row are this demo's to delete.
+ * Everything a session is lives in {@see AbstractSessionsLibraryAgent} (HIL-710), and so do the
+ * operations over the person since HIL-1197: {@see CliCommands::ADMIN_CREATE} and the grant
+ * pair write `hilos_user` in the framework, the block and the takeover check alongside them.
+ * What this demo has to say for itself is the claims over its own sign-in - the waits and the
+ * registration holds - and the erasure of an account whose deletion fell due (HIL-302): the
+ * framework erases the ways in and signs the person out, and the rename audit and the user row
+ * are this demo's to delete.
  *
  * Registered under {@see HilosAgentType::HILOS_SESSIONS_LIBRARY} by this demo's own topology,
  * which is also what makes the handshake arrive here rather than in {@see TasksAgent}.
@@ -42,12 +41,12 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     private const string ROWS_ERASED_RENAMES = 'renames';
 
     /**
-     * The users table this library mints into, and the holds a registration parks on.
+     * The person rows an erasure deletes, and the holds a registration parks on.
      *
-     * The users table is claimed from this library's OWN process. The truth-source registry is
-     * per process, so the claim the project agent makes covers that agent's worker and nothing
-     * else: without this the minted administrator would be refused as a write with no truth
-     * source behind it.
+     * Minting an administrator and writing the admin and block flags are claimed by the
+     * framework's base (HIL-1197); what this demo adds on the person table is removing the row
+     * when an account is erased, from this library's OWN process - the truth-source registry is
+     * per process, and the claim the users library makes covers its own worker and nothing else.
      *
      * The registration holds are the framework library's claim, made here because only a project
      * knows whether it has a sign-in surface at all. The table is mounted by
@@ -58,7 +57,8 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        TasksDbContext::users => TruthSourceOperation::BY_KIND,
+        // TODO(HIL-1200): the framework deletes the person row after the project's own rows, and this claim goes.
+        TasksDbContext::users => [TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library writes the rename audit; an erasure
         // deletes the person's rows before their user row (HIL-302).
         TasksDbContext::userRenames => [TruthSourceOperation::Remove],
@@ -89,75 +89,6 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         StateHilosCodeSendAttempt::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateHilosOAuthTrip::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
-
-    /**
-     * Makes one user an administrator, minting the row when the session carries none.
-     *
-     * The session bind around this is the framework's; all that happens here is the user
-     * table.
-     *
-     * @param ?int $userId User the session carries, or null when it carries none
-     * @return int Id of the user that is now an administrator
-     * @throws ItemNotFoundForUpdateException When the id names no user row
-     * @throws HilosException On database failure while minting or flagging
-     */
-    protected function ensureAdminUser(?int $userId): int
-    {
-        if ($userId === null) {
-            return (int)Hilos::$db->users->actions->registerAdmin()->id;
-        }
-
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-
-        $user->actions->setAdmin(true);
-
-        return $userId;
-    }
-
-    /**
-     * Writes the admin flag of one user - and nothing else.
-     *
-     * The framework half of the grant ends at this seam: the command is validated and
-     * answered there, and what a user row is lives here. Telling the person's open tabs is
-     * the library's too since HIL-729 - it states the session and this demo's project agent
-     * says it out loud, which is the one path every other identity change already travels.
-     *
-     * It writes under the same claim {@see self::OWNS_DB} makes for the minting seam above:
-     * the truth-source registry is per process, and this library has its own.
-     *
-     * @param int $userId Target user id, already validated as positive
-     * @param bool $admin New admin flag
-     * @throws ItemNotFoundForUpdateException When no user carries that id
-     * @throws HilosException On database failure while writing the flag
-     */
-    protected function applyAdminGrant(int $userId, bool $admin): void
-    {
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-
-        $user->actions->setAdmin($admin);
-    }
-
-    /**
-     * @param int $userId Target account id
-     * @param bool $block Requested block flag
-     * @throws ItemNotFoundForUpdateException When the account does not exist
-     * @throws HilosException On database or truth-source failure
-     */
-    protected function applyAccountBlock(int $userId, bool $block): void
-    {
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-
-        $user->actions->setBlock($block);
-    }
 
     /**
      * Deletes everything this demo keeps of a person whose account is being erased (HIL-302).

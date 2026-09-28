@@ -50,9 +50,9 @@ use Hilos\Utils\Helpers\RandomHelper;
  * {@see HilosSignalConstants::HILOS_IMPERSONATE_DONE} - and a refusal reaches it as text on
  * that frame, because the guards now run outside a page.
  *
- * The only thing left in this project either way is the seam answering whether the takeover
- * is allowed. What the chat agent still does is say the result out loud, which is why every
- * case hands it the frames the library queued.
+ * Nothing of the takeover is left in this project either way: whether it is allowed is the
+ * framework's check over the people table since HIL-1197. What the chat agent still does is
+ * say the result out loud, which is why every case hands it the frames the library queued.
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class ImpersonationTest extends IntegrationTestCase

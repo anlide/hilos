@@ -532,10 +532,12 @@ final class Hilos extends HilosFacade
      * owners no longer collide. The rights of nobody changed when the list was written - what
      * writes today goes on writing, out loud instead of by eye.
      *
-     * One of the rows is this demo's own table: the person is held by the chat agent and the users
-     * library at once. The other four are the framework's auth libraries and the code agent sharing
-     * the tables of signing in, and they stand the same way in every demo that switches those
-     * features on.
+     * One of the rows is this demo's own table: the person is held by the chat agent together with
+     * the sessions and the users library. The sessions library joined it when it began to mint
+     * administrators and write the flags for every demo (HIL-1197), which made its share whole
+     * beside the tombstone and the erasure it already wrote. The other four are the framework's
+     * auth libraries and the code agent sharing the tables of signing in, and they stand the same
+     * way in every demo that switches those features on.
      *
      * Parting them for real is somebody else's work, and it has an address: HIL-630 gives the
      * person an agent of their own, and the auth libraries are parted with it.
@@ -546,7 +548,7 @@ final class Hilos extends HilosFacade
             SharedOwnersKey::DEBT => 'HIL-630',
         ],
         ChatDbContext::users => [
-            SharedOwnersKey::OWNERS => [ChatAgent::class, UsersLibraryAgent::class],
+            SharedOwnersKey::OWNERS => [ChatAgent::class, SessionsLibraryAgent::class, UsersLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',
         ],
         HilosDbContext::identities => [

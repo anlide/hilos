@@ -63,7 +63,7 @@ where it is today — a hook the project implements.
 |---|---|
 | Creating a person, the name shown for one, "an administrator is not deleted" (`assertAdministratorMayDelete()`) | HIL-1194 |
 | Renaming a person — the write, the journal row, the notification | (not in the code yet — HIL-1195) |
-| Creating the first administrator, granting rights, blocking (`applyAccountBlock()`), the replacement check before a grant is taken away | (not in the code yet — HIL-1197) |
+| Creating the first administrator (`ensureAdminUser()`), granting and removing rights (`applyAdminGrant()`), blocking (`applyAccountBlock()`), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197 |
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
 | The tombstone of a merged account and "is this account already folded" | (not in the code yet — HIL-1199) |
 | Erasing a person — the framework deletes the person's row last, after the project's rows ([account-deletion.md](account-deletion.md)) | (not in the code yet — HIL-1200) |
@@ -73,11 +73,12 @@ where it is today — a hook the project implements.
 
 What stays the project's: hooks over its own columns and its own rows — the chat
 messages a merge re-attributes, the project's own tables an erasure clears. The
-people library stays abstract by convention alone: the project registers its own
-subclass, as it does every agent. `afterUserCreated()` stays the project's hook,
-because what it writes lands in the project's own tables — the chat's
-registration event in its room. How each of the other hooks is held is decided
-by the leaf that moves the operation; this page does not name it.
+people library and the sessions library stay abstract by convention alone: the
+project registers its own subclass of each, as it does every agent.
+`afterUserCreated()` stays the project's hook, because what it writes lands in
+the project's own tables — the chat's registration event in its room. How each
+of the other hooks is held is decided by the leaf that moves the operation; this
+page does not name it.
 
 ## Renaming A Person
 
