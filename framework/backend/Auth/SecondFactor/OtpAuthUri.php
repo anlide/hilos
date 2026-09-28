@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\SecondFactor;
 
+use Hilos\Auth\AuthenticatorName;
+
 /**
  * The `otpauth://` address an authenticator app reads from a QR code (HIL-494).
  *
@@ -11,7 +13,8 @@ namespace Hilos\Auth\SecondFactor;
  * the account so the entry is recognizable in a list of many, and the parameters repeat
  * what {@see Totp} computes with, so an app that does not assume the defaults computes the
  * same codes. The issuer is one name for the whole installation - the project's name, the
- * same one a passkey is shown under.
+ * same one a passkey is shown under; outside production it carries the environment, e.g.
+ * "Hilos (local)" ({@see AuthenticatorName}).
  */
 final class OtpAuthUri
 {

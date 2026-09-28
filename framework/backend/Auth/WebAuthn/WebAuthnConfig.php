@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\WebAuthn;
 
+use Hilos\Auth\AuthenticatorName;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -15,9 +16,10 @@ use Hilos\Hilos;
  * (`rpId` / `rpName`), the set of origins a `clientDataJSON.origin` may match,
  * the challenge lifetime and HMAC secret backing the stateless challenge token,
  * and the user-verification / timeout hints echoed into the client publicKey
- * options. Values come from env (`HILOS_WEBAUTHN_*`) via {@see fromEnv()};
- * tests build one directly. `challengeSecret` is env-only and never synced to a
- * client.
+ * options. The Relying Party name (`rpName`) comes from {@see AuthenticatorName}
+ * and outside production carries the environment. Values come from env
+ * (`HILOS_WEBAUTHN_*`) via {@see fromEnv()}; tests build one directly.
+ * `challengeSecret` is env-only and never synced to a client.
  */
 final readonly class WebAuthnConfig
 {
@@ -27,7 +29,7 @@ final readonly class WebAuthnConfig
 
     /**
      * @param string $rpId Relying Party id (registrable domain, no scheme/port)
-     * @param string $rpName Human-readable Relying Party name for the authenticator UI
+     * @param string $rpName Human-readable Relying Party name for the authenticator UI; outside production it carries the environment
      * @param list<string> $origins Allowed ceremony origins (scheme://host[:port]); clientDataJSON.origin must match one exactly
      * @param int $challengeTtlSeconds Seconds a challenge token stays valid
      * @param string $userVerification Requested UV level: required | preferred | discouraged
@@ -58,7 +60,7 @@ final readonly class WebAuthnConfig
     {
         return new self(
             Hilos::$env[EnvConstants::HILOS_WEBAUTHN_RP_ID]->string(),
-            Hilos::$env[EnvConstants::HILOS_WEBAUTHN_RP_NAME]->string(),
+            AuthenticatorName::fromEnv(),
             self::parseOrigins(Hilos::$env[EnvConstants::HILOS_WEBAUTHN_ORIGIN]->string()),
             Hilos::$env[EnvConstants::HILOS_WEBAUTHN_CHALLENGE_TTL_SEC]->int(),
             Hilos::$env[EnvConstants::HILOS_WEBAUTHN_USER_VERIFICATION]->string(),

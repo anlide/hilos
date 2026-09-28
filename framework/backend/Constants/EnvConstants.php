@@ -670,7 +670,11 @@ enum EnvConstants
      */
     case HILOS_WEBAUTHN_RP_ID;
 
-    /** @var string Human-readable Relying Party name shown by the authenticator UI. Default "Hilos". */
+    /**
+     * @var string Human-readable Relying Party name shown by the authenticator UI.
+     * Default "Hilos". Outside production the environment is appended — "Hilos (local)"
+     * (AuthenticatorName, HIL-1247); the value itself stays the plain name.
+     */
     case HILOS_WEBAUTHN_RP_NAME;
 
     /**

@@ -49,6 +49,7 @@ a change in a platform's behavior is caught only by a manual run.
 Paths that touch this surface:
 
 - `framework/backend/Auth/WebAuthn/**`
+- `framework/backend/Auth/AuthenticatorName.php`
 - `framework/backend/Auth/Library/Command/PasskeyCommands.php`
 - `framework/frontend/core/src/auth/passkey.ts`
 - `framework/frontend/core/src/auth/passkeyCeremony.ts`
@@ -98,6 +99,25 @@ Keep these numbers stable: hand-overs refer to them.
 8. Step-up — an action that asks for confirmation, confirmed with the device key: the OS window appears and the action completes.
 9. Sign-up without an address — "Create an account with a passkey" on an empty field (HIL-1106), on a device with a platform key: the terms screen, then the OS window enrolls the key; the account is named User + six digits and signs in by the key. On a machine without a platform key the line is absent.
 
+## TOTP
+
+Automation covers the code calculation and enrolment flow (`demo/chat/tests/e2e/helpers/totp.ts`).
+A real authenticator app scanning the enrollment QR, displaying the installation name, and keeping the
+entry in its list cannot be automated.
+
+Paths that touch this surface:
+
+- `framework/backend/Auth/SecondFactor/**`
+- `framework/backend/Auth/AuthenticatorName.php`
+- `startEnrolment()` in `framework/backend/Auth/Library/Command/SecondFactorCommands.php`
+- `HILOS_WEBAUTHN_RP_NAME` and `APP_ENV` in `framework/backend/Environment/EnvCatalogStub.php`
+
+### Manual items
+
+Keep these numbers stable: hand-overs refer to them.
+
+1. Any phone, an authenticator app — on a stand (APP_ENV=local), /profile/security → Add an app, scan the QR: the new entry reads "Hilos (local): <address>"; the code it shows confirms the app.
+
 ## Other surfaces — one line each until a change reaches them
 
 - Mail (Mailpit, real SMTP; `framework/backend/Mail/SmtpMailTransport.php`): how the HTML letter renders in a real mail client — specs read only the text part (`demo/chat/tests/e2e/helpers/mail.ts`); that the magic link points at the right host — specs keep only its path; deliverability (SPF/DKIM, the spam folder); the link opened on another device.
@@ -105,7 +125,6 @@ Keep these numbers stable: hand-overs refer to them.
 - Telegram codes (stand gateway `/telegram`; `framework/backend/Auth/CodeChannel/TelegramCodeChannel.php`): delivery into the Telegram app on a phone.
 - OAuth (stand gateway `/oauth`; `framework/backend/Auth/OAuth/HttpOAuthProvider.php`): the real provider's account chooser and consent screen; the redirect URI registered at the provider.
 - Local model (stand gateway `/model`; `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php`): a real model's own answer — the spec dictates the verdict.
-- TOTP (`framework/backend/Auth/SecondFactor/Totp.php`): a real authenticator app scanning the enrollment QR — the spec computes the code itself (`demo/chat/tests/e2e/helpers/totp.ts`).
 - Watchdog alert mail (`WATCHDOG_ALERT_SMTP_*` in `framework/backend/Environment/EnvCatalogStub.php`): the letter reaching an operator's inbox — no stand wires these settings.
 - Web Push (`framework/backend/Push/WebPushRequestFactory.php`, `framework/backend/Push/Delivery/PushEndpointSend.php`): a notification shown through a real browser push service — no double exists (HIL-918).
 

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Auth\SecondFactor;
 
+use Hilos\Auth\AuthenticatorName;
 use Hilos\Auth\SecondFactor\OtpAuthUri;
+use Hilos\Constants\AppEnv;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -32,6 +34,18 @@ final class OtpAuthUriTest extends TestCase
         self::assertStringStartsWith(
             'otpauth://totp/A%3AB:%2B48123456789?',
             OtpAuthUri::build('A:B', '+48123456789', 'JBSWY3DPEHPK3PXP'),
+        );
+    }
+
+    /**
+     * The stand name carries the environment in both the label and the issuer.
+     */
+    public function testStandNameCarriesEnvironmentInLabelAndIssuer(): void
+    {
+        self::assertSame(
+            'otpauth://totp/Hilos%20%28local%29:ada%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Hilos%20%28local%29'
+                . '&algorithm=SHA1&digits=6&period=30',
+            OtpAuthUri::build(AuthenticatorName::compose('Hilos', AppEnv::LOCAL), 'ada@example.com', 'JBSWY3DPEHPK3PXP'),
         );
     }
 }

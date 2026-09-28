@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AuthenticatorName;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
@@ -313,7 +314,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @param int $userId Person enrolling
      * @return array{0: int, 1: string, 2: string} The unconfirmed authenticator, its base32 secret and otpauth address
      * @throws RandomException When the secret cannot be drawn
-     * @throws HilosException When a lookup or the write fails
+     * @throws HilosException When a lookup, the env read or the write fails
      */
     public function startEnrolment(int $userId): array
     {
@@ -326,7 +327,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
         return [
             (int)$factor->id,
             $secret,
-            OtpAuthUri::build(Hilos::$env[EnvConstants::HILOS_WEBAUTHN_RP_NAME]->string(), $account, $secret),
+            OtpAuthUri::build(AuthenticatorName::fromEnv(), $account, $secret),
         ];
     }
 
