@@ -16,10 +16,8 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
@@ -35,11 +33,12 @@ use Hilos\WiringRefusal;
 /**
  * The polls demo's users library - the project half of the framework sign-in feature (HIL-634).
  *
- * Every sign-in command lives in {@see AbstractUsersLibraryAgent}; what is here is the
- * handful of answers only this project can give: which collection its accounts live in,
- * how one is created and named, which methods an identifier may be offered, and the
- * provider wiring a social login runs on. Everything the surface actually does with those
- * answers is the framework's.
+ * Every sign-in command lives in {@see AbstractUsersLibraryAgent}, and so does the person -
+ * created, named and guarded against deletion on the framework's table. What is here is the
+ * handful of answers only this project can give: which methods an identifier may be offered,
+ * the provider wiring a social login runs on, and (until HIL-1195) the rename an
+ * administrator asks for. Everything the surface actually does with those answers is the
+ * framework's.
  *
  * Registered under {@see HilosAgentType::HILOS_USERS_LIBRARY} by this demo's own topology,
  * and reached because the demo declares {@see HilosFeature::AUTH}: the feature is what
@@ -51,23 +50,17 @@ use Hilos\WiringRefusal;
 final class UsersLibraryAgent extends AbstractUsersLibraryAgent
 {
     /**
-     * The account set and the rename journal, both written from this library's OWN process.
-     *
-     * The account set is the claim the framework library cannot make: which collection the user
-     * rows live in is a name only this demo knows. Every operation, and not the library's
-     * add-and-remove default: a library that renames somebody edits the row it owns, and the
-     * profile submits that used to do it from a page come here now (HIL-771).
+     * The rename journal, written from this library's OWN process.
      *
      * The registry is per process, and the audit row is written HERE rather than in the agent
      * that catalogs it: a claim registered by the admin index agent covers that agent's worker and
      * nothing else, so without this the rename's log line would be refused as a write with no
-     * truth source behind it. The same second claim, for the same reason, that the account set
-     * itself carries.
+     * truth source behind it. The account row the rename edits is claimed by the framework's
+     * library itself (HIL-1194).
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        PollsDbContext::users => TruthSourceOperation::ALL,
         PollsDbContext::userRenames => TruthSourceOperation::BY_KIND,
     ];
 
@@ -120,23 +113,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
             $data->data->replySignal,
             HandoverAnswerSignalData::to($data->data, $this->renameForAdmin($data->data)),
         );
-    }
-
-    /**
-     * @param int $userId Account to schedule for deletion
-     * @throws ItemNotFoundForUpdateException When the account does not exist
-     * @throws ValidationException When the account is an administrator or cannot be deleted
-     * @throws HilosException When the account cannot be read
-     */
-    protected function assertAdministratorMayDelete(int $userId): void
-    {
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-        if ($user->admin === true) {
-            throw new ValidationException('Remove the admin rights first');
-        }
     }
 
     /**
@@ -217,37 +193,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         } catch (HilosException $e) {
             $this->logAgentError("Rename notification failed for userId={$userId}: {$e->getMessage()}");
         }
-    }
-
-    /**
-     * Creates one account with the display name the ceremony earned.
-     *
-     * @param string $displayName Name to show for the new account
-     * @return int Durable id of the created user
-     * @throws EmptyValueException When the display name is empty
-     * @throws HilosException When the insert fails
-     */
-    public function createUser(string $displayName): int
-    {
-        return (int)Hilos::$db->users->actions->createWithName($displayName)->id;
-    }
-
-    /**
-     * Names one account the way this demo shows it.
-     *
-     * A row that is gone, or one carrying an empty name, answers null - the caller draws
-     * its own placeholder rather than offering the person a blank label to recognize
-     * themselves by.
-     *
-     * @param int $userId Account to name
-     * @return ?string Name to show, or null when there is none
-     * @throws HilosException When the lookup fails
-     */
-    public function displayNameOf(int $userId): ?string
-    {
-        $name = Hilos::$db->users[$userId]?->name;
-
-        return $name === null || $name === '' ? null : $name;
     }
 
     /**

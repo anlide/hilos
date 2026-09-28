@@ -97,8 +97,10 @@ builder checks the retained completed-erasure row before publishing; see
 ## The Project's Seam
 
 `assertAdministratorMayDelete()` judges the admin card's target before
-scheduling: refuse an administrator and, where accounts merge, a merged account.
-Its default refuses.
+scheduling. The framework's default refuses an account that does not exist and
+an administrator (`Remove the admin rights first`). A project with a refusal of
+its own overrides it and calls the parent first: the chat refuses a merged
+account, until the merge table takes that refusal over (HIL-1199).
 
 `applyAccountErasure()` refuses by default (`NotImplementedException`), like the
 merge's seams: a project that forgot to erase its rows hears it when the first

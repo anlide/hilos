@@ -52,10 +52,10 @@ use Random\RandomException;
 /**
  * The chat demo's users library - the project half of the framework sign-in feature (HIL-622).
  *
- * Every sign-in command lives in {@see AbstractUsersLibraryAgent}; what stayed behind is the
- * handful of answers only this project can give: which collection its members live in, how one
- * is created and named, what else happens when an account is born, which methods an identifier
- * may be offered, and the provider wiring a social login runs on.
+ * Every sign-in command lives in {@see AbstractUsersLibraryAgent}, and so does the person -
+ * created, named and guarded against deletion on the framework's table. What stayed behind is
+ * the handful of answers only this project can give: what else happens when an account is born,
+ * which methods an identifier may be offered, and the provider wiring a social login runs on.
  *
  * Beside them it holds the one profile submit that is the chat's own - the rename and its whole
  * moderation round trip (HIL-771). It was an action of {@see ProfilePage} until a page turned out
@@ -72,12 +72,9 @@ use Random\RandomException;
 final class UsersLibraryAgent extends AbstractUsersLibraryAgent
 {
     /**
-     * The chat tables this library writes from its OWN process, the account set among them.
+     * The chat tables this library writes from its OWN process.
      *
-     * The account set is the claim the framework library cannot make: which collection the user
-     * rows live in is a name only this demo knows. Every operation, and not the library's
-     * add-and-remove default: a library that renames somebody edits the row it owns, and the
-     * profile submits that used to do it from a page come here now (HIL-771).
+     * The account row itself is not among them: the framework's library claims it (HIL-1194).
      *
      * The registry is per process, and the account event is written HERE rather than in the agent
      * that owns the room: a claim registered by the chat agent covers the chat agent's worker and
@@ -93,7 +90,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        ChatDbContext::users => TruthSourceOperation::ALL,
         ChatDbContext::events => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventUserRegistrations => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventUserRenames => TruthSourceOperation::BY_KIND,
@@ -258,21 +254,21 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     }
 
     /**
+     * Refuses a merged account beside what the framework refuses.
+     *
+     * The framework's check runs first - a missing account, an administrator - and only a
+     * person who passed it is asked whether they were folded into another account.
+     *
      * @param int $userId Account to schedule for deletion
      * @throws ItemNotFoundForUpdateException When the account does not exist
-     * @throws ValidationException When the account is an administrator or cannot be deleted
+     * @throws ValidationException When the account is an administrator or was merged into another one
      * @throws HilosException When the account cannot be read
      */
     protected function assertAdministratorMayDelete(int $userId): void
     {
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-        if ($user->admin === true) {
-            throw new ValidationException('Remove the admin rights first');
-        }
-        if ($user->mergedInto !== null) {
+        parent::assertAdministratorMayDelete($userId);
+        // TODO(HIL-1199): the merge table takes this refusal over, and this override goes.
+        if (Hilos::$db->users[$userId]->mergedInto !== null) {
             throw new ValidationException('This account was merged into another one');
         }
     }
@@ -322,37 +318,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         }
 
         return null;
-    }
-
-    /**
-     * Creates one chat user with the display name the ceremony earned.
-     *
-     * @param string $displayName Name to show for the new account
-     * @return int Durable id of the created user
-     * @throws EmptyValueException When the display name is empty
-     * @throws HilosException When the insert fails
-     */
-    public function createUser(string $displayName): int
-    {
-        return (int)Hilos::$db->users->actions->createWithName($displayName)->id;
-    }
-
-    /**
-     * Names one chat account the way the room shows it.
-     *
-     * A row that is gone, or one carrying an empty name, answers null - the caller draws
-     * its own placeholder rather than offering the person a blank label to recognize
-     * themselves by.
-     *
-     * @param int $userId Account to name
-     * @return ?string Name to show, or null when there is none
-     * @throws HilosException When the lookup fails
-     */
-    public function displayNameOf(int $userId): ?string
-    {
-        $name = Hilos::$db->users[$userId]?->name;
-
-        return $name === null || $name === '' ? null : $name;
     }
 
     /**

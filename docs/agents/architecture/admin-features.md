@@ -247,8 +247,10 @@ The account card requires `applyAccountBlock()` on the sessions library,
 That audience judges the requesting administrator and protects the last active one.
 All three are the framework's implementation on the target structure, since the
 columns they read are the framework's: `applyAccountBlock()` (not in the code
-yet — HIL-1197), `assertAdministratorMayDelete()` (not in the code yet —
-HIL-1194). `ADMIN_AUDIENCE` already is: its default `AdminAudience` answers the
+yet — HIL-1197). `assertAdministratorMayDelete()` and `ADMIN_AUDIENCE` already
+are. The check refuses a missing account and an administrator on its own
+`hilos_user` row, and a project with a refusal of its own overrides it and calls
+the parent first. `ADMIN_AUDIENCE`'s default `AdminAudience` answers the
 unblocked `hilos_user` rows that say admin, and a project points the constant at
 a subclass only to narrow that circle — the chat leaves out merged accounts
 until the merge has a framework table (HIL-1199).

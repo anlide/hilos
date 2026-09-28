@@ -14,6 +14,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Tests\Integration\AuthThrottleIntegrationTest;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -122,6 +123,20 @@ final class AgentTruthSourceOperationsTest extends TestCase
         $this->assertTrue(true);
     }
 
+    /**
+     * The person row is the library's whole, although what a library does by default is add and remove.
+     *
+     * The claim is read off the class the way a start reads it, so no project subclass stands
+     * between the base's declaration and the answer (HIL-1194).
+     */
+    public function testLibraryAgentHoldsThePersonRowWithEveryOperation(): void
+    {
+        $claims = OwnershipDeclaration::dbCollectionsOf(AgentTruthSourceOperationsTestLibrary::class);
+
+        $this->assertArrayHasKey(HilosDbContext::users, $claims);
+        $this->assertTrue($claims[HilosDbContext::users]->isComplete());
+    }
+
     public function testLibraryAgentMayNotEditWhatIsAlreadyWritten(): void
     {
         $agent = new AgentTruthSourceOperationsTestLibrary();
@@ -196,10 +211,11 @@ final class AgentTruthSourceOperationsTestAgent extends AbstractAgent
 }
 
 /**
- * The framework's library base class, made concrete with the seams a project fills in.
+ * The framework's library base class under a test name, and nothing else.
  *
  * Subclassed rather than imitated on purpose: what is under test is the default the base
- * class declares, and a copy of that default in a test agent would prove only the copy.
+ * class declares, and a copy of that default in a test agent would prove only the copy. It
+ * overrides no method either, which proves the base has no seam left a project must fill in.
  */
 final class AgentTruthSourceOperationsTestLibrary extends AbstractUsersLibraryAgent
 {
@@ -215,22 +231,4 @@ final class AgentTruthSourceOperationsTestLibrary extends AbstractUsersLibraryAg
 
     public const string AGENT_TYPE = 'unit_truth_source_operations_library';
     public const string RT_COLLECTION = 'unit_truth_source_operations_library_rt';
-
-    /**
-     * @param string $displayName Name the account would be minted under
-     * @return int Never returned: no test drives account creation
-     */
-    public function createUser(string $displayName): int
-    {
-        return 0;
-    }
-
-    /**
-     * @param int $userId Account to name
-     * @return ?string Always null: no test drives account lookup
-     */
-    public function displayNameOf(int $userId): ?string
-    {
-        return null;
-    }
 }

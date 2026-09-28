@@ -49,7 +49,7 @@ person until the merge tombstone table takes the fact over (HIL-1199).
 The row belongs to the framework's people library — the users library agent
 (`AbstractUsersLibraryAgent`), which already owns the person's ways in, codes,
 reservations and second factor. Its claim on `users` is declared on the base
-class itself, not in a project subclass (not in the code yet — HIL-1194).
+class itself, not in a project subclass.
 Ownership and the reader interest a claim raises:
 [truth-source.md](truth-source.md).
 
@@ -61,7 +61,7 @@ where it is today — a hook the project implements.
 
 | What | Leaf |
 |---|---|
-| Creating a person, the name shown for one, "an administrator is not deleted" (`assertAdministratorMayDelete()`) | (not in the code yet — HIL-1194) |
+| Creating a person, the name shown for one, "an administrator is not deleted" (`assertAdministratorMayDelete()`) | HIL-1194 |
 | Renaming a person — the write, the journal row, the notification | (not in the code yet — HIL-1195) |
 | Creating the first administrator, granting rights, blocking (`applyAccountBlock()`), the replacement check before a grant is taken away | (not in the code yet — HIL-1197) |
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
@@ -72,9 +72,12 @@ where it is today — a hook the project implements.
 | `name` and `lastActivity` on the frontend `User` entity | (not in the code yet — HIL-1193) |
 
 What stays the project's: hooks over its own columns and its own rows — the chat
-messages a merge re-attributes, the project's own tables an erasure clears. How
-each hook is held, and whether the people library stays abstract, is decided by
-the leaf that moves the operation; this page does not name it.
+messages a merge re-attributes, the project's own tables an erasure clears. The
+people library stays abstract by convention alone: the project registers its own
+subclass, as it does every agent. `afterUserCreated()` stays the project's hook,
+because what it writes lands in the project's own tables — the chat's
+registration event in its room. How each of the other hooks is held is decided
+by the leaf that moves the operation; this page does not name it.
 
 ## Renaming A Person
 

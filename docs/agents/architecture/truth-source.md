@@ -527,8 +527,7 @@ asked and refused the same way. *A Claim Over A Set* has the width itself.
 it.** The account table is the framework's `hilos_user`, mounted under the
 framework's own key `users`, and the claim on
 it is declared on `AbstractUsersLibraryAgent` itself, beside the ways in and the
-codes it already owns (not in the code yet — HIL-1194). Today the project
-subclass still declares that claim until HIL-1194 moves it to the base. The
+codes it already owns (HIL-1194). The
 base used to ask for the collection's name at run time through a seam,
 `usersCollection()`, and that seam went with the claim it registered (HIL-897).
 The operations are spelled out rather than left to the kind: the library's

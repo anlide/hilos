@@ -117,7 +117,9 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
@@ -130,12 +132,13 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Schema\EntitySchemaAxis;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Core\Action\ActionRefusal;
-use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
@@ -160,21 +163,24 @@ use Throwable;
  * command that ends in a signed-in person ends in a frame to that library, never in a
  * session write of its own.
  *
- * It is ABSTRACT for one reason, the same one that makes the OAuth agent abstract: creating
- * a user touches the project's own users table, which the framework does not know the shape
- * of. The project supplies that step through {@see createUser()} and whatever it does
- * besides through {@see afterUserCreated()}; the methods it offers for an identifier are
- * its method directory narrowed by the admin ({@see EnabledAuthMethods}). Everything else -
- * the commands, their guards, their answers - stays here and is the same for every project
- * that declares {@see HilosFeature::AUTH}.
+ * It is ABSTRACT by convention alone, like {@see AbstractNotificationsLibraryAgent}: every
+ * Hilos agent is mounted through a concrete class in the project's registry. The person is
+ * the framework's (HIL-1194) - created in `hilos_user` ({@see createUser()}), named from it
+ * ({@see displayNameOf()}), and refused deletion while an administrator
+ * ({@see assertAdministratorMayDelete()}). What a project adds is its providers
+ * ({@see buildOAuthService()}), whatever it does when an account is born
+ * ({@see afterUserCreated()}) and the claims over its own tables; the methods it offers for an
+ * identifier are its method directory narrowed by the admin ({@see EnabledAuthMethods}).
+ * Everything else - the commands, their guards, their answers - stays here and is the same for
+ * every project that declares {@see HilosFeature::AUTH}.
  */
 abstract class AbstractUsersLibraryAgent extends AbstractAgent
 {
     /**
-     * The proofs an account is reached by: its ways in, the codes that check them, the holds a
-     * registration takes, the credentials a passkey enrols.
+     * The account set, and the proofs an account is reached by: its ways in, the codes that check
+     * them, the holds a registration takes, the credentials a passkey enrols.
      *
-     * The first four are claimed OUTRIGHT and with every operation. They used to be described as
+     * The four proofs are claimed OUTRIGHT and with every operation. They used to be described as
      * needing no claim of their own, and that sentence held on nothing but the guard's silence:
      * the right was asked only of the four eagerly loaded collections, and these four are lazy
      * (HIL-716). Every write to them goes through a command of this library - a code is issued and
@@ -183,11 +189,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * that default is what a library does to a row it SHARES, and the rows carrying an account's
      * proofs are edited in place.
      *
-     * The account set itself is NOT here. Which collection the user rows live in is a name only
-     * the project knows, and a class constant cannot ask - so the project subclass declares it,
-     * with every operation, for the reason the claim over it is a whole one and not the
-     * create-only right it began as (HIL-771): a page carries no claim, so the writers that used
-     * to rename somebody from a profile submit come here instead, and renaming is editing the row.
+     * The account set is claimed whole and with every operation too (HIL-1194). The table and its
+     * key are the framework's (`hilos_user`, HIL-1192), so the claim no longer waits for a
+     * project to name the collection. Every operation, and not the create-only right it began as
+     * (HIL-771): a page carries no claim, so the writers that used to rename somebody from a
+     * profile submit come here instead, and renaming is editing the row.
      *
      * The second factor is a proof of the account too (HIL-494), so four of its tables are here
      * the same way: the authenticators, the backup codes, the delayed removals and each person's
@@ -206,6 +212,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
+        HilosDbContext::users => TruthSourceOperation::ALL,
         HilosDbContext::identities => TruthSourceOperation::ALL,
         HilosDbContext::verifications => TruthSourceOperation::ALL,
         HilosDbContext::registrationReservations => TruthSourceOperation::ALL,
@@ -493,9 +500,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * library's to reword, which is why updating is absent and why a pair is not two writers of
      * one row.
      *
-     * The account set is deliberately not among them: the project subclass claims it whole in its
-     * own `OWNS_DB`, because a library that renames somebody edits the row it owns, and there it
-     * owns rather than shares.
+     * The account set is deliberately not among them: its claim is declared in this class's own
+     * `OWNS_DB` with every operation, because a library that renames somebody edits the row it
+     * owns, and there it owns rather than shares.
      *
      * @return TruthSourceOperations Adding and removing, never updating
      */
@@ -691,13 +698,26 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Refuses an administrator's deletion of an account that is missing or is an administrator.
+     *
+     * What the framework checks on its own `hilos_user` row. A project with a refusal of its own
+     * overrides this and calls the parent first - the chat refuses a merged account until the
+     * merge table takes that over (HIL-1199).
+     *
      * @param int $userId Account an administrator wants to schedule for deletion
-     * @throws NotImplementedException When the project has not wired deletion by an administrator
-     * @throws HilosException When the project refuses the account or cannot read it
+     * @throws ItemNotFoundForUpdateException When the account does not exist
+     * @throws ValidationException When the account is an administrator
+     * @throws HilosException When the account cannot be read
      */
     protected function assertAdministratorMayDelete(int $userId): void
     {
-        throw new NotImplementedException('Deletion by an administrator is not wired in this project');
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+        if ($user->admin === true) {
+            throw new ValidationException('Remove the admin rights first');
+        }
     }
 
     /**
@@ -1078,36 +1098,46 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Creates one user row in the project's own users table.
-     *
-     * The seam the whole class is abstract for: the framework has an identity, an address
-     * and a display name, and no idea what a user of THIS project is made of.
+     * Creates one person row in the framework's `hilos_user` table.
      *
      * Called inside the landing transaction, and {@see afterUserCreated()} after it commits:
      * the row and the identity that makes it reachable stand or fall together, while what a
      * project writes ABOUT a new member is news and must not be rolled back into existence.
      *
+     * Not final: the framework's test stands replace it with a table of their own to look inside
+     * the landing transaction. A project has nothing to override here - the columns a subclass of
+     * the person adds must be insertable ({@see EntitySchemaAxis::COLUMN_NOT_INSERTABLE}).
+     *
      * @param string $displayName Name to show for the new account
      * @return int Durable id of the created user
-     * @throws HilosException When the project's create fails
+     * @throws EmptyValueException When the display name is empty
+     * @throws HilosException When the insert fails
      */
-    abstract public function createUser(string $displayName): int;
+    public function createUser(string $displayName): int
+    {
+        return (int)Hilos::$db->users->actions->createWithName($displayName)->id;
+    }
 
     /**
-     * Names one account the way the project would show it.
+     * Names one account by the `hilos_user.name` it carries.
      *
-     * The framework knows a user by id; what to call them is a column of the project's own
-     * table. Asked for by the passkey enrollment, whose options carry a name the OS picker
-     * draws beside the key - a person with two accounts sees only this to tell them apart.
+     * Asked for by the passkey enrollment, whose options carry a name the OS picker draws
+     * beside the key - a person with two accounts sees only this to tell them apart.
      *
-     * Null when the project has nothing to show - a deleted row, or an account it never
-     * named - and the caller then draws its own placeholder rather than an empty label.
+     * Null when there is nothing to show - a deleted row, or an account never named - and the
+     * caller then draws its own placeholder rather than an empty label. Not final, for the
+     * reason {@see createUser()} gives.
      *
      * @param int $userId Account to name
-     * @return ?string Name to show, or null when the project has none for this account
-     * @throws HilosException When the project's lookup fails
+     * @return ?string Name to show, or null when there is none for this account
+     * @throws HilosException When the lookup fails
      */
-    abstract public function displayNameOf(int $userId): ?string;
+    public function displayNameOf(int $userId): ?string
+    {
+        $name = Hilos::$db->users[$userId]?->name;
+
+        return $name === null || $name === '' ? null : $name;
+    }
 
     /**
      * Runs whatever else the project does when an account is born.

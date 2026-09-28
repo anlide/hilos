@@ -25,6 +25,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
+use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /** Account-card writes run under the real sessions library's claim and answer the waiting page. */
@@ -134,6 +135,17 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         self::assertFalse(Hilos::$db->users[$this->userId]->admin);
     }
 
+    public function testDeletionRefusesAnAdministratorFirstAndThenAMergedAccount(): void
+    {
+        Hilos::$db->users[$this->userId]->actions->setAdmin(true);
+        self::assertSame('Remove the admin rights first', $this->deletion($this->userId)->error);
+        $mergedId = (int) Hilos::$db->users->actions->createWithName('Folded')->id;
+        Hilos::$db->users[$mergedId]->actions->tombstone($this->adminId);
+        self::assertSame('This account was merged into another one', $this->deletion($mergedId)->error);
+        self::assertNull(Hilos::$db->accountDeletions->liveOf($this->userId));
+        self::assertNull(Hilos::$db->accountDeletions->liveOf($mergedId));
+    }
+
     public function testRightsCountTabsAndKeepThePersonsSession(): void
     {
         $token = $this->signIn('user-a', $this->userId);
@@ -216,6 +228,29 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
             $userId, $admin, HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE,
             $acceptKey, 'lifecycle-request', HilosSignalConstants::HILOS_USER_ADMIN_SET, null,
         ));
+    }
+
+    private function deletion(int $userId): HandoverAnswerSignalData
+    {
+        $this->drainSignals();
+        $library = $this->usersLibrary();
+        $this->underAgent($library, static fn () => $library->onSignalAgent(
+            new AgentSignalData(new AccountDeletionSetSignalData(
+                $userId, true, HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE,
+                'admin-ak', 'lifecycle-request', HilosSignalConstants::HILOS_USER_DELETION_SET, null,
+            )),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET,
+        ));
+        $reply = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $reply = $signal->data->data;
+            }
+        }
+        self::assertNotNull($reply);
+
+        return $reply;
     }
 
     private function ask(string $name, HandoverAskInterface $request): HandoverAnswerSignalData
