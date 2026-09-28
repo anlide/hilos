@@ -122,6 +122,7 @@ HELP;
                 CliCommands::MIGRATION_DOWN,
                 CliCommands::MIGRATION_STATUS,
                 CliCommands::MIGRATION_RETRY,
+                CliCommands::MIGRATION_RELEASE,
             ],
             'Database Seeds' => [
                 CliCommands::SEED_APPLY,

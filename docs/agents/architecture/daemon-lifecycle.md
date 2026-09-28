@@ -71,8 +71,8 @@
 
 ## Container watchdog and crash recovery (HIL-450)
 
-In Docker the daemon is not PID 1 — `Bootstrap/docker.php` is. It runs migrations and
-then supervises `daemon.php` through `DockerManager`, restarting it whenever it dies.
+In Docker the daemon is not PID 1 — `Bootstrap/docker.php` is. It runs migrations under the
+schema rollout claim ([../orm/migrations.md](../orm/migrations.md)) and then supervises `daemon.php` through `DockerManager`, restarting it whenever it dies.
 Two rules make that supervision survive a *crash* rather than only a clean exit:
 
 - **Sweep before every start.** Workers are spawned with `proc_open` and inherit the

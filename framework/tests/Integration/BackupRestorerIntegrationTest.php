@@ -29,6 +29,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\MigrationClaim;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Database\Schema\Schema;
 use Hilos\Environment\EnvAccessor;
@@ -92,6 +93,9 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
      * registry that declared it for `null`. Read by the catalog fixtures below.
      */
     public const string NULLABLE_COLUMN = 'nickname';
+
+    /** Holder of the rollout claim a fixture archive was taken under; a process of the backup's time. */
+    private const string ARCHIVED_CLAIM_HOLDER = 'backup-time-node:4242';
 
     /** Administrator of the restored database, as its audience names them. */
     public const int ADMIN_USER_ID = 41;
@@ -256,6 +260,22 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
 
         $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
+    }
+
+    public function testARolloutClaimTheArchiveCarriedIsClearedBeforeMigrating(): void
+    {
+        $this->listFixtureMigration();
+        // A FULL dump taken while a process held the claim carries that row. Left in place it
+        // would keep the migrate step below waiting for a process of the backup's time forever.
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'alpha']]) . $this->claimDumpSql(self::ARCHIVED_CLAIM_HOLDER),
+            self::ARCHIVE_MIGRATION_INDEX,
+        );
+
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+        $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
+        $this->assertNull(MigrationClaim::current(), 'The claim table must be left empty');
     }
 
     public function testASchemaArchiveIsLeftAtTheLevelItsMarkerDeclares(): void
@@ -736,6 +756,21 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         return 'DROP TABLE IF EXISTS `' . self::PROBE_TABLE . "`;\n"
             . 'CREATE TABLE `' . self::PROBE_TABLE . "` (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL);\n"
             . 'INSERT INTO `' . self::PROBE_TABLE . "` VALUES {$inserts};\n";
+    }
+
+    /**
+     * A mysqldump-shaped dump of the rollout claim table holding one row.
+     *
+     * @param string $holder Holder the archived row names
+     * @return string Dump SQL
+     */
+    private function claimDumpSql(string $holder): string
+    {
+        return 'DROP TABLE IF EXISTS `' . MigrationClaim::TABLE . "`;\n"
+            . 'CREATE TABLE `' . MigrationClaim::TABLE . '` (`id` tinyint(3) UNSIGNED NOT NULL,'
+            . " `holder` varchar(255) NOT NULL, `claimed_at` datetime NOT NULL, PRIMARY KEY (`id`));\n"
+            . 'INSERT INTO `' . MigrationClaim::TABLE . '` VALUES (' . MigrationClaim::CLAIM_ID
+            . ", '{$holder}', '2026-08-08 11:59:59');\n";
     }
 
     /**

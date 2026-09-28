@@ -13,6 +13,8 @@ use Hilos\Core\Exception\Process\FailedToGetStatusException;
 use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\MigrationClaim;
+use Hilos\Database\MigrationClaimHolder;
 use Hilos\Hilos;
 use Hilos\Log\DaemonLogAddress;
 use Hilos\Log\LogRootOwnershipGuard;
@@ -29,7 +31,9 @@ use Throwable;
  * database connect. The spine runs the env prelude, connects the database (with retry, as
  * MySQL may still be starting), applies schema migrations before Hilos touches any table,
  * initializes the Hilos context, claims the log directory ({@see LogRootOwnershipGuard}), and
- * supervises daemon.php through {@see DockerManager}. The per-failure exit codes the
+ * supervises daemon.php through {@see DockerManager}. The migrations run under the rollout
+ * claim in the database ({@see MigrationClaim}, HIL-1228), so nodes starting together on one
+ * database are safe: one rolls the schema out, the rest wait for it. The per-failure exit codes the
  * duplicated bootstraps carried are preserved: a watchdog start/status failure exits ERROR, a
  * non-blocking-mode or migration failure exits PERMISSION_DENIED, any other failure exits
  * ERROR. A log directory another daemon owns exits ERROR too, with the refusal as one line and
@@ -61,9 +65,11 @@ final class DockerApplication
                 // routines are configured here, by the one entrypoint that applies them.
                 Migration::setRoutinesPath($bootstrapDir . '/../Database/Migration/Routines');
 
-                // Run migrations once on startup (creates tables before Hilos accesses them).
+                // Run migrations once on startup (creates tables before Hilos accesses them), under
+                // the rollout claim in the database: of the nodes starting together on one database
+                // one rolls the schema out and the rest wait for it (HIL-1228).
                 Migration::initialize();
-                $applied = Migration::migrateUp();
+                $applied = Migration::migrateUp(holder: MigrationClaimHolder::nodeStart());
                 if ($applied > 0) {
                     Logger::info("Applied {$applied} migration(s) on startup");
                 }

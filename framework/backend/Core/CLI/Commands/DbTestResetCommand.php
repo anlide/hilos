@@ -101,7 +101,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
-     * @throws EnvException When DB env variables are missing or invalid
+     * @throws EnvException When DB env variables are missing or invalid, or CLUSTER_NODE_ID for the rollout claim
      * @throws DatabaseConnectionException When database connect or SET NAMES fails
      * @throws CantConnectToMysqlServerException When MySQL is unreachable
      * @throws DatabaseRuntimeException When SET NAMES query fails

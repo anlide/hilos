@@ -9,6 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Environment\Exception\EnvException;
 
 /**
  * Migration Retry Command.
@@ -90,6 +91,7 @@ HELP;
      * @param list<string> $args Positional args (version required)
      * @return int Exit code (0 on success)
      * @throws DatabaseException If the connection cannot be selected or the migrations cannot be retried
+     * @throws EnvException When the rollout claim's holder name cannot read CLUSTER_NODE_ID
      */
     public function execute(array $options, array $args): int
     {

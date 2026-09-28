@@ -17,6 +17,7 @@ php cli.php db:migration:up [options]           # Apply pending migrations
 php cli.php db:migration:down <version> [options]  # Rollback to specific version
 php cli.php db:migration:status [options]       # Check migration status
 php cli.php db:migration:retry <version> [options] # Retry failed migration
+php cli.php db:migration:release <holder> [options] # Release a rollout claim a dead holder left
 ```
 
 ### Migration options

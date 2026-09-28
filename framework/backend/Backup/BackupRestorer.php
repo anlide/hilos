@@ -16,6 +16,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\MigrationClaim;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\FsException;
@@ -424,12 +425,18 @@ final class BackupRestorer
      * finished schema it just imported. A FULL archive brings the rows themselves and declares
      * nothing.
      *
+     * The rollout claim table is emptied before either: a FULL archive carries the claim row a
+     * process held at the moment of the backup, and `migrateUp` would wait for that process
+     * forever (HIL-1228). Nothing live is lost: the import has already replaced the target's table
+     * whole.
+     *
      * @param BackupConnectionMeta $connection Restored connection to migrate
      * @param ?int $level Migration level to record before migrating; null when the archive
      *     imported the `migration` rows itself
      * @throws RestoreFailedException When the connection is not configured, cannot be opened,
      *     or a migration fails; the data is already imported at this point, so the run ends
-     *     partially restored (HIL-436)
+     *     partially restored (HIL-436); also when the rollout claim's holder name cannot read
+     *     CLUSTER_NODE_ID, so that failure too is told as one after the import
      */
     private function migrateConnection(BackupConnectionMeta $connection, ?int $level): void
     {
@@ -438,11 +445,13 @@ final class BackupRestorer
             if (!Database::isConnected($connection->index)) {
                 Database::connect($connection->index);
             }
+            Migration::initialize();
+            MigrationClaim::clear();
             if ($level !== null) {
                 Migration::recordAppliedLevel($level);
             }
             Migration::migrateUp();
-        } catch (DatabaseException $failure) {
+        } catch (DatabaseException | EnvException $failure) {
             throw new RestoreFailedException(
                 "Failed to migrate connection {$connection->index} after the import: "
                 . $failure->getMessage(),

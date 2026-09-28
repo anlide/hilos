@@ -6,6 +6,7 @@ namespace Hilos\Database\Schema;
 
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Migration;
+use Hilos\Database\MigrationClaim;
 
 /**
  * FrameworkTablesWithoutEntity - the framework's own tables that live outside the ORM.
@@ -19,8 +20,8 @@ use Hilos\Database\Migration;
  * Three groups, each outside the ORM for the same reason - they are written by code
  * that runs before or beneath an Entity, so an Entity would buy nothing:
  *
- * - **`migration`** is created by {@see Migration} itself, before any
- *   migration has run and therefore before any Entity's table exists.
+ * - **`migration`** and **`hilos_migration_claim`** are created by {@see Migration}
+ *   itself, before any migration has run and therefore before any Entity's table exists.
  * - **The change-log tables** record what changed in the other tables; a row of theirs
  *   is written by the log, not loaded as a domain object.
  * - **The analytics tables** are append-only facts and their dictionaries, written in
@@ -57,9 +58,9 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
      * Returns the personal-data verdict of the framework's tables outside the ORM.
      *
      * Kept in step with the DDL the framework ships:
-     * {@see Migration::initialize()} for `migration`, and the
+     * {@see Migration::initialize()} for `migration` and `hilos_migration_claim`, and the
      * `create_hilos_analytics.sql` / `create_hilos_change_log.sql` stubs for the rest.
-     * Applied on every database in the registry because `migration` is created on every
+     * Applied on every database in the registry because those two are created on every
      * migrated database; a table a project does not create on a given database is simply
      * never seen by the gates, so the framework may classify everything it ships.
      *
@@ -77,6 +78,8 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
     {
         return [
             'migration' => [],
+            // The rollout claim holds a node or process name and a time: nothing personal.
+            MigrationClaim::TABLE => [],
 
             'hilos_change_log' => [
                 'old_value' => AnonymizationStrategy::MASK,
@@ -155,6 +158,8 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
     {
         return [
             'migration' => ['index', 'failed'],
+            // The holder is a node id or a host name with a process id: a machine, not a person.
+            MigrationClaim::TABLE => ['id', 'holder', 'claimed_at'],
 
             'hilos_change_log' => [
                 'id',

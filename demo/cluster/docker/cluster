@@ -9,8 +9,9 @@
 # `test:cluster:inspect` reply and compares against the expected invariants.
 #
 # Usage:
-#   cluster up                 build + start mysql, migrate the schema, start the 5
-#                              nodes and the cli container. On a data volume created
+#   cluster up                 build + start mysql, start the 5 nodes (they roll the
+#                              schema out under a claim in the database, HIL-1228) and
+#                              the cli container. On a data volume created
 #                              before HIL-712 (per-node schemas), run `down --volumes`
 #                              once first: the shared schema is created by the mariadb
 #                              image on the volume's first boot and never after.
@@ -24,6 +25,7 @@
 #   cluster crash-daemon <n>   SIGKILL the daemon inside a live node container
 #   cluster kill-worker <n> <i> SIGKILL worker #i inside a live node container, its daemon kept
 #   cluster container-id <n>   print a node's docker container id
+#   cluster container-log <n>  print a node's container log so far (docker logs, no follow)
 #   cluster partition <node>   disconnect a node from the cluster network
 #   cluster heal <node>        reconnect a node to the cluster network (static IP)
 #   cluster logs <node>        follow a node's container logs
@@ -73,8 +75,6 @@ cmd_up() {
   dc --profile cli run --rm cluster-cli sh -c 'rm -f /app/data/logs/*/protected-mode.state.json*'
   echo "cluster: starting mysql..."
   dc up -d cluster-mysql
-  echo "cluster: migrating the shared schema..."
-  dc up --exit-code-from cluster-migrate cluster-migrate
   echo "cluster: starting 5 nodes..."
   dc up -d cluster-m1 cluster-m2 cluster-m3 cluster-s1 cluster-s2
   echo "cluster: starting cli container..."
@@ -213,6 +213,9 @@ cmd_start() { local n="${1:-}"; valid_node "$n"; dc up -d "cluster-$n" >/dev/nul
 # leave half-open sockets on both sides — and never for an ordinary restart.
 cmd_recreate() { local n="${1:-}"; valid_node "$n"; dc up -d --force-recreate "cluster-$n" >/dev/null && echo "cluster: recreated cluster-$n"; }
 cmd_container_id() { local n="${1:-}"; valid_node "$n"; docker inspect -f '{{.Id}}' "cluster-$n"; }
+# The container log as it stands, not followed: scenario 21 reads which node applied the
+# schema on startup, a line only the watchdog's stdout carries (HIL-1228).
+cmd_container_log() { local n="${1:-}"; valid_node "$n"; docker logs "cluster-$n" 2>&1; }
 
 # Kill the daemon INSIDE a running container, leaving the watchdog (PID 1) and the
 # daemon's workers alive: the workers are re-parented onto the watchdog and keep the
@@ -317,17 +320,18 @@ cmd_scenarios() {
   # `--volumes` on top of that since HIL-712: the schema of this stand is created by
   # the mariadb image from MYSQL_DATABASE, and an image only does that on the FIRST
   # boot of its data volume. A volume left over from a run with a different schema
-  # name would therefore never get one, and cluster-migrate would fail against a
-  # database that does not exist. Wiping it also keeps the settings row scenario 11
-  # writes from surviving into the next matrix.
+  # name would therefore never get one, and the nodes would not find the database
+  # they are configured for. Wiping it also keeps the settings row scenario 11
+  # writes from surviving into the next matrix, and it is what gives scenario 21 its
+  # empty database: five nodes starting together roll the schema out once (HIL-1228).
   cmd_down --volumes
   cmd_up
   python3 "$here/cluster_e2e.py"
 }
 
-# The stranger of scenario 17 (HIL-1034): up on its own, without touching the running cluster
-# or re-running the schema step under it; down removes the container outright, so the next
-# matrix starts without it. Not a valid_node: kill/start/recreate have nothing to do with it.
+# The stranger of scenario 17 (HIL-1034): up on its own, without touching the running cluster;
+# down removes the container outright, so the next matrix starts without it. Not a valid_node:
+# kill/start/recreate have nothing to do with it.
 cmd_intruder() {
   case "${1:-}" in
     up)   dc --profile intruder up -d --no-deps cluster-x1 ;;
@@ -351,10 +355,11 @@ case "${1:-}" in
   crash-daemon) shift; cmd_crash_daemon "$@" ;;
   kill-worker) shift; cmd_kill_worker "$@" ;;
   container-id) shift; cmd_container_id "$@" ;;
+  container-log) shift; cmd_container_log "$@" ;;
   partition) shift; cmd_partition "$@" ;;
   heal)      shift; cmd_heal "$@" ;;
   logs)      shift; cmd_logs "$@" ;;
   intruder)  shift; cmd_intruder "$@" ;;
   scenarios) shift; cmd_scenarios ;;
-  *)         die "usage: cluster {up|down|restart|status|inspect|client|kill|start|recreate|crash-daemon|kill-worker|container-id|partition|heal|logs|intruder|scenarios} [args]" ;;
+  *)         die "usage: cluster {up|down|restart|status|inspect|client|kill|start|recreate|crash-daemon|kill-worker|container-id|container-log|partition|heal|logs|intruder|scenarios} [args]" ;;
 esac

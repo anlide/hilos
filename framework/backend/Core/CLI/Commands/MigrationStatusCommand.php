@@ -9,6 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\MigrationClaim;
 
 /**
  * Migration Status Command.
@@ -112,6 +113,11 @@ HELP;
         
         if (!empty($status['failed_migrations'])) {
             echo "Failed migrations:  " . implode(', ', $status['failed_migrations']) . " ⚠\n";
+        }
+
+        $claim = MigrationClaim::current();
+        if ($claim !== null) {
+            echo "Rollout claim:      held by {$claim->holder} since {$claim->claimedAt}\n";
         }
         
         echo "\nMigration list:\n";

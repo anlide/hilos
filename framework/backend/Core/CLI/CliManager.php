@@ -53,6 +53,7 @@ use Hilos\Core\CLI\Commands\ImpersonateStopCommand;
 use Hilos\Core\CLI\Commands\LlmPingCommand;
 use Hilos\Core\CLI\Commands\LogTestAppendCommand;
 use Hilos\Core\CLI\Commands\MigrationDownCommand;
+use Hilos\Core\CLI\Commands\MigrationReleaseCommand;
 use Hilos\Core\CLI\Commands\MigrationRetryCommand;
 use Hilos\Core\CLI\Commands\MigrationStatusCommand;
 use Hilos\Core\CLI\Commands\MigrationUpCommand;
@@ -159,6 +160,7 @@ class CliManager
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();
         $this->commands[CliCommands::MIGRATION_RETRY] = new MigrationRetryCommand();
+        $this->commands[CliCommands::MIGRATION_RELEASE] = new MigrationReleaseCommand();
         $this->commands[CliCommands::SEED_APPLY] = new SeedApplyCommand();
         $this->commands[CliCommands::DB_SCHEMA_STATUS] = new DbSchemaStatusCommand();
         $this->commands[CliCommands::DB_WAIT] = new DbWaitCommand();

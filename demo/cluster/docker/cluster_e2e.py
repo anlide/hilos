@@ -59,6 +59,8 @@ Plus scenarios beyond that matrix:
  20 rt set width across nodes  every node owns its set of one collection: a node writes its own
                                set, is refused another's, and a node cut off while a set was
                                written gets the row by the hand-over of that set (HIL-1116)
+ 21 schema rolled out once     five nodes starting together on an empty database: one applies,
+                               the rest wait (HIL-1228)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -343,6 +345,11 @@ def node_log_since(node, mark):
 def container_id(node):
     """Docker id of a node's container, or '' when there is none."""
     return ctl_out("container-id", node)
+
+
+def container_log(node):
+    """A node's container log so far (docker logs, not followed), or '' when there is none."""
+    return ctl_out("container-log", node)
 
 
 def _inspect(subcmd, node):
@@ -1824,7 +1831,43 @@ def scenario_20_rt_set_width_across_nodes():
         wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
 
 
+# The watchdog's line after it applied migrations on startup (DockerApplication), and the one a
+# node writes while another holds the rollout claim (MigrationClaim).
+APPLIED_ON_STARTUP = re.compile(r"Applied \d+ migration\(s\) on startup")
+WAITING_FOR_CLAIM = "Waiting for the schema rollout claim"
+
+
+def scenario_21_schema_rolled_out_once():
+    """Five nodes started together on an empty database roll the schema out once (HIL-1228).
+
+    `cluster scenarios` gives this its setting: it wipes the database volume and starts all five
+    nodes at once, with no schema step of the stand in front of them. Each node's watchdog runs
+    the migrations under the rollout claim in the database, so exactly one applies them and the
+    rest find the level already there - and all five then converge.
+
+    What this proves is the outcome, not the race: whether the starts overlap is up to timing,
+    and with this demo's few quick migrations they often do not - a node arriving after the
+    rollout finds nothing to apply with or without the claim. Nodes racing on one claim are
+    covered by MigrationClaimIntegrationTest, where the wait is driven rather than hoped for. So
+    the lines of the nodes that waited are printed, not asserted.
+    """
+    wait_converge(ALL_NODES)
+    logs = {node: container_log(node) for node in ALL_NODES}
+    assert all(logs.values()), f"no container log for {[n for n, log in logs.items() if not log]}"
+
+    applied = [node for node, log in logs.items() if APPLIED_ON_STARTUP.search(log)]
+    for node, log in logs.items():
+        waited = log.count(WAITING_FOR_CLAIM)
+        if waited:
+            print(f"  {node} waited for the claim ({waited} line(s))")
+    assert len(applied) == 1, f"expected exactly one node to apply the schema on startup, got {applied}"
+    return f"{applied[0]} applied the schema; the other four found it applied, all five in the cluster"
+
+
 SCENARIOS = [
+    # First, because it reads the container logs of the stand `cluster scenarios` has just
+    # raised: 9 and 16 kill and recreate nodes, and a recreated container starts a new log.
+    ("21 schema rolled out once", scenario_21_schema_rolled_out_once),
     ("1 master-slave mesh", scenario_1_master_slave_mesh),
     ("2 master-master", scenario_2_master_master),
     ("3 placement", scenario_3_placement),

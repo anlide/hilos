@@ -327,7 +327,7 @@ scenario on a single shape retires (not in the code yet — HIL-1218).
 |---|---|---|---|---|
 | binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (not in the code yet — HIL-1215) |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4` | a primary and a replica behind one address (not in the code yet — HIL-1229) | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet, 18 capacity is consumed, 19 worker death on a live node (not in the code yet — HIL-1216) |
-| online-testing | Angular | three equal masters that host work themselves | a three-node multi-primary (not in the code yet — HIL-1230) | 11 cross-node db fact, 15 db interest addressing (not in the code yet — HIL-1217); a database node that dies and the nodes that reconnect (not in the code yet — HIL-1231); the schema rolled out once by nodes that start together (not in the code yet — HIL-1228) |
+| online-testing | Angular | three equal masters that host work themselves | a three-node multi-primary (not in the code yet — HIL-1230) | 11 cross-node db fact, 15 db interest addressing (not in the code yet — HIL-1217); a database node that dies and the nodes that reconnect (not in the code yet — HIL-1231); the schema rolled out once by nodes that start together (scenario 21 on the demo/cluster stand today — moves with HIL-1217) |
 
 Why the scenarios fall this way (the owner's word, 2026-09-27): quorum, a
 network partition and TLS are proved on the simplest database, so that two
@@ -337,8 +337,9 @@ proved where the database is a real cluster.
 
 The move goes **cluster → e2e → MySQL**. The scenarios move first, every
 stand still on one database server — a scenario never changes its database in
-the same step as its stand; the e2e specs move next; the MySQL topologies, the
-one-time schema rollout and the browser on a multi-node stand come last.
+the same step as its stand; the e2e specs move next; the MySQL topologies and
+the browser on a multi-node stand come last. The one-time schema rollout went
+ahead of all of them (HIL-1228): it is needed on one server too.
 
 A stand takes rather than holds. The harness is one and shared: it reads the
 nodes, their addresses, their room and the set of scenarios from the stand it
@@ -352,10 +353,12 @@ three has is a question for the owner, not a fourth stand grown on the way:
 the three shapes are one decision, and a quiet fourth would rewrite it from
 inside a leaf.
 
-Nodes that start together on one database roll the schema out once
-(not in the code yet — HIL-1228); whether that is a lock inside the node or a
-step before the nodes start is that leaf's to decide. Until it lands, a stand
-keeps a one-shot rollout service that runs before its nodes (HIL-712).
+Nodes that start together on one database roll the schema out once, under
+the rollout claim in the database itself (HIL-1228,
+[orm/migrations.md](orm/migrations.md)): one node applies the migrations, the
+rest wait for it and find the level already there. A stand therefore has no
+one-shot rollout service in front of its nodes any more, and starts them all
+at once on an empty database — which is what scenario 21 reads.
 
 The Playwright suite of binance-btc-tracker drives the backup, logs and
 protected-mode specs against the multi-node binance stand, with the browser

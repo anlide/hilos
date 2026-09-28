@@ -16,6 +16,7 @@ reason in its `execution()` declaration. See
 | `db:migration:down` | `cli-offline-write` | Roll back last applied migration |
 | `db:migration:status` | `cli-read` | Show applied / pending migrations |
 | `db:migration:retry` | `cli-offline-write` | Retry a failed migration |
+| `db:migration:release` | `cli-offline-write` | Release a schema rollout claim a dead holder left |
 
 ## Schema / Entity commands
 

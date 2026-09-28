@@ -2,6 +2,8 @@
 
 namespace Hilos\Database;
 
+use Hilos\Database\Exception\MigrationMarkedFailedException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -57,7 +59,12 @@ class Migration
     }
 
     /**
-     * @throws DatabaseException When connection fails or migration table cannot be created
+     * Ensures both tables the migration track runs on: `migration` and the rollout claim's.
+     *
+     * Each is probed on its own: an installation migrated before the claim existed already
+     * has `migration`, and stopping at it would leave the claim table uncreated there.
+     *
+     * @throws DatabaseException When connection fails or a migration table cannot be created
      */
     public static function initialize(): void
     {
@@ -66,25 +73,44 @@ class Migration
             return;
         }
 
-        try {
-            // Check if table exists
-            Database::sql(DatabaseSql::tableExistsProbe('migration'));
-            self::$initialized[$connectionIndex] = true;
-            return;
-        } catch (DatabaseException $e) {
-            // Table doesn't exist, create it
-        }
-
-        // Create migration table
-        Database::sqlRun(
+        self::ensureTable(
+            'migration',
             'CREATE TABLE IF NOT EXISTS `migration` (
                 `index` int(10) UNSIGNED NOT NULL,
                 `failed` tinyint(1) NOT NULL DEFAULT 1,
                 PRIMARY KEY (`index`)
             ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );
+        self::ensureTable(
+            MigrationClaim::TABLE,
+            'CREATE TABLE IF NOT EXISTS `' . MigrationClaim::TABLE . '` (
+                `id` tinyint(3) UNSIGNED NOT NULL,
+                `holder` varchar(255) NOT NULL,
+                `claimed_at` datetime NOT NULL,
+                PRIMARY KEY (`id`)
+            ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
+        );
 
         self::$initialized[$connectionIndex] = true;
+    }
+
+    /**
+     * Creates a table only after the probe says it is not there, so an existing one sees no DDL.
+     *
+     * @param string $table Table to probe
+     * @param string $createSql Statement creating it
+     * @throws DatabaseException When the table is missing and cannot be created
+     */
+    private static function ensureTable(string $table, string $createSql): void
+    {
+        try {
+            Database::sql(DatabaseSql::tableExistsProbe($table));
+            return;
+        } catch (DatabaseException) {
+            // Table doesn't exist, create it
+        }
+
+        Database::sqlRun($createSql);
     }
 
     /**
@@ -158,70 +184,120 @@ class Migration
     }
 
     /**
+     * Applies the pending migrations under the schema rollout claim ({@see MigrationClaim}).
+     *
+     * The level is read without the claim, and a database already at the target takes no claim
+     * at all; otherwise the level is read again under the claim, because another holder may have
+     * rolled the schema out while this one waited. The claim is given up on success and on
+     * failure alike, so the next holder sees a failed migration at once instead of waiting.
+     *
      * @param ?int $targetIndex Target migration index (null applies through latest)
+     * @param ?MigrationClaimHolder $holder Who takes the claim; this process when null
      * @return int Number of migrations applied
      * @throws DatabaseException When migration file is missing, unreadable, or SQL fails
+     * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
+     * @throws MigrationMarkedFailedException When the next migration is marked failed by an earlier run
      */
-    public static function migrateUp(?int $targetIndex = null): int
+    public static function migrateUp(?int $targetIndex = null, ?MigrationClaimHolder $holder = null): int
     {
         self::initialize();
 
-        $currentIndex = self::getCurrentIndex();
         $availableMigrations = self::getAvailableMigrations();
 
         if ($targetIndex === null) {
             $targetIndex = !empty($availableMigrations) ? max($availableMigrations) : 0;
         }
 
-        $applied = 0;
-
-        foreach ($availableMigrations as $migrationIndex) {
-            if ($migrationIndex <= $currentIndex) {
-                continue; // Already applied
-            }
-
-            if ($migrationIndex > $targetIndex) {
-                break; // Stop at target
-            }
-
-            self::applyMigrationUp($migrationIndex);
-            $applied++;
+        if (self::pendingMigrations($availableMigrations, self::getCurrentIndex(), $targetIndex) === []) {
+            return 0;
         }
 
-        return $applied;
+        $holder ??= MigrationClaimHolder::process();
+        MigrationClaim::take($holder);
+        try {
+            $applied = 0;
+            foreach (self::pendingMigrations($availableMigrations, self::getCurrentIndex(), $targetIndex) as $migrationIndex) {
+                self::refuseMarkedFailed($migrationIndex);
+                self::applyMigrationUp($migrationIndex);
+                $applied++;
+            }
+
+            return $applied;
+        } finally {
+            MigrationClaim::release($holder);
+        }
     }
 
     /**
+     * Rolls migrations back under the schema rollout claim ({@see MigrationClaim}), taken by this process.
+     *
      * @param int $targetIndex Target migration index
      * @return int Number of migrations rolled back
      * @throws DatabaseException When rollback file is missing, unreadable, or SQL fails
+     * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
      */
     public static function migrateDown(int $targetIndex): int
     {
         self::initialize();
 
-        $currentIndex = self::getCurrentIndex();
-        $availableMigrations = self::getAvailableMigrations();
+        $holder = MigrationClaimHolder::process();
+        MigrationClaim::take($holder);
+        try {
+            $currentIndex = self::getCurrentIndex();
+            $availableMigrations = self::getAvailableMigrations();
 
-        $rolledBack = 0;
+            $rolledBack = 0;
 
-        // Rollback in reverse order
-        rsort($availableMigrations);
+            // Rollback in reverse order
+            rsort($availableMigrations);
 
-        foreach ($availableMigrations as $migrationIndex) {
-            if ($migrationIndex <= $targetIndex) {
-                break; // Stop at target
+            foreach ($availableMigrations as $migrationIndex) {
+                if ($migrationIndex <= $targetIndex) {
+                    break; // Stop at target
+                }
+
+                if ($migrationIndex > $currentIndex) {
+                    continue; // Not applied yet
+                }
+
+                self::applyMigrationDown($migrationIndex);
+                $rolledBack++;
             }
 
-            if ($migrationIndex > $currentIndex) {
-                continue; // Not applied yet
-            }
-
-            self::applyMigrationDown($migrationIndex);
-            $rolledBack++;
+            return $rolledBack;
+        } finally {
+            MigrationClaim::release($holder);
         }
+    }
 
-        return $rolledBack;
+    /**
+     * @param list<int> $availableMigrations Sorted migration indices the track lists
+     * @param int $currentIndex Level the database is at
+     * @param int $targetIndex Level to stop at
+     * @return list<int> Indices above the level and up to the target, in order
+     */
+    private static function pendingMigrations(array $availableMigrations, int $currentIndex, int $targetIndex): array
+    {
+        return array_values(array_filter(
+            $availableMigrations,
+            static fn (int $migrationIndex): bool => $migrationIndex > $currentIndex && $migrationIndex <= $targetIndex,
+        ));
+    }
+
+    /**
+     * Refuses a migration an earlier run left marked failed: its SQL may be half applied, and
+     * running it again over that is the operator's decision (`db:migration:retry`), not a start's.
+     *
+     * @param int $index Migration about to be applied
+     * @throws DatabaseException When the migration table cannot be read
+     * @throws MigrationMarkedFailedException When the migration is marked failed
+     */
+    private static function refuseMarkedFailed(int $index): void
+    {
+        Database::sql('SELECT `index` FROM `migration` WHERE `index` = ? AND `failed` = 1', [$index]);
+        if (Database::row() !== null) {
+            throw MigrationMarkedFailedException::forIndex($index);
+        }
     }
 
     /**
@@ -494,25 +570,35 @@ class Migration
     }
 
     /**
-     * Deletes failed record and re-applies migration up.
+     * Deletes failed record and re-applies migration up, under the schema rollout claim
+     * ({@see MigrationClaim}) taken by this process.
      *
      * @param int $index Migration index to retry
      * @throws DatabaseException When migration is missing, not failed, or re-apply fails
+     * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
      */
     public static function retryFailed(int $index): void
     {
-        Database::sql('SELECT `failed` FROM `migration` WHERE `index` = ?', [$index]);
-        $row = Database::row()
-            ?? throw new DatabaseException("Migration {$index} not found in database");
+        self::initialize();
 
-        if ((int)$row['failed'] === 0) {
-            throw new DatabaseException("Migration {$index} is not failed");
+        $holder = MigrationClaimHolder::process();
+        MigrationClaim::take($holder);
+        try {
+            Database::sql('SELECT `failed` FROM `migration` WHERE `index` = ?', [$index]);
+            $row = Database::row()
+                ?? throw new DatabaseException("Migration {$index} not found in database");
+
+            if ((int)$row['failed'] === 0) {
+                throw new DatabaseException("Migration {$index} is not failed");
+            }
+
+            // Mark for retry
+            Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?', [$index]);
+
+            // Apply again
+            self::applyMigrationUp($index);
+        } finally {
+            MigrationClaim::release($holder);
         }
-
-        // Mark for retry
-        Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?', [$index]);
-
-        // Apply again
-        self::applyMigrationUp($index);
     }
 }

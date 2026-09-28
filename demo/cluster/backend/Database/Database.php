@@ -22,9 +22,9 @@ use Hilos\HilosException;
  *
  * Reads the primary connection from DB_* env. Every node of the stand names the
  * same schema, because the cluster model is one database per cluster and a node
- * that cannot see its neighbour's row cannot be asked about it (HIL-712). Nobody
- * races on the settings-table migration at first boot: a one-shot step of the
- * stand (the `cluster-migrate` service) applies it before any node starts.
+ * that cannot see its neighbour's row cannot be asked about it (HIL-712). Nodes
+ * booting together on it do not race on the migrations: they roll the schema out
+ * under the rollout claim in the database, one at a time (HIL-1228).
  */
 final class Database extends BaseDatabase
 {

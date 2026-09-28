@@ -89,6 +89,9 @@ final class CliCommands
     /** @var string Command: Retry failed migration */
     public const string MIGRATION_RETRY = 'db:migration:retry';
 
+    /** @var string Command: Release a rollout claim left by a dead holder */
+    public const string MIGRATION_RELEASE = 'db:migration:release';
+
     /** @var string Command: Apply database seeds */
     public const string SEED_APPLY = 'db:seed:apply';
 
