@@ -265,6 +265,27 @@ function expectBackToTailRoom(container: HTMLElement): HTMLElement {
   return room as HTMLElement
 }
 
+/**
+ * Asserts the room of the line count stands in the strip, held by exactly
+ * one invisible twin hidden from assistive technology, with one live status
+ * region, and returns it.
+ *
+ * @param container The mounted page.
+ */
+function expectCountRoom(container: HTMLElement): HTMLElement {
+  const room = byId(container, 'hilos-log-count-room')
+  expect(room).not.toBeNull()
+  const twins = (room as HTMLElement).querySelectorAll('.invisible')
+  expect(twins).toHaveLength(1)
+  expect(twins[0].getAttribute('aria-hidden')).toBe('true')
+  expect(twins[0].querySelectorAll('[data-id]')).toHaveLength(0)
+  const regions = (room as HTMLElement).querySelectorAll('[role="status"]')
+  expect(regions).toHaveLength(1)
+  expect(regions[0].getAttribute('aria-live')).toBe('polite')
+
+  return room as HTMLElement
+}
+
 describe('HilosLogsViewPage', () => {
   afterEach(cleanup)
 
@@ -373,15 +394,22 @@ describe('HilosLogsViewPage', () => {
     const container = mountPage(connection, LIVE_FILE)
     pushCatalog(catalog())
     const asked = sent.length
+    const room = expectCountRoom(container)
+    const region = room.querySelector('[role="status"]') as HTMLElement
+    expect(region.textContent).toBe('')
+    expect(byId(room, 'hilos-log-count')).not.toBeNull()
 
     fireEvent.change(byId(container, 'hilos-log-substring') as HTMLElement, {
       target: { value: 'deadlock' },
     })
 
     expect(sent).toHaveLength(asked)
-    expect(byId(container, 'hilos-log-search-pending')?.textContent).toBe(
-      'Not applied yet — press Search',
-    )
+    const pending = byId(region, 'hilos-log-search-pending')
+    expect(pending).not.toBeNull()
+    expect(pending?.textContent).toBe('Not applied yet — press Search')
+    expect(pending?.getAttribute('role')).toBeNull()
+    expect(byId(room, 'hilos-log-count')).toBeNull()
+    expectCountRoom(container)
   })
 
   it('applies the typed substring on the Search button, and drops the note', () => {
@@ -398,6 +426,10 @@ describe('HilosLogsViewPage', () => {
     expect(sent).toHaveLength(asked + 1)
     expect(sent.at(-1)?.data).toMatchObject({ substring: 'deadlock' })
     expect(byId(container, 'hilos-log-search-pending')).toBeNull()
+    const room = expectCountRoom(container)
+    expect(byId(room, 'hilos-log-count')).not.toBeNull()
+    const region = room.querySelector('[role="status"]') as HTMLElement
+    expect(region.textContent).toBe('')
   })
 
   it('applies the same substring on Enter as on the button', () => {

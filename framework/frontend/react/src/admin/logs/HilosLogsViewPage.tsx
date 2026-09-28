@@ -12,7 +12,9 @@
 // That control stands in the strip above the pane, in a room taken always (HIL-1024),
 // so neither its arrival nor its count moves the pane (styling-rules.md, "The room a
 // live message takes"); so nothing ever moves under the reader's eyes, and nothing is
-// lost without saying so. The catalog, the address, the read, the buffer and the row
+// lost without saying so. The note that a typed search is not applied yet stands
+// in the place of the line count, in a cell held at its width always (HIL-1152),
+// so it does not move the pane either. The catalog, the address, the read, the buffer and the row
 // view-model are the core headless's (hilosLogViewer), including the threshold that
 // decides "at the tail" and the wording of the notes — this view owns only the
 // markup and the scrolling, so a project mounts it by passing its
@@ -403,18 +405,42 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
           <i className="bi bi-arrow-up me-1" aria-hidden="true" />
           Earlier
         </button>
-        <span className="small text-body-secondary" data-id="hilos-log-count">
-          {entryCount} entries shown
-        </span>
-        {substringDirty ? (
-          <span
-            className="small text-warning-emphasis"
-            role="status"
-            data-id="hilos-log-search-pending"
-          >
+        {/* The line count and the note that the typed search is not applied
+        yet share one cell (HIL-1152); the note stands in the count's place while
+        the two texts differ, and an invisible twin of the note holds the cell at
+        its width always, so neither its coming nor its going moves the pane
+        (styling-rules.md, "The room a live message takes"); the status region
+        stands there always so a screen reader hears the note arrive
+        (accessibility.md, "Live regions"), and the count stays outside it
+        because it changes with every line of the tail. */}
+        <span className="hilos-stack" data-id="hilos-log-count-room">
+          <span className="small invisible" aria-hidden="true">
+            <i className="bi bi-exclamation-circle me-1" />
             Not applied yet — press Search
           </span>
-        ) : null}
+          <span role="status" aria-live="polite">
+            {substringDirty ? (
+              <span
+                className="small text-warning-emphasis"
+                data-id="hilos-log-search-pending"
+              >
+                <i
+                  className="bi bi-exclamation-circle me-1"
+                  aria-hidden="true"
+                />
+                Not applied yet — press Search
+              </span>
+            ) : null}
+          </span>
+          {substringDirty ? null : (
+            <span
+              className="small text-body-secondary"
+              data-id="hilos-log-count"
+            >
+              {entryCount} entries shown
+            </span>
+          )}
+        </span>
         {following ? (
           <span
             className="ms-auto badge text-bg-success-subtle text-success-emphasis border border-success-subtle"

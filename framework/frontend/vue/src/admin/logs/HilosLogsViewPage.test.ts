@@ -331,13 +331,20 @@ describe('HilosLogsViewPage', () => {
     pushCatalog(catalog())
     await nextTick()
     const asked = sent.length
+    const room = expectCountRoom(wrapper)
+    const region = room.find('[role="status"]')
+    expect(region.text()).toBe('')
+    expect(room.find('[data-id="hilos-log-count"]').exists()).toBe(true)
 
     await wrapper.find('[data-id="hilos-log-substring"]').setValue('deadlock')
 
     expect(sent).toHaveLength(asked)
-    expect(wrapper.find('[data-id="hilos-log-search-pending"]').text()).toBe(
-      'Not applied yet — press Search',
-    )
+    const pending = region.find('[data-id="hilos-log-search-pending"]')
+    expect(pending.exists()).toBe(true)
+    expect(pending.text()).toBe('Not applied yet — press Search')
+    expect(pending.attributes('role')).toBeUndefined()
+    expect(room.find('[data-id="hilos-log-count"]').exists()).toBe(false)
+    expectCountRoom(wrapper)
   })
 
   it('applies the typed substring on the Search button, and drops the note', async () => {
@@ -355,6 +362,9 @@ describe('HilosLogsViewPage', () => {
     expect(wrapper.find('[data-id="hilos-log-search-pending"]').exists()).toBe(
       false,
     )
+    const room = expectCountRoom(wrapper)
+    expect(room.find('[data-id="hilos-log-count"]').exists()).toBe(true)
+    expect(room.find('[role="status"]').text()).toBe('')
   })
 
   it('applies the same substring on Enter as on the button', async () => {
@@ -598,6 +608,29 @@ function expectBackToTailRoom(
   const twins = room.findAll('.invisible')
   expect(twins).toHaveLength(1)
   expect(twins[0].attributes('aria-hidden')).toBe('true')
+
+  return room
+}
+
+/**
+ * Asserts the room of the line count stands in the strip, held by exactly
+ * one invisible twin hidden from assistive technology, with one live status
+ * region, and returns it.
+ *
+ * @param wrapper The mounted page.
+ */
+function expectCountRoom(
+  wrapper: ReturnType<typeof mountPage>,
+): ReturnType<ReturnType<typeof mountPage>['find']> {
+  const room = wrapper.find('[data-id="hilos-log-count-room"]')
+  expect(room.exists()).toBe(true)
+  const twins = room.findAll('.invisible')
+  expect(twins).toHaveLength(1)
+  expect(twins[0].attributes('aria-hidden')).toBe('true')
+  expect(twins[0].findAll('[data-id]')).toHaveLength(0)
+  const regions = room.findAll('[role="status"]')
+  expect(regions).toHaveLength(1)
+  expect(regions[0].attributes('aria-live')).toBe('polite')
 
   return room
 }
