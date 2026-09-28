@@ -1014,6 +1014,7 @@ abstract class BrowserContext
                 $snapshot->lastAnchor,
                 $rowAnchors,
                 $snapshot->frame,
+                $snapshot->rowsBefore,
             );
 
             return new BrowserTableWindow($rows, $snapshot);
@@ -2838,6 +2839,8 @@ abstract class BrowserContext
      * someone reads it: the classifier of an arriving row, the count, and the classifier of an
      * edit share one answer. A created row's place is shared too: a row below the window tells
      * its count frame that rows remain after it; an unreadable place is settled by the recount.
+     * An edited row's place is shared the same way: the count reads it for the word on rows after
+     * the window, and the announcement reads it for the strip.
      *
      * Any mutation the table builds marks the window for a facet count recalculation when the
      * connection has declared filters for it: whether a changed or removed row affected a particular
@@ -2941,7 +2944,8 @@ abstract class BrowserContext
         $placement = function () use (&$placementAsked, &$place, $table, $viewport, $mutation, $membership): ?TableRowPlacement {
             if (!$placementAsked) {
                 $placementAsked = true;
-                if ($mutation->type === TableMutationType::Create
+                if (
+                    ($mutation->type === TableMutationType::Create || $mutation->type === TableMutationType::Update)
                     && $mutation->row !== null
                     && !$viewport->hasRow((string) $mutation->rowKey)
                 ) {
@@ -2968,7 +2972,15 @@ abstract class BrowserContext
 
         // Ahead of the delta, which forgets a row it takes out of the window: a row the window held
         // when this change came is the delta's to judge, and announcing it as well would be a second answer.
-        $this->announceViewportEntry($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership);
+        $this->announceViewportEntry(
+            $viewport,
+            $mutation,
+            $acceptKey,
+            $page,
+            $browserKey,
+            $membership,
+            $placement,
+        );
 
         $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own, $focused, $membership);
         if ($delta !== null) {
@@ -3330,6 +3342,7 @@ abstract class BrowserContext
             $snapshot->lastAnchor,
             $rowAnchors,
             $snapshot->frame,
+            $snapshot->rowsBefore,
         );
 
         $this->queueAddressedTableSignal(
@@ -3437,10 +3450,11 @@ abstract class BrowserContext
      * knows no announced tail, so the tail travels as `inside`: on this page, which is all the strip
      * says.
      *
-     * The place is read by the create's classifier ({@see self::viewportPlacement()}), which for a
-     * window with a filter map has already required the source's yes. A window without one asks the
-     * same question after the place, and only a no from the table's own narrowing keeps it silent;
-     * a table that cannot say is announced to, as the delta treats the rows it holds.
+     * The place is the shared answer the count already reads ({@see self::viewportPlacement()}).
+     * For a window with a filter map that answer has already required the source's yes. A window
+     * without one asks the same question after the place, and only a no from the table's own
+     * narrowing keeps it silent; a table that cannot say is announced to, as the delta treats the
+     * rows it holds.
      *
      * The frame carries the total the window already has: an edit adds no row to the set. What the
      * edit does to the number is the count's business, taken before this runs, and under a filter
@@ -3448,22 +3462,22 @@ abstract class BrowserContext
      * announced, so every edit that leaves such a row inside sends the frame again, and the client
      * counts the key once.
      *
-     * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
      * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
+     * @param Closure(): ?TableRowPlacement $placement Edited row's place, read at most once per change
      */
     private function announceViewportEntry(
-        ViewportTable $table,
         TableViewportSubscription $viewport,
         TableRowMutationDTO $mutation,
         string $acceptKey,
         string $page,
         string $browserKey,
         Closure $membership,
+        Closure $placement,
     ): void {
         if ($mutation->type !== TableMutationType::Update || $mutation->row === null) {
             return;
@@ -3471,8 +3485,8 @@ abstract class BrowserContext
         if ($viewport->hasRow((string) $mutation->rowKey)) {
             return;
         }
-        $placement = $this->viewportPlacement($table, $viewport, $mutation, $this->viewportQuery($viewport), $membership);
-        if ($placement !== TableRowPlacement::Inside && $placement !== TableRowPlacement::Tail) {
+        $place = $placement();
+        if ($place !== TableRowPlacement::Inside && $place !== TableRowPlacement::Tail) {
             return;
         }
         if ($viewport->filter === [] && $membership() === false) {
@@ -3935,11 +3949,68 @@ abstract class BrowserContext
     }
 
     /**
+     * Settles the word on rows after an ordered window when an edit moves a row it does not hold.
+     *
+     * An edit carries the source's fields and the window orders by the table row's fields, and
+     * nothing in general ties the two — a user's presence is read from sessions — so the crossing
+     * is read from the row's place and from the word last given to this window (owner decision,
+     * 28.09.2026, HIL-1160). Below a window told that none follow, the word becomes that some do,
+     * without a query, unless the table says the row is not in the set. Above, inside or at the
+     * tail of a window told that some follow, the recount at the end of the flush settles it. A
+     * place that cannot be read takes that recount too.
+     *
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param string $acceptKey Target accept key
+     * @param string $browserKey Browser table key
+     * @param string $page Subscribed page key
+     * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change
+     * @param Closure(): ?TableRowPlacement $placement Edited row's place, read at most once per change
+     * @return ?array{totalCount: int, totalExact: bool, hasRowsAfter?: bool} New total with the word on it, or null when unchanged or marked
+     */
+    private function viewportEdgeAfterEdit(
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        string $acceptKey,
+        string $browserKey,
+        string $page,
+        Closure $membership,
+        Closure $placement,
+    ): ?array {
+        if ($viewport->hasRow((string) $mutation->rowKey)
+            || !$this->viewportHasEdge($viewport)
+            || $viewport->hasRowsAfter() === null
+        ) {
+            return null;
+        }
+
+        $place = $placement();
+        if ($place === null) {
+            return $this->markTotalRecount($acceptKey, $browserKey, $page);
+        }
+        if ($place === TableRowPlacement::Below) {
+            if ($viewport->hasRowsAfter() === true) {
+                return null;
+            }
+
+            return $membership() === false
+                ? null
+                : $this->countedTotal($viewport, $viewport->totalCount(), hasRowsAfter: true);
+        }
+        if ($viewport->hasRowsAfter() === true) {
+            return $this->markTotalRecount($acceptKey, $browserKey, $page);
+        }
+
+        return null;
+    }
+
+    /**
      * Emits a viewport count shift if mutation arithmetic can settle it, or marks the window for recount.
      *
      * In an exact window with no filter active, the type of the change settles the count by
-     * row-level type (create +1, delete -1, update none), unless the window's edge needs a recount — the type is row-level
-     * faithful because each table builds it that way. With a filter active, the row is placed
+     * row-level type (create +1, delete -1, update none), unless the window's edge needs a recount
+     * or an edit of a row the window does not hold moves the word on rows after it. The type is
+     * row-level faithful because each table builds it that way. With a filter active, the row is placed
      * against the set by asking the table about that one row; if that one row settles the count,
      * the count is updated and emitted immediately.
      *
@@ -3965,7 +4036,7 @@ abstract class BrowserContext
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
      * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
-     * @param Closure(): ?TableRowPlacement $placement Created row's place, read at most once per change
+     * @param Closure(): ?TableRowPlacement $placement Created or edited row's place, read at most once per change
      * @throws InvalidArgumentException When the viewport count signal cannot be named
      */
     private function emitViewportCount(
@@ -4063,7 +4134,11 @@ abstract class BrowserContext
     }
 
     /**
-     * Records a new total count on the viewport and emits table_viewport_count if it changed.
+     * Records a new total on the viewport and emits table_viewport_count when the total or the word moved.
+     *
+     * A frame whose total and exactness match what the window holds still goes out when it carries
+     * a word different from the one last given to this window. A total that says nothing about
+     * that word leaves the word as it stands.
      *
      * @param TableViewportSubscription $viewport Connection's window
      * @param array{totalCount: int, totalExact: bool, hasRowsAfter?: bool} $total Resolved total count and exactness
@@ -4081,11 +4156,15 @@ abstract class BrowserContext
     ): void {
         $totalCount = $total[TableConstants::RESULT_KEY_TOTAL_COUNT];
         $totalExact = $total[TableConstants::RESULT_KEY_TOTAL_EXACT];
-        if ($totalCount === $viewport->totalCount() && $totalExact === $viewport->totalExact()) {
+        $hasRowsAfter = $total[TableConstants::RESULT_KEY_HAS_ROWS_AFTER] ?? null;
+        if ($totalCount === $viewport->totalCount()
+            && $totalExact === $viewport->totalExact()
+            && ($hasRowsAfter === null || $hasRowsAfter === $viewport->hasRowsAfter())
+        ) {
             return;
         }
 
-        $viewport->recordTotal($totalCount, $totalExact);
+        $viewport->recordTotal($totalCount, $totalExact, $hasRowsAfter);
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_COUNT,
@@ -4136,6 +4215,11 @@ abstract class BrowserContext
      * Arithmetic settles the total but cannot settle whether rows remain after this window
      * (owner decision, HIL-1153). An unreadable create takes the same road.
      *
+     * An edit of a row outside an ordered window is no longer nothing. The edit carries the
+     * source's fields and the window orders by the table row's fields, and nothing in general
+     * ties the two — a user's presence is read from sessions — so the crossing is read from the
+     * row's place and from the word on rows after the window (owner decision, 28.09.2026, HIL-1160).
+     *
      * With a filter active the set is not every row, and what the count needs is one bit — is
      * this row in the set now? That is asked of the table, and the answer decides:
      * - a created row moves the count by one when it belongs to the set and not at all when it does not;
@@ -4155,7 +4239,7 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $browserKey Browser table key
      * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
-     * @param Closure(): ?TableRowPlacement $placement Created row's place, read at most once per change
+     * @param Closure(): ?TableRowPlacement $placement Created or edited row's place, read at most once per change
      * @return ?array{totalCount: int, totalExact: bool, hasRowsAfter?: bool} New total with the word on it, or null when unchanged/marked
      */
     private function viewportTotalAfterMutation(
@@ -4195,7 +4279,15 @@ abstract class BrowserContext
                 TableMutationType::Delete => !$viewport->hasRow((string) $mutation->rowKey) && $this->viewportHasEdge($viewport)
                     ? $this->markTotalRecount($acceptKey, $browserKey, $page)
                     : $this->countedTotal($viewport, max(0, $viewport->totalCount() - 1)),
-                TableMutationType::Update => null,
+                TableMutationType::Update => $this->viewportEdgeAfterEdit(
+                    $viewport,
+                    $mutation,
+                    $acceptKey,
+                    $browserKey,
+                    $page,
+                    $membership,
+                    $placement,
+                ),
                 default => $this->markTotalRecount($acceptKey, $browserKey, $page),
             };
         }

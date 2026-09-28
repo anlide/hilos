@@ -2678,6 +2678,23 @@ describe('TableViewportController window place', () => {
     expect(controller.hasNextPage.get()).toBe(false)
   })
 
+  it('turns Next on and off when a count keeps the total and only the edge changes', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+    expect(controller.hasNextPage.get()).toBe(false)
+
+    // The total is the one the window already holds. Next follows the word in the frame.
+    controller.ingestCount(21, true, true)
+    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
+    expect(controller.frame.footer.get().totalCount).toBe(21)
+
+    controller.ingestCount(21, true, false)
+    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
+    expect(controller.frame.footer.get().totalCount).toBe(21)
+  })
+
   it('does not change the edge for an in-window removal, before or after Apply', () => {
     const { controller, open } = makePlaced()
     open(tail(), 21, 10, { id: 12 }, { id: 21 })

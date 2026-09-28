@@ -31,6 +31,8 @@ import {
 // - one another tab renamed into the window is announced by that strip too, and so
 //   is one renamed onto the tail of a last page with room — an edited row never
 //   comes in on its own;
+// - one renamed from above a full last page to past it turns Next on, and the
+//   only bot past a page, renamed back above it, turns Next off;
 // - a value another tab edited, leaving the row in its place, lands at once,
 //   highlighted and with no gate.
 //
@@ -148,6 +150,48 @@ async function renameBot(
   await typeInto(page.getByTestId('admin-bots-name'), name)
   await clickSubmit(page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+}
+
+/**
+ * Create bots that sort after every current one until the total fills whole windows.
+ *
+ * A last page with room would take a rename past it as a tail with a free slot,
+ * and Next would stay off for a true reason. The names sort after the bots
+ * already in the set, including ones an earlier attempt left behind.
+ *
+ * @param page The Playwright page on the bots admin.
+ * @param stamp The test's time stamp.
+ * @returns The names of the bots created, for the caller to delete.
+ */
+async function fillToWholePages(page: Page, stamp: number): Promise<string[]> {
+  const names: string[] = []
+  let total = await tableTotal(page)
+  while (total % WINDOW !== 0) {
+    const name = `ZZ ${stamp} pad ${names.length}`
+    await createBot(page, name)
+    names.push(name)
+    total += 1
+    await expectTableTotal(page, total)
+  }
+
+  return names
+}
+
+/**
+ * Delete the padding bots, which stand at the end of the set.
+ *
+ * @param page The Playwright page on the bots admin.
+ * @param names Names {@link fillToWholePages} returned.
+ */
+async function deletePads(page: Page, names: string[]): Promise<void> {
+  if (names.length === 0) {
+    return
+  }
+  await dismissToasts(page)
+  await goToLastPage(page)
+  for (const name of [...names].reverse()) {
+    await deleteBot(page, await tableRowKeyByText(page, name))
+  }
 }
 
 /**
@@ -385,6 +429,81 @@ test('Next still reaches the rows below after bots above the window are deleted'
   await expect(tabB.getByTestId('hilos-table-empty-page')).toHaveCount(0)
   await expect(next).toBeDisabled()
   await tabB.close()
+})
+
+test('Next turns on when another tab renames a bot from above a full last page to past it', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const name = nameBeforeAll(stamp)
+  const past = `ZZ ${stamp} zzz`
+
+  await signUpAdmin(page)
+  await openBots(page)
+  const pads = await fillToWholePages(page, stamp)
+
+  const tabB = await page.context().newPage()
+  await openBots(tabB)
+  await goToLastPage(tabB)
+  const next = tabB.getByTestId('hilos-table-next')
+  await expect(next).toBeDisabled()
+
+  // A bot before every other stands above B. The strip says so, and a full last
+  // page still has nothing after it, so Next stays off.
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+  const strip = tabB.getByTestId('hilos-table-announce')
+  await expect(strip).toContainText('1 new row')
+  await expect(next).toBeDisabled()
+  const total = await tableTotal(tabB)
+
+  // The same bot, renamed past every row B shows, is now the next page. The
+  // total does not move; Next does.
+  await renameBot(page, key, past)
+  await expectTableTotal(tabB, total)
+  await expect(next).toBeEnabled()
+  await next.click()
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+  await expect(tabB.getByTestId('hilos-table-empty-page')).toHaveCount(0)
+
+  await deleteBot(tabB, key)
+  await tabB.close()
+  await deletePads(page, pads)
+})
+
+test('Next turns off when the only bot past the window is renamed above it', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const past = `ZZ ${stamp} zzz`
+  const name = nameBeforeAll(stamp)
+
+  await signUpAdmin(page)
+  await openBots(page)
+  const pads = await fillToWholePages(page, stamp)
+  await createBot(page, past)
+  await dismissToasts(page)
+  await goToLastPage(page)
+  const key = await tableRowKeyByText(page, past)
+
+  const tabB = await page.context().newPage()
+  await openBots(tabB)
+  await goToLastPage(tabB)
+  await pageBackOnce(tabB)
+  const next = tabB.getByTestId('hilos-table-next')
+  await expect(next).toBeEnabled()
+  const total = await tableTotal(tabB)
+
+  // The only row after B moves above it. The total stays, and Next has nowhere
+  // left to go.
+  await renameBot(page, key, name)
+  await expectTableTotal(tabB, total)
+  await expect(next).toBeDisabled()
+
+  await tabB.close()
+  await openBots(page)
+  await deleteBot(page, await tableRowKeyByText(page, name))
+  await deletePads(page, pads)
 })
 
 test('after Show the footer names the tail, Next is off, and Back reaches the first row', async ({

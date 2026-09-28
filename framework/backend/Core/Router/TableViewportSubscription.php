@@ -38,8 +38,8 @@ use Hilos\Core\Table\TableConstants;
  * size of the build, as it did before the frame existed.
  *
  * The descriptor is immutable; the delivered rows, the total count with the word on how exact
- * it is, the two places the window sits between and the two framing it are updated as windows
- * are served and as rows leave the set.
+ * it is, the word on whether rows stand after the window, the two places the window sits
+ * between and the two framing it are updated as windows are served and as rows leave the set.
  */
 final class TableViewportSubscription
 {
@@ -72,6 +72,9 @@ final class TableViewportSubscription
     /** Places standing right outside the last served window, or null when its source did not report them. */
     private ?TableWindowFrameDTO $frame = null;
 
+    /** Whether the server last told this window that unheld rows follow it, or null when it has not said. */
+    private ?bool $hasRowsAfter = null;
+
     /**
      * @param string $tableKey Table the viewport scopes
      * @param array<string, mixed> $filter Open filter map, resolved to a query by the concrete table
@@ -101,6 +104,11 @@ final class TableViewportSubscription
      * report one included: a frame is a snapshot of the build it came with, and one left over from
      * an earlier build would frame a window that is no longer there.
      *
+     * The word on rows after the window is taken by the same rule the client uses. An exact total,
+     * a known number of rows before the window, a non-empty window, an order and a limit settle it
+     * as whether those rows before it plus the rows it holds fall short of the total. Anything else
+     * leaves the word unknown.
+     *
      * @param array<string, array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>}> $wireRows Wire rows
      *     delivered in the window, keyed by row-id key, in display order
      * @param int $totalCount Total rows matching the filter
@@ -111,6 +119,7 @@ final class TableViewportSubscription
      *     empty when the table was not asked or could not say
      * @param ?TableWindowFrameDTO $frame Places standing right outside the window, or null when its source did not
      *     report them
+     * @param ?int $rowsBefore Rows of the set standing before the window, or null when the build did not say
      */
     public function recordWindow(
         array $wireRows,
@@ -120,6 +129,7 @@ final class TableViewportSubscription
         ?TableAnchorDTO $lastAnchor,
         array $rowAnchors = [],
         ?TableWindowFrameDTO $frame = null,
+        ?int $rowsBefore = null,
     ): void {
         $this->rowDigests = array_map(self::digest(...), $wireRows);
         $this->renderedDigests = $this->rendered === [] ? [] : array_map($this->renderedDigest(...), $wireRows);
@@ -130,6 +140,13 @@ final class TableViewportSubscription
         $this->firstAnchor = $firstAnchor;
         $this->lastAnchor = $lastAnchor;
         $this->frame = $frame;
+        $this->hasRowsAfter = $totalExact
+            && $rowsBefore !== null
+            && $wireRows !== []
+            && $this->sort !== null
+            && $this->limit !== TableConstants::NO_LIMIT
+            ? $rowsBefore + count($wireRows) < $totalCount
+            : null;
     }
 
     /**
@@ -151,13 +168,23 @@ final class TableViewportSubscription
     /**
      * Records a new total without touching the delivered rows.
      *
+     * An inexact total forgets the word on rows after the window. An exact total takes a word when
+     * one is given and leaves the word it already holds when none is, the way a count frame that
+     * did not speak of the edge leaves it.
+     *
      * @param int $totalCount Total rows matching the filter
      * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
+     * @param ?bool $hasRowsAfter Whether unheld rows follow the window, or null when this total does not say
      */
-    public function recordTotal(int $totalCount, bool $totalExact): void
+    public function recordTotal(int $totalCount, bool $totalExact, ?bool $hasRowsAfter = null): void
     {
         $this->totalCount = $totalCount;
         $this->totalExact = $totalExact;
+        if (!$totalExact) {
+            $this->hasRowsAfter = null;
+        } elseif ($hasRowsAfter !== null) {
+            $this->hasRowsAfter = $hasRowsAfter;
+        }
     }
 
     /**
@@ -195,6 +222,7 @@ final class TableViewportSubscription
         $declared->rowAnchors = $this->rowAnchors;
         $declared->totalCount = $this->totalCount;
         $declared->totalExact = $this->totalExact;
+        $declared->hasRowsAfter = $this->hasRowsAfter;
         $declared->builtRowCount = $this->builtRowCount;
         $declared->firstAnchor = $this->firstAnchor;
         $declared->lastAnchor = $this->lastAnchor;
@@ -325,6 +353,20 @@ final class TableViewportSubscription
     public function totalExact(): bool
     {
         return $this->totalExact;
+    }
+
+    /**
+     * Whether the server last told this window that unheld rows follow it.
+     *
+     * Null is "not said": an inexact total, a window with no order or no limit, an empty window,
+     * or a build that did not report how many rows stand before it. The client reads the same
+     * three answers off the same rule.
+     *
+     * @return ?bool Whether unheld rows follow the window, or null when the server has not said
+     */
+    public function hasRowsAfter(): ?bool
+    {
+        return $this->hasRowsAfter;
     }
 
     /**

@@ -602,9 +602,12 @@ the window, or at the tail of a last page with room, is announced by the same
 frame as `inside`, with the total unchanged, and never arrives on its own: a row
 that left the page earlier may still stand on the screen with its mark, and
 would stand twice. Above the window nothing is sent — without its past the row
-may have stood there before the edit too; below it, only the count. With a
-filter the source must say the row is in the set; without one, only the
-table's own "not in the set" keeps the window silent.
+may have stood there before the edit too. Below the window, when the word was
+that none follow, a count frame carries the same total and `hasRowsAfter: true`;
+above or inside, when the word was that some follow, the recount at the end of
+the batch settles the word (HIL-1160). With a filter the source must say the
+row is in the set; without one, only the table's own "not in the set" keeps
+the window silent.
 
 ## Announcing what the window cannot show
 
@@ -653,7 +656,9 @@ delete leave it alone; an own create that pushes a row out sets it to true.
 An inexact total clears it, whichever frame carried the total, as do a refusal,
 convergence to an empty set, and resetting the address. With no edge known, Next
 uses the page count, or the full-window rule when the count is inexact. An
-unordered window has no edge to read.
+unordered window has no edge to read. The server holds the same word on each
+window and moves it by these rules; an edit that carries a row the window does
+not hold across that window moves the word too (HIL-1160).
 
 On the wire this is `table_viewport_announce` (page, tableKey, rowKey, placement,
 totalCount, totalExact, pageCount), where `placement` is `above` or `inside`.
@@ -805,15 +810,23 @@ The question is put once per change, whichever of the two needs it first.
   Whether it was in the set before the change is a question about its previous
   state, and no previous state is kept: a source update carries the changed
   columns and a delete need carry no row at all. The window is marked for a single
-  recount at the end of the flush, and a `table_viewport_count` frame is sent if
-  the total moved. The past is needed for the number, not for the place: an
-  edited row that now stands inside the window is still announced (see *Where an
-  arriving row lands*).
+  recount at the end of the flush, and a `table_viewport_count` frame is sent when
+  the total moved or the word on the edge did. The past is needed for the number,
+  not for the place: an edited row that now stands inside the window is still
+  announced (see *Where an arriving row lands*).
 - **A removal outside an ordered window with an edge** needs that recount even
   without a filter (HIL-1153). The delete carries no row, so arithmetic can take
   one off but cannot say whether any rows remain after the window. A create whose
   place cannot be read takes the same road; one placed below the window says
   `hasRowsAfter: true` without another query.
+- **An edit of a row outside an ordered window with an edge and no filter**
+  (owner decision 28.09.2026, HIL-1160). Below the window, a word of none
+  becomes some, with no query, and a word of some changes nothing. Above,
+  inside or at the tail, a word of some recounts and a word of none changes
+  nothing. A place that cannot be read recounts. There is no check that the
+  edit touched a sort field: an edit names the source's fields, the window
+  orders by the table row's fields, and nothing in general ties the two — a
+  user's presence is read from sessions.
 - **A table that does not implement the question** answers "cannot say", and
   marks the window for that same single recount at the end of the flush (at most
   once per window per flush, rather than on every change). That is what the default
@@ -834,13 +847,17 @@ Appended rows stand after that anchor too, so only a returned row the window
 does not hold means `hasRowsAfter: true`. The key is sent only when the answer
 has an exact total and `rowsBefore`: a handmade snapshot that does not honor the
 address cannot settle the edge. Other windows keep their original query and
-send no edge key. An unchanged total still sends no count frame.
+send no edge key. A frame with the same total goes out only when its key
+differs from the word the server last told this window
+(`TableViewportSubscription`).
 
 The added cost is one recount per such window per batch with an outside delete,
 including windows with no filter — fifty deletes cost one query, not fifty.
 In-memory tables count their already assembled set; database tables count the
 indexed set (owner decision 26.09.2026, HIL-1153). Filtered windows already paid
-that recount under HIL-1089.
+that recount under HIL-1089. A window with no filter also pays one recount per
+batch in which a row above it was edited while its word was that some follow
+(owner decision 28.09.2026, HIL-1160).
 
 ### Above the ceiling
 
@@ -1270,7 +1287,7 @@ addressed to the one connection it concerns:
 | `table_viewport_frozen` | server → client, live | `page`, `tableKey`, `since` (server ms of the first failure) — sent once per freeze |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row` (on `row_removed` only for the row the tab holds in focus, and only while it is alive), `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |
-| `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount`, `hasRowsAfter` (absent when the count is inexact or the server did not settle the edge) |
+| `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount`, `hasRowsAfter` (absent when the count is inexact or the server did not settle the edge; a frame may carry an unchanged total when only this word changed) |
 | `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `requestId` — the row takes the place the sort gives it, not the tail |
 | `table_viewport_announce` | server → client, live | `page`, `tableKey`, `rowKey`, `placement` (`above` / `inside`), `totalCount`, `totalExact`, `pageCount` |
 | `table_viewport_unannounce` | server → client, live | `page`, `tableKey`, `rowKey` |

@@ -59,6 +59,104 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
         $this->assertFalse($viewport->hasRow('z'));
     }
 
+    public function testRecordWindowSaysRowsFollowWhenThePlaceAndTheTotalSaySo(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 5, true, null, null, [], null, 0);
+
+        $this->assertTrue($viewport->hasRowsAfter());
+    }
+
+    public function testRecordWindowSaysNoRowsFollowWhenTheWindowHoldsTheEnd(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 2, true, null, null, [], null, 0);
+
+        $this->assertFalse($viewport->hasRowsAfter());
+    }
+
+    public function testRecordWindowForgetsTheWordWhenTheTotalIsNotExact(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 5, false, null, null, [], null, 0);
+
+        $this->assertNull($viewport->hasRowsAfter());
+    }
+
+    public function testRecordWindowForgetsTheWordWhenThePlaceBeforeItIsUnknown(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 5, true, null, null);
+
+        $this->assertNull($viewport->hasRowsAfter());
+    }
+
+    public function testRecordWindowForgetsTheWordWhenTheWindowIsEmpty(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf([]), 5, true, null, null, [], null, 0);
+
+        $this->assertNull($viewport->hasRowsAfter());
+    }
+
+    public function testRecordWindowForgetsTheWordWhenTheWindowHasNoOrder(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'settings', limit: 2);
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 5, true, null, null, [], null, 0);
+
+        $this->assertNull($viewport->hasRowsAfter());
+    }
+
+    public function testRecordWindowForgetsTheWordWhenTheWindowHasNoLimit(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: 'settings',
+            sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_ASC)),
+        );
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 5, true, null, null, [], null, 0);
+
+        $this->assertNull($viewport->hasRowsAfter());
+    }
+
+    public function testRecordTotalForgetsTheWordWhenTheTotalStopsBeingExact(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 5, true, null, null, [], null, 0);
+        $viewport->recordTotal(TableConstants::COUNT_CEILING, false);
+
+        $this->assertNull($viewport->hasRowsAfter());
+    }
+
+    public function testRecordTotalTakesAWordWhenOneIsGiven(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 5, true, null, null, [], null, 0);
+        $viewport->recordTotal(5, true, false);
+
+        $this->assertFalse($viewport->hasRowsAfter());
+    }
+
+    public function testRecordTotalLeavesTheWordWhenNoneIsGiven(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 5, true, null, null, [], null, 0);
+        $viewport->recordTotal(6, true);
+
+        $this->assertSame(6, $viewport->totalCount());
+        $this->assertTrue($viewport->hasRowsAfter());
+    }
+
+    public function testWithRenderedCarriesTheWord(): void
+    {
+        $viewport = self::orderedViewport();
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 2, true, null, null, [], null, 0);
+
+        $carried = $viewport->withRendered([], []);
+
+        $this->assertFalse($carried->hasRowsAfter());
+        $this->assertFalse($viewport->hasRowsAfter());
+    }
+
     public function testNumericRowKeysComeBackAsStrings(): void
     {
         $viewport = new TableViewportSubscription(tableKey: 'settings');
@@ -227,6 +325,21 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
 
         $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
         $this->assertTrue($registry->isTableViewportFrozen('ak', 'users'));
+    }
+
+    /**
+     * Builds an ordered window of a fixed size, the only shape that can hold a word on its edge.
+     *
+     * @param int $limit Window size
+     * @return TableViewportSubscription Ordered window before any build is recorded
+     */
+    private static function orderedViewport(int $limit = 2): TableViewportSubscription
+    {
+        return new TableViewportSubscription(
+            tableKey: 'settings',
+            sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_ASC)),
+            limit: $limit,
+        );
     }
 
     /**

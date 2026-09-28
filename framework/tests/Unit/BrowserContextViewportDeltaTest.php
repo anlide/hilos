@@ -2050,6 +2050,268 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
+    public function testAnEditBelowAFullLastWindowThatWasToldNoneFollowSaysSomeDo(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            2,
+            2,
+            rowsBefore: 0,
+        );
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('mike', 'Zed')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Zed']));
+        $context->flushToSignalRouter();
+
+        // The row landed past a window that holds the end of the set. The place was already read,
+        // so the word flips without asking the table for another page.
+        $count = $this->nextCount();
+        $this->assertSame(2, $count->totalCount);
+        $this->assertTrue($count->hasRowsAfter);
+        $this->assertTrue($viewport->hasRowsAfter());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame([], $table->queries);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditBelowAWindowAlreadyToldThatRowsFollowSendsNothing(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            2,
+            4,
+            rowsBefore: 0,
+        );
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('mike', 'Zed')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Zed']));
+        $context->flushToSignalRouter();
+
+        $this->assertTrue($viewport->hasRowsAfter());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame([], $table->queries);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditThatMovesTheOnlyRowAfterTheWindowAboveItClosesTheEdge(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('mike', 'Mike'), self::row('oscar', 'Oscar')],
+            2,
+            3,
+            rowsBefore: 0,
+        );
+        $context = $this->bootWithViewport(
+            [self::row('zulu', 'Alpha'), self::row('mike', 'Mike'), self::row('oscar', 'Oscar')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zulu', ['label' => 'Alpha']));
+        $context->flushToSignalRouter();
+
+        // The only row past the window moved above it. One recount after the build's last row
+        // is what says the next page is gone; the total itself did not move.
+        $count = $this->nextCount();
+        $this->assertSame(3, $count->totalCount);
+        $this->assertFalse($count->hasRowsAfter);
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertCount(1, $table->queries);
+        $query = $table->queries[0];
+        $this->assertSame($viewport->lastAnchor(), $query->anchor);
+        $this->assertSame(TableAnchorDirection::After, $query->anchorDirection);
+        $this->assertNull($query->pageIndex);
+        $this->assertSame(3, $query->limit);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditAboveAWindowThatStillHasRowsAfterItRecountsWithoutAFrame(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('mike', 'Mike'), self::row('oscar', 'Oscar')],
+            2,
+            4,
+            rowsBefore: 0,
+        );
+        $context = $this->bootWithViewport(
+            [
+                self::row('zulu', 'Alpha'),
+                self::row('mike', 'Mike'),
+                self::row('oscar', 'Oscar'),
+                self::row('zed', 'Zed'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zulu', ['label' => 'Alpha']));
+        $context->flushToSignalRouter();
+
+        // Another row still stands past the window, so the word the recount reads is the one the
+        // window was already told. A frame repeating it would move nothing.
+        $this->assertTrue($viewport->hasRowsAfter());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertCount(1, $table->queries);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditAboveAWindowToldThatNoneFollowSendsNothing(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('mike', 'Mike'), self::row('oscar', 'Oscar')],
+            2,
+            4,
+            pageIndex: 1,
+            rowsBefore: 2,
+        );
+        $context = $this->bootWithViewport(
+            [
+                self::row('zulu', 'Alpha'),
+                self::row('bob', 'Bob'),
+                self::row('mike', 'Mike'),
+                self::row('oscar', 'Oscar'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zulu', ['label' => 'Alpha']));
+        $context->flushToSignalRouter();
+
+        // A row that moved further above a window holding the end cannot add a row past it.
+        $this->assertFalse($viewport->hasRowsAfter());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame([], $table->queries);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditIntoAWindowToldThatRowsFollowAnnouncesThenRecountsTheEdge(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            2,
+            3,
+            rowsBefore: 0,
+        );
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('zed', 'Beta'), self::row('gamma', 'Gamma')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // The strip speaks at once. The recount answers afterwards, and only its frame travels
+        // when the word on the edge is no longer the one the window was told.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Inside, $announce->placement);
+        $this->assertSame('zed', $announce->rowKey);
+        $this->assertSame(3, $announce->totalCount);
+        $count = $this->nextCount();
+        $this->assertSame(3, $count->totalCount);
+        $this->assertFalse($count->hasRowsAfter);
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertCount(1, $table->queries);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditWhosePlaceCannotBeReadRecountsTheEdge(): void
+    {
+        $window = [self::row('alpha', 'Alpha')];
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byLabel(TableConstants::ORDER_ASC),
+            limit: 1,
+        );
+        // A last anchor to recount after, and no first anchor to classify against.
+        $viewport->recordWindow(
+            self::deliveredWindow($window),
+            2,
+            true,
+            null,
+            self::anchorOf($window[0]),
+            self::deliveredAnchors($window),
+            rowsBefore: 0,
+        );
+        $context = $this->bootWithViewport(
+            [self::row('beta', 'Aaa'), self::row('alpha', 'Alpha')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['label' => 'Aaa']));
+        $context->flushToSignalRouter();
+
+        $count = $this->nextCount();
+        $this->assertSame(2, $count->totalCount);
+        $this->assertFalse($count->hasRowsAfter);
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertCount(1, $table->queries);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEditBelowAWindowToldNoneFollowSendsNothingWhenTheRowIsOutOfTheSet(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            2,
+            2,
+            rowsBefore: 0,
+        );
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma'), self::row('mike', 'Zed')],
+            $viewport,
+            inSet: false,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Zed']));
+        $context->flushToSignalRouter();
+
+        // The table's own no is the same reading the announcement uses: a row outside the set
+        // does not stand past the window.
+        $this->assertFalse($viewport->hasRowsAfter());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame([], $table->queries);
+        $this->assertSame(1, $table->setQuestions);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredEditOutsideTheWindowSendsTheWordWhenTheTotalStays(): void
+    {
+        $viewport = self::pageByLabel(
+            [self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            2,
+            3,
+            filter: ['status' => 'failed'],
+            rowsBefore: 0,
+        );
+        $context = $this->bootWithViewport(
+            [self::row('zed', 'Aaa'), self::row('alpha', 'Alpha'), self::row('gamma', 'Gamma')],
+            $viewport,
+            inSet: true,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Aaa']));
+        $context->flushToSignalRouter();
+
+        // The recount already knew the edge. What used to drop the frame was the total staying
+        // put; the word on it is no longer the one this window was told.
+        $count = $this->nextCount();
+        $this->assertSame(3, $count->totalCount);
+        $this->assertFalse($count->hasRowsAfter);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
     public function testAFilteredWindowIsAnnouncedARowAnEditBroughtIntoItsSetAndThenCounted(): void
     {
         $viewport = self::pageByLabel(
@@ -2096,6 +2358,11 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
         $context->flushToSignalRouter();
 
+        // The row stays unannounced: the table said it is outside the set. The recount still
+        // answers the edge, and that word reaches the window even though the total did not move.
+        $count = $this->nextCount();
+        $this->assertSame(3, $count->totalCount);
+        $this->assertFalse($count->hasRowsAfter);
         $this->assertFalse($viewport->hasRow('zed'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
@@ -2116,7 +2383,11 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zed', ['label' => 'Beta']));
         $context->flushToSignalRouter();
 
-        // The place in the order does not say whether the row is in this set at all.
+        // The place in the order does not say whether the row is in this set at all, so the row
+        // is not announced. The recount's word on the edge still goes out: the total did not move.
+        $count = $this->nextCount();
+        $this->assertSame(3, $count->totalCount);
+        $this->assertFalse($count->hasRowsAfter);
         $this->assertFalse($viewport->hasRow('zed'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
@@ -2456,6 +2727,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
      * @param int $totalCount Total recorded for the window
      * @param int $pageIndex Numbered page the window stands on
      * @param array<string, mixed> $filter Open filter map narrowing the window's set
+     * @param ?int $rowsBefore Rows of the set standing before the window, or null when the build did not say
      * @return TableViewportSubscription Window as served
      */
     private static function pageByLabel(
@@ -2464,6 +2736,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         int $totalCount,
         int $pageIndex = 0,
         array $filter = [],
+        ?int $rowsBefore = null,
     ): TableViewportSubscription {
         $viewport = new TableViewportSubscription(
             tableKey: ViewportDeltaUnitTable::TABLE,
@@ -2479,6 +2752,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
             $windowRows === [] ? null : self::anchorOf($windowRows[0]),
             $windowRows === [] ? null : self::anchorOf($windowRows[count($windowRows) - 1]),
             self::deliveredAnchors($windowRows),
+            rowsBefore: $rowsBefore,
         );
 
         return $viewport;
