@@ -45,6 +45,9 @@ const LOG_STREAM_SCENARIO_AGENT_IN_MASTER = 'agent-in-master';
 /** A file rotation cannot move, mounted into the log directory before the watchdog starts. */
 const LOG_STREAM_SCENARIO_ROTATION_REFUSED = 'rotation-refused';
 
+/** A log directory another environment owns, marked before the watchdog starts. */
+const LOG_STREAM_SCENARIO_LOG_ROOT_FOREIGN = 'log-root-foreign';
+
 /**
  * The scenario ids a record may name, in the order the command walks them.
  *
@@ -56,6 +59,7 @@ const LOG_STREAM_SCENARIOS = [
     LOG_STREAM_SCENARIO_MASTER_ERROR,
     LOG_STREAM_SCENARIO_AGENT_IN_MASTER,
     LOG_STREAM_SCENARIO_ROTATION_REFUSED,
+    LOG_STREAM_SCENARIO_LOG_ROOT_FOREIGN,
 ];
 
 /** The stdout of the container's PID 1 — what `docker logs` prints to its own stdout. */

@@ -18,12 +18,12 @@ use Hilos\Hilos;
  * time. So the address is read unassertively here, and each caller decides for itself what an
  * unset one means to it.
  *
- * Four places on the watchdog's path need that answer: {@see DockerApplication} configuring the
- * Logger, {@see DockerManager} announcing the gap, skipping rotation, pointing the child's
- * descriptors and quoting the error tail. Three or four of them asking the environment separately
- * would part ways on the first edit — the same argument {@see DaemonRawStream} was built on — and a
- * private helper could not be unit-tested, which on this leaf is the only thing testable without a
- * container.
+ * Several places on the watchdog's path need that answer: {@see DockerApplication} claiming the
+ * log directory and configuring the Logger, {@see DockerManager} announcing the gap, skipping
+ * rotation, pointing the child's descriptors and quoting the error tail. Three or four of them
+ * asking the environment separately would part ways on the first edit — the same argument
+ * {@see DaemonRawStream} was built on — and a private helper could not be unit-tested, which on
+ * this leaf is the only thing testable without a container.
  */
 final class DaemonLogAddress
 {

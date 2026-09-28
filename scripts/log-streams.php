@@ -15,7 +15,7 @@ declare(strict_types=1);
  *
  * A record is:
  *   rows        the map rows the record proves, by number.
- *   scenario    which of the five provocations produces the line — the ids are declared in the
+ *   scenario    which of the six provocations produces the line — the ids are declared in the
  *               verdicts file, and the command walks them in that order.
  *   source      one human phrase for the red line.
  *   pattern     a PCRE matched per line, or null for a record that asserts emptiness only. An
@@ -320,5 +320,24 @@ return [
         'empty' => [],
         'supersedes' => 'map row 3 says the line goes to daemon-error.log only and never reaches docker logs;'
             . ' since HIL-1016 moved it off Logger::errorLog() it reaches both',
+    ],
+    // ---------------------------------------------------------------- log-root-foreign
+    [
+        'rows' => [2],
+        'scenario' => 'log-root-foreign',
+        'source' => 'the watchdog refuses a log directory another environment owns, in the container log and in no file (HIL-1130)',
+        // framework/backend/Utils/Exception/LogRootOwnedByAnotherException.php forOwner(): "This daemon refuses to
+        // start: the log directory {$logRoot} belongs to environment ...", thrown by framework/backend/Log/
+        // LogRootOwnershipGuard.php claimLogRoot() from framework/backend/Core/Daemon/DockerApplication.php run().
+        // container-log-stderr is not forbidden: without an error address error_log() writes the same text there.
+        'pattern' => '/This daemon refuses to start: the log directory \/var\/log\/hilos belongs to environment'
+            . ' "log-stream-check-foreign" node ""/',
+        'lands' => ['container-log'],
+        'never' => ['any-file'],
+        'nowhere' => false,
+        'empty' => [],
+        'supersedes' => 'map row 2 says a watchdog ERROR lands in the container log and in daemon-error.log; the'
+            . ' log-directory refusal is written before the watchdog takes its error address (HIL-1130), so it'
+            . ' reaches the container log only',
     ],
 ];

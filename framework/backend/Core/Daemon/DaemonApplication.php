@@ -77,8 +77,11 @@ final class DaemonApplication
             }
 
             // A refusal that the log directory belongs to another daemon cannot be written into
-            // that daemon's journal. Logger without a file writes to stdout/stderr, which is
-            // `docker logs` — that is where this refusal has to land.
+            // that daemon's journal. Logger without a file writes to stdout/stderr — a terminal, or
+            // `docker logs` for a daemon run without the watchdog — and that is where this refusal
+            // has to land. Under the watchdog the directory was claimed before this process was
+            // started, its stdout/stderr being a raw pair inside that directory, so here the claim
+            // refreshes the same pair (HIL-1130).
             LogRootOwnershipGuard::claimLogRoot();
 
             Logger::setLogFile(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string());

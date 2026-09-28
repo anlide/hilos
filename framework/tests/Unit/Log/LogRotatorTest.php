@@ -25,6 +25,11 @@ use Throwable;
  * rotation that calls the bare PHP primitives cannot reach its own failure branches inside a
  * Hilos process — the warning becomes an ErrorException first — so a case that proves those
  * branches reachable has to install that handler, the way the five older cases must not.
+ *
+ * One case reuses a batch of the same second that already holds a file of the same name, the
+ * way a watchdog restarted within that second finds it (P-375, HIL-1130): the file is left live
+ * rather than renamed over the one the batch already keeps. No warning is involved there —
+ * rename() overwrites silently — so that case needs no handler.
  */
 final class LogRotatorTest extends TestCase
 {
@@ -142,6 +147,28 @@ final class LogRotatorTest extends TestCase
         $batchDir = $this->dir . '/' . LogRotationConstants::LOG_STAGING_SUBDIR_NAME
             . '/' . $report->batchDirName;
         $this->assertSame('one', file_get_contents($batchDir . '/daemon.log'));
+    }
+
+    public function testRotateLeavesAFileLiveWhenTheSameSecondBatchAlreadyHoldsItsName(): void
+    {
+        file_put_contents($this->dir . '/daemon.log', 'one');
+        file_put_contents($this->dir . '/daemon-error.log', 'new');
+        foreach ($this->candidateBatchPaths() as $batchPath) {
+            $this->makeDirectory($batchPath);
+            file_put_contents($batchPath . '/daemon-error.log', 'previous run');
+        }
+
+        $report = new LogRotator($this->dir)->rotate();
+
+        $this->assertSame(1, $report->movedCount);
+        $this->assertSame([$this->dir . '/daemon-error.log'], $report->failedFiles);
+        // The file whose name the batch held stays live, and the batch keeps what it already had.
+        $this->assertSame('new', file_get_contents($this->dir . '/daemon-error.log'));
+        $batchDir = $this->dir . '/' . LogRotationConstants::LOG_STAGING_SUBDIR_NAME
+            . '/' . $report->batchDirName;
+        $this->assertSame('previous run', file_get_contents($batchDir . '/daemon-error.log'));
+        $this->assertSame('one', file_get_contents($batchDir . '/daemon.log'));
+        $this->assertFileDoesNotExist($this->dir . '/daemon.log');
     }
 
     public function testRotateRaisesItsOwnExceptionWhenTheStagingDirectoryCannotBeCreated(): void

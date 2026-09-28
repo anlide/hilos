@@ -17,7 +17,8 @@ use PHPUnit\Framework\TestCase;
  *
  * Three outcomes: an empty directory receives a marker; a marker that already names
  * this process is refreshed; a marker that names another pair refuses the start and
- * the message names both sides.
+ * the message names both sides. A directory that is not there yet is created by the
+ * claim, which under docker is the watchdog's first touch of it (HIL-1130).
  */
 final class LogRootOwnershipGuardTest extends TestCase
 {
@@ -57,14 +58,7 @@ final class LogRootOwnershipGuardTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (glob($this->dir . DIRECTORY_SEPARATOR . '{,.}*', GLOB_BRACE) ?: [] as $entry) {
-            if (is_file($entry)) {
-                unlink($entry);
-            }
-        }
-        if (is_dir($this->dir)) {
-            rmdir($this->dir);
-        }
+        $this->removeTree($this->dir);
 
         foreach ($this->previousEnvValues as $name => $value) {
             if ($value === false) {
@@ -88,6 +82,21 @@ final class LogRootOwnershipGuardTest extends TestCase
         $this->assertSame(self::ENVIRONMENT, $owner['environment']);
         $this->assertSame(self::NODE, $owner['node']);
         $this->assertFileExists(LogRootOwnerMarker::pathIn($this->dir));
+    }
+
+    public function testAnAbsentDirectoryIsCreatedAndReceivesAMarker(): void
+    {
+        $absent = $this->dir . DIRECTORY_SEPARATOR . 'absent';
+        $this->putEnv(EnvConstants::DAEMON_LOG_FILE, $absent . DIRECTORY_SEPARATOR . 'daemon.log');
+
+        LogRootOwnershipGuard::claimLogRoot();
+
+        $this->assertDirectoryExists($absent);
+        $owner = LogRootOwnerMarker::read($absent, self::ENVIRONMENT, self::NODE);
+
+        $this->assertNotNull($owner);
+        $this->assertSame(self::ENVIRONMENT, $owner['environment']);
+        $this->assertSame(self::NODE, $owner['node']);
     }
 
     public function testAMatchingMarkerIsRefreshedAndDoesNotRefuse(): void
@@ -125,6 +134,29 @@ final class LogRootOwnershipGuardTest extends TestCase
         $this->assertStringContainsString('test', $message);
         $this->assertStringContainsString(LogRootOwnerMarker::pathIn($this->dir), $message);
         $this->assertStringContainsString($this->dir, $message);
+    }
+
+    /**
+     * Recursively removes a directory tree, the marker's dot-file included.
+     *
+     * @param string $path Directory or file to remove
+     */
+    private function removeTree(string $path): void
+    {
+        if (!is_dir($path)) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+            return;
+        }
+
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $this->removeTree($path . DIRECTORY_SEPARATOR . $entry);
+        }
+        rmdir($path);
     }
 
     /**

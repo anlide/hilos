@@ -6,9 +6,13 @@ namespace Hilos\Log;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonApplication;
+use Hilos\Core\Daemon\DockerApplication;
+use Hilos\Core\Daemon\DockerManager;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileWriteException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Utils\Exception\LogRootOwnedByAnotherException;
 use Hilos\Utils\Logger;
@@ -27,24 +31,43 @@ use JsonException;
  * can. So the refusal speaks on stdout/stderr (`docker logs`) rather than in the journal
  * of the directory it is being turned away from.
  *
- * Runs from {@see DaemonApplication::run()}, once, after the required environment is
- * present and before {@see Logger} is pointed at the log files. Nothing composes until
- * it returns: no server binds, no port is taken, no peer sees a node that is not going
- * to come up.
+ * Under docker the directory is claimed first by the container watchdog, from
+ * {@see DockerApplication::run()}: before the startup rotation, before the watchdog takes its
+ * error address, before the daemon's raw output pair is opened. The daemon's own refusal
+ * could not keep the directory clean there - under the watchdog its stdout/stderr is that
+ * raw pair inside the directory itself, and by the time it refused the watchdog had already
+ * rotated the directory and written into it (HIL-1130).
  *
- * Only the daemon carries it. The worker inherits a decision the daemon already made,
- * and the CLI is where a stand is repaired - a gate there would be a dead end with no
- * way out of it.
+ * The daemon claims again from {@see DaemonApplication::run()}, once, after the required
+ * environment is present and before {@see Logger} is pointed at the log files. Under the
+ * watchdog that is a refresh of the same pair; without one it is the only claim. Nothing
+ * composes until it returns: no server binds, no port is taken, no peer sees a node that is
+ * not going to come up.
+ *
+ * A directory that does not exist yet is created by the claim, since whichever process claims
+ * first may be the first to touch it. The worker inherits a decision the daemon already made,
+ * and the CLI is where a stand is repaired - a gate there would be a dead end with no way out
+ * of it.
  */
 final class LogRootOwnershipGuard
 {
+    /**
+     * Mode an absent log directory is created with.
+     *
+     * One value for both hands that may create it - this claim, and {@see DockerManager} when
+     * it opens the daemon's raw output pair - so neither opens the directory wider than the other.
+     */
+    public const int LOG_ROOT_MODE = 0700;
+
     /**
      * Claims this process as the owner of the log directory, or refuses the start.
      *
      * Three outcomes: no marker — this process publishes one and starts; the marker
      * names this same environment and node — the timestamp is refreshed and the start
-     * continues; any other marker — the start is refused.
+     * continues; any other marker — the start is refused. An absent directory has no
+     * marker, and is created before one is published into it.
      *
+     * @throws DirectoryCreateException When the log directory is absent and cannot be created
      * @throws EnvException When APP_ENV, CLUSTER_NODE_ID, or DAEMON_LOG_FILE cannot be read
      * @throws FileMoveException When the owner marker cannot be published into place
      * @throws FileWriteException When the owner marker cannot be written
@@ -69,6 +92,7 @@ final class LogRootOwnershipGuard
             );
         }
 
+        FsPath::ensureDirectory($logRoot, self::LOG_ROOT_MODE);
         LogRootOwnerMarker::publish($logRoot, $environment, $node);
     }
 }

@@ -24,13 +24,18 @@
    node, or cannot be read. It runs after the required-environment check — `APP_ENV` and
    `DAEMON_LOG_FILE` are present — and **ahead of** `Logger::setLogFile()`. A refusal
    that the directory belongs to another daemon cannot be written into that daemon's
-   journal; `Logger` without a file writes to stdout/stderr, which is `docker logs`,
-   and that is where this refusal has to land. That is the opposite of
+   journal. Under docker the directory is claimed first by the watchdog, from
+   `DockerApplication::run()` before its startup rotation, and the watchdog leaves on a
+   refusal (below, "The watchdog claims the log directory before it touches it"); here a
+   daemon under the watchdog only refreshes the same pair. The refusal by ownership stays
+   with the daemon run without a watchdog: its stdout/stderr there is a terminal or
+   `docker logs`, and `Logger` without a file writes to stdout/stderr, so that is where
+   this refusal has to land. Under the watchdog it could not — the daemon's stdout/stderr
+   is the raw pair inside the very directory. That is the opposite of
    `AnonymizationStartupGuard` below, which stands **after** `setLogFile()` on purpose:
    its reader is the author of a migration, and the refusal belongs in the daemon log
    where that author will look for it. Here the reader is the operator of the stand.
-   Only the daemon carries it: the worker inherits the decision, and the CLI is where
-   a stand is repaired.
+   The worker inherits the decision, and the CLI is where a stand is repaired.
 3. `FrameworkExtensionGuard::assertMountedExtensionsWhole()` refuses the start of a node
    whose chain of subclasses under a framework key is not whole, did not keep the base's
    declaration, carries a column with two verdicts or a new one with none — in any project,
@@ -126,6 +131,23 @@ daemon's own list of *every* missing name is what reaches `docker logs`. A descr
 not a path: `/dev/stdout` inside a container resolves to an anonymous pipe, which `open()`
 answers with `ENOENT`, so no path leads to the container log.
 
+**The watchdog claims the log directory before it touches it (HIL-1130).** Its startup
+rotation and the daemon's raw output pair are the first hands in the directory, so
+`DockerApplication::run()` calls `LogRootOwnershipGuard::claimLogRoot()` right after the
+prelude — before `Logger::setErrorLogFile()`, before `runDockerWatchdog()` — and the claim
+creates the directory when it is not there yet. It asks only when the environment names
+both the directory (`DAEMON_LOG_FILE`) and this process (`APP_ENV`): with no address the
+watchdog touches no directory, and refusing over an unset `APP_ENV` alone would take from
+the daemon the whole missing list above. A foreign or unreadable marker ends the watchdog
+with `ExitCode::ERROR` and one line in `docker logs` — the refusal's own text, no trace —
+and the directory is left as it was found. It leaves rather than living on and waiting:
+`Up` in `docker ps` over a daemon that never starts is untrue; under
+`restart: unless-stopped` docker already retries with a growing pause, every attempt
+refuses before touching the directory, and the node comes up by itself once the marker is
+deleted — the wait costs nothing and needs no mechanism in the watchdog; under
+`restart: "no"` the container stays `Exited`, which is the loud failure a stand should
+show. The daemon's own claim then refreshes the same pair.
+
 **Two occasions get mail, and no others (HIL-617).** `WatchdogAlertMailer` writes when the
 failed-start run hits the threshold above, and when the watchdog is exiting after a failure
 of its own — the first from `recordFailedStart()` at the exact moment the count reaches the
@@ -147,8 +169,9 @@ letter and no timed reminder.
   exception or a PHP fatal. On `kill -9`, on the OOM killer, or when the container itself
   goes down, there is no letter, and this is not a gap to be closed from the inside —
   those are watched for from outside (zabbix, the restart policy).
-  There is also no letter for a failure *before* the loop: the path check, the missing
-  functions and the log rotation all run before `WatchdogAlertMailer::fromEnv()` is built,
+  There is also no letter for a failure *before* the loop: the log-directory claim, the
+  path check, the missing functions and the log rotation all run before
+  `WatchdogAlertMailer::fromEnv()` is built,
   so a full log volume kills the watchdog silently. And `WATCHDOG_ALERT_TIMEOUT_MS` does
   not cover the name lookup inside the connect, so a box whose DNS is gone can hold the
   dying watchdog for as long as its resolver takes. Both are the price of a watchdog with

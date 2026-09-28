@@ -13,7 +13,8 @@ use Hilos\Log\LogRootOwnershipGuard;
  *
  * Raised at startup by {@see LogRootOwnershipGuard} when the marker names another
  * environment or node, and by {@see LogRootOwnerMarker::read()} when a marker is
- * there and cannot be understood. An unreadable file is treated as foreign: opening
+ * there and cannot be understood. Under docker it is raised in the container watchdog
+ * first, before the watchdog has touched the directory (HIL-1130). An unreadable file is treated as foreign: opening
  * the directory on the strength of a parse failure would lose the claim the file
  * exists to keep. A missing marker is not this — that directory has no owner yet.
  *

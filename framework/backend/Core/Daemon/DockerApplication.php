@@ -15,7 +15,9 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Hilos;
 use Hilos\Log\DaemonLogAddress;
+use Hilos\Log\LogRootOwnershipGuard;
 use Hilos\Log\LogWriteLevelApplier;
+use Hilos\Utils\Exception\LogRootOwnedByAnotherException;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -26,11 +28,12 @@ use Throwable;
  * A docker.php collapses to a single {@see run()} call naming its Hilos facade and its
  * database connect. The spine runs the env prelude, connects the database (with retry, as
  * MySQL may still be starting), applies schema migrations before Hilos touches any table,
- * initializes the Hilos context, and supervises daemon.php through {@see DockerManager}.
- * The per-failure exit codes the duplicated bootstraps carried are preserved: a watchdog
- * start/status failure exits ERROR, a non-blocking-mode or migration failure exits
- * PERMISSION_DENIED, any other failure exits ERROR. On a clean return the process exits
- * SUCCESS.
+ * initializes the Hilos context, claims the log directory ({@see LogRootOwnershipGuard}), and
+ * supervises daemon.php through {@see DockerManager}. The per-failure exit codes the
+ * duplicated bootstraps carried are preserved: a watchdog start/status failure exits ERROR, a
+ * non-blocking-mode or migration failure exits PERMISSION_DENIED, any other failure exits
+ * ERROR. A log directory another daemon owns exits ERROR too, with the refusal as one line and
+ * no trace. On a clean return the process exits SUCCESS.
  */
 final class DockerApplication
 {
@@ -68,6 +71,21 @@ final class DockerApplication
                 // Initialize Hilos now that the schema is ready.
                 $hilosClass::init();
             });
+
+            // The watchdog is the first to touch the log directory - the startup rotation and the
+            // daemon's raw output pair are below - so it claims the directory here, before either
+            // of them and before it takes its own error address: a refusal must reach docker logs
+            // and leave the directory exactly as it found it. The daemon's own claim comes too late
+            // under a watchdog, its stdout/stderr being that raw pair inside the directory
+            // (HIL-1130). Asked only when the environment names both the directory and this
+            // process: with no address the watchdog touches no directory, and refusing over an
+            // unset APP_ENV alone would take from the daemon the whole missing list it names
+            // at once (HIL-843).
+            if (DaemonLogAddress::configured(EnvConstants::DAEMON_LOG_FILE) !== null
+                && isset(Hilos::$env[EnvConstants::APP_ENV])
+            ) {
+                LogRootOwnershipGuard::claimLogRoot();
+            }
 
             // Only the error log address: setLogFile() would stop Logger from echoing and
             // leave the container's docker logs empty, which is where a dead node is read first.
@@ -109,6 +127,11 @@ final class DockerApplication
                 ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
             ]);
             exit(ExitCode::PERMISSION_DENIED);
+        } catch (LogRootOwnedByAnotherException $e) {
+            // The operator's line, not the author's: the text names both owners and the marker to
+            // delete, and a file, a line and a trace would only bury it.
+            Logger::error($e->getMessage());
+            exit(ExitCode::ERROR);
         } catch (Throwable $e) {
             Logger::error('Docker Watchdog failed: ' . $e->getMessage(), [
                 ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),

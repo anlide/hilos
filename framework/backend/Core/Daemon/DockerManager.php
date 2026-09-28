@@ -23,6 +23,7 @@ use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Log\DaemonLogAddress;
 use Hilos\Log\DaemonRawStream;
+use Hilos\Log\LogRootOwnershipGuard;
 use Hilos\Log\LogRotator;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Utils\Exception\LogRotationException;
@@ -374,16 +375,16 @@ class DockerManager extends BaseManager
         if ($logFile !== null) {
             $logDir = dirname($logFile);
             try {
-                FsPath::ensureDirectory($logDir, 0700);
+                FsPath::ensureDirectory($logDir, LogRootOwnershipGuard::LOG_ROOT_MODE);
             } catch (DirectoryCreateException $failure) {
                 throw new LogRotationException("Cannot create log directory: $logDir", 0, $failure);
             }
         }
 
-        // (1) The raw pair is opened Process::PIPE_APPEND (:413,:417) and survives a daemon restart,
-        // while startup rotation runs once per watchdog run (:102), so without a mark the quote would
+        // (1) The raw pair is opened Process::PIPE_APPEND (:401,:405) and survives a daemon restart,
+        // while startup rotation runs once per watchdog run (:108), so without a mark the quote would
         // name an earlier crash. (2) The watchdog writes its own ERROR lines to the same daemon-error.log
-        // (DockerApplication.php:76-80), and taking the mark here leaves its previous line behind the quote.
+        // (DockerApplication::run()), and taking the mark here leaves its previous line behind the quote.
         $this->outputQuote = DaemonOutputQuote::markedAt($logFile, $errorLogFile);
 
         // Create Process object with stdout and stderr redirected to files. An address that was

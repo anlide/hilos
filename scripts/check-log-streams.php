@@ -12,7 +12,7 @@ declare(strict_types=1);
  * table in `scripts/log-streams.php`. It goes red when a stream moves. The judging is in
  * `scripts/log-stream-verdicts.php`; everything that talks to docker is here and nowhere else.
  *
- * Five scenarios, in sequence and never overlapping — two daemon containers over one database
+ * Six scenarios, in sequence and never overlapping — two daemon containers over one database
  * and one log directory would file each other's lines. Each one arms itself, marks the streams,
  * provokes its sources, polls every `lands` expectation until it arrives or the deadline passes,
  * takes the closing snapshot, and only then judges the `never` half — a line still in flight
@@ -32,6 +32,10 @@ declare(strict_types=1);
  *                     up; both halves are asserted. It was chosen for map row 3, reached row 18
  *                     instead while the refused rename still ended the watchdog, and reaches row 3
  *                     since HIL-1045.
+ *   log-root-foreign  a daemon container of its own, started over a log directory whose owner
+ *                     marker names another environment. The watchdog must refuse before it touches
+ *                     the directory: the container leaves with an error, the refusal is in the
+ *                     container log, and the directory holds exactly what it held (HIL-1130).
  *
  * Readiness is asked over the command socket (`cli.php daemon:status`, run inside the daemon's
  * container where the daemon addresses itself), never read off the log files — a stream that
@@ -45,8 +49,9 @@ declare(strict_types=1);
  *
  * The stand is left as it was found: the log directory is reset where a scenario needs a clean
  * one, every container the check started is stopped by the check, the probe and its ini are
- * removed, the freeze state file is deleted, and the stand is dropped at the end whatever
- * happened — a red must not leave a daemon eating cores.
+ * removed, the freeze state file is deleted, the owner marker the foreign one replaced is put
+ * back, and the stand is dropped at the end whatever happened — a red must not leave a daemon
+ * eating cores.
  *
  * Usage:
  *   composer run test:log-streams                      from the repository root, alone
@@ -192,6 +197,33 @@ const LOG_STREAMS_WORKER_WARNING_ROW = 20;
 /** The map row of rotation-refused, whose living-node half is asserted over the daemon, not by a record. */
 const LOG_STREAMS_ROTATION_ROW = 3;
 
+/**
+ * Basename of the log-root owner marker. `LogRootOwnerMarker::FILE_NAME` owns it; a host-side
+ * script cannot load the framework, so it is spelled here once.
+ */
+const LOG_STREAMS_OWNER_MARKER = '.hilos-log-root-owner.json';
+
+/** The environment the foreign marker names: one no stand runs as, so the refusal is certain. */
+const LOG_STREAMS_FOREIGN_ENVIRONMENT = 'log-stream-check-foreign';
+
+/** The marker format the framework writes and accepts (`LogRootOwnerMarker::FORMAT_VERSION`). */
+const LOG_STREAMS_OWNER_MARKER_VERSION = 1;
+
+/** The exit code of a watchdog that refused its log directory: `ExitCode::ERROR`. */
+const LOG_STREAMS_REFUSAL_EXIT_CODE = 1;
+
+/**
+ * How long the refusing container is given to leave. The watchdog connects the database and
+ * applies migrations before it reaches the claim, so this is a start's worth of time, not a moment's.
+ */
+const LOG_STREAMS_REFUSAL_DEADLINE_SECONDS = 120;
+
+/** The map row of log-root-foreign, whose exit and untouched-directory halves are asserted here, not by a record. */
+const LOG_STREAMS_REFUSAL_ROW = 2;
+
+/** What `docker inspect` says of a container whose PID 1 has left. */
+const LOG_STREAMS_CONTAINER_EXITED = 'exited';
+
 $root = dirname(__DIR__);
 require_once $root . '/scripts/stand-registry.php';
 require_once $root . '/scripts/step-artifacts.php';
@@ -200,7 +232,7 @@ require_once $root . '/scripts/log-stream-verdicts.php';
 exit(checkLogStreams($root, require $root . '/scripts/log-streams.php'));
 
 /**
- * Walk the five scenarios, print what went wrong, drop the stand, and say how it went.
+ * Walk the six scenarios, print what went wrong, drop the stand, and say how it went.
  *
  * @param string $root Repository root.
  * @param array<int, mixed> $records What `scripts/log-streams.php` returned.
@@ -243,6 +275,7 @@ function checkLogStreams(string $root, array $records): int
         LOG_STREAM_SCENARIO_MASTER_ERROR => 'runMasterErrorScenario',
         LOG_STREAM_SCENARIO_AGENT_IN_MASTER => 'runAgentInMasterScenario',
         LOG_STREAM_SCENARIO_ROTATION_REFUSED => 'runRotationRefusedScenario',
+        LOG_STREAM_SCENARIO_LOG_ROOT_FOREIGN => 'runLogRootForeignScenario',
     ];
     foreach ($scenarios as $scenario => $runner) {
         $own = logStreamRecordsOf($records, $scenario);
@@ -560,6 +593,141 @@ function runRotationRefusedScenario(array $box, array $records): array
     return ['failures' => $failures, 'harness' => null];
 }
 
+/**
+ * A container of its own over a log directory another environment owns: the watchdog must refuse
+ * before it touches the directory.
+ *
+ * The marker left by the earlier scenarios was published inside the container and belongs to
+ * root, so it is not written over from the host: it is read, deleted, replaced by a foreign one
+ * in the marker's own format — this proves the foreign-owner branch, not the unreadable one — and
+ * put back at the end. The directory is listed, recursively, before the container starts and
+ * after it has left, and the two listings must match to the entry, with the marker unchanged to
+ * the byte: a rotation batch, a line in `daemon-error.log` or a raw pair is each a new entry or a
+ * changed one. The line itself is the scenario's record; the exit and the untouched directory are
+ * asserted here, under the record's map row.
+ *
+ * @param array{root: string, cwd: string, compose: string, logDir: string} $box Where things are.
+ * @param array<int, array<string, mixed>> $records The scenario's records.
+ * @return array{failures: array<int, string>, harness: string|null}
+ */
+function runLogRootForeignScenario(array $box, array $records): array
+{
+    $cleared = clearForOwnContainer($box);
+    if ($cleared !== null) {
+        return ['failures' => [], 'harness' => $cleared];
+    }
+    $markerPath = $box['logDir'] . '/' . LOG_STREAMS_OWNER_MARKER;
+    $previousMarker = is_file($markerPath) ? file_get_contents($markerPath) : null;
+    if ($previousMarker === false || (is_file($markerPath) && !unlink($markerPath))) {
+        return ['failures' => [], 'harness' => 'the owner marker of the log directory could not be taken aside'];
+    }
+    // The keys of LogRootOwnerMarker, which are private to it.
+    $foreignMarker = json_encode([
+        'version' => LOG_STREAMS_OWNER_MARKER_VERSION,
+        'environment' => LOG_STREAMS_FOREIGN_ENVIRONMENT,
+        'node' => '',
+        'startedAt' => time(),
+    ]);
+    if ($foreignMarker === false || file_put_contents($markerPath, $foreignMarker) === false) {
+        restoreOwnerMarker($markerPath, $previousMarker);
+
+        return ['failures' => [], 'harness' => 'no foreign owner marker could be written into the log directory'];
+    }
+
+    $before = logDirectoryListing($box['logDir']);
+    $marks = markStreams($box, LOG_STREAMS_OWN_CONTAINER);
+    $started = startOwnContainer($box, '');
+    if ($started !== null) {
+        removeOwnContainer($box);
+        restoreOwnerMarker($markerPath, $previousMarker);
+
+        return ['failures' => [], 'harness' => $started];
+    }
+
+    $failures = [];
+    $exit = awaitContainerExit(LOG_STREAMS_OWN_CONTAINER);
+    if ($exit !== null) {
+        $failures[] = sprintf(
+            "RED map row %d, scenario %s: the container did not leave with exit code %d on a log directory another environment owns: %s\n",
+            LOG_STREAMS_REFUSAL_ROW,
+            LOG_STREAM_SCENARIO_LOG_ROOT_FOREIGN,
+            LOG_STREAMS_REFUSAL_EXIT_CODE,
+            $exit,
+        );
+    }
+    $after = logDirectoryListing($box['logDir']);
+    $appeared = array_diff($after, $before);
+    $vanished = array_diff($before, $after);
+    $markerKept = readArtifactFile($markerPath) === $foreignMarker;
+    if ($appeared !== [] || $vanished !== [] || !$markerKept) {
+        $failures[] = sprintf(
+            "RED map row %d, scenario %s: the refusing watchdog touched the log directory\n"
+                . "  appeared: %s\n  vanished: %s\n  foreign marker unchanged: %s\n",
+            LOG_STREAMS_REFUSAL_ROW,
+            LOG_STREAM_SCENARIO_LOG_ROOT_FOREIGN,
+            $appeared === [] ? '-' : implode(', ', $appeared),
+            $vanished === [] ? '-' : implode(', ', $vanished),
+            $markerKept ? 'yes' : 'no',
+        );
+    }
+
+    $snapshot = awaitLandings($box, LOG_STREAMS_OWN_CONTAINER, $marks, $records);
+    $failures = array_merge($failures, judgeScenario($records, $snapshot));
+    removeOwnContainer($box);
+    restoreOwnerMarker($markerPath, $previousMarker);
+
+    return ['failures' => $failures, 'harness' => null];
+}
+
+/**
+ * Put the owner marker back the way the scenario found it: the foreign one deleted, and the one it
+ * replaced written back when there was one.
+ *
+ * @param string $markerPath The marker in the host's view of the log directory.
+ * @param string|null $previousMarker What the marker held before the scenario, or null when there was none.
+ */
+function restoreOwnerMarker(string $markerPath, ?string $previousMarker): void
+{
+    if (is_file($markerPath)) {
+        unlink($markerPath);
+    }
+    if ($previousMarker !== null) {
+        file_put_contents($markerPath, $previousMarker);
+    }
+}
+
+/**
+ * Everything under the log directory, recursively, as one entry per path relative to it: a
+ * directory by its path, a file by its path and its size. Two listings that differ name what
+ * appeared, what vanished, and what grew or shrank.
+ *
+ * @param string $logDir The host's view of the log directory.
+ * @return array<int, string>
+ */
+function logDirectoryListing(string $logDir): array
+{
+    $listing = [];
+    $pending = [''];
+    while ($pending !== []) {
+        $relative = array_shift($pending);
+        foreach (scandir($logDir . $relative) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $path = $relative . '/' . $entry;
+            if (is_dir($logDir . $path)) {
+                $listing[] = $path . '/';
+                $pending[] = $path;
+            } else {
+                $listing[] = $path . ' (' . filesize($logDir . $path) . ' bytes)';
+            }
+        }
+    }
+    sort($listing);
+
+    return $listing;
+}
+
 // ------------------------------------------------------------------ the stand
 
 /**
@@ -764,6 +932,38 @@ function waitDaemonReady(string $container): ?string
         LOG_STREAMS_READY_DEADLINE_SECONDS,
         $last,
     );
+}
+
+/**
+ * Wait until the container's PID 1 has left, and say what it left with.
+ *
+ * Asked of docker rather than of the container: a container that has left answers no `exec`.
+ *
+ * @param string $container The container.
+ * @return string|null Null when it left with {@see LOG_STREAMS_REFUSAL_EXIT_CODE}; otherwise what was seen instead.
+ */
+function awaitContainerExit(string $container): ?string
+{
+    $deadline = microtime(true) + LOG_STREAMS_REFUSAL_DEADLINE_SECONDS;
+    $state = '';
+    while (true) {
+        $inspected = runArtifactCommand(
+            'docker',
+            'docker inspect -f ' . escapeshellarg('{{.State.Status}} {{.State.ExitCode}}') . ' ' . escapeshellarg($container),
+            sys_get_temp_dir(),
+            LOG_STREAMS_COMMAND_TIMEOUT_SECONDS,
+        );
+        $state = trim($inspected['output']);
+        if ($inspected['missing'] === [] && str_starts_with($state, LOG_STREAMS_CONTAINER_EXITED . ' ')) {
+            return $state === LOG_STREAMS_CONTAINER_EXITED . ' ' . LOG_STREAMS_REFUSAL_EXIT_CODE
+                ? null
+                : 'it left, but as "' . $state . '"';
+        }
+        if (microtime(true) >= $deadline) {
+            return sprintf('it was still "%s" after %ds', $state, LOG_STREAMS_REFUSAL_DEADLINE_SECONDS);
+        }
+        usleep(LOG_STREAMS_POLL_INTERVAL_MICROSECONDS);
+    }
 }
 
 /**

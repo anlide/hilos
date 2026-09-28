@@ -58,10 +58,25 @@ Inside the container the path is always the same
 separate directories, and a marker in the directory is what guarantees it. The
 file is `.hilos-log-root-owner.json`. Deleting it is the only lawful way to hand
 the directory to another environment; there is no switch that turns the claim
-off. `LogRootOwnershipGuard::claimLogRoot()` publishes the marker at daemon
-start and refuses a foreign or unreadable one, before `Logger::setLogFile()`, so
-the refusal lands in `docker logs` rather than in the journal of the directory
-it is being turned away from.
+off. `LogRootOwnershipGuard::claimLogRoot()` publishes the marker and refuses a
+foreign or unreadable one, and under docker the container watchdog asks it
+**first** — from `DockerApplication::run()`, before the startup rotation, before
+it takes its own error address, before the daemon's raw output pair is opened,
+and creating the directory if it is not there yet. A foreign or unreadable
+marker stops the container with an error: the refusal is one line in
+`docker logs` and nowhere else, and the directory is left exactly as it was
+found — no batch in `staging/`, no line in `daemon-error.log`, no raw pair. With
+`restart: unless-stopped` docker retries on its own, every attempt refuses
+before touching the directory, and the node comes up by itself once the marker
+is deleted.
+
+The daemon cannot be the first to ask under docker: its stdout/stderr there is
+the raw pair inside the very directory it would be turned away from, and by the
+time it refused, the watchdog had already rotated that directory and written
+into it (HIL-1130). The daemon still claims at its own start, before
+`Logger::setLogFile()` — under the watchdog that refreshes the same pair, and
+for a daemon run without one it is the only claim, which lands in its terminal
+or in `docker logs`.
 
 ## The Node Agent Owns The Directory, Not The Lines (HIL-753)
 
@@ -412,7 +427,11 @@ they deliberately do not share a factory:
 
 - **The start path.** The container watchdog rotates before the daemon is
   started (`LogRotator::forStartup()`, called from `DockerManager`), when no
-  descriptor is open on any of these files, so it takes everything.
+  descriptor is open on any of these files, so it takes everything. A watchdog
+  restarted within the same second reuses that second's batch, and a file whose
+  name the batch already holds is not renamed over it: it stays live and is
+  named in the watchdog's "could not move" line, and the next rotation takes it
+  (P-375, HIL-1130).
 - **The runtime path.** The owner rotates while the node runs
   (`LogRotator::forRuntime()`), and it leaves the daemon's raw output pair live
   — `daemon-raw.log` and `daemon-error-raw.log`, named by `DaemonRawStream`.
@@ -882,4 +901,7 @@ Remember the outcome, speak on its change, clear on recovery.
   a refused `rename()` reaching the watchdog's error handler, and the rest
   because each needs a lever the check does not have yet: a stand whose env
   does not name the log addresses, a real error out of a live agent,
-  `daemon:monitor` under the probe, the daemon run without a watchdog.
+  `daemon:monitor` under the probe, the daemon run without a watchdog. The same
+  step also proves the refusal of a container pointed at a log directory another
+  environment owns: the container leaves with an error, the refusal is in
+  `docker logs`, and the directory is untouched (HIL-1130).

@@ -130,11 +130,11 @@ final class LogRotator
      * Creates `staging/{timestamp}/` under the log root and renames each live `*.log` file into
      * it, apart from the kept basenames. The batch directory is created only once there is
      * something to put in it, so a run with nothing to move leaves no empty folder for the carrier
-     * to walk. Individual move failures are collected and skipped; only directory-creation
-     * failures raise. Both the moves and the two directory creations go through
-     * {@see FsPath}, because a bare `rename()` or `mkdir()` raises a warning before it returns
-     * false and every Hilos process turns that warning into the end of the process — which left
-     * the branches below unreachable until HIL-1045.
+     * to walk. Individual move failures are collected and skipped, and so is a file whose name
+     * the batch already holds; only directory-creation failures raise. Both the moves and the two
+     * directory creations go through {@see FsPath}, because a bare `rename()` or `mkdir()` raises
+     * a warning before it returns false and every Hilos process turns that warning into the end of
+     * the process — which left the branches below unreachable until HIL-1045.
      *
      * @return LogRotationReport What was moved, where, and what stayed behind
      * @throws LogRotationException If the staging or timestamp directory cannot be created
@@ -177,6 +177,16 @@ final class LogRotator
         $failedFiles = [];
         foreach ($logFiles as $logFile) {
             $targetPath = $timestampDir . DIRECTORY_SEPARATOR . basename($logFile);
+
+            // A batch of the same second is reused, not made anew (FsPath::ensureDirectory() returns on
+            // an existing directory), so it may already hold this name - and rename() would overwrite
+            // it without a word, first of all the daemon-error.log that says why the previous run
+            // died (P-375). The file stays live instead and loses nothing: the daemon's raw output is
+            // opened for appending, and the next rotation takes it.
+            if (file_exists($targetPath)) {
+                $failedFiles[] = $logFile;
+                continue;
+            }
 
             try {
                 FsPath::move($logFile, $targetPath);
