@@ -20,6 +20,7 @@ use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\PageSubscription;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -192,6 +193,57 @@ final class SignalRouterPerInstancePageRoutingTest extends TestCase
     }
 
     /**
+     * Departure targets the bound instance, the page's unindexed agent, or nobody.
+     */
+    public function testThePageServingAgentIsTheBoundInstanceTheTypeOrNobody(): void
+    {
+        $this->manager();
+
+        $this->assertEquals(
+            new AgentDestination(PerInstanceChatPage::SUBSCRIPTION_AGENT_TYPE, '42'),
+            HilosFacade::$sr->pageServingAgent(new PageSubscription(
+                PerInstanceChatPage::PAGE,
+                agentType: PerInstanceChatPage::SUBSCRIPTION_AGENT_TYPE,
+                agentIndex: '42',
+            )),
+        );
+        $this->assertEquals(
+            new AgentDestination(PerInstanceFallbackAgent::AGENT_TYPE),
+            HilosFacade::$sr->pageServingAgent(new PageSubscription(
+                PerInstanceChatPage::PAGE,
+                agentType: PerInstanceFallbackAgent::AGENT_TYPE,
+            )),
+        );
+        $this->assertNull(HilosFacade::$sr->pageServingAgent(new PageSubscription(PerInstanceChatPage::PAGE)));
+        $this->assertEquals(
+            new AgentDestination(PerInstancePlainPage::SUBSCRIPTION_AGENT_TYPE),
+            HilosFacade::$sr->pageServingAgent(new PageSubscription(PerInstancePlainPage::PAGE)),
+        );
+        $this->assertNull(HilosFacade::$sr->pageServingAgent(new PageSubscription('unregistered_page')));
+    }
+
+    /**
+     * A project's subscription fallback also owns departures from an unregistered page.
+     */
+    public function testAnUnregisteredPagesServingAgentIncludesTheProjectFallback(): void
+    {
+        $router = new class extends SignalRouter {
+            /**
+             * @return ?string Project fallback for unregistered pages
+             */
+            protected function getDefaultPageSubscriptionAgentType(): ?string
+            {
+                return PerInstanceFallbackAgent::AGENT_TYPE;
+            }
+        };
+
+        $this->assertEquals(
+            new AgentDestination(PerInstanceFallbackAgent::AGENT_TYPE),
+            $router->pageServingAgent(new PageSubscription('unregistered_page')),
+        );
+    }
+
+    /**
      * Mounts the fixture router and browser and returns the master that resolves addresses.
      *
      * @return PerInstanceTestDaemonManager Master exposing its subscription step
@@ -290,6 +342,13 @@ final class PerInstancePlainPage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = 'per_instance_plain_agent';
 }
 
+final class PerInstanceLifecyclePage extends AbstractPage
+{
+    public const string PAGE = 'per_instance_lifecycle';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = PerInstanceFallbackAgent::AGENT_TYPE;
+}
+
 final class PerInstanceActionPayloadDTO extends ActionPayloadDTO
 {
     /**
@@ -357,6 +416,7 @@ final class PerInstanceTestHilos extends HilosFacade
         PerInstanceChatPage::PAGE => PerInstanceChatPage::class,
         PerInstanceProfilePage::PAGE => PerInstanceProfilePage::class,
         PerInstancePlainPage::PAGE => PerInstancePlainPage::class,
+        PerInstanceLifecyclePage::PAGE => PerInstanceLifecyclePage::class,
     ];
 
     public const array AGENTS = [

@@ -1675,6 +1675,10 @@ abstract class WorkerManager extends BaseManager
                         ($this->pageSignalRouters[$agentId] ?? null)?->dropPendingFrames($signalData->acceptKey);
                         Hilos::$browser?->dropHeldFacetCounts($signalData->acceptKey);
                         $this->dropParkedFrames(SourceConsumer::page($signalData->acceptKey));
+                        // Release what the page read, as an explicit unsubscribe does. Interest
+                        // precedes the subscription record; a release after dropping parked
+                        // frames is harmless when that path already released it.
+                        $this->releaseSourceInterest(SourceConsumer::page($signalData->acceptKey));
                         $this->agentIdleTracker->dropSubscriber($agentId, $signalData->acceptKey, microtime(true));
                     }
                     $agent->onSignalConnectionClose($signalData, $source, $name);

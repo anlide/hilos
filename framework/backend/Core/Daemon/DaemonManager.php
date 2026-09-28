@@ -98,6 +98,7 @@ use Hilos\Core\Router\Destination\RemoteFanoutDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\PageAgentAddress;
+use Hilos\Core\Router\PageSubscription;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
@@ -5204,7 +5205,7 @@ abstract class DaemonManager extends BaseManager implements
                 }
                 $page = $signal->data->page ?? $signalName;
                 $address = $this->settledPageAgentAddress($page, $signal->data->acceptKey, $signal->data->params);
-                $this->unsubscribeReplacedPageAgent($signal->data->acceptKey, $address);
+                $this->unsubscribeReplacedPageAgent($signal->data->acceptKey, $page, $address);
                 Hilos::$sr->subscribeToPage($page, $signal->data);
                 if ($address !== null) {
                     Hilos::$sr->bindPageAgent(
@@ -5238,7 +5239,7 @@ abstract class DaemonManager extends BaseManager implements
                     $signal->data->params,
                 );
                 if ($reassessedAddress !== null) {
-                    $this->unsubscribeReplacedPageAgent($signal->data->acceptKey, $reassessedAddress);
+                    $this->unsubscribeReplacedPageAgent($signal->data->acceptKey, $reassessedPage, $reassessedAddress);
                     Hilos::$sr->bindPageAgent(
                         $signal->data->acceptKey,
                         $reassessedPage,
@@ -5443,8 +5444,10 @@ abstract class DaemonManager extends BaseManager implements
      * frame is routed after the current one - by then the record already carries the new
      * address, and the unsubscribe would be delivered to the very agent that just took over.
      *
-     * No-op when the connection held nothing, when nothing was bound (the worker-side
-     * replacement handles that case as it always has), or when the address has not moved.
+     * No-op when the connection held nothing, when nobody serves its previous page, or when
+     * the next page is served by the same agent: its worker replaces the old subscription in
+     * its own mirror. A page served by its type used to be left out, and its worker never
+     * heard that the connection had moved on (HIL-1142).
      *
      * The previous addressee is looked up before it is written to, not assumed to be here
      * (HIL-745): a per-instance page moves between nodes, so the agent that used to serve this
@@ -5454,19 +5457,24 @@ abstract class DaemonManager extends BaseManager implements
      * already moved on to its next page.
      *
      * @param string $acceptKey Connection whose subscription is being replaced
+     * @param string $page Page the connection is moving to
      * @param ?PageAgentAddress $address Settled address the subscription is moving to, null when the new page is not per-instance
      * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
      */
-    private function unsubscribeReplacedPageAgent(string $acceptKey, ?PageAgentAddress $address): void
+    private function unsubscribeReplacedPageAgent(string $acceptKey, string $page, ?PageAgentAddress $address): void
     {
         $previous = Hilos::$sr->pageSubscription($acceptKey);
-        if ($previous === null || $previous->agentType === null) {
+        $previousAgent = $previous === null ? null : Hilos::$sr->pageServingAgent($previous);
+        if ($previousAgent === null) {
             return;
         }
 
-        if ($address !== null
-            && $previous->agentType === $address->agentType
-            && $previous->agentIndex === $address->agentIndex
+        $nextAgent = $address !== null
+            ? new AgentDestination($address->agentType, $address->agentIndex)
+            : Hilos::$sr->pageServingAgent(new PageSubscription($page));
+        if ($nextAgent !== null
+            && $previousAgent->agentType === $nextAgent->agentType
+            && $previousAgent->agentIndex === $nextAgent->agentIndex
         ) {
             return;
         }
@@ -5479,7 +5487,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->deliverToAgentDestination(
             $workerServer,
             $this->findPeerServer(),
-            Hilos::$sr->placeAgentDestination(new AgentDestination($previous->agentType, $previous->agentIndex)),
+            Hilos::$sr->placeAgentDestination($previousAgent),
             new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
@@ -5551,17 +5559,18 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Tells every agent instance holding a subscription of this connection that it is gone.
+     * Tells the agent serving this connection's page that the connection is gone.
      *
-     * The ordinary route sends connection_close to one lifecycle agent of a type; an instance
-     * living in another worker would never hear of the disconnect and would keep a subscription
-     * that has no socket behind it. Delivered before the records are dropped, because the records
-     * are what name the addressees.
+     * SignalRouter::pageServingAgent() names a bound instance or the page's agent type. A page
+     * served by its type used to hear nothing, leaving its worker with a subscription, reader
+     * interest and idle subscriber for a socket that was gone (HIL-1142). Delivered before the
+     * record is dropped, because it names the page and its addressee.
      *
      * Skipped when the ordinary walk already reached that very agent, which is the ordinary
      * shape rather than a corner: a subscription that could name no instance is served by the
-     * page's fallback agent, and a project usually names its lifecycle agent there. Delivering
-     * again would run the agent's close hook twice for one disconnect.
+     * page's fallback agent, and a project usually names its lifecycle agent there. Pages served
+     * by the lifecycle agent's type are the same case. Delivering again would run the agent's
+     * close hook twice for one disconnect.
      *
      * The addressee is looked up rather than assumed local (HIL-745). A per-instance page is
      * served by the node holding its entity, so on a follower the straight local send raised an
@@ -5590,13 +5599,14 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $subscription = Hilos::$sr->pageSubscription($data->acceptKey);
-        if ($subscription === null || $subscription->agentType === null) {
+        $servingAgent = $subscription === null ? null : Hilos::$sr->pageServingAgent($subscription);
+        if ($servingAgent === null) {
             return;
         }
 
         foreach ($agentsDelivered as $delivered) {
-            if ($delivered->agentType === $subscription->agentType
-                && $delivered->agentIndex === $subscription->agentIndex
+            if ($delivered->agentType === $servingAgent->agentType
+                && $delivered->agentIndex === $servingAgent->agentIndex
             ) {
                 return;
             }
@@ -5605,7 +5615,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->deliverToAgentDestination(
             $workerServer,
             $this->findPeerServer(),
-            Hilos::$sr->placeAgentDestination(new AgentDestination($subscription->agentType, $subscription->agentIndex)),
+            Hilos::$sr->placeAgentDestination($servingAgent),
             $signal,
         );
     }

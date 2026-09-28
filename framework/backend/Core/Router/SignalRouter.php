@@ -1536,6 +1536,29 @@ class SignalRouter
     }
 
     /**
+     * Names the agent serving a connection's page by the same rule as getPageSubscriptionDestinations().
+     * The master uses this for connection-close fan-out and replacement: a bound instance, otherwise
+     * the page's agent type including the project fallback; an unbound per-instance page has no owner.
+     *
+     * @param PageSubscription $subscription Page record whose serving agent is needed
+     * @return ?AgentDestination Serving agent, or null when the record has no addressee
+     */
+    public function pageServingAgent(PageSubscription $subscription): ?AgentDestination
+    {
+        if ($subscription->agentType !== null) {
+            return new AgentDestination($subscription->agentType, $subscription->agentIndex);
+        }
+
+        if ($this->pageAgentIndexRoute($subscription->page) !== null) {
+            return null;
+        }
+
+        $agentType = $this->getPageSubscriptionAgentType($subscription->page);
+
+        return $agentType === null ? null : new AgentDestination($agentType);
+    }
+
+    /**
      * Reports whether the project registered a page class that serves this key.
      *
      * Dashboard and child cards ask the same question as subscription routing. The

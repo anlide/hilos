@@ -238,6 +238,31 @@ final class WorkerParkedFrameTest extends TestCase
     }
 
     /**
+     * An answered page keeps no reader interest after its connection closes (HIL-1142).
+     */
+    public function testAConnectionThatClosesOnAnAnsweredPageLetsGoOfWhatItRead(): void
+    {
+        $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerParkedFrameTestAgent::AGENT_TYPE));
+        $this->manager->handleDaemonMessage($this->pageSubscribe(WorkerParkedFrameTestReadingPage::PAGE));
+
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION);
+        $this->manager->pass(microtime(true));
+
+        $this->assertSame(
+            [WorkerParkedFrameTestReadingPage::PAGE],
+            $this->manager->agent(WorkerParkedFrameTestAgent::AGENT_TYPE)?->subscribedPages,
+        );
+
+        $this->manager->handleDaemonMessage($this->connectionClose());
+
+        $this->assertNotContains(
+            SourceConsumer::page(self::ACCEPT_KEY),
+            SourceInterestRegistry::consumersOf(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION),
+        );
+        $this->assertFalse(SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION));
+    }
+
+    /**
      * @param string $agentId Agent the signal is addressed to
      * @param string $name Signal name the agent records
      * @return DaemonAgentMessageDTO System signal as the daemon hands it to the worker

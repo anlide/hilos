@@ -111,6 +111,95 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
     }
 
     /**
+     * A page served by its type leaves no bound address, but its agent still owes cleanup.
+     */
+    public function testAConnectionCloseReachesTheAgentServingAPagePlacedByItsType(): void
+    {
+        $manager = $this->manager();
+        $this->queueSubscribe(PerInstancePlainPage::PAGE, []);
+        $manager->drainQueue();
+        $manager->forgetDeliveries();
+
+        $this->queue(
+            SignalTypeConstants::CONNECTION_CLOSE,
+            SignalTypeConstants::CONNECTION_CLOSE,
+            new WebSocketCloseSignalDTO(self::ACCEPT_KEY),
+        );
+        $manager->drainQueue();
+
+        $this->assertContains(
+            SignalTypeConstants::CONNECTION_CLOSE . '@' . PerInstancePlainPage::SUBSCRIPTION_AGENT_TYPE,
+            $manager->deliveries(),
+        );
+        $this->assertNull(Hilos::$sr->pageSubscription(self::ACCEPT_KEY));
+    }
+
+    /**
+     * The previous worker hears the unsubscribe before the new agent hears the subscribe.
+     */
+    public function testLeavingAPageServedByItsTypeForAnotherAgentTellsTheOldAgentFirst(): void
+    {
+        $manager = $this->manager();
+        $this->queueSubscribe(PerInstancePlainPage::PAGE, []);
+        $manager->drainQueue();
+        $manager->forgetDeliveries();
+
+        $this->queueSubscribe(PerInstanceChatPage::PAGE, ['chatId' => '42']);
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [
+                SignalTypeConstants::PAGE_UNSUBSCRIBE . '@' . PerInstancePlainPage::SUBSCRIPTION_AGENT_TYPE,
+                SignalTypeConstants::PAGE_SUBSCRIBE . '@' . PerInstanceChatPage::SUBSCRIPTION_AGENT_TYPE . ':42',
+            ],
+            $manager->deliveries(),
+        );
+    }
+
+    /**
+     * Replacement inside one agent belongs to its worker, whose mirror holds the old page.
+     */
+    public function testMovingWithinTheSameAgentLeavesTheMasterSilent(): void
+    {
+        $manager = $this->manager();
+        $this->queueSubscribe(PerInstancePlainPage::PAGE, []);
+        $manager->drainQueue();
+        $manager->forgetDeliveries();
+
+        $this->queueSubscribe(PerInstancePlainPage::PAGE, ['chatId' => '7']);
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [SignalTypeConstants::PAGE_SUBSCRIBE . '@' . PerInstancePlainPage::SUBSCRIPTION_AGENT_TYPE],
+            $manager->deliveries(),
+        );
+    }
+
+    /**
+     * The ordinary lifecycle delivery already reaches this page's agent without a bound record.
+     */
+    public function testAPageOfTheLifecycleAgentPlacedByItsTypeIsClosedOnce(): void
+    {
+        $manager = $this->manager();
+        $this->queueSubscribe(PerInstanceLifecyclePage::PAGE, []);
+        $manager->drainQueue();
+        $manager->forgetDeliveries();
+
+        $this->queue(
+            SignalTypeConstants::CONNECTION_CLOSE,
+            SignalTypeConstants::CONNECTION_CLOSE,
+            new WebSocketCloseSignalDTO(self::ACCEPT_KEY),
+        );
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [SignalTypeConstants::CONNECTION_CLOSE . '@' . PerInstanceFallbackAgent::AGENT_TYPE],
+            $manager->deliveries(),
+        );
+        $this->assertNull(Hilos::$sr->pageSubscription(self::ACCEPT_KEY));
+    }
+
+    /**
      * The refusal has to stop the frame too, not just the record. An update let through is
      * applied on the far side - the worker merges the new params into its own mirror and
      * re-renders the page from them - and the master would then address instance 42 while

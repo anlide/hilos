@@ -130,9 +130,10 @@ constant is inherited, so a base answers for its whole branch and a thin subclas
 writes nothing; `UNDECLARED` belongs to `AbstractPage` alone, because an answer on a
 common root would declare every page in the repository at once.
 
-The answer matters because `READS_DB` is taken up on a page subscription and let go on
-unsubscribe (`WorkerManager::takeUpPageSources()`, reached from the `page_subscribe`
-route). A page nobody subscribes to is never the subject of a take-up, so a list it
+The answer matters because `READS_DB` is taken up on a page subscription and let go when
+the connection leaves the page: an unsubscribe, a move to another page, or the connection's
+close (`WorkerManager::takeUpPageSources()`, reached from the `page_subscribe` route).
+A page nobody subscribes to is never the subject of a take-up, so a list it
 writes there sits unread and its reads are refused at the moment the person presses the
 button. Those reads belong in `DbContext::processWideReadCollections()` instead, which
 holds interest for the life of the process — the framework's own entries are in
@@ -166,8 +167,9 @@ page leaving the collection out is never told its picture stopped moving (HIL-87
 The list behaves like the database one in every other respect. Naming a collection a
 table already draws from is harmless, because interest is held per collection and not
 per mention; a subclass that declares its own list replaces its parent's and carries it
-with `[...parent::READS_RT, …]`; and it is taken up on subscription and let go on
-unsubscribe, so an `ACTION_HOST` filling it is reported for the same reason.
+with `[...parent::READS_RT, …]`; and it is taken up on subscription and let go when the
+connection leaves the page: an unsubscribe, a move to another page, or the connection's
+close. An `ACTION_HOST` filling it is reported for the same reason.
 
 What it does not do is refuse the page. `BrowserContext::assertPageSourcesReady()` judges
 the collections the page's answer is BUILT from, which are the topological ones, and a

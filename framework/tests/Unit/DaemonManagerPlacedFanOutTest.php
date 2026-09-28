@@ -104,6 +104,34 @@ final class DaemonManagerPlacedFanOutTest extends TestCase
     }
 
     /**
+     * A page served by its type asks placement too, without inventing an instance index.
+     */
+    public function testTheCloseFanOutAsksWhereTheAgentOfAPagePlacedByItsTypeRuns(): void
+    {
+        $manager = new PlacedFanOutTestManager();
+        Hilos::$browser = new PlacedFanOutTestBrowser();
+        $this->queue(
+            SignalTypeConstants::PAGE_SUBSCRIBE,
+            PlacedFanOutPlainPage::PAGE,
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, PlacedFanOutPlainPage::PAGE),
+        );
+        $manager->drainQueue();
+        $manager->forgetDeliveries();
+        $placement = $this->installPlacement([
+            PlacedFanOutPlainPage::SUBSCRIPTION_AGENT_TYPE => AgentLocation::onNode('node-B'),
+        ]);
+
+        $this->queueClose();
+        $manager->drainQueue();
+
+        $this->assertContains(PlacedFanOutPlainPage::SUBSCRIPTION_AGENT_TYPE, $placement->asked);
+        $this->assertNotContains(
+            SignalTypeConstants::CONNECTION_CLOSE . '@' . PlacedFanOutPlainPage::SUBSCRIPTION_AGENT_TYPE,
+            $manager->deliveries(),
+        );
+    }
+
+    /**
      * An address nobody knows is not an excuse to deliver locally, and not an occasion to tell
      * the browser anything either: the subscription this would answer is the one whose
      * connection has just gone. The fan-out ignores what the delivery reports for that reason,
@@ -527,6 +555,16 @@ final class PlacedFanOutChatPage extends AbstractPage
 }
 
 /**
+ * A page whose unindexed owner is different from the lifecycle agent.
+ */
+final class PlacedFanOutPlainPage extends AbstractPage
+{
+    public const string PAGE = 'placed_fan_out_plain';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'placed_fan_out_plain_agent';
+}
+
+/**
  * The agent a subscription naming no instance falls back to, and the one the router hands
  * WebSocket lifecycle signals - the ordinary project shape, and what makes a doubled
  * connection_close reachable at all.
@@ -562,6 +600,7 @@ final class PlacedFanOutTestHilos extends Hilos
 {
     public const array PAGES = [
         PlacedFanOutChatPage::PAGE => PlacedFanOutChatPage::class,
+        PlacedFanOutPlainPage::PAGE => PlacedFanOutPlainPage::class,
     ];
 
     public const array AGENTS = [

@@ -126,6 +126,17 @@ A project that declares `HilosFeature::UPLOADS` is the exception: its
 routing it beside the feature is refused at start
 ([architecture/uploads.md](../architecture/uploads.md)).
 
+The master tells the agent serving a page when its connection leaves. On
+`connection_close`, alongside the ordinary lifecycle delivery, it sends the close to
+the bound instance of a per-instance page, or to the page's agent type otherwise
+(`SignalRouter::pageServingAgent()`), before dropping the subscription record. It skips
+the extra delivery when the ordinary route already addressed that same type and index.
+On a `page_subscribe` moving to another agent, the master delivers `page_unsubscribe`
+straight to the previous agent before routing the new subscribe; queuing it would read
+the new record instead. Both deliveries use ordinary agent placement, including a node
+elsewhere in the cluster. A move to a page of the same agent is replaced inside that
+agent's own worker, where the previous subscription lives.
+
 ## Agent → agent
 
 ```php
@@ -253,9 +264,8 @@ checked either — the ordinary `DB_EXISTS` guards ask that inside the agent.
 Consequences worth knowing before declaring one:
 
 - **Replacement.** Navigation is a single `page_subscribe` that atomically replaces the
-  previous subscription. When the address moves, the master delivers `page_unsubscribe`
-  straight to the previous agent — not through the queue, which would deliver it after
-  the record already named the new one.
+  previous subscription. The departure delivery described under
+  [WebSocket → agent](#websocket--agent) applies to the bound instance too.
 - **Update.** `page_update_subscription` is a param change INSIDE the same page. An
   update that would change the index value is refused with a log line and leaves the
   subscription untouched: another instance is another page, and a page change arrives as
@@ -263,9 +273,8 @@ Consequences worth knowing before declaring one:
 - **Action.** An action on a per-instance page is addressed by the caller's live
   subscription to the page that owns it. No subscription, no destination — acting on a
   page one is not subscribed to never meant anything.
-- **Disconnect.** `connection_close` additionally reaches the instance that held the
-  connection's subscription, and the records are dropped only afterwards. Without that,
-  an instance in another worker keeps a subscription with no socket behind it.
+- **Disconnect.** The same [departure delivery](#websocket--agent) reaches the bound
+  instance before the connection's subscription records are dropped.
 - **Move on sign-in.** A guest who signs in stays on the same page, and the page is
   re-judged rather than re-subscribed: `page_access_reassess` carries a copy of the
   subscribe, its address is recomputed, and the client gets a full page answer without
