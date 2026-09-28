@@ -21,6 +21,8 @@ final class PushUnsubscribeActionDTO extends ActionPayloadDTO
     /** Payload key: the browser push endpoint URL. */
     public const string endpoint = 'endpoint';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $endpoint Browser push endpoint URL
      */

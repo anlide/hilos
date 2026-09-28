@@ -16,6 +16,8 @@ final class PushRemoveActionDTO extends ActionPayloadDTO
 {
     public const string subscriptionId = 'subscriptionId';
 
+    public const array SECRET_FIELDS = [];
+
     /** @param int $subscriptionId Positive push-subscription row id */
     public function __construct(public readonly int $subscriptionId)
     {

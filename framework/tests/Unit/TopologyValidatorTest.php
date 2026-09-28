@@ -1165,6 +1165,50 @@ final class TopologyValidatorTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testPageActionDtoThatDoesNotDeclareItsSecretFieldsIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyUndeclaredSecretsPageHilos::validateTopology();
+            },
+            [
+                'Action DTO route ' . TopologyUndeclaredSecretsPage::UNDECLARED_ACTION
+                    . ' class ' . TopologyUndeclaredSecretsActionDTO::class
+                    . ' must declare SECRET_FIELDS: the payload keys analytics writes masked, [] when there are none',
+            ],
+        );
+    }
+
+    public function testAgentActionDtoThatDoesNotDeclareItsSecretFieldsIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyUndeclaredSecretsAgentHilos::validateTopology();
+            },
+            [
+                'AGENTS[' . TopologyUndeclaredSecretsAgent::AGENT_TYPE . '] class ' . TopologyUndeclaredSecretsAgent::class
+                    . ' AGENT_ACTIONS[' . TopologyUndeclaredSecretsAgent::UNDECLARED_ACTION . '] class '
+                    . TopologyUndeclaredSecretsActionDTO::class
+                    . ' must declare SECRET_FIELDS: the payload keys analytics writes masked, [] when there are none',
+            ],
+        );
+    }
+
+    public function testSecretFieldsThatAreNotAListOfPayloadKeysAreRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyMalformedSecretsPageHilos::validateTopology();
+            },
+            [
+                'Action DTO route ' . TopologyMalformedSecretsPage::MALFORMED_ACTION
+                    . ' class ' . TopologyMalformedSecretsActionDTO::class . ' must declare SECRET_FIELDS',
+                'Action DTO route ' . TopologyMalformedSecretsPage::EMPTY_KEY_ACTION
+                    . ' class ' . TopologyEmptyKeySecretsActionDTO::class . ' must declare SECRET_FIELDS',
+            ],
+        );
+    }
+
     /**
      * Asserts topology validation fails with every expected message fragment.
      *
@@ -2928,6 +2972,8 @@ final class TopologyTestIndexedAgentSignalData implements SignalDataInterface
 
 final class TopologyTestActionPayloadDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates a no-op topology test action payload DTO.
      *
@@ -5658,5 +5704,159 @@ final class TopologySetTreeHoldingHilos extends HilosFacade
     protected static function createDb(): HilosDbContext
     {
         return new TopologySetTreeDbContext();
+    }
+}
+
+/**
+ * Action DTO fixture base for the secret-fields refusals: the payload plays no part in them.
+ */
+abstract class TopologySecretsTestActionDTO extends ActionPayloadDTO
+{
+    /**
+     * Creates a no-op secret-fields fixture DTO.
+     *
+     * @param array<string, mixed> $data Payload data
+     * @return static DTO instance
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static();
+    }
+
+    /**
+     * Returns the fixture action name.
+     *
+     * @return string Action name
+     */
+    public function getAction(): string
+    {
+        return static::class;
+    }
+
+    /**
+     * Converts the DTO to array.
+     *
+     * @return array<string, mixed> Empty payload
+     */
+    public function toArray(): array
+    {
+        return [];
+    }
+}
+
+/**
+ * An action DTO that says nothing about which of its payload keys are secret.
+ */
+final class TopologyUndeclaredSecretsActionDTO extends TopologySecretsTestActionDTO
+{
+}
+
+/**
+ * An action DTO that maps its secret keys instead of listing them.
+ */
+final class TopologyMalformedSecretsActionDTO extends TopologySecretsTestActionDTO
+{
+    public const array SECRET_FIELDS = ['password' => 'password'];
+}
+
+/**
+ * An action DTO that lists an empty payload key among its secrets.
+ */
+final class TopologyEmptyKeySecretsActionDTO extends TopologySecretsTestActionDTO
+{
+    public const array SECRET_FIELDS = ['code', ''];
+}
+
+final class TopologyUndeclaredSecretsPage extends AbstractPage
+{
+    public const string PAGE = 'undeclared_secrets_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const string UNDECLARED_ACTION = 'undeclared_secrets_action';
+
+    public const array ACTIONS = [
+        self::UNDECLARED_ACTION => TopologyUndeclaredSecretsActionDTO::class,
+    ];
+}
+
+final class TopologyMalformedSecretsPage extends AbstractPage
+{
+    public const string PAGE = 'malformed_secrets_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const string MALFORMED_ACTION = 'malformed_secrets_action';
+
+    public const string EMPTY_KEY_ACTION = 'empty_key_secrets_action';
+
+    public const array ACTIONS = [
+        self::MALFORMED_ACTION => TopologyMalformedSecretsActionDTO::class,
+        self::EMPTY_KEY_ACTION => TopologyEmptyKeySecretsActionDTO::class,
+    ];
+}
+
+final class TopologyUndeclaredSecretsAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'undeclared_secrets_agent';
+
+    public const string UNDECLARED_ACTION = 'undeclared_secrets_agent_action';
+
+    public const array AGENT_ACTIONS = [
+        self::UNDECLARED_ACTION => TopologyUndeclaredSecretsActionDTO::class,
+    ];
+}
+
+final class TopologyUndeclaredSecretsPageHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyUndeclaredSecretsPage::PAGE => TopologyUndeclaredSecretsPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyMalformedSecretsPageHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyMalformedSecretsPage::PAGE => TopologyMalformedSecretsPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyUndeclaredSecretsAgentHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyUndeclaredSecretsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyUndeclaredSecretsAgent::class,
+            AgentRegistryKey::DAEMON => TopologyUndeclaredSecretsAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
     }
 }

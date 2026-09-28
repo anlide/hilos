@@ -17,6 +17,8 @@ final class BackupDeleteActionDTO extends ActionPayloadDTO
     /** Payload key: the target backup id (also the archive/sidecar base name). */
     public const string backupId = 'backupId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $backupId Target backup id
      */

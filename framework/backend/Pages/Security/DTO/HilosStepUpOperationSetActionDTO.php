@@ -17,6 +17,8 @@ final class HilosStepUpOperationSetActionDTO extends ActionPayloadDTO
     public const string operationKey = 'operationKey';
     public const string enabled = 'enabled';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $operationKey Operation to switch
      * @param bool $enabled Whether confirmation should be required

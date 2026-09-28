@@ -27,6 +27,9 @@ final class HilosOAuthProviderSetActionDTO extends ActionPayloadDTO
     /** Payload key: the new value. */
     public const string value = 'value';
 
+    /** Payload keys analytics masks: the client secret rides in value, so every field's value is masked. */
+    public const array SECRET_FIELDS = [self::value];
+
     /**
      * @param string $providerKey Target provider key
      * @param string $field Target field name

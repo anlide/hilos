@@ -15,6 +15,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class HilosUserUpdateActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     public function __construct(
         public readonly int $id,
         public readonly string $name,

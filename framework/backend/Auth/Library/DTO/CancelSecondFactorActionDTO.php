@@ -15,6 +15,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class CancelSecondFactorActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Get action name.
      *

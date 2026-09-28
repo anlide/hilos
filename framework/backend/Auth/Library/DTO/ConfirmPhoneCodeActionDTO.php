@@ -22,6 +22,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ConfirmPhoneCodeActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['code'];
+
     /**
      * Creates a phone-code confirmation DTO.
      *

@@ -21,6 +21,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class LogoutActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Get action name.
      *

@@ -16,6 +16,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class SecondFactorResetCancelLinkActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['token'];
+
     /**
      * @param string $token Token the link carried (trimmed)
      */

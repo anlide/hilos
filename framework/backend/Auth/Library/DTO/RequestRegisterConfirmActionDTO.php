@@ -23,6 +23,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class RequestRegisterConfirmActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates a resend DTO.
      *

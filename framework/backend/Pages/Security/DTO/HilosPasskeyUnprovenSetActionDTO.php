@@ -22,6 +22,8 @@ final class HilosPasskeyUnprovenSetActionDTO extends ActionPayloadDTO
     /** Payload key: whether the setting should allow it. */
     public const string allowed = 'allowed';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param bool $allowed Whether a passkey may start an account on an unconfirmed address
      */

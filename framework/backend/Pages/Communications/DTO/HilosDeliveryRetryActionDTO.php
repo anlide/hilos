@@ -21,6 +21,8 @@ final class HilosDeliveryRetryActionDTO extends ActionPayloadDTO
     /** Payload key: the delivery row id to retry. */
     public const string deliveryId = 'deliveryId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $deliveryId Delivery row id to retry
      */

@@ -170,6 +170,12 @@ class SignalRouter
     private ?string $reportedTableWindowsAcceptKey = null;
 
     /**
+     * @var array<string, ?list<string>> Secret payload keys by action name, null for a name the
+     *     topology does not route. Read once per name: the registries do not change in a process.
+     */
+    private array $actionSecretFields = [];
+
+    /**
      * @var string Identity of this process as the emitter of the DB syncs it sends.
      *
      * A clear fact has no row id, so the self-broadcast registry cannot key it the way
@@ -1998,5 +2004,30 @@ class SignalRouter
         }
 
         return $dtoClass::fromArray($data);
+    }
+
+    /**
+     * Returns the payload keys the action's DTO declares secret, for analytics to write masked.
+     *
+     * The DTO is found the way the action is routed: an agent's AGENT_ACTIONS first, then a
+     * page's ACTIONS. The answer is kept per name for the life of the process, null included.
+     *
+     * @param string $action Action name from the frame
+     * @return ?list<string> Declared secret keys, [] when there are none; null when the topology knows no such action
+     */
+    public function actionSecretFields(string $action): ?array
+    {
+        if (array_key_exists($action, $this->actionSecretFields)) {
+            return $this->actionSecretFields[$action];
+        }
+
+        $dtoClass = $this->hilosClass()::getAgentActionDtoRoutes()[$action]
+            ?? $this->hilosClass()::getActionDtoRoutes()[$action]
+            ?? null;
+        $constant = "{$dtoClass}::" . ActionPayloadDTO::META_SECRET_FIELDS;
+        $fields = is_string($dtoClass) && defined($constant) ? constant($constant) : null;
+        $this->actionSecretFields[$action] = is_array($fields) ? $fields : null;
+
+        return $this->actionSecretFields[$action];
     }
 }

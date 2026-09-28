@@ -13,6 +13,8 @@ final class ProfileSetPasswordActionDTO extends ActionPayloadDTO
 {
     public const string NEW_PASSWORD = 'newPassword';
 
+    public const array SECRET_FIELDS = [self::NEW_PASSWORD];
+
     /**
      * Creates the set-password action DTO.
      *

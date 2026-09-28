@@ -23,6 +23,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ConfirmPasswordResetActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['code'];
+
     /**
      * Creates a password-reset confirmation DTO.
      *

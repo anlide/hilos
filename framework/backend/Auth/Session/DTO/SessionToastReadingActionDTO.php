@@ -30,6 +30,8 @@ final class SessionToastReadingActionDTO extends ActionPayloadDTO
 {
     public const string reading = 'reading';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param bool $reading Whether the stack is being read in the acting tab
      */

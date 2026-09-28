@@ -34,6 +34,8 @@ final class LogsFollowStartActionDTO extends ActionPayloadDTO
     /** Payload key: keep only lines containing this text. */
     public const string substring = 'substring';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $nodeId Id of the node owning the file, empty for this node
      * @param string $stream File name of the live stream to follow

@@ -12,6 +12,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class SessionsEndOthersActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /** @return string Action name */
     public function getAction(): string
     {

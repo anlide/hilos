@@ -17,6 +17,8 @@ use Hilos\Notification\NotificationAction;
  */
 final class NotificationMarkAllReadPayloadDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Action name this DTO represents.
      *

@@ -21,6 +21,8 @@ final class NotificationMarkReadPayloadDTO extends ActionPayloadDTO
     /** Payload key: id of the notification to mark read. */
     public const string id = 'id';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $id Notification id to mark read
      */

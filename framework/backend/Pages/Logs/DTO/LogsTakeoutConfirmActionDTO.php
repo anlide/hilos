@@ -30,6 +30,8 @@ final class LogsTakeoutConfirmActionDTO extends ActionPayloadDTO
     /** Payload key: Unix timestamp of the rotation batch being confirmed. */
     public const string batchTimestamp = 'batchTimestamp';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $nodeId Id of the node holding the batch, empty for this node
      * @param int $batchTimestamp Unix timestamp of the rotation batch being confirmed

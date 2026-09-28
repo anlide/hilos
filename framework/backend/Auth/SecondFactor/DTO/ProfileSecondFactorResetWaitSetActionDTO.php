@@ -16,6 +16,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ProfileSecondFactorResetWaitSetActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $days Wait the person asks for, in days
      */

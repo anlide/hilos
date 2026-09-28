@@ -23,6 +23,8 @@ final class UploadInitActionDTO extends ActionPayloadDTO
     /** Longest file name kept, in characters. */
     public const int MAX_FILENAME_LENGTH = 255;
 
+    public const array SECRET_FIELDS = [];
+
     /** Path separators a browser may leave in front of a file name. */
     private const string PATH_SEPARATORS = '/\\';
 

@@ -15,6 +15,8 @@ final class HilosUserBlockSetActionDTO extends ActionPayloadDTO
     public const string userId = 'userId';
     public const string block = 'block';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $userId Target account id
      * @param bool $block Requested state

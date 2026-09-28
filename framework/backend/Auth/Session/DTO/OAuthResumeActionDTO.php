@@ -27,6 +27,8 @@ final class OAuthResumeActionDTO extends ActionPayloadDTO
 {
     public const string tripKey = 'tripKey';
 
+    public const array SECRET_FIELDS = [self::tripKey];
+
     /**
      * @param string $tripKey Key the tab minted for its trip
      */

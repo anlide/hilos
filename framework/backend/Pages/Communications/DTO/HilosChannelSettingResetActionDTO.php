@@ -24,6 +24,8 @@ final class HilosChannelSettingResetActionDTO extends ActionPayloadDTO
     /** Payload key: the target field key. */
     public const string field = 'field';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $channel Target channel name
      * @param string $field Target field key

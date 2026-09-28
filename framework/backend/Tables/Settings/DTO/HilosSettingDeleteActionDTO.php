@@ -15,6 +15,8 @@ use Hilos\Database\Entity\Item\Setting;
  */
 final class HilosSettingDeleteActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates setting delete action DTO.
      *

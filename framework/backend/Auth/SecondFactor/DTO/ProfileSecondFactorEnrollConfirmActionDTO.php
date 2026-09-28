@@ -16,6 +16,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ProfileSecondFactorEnrollConfirmActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['code'];
+
     /**
      * @param int $authenticatorId Authenticator the enrolment started
      * @param string $code First code from the app

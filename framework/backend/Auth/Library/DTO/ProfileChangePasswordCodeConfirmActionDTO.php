@@ -16,6 +16,8 @@ final class ProfileChangePasswordCodeConfirmActionDTO extends ActionPayloadDTO
 {
     public const string CODE = 'code';
 
+    public const array SECRET_FIELDS = [self::CODE];
+
     /**
      * Creates a password-change code confirmation.
      *

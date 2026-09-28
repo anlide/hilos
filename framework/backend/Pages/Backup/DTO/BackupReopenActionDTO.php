@@ -19,6 +19,8 @@ use Hilos\Pages\Backup\AbstractHilosBackupPage;
  */
 final class BackupReopenActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Get action name.
      *

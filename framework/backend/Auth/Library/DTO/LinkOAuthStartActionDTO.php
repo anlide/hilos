@@ -23,6 +23,8 @@ use Hilos\Pages\AbstractHilosProfileSignInPage;
  */
 final class LinkOAuthStartActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates OAuth link-start action DTO.
      *

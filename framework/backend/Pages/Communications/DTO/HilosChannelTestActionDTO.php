@@ -21,6 +21,8 @@ final class HilosChannelTestActionDTO extends ActionPayloadDTO
     /** Payload key: the target channel name. */
     public const string channel = 'channel';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $channel Target channel name
      */

@@ -28,6 +28,8 @@ final class ImpersonateStartActionDTO extends ActionPayloadDTO
 {
     public const string targetUserId = 'targetUserId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $targetUserId User id the admin session will impersonate
      */

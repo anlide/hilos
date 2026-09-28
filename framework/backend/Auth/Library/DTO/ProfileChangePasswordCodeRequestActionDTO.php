@@ -10,6 +10,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /** Requests a password-change code at the server-resolved account address (HIL-300). */
 final class ProfileChangePasswordCodeRequestActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Get action name.
      *

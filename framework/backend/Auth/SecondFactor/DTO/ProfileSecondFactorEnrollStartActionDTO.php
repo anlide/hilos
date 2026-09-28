@@ -17,6 +17,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ProfileSecondFactorEnrollStartActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['proofCode'];
+
     /**
      * @param ?string $proofCode Code proving the factor already connected, or null for the first app
      * @param bool $proofBackup Whether the proof is a backup code

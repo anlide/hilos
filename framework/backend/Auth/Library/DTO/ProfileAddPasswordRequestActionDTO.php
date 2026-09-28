@@ -21,6 +21,8 @@ final class ProfileAddPasswordRequestActionDTO extends ActionPayloadDTO
 {
     public const string EMAIL = 'email';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates an add-password request DTO.
      *

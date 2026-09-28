@@ -140,6 +140,69 @@ the second line: registries are computed from `AGENTS` and `PAGES` at runtime,
 and before it existed a broken entry fell through as a silent passthrough that
 delivered an unparsed payload to a handler typed for the declared DTO.
 
+## Secret fields of an action payload
+
+Analytics records the payload of every client action — as the master reads the
+frame, as the agent receives it, and under the HTTP request that caused it. A
+password or a code written there would sit in a table and in every full backup
+of it, so the action says which of its fields must never be written as they
+came.
+
+**Every concrete action DTO declares `public const array SECRET_FIELDS`**: the
+payload keys that hold a secret, `[]` when there are none. There is no default.
+`ActionPayloadDTO` names the constant (`META_SECRET_FIELDS`) and declares none,
+and neither does an abstract intermediate class such as `TableBulkActionDTO`:
+the check asks `defined()`, and a constant up the chain would answer for every
+action below it, the one that forgot included. `UnknownActionPayloadDTO` is the
+one exception — it is in no registry, and its payload is unknown by definition.
+
+A secret is a value that, presented, lets its bearer act for a person or for the
+system: a password, a confirmation code, a one-time link token, the key of an
+OAuth trip, an OAuth code, a client secret, the signature of a passkey
+assertion, the secret of a push subscription. Not a secret: an identifier, a
+flag saying which way of confirming was used (`backupCode`, `proofBackup`,
+`trustDevice`), a state the server signed itself, the public parts of a passkey.
+A nested object that carries a secret is declared by its key, whole — the step-up
+action declares `passkey`, not the signature inside it.
+
+Declare through the DTO's own key constants where it has them:
+
+```php
+final class ProfileChangePasswordActionDTO extends ActionPayloadDTO
+{
+    public const string CODE = 'code';
+    public const string NEW_PASSWORD = 'newPassword';
+    public const string SIGN_OUT_OTHERS = 'signOutOthers';
+
+    public const array SECRET_FIELDS = [self::CODE, self::NEW_PASSWORD];
+}
+```
+
+**The start refuses an action that says nothing.** `TopologyValidator` checks
+every DTO in both action registries — page `ACTIONS` and agent `AGENT_ACTIONS` —
+and a missing constant, or one that is not a list of non-empty keys, is an
+`InvalidTopologyException` naming the action and the class. It runs at every
+start of every process and in each demo's topology test, so a new action cannot
+ship silent: the question is asked of whoever adds it, which is the only person
+who knows the answer. A check by similar-looking key names was weighed and
+refused — it misses the next field called `pin`, `otp` or `invite`, which is
+exactly how the payloads came to hold passwords.
+
+**What analytics does with the declaration.** `AnalyticsCollector` masks at the
+entry of its three action records, before anything stores the payload:
+`logUserAction()`, `logAgentUserAction()` and `logApiAgentAction()`. It asks
+`SignalRouter::actionSecretFields()`, which finds the DTO the way the action is
+routed — the agent's `AGENT_ACTIONS` first, then the page's `ACTIONS` — and
+`SecretPayloadMask` applies one rule: a declared key is looked for at the top of
+the payload and one level inside `data`, where the envelope a worker hands an
+agent keeps the action; a null or empty value stays, so the record still shows
+which way of confirming was used; any other value becomes `***`. An action the
+topology does not route keeps its name in the user-action and agent-reaction
+records and loses its payload, since nobody declared what in it is secret; under
+an HTTP request an unknown name is a system, cron or agent signal rather than an
+action, and its payload is written as it came. Whoever moves the recording
+elsewhere keeps the mask at these three entries.
+
 ## Outbound server→client WebSocket signals (decision)
 
 **Decision: defer.** Do not add a backend topology registry for outbound WS

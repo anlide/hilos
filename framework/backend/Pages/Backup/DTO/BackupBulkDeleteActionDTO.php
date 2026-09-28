@@ -16,6 +16,8 @@ use Hilos\Core\Table\DTO\TableBulkActionDTO;
  */
 final class BackupBulkDeleteActionDTO extends TableBulkActionDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Gets the action name this DTO represents.
      *

@@ -15,6 +15,8 @@ final class HilosUserAdminSetActionDTO extends ActionPayloadDTO
     public const string userId = 'userId';
     public const string admin = 'admin';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $userId Target account id
      * @param bool $admin Requested state

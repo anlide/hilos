@@ -18,6 +18,8 @@ final class AccountDeletionStartActionDTO extends ActionPayloadDTO
 {
     public const string code = 'code';
 
+    public const array SECRET_FIELDS = [self::code];
+
     /**
      * @param string $code Code the account's address received, or empty when no code was sent
      */

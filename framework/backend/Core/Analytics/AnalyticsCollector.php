@@ -652,9 +652,13 @@ final class AnalyticsCollector
     /**
      * Persists a user action against the WS connection and current page session.
      *
+     * The payload is masked here, before anything stores it: the secret fields the action's DTO
+     * declares are written as {@see SecretPayloadMask::MASK}, and an action the topology does not
+     * know keeps its name but loses its payload, since nobody declared what in it is secret.
+     *
      * @param string $acceptKey WebSocket accept key; empty yields null
      * @param string $actionName Client action name; empty yields null
-     * @param ?array<string, mixed> $payload Action payload, or null
+     * @param ?array<string, mixed> $payload Raw action payload, or null
      * @return ?int User action id, or null when the connection is unknown or collection is disabled
      */
     public function logUserAction(string $acceptKey, string $actionName, ?array $payload): ?int
@@ -677,7 +681,7 @@ final class AnalyticsCollector
                     $connection->id,
                     $this->pageSessions[$acceptKey] ?? null,
                     $this->ensureActionName($actionName),
-                    $this->ensurePayloadJson($payload),
+                    $this->ensurePayloadJson($this->maskActionPayload($actionName, $payload)),
                     $this->nowTs(),
                 ],
             );
@@ -688,6 +692,10 @@ final class AnalyticsCollector
 
     /**
      * Buffers an agent reaction to a user action for the next flush.
+     *
+     * The payload is masked here, before anything stores it, by the same rule as
+     * {@see self::logUserAction()}: the signal name is the action's name, and the action lies
+     * under `data` of the envelope, where the mask looks too.
      *
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
@@ -711,7 +719,7 @@ final class AnalyticsCollector
                 'agent_session_id' => $agentSessionId,
                 'user_action_id' => $userActionId,
                 'signal_name_id' => $this->ensureSignalName($signalName),
-                'payload_json_id' => $this->ensurePayloadJson($payload),
+                'payload_json_id' => $this->ensurePayloadJson($this->maskActionPayload($signalName, $payload)),
                 'created_ts' => $this->nowTs(),
             ]);
         });
@@ -865,6 +873,10 @@ final class AnalyticsCollector
     /**
      * Buffers an agent action triggered by an API request for the next flush.
      *
+     * The payload is masked here, before anything stores it, when the signal name is an action
+     * the topology knows. System, cron and agent signals pass this way too; theirs is no action,
+     * and their payload is written as it came.
+     *
      * @param int $apiRequestId Originating API request id
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
@@ -887,7 +899,7 @@ final class AnalyticsCollector
                 'api_request_id' => $apiRequestId,
                 'agent_session_id' => $agentSessionId,
                 'signal_name_id' => $this->ensureSignalName($signalName),
-                'payload_json_id' => $this->ensurePayloadJson($payload),
+                'payload_json_id' => $this->ensurePayloadJson($this->maskSignalPayload($signalName, $payload)),
                 'created_ts' => $this->nowTs(),
             ]);
         });
@@ -1339,6 +1351,42 @@ final class AnalyticsCollector
     private function buildAgentKey(string $agentType, ?string $agentIndex): string
     {
         return $agentIndex === null ? $agentType : $agentType . '::' . $agentIndex;
+    }
+
+    /**
+     * Returns a user action's payload as analytics may keep it: masked, or nothing at all for an
+     * action the topology does not know - that one never declared which of its fields are secret.
+     *
+     * @param string $actionName Action name the payload came with
+     * @param ?array<string, mixed> $payload Action payload, or null
+     * @return ?array<string, mixed> Masked payload, or null when there is none or the action is unknown
+     */
+    private function maskActionPayload(string $actionName, ?array $payload): ?array
+    {
+        $secretFields = Hilos::$sr?->actionSecretFields($actionName);
+        if ($payload === null || $secretFields === null) {
+            return null;
+        }
+
+        return SecretPayloadMask::apply($payload, $secretFields);
+    }
+
+    /**
+     * Returns a signal's payload as analytics may keep it: masked when the name is an action the
+     * topology knows, as it came when it is not an action at all.
+     *
+     * @param string $signalName Signal name the payload came with
+     * @param ?array<string, mixed> $payload Signal payload, or null
+     * @return ?array<string, mixed> Masked payload, or the payload unchanged for a name that is no action
+     */
+    private function maskSignalPayload(string $signalName, ?array $payload): ?array
+    {
+        $secretFields = Hilos::$sr?->actionSecretFields($signalName);
+        if ($payload === null || $secretFields === null) {
+            return $payload;
+        }
+
+        return SecretPayloadMask::apply($payload, $secretFields);
     }
 
     /**

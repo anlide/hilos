@@ -20,6 +20,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class RequestMagicLinkActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates a magic-link request DTO.
      *

@@ -23,6 +23,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class DetectIdentifierActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates detect-identifier action DTO.
      *

@@ -23,6 +23,8 @@ final class HilosSecondFactorSettingSetActionDTO extends ActionPayloadDTO
     /** Payload key: the value typed. */
     public const string value = 'value';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $key Setting key
      * @param string $value Value typed, as text

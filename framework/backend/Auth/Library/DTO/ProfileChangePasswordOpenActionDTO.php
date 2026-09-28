@@ -10,6 +10,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /** Opens a password change; the server resolves the account address (HIL-300). */
 final class ProfileChangePasswordOpenActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Get action name.
      *

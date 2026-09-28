@@ -23,6 +23,8 @@ final class MaintenanceCircleRemoveActionDTO extends ActionPayloadDTO
     /** Payload key: the row key of the membership to remove. */
     public const string memberId = 'memberId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $memberId Row key of the membership to remove
      */

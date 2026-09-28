@@ -14,6 +14,8 @@ final class LegalRevisionChangesActionDTO extends ActionPayloadDTO
     public const string document = 'document';
     public const string revisionId = 'revisionId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $document Document key
      * @param string $revisionId Revision key

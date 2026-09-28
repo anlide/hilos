@@ -28,6 +28,8 @@ final class SessionToastExpiredActionDTO extends ActionPayloadDTO
 {
     public const string key = 'key';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $key Server-minted name of the card whose countdown finished
      */

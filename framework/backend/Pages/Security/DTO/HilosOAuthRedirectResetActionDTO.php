@@ -15,6 +15,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class HilosOAuthRedirectResetActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * @return string Action name constant
      */

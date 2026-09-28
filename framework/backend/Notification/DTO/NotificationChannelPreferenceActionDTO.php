@@ -24,6 +24,8 @@ final class NotificationChannelPreferenceActionDTO extends ActionPayloadDTO
     /** Payload key: the desired state (true = allowed, false = muted). */
     public const string enabled = 'enabled';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $channel Channel name being toggled
      * @param bool $enabled Desired state: true opts in (default), false mutes

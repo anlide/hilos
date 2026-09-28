@@ -13,6 +13,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  */
 final class AttachmentDraftDeleteActionDTO extends ChatActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $draftId Draft id to delete
      */

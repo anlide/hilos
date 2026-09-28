@@ -15,6 +15,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ProfileSecondFactorCodesShowActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['proofCode'];
+
     /**
      * @param string $proofCode Code from a connected app or a backup code, proving the factor
      * @param bool $proofBackup Whether the proof is a backup code

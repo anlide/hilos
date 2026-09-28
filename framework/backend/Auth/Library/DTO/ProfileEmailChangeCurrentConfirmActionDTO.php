@@ -20,6 +20,8 @@ final class ProfileEmailChangeCurrentConfirmActionDTO extends ActionPayloadDTO
 {
     public const string CODE = 'code';
 
+    public const array SECRET_FIELDS = [self::CODE];
+
     /**
      * Creates a current-address confirm DTO.
      *

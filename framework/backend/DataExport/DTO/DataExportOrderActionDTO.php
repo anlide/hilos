@@ -10,6 +10,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /** Orders a copy for the person resolved from the acting browser; carries no person id. */
 final class DataExportOrderActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Get action name.
      *

@@ -13,6 +13,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  */
 final class FileUploadInitActionDTO extends ChatActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     public function __construct(
         public readonly string $filename,
         public readonly string $mimeType,

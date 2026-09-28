@@ -56,6 +56,8 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
     /** Payload key: unix milliseconds of the entry to open the file on, absent for a read from the tail (HIL-868). */
     public const string anchorAtMs = 'anchorAtMs';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $nodeId Id of the node owning the file, empty for this node
      * @param string $source Which half of the store to read

@@ -32,6 +32,9 @@ final class PushSubscribeActionDTO extends ActionPayloadDTO
     /** Payload key: the subscribing device user agent. */
     public const string userAgent = 'userAgent';
 
+    /** Payload keys analytics masks: the client auth secret. */
+    public const array SECRET_FIELDS = [self::auth];
+
     /**
      * @param string $endpoint Browser push endpoint URL
      * @param string $p256dh Client public key (base64url)

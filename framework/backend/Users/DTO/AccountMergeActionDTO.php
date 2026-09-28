@@ -22,6 +22,8 @@ final class AccountMergeActionDTO extends ActionPayloadDTO
     public const string loserUserId = 'loserUserId';
     public const string passwordFate = 'passwordFate';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $survivorUserId User id that absorbs the other account
      * @param int $loserUserId User id folded into the survivor

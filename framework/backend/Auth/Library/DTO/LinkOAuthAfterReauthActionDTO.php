@@ -19,6 +19,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class LinkOAuthAfterReauthActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['token'];
+
     /**
      * Creates OAuth link action DTO.
      *

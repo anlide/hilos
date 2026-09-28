@@ -24,6 +24,8 @@ final class ProfileAddPasswordConfirmActionDTO extends ActionPayloadDTO
     public const string CODE = 'code';
     public const string NEW_PASSWORD = 'newPassword';
 
+    public const array SECRET_FIELDS = [self::CODE, self::NEW_PASSWORD];
+
     /**
      * Creates an add-password confirm DTO.
      *

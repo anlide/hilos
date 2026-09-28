@@ -15,6 +15,8 @@ final class StepUpStartActionDTO extends ActionPayloadDTO
 {
     public const string operation = 'operation';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $operation Protected operation key
      */

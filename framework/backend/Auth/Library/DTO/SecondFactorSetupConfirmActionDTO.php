@@ -16,6 +16,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class SecondFactorSetupConfirmActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['code'];
+
     /**
      * @param string $code Code as typed (trimmed)
      * @param string $label Name of the authenticator (trimmed)

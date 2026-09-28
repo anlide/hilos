@@ -18,6 +18,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ConfirmMagicLinkActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['token'];
+
     /**
      * Creates a magic-link confirmation DTO.
      *

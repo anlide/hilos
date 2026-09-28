@@ -25,6 +25,8 @@ final class HilosSignInMethodSetActionDTO extends ActionPayloadDTO
     /** Payload key: whether the method should be on. */
     public const string enabled = 'enabled';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $methodKey Method to switch
      * @param bool $enabled Whether the method should be on

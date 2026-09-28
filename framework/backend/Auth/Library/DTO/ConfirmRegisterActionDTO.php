@@ -24,6 +24,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ConfirmRegisterActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['code'];
+
     /**
      * Creates a registration-confirm DTO.
      *

@@ -24,6 +24,8 @@ use Hilos\Push\DTO\PushSubscribeActionDTO;
  */
 final class PasskeyRegisterConfirmActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates a passkey registration confirmation DTO.
      *

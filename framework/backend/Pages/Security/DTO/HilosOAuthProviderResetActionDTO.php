@@ -23,6 +23,8 @@ final class HilosOAuthProviderResetActionDTO extends ActionPayloadDTO
     /** Payload key: the target field name. */
     public const string field = 'field';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $providerKey Target provider key
      * @param string $field Target field name

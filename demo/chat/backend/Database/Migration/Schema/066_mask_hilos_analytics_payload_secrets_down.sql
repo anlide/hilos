@@ -1,0 +1,5 @@
+-- Migration Rollback: Mask the secrets analytics recorded in action payloads (HIL-1187)
+-- Created: 2026-09-28
+-- Index: 066
+--
+-- Irreversible data cleanup: masked secrets are not restored.

@@ -15,6 +15,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  */
 final class BotDeleteActionDTO extends ChatActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates bot delete action DTO.
      *

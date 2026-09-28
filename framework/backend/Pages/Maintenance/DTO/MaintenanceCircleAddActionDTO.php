@@ -23,6 +23,8 @@ final class MaintenanceCircleAddActionDTO extends ActionPayloadDTO
     /** Payload key: the address as the operator typed it. */
     public const string identifier = 'identifier';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $identifier Address as the operator typed it
      */

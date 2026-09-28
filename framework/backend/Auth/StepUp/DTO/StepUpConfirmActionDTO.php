@@ -20,6 +20,9 @@ final class StepUpConfirmActionDTO extends ActionPayloadDTO
     public const string password = 'password';
     public const string passkey = 'passkey';
 
+    // passkey is masked whole: its signature is what a replay would present
+    public const array SECRET_FIELDS = [self::code, self::password, self::passkey];
+
     /**
      * @param string $operation Protected operation key
      * @param string $method Method returned by the opening action

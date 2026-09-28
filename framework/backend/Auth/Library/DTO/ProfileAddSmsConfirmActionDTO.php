@@ -21,6 +21,8 @@ final class ProfileAddSmsConfirmActionDTO extends ActionPayloadDTO
     public const string PHONE = 'phone';
     public const string CODE = 'code';
 
+    public const array SECRET_FIELDS = [self::CODE];
+
     /**
      * Creates an add-phone confirm DTO.
      *

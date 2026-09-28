@@ -27,6 +27,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class RegisterActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates register action DTO.
      *

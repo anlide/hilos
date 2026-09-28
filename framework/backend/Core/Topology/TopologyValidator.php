@@ -123,6 +123,10 @@ final class TopologyValidator
      */
     private const string AGENT_HTTP_PATH_PATTERN = '#^/[A-Za-z0-9._~/-]*$#';
 
+    /** @var string Tail of the refusal naming an action DTO that does not say which of its payload keys are secret */
+    private const string UNDECLARED_SECRET_FIELDS = 'must declare ' . ActionPayloadDTO::META_SECRET_FIELDS
+        . ': the payload keys analytics writes masked, [] when there are none';
+
     /**
      * Validates topology constants declared by a Hilos facade subclass.
      *
@@ -2041,6 +2045,11 @@ final class TopologyValidator
 
             if (!is_string($dtoClass) || $dtoClass === '' || !is_subclass_of($dtoClass, ActionPayloadDTO::class)) {
                 $errors[] = "Computed action DTO route {$action} must reference a valid ActionPayloadDTO class";
+                continue;
+            }
+
+            if (!$this->declaresSecretFields($dtoClass)) {
+                $errors[] = "Action DTO route {$action} class {$dtoClass} " . self::UNDECLARED_SECRET_FIELDS;
             }
         }
     }
@@ -2091,6 +2100,11 @@ final class TopologyValidator
                     $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_ACTIONS[{$action}] class {$dtoClass} must extend "
                         . ActionPayloadDTO::class;
                     continue;
+                }
+
+                if (!$this->declaresSecretFields($dtoClass)) {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_ACTIONS[{$action}] class {$dtoClass} "
+                        . self::UNDECLARED_SECRET_FIELDS;
                 }
 
                 if (array_key_exists($action, $pageActionRoutes)) {
@@ -3070,6 +3084,32 @@ final class TopologyValidator
 
             $seen[$key] = true;
         }
+    }
+
+    /**
+     * Tells whether an action DTO says which of its payload keys analytics must write masked.
+     *
+     * Asked of the concrete class, and answered by `defined()`: a constant up the chain would
+     * answer for every action below it, which is why the base declares none.
+     *
+     * @param class-string<ActionPayloadDTO> $dtoClass Action DTO class
+     * @return bool Whether SECRET_FIELDS is declared as a list of non-empty payload keys
+     */
+    private function declaresSecretFields(string $dtoClass): bool
+    {
+        $constant = "{$dtoClass}::" . ActionPayloadDTO::META_SECRET_FIELDS;
+        $fields = defined($constant) ? constant($constant) : null;
+        if (!is_array($fields) || !array_is_list($fields)) {
+            return false;
+        }
+
+        foreach ($fields as $field) {
+            if (!is_string($field) || $field === '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

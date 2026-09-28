@@ -13,6 +13,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  */
 final class GuardianAgentRunStartActionDTO extends ChatActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates guardian run start DTO.
      *

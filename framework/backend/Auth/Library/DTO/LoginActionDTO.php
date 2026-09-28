@@ -17,6 +17,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class LoginActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['password'];
+
     /**
      * Creates login action DTO.
      *

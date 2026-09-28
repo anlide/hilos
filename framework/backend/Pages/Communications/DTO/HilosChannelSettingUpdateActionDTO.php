@@ -30,6 +30,8 @@ final class HilosChannelSettingUpdateActionDTO extends ActionPayloadDTO
     /** Payload key: the new value. */
     public const string value = 'value';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $channel Target channel name
      * @param string $field Target field key

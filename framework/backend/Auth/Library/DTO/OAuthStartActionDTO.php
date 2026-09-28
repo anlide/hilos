@@ -22,6 +22,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class OAuthStartActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates OAuth start action DTO.
      *

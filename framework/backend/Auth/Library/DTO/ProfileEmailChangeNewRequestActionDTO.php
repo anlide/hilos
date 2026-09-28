@@ -21,6 +21,8 @@ final class ProfileEmailChangeNewRequestActionDTO extends ActionPayloadDTO
     public const string CURRENT_CODE = 'currentCode';
     public const string EMAIL = 'email';
 
+    public const array SECRET_FIELDS = [self::CURRENT_CODE];
+
     /**
      * Creates a new-address request DTO.
      *

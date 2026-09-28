@@ -15,6 +15,8 @@ final class ProfileChangePasswordActionDTO extends ActionPayloadDTO
     public const string NEW_PASSWORD = 'newPassword';
     public const string SIGN_OUT_OTHERS = 'signOutOthers';
 
+    public const array SECRET_FIELDS = [self::CODE, self::NEW_PASSWORD];
+
     /**
      * @param string $code Address code, empty when the account has no reachable address
      * @param string $newPassword New password to set

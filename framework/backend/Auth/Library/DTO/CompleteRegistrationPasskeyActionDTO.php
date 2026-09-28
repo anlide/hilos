@@ -24,6 +24,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class CompleteRegistrationPasskeyActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates a registration passkey completion DTO.
      *

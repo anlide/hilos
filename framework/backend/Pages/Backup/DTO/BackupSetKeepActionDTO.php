@@ -22,6 +22,8 @@ final class BackupSetKeepActionDTO extends ActionPayloadDTO
     /** Payload key: the desired keep pin (true excludes the backup from rotation). */
     public const string keep = 'keep';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $backupId Target backup id
      * @param bool $keep Desired keep pin

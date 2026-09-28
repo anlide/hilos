@@ -15,6 +15,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  */
 final class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates moderator piece delete action DTO.
      *

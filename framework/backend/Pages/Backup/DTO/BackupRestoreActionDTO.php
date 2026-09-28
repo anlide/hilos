@@ -24,6 +24,8 @@ final class BackupRestoreActionDTO extends ActionPayloadDTO
     /** Payload key: the archive to restore. */
     public const string backupId = 'backupId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $backupId Id of the archive to restore
      */

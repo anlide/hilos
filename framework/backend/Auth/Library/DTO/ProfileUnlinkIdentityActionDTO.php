@@ -18,6 +18,8 @@ final class ProfileUnlinkIdentityActionDTO extends ActionPayloadDTO
 {
     public const string IDENTITY_ID = 'identityId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates the unlink-identity action DTO.
      *

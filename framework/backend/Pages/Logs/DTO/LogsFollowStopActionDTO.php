@@ -24,6 +24,8 @@ final class LogsFollowStopActionDTO extends ActionPayloadDTO
     /** Payload key: id of the node the viewer believes it is following, empty for this node. */
     public const string nodeId = 'nodeId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $nodeId Id of the node the viewer believes it is following, empty for this node
      */

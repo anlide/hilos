@@ -10,6 +10,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /** Public read of registration's consent form and current documents. */
 final class LegalConsentActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /** @return string Public consent action name */
     public function getAction(): string
     {

@@ -15,6 +15,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  */
 final class RenameActionDTO extends ChatActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates rename action DTO.
      *

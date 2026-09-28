@@ -18,6 +18,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ConfirmSecondFactorActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['code'];
+
     /**
      * @param string $code Code as typed (trimmed)
      * @param bool $backupCode Whether the code is a backup code rather than one from an app

@@ -14,6 +14,8 @@ use Hilos\Files\Upload\UploadFrame;
  */
 final class UploadCancelActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $clientUploadId Id the client gave the upload
      */

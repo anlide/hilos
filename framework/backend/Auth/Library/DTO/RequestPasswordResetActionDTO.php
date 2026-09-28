@@ -18,6 +18,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class RequestPasswordResetActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates a password-reset request DTO.
      *

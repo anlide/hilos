@@ -15,6 +15,8 @@ final class HilosUserDeletionSetActionDTO extends ActionPayloadDTO
     public const string userId = 'userId';
     public const string scheduled = 'scheduled';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $userId Target account id
      * @param bool $scheduled Requested state

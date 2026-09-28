@@ -18,7 +18,8 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - Page/group subscriptions, send helpers, and the rule that one page
   subscription answers with everything the page renders:
   `docs/agents/signals/subscriptions.md`
-- Payload DTOs and agent-to-agent signals: `docs/agents/signals/dto-convention.md`
+- Payload DTOs, agent-to-agent signals, and declaring an action payload's
+  secret fields: `docs/agents/signals/dto-convention.md`
 - You just wrote a fact and someone is looking at a screen it devalues right
   now — whether the server owes that screen a move, and which frame moves it:
   `docs/agents/signals/screen-invalidation.md`

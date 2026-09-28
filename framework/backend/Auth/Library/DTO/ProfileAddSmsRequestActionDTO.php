@@ -20,6 +20,8 @@ final class ProfileAddSmsRequestActionDTO extends ActionPayloadDTO
 {
     public const string PHONE = 'phone';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates an add-phone request DTO.
      *

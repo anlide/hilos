@@ -16,6 +16,8 @@ final class SessionEndActionDTO extends ActionPayloadDTO
 {
     public const string sessionId = 'sessionId';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param int $sessionId Positive database session row id
      */

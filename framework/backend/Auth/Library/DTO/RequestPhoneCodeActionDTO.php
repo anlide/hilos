@@ -26,6 +26,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class RequestPhoneCodeActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = [];
+
     /**
      * Creates a phone-code request DTO.
      *

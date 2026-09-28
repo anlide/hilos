@@ -23,6 +23,9 @@ use Hilos\Runtime\State\Item\HilosOAuthTrip;
  */
 final class OAuthCallbackActionDTO extends ActionPayloadDTO
 {
+    // state is the marker the server signed against forgery, not a secret
+    public const array SECRET_FIELDS = ['code', 'tripKey'];
+
     /**
      * Creates OAuth callback action DTO.
      *

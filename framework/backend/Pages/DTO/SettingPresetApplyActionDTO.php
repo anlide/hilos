@@ -25,6 +25,8 @@ final class SettingPresetApplyActionDTO extends ActionPayloadDTO
     /** Payload key: machine name of the preset to apply. */
     public const string preset = 'preset';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $preset Machine name of the preset to apply
      */

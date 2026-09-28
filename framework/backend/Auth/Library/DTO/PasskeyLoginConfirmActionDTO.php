@@ -26,6 +26,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class PasskeyLoginConfirmActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['signature'];
+
     /**
      * Creates a passkey login confirmation DTO.
      *

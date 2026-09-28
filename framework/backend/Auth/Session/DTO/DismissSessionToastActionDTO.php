@@ -28,6 +28,8 @@ final class DismissSessionToastActionDTO extends ActionPayloadDTO
 {
     public const string key = 'key';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $key Server-minted name of the card being closed
      */

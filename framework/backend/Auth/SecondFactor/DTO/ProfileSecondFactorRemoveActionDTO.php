@@ -16,6 +16,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 final class ProfileSecondFactorRemoveActionDTO extends ActionPayloadDTO
 {
+    public const array SECRET_FIELDS = ['proofCode'];
+
     /**
      * @param int $authenticatorId Authenticator to disconnect
      * @param string $proofCode Code from a connected app or a backup code, proving the factor

@@ -205,6 +205,11 @@ final class TopologyThrottleVerdictAgentDaemon extends TopologyTestAgentDaemon
     public const string AGENT_TYPE = 'throttle_verdict_agent';
 }
 
+final class TopologyUndeclaredSecretsAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'undeclared_secrets_agent';
+}
+
 final class TopologyThrottleUntypedVerdictAgentDaemon extends TopologyTestAgentDaemon
 {
     public const string AGENT_TYPE = 'throttle_untyped_verdict_agent';

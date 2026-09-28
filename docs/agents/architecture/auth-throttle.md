@@ -35,9 +35,12 @@ scope: one abusive browser must not lift the IP-wide pressure it created.
 
 The session identity is the sha256 digest of the session token, never the token
 (`ThrottleIdentity::forSession`, the one place that recipe exists). The action
-payload is written to the analytics journal verbatim, so a raw token riding on it
-would become a replayable credential sitting in a table; the digest keys the same
-counter and cannot be presented as a session.
+reaches the analytics journal with only the fields its DTO declares secret
+masked ([dto-convention.md](../signals/dto-convention.md), "Secret fields of an
+action payload"), and the session identity rides in the signal envelope rather
+than in a DTO field, so no declaration covers it: a raw token there would become
+a replayable credential sitting in a table. The digest keys the same counter and
+cannot be presented as a session.
 
 A scope with nothing to key on is dropped rather than keyed on a placeholder: one
 shared empty identity would let strangers spend each other's budget.

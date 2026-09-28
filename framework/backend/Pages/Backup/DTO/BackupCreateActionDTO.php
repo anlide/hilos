@@ -21,6 +21,8 @@ final class BackupCreateActionDTO extends ActionPayloadDTO
     /** Payload key: the {@see BackupScope} value the run captures. */
     public const string scope = 'scope';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $scope Requested backup scope value (raw; validated on the page)
      */

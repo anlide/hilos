@@ -20,6 +20,8 @@ final class HilosOAuthRedirectSetActionDTO extends ActionPayloadDTO
     /** Payload key: the new return address. */
     public const string value = 'value';
 
+    public const array SECRET_FIELDS = [];
+
     /**
      * @param string $value New return address, as sent
      */
