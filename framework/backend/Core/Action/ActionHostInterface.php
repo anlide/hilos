@@ -156,9 +156,12 @@ interface ActionHostInterface
     /**
      * Reports an untracked action's failure, which has no request id to correlate a reply to.
      *
+     * The hook reports the failure and records no state: a guard refusal arrives here too,
+     * before anything had started (HIL-1252).
+     *
      * @param string $acceptKey Accept key of the initiating connection
      * @param string $action Action name that failed
-     * @param ActionPayloadDTO $dto Parsed action payload the handler was given
+     * @param ActionPayloadDTO $dto Parsed action payload; on a guard refusal the handler never ran
      * @param Throwable $e Failure to surface
      * @throws InvalidArgumentException When the error frame cannot be named
      */

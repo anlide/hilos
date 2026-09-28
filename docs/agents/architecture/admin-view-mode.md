@@ -103,8 +103,8 @@ change the body of that question, not the mode around it.
   declared as reading (not in the code yet — HIL-1251); the refusal's code and
   reason are HIL-1251's.
 - A refused action writes nothing — not to the database, not to RT: the page's
-  refusal handler records no state (not in the code yet — HIL-1252). The case
-  the rule is written from is the Guardian page of the chat demo.
+  refusal handler records no state. The case the rule is written from is the
+  Guardian page of the chat demo.
 - The error's text — the exception's class and message — goes to whoever
   proved an admin, not to anyone on an `ADMIN` page; today the page's level
   decides it (not in the code yet — HIL-1251). A project page does not put

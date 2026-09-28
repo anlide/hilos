@@ -21,6 +21,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Pages\AbstractHilosGuardianAgentPage;
+use Hilos\Runtime\Exception\RtBaseException;
 use Throwable;
 
 /**
@@ -55,6 +56,7 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
      * @param ActionPayloadDTO $dto Action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
+     * @throws RtBaseException When a run the agent failed cannot be recorded as FAILED in runtime state
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -84,30 +86,6 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
     }
 
     /**
-     * Marks guardian run actions as failed for the initiating client.
-     *
-     * @param string $acceptKey WebSocket accept key for the client
-     * @param string $action Action name that failed
-     * @param ActionPayloadDTO $dto Action payload
-     * @param Throwable $e Action failure
-     */
-    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
-    {
-        if ($dto instanceof GuardianAgentRunStartActionDTO || $dto instanceof GuardianAgentRunStopActionDTO) {
-            $status = Hilos::$rt->guardianAgentStatuses[$dto->agentId] ?? null;
-            if ($status === null) {
-                Hilos::$rt->guardianAgentStatuses->actions->create($dto->agentId, GuardianRunStatus::FAILED);
-            } else {
-                $status->actions->setStatus(GuardianRunStatus::FAILED);
-            }
-
-            return;
-        }
-
-        parent::onActionException($acceptKey, $action, $dto, $e);
-    }
-
-    /**
      * Handle one guardian run start action.
      *
      * @param GuardianAgentRunStartActionDTO $dto Action payload
@@ -118,7 +96,13 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
             return;
         }
 
-        $this->agent->startGuardianRun($dto->agentId);
+        try {
+            $this->agent->startGuardianRun($dto->agentId);
+        } catch (Throwable $e) {
+            $this->markRunFailed($dto->agentId);
+
+            throw $e;
+        }
     }
 
     /**
@@ -132,6 +116,31 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
             return;
         }
 
-        $this->agent->stopGuardianRun($dto->agentId);
+        try {
+            $this->agent->stopGuardianRun($dto->agentId);
+        } catch (Throwable $e) {
+            $this->markRunFailed($dto->agentId);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Records a guardian run as failed in runtime state.
+     *
+     * FAILED is written only here, about a start or stop the agent was actually
+     * asked for and which threw. A guard refusal (401, 403, rate limit, the view
+     * mode) never reaches this point: the handler does not run (HIL-1252).
+     *
+     * @param string $agentId Guardian agent identifier
+     */
+    private function markRunFailed(string $agentId): void
+    {
+        $status = Hilos::$rt->guardianAgentStatuses[$agentId] ?? null;
+        if ($status === null) {
+            Hilos::$rt->guardianAgentStatuses->actions->create($agentId, GuardianRunStatus::FAILED);
+        } else {
+            $status->actions->setStatus(GuardianRunStatus::FAILED);
+        }
     }
 }

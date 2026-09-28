@@ -583,8 +583,10 @@ abstract class AbstractPage implements ActionHostInterface
     /**
      * Sends the default page action error signal.
      *
-     * Optional hook called by PageSignalRouter when onAction() throws. Override
-     * only when the page has a more specific user-facing error contract.
+     * Optional hook called by PageSignalRouter when the action fails: its handler
+     * threw, or a guard refused it before the handler ran. The hook reports the
+     * failure and never records state. Override only when the page has a more
+     * specific user-facing error contract.
      *
      * @param string $acceptKey WebSocket accept key
      * @param string $action Action name
