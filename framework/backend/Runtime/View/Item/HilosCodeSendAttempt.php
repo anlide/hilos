@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper over one session's code send attempt (HIL-826).
@@ -45,6 +46,7 @@ final class HilosCodeSendAttempt extends RtItem
      * @return string|int|null Property value
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|int|null
     {

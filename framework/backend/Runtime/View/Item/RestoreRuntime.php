@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
+use Hilos\HilosException;
 
 /**
  * Read-only view of the restore runtime singleton.
@@ -50,6 +51,7 @@ final class RestoreRuntime extends RtItem
      * @return string|int|bool|array<int, string>|RestoreRuntimeActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|int|bool|array|RestoreRuntimeActions|null
     {

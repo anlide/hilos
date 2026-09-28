@@ -7,7 +7,7 @@ namespace Demo\Tasks\Browser\Table;
 use Demo\Tasks\Browser\TasksBrowserRef;
 use Demo\Tasks\Browser\TasksBrowserSource;
 use Demo\Tasks\Browser\TasksBrowserTable;
-use Demo\Tasks\Database\Object\Item\User;
+use Hilos\Database\Object\Item\User;
 use Demo\Tasks\Runtime\State\Item\Connection;
 use Demo\Tasks\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Constants\HilosPageRouteParams;

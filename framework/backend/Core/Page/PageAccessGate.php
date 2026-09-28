@@ -8,6 +8,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * Enforces a page's declared ACCESS_LEVEL for one connection.
@@ -37,6 +38,7 @@ final class PageAccessGate
      * @param string $acceptKey Acting connection accept key
      * @throws PageUnauthorizedException When the level requires a user and the session is anonymous (or no browser context is mounted)
      * @throws PageForbiddenException When the level is ADMIN and the authenticated user lacks the admin privilege
+     * @throws HilosException When the project's administrator lookup fails
      */
     public static function assert(string $pageClass, string $acceptKey): void
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Collection;
 
+use Hilos\HilosException;
 use Demo\Chat\Database\View\Collection\Users as DbUsers;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
@@ -159,6 +160,7 @@ final class Connections extends HilosSessionConnections
      * @throws RtCollectionActionsClassException When actions class is missing or invalid
      * @throws CollectionNotManualException When relevant users cannot be added to a manual collection
      * @throws ObjectGetIdStringNotImplementedException When a DB user item cannot expose a manual collection key
+     * @throws HilosException When an inherited getter or a linked collection refuses the read
      */
     public function __get(string $name): ConnectionsActions|DbUsers
     {

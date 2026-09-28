@@ -9,6 +9,7 @@ use Demo\Cluster\Runtime\View\Actions\Item\WorkerStatusActions;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper over one fleet worker status row.
@@ -34,6 +35,7 @@ final class WorkerStatus extends RtItem
     /**
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): int|string|WorkerStatusActions|null
     {

@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
+use Hilos\HilosException;
 
 /**
  * Read-only view of the backup subsystem's runtime singleton.
@@ -46,6 +47,7 @@ final class BackupRuntime extends RtItem
      * @return string|int|bool|BackupRuntimeActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|int|bool|BackupRuntimeActions|null
     {

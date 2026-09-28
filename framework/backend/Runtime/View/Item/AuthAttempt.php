@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\AuthAttempt as StateAuthAttempt;
 use Hilos\Runtime\View\Actions\Item\AuthAttemptActions;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper over the window counter of one throttle key (HIL-420).
@@ -42,6 +43,7 @@ final class AuthAttempt extends RtItem
      * @return string|int|float|AuthAttemptActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|int|float|AuthAttemptActions|null
     {

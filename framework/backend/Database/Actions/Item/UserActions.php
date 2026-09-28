@@ -2,16 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Demo\Polls\Database\Actions\Item;
+namespace Hilos\Database\Actions\Item;
 
-use Demo\Polls\Database\Object\Item\User as ObjectUser;
-use Demo\Polls\Database\View\Item\User;
+use Hilos\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\View\Item\User;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -21,14 +20,14 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @extends DbActions<User, ObjectUser>
  * @property-read ObjectUser $object
  */
-final class UserActions extends DbActions
+class UserActions extends DbActions
 {
     /**
      * Shortest display name a user may carry.
      *
      * Public because the frame is one, not two: a name arriving from an OAuth
      * provider is measured against the very frame the rename applies, instead of a
-     * second copy of the numbers (HIL-573).
+     * second copy of the numbers.
      */
     public const int NAME_MIN_LENGTH = 2;
 
@@ -118,10 +117,7 @@ final class UserActions extends DbActions
     }
 
     /**
-     * Deletes this user's row - the account is being erased (HIL-302).
-     *
-     * The last write of the demo's half of the erasure: the rename rows pointing at this one are
-     * gone by then. Written inside the transaction the framework opened.
+     * Deletes this person's row after the caller has removed its dependent rows.
      *
      * @throws ItemNotFoundForUpdateException When the user is not persisted (id is null)
      * @throws HilosException On database error or other failure

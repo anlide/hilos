@@ -1,14 +1,16 @@
 <?php
 
-namespace Demo\Tasks\Database\Object\Collection;
+declare(strict_types=1);
 
-use Demo\Tasks\Database\Entity\Collection\Users as EntityUsers;
-use Demo\Tasks\Database\Object\Item\User as ObjectUser;
-use Demo\Tasks\Database\TasksDbContext;
+namespace Hilos\Database\Object\Collection;
+
+use Hilos\Database\Entity\Collection\Users as EntityUsers;
+use Hilos\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Objects;
 
 /**
- * Users - Object collection for tasks users.
+ * Users - Object collection for framework people.
  *
  * @extends Objects<ObjectUser>
  * @method ObjectUser|null current()
@@ -17,9 +19,9 @@ use Hilos\Database\Object\Objects;
  * @method ObjectUser|null get(int|string $key)
  * @method ObjectUser|null offsetGet(mixed $offset)
  */
-final class Users extends Objects
+class Users extends Objects
 {
     public const string OBJECT_CLASS = ObjectUser::class;
     public const string ENTITY_COLLECTION_CLASS = EntityUsers::class;
-    public const string COLLECTION_KEY = TasksDbContext::users;
+    public const string COLLECTION_KEY = HilosDbContext::users;
 }

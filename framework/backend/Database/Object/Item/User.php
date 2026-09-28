@@ -1,16 +1,15 @@
 <?php
 
-namespace Demo\Polls\Database\Object\Item;
+declare(strict_types=1);
 
-use Demo\Polls\Database\Entity\Item\User as EntityUser;
-use Demo\Polls\Database\PollsDbContext;
+namespace Hilos\Database\Object\Item;
+
+use Hilos\Database\Entity\Item\User as EntityUser;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Object\Item\Object_;
 
 /**
  * User - Object wrapper for user entity.
- *
- * Auto-generated from Entity: Demo\Polls\Database\Entity\Item\User
  *
  * Business logic layer with change tracking.
  *
@@ -22,7 +21,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property bool $block
  * @property ?string $lastActivity
  */
-final class User extends Object_
+class User extends Object_
 {
     public const string ENTITY_CLASS = EntityUser::class;
 
@@ -31,16 +30,6 @@ final class User extends Object_
     public const string admin = 'admin';
     public const string block = 'block';
     public const string lastActivity = 'lastActivity';
-
-    /**
-     * Returns the database collection key for this object type.
-     *
-     * @return string Collection key (PollsDbContext::users)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return PollsDbContext::users;
-    }
 
     /**
      * Returns the value of a user object property by name.
@@ -93,5 +82,15 @@ final class User extends Object_
             self::block => $this->entity->block,
             self::lastActivity => $this->entity->last_activity,
         ];
+    }
+
+    /**
+     * Returns the database collection key for this object type.
+     *
+     * @return string Collection key (HilosDbContext::users)
+     */
+    protected static function getCollectionKey(): string
+    {
+        return HilosDbContext::users;
     }
 }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Tables\HilosUser\DTO;
 
-use Demo\Tasks\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\AdminUser;
 
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
@@ -96,6 +98,9 @@ final class AdminUsersTable extends TableDefinition implements ViewportTable
      * @param SourceChange $change DB or RT source change to project into the admin users table
      * @return ?TableRowMutationDTO Admin users row mutation, or null when the change does not affect this table
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -226,6 +231,8 @@ final class AdminUsersTable extends TableDefinition implements ViewportTable
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

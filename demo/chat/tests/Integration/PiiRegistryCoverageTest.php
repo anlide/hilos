@@ -207,11 +207,11 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     private static function insertProbeUser(): int
     {
         Database::sqlRun(
-            'INSERT INTO `user` (`name`) VALUES (?)',
+            'INSERT INTO `hilos_user` (`name`) VALUES (?)',
             SqlParamCollection::fromArray([self::PROBE_USER_NAME]),
         );
         Database::sql(
-            'SELECT `id` FROM `user` WHERE `name` = ? ORDER BY `id` DESC LIMIT 1',
+            'SELECT `id` FROM `hilos_user` WHERE `name` = ? ORDER BY `id` DESC LIMIT 1',
             SqlParamCollection::fromArray([self::PROBE_USER_NAME]),
         );
 
@@ -226,7 +226,7 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     private static function probeUserName(int $probeId): ?string
     {
         Database::sql(
-            'SELECT `name` FROM `user` WHERE `id` = ?',
+            'SELECT `name` FROM `hilos_user` WHERE `id` = ?',
             SqlParamCollection::fromArray([$probeId]),
         );
         $name = Database::field('name');

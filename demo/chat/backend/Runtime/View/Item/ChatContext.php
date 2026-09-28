@@ -9,6 +9,7 @@ use Demo\Chat\Runtime\View\Actions\Item\ChatContextActions;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\HilosException;
 
 /**
  * Read-only runtime item for the shared chat context state.
@@ -39,6 +40,7 @@ final class ChatContext extends RtItem
      * @return ?string|float|ChatContextActions Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): mixed
     {

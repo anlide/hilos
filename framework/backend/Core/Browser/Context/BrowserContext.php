@@ -107,6 +107,7 @@ use Throwable;
 use ArrayAccess;
 use Closure;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\HilosException;
 
 /**
  * Base browser-facing context.
@@ -5452,6 +5453,7 @@ abstract class BrowserContext
      *
      * @param int $userId Authenticated durable user id
      * @return bool Whether this user may access ADMIN-level pages and actions
+     * @throws HilosException When the project's administrator lookup fails
      */
     public function isAdmin(int $userId): bool
     {

@@ -1,22 +1,21 @@
 <?php
 
-namespace Demo\Tasks\Database\Entity\Item;
+declare(strict_types=1);
 
-use Demo\Tasks\Database\Entity\Collection\Users as EntityUsers;
+namespace Hilos\Database\Entity\Item;
+
+use Hilos\Database\Entity\Collection\Users as EntityUsers;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
-use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * User - Entity representing user table row.
- *
- * Auto-generated from table: user.
- * Used by DbCollection and ObjectCollection for ORM layer.
+ * Framework person row. Projects add columns by extending the whole ORM chain
+ * under the users key (docs/agents/architecture/people-table.md).
  *
  * @method static EntityUsers get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityUsers getAll()
  */
-final class User extends Entity
+class User extends Entity
 {
     // Column name constants
     public const string id = 'id';
@@ -26,7 +25,7 @@ final class User extends Entity
     public const string last_activity = 'last_activity';
 
     // Table meta information
-    public const string _table = 'user';
+    public const string _table = 'hilos_user';
     public const string _primary = self::id;
     public const array _columns = [
         self::id,
@@ -47,9 +46,9 @@ final class User extends Entity
 
     // Indexes
     public const array _indexes = [
-        'admin' => [Entity::INDEX_COLUMNS => [self::admin]],
-        'block' => [Entity::INDEX_COLUMNS => [self::block]],
-        'last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
+        'idx_user_admin' => [Entity::INDEX_COLUMNS => [self::admin]],
+        'idx_user_block' => [Entity::INDEX_COLUMNS => [self::block]],
+        'idx_user_last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
     ];
 
     public const string _setVia = Entity::SET_STANDALONE;

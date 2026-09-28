@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\Hilos;
 
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Database\DatabaseException;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatCommandConstants;
@@ -194,6 +197,9 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
      * @throws ValidationException When the asker is not an administrator or the target is unknown
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     protected function assertImpersonationAllowed(int $adminUserId, int $targetUserId): void
     {
@@ -218,6 +224,9 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * @param int $survivorUserId Survivor user id that would absorb the loser
      * @param int $loserUserId Loser user id that would be folded in
      * @throws ValidationException When either id names nobody, or either account is already merged
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     protected function assertMergeable(int $survivorUserId, int $loserUserId): void
     {

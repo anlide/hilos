@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\TableRefusalRuntime as StateTableRefusalRuntime;
 use Hilos\Runtime\View\Actions\Item\TableRefusalRuntimeActions;
+use Hilos\HilosException;
 
 /**
  * Read-only view of the test-only table refusal singleton (HIL-1131).
@@ -37,6 +38,7 @@ final class TableRefusalRuntime extends RtItem
      * @return string|TableRefusalRuntimeActions Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|TableRefusalRuntimeActions
     {

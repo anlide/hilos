@@ -34,6 +34,7 @@ use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFacto
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
+use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\HilosException;
@@ -86,6 +87,7 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::dataExports => DbCollectionDataExports::class,
         HilosDbContext::files => DbCollectionFiles::class,
         HilosDbContext::fileVariants => DbCollectionFileVariants::class,
+        HilosDbContext::users => DbCollectionUsers::class,
     ];
 
     /**

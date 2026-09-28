@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Item;
 
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Database\DatabaseException;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
@@ -13,6 +16,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\HilosException;
 
 /**
  * Read-only item for an uploaded attachment draft.
@@ -47,6 +51,10 @@ final class AttachmentDraft extends RtItem
      *
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|int|User|Connection|AttachmentDraftActions|null
     {

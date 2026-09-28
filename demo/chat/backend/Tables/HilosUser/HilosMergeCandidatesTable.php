@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\HilosUser;
 
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
@@ -64,6 +68,10 @@ final class HilosMergeCandidatesTable extends AbstractHilosMergeCandidatesTable
     /**
      * @return iterable<int> Current chat user ids, including tombstones rejected by the row seam
      * @throws DatabaseException When the user query fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
+     * @throws TableSearchFieldUnknownException When a search field is absent from the user row
+     * @throws TableSearchNotSupportedException When a search term has no searchable fields
      */
     protected function userIds(): iterable
     {

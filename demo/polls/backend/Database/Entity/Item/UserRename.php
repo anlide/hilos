@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Polls\Database\Entity\Item;
 
 use Demo\Polls\Database\Entity\Collection\UserRenames as EntityUserRenames;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Item\User;
 use Hilos\Database\PhpType;
 
 /**

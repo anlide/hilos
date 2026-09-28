@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Database\DatabaseException;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
@@ -97,6 +100,9 @@ final class UserPage extends AbstractPage
      * @throws MissingPageRouteParamException When `id` is absent
      * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
      * @throws PageInternalErrorException When the guarded user row is absent all the same
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {

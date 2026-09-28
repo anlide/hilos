@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\TableLagRuntime as StateTableLagRuntime;
 use Hilos\Runtime\View\Actions\Item\TableLagRuntimeActions;
+use Hilos\HilosException;
 
 /**
  * Read-only view of the test-only table lag singleton (HIL-1020).
@@ -39,6 +40,7 @@ final class TableLagRuntime extends RtItem
      * @return int|TableLagRuntimeActions Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): int|TableLagRuntimeActions
     {

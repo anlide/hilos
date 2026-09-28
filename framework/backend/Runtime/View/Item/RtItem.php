@@ -13,6 +13,7 @@ use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\HilosException;
 
 /**
  * RtItem - read-only wrapper around runtime state.
@@ -171,6 +172,7 @@ abstract class RtItem
      * @return mixed Property value (never reached, throws instead)
      * @throws RtItemPropertyNotFoundException When the property does not exist
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): mixed
     {

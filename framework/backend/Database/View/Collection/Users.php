@@ -2,20 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Demo\Polls\Database\View\Collection;
+namespace Hilos\Database\View\Collection;
 
-use Demo\Polls\Database\Actions\Collection\UsersActions;
-use Demo\Polls\Database\PollsDbContext;
-use Demo\Polls\Database\Object\Collection\Users as ObjectUsers;
-use Demo\Polls\Database\View\Item\User;
+use Hilos\Database\Actions\Collection\UsersActions;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Collection\Users as ObjectUsers;
+use Hilos\Database\View\Item\User;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\View\Collection\DbCollection;
-use Hilos\Database\View\Collection\HilosUserBlockSource;
 
 /**
- * Users - Db collection of User items with additional filtering methods.
+ * Framework people, addressed by primary id. This collection supplies the account block flags.
  *
  * @extends DbCollection<User, ObjectUsers>
  * @method ObjectUsers|null getObjectCollection()
@@ -25,7 +23,7 @@ use Hilos\Database\View\Collection\HilosUserBlockSource;
  * @method User|null offsetGet(mixed $offset)
  * @property-read UsersActions $actions Actions for write operations
  */
-final class Users extends DbCollection implements HilosUserBlockSource
+class Users extends DbCollection implements HilosUserBlockSource
 {
     public const string DB_ITEM_CLASS = User::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectUsers::class;
@@ -33,10 +31,9 @@ final class Users extends DbCollection implements HilosUserBlockSource
     /**
      * Lists every user, loading the collection in full first.
      *
-     * The collection is lazy by key ({@see PollsDbContext::configure()}), so plain
+     * The collection is lazy by key ({@see HilosDbContext::configure()}), so plain
      * iteration only sees the rows some earlier read happened to load. A whole-table
-     * question - "who are the administrators" - needs all of them, and a demo user
-     * table is small enough to hold at once.
+     * question - "who are the administrators" - needs all of them.
      *
      * @return list<User> Every user row, in collection order
      * @throws DatabaseException When loading the user collection fails
@@ -62,7 +59,7 @@ final class Users extends DbCollection implements HilosUserBlockSource
     /**
      * Reports the block flag of each requested user, reading each row by key.
      *
-     * The collection is lazy by key ({@see PollsDbContext::configure()}), and a guard asking
+     * The collection is lazy by key ({@see HilosDbContext::configure()}), and a guard asking
      * about one person must not pull the whole table in to answer, so no row beyond the
      * requested ones is loaded.
      *

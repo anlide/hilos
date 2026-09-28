@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Tables\HilosUser;
 
-use Demo\Polls\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Tables\Users\AbstractHilosUserTableRow;
 

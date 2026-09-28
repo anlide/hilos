@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Polls\Agents;
 
 use Demo\Polls\Auth\PollsOAuthConfig;
-use Demo\Polls\Database\Actions\Item\UserActions;
+use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\HilosException;

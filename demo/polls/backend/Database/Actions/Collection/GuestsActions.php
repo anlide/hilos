@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Database\Actions\Collection;
 
+use Hilos\Database\Actions\Collection\UsersActions;
 use Demo\Polls\Database\Object\Collection\Guests as ObjectGuests;
 use Demo\Polls\Database\View\Collection\Guests as DbCollectionGuests;
 use Demo\Polls\Database\View\Item\Guest;

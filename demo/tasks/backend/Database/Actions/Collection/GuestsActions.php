@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Database\Actions\Collection;
 
+use Hilos\Database\Actions\Collection\UsersActions;
 use Demo\Tasks\Database\Object\Collection\Guests as ObjectGuests;
 use Demo\Tasks\Database\View\Collection\Guests as DbCollectionGuests;
 use Demo\Tasks\Database\View\Item\Guest;

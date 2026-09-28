@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Tables\HilosUser;
 
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Demo\Tasks\Browser\TasksBrowserSource;
-use Demo\Tasks\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Demo\Tasks\Database\TasksDbContext;
-use Demo\Tasks\Database\View\Item\User as DbUser;
+use Hilos\Database\View\Item\User as DbUser;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
@@ -156,6 +158,8 @@ final class HilosUsersTable extends AbstractHilosUsersTable
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

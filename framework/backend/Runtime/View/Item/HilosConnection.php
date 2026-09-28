@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
 use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
+use Hilos\HilosException;
 
 /**
  * Read-only runtime item for one connection row — the presence stage (HIL-509).
@@ -39,6 +40,7 @@ abstract class HilosConnection extends RtItem
      * @return mixed Property value or item actions
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): mixed
     {

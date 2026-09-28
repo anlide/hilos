@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Item;
 
+use Hilos\HilosException;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
 use Demo\Chat\Database\View\Collection\EventAttachments;
@@ -46,6 +47,7 @@ final class EventMessage extends DbItem
      * @throws DatabaseException If attachment collection loading fails
      * @throws CollectionNotManualException If attachments collection cannot accept filtered items
      * @throws ObjectGetIdStringNotImplementedException If an attachment id is not available
+     * @throws HilosException When an inherited getter or a linked collection refuses the read
      */
     public function __get(string $name): mixed
     {

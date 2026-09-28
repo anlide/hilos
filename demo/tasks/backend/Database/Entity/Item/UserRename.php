@@ -1,10 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Tasks\Database\Entity\Item;
 
 use Demo\Tasks\Database\Entity\Collection\UserRenames as EntityUserRenames;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Item\User;
 use Hilos\Database\PhpType;
 
 /**

@@ -2,13 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Demo\Polls\Database\View\Item;
+namespace Hilos\Database\View\Item;
 
-use Demo\Polls\Database\Actions\Item\UserActions;
-use Demo\Polls\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\Actions\Item\UserActions;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
-use Hilos\Database\View\Item\DbItem;
 use Hilos\HilosException;
 
 /**
@@ -30,18 +29,18 @@ use Hilos\HilosException;
  * @property-read ?string $lastActivity Last activity timestamp
  * @property-read UserActions $actions Actions for write operations on this user
  */
-final class User extends DbItem
+class User extends DbItem
 {
     /**
      * Property getter (read-only access).
      *
      * @param string $name Property name
-     * @return bool|int|string|UserActions|null Property value or item actions
+     * @return mixed Property value or item actions
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
      * @throws HilosException Whatever the inherited getter raises
      */
-    public function __get(string $name): bool|int|string|UserActions|null
+    public function __get(string $name): mixed
     {
         return match ($name) {
             ObjectUser::id => $this->_object->id,

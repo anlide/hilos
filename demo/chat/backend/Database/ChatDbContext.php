@@ -23,7 +23,6 @@ use Demo\Chat\Database\Object\Collection\EventUserRegistrations as ObjectEventUs
 use Demo\Chat\Database\Object\Collection\EventUserRenames as ObjectEventUserRenames;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPieces;
-use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Database\View\Collection\EventAttachments;
 use Demo\Chat\Database\View\Collection\EventMessages;
@@ -32,6 +31,7 @@ use Demo\Chat\Database\View\Collection\EventUserRenames;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\Users;
+use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
@@ -54,7 +54,6 @@ use Hilos\Database\Object\Objects;
  */
 final class ChatDbContext extends HilosDbContext
 {
-    public const string users = 'users';
     public const string events = 'events';
     public const string eventMessages = 'eventMessages';
     public const string eventUserRegistrations = 'eventUserRegistrations';
@@ -63,7 +62,6 @@ final class ChatDbContext extends HilosDbContext
     public const string bots = 'bots';
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
 
-    public const string user = 'user';
     public const string event = 'event';
     public const string eventMessage = 'eventMessage';
     public const string eventUserRegistration = 'eventUserRegistration';
@@ -84,7 +82,6 @@ final class ChatDbContext extends HilosDbContext
     {
         parent::configure();
 
-        $this->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
         $this->_objectCollections[self::eventMessages] = ObjectEventMessages::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::eventUserRegistrations] = ObjectEventUserRegistrations::initDB(Objects::LAZY_STRATEGY_KEY);
@@ -93,7 +90,6 @@ final class ChatDbContext extends HilosDbContext
         $this->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_NONE);
         $this->_objectCollections[self::moderatorPromptPieces] = ObjectModeratorPromptPieces::initDB(Objects::LAZY_STRATEGY_NONE);
 
-        $this->setRepresent(self::users, Users::class, UsersActions::class, UserActions::class);
         $this->setRepresent(self::events, Events::class, EventsActions::class);
         $this->setRepresent(self::eventMessages, EventMessages::class, EventMessagesActions::class);
         $this->setRepresent(self::eventUserRegistrations, EventUserRegistrations::class, EventUserRegistrationsActions::class);
@@ -106,6 +102,19 @@ final class ChatDbContext extends HilosDbContext
             ModeratorPromptPiecesActions::class,
             ModeratorPromptPieceActions::class,
         );
+    }
+
+    /**
+     * Chat's person chain keeps merged_into until the framework merge table takes it over (HIL-1199).
+     *
+     * @return array<string, FrameworkExtension> Framework keys served by project subclasses
+     */
+    protected function frameworkExtensions(): array
+    {
+        return [
+            ...parent::frameworkExtensions(),
+            self::users => new FrameworkExtension(Users::class, UsersActions::class, UserActions::class),
+        ];
     }
 
     /**

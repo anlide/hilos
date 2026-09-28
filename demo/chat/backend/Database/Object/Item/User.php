@@ -1,65 +1,37 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Object\Item\User as FrameworkUser;
 
 /**
  * User - Object wrapper for user entity.
  *
- * Auto-generated from Entity: Demo\Chat\Database\Entity\Item\User
- *
  * Business logic layer with change tracking.
  *
- * @extends Object_<EntityUser>
- *
- * @property-read ?int $id
- * @property string $name
- * @property bool $admin
- * @property bool $block
  * @property ?int $mergedInto
- * @property ?string $lastActivity
  */
-final class User extends Object_
+final class User extends FrameworkUser
 {
     public const string ENTITY_CLASS = EntityUser::class;
 
-    public const string id = 'id';
-    public const string name = 'name';
-    public const string admin = 'admin';
-    public const string block = 'block';
     public const string mergedInto = 'mergedInto';
-    public const string lastActivity = 'lastActivity';
-
-    /**
-     * Returns the database collection key for this object type.
-     *
-     * @return string Collection key (ChatDbContext::users)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return ChatDbContext::users;
-    }
 
     /**
      * Returns the value of a user object property by name.
      *
-     * @param string $property Property name (id, name, admin, block, mergedInto, lastActivity)
+     * @param string $property Property name (mergedInto or a framework field)
      * @return mixed Property value or parent method result
      * @throws DatabaseException If entity access fails
      */
     public function __get(string $property): mixed
     {
         return match ($property) {
-            self::id => $this->entity->id,
-            self::name => $this->entity->name,
-            self::admin => $this->entity->admin,
-            self::block => $this->entity->block,
             self::mergedInto => $this->entity->merged_into,
-            self::lastActivity => $this->entity->last_activity,
             default => parent::__get($property),
         };
     }
@@ -74,11 +46,7 @@ final class User extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::name => $this->entity->name = (string)$value,
-            self::admin => $this->entity->admin = (bool)$value,
-            self::block => $this->entity->block = (bool)$value,
             self::mergedInto => $this->entity->merged_into = $value === null ? null : (int)$value,
-            self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
         };
     }
@@ -91,12 +59,8 @@ final class User extends Object_
     public function toArray(): array
     {
         return [
-            self::id => $this->entity->id,
-            self::name => $this->entity->name,
-            self::admin => $this->entity->admin,
-            self::block => $this->entity->block,
+            ...parent::toArray(),
             self::mergedInto => $this->entity->merged_into,
-            self::lastActivity => $this->entity->last_activity,
         ];
     }
 }

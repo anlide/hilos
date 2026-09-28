@@ -37,6 +37,7 @@ use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFacto
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
+use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
@@ -56,6 +57,7 @@ use Hilos\Database\Actions\Collection\SecondFactorTrustsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
+use Hilos\Database\Actions\Collection\UsersActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
 use Hilos\Database\Actions\Item\DataExportActions;
@@ -68,6 +70,7 @@ use Hilos\Database\Actions\Item\SecondFactorBackupCodeActions;
 use Hilos\Database\Actions\Item\SecondFactorResetActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
+use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
 
 /**
@@ -89,6 +92,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionRegistrationReservations $registrationReservations
  * @property-read DbCollectionPasskeyCredentials $passkeyCredentials
  * @property-read DbCollectionSessions $sessions
+ * @property-read DbCollectionUsers $users
  * @property-read DbCollectionNotifications $notifications
  * @property-read DbCollectionNotificationDeliveries $notificationDeliveries
  * @property-read DbCollectionNotificationPreferences $notificationPreferences
@@ -122,6 +126,8 @@ abstract class HilosDbContext extends DbContext
     public const string passkeyCredential = 'passkeyCredential';
     public const string sessions = 'sessions';
     public const string session = 'session';
+    public const string users = 'users';
+    public const string user = 'user';
     public const string notifications = 'notifications';
     public const string notification = 'notification';
     public const string notificationDeliveries = 'notificationDeliveries';
@@ -188,7 +194,7 @@ abstract class HilosDbContext extends DbContext
      * passkey credentials, sessions, notifications, notification deliveries,
      * notification preferences, push subscriptions, the verifier circle, auth blocks,
      * OAuth providers, the five tables of the second factor, operation confirmations, account
-     * deletion requests, legal acceptances, and the files registry).
+     * deletion requests, legal acceptances, the files registry, and people).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
      * notification deliveries, notification preferences, push subscriptions and auth
@@ -222,6 +228,9 @@ abstract class HilosDbContext extends DbContext
      * The files registry (HIL-336) loads by row id and by the files library's bounded batch of
      * unbound rows, never as a full set, so it stays inert for projects that do not activate the
      * hilos_file table. Its image copies load by original file and stay inert without their table too (HIL-141).
+     *
+     * People load by key when a session, page or library asks for a person. A question about
+     * everyone uses DbCollectionUsers::listAll(); mounting users stays inert where nobody signs in.
      *
      * A project's own chain over a framework table is mounted here too, under the framework's
      * key: the declarations of {@see self::frameworkExtensions()} are read once, and each key is
@@ -383,6 +392,13 @@ abstract class HilosDbContext extends DbContext
             DbCollectionFileVariants::class,
             FileVariantsActions::class,
             FileVariantActions::class,
+        );
+        $this->mountFramework(
+            self::users,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionUsers::class,
+            UsersActions::class,
+            UserActions::class,
         );
 
         $unknown = array_keys(array_diff_key($this->declaredExtensions, $this->frameworkChains));

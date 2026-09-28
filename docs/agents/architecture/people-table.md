@@ -17,14 +17,14 @@ Written Ahead Of Its Code*).
 ## Core Rule
 
 The person is the framework's table `hilos_user`, with the columns `id`, `name`,
-`admin`, `block`, `last_activity` (not in the code yet — HIL-1192). Its Entity
-declares `Entity::SET_STANDALONE` with `_setRoot = true` — a person belongs to
+`admin`, `block`, `last_activity`. Its Entity declares `Entity::SET_STANDALONE` with `_setRoot = true` — a person belongs to
 nobody's set and is the root other tables hang their sets on — and the verdict
-`FAKE_NAME` on `name`. The collection key `users` is mounted by `HilosDbContext`
-(not in the code yet — HIL-1192). A project carries the migration stub
+`FAKE_NAME` on `name`. The collection key `users` is mounted by
+`HilosDbContext`. A project carries the migration stub
 `create_hilos_user.sql` among its own migrations, like every framework table.
-The three demos, each of which carries a copy of a `user` table of its own today,
-move onto it (not in the code yet — HIL-1192).
+The three demos migrate their former `user` tables to this shape. The shared
+columns and indexes match the stub: `name` is `VARCHAR(255)`, while the code
+keeps the rename limit at 64 characters.
 
 The owner's frame (2026-09-24, the HIL-1111 interview), in the owner's words
 rendered in English: *it has to be framework-level, and a project inherits it
@@ -42,8 +42,7 @@ mounting it under the framework's `users` key
 additions, not a copy of the table under a project name.
 
 The first live example is the chat demo: its subclass keeps `merged_into` on the
-person (not in the code yet — HIL-1192) until the merge tombstone table takes the
-fact over (HIL-1199).
+person until the merge tombstone table takes the fact over (HIL-1199).
 
 ## Who Owns The Row
 

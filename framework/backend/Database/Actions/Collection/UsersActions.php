@@ -2,15 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Demo\Tasks\Database\Actions\Collection;
+namespace Hilos\Database\Actions\Collection;
 
-use Demo\Tasks\Database\Object\Collection\Users as ObjectUsers;
-use Demo\Tasks\Database\Object\Item\User as ObjectUser;
-use Demo\Tasks\Database\View\Collection\Users as DbCollectionUsers;
-use Demo\Tasks\Database\View\Item\User;
+use Hilos\Database\Object\Collection\Users as ObjectUsers;
+use Hilos\Database\View\Collection\Users as DbCollectionUsers;
+use Hilos\Database\View\Item\User;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
-use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -22,7 +20,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property-read DbCollectionUsers $collection
  * @property-read ObjectUsers $objectCollection
  */
-final class UsersActions extends DbActions
+class UsersActions extends DbActions
 {
     /**
      * The numeric tail a generated display name ends in - four digits, so the users list
@@ -39,13 +37,7 @@ final class UsersActions extends DbActions
     /**
      * Registers a fresh user that is already an administrator.
      *
-     * The only way to a `user` row in this demo since HIL-610: a row here means an
-     * account, and a visitor is not one. The flag is set by the mint rather than by a
-     * grant behind it, because the admin pages open on a row that says admin, and on a
-     * fresh installation no row does - the id to grant is exactly what nobody can look
-     * up yet. The name is generated because the users list shows one.
-     *
-     * The caller binds the session to what this returns; nothing here identifies the row.
+     * The caller binds a session to the new account; its display name is generated.
      *
      * @return User Registered administrator
      * @throws HilosException On database error
@@ -55,7 +47,8 @@ final class UsersActions extends DbActions
     {
         $this->ensureCanCreate();
 
-        $user = ObjectUser::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $user = $objectClass::create();
         $user->name = 'Admin' . RandomHelper::integer(self::NAME_SUFFIX_MIN, self::NAME_SUFFIX_MAX);
         $user->admin = true;
         $user->lastActivity = TimeHelper::getSqlDateTime();
@@ -75,11 +68,7 @@ final class UsersActions extends DbActions
     /**
      * Creates an account carrying a display name.
      *
-     * The second mint this demo has, and the one every sign-in road ends at: HIL-610
-     * left `registerAdmin()` alone here because a visitor stopped being a user, and a
-     * visitor who signs in needs a row that is neither an administrator nor a guest.
-     * The name comes from the ceremony that created the account - typed at
-     * registration, or read off the OAuth provider - and stays editable afterwards.
+     * The name comes from registration or an OAuth provider and remains editable.
      *
      * The name is trimmed here and an empty one is refused: a nameless account is a
      * defect wherever it comes from, and this is the one door every road passes
@@ -103,7 +92,8 @@ final class UsersActions extends DbActions
             throw new EmptyValueException('User name cannot be empty');
         }
 
-        $user = ObjectUser::create();
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $user = $objectClass::create();
         $user->name = $displayName;
         $user->lastActivity = TimeHelper::getSqlDateTime();
         $user->sync();

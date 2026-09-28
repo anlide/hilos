@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Tasks\Agents;
 
 use Demo\Tasks\Auth\TasksOAuthConfig;
-use Demo\Tasks\Database\Actions\Item\UserActions;
+use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\HilosException;

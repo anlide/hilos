@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper over one cluster node as this node's master observed it (HIL-337).
@@ -42,6 +43,7 @@ final class HilosClusterNode extends RtItem
      * @return string|array<int, string>|bool|float|null Property value
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|array|bool|float|null
     {

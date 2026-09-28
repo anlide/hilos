@@ -9,6 +9,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper over one stored-backup index row.
@@ -60,6 +61,7 @@ final class BackupHistory extends RtItem
      * @return string|int|bool|array<int, BackupConnectionMeta>|BackupHistoryActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|int|bool|array|BackupHistoryActions|null
     {

@@ -47,7 +47,7 @@ for a project to clone. Two contract shapes recur:
   means no engine code, not zero project files.
 - **Framework data with a project-bound presence source (bound).** The framework
   owns the merge engine, the row contract, and the data — the people table
-  `hilos_user` (not in the code yet — HIL-1192); the project binds only its
+  `hilos_user`; the project binds only its
   presence. Hilos-users is this shape: `Hilos\Tables\Users\AbstractHilosUsersTable`
   is abstract with five hooks, of which the two over the users source become
   the framework's (not in the code yet — HIL-1201); `AbstractHilosUserTableRow`
@@ -122,19 +122,17 @@ requires, in dependency order (the table merges sources that must exist first):
    drops (not in the code yet — HIL-1198).
 2. **The people table.** Copy the framework's migration stub
    `create_hilos_user.sql` among the project's migrations, like every framework
-   table's; no entity is generated — the person is the framework's `hilos_user`
-   (not in the code yet — HIL-1192). A project that needs columns of its own
-   adds them by subclassing the whole ORM chain and mounting it under the
+   table's; no entity is generated — the person is the framework's `hilos_user`.
+   A project that needs columns of its own adds them by subclassing the whole
+   ORM chain and mounting it under the
    framework's `users` key ([../orm/inheritance.md](../orm/inheritance.md));
    *(Contract Gate: the subclass's columns.)* No block source and no line in
    `processWideReadCollections()` is needed from the project: `block` is a
    framework column and the framework reads it (not in the code yet —
-   HIL-1198). Until those leaves land, the recipe is today's: the project's
-   entity triad and migration with `id`/`admin`/`block` as the framework-fixed
-   fields, its users view collection implementing
-   `Hilos\Database\View\Collection\HilosUserBlockSource` — `blockedAmong(list<int>):
-   array<int, bool>` read row by key, a missing row answering `false` — and the
-   collection key named in `DbContext::processWideReadCollections()`, because
+   HIL-1198). Until that leaf lands, the framework's `users` collection already
+   supplies `Hilos\Database\View\Collection\HilosUserBlockSource`; the project
+   generates neither a person entity nor a block source. It still names `users`
+   in `DbContext::processWideReadCollections()`, because
    `Hilos\Users\AccountBlockReader` asks in whatever process runs the guard.
 3. **RT presence source.** Generate an RT connections collection that
    `implements Hilos\Runtime\View\Collection\HilosPresenceSource`, returning a
@@ -594,7 +592,7 @@ ask for explicit confirmation, per the root `AGENTS.md` gate, before generating:
 
 - the DB entity fields or migration shape — for hilos-users, the columns a
   project's subclass of `hilos_user` adds; the base fields are the framework's
-  and not the project's to change (not in the code yet — HIL-1192);
+  and not the project's to change;
 - the RT connection/presence item shape consumed by the merge.
 
 Signals, action DTOs, and routing for a framework feature ship with the framework
@@ -604,7 +602,6 @@ base, not per project — they are not generated here.
 
 Use `$hilos-testing-cli` to choose composer scripts. After generating, keep the
 target project's admin e2e green and add coverage for the presence source of a
-bound feature and for the project's subclass of `hilos_user`, where it has one
-(not in the code yet — HIL-1192). The framework base classes named above
-are the contract the generated code binds to; do not modify them to make
-activation fit.
+bound feature and for the project's subclass of `hilos_user`, where it has one.
+The framework base classes named above are the contract the generated code
+binds to; do not modify them to make activation fit.

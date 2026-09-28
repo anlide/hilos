@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\HilosUser;
 
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
@@ -156,6 +158,8 @@ final class HilosUsersTable extends AbstractHilosUsersTable
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

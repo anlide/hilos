@@ -130,6 +130,9 @@ final class ChatBrowserContext extends BrowserContext
      *
      * @param int $userId Authenticated durable user id
      * @return bool Whether this user may access ADMIN-level pages and actions
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     public function isAdmin(int $userId): bool
     {

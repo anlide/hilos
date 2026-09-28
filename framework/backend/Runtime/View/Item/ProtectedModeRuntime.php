@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
+use Hilos\HilosException;
 
 /**
  * Read-only view of the protected-mode runtime singleton.
@@ -52,6 +53,7 @@ final class ProtectedModeRuntime extends RtItem
      * @return string|int|array<int, string>|ProtectedModeRuntimeActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|int|array|ProtectedModeRuntimeActions|null
     {

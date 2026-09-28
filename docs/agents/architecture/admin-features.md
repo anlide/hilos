@@ -45,7 +45,7 @@ The project:
   [app-topology.md](../app-topology.md#feature-declaration);
 - declares the content — a catalog (settings), or, for hilos-users, a subclass
   chain of the people table `hilos_user` when the project needs columns of its
-  own (not in the code yet — HIL-1192; see [people-table.md](people-table.md)),
+  own (see [people-table.md](people-table.md)),
   or the collection it binds;
 - sets one `SUBSCRIPTION_AGENT_TYPE`;
 - ships a `BrowserContext` so the table's snapshot reaches the browser — an empty
@@ -145,7 +145,7 @@ than needing its own.
 | Browser table | the merge/query/mutation engine + base row contract | the row's extra fields, the declared sources, the field map |
 | Page | subscribe + the action lifecycle (ack/error) | `SUBSCRIPTION_AGENT_TYPE`, registration |
 | Actions | the add/update/delete dispatch over `Hilos::$table` | nothing for a framework feature; the entity's actions for a Mode-2 one |
-| Data | settings collection (`HilosDbContext`); the people table `hilos_user` (not in the code yet — HIL-1192) | a project entity (Mode 2), a subclass chain of `hilos_user` when the project adds columns, the settings catalog |
+| Data | settings collection (`HilosDbContext`); the people table `hilos_user` | a project entity (Mode 2), a subclass chain of `hilos_user` when the project adds columns, the settings catalog |
 | Browser delivery | snapshot + reactive push, incl. the self-snapshot path for catalog tables | a `BrowserContext` (an empty subclass suffices for a framework feature) |
 | Frontend | the view + the headless controller (`@hilos/core/admin/*`) | a thin typed context + a wrapper |
 
@@ -196,8 +196,8 @@ Follow the framework extension contract in
 - The account `block` column and its reading are the framework's: `block` is a
   column of the people table `hilos_user`, and the framework reads it itself
   wherever a guard runs, so the project implements no block source
-  (not in the code yet — HIL-1198). Today the project's DB users collection
-  implements `HilosUserBlockSource` and framework code asks through
+  (not in the code yet — HIL-1198). Today the framework's people collection
+  (`users`) implements `HilosUserBlockSource` and framework code asks through
   `AccountBlockReader`, as a process-wide read; what becomes of those two seams
   is that leaf's question, not this page's. Whoever writes `block` sends the
   sessions library `hilos_account_block_changed` {userId}; the library reads the
@@ -209,7 +209,7 @@ Follow the framework extension contract in
 ## hilos-users base
 
 The framework owns the people table `hilos_user` whole — `id`, `name`, `admin`,
-`block`, `last_activity` (not in the code yet — HIL-1192) — plus the computed
+`block`, `last_activity` — plus the computed
 presence/online summary. A project that needs more extends it by subclassing the
 whole ORM chain and mounting it under the framework key; the rules of the table
 are in [people-table.md](people-table.md). The frontend `User` type carries the

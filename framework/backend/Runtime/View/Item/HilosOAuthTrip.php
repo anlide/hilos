@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\View\Actions\Item\HilosOAuthTripActions;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper over one provider sign-in a tab is waiting on (HIL-1044).
@@ -45,6 +46,7 @@ final class HilosOAuthTrip extends RtItem
      * @return string|int|HilosOAuthTripActions|null Property value
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|int|HilosOAuthTripActions|null
     {

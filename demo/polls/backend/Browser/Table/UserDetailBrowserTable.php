@@ -7,7 +7,7 @@ namespace Demo\Polls\Browser\Table;
 use Demo\Polls\Browser\PollsBrowserRef;
 use Demo\Polls\Browser\PollsBrowserSource;
 use Demo\Polls\Browser\PollsBrowserTable;
-use Demo\Polls\Database\Object\Item\User;
+use Hilos\Database\Object\Item\User;
 use Demo\Polls\Runtime\State\Item\Connection;
 use Demo\Polls\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Constants\HilosPageRouteParams;

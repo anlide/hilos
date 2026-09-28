@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionToastStacksActions;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper over one session's toast stack (HIL-768).
@@ -39,6 +40,7 @@ final class HilosSessionToastStack extends RtItem
      * @return string|array<int, mixed> Property value
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
+     * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
     public function __get(string $name): string|array
     {

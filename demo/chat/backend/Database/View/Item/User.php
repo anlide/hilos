@@ -12,7 +12,8 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\ChatUserState as RuntimeChatUserState;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
-use Hilos\Database\View\Item\DbItem;
+use Hilos\Database\View\Item\User as FrameworkUser;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
@@ -21,21 +22,15 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
  * Stores reference to ObjectUser instance.
  * Object instances are stored in ObjectCollection in Hilos.
  *
- * @extends DbItem<ObjectUser>
  * @method __construct(ObjectUser $objectUser)
  *
- * @property-read ?int $id User ID (primary key)
- * @property-read string $name User name
- * @property-read bool $admin Whether the user is a panel admin operator
- * @property-read bool $block Whether the user is blocked from acting
  * @property-read ?int $mergedInto Survivor user id this account was merged into, or null when standalone
- * @property-read ?string $lastActivity Last activity timestamp
  * @property-read Connections $connections Connections for this user (online check)
  * @property-read int $onlineSessionCount Number of active online sessions for this user
  * @property-read ?RuntimeChatUserState $chatUserState Per-user chat runtime state
  * @property-read UserActions $actions Actions for write operations on this user
  */
-final class User extends DbItem
+final class User extends FrameworkUser
 {
     public const string onlineSessionCount = 'onlineSessionCount';
 
@@ -43,25 +38,20 @@ final class User extends DbItem
      * Property getter (read-only access). Supports lazy loading of related collections.
      *
      * @param string $name Property name
-     * @return bool|int|string|Connections|RuntimeChatUserState|UserActions|null Property value, actions, or linked runtime items
+     * @return mixed Property value, actions, or linked runtime items
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
      * @throws RtActionsStateCollectionNullException If runtime connection state collection is not initialized
+     * @throws HilosException Whatever the inherited getter or runtime bridges raise
      */
-    public function __get(string $name): bool|int|string|Connections|RuntimeChatUserState|UserActions|null
+    public function __get(string $name): mixed
     {
         return match ($name) {
-            ObjectUser::id => $this->_object->id,
-            ObjectUser::name => $this->_object->name,
-            ObjectUser::admin => $this->_object->admin,
-            ObjectUser::block => $this->_object->block,
             ObjectUser::mergedInto => $this->_object->mergedInto,
-            ObjectUser::lastActivity => $this->_object->lastActivity,
             ChatRtContext::connections => Hilos::$rt->connections->forUser($this->id),
             self::onlineSessionCount => count($this->connections),
-            ChatRtContext::chatUserState => Hilos::$rt->userStates[$this->_object->id] ?? null,
+            ChatRtContext::chatUserState => Hilos::$rt->userStates[$this->_object->id],
             default => parent::__get($name),
         };
     }
-
 }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Browser;
 
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Database\DatabaseException;
 use Demo\Tasks\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
@@ -35,6 +38,9 @@ final class TasksBrowserContext extends BrowserContext
      *
      * @param int $userId Authenticated durable user id
      * @return bool Whether this user may access ADMIN-level pages and actions
+     * @throws DatabaseException When reading the user collection fails
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured
      */
     public function isAdmin(int $userId): bool
     {

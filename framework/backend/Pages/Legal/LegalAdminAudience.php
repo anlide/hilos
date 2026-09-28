@@ -25,6 +25,7 @@ use Hilos\Legal\LegalTally;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
+use Hilos\HilosException;
 
 /** Process-local histograms shared by the legal agent's pages and their table windows. */
 final class LegalAdminAudience
@@ -153,6 +154,7 @@ final class LegalAdminAudience
      * @param PageAgentInterface $agent Agent serving the section; windows use the browser router
      * @throws DatabaseException When acceptance histograms cannot be read
      * @throws InvalidArgumentException When a table-window signal cannot be named
+     * @throws HilosException When the administrator access lookup fails
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
