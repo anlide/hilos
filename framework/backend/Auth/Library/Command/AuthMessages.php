@@ -92,6 +92,11 @@ final class AuthMessages
      */
     public const string RESERVATION_EXPIRED = 'That registration expired, please start again';
 
+    public const string CONSENT_REVISED =
+        'The terms were updated while you were reading. Review the differences and accept again.';
+    public const string TERMS_UNPUBLISHED =
+        'This project has not published its terms yet, so an account cannot be created here.';
+
     /**
      * Message for a sign-in link that no longer opens anything - expired, already
      * clicked, or mangled in the mail client. Distinct from

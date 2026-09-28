@@ -128,6 +128,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string expiresAt = 'expiresAt';
     public const string code = 'code';
     public const string secondFactor = 'secondFactor';
+    public const string acceptedRevisions = 'acceptedRevisions';
     public const string trustDeviceDays = 'trustDeviceDays';
     public const string resetEffectiveAt = 'resetEffectiveAt';
     public const string accountBlocked = 'accountBlocked';
@@ -154,7 +155,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?string $pendingAck Ack the receiving connection still owes (a {@see SessionAck} value), or null
      * @param ?int $serverTimeMs Server "now" in epoch milliseconds, or null before the session context is stamped
      * @param ?array{identifier: ?string, kind: ?string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     channel: ?string, expiresAt: ?int, code: ?string, acceptedRevisions?: array<string, string>,
      *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
      * @param ?array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time
@@ -252,7 +253,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *
      * @param int $serverTimeMs Server "now" in epoch milliseconds
      * @param ?array{identifier: ?string, kind: ?string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     channel: ?string, expiresAt: ?int, code: ?string, acceptedRevisions?: array<string, string>,
      *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
      * @param array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time code to
@@ -425,7 +426,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * member is read only where it came.
      *
      * @return ?array{identifier: ?string, kind: ?string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     channel: ?string, expiresAt: ?int, code: ?string, acceptedRevisions?: array<string, string>,
      *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} Node, or null when absent
      * @throws InvalidFormatException When a present node lacks a required member
      */
@@ -445,6 +446,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             self::expiresAt => self::optionalInt($node, self::expiresAt),
             self::code => self::optionalString($node, self::code),
         ];
+        $acceptedRevisions = self::optionalArray($node, self::acceptedRevisions);
+        if ($acceptedRevisions !== null) {
+            $step[self::acceptedRevisions] = $acceptedRevisions;
+        }
         $secondFactor = self::optionalArray($node, self::secondFactor);
         if ($secondFactor !== null) {
             $step[self::secondFactor] = [

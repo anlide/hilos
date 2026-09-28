@@ -44,6 +44,9 @@ use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Auth\Verification\VerificationService;
+use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Legal\LegalConsentProjector;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -98,6 +101,49 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     private const string EMAIL_ADD_CODE = '424242';
     private const int TTL_SECONDS = 900;
 
+    /** A missing or stale consent map must be refused before a hold or letter exists. */
+    public function testAnUnknownAddressNeedsConsentBeforeRequestingALink(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'unaccepted-link');
+        try {
+            foreach ([null, ['terms' => 'outdated']] as $accepted) {
+                ExecutionContext::setCurrentAcceptKey('unaccepted-link');
+                $reply = $this->usersLibrary()->onAgentAction(
+                    'unaccepted-link', HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
+                    new RequestMagicLinkActionDTO($email, $accepted),
+                );
+                self::assertInstanceOf(AuthFlowOutcome::class, $reply);
+                self::assertFalse($reply->ok);
+                self::assertSame(AuthFlowStep::CONSENT, $reply->step);
+                self::assertSame($accepted === null ? 'consent_required' : 'consent_revised', $reply->code);
+                self::assertNull(new RegistrationReservationService()->findActiveForSession(
+                    Hilos::$rt->connections['unaccepted-link']->sessionToken,
+                ));
+                self::assertNull(new VerificationService()->activeExpiresAt(VerificationType::MAGIC_LINK, $email));
+            }
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /** A repeated link uses the same browser's accepted revisions before replacing its hold. */
+    public function testRepeatingALinkCanOmitTheAcceptedMap(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'repeat-accepted-link');
+        try {
+            $this->requestLink($agent, 'repeat-accepted-link', $email);
+            $reply = $this->requestLink($agent, 'repeat-accepted-link', $email, includeConsent: false);
+            self::assertTrue($reply->ok);
+            self::assertSame(LegalConsentProjector::acceptance(), $this->holdOf('repeat-accepted-link')?->acceptedRevisions());
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
     /**
      * A link asked for a free address holds it, and mails no registration code.
      *
@@ -144,7 +190,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $this->openSession($agent, 'taken-send-ak');
 
         try {
-            $outcome = $this->requestLink($agent, 'taken-send-ak', $email);
+            $outcome = $this->requestLink($agent, 'taken-send-ak', $email, includeConsent: false);
 
             $this->assertTrue($outcome->ok);
             $this->assertSame(0, $this->reservationRowCount($email));
@@ -312,6 +358,10 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $this->requestLink($agent, 'expired-ak', $email);
         $this->seedKnownToken($email);
         $this->ageReservationOut($email);
+        // The proof may land without its own live hold; another live browser supplies its recorded consent.
+        new RegistrationReservationService()->hold(
+            IdentityType::MAGIC_LINK, 'consenting-other-browser', $email, LegalConsentProjector::acceptance(),
+        );
 
         try {
             $outcome = $this->clickLink($agent, 'expired-ak', $email, self::TOKEN);
@@ -896,6 +946,10 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $this->requestLink($agent, 'code-expired-ak', $email);
         $this->seedKnownCode($email);
         $this->ageReservationOut($email);
+        // The proof may land without its own live hold; another live browser supplies its recorded consent.
+        new RegistrationReservationService()->hold(
+            IdentityType::MAGIC_LINK, 'consenting-other-browser', $email, LegalConsentProjector::acceptance(),
+        );
 
         try {
             $outcome = $this->submitCode($agent, 'code-expired-ak', $email, self::CODE);
@@ -974,16 +1028,17 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
      * @param ChatAgent $agent Agent owning the page
      * @param string $acceptKey Acting connection accept key
      * @param string $email Address the link is asked for
+     * @param bool $includeConsent Whether this is the first registration send
      * @return AuthFlowOutcome The outcome the surface is answered with
      * @throws HilosException When the request handler rejects the action
      */
-    private function requestLink(ChatAgent $agent, string $acceptKey, string $email): AuthFlowOutcome
+    private function requestLink(ChatAgent $agent, string $acceptKey, string $email, bool $includeConsent = true): AuthFlowOutcome
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
-            new RequestMagicLinkActionDTO($email),
+            new RequestMagicLinkActionDTO($email, $includeConsent ? LegalConsentProjector::acceptance() : null),
         );
         $handedOver = $this->deliverLibraryFrames($agent);
         $outcome = $reply ?? $handedOver;
@@ -1035,7 +1090,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email),
+            new RegisterActionDTO($email, LegalConsentProjector::acceptance()),
         );
         $this->deliverLibraryFrames($agent);
     }

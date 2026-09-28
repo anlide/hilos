@@ -18,9 +18,12 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
+use Hilos\Legal\LegalCatalogStub;
+use Hilos\Legal\LegalConsentProjector;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Random\RandomException;
@@ -78,6 +81,8 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         'HILOS_VERIFICATION_SEND_CAP_SMS',
     ];
 
+    private string $previousAppClass;
+
     private ?DbContext $previousDb = null;
 
     private ?SignalRouter $previousSignalRouter = null;
@@ -91,6 +96,8 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousAppClass = Hilos::appClass();
+        CodeChannelConsentHilos::initBrowser();
 
         self::runStubs(down: true);
         self::runStubs(down: false);
@@ -116,6 +123,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
      */
     protected function tearDown(): void
     {
+        $this->previousAppClass::initBrowser();
         foreach (self::VERIFICATION_KNOBS as $knob) {
             putenv($knob);
         }
@@ -303,6 +311,94 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
+     * Consent refusals must leave neither a reservation nor a delivered code.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testUnacceptedAndRevisedPhoneRequestsNeitherReserveNorSend(): void
+    {
+        foreach ([null, ['terms' => 'outdated']] as $accepted) {
+            $phone = $this->uniquePhone();
+            $channel = new CodeChannelTestChannel('consent-refusal', reachable: true);
+            $this->request(new CodeChannelTestAgent($channel), $phone, 'consent-refusal', acceptedRevisions: $accepted);
+            self::assertSame(
+                $accepted === null ? HilosCodeSendAttempt::REASON_CONSENT_REQUIRED : HilosCodeSendAttempt::REASON_CONSENT_REVISED,
+                $this->takeResultReason(),
+            );
+            self::assertSame([], $channel->handedOff);
+            self::assertNull(new RegistrationReservationService()->findActiveForSession(self::SESSION_TOKEN));
+            self::assertNull(new VerificationService()->activeChannel(VerificationType::SMS_LOGIN, $phone));
+        }
+    }
+
+    /**
+     * An installation without documents cannot open registration through a phone.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testAnUnpublishedProjectDoesNotSendARegistrationCode(): void
+    {
+        Hilos::initBrowser();
+        $channel = new CodeChannelTestChannel('unpublished', reachable: true);
+        $this->request(new CodeChannelTestAgent($channel), $this->uniquePhone(), 'unpublished');
+        self::assertSame(HilosCodeSendAttempt::REASON_TERMS_UNPUBLISHED, $this->takeResultReason());
+        self::assertSame([], $channel->handedOff);
+        self::assertNull(new RegistrationReservationService()->findActiveForSession(self::SESSION_TOKEN));
+    }
+
+    /**
+     * The phone handoff persists consent and a repeat can omit its map.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testThePhoneAgentPersistsConsentAndRetainsItOnARepeat(): void
+    {
+        $phone = $this->uniquePhone();
+        $accepted = LegalConsentProjector::acceptance();
+        $agent = new CodeChannelTestAgent(new CodeChannelTestChannel('consent', reachable: true));
+        $this->request($agent, $phone, 'consent', acceptedRevisions: $accepted);
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame($accepted, new RegistrationReservationService()->ownAcceptance(self::SESSION_TOKEN, $phone));
+        $this->request($agent, $phone, 'consent', acceptedRevisions: null);
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame($accepted, new RegistrationReservationService()->ownAcceptance(self::SESSION_TOKEN, $phone));
+    }
+
+    /**
+     * A renewal after the hold died must carry the tab's map again.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testPhoneRenewalAfterExpiryRequiresAndPersistsTheTabsConsent(): void
+    {
+        $phone = $this->uniquePhone();
+        $accepted = LegalConsentProjector::acceptance();
+        $channel = new CodeChannelTestChannel('renew-consent', reachable: true);
+        $agent = new CodeChannelTestAgent($channel);
+        $this->request($agent, $phone, 'renew-consent', acceptedRevisions: $accepted);
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
+        Database::sqlRun(
+            'UPDATE `hilos_registration_reservation` SET `expires_at` = DATE_SUB(NOW(), INTERVAL 1 SECOND) '
+            . 'WHERE `session_token` = ?',
+            [self::SESSION_TOKEN],
+        );
+        /** @var ObjectRegistrationReservations $reservations */
+        $reservations = Hilos::$db->getObjectCollection(HilosDbContext::registrationReservations);
+        $reservations->clearInMemory();
+        $reservations->deleteExpired();
+
+        $this->request($agent, $phone, 'renew-consent', acceptedRevisions: null);
+        self::assertSame(HilosCodeSendAttempt::REASON_CONSENT_REQUIRED, $this->takeResultReason());
+        self::assertNull(new RegistrationReservationService()->findActiveForSession(self::SESSION_TOKEN));
+        self::assertCount(1, $channel->handedOff);
+
+        $this->request($agent, $phone, 'renew-consent', acceptedRevisions: $accepted);
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame($accepted, new RegistrationReservationService()->ownAcceptance(self::SESSION_TOKEN, $phone));
+        self::assertCount(2, $channel->handedOff);
+    }
+
+    /**
      * A number that already has an account is a sign-in: nothing is held, nothing is waited on.
      *
      * @throws HilosException When an identity, reservation or wait query fails
@@ -312,7 +408,9 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         $phone = $this->uniquePhone();
         Hilos::$db?->identities->createSmsIdentity(self::EXISTING_USER_ID, $phone);
 
-        $this->request(new CodeChannelTestAgent(new CodeChannelTestChannel('known', reachable: true)), $phone, 'known');
+        $this->request(
+            new CodeChannelTestAgent(new CodeChannelTestChannel('known', reachable: true)), $phone, 'known', acceptedRevisions: null,
+        );
 
         self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
         self::assertNull(
@@ -372,6 +470,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
      * @param string $phone Number the code is asked for
      * @param string $channel Channel name the request names
      * @param string $sessionToken Session token the request speaks for
+     * @param ?array<string, string> $acceptedRevisions Accepted boundary map, omitted by repeat sends
      * @throws HilosException When the session seed, the agent's intake or its tick raises
      */
     private function request(
@@ -379,12 +478,13 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         string $phone,
         string $channel,
         string $sessionToken = self::SESSION_TOKEN,
+        ?array $acceptedRevisions = ['terms' => '2026-09-17'],
     ): void {
         // The wait is a column on the session row since HIL-612, so the browser this
         // request speaks for has to exist before the agent can remember anything about it -
         // exactly as it does in production, where a socket only ever arrives with a
         // session the master already resolved.
-        $this->deliver($agent, $phone, $channel, $sessionToken);
+        $this->deliver($agent, $phone, $channel, $sessionToken, $acceptedRevisions);
 
         // Every channel in this case answers reachability without the network, so a
         // single tick carries the operation through probe, mint, send and outcome.
@@ -398,6 +498,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
      * @param string $phone Number the code is asked for
      * @param string $channel Channel name the request names
      * @param string $sessionToken Session token the request speaks for
+     * @param ?array<string, string> $acceptedRevisions Accepted boundary map, omitted by repeat sends
      * @throws HilosException When the session seed or the agent's intake raises
      */
     private function deliver(
@@ -405,6 +506,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         string $phone,
         string $channel,
         string $sessionToken = self::SESSION_TOKEN,
+        ?array $acceptedRevisions = ['terms' => '2026-09-17'],
     ): void {
         if (Hilos::$db?->sessions->findByToken($sessionToken) === null) {
             Hilos::$db?->sessions->actions->createAnonymous($sessionToken);
@@ -418,6 +520,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
                 $channel,
                 VerificationType::SMS_LOGIN,
                 self::PROGRESS_TICKET,
+                $acceptedRevisions,
             )),
             '',
             HilosSignalConstants::HILOS_AUTH_CODE_SEND,
@@ -599,4 +702,10 @@ final class CodeChannelTestChannel extends CodeChannel
     {
         $this->handedOff[] = $identifier;
     }
+}
+
+/** Registration consent uses a declared document even when the transport is a test channel. */
+abstract class CodeChannelConsentHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = LegalCatalogStub::class;
 }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library\DTO;
 
 use Hilos\Auth\CodeChannel\CodeChannel;
+use Hilos\Auth\Registration\RegistrationConsent;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -29,10 +31,12 @@ final class RequestPhoneCodeActionDTO extends ActionPayloadDTO
      *
      * @param string $phone Submitted phone number (trimmed)
      * @param string $channel Code channel key the person chose (see CodeChannel::name())
+     * @param ?array<string, string> $acceptedRevisions Accepted document-to-revision boundary map, or null for a repeat
      */
     public function __construct(
         public readonly string $phone,
         public readonly string $channel,
+        public readonly ?array $acceptedRevisions = null,
     ) {
     }
 
@@ -52,25 +56,28 @@ final class RequestPhoneCodeActionDTO extends ActionPayloadDTO
      * @param array<string, mixed> $data Payload data
      * @return static Request DTO instance
      * @throws InvalidFormatException When a field the action needs is absent or not a string
+     * @throws ValidationException When the accepted revision map has an unknown document or invalid revision id
      */
     public static function fromArray(array $data): static
     {
         return new static(
             phone: trim(self::requireString($data, 'phone')),
             channel: trim(self::requireString($data, 'channel')),
+            acceptedRevisions: RegistrationConsent::readPayload(self::optionalArray($data, RegistrationConsent::PAYLOAD_KEY)),
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{phone: string, channel: string} Request payload
+     * @return array<string, mixed> Action payload including the optional accepted revisions
      */
     public function toArray(): array
     {
         return [
             'phone' => $this->phone,
             'channel' => $this->channel,
+            RegistrationConsent::PAYLOAD_KEY => $this->acceptedRevisions,
         ];
     }
 }

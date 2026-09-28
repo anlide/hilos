@@ -71,10 +71,6 @@ export interface HilosAuthContext {
   readonly actions: ActionLifecycle
   /** The project's ORDERED code delivery channels (HIL-492); may be empty. */
   readonly channels: readonly CodeChannelDescriptor[]
-  /** Where this deployment serves the terms the consent screen links to. */
-  readonly termsPath: string
-  /** Where this deployment serves the privacy policy the consent screen links to. */
-  readonly privacyPath: string
 }
 
 /**

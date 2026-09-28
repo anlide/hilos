@@ -53,8 +53,6 @@ function setup(opening: object = NO_STEP) {
     scopes: new ScopeManager(),
     actions: { dispatch },
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
     connection: {
       on: (_: string, listener: (signal: ProjectSignal) => void) => {
         listeners.add(listener)

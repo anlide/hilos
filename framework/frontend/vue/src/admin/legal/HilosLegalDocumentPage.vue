@@ -2,15 +2,22 @@
 import {
   computedSignal,
   createHilosLegalRevisionsTable,
+  createHilosLegalConsentPreview,
+  hilosLegalDocumentLabel,
+  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_DOCUMENT_SECTION,
   legalAdminDocumentSchema,
   resolveHilosPath,
   type HilosLegalContext,
+  type HilosLegalDocumentKey,
 } from '@hilos/core'
-import { computed, inject, onMounted, onUnmounted } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosModal from '../../HilosModal.vue'
+import HilosFormError from '../../HilosFormError.vue'
+import HilosLegalConsent from '../../legal/HilosLegalConsent.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -34,8 +41,23 @@ const details = computed(() => {
   return parsed.success ? parsed.data : null
 })
 const revisions = createHilosLegalRevisionsTable(props.context, documentKey)
+const preview = createHilosLegalConsentPreview(props.context)
+const previewOpen = useSignal(preview.opened)
+const previewTerms = useSignal(preview.terms)
+const previewLoading = useSignal(preview.loading)
+const previewError = useSignal(preview.error)
+const accepted = ref(false)
+const reading = ref<HilosLegalDocumentKey | null>(null)
+function openPreview(): void {
+  accepted.value = false
+  reading.value = null
+  void preview.open()
+}
 onMounted(() => revisions.start())
-onUnmounted(() => revisions.dispose())
+onUnmounted(() => {
+  revisions.dispose()
+  preview.close()
+})
 </script>
 
 <template>
@@ -125,6 +147,18 @@ onUnmounted(() => revisions.dispose())
           </p>
         </div>
       </section>
+      <section class="mb-4">
+        <h2 class="h5">How a person sees it</h2>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          data-id="legal-preview-consent"
+          @click="openPreview"
+        >
+          <i class="bi bi-eye me-1" aria-hidden="true" />Consent screen at
+          registration
+        </button>
+      </section>
       <HilosViewportTable :controller="revisions.controller">
         <template #cell-rowKey="{ row }">
           <div data-id="legal-revision-row" :data-revision="row.rowKey">
@@ -158,5 +192,87 @@ onUnmounted(() => revisions.dispose())
         >
       </HilosViewportTable>
     </template>
+    <HilosModal
+      :model-value="previewOpen"
+      title="Consent screen at registration"
+      initial-focus="dialog"
+      @update:model-value="
+        (value) => {
+          if (!value) preview.close()
+        }
+      "
+    >
+      <div data-id="legal-consent-preview">
+        <div class="visually-hidden" role="status" aria-live="polite">
+          {{ previewError ?? (previewLoading ? 'Loading terms…' : '') }}
+        </div>
+        <div
+          v-if="previewLoading"
+          class="placeholder-glow"
+          data-id="legal-consent-loading"
+          aria-busy="true"
+        >
+          <span class="placeholder col-12" aria-hidden="true" />
+          <span class="placeholder col-9" aria-hidden="true" />
+        </div>
+        <p
+          v-if="previewTerms?.documents.length === 0"
+          data-id="legal-consent-unpublished"
+        >
+          {{ LEGAL_TERMS_UNPUBLISHED_MESSAGE }}
+        </p>
+        <HilosLegalConsent
+          v-else-if="previewTerms"
+          v-model:accepted="accepted"
+          v-model:reading="reading"
+          :terms="previewTerms"
+        />
+        <p
+          v-if="previewTerms?.form === 'line' && previewTerms.documents.length"
+          class="small text-body-secondary mb-0"
+          data-id="auth-consent-line"
+        >
+          By creating an account you accept the
+          <template
+            v-for="(item, index) in previewTerms.documents"
+            :key="item.document"
+          >
+            <template v-if="index"> and the </template>
+            <button
+              type="button"
+              class="btn btn-link btn-sm p-0"
+              data-id="legal-consent-read"
+              :data-document="item.document"
+              @click="reading = item.document"
+            >
+              {{ hilosLegalDocumentLabel(item.document) }}
+            </button> </template
+          >.
+        </p>
+        <HilosFormError
+          :message="previewError"
+          data-id="legal-consent-preview-error"
+        />
+      </div>
+      <template #actions>
+        <button
+          v-if="previewError"
+          type="button"
+          class="btn btn-primary"
+          data-id="legal-consent-preview-retry"
+          @click="openPreview"
+        >
+          Try again
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-id="legal-consent-preview-close"
+          @click="preview.close"
+        >
+          Close
+        </button>
+      </template>
+    </HilosModal>
   </HilosAdminPage>
 </template>

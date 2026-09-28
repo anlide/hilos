@@ -10,6 +10,9 @@ import {
 import {
   computedSignal,
   createHilosLegalRevisionsTable,
+  createHilosLegalConsentPreview,
+  hilosLegalDocumentLabel,
+  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
@@ -19,9 +22,14 @@ import {
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalContext,
+  type HilosLegalConsentTerms,
+  type HilosLegalDocumentKey,
   type HilosLegalAdminDocument,
 } from '@hilos/core'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosModal } from '../../HilosModal.js'
+import { HilosFormError } from '../../HilosFormError.js'
+import { HilosLegalConsent } from '../../legal/HilosLegalConsent.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -31,7 +39,15 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
 @Component({
   selector: 'hilos-legal-document-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosLink, HilosTableCell, HilosViewportTable],
+  imports: [
+    HilosAdminPage,
+    HilosLink,
+    HilosTableCell,
+    HilosViewportTable,
+    HilosModal,
+    HilosFormError,
+    HilosLegalConsent,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       @if (refusal() !== null) {
@@ -112,6 +128,18 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
             </div>
           }
         </section>
+        <section class="mb-4">
+          <h2 class="h5">How a person sees it</h2>
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            data-id="legal-preview-consent"
+            (click)="openPreview()"
+          >
+            <i class="bi bi-eye me-1" aria-hidden="true"></i>Consent screen at
+            registration
+          </button>
+        </section>
         <hilos-viewport-table [controller]="revisions().controller">
           <ng-template [hilosTableCell]="keys.rowKey" let-row
             ><div
@@ -151,6 +179,94 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
           >
         </hilos-viewport-table>
       }
+      <hilos-modal
+        [open]="previewOpen()"
+        title="Consent screen at registration"
+        initialFocus="dialog"
+        (openChange)="$event ? undefined : preview().close()"
+      >
+        <div data-id="legal-consent-preview">
+          <div class="visually-hidden" role="status" aria-live="polite">
+            {{ previewError() ?? (previewLoading() ? 'Loading terms…' : '') }}
+          </div>
+          @if (previewLoading()) {
+            <div
+              class="placeholder-glow"
+              data-id="legal-consent-loading"
+              aria-busy="true"
+            >
+              <span class="placeholder col-12" aria-hidden="true"></span>
+              <span class="placeholder col-9" aria-hidden="true"></span>
+            </div>
+          }
+          @if (previewTerms(); as terms) {
+            @if (terms.documents.length) {
+              <hilos-legal-consent
+                [terms]="terms"
+                [accepted]="accepted()"
+                [reading]="reading()"
+                (acceptedChange)="accepted.set($event)"
+                (readingChange)="reading.set($event)"
+              />
+            } @else {
+              <p data-id="legal-consent-unpublished">
+                {{ unpublishedMessage }}
+              </p>
+            }
+            @if (terms.form === 'line' && terms.documents.length) {
+              <p
+                class="small text-body-secondary mb-0"
+                data-id="auth-consent-line"
+              >
+                By creating an account you accept the
+                @for (
+                  item of terms.documents;
+                  track item.document;
+                  let index = $index
+                ) {
+                  @if (index) {
+                    and the
+                  }
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm p-0"
+                    data-id="legal-consent-read"
+                    [attr.data-document]="item.document"
+                    (click)="reading.set(item.document)"
+                  >
+                    {{ documentLabel(item.document) }}
+                  </button>
+                }
+                .
+              </p>
+            }
+          }
+          <hilos-form-error
+            [message]="previewError()"
+            dataId="legal-consent-preview-error"
+          />
+        </div>
+        <ng-template #modalActions>
+          @if (previewError()) {
+            <button
+              type="button"
+              class="btn btn-primary"
+              data-id="legal-consent-preview-retry"
+              (click)="openPreview()"
+            >
+              Try again
+            </button>
+          }
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-id="legal-consent-preview-close"
+            (click)="preview().close()"
+          >
+            Close
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -163,6 +279,17 @@ export class HilosLegalDocumentPage {
   protected readonly path = resolveHilosPath
   protected readonly details = signal<HilosLegalAdminDocument | null>(null)
   protected readonly refusal = signal<string | null>(null)
+  protected readonly preview = computed(() =>
+    createHilosLegalConsentPreview(this.context()),
+  )
+  protected readonly previewOpen = signal(false)
+  protected readonly previewTerms = signal<HilosLegalConsentTerms | null>(null)
+  protected readonly previewLoading = signal(false)
+  protected readonly previewError = signal<string | null>(null)
+  protected readonly accepted = signal(false)
+  protected readonly reading = signal<HilosLegalDocumentKey | null>(null)
+  protected readonly documentLabel = hilosLegalDocumentLabel
+  protected readonly unpublishedMessage = LEGAL_TERMS_UNPUBLISHED_MESSAGE
   private readonly router = inject(HILOS_ROUTER)
   private readonly document = computedSignal(() =>
     String(this.router.currentRoute.get().params['documentKey'] ?? ''),
@@ -189,7 +316,18 @@ export class HilosLegalDocumentPage {
       }
       read()
       readRefusal()
+      const preview = this.preview()
+      this.previewOpen.set(preview.opened.get())
+      this.previewTerms.set(preview.terms.get())
+      this.previewLoading.set(preview.loading.get())
+      this.previewError.set(preview.error.get())
       const off = [
+        subscribeSignal(preview.opened, (value) => this.previewOpen.set(value)),
+        subscribeSignal(preview.terms, (value) => this.previewTerms.set(value)),
+        subscribeSignal(preview.loading, (value) =>
+          this.previewLoading.set(value),
+        ),
+        subscribeSignal(preview.error, (value) => this.previewError.set(value)),
         subscribeSignal(source, read),
         subscribeSignal(refusal, readRefusal),
       ]
@@ -197,7 +335,13 @@ export class HilosLegalDocumentPage {
       onCleanup(() => {
         for (const stop of off) stop()
         revisions.dispose()
+        preview.close()
       })
     })
+  }
+  protected openPreview(): void {
+    this.accepted.set(false)
+    this.reading.set(null)
+    void this.preview().open()
   }
 }

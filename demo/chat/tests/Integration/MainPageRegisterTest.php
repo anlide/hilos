@@ -44,6 +44,7 @@ use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Legal\LegalConsentProjector;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -84,6 +85,47 @@ final class MainPageRegisterTest extends IntegrationTestCase
      * waits for, long enough that it is not a spin.
      */
     private const int SECOND_BOUNDARY_POLL_MICROSECONDS = 10_000;
+
+    /** Neither the address nor a code may be reserved until every current document is accepted. */
+    public function testRegistrationWithoutCurrentConsentLeavesNoHoldOrCode(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'unaccepted-register');
+        try {
+            foreach ([null, ['terms' => 'outdated']] as $accepted) {
+                ExecutionContext::setCurrentAcceptKey('unaccepted-register');
+                $reply = $this->usersLibrary()->onAgentAction(
+                    'unaccepted-register', HilosSignalConstants::HILOS_REGISTER,
+                    new RegisterActionDTO($email, $accepted),
+                );
+                self::assertInstanceOf(AuthFlowOutcome::class, $reply);
+                self::assertFalse($reply->ok);
+                self::assertSame(AuthFlowStep::CONSENT, $reply->step);
+                self::assertSame($accepted === null ? 'consent_required' : 'consent_revised', $reply->code);
+                self::assertNull($this->holdOf('unaccepted-register'));
+                self::assertNull($this->activeChallenge($email));
+            }
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /** An ordinary repeat must use this browser's live consent rather than need another map. */
+    public function testRepeatingAnAcceptedRegistrationCanOmitConsent(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'repeat-accepted');
+        try {
+            $this->register($agent, 'repeat-accepted', $email);
+            $reply = $this->register($agent, 'repeat-accepted', $email, includeConsent: false);
+            self::assertTrue($reply->ok);
+            self::assertSame(LegalConsentProjector::acceptance(), $this->holdOf('repeat-accepted')?->acceptedRevisions());
+        } finally {
+            $this->cleanUp();
+        }
+    }
 
     /**
      * A submit holds the address and issues a code, and creates no account at all.
@@ -1005,8 +1047,46 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
             $this->assertNotNull($outcome->expiresAt, 'The code screen comes back with a life on it');
             $this->assertSame($email, $this->holdOf('renew-ak')?->identifier);
+            $this->assertSame(LegalConsentProjector::acceptance(), $this->holdOf('renew-ak')?->acceptedRevisions());
             $this->assertSame(1, $this->reservationRowCount($email), 'The dead row is replaced, not added to');
             $this->assertSame(2, $this->sendRowCount($email), 'A second letter really goes out');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A dead hold cannot supply consent to a renewal missing its current map.
+     *
+     * @throws HilosException When setup, expiry or registration handling fails
+     */
+    public function testRenewingADeadHoldWithoutCurrentConsentCreatesNeitherHoldNorMail(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'renew-unaccepted');
+        try {
+            $this->register($agent, 'renew-unaccepted', $email);
+            $this->ageReservationOut($email);
+            $this->ageSendsOutOfTheCooldown(
+                $email, Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int() + 1,
+            );
+            $this->reservations()->deleteExpired();
+
+            foreach ([null, ['terms' => 'outdated']] as $accepted) {
+                ExecutionContext::setCurrentAcceptKey('renew-unaccepted');
+                $reply = $this->usersLibrary()->onAgentAction(
+                    'renew-unaccepted', HilosSignalConstants::HILOS_REGISTER,
+                    new RegisterActionDTO($email, $accepted),
+                );
+                self::assertInstanceOf(AuthFlowOutcome::class, $reply);
+                self::assertFalse($reply->ok);
+                self::assertSame(AuthFlowStep::CONSENT, $reply->step);
+                self::assertSame($accepted === null ? 'consent_required' : 'consent_revised', $reply->code);
+                self::assertNull($this->holdOf('renew-unaccepted'));
+                self::assertSame(0, $this->reservationRowCount($email));
+                self::assertSame(1, $this->sendRowCount($email), 'A refused renewal sends no second letter');
+            }
         } finally {
             $this->cleanUp();
         }
@@ -1733,16 +1813,17 @@ final class MainPageRegisterTest extends IntegrationTestCase
      * @param ChatAgent $agent Agent owning the page
      * @param string $acceptKey Acting connection accept key
      * @param string $email Submitted email
+     * @param bool $includeConsent Whether this is the first accepted submission rather than a repeat
      * @return AuthFlowOutcome The outcome the surface is answered with
      * @throws HilosException When the register handler rejects the action
      */
-    private function register(ChatAgent $agent, string $acceptKey, string $email): AuthFlowOutcome
+    private function register(ChatAgent $agent, string $acceptKey, string $email, bool $includeConsent = true): AuthFlowOutcome
     {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email),
+            new RegisterActionDTO($email, $includeConsent ? LegalConsentProjector::acceptance() : null),
         );
         $handedOver = $this->deliverLibraryFrames($agent);
         $outcome = $reply ?? $handedOver;

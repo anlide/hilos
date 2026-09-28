@@ -10,6 +10,7 @@
 
 /** Client→server: look an identifier up while it is typed (PHP `HilosSignalConstants::HILOS_DETECT_IDENTIFIER`). */
 export const AUTH_ACTION_DETECT_IDENTIFIER = 'hilos_detect_identifier'
+export const AUTH_ACTION_LEGAL_CONSENT = 'hilos_legal_consent'
 
 /** Client→server: email+password login (PHP `HilosSignalConstants::HILOS_LOGIN`). */
 export const AUTH_ACTION_LOGIN = 'hilos_login'

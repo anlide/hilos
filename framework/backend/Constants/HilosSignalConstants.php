@@ -700,6 +700,9 @@ final class HilosSignalConstants
     /** Client → server: look an identifier up while it is typed (public, anonymous-reachable). */
     public const string HILOS_DETECT_IDENTIFIER = 'hilos_detect_identifier';
 
+    /** Client → server: read registration consent (public); reply contains form and current documents. */
+    public const string HILOS_LEGAL_CONSENT = 'hilos_legal_consent';
+
     /** Client → server: email+password login (public, anonymous-reachable). */
     public const string HILOS_LOGIN = 'hilos_login';
 

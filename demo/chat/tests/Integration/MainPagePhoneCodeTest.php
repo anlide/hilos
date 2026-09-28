@@ -26,6 +26,7 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Legal\LegalConsentProjector;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
@@ -387,7 +388,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
     private function holdNumber(string $acceptKey, string $phone): void
     {
         new RegistrationReservationService()
-            ->hold(IdentityType::SMS, Hilos::$rt->connections[$acceptKey]->sessionToken, $phone);
+            ->hold(IdentityType::SMS, Hilos::$rt->connections[$acceptKey]->sessionToken, $phone, LegalConsentProjector::acceptance());
     }
 
     /**

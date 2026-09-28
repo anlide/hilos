@@ -5,6 +5,8 @@
 // in, the step every tab of a browser follows as it happens, the policy frame
 // that outranks an older answer, the way back that lets the held sign-in go, and
 // the wire each of those screens sends.
+import { consentTerms } from '../legal/consentFixture.js'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createAuthFlow,
@@ -71,6 +73,7 @@ function heldStep(overrides: Partial<PendingAuthStep> = {}): PendingAuthStep {
     expiresAt: LOCAL_NOW + 15 * 60_000,
     code: null,
     secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
+    acceptedRevisions: null,
     ...overrides,
   }
 }
@@ -86,12 +89,14 @@ function releasedStep(code: string | null = null): PendingAuthStep {
     expiresAt: null,
     code,
     secondFactor: null,
+    acceptedRevisions: null,
   }
 }
 
 /** Build a flow with passing stubs; override any seam per test. */
 function setup(options: Partial<AuthFlowOptions> = {}) {
   return createAuthFlow({
+    onConsentTerms: async () => consentTerms(),
     authMethods: createSignal<readonly AuthMethodEntry[]>(ENTRIES),
     channels: [],
     onDetect: async (identifier) => detected(identifier),
@@ -175,6 +180,7 @@ describe('the code step a proven sign-in is held on', () => {
       expiresAt: LOCAL_NOW + 60_000,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     flow.setField('code', '123456')
     await flow.submit()
@@ -520,6 +526,7 @@ describe('the step every tab of a browser follows', () => {
       expiresAt: LOCAL_NOW + 60_000,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     flow.followReportedStep(null)
 
@@ -595,6 +602,7 @@ describe('the wire of the second-factor screens', () => {
     code: '123456',
     newPassword: '',
     consentAccepted: false,
+    acceptedRevisions: null,
     usingBackupCode: true,
     trustDevice: true,
     secondFactorLabel: 'Work phone',

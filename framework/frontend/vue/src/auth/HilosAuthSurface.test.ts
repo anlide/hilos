@@ -12,12 +12,15 @@
 // that has no equivalent anywhere else: a waiting screen that also takes a code.
 // And one with a provider (HIL-926), for where a trip that ended on the park
 // lands: the surface's half of that answer lives only here.
+import { consentTerms } from '../../../core/test/legal/consentFixture.js'
+
 import {
   ActionError,
   ActionLifecycle,
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_LEGAL_CONSENT,
   AUTH_ACTION_LOGIN,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
@@ -176,6 +179,13 @@ function passwordOnlyContext(refuseLogin = false): {
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
       dispatched.push({ action, payload })
+      if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        return {
+          requestId: `consent-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: consentTerms() }),
+        } as unknown as ActionHandle
+      }
       const identifier = String(payload['identifier'] ?? '')
       // Only the lookup answers with a domain reply, and it is what reveals the
       // password field: an account that exists and has a password on it.
@@ -191,7 +201,9 @@ function passwordOnlyContext(refuseLogin = false): {
               registrationBlock: null,
               signInBlock: null,
             }
-          : undefined
+          : action === AUTH_ACTION_LEGAL_CONSENT
+            ? consentTerms()
+            : undefined
 
       return {
         requestId: `req-${dispatched.length}`,
@@ -218,8 +230,6 @@ function passwordOnlyContext(refuseLogin = false): {
       scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -241,6 +251,13 @@ function magicLinkContext(): {
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
       dispatched.push({ action, payload })
+      if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        return {
+          requestId: `consent-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: consentTerms() }),
+        } as unknown as ActionHandle
+      }
       const identifier = String(payload['identifier'] ?? '')
       const reply =
         action === AUTH_ACTION_DETECT_IDENTIFIER
@@ -254,7 +271,9 @@ function magicLinkContext(): {
               registrationBlock: null,
               signInBlock: null,
             }
-          : undefined
+          : action === AUTH_ACTION_LEGAL_CONSENT
+            ? consentTerms()
+            : undefined
 
       return {
         requestId: `req-${dispatched.length}`,
@@ -274,8 +293,6 @@ function magicLinkContext(): {
       ]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -309,7 +326,9 @@ function freeIdentifierContext(
               registrationBlock,
               signInBlock: null,
             }
-          : undefined
+          : action === AUTH_ACTION_LEGAL_CONSENT
+            ? consentTerms()
+            : undefined
 
       return {
         requestId: 'req-free',
@@ -324,8 +343,6 @@ function freeIdentifierContext(
     scopes: scopesWith([{ key: 'password', name: null }]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -357,7 +374,9 @@ function registrableIdentifierContext(): HilosAuthContext {
               registrationBlock: null,
               signInBlock: null,
             }
-          : undefined
+          : action === AUTH_ACTION_LEGAL_CONSENT
+            ? consentTerms()
+            : undefined
 
       return {
         requestId: 'req-registrable',
@@ -375,8 +394,6 @@ function registrableIdentifierContext(): HilosAuthContext {
     ]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -411,7 +428,9 @@ function liveAccountContext(
               registrationBlock: null,
               signInBlock,
             }
-          : undefined
+          : action === AUTH_ACTION_LEGAL_CONSENT
+            ? consentTerms()
+            : undefined
 
       return {
         requestId: 'req-live',
@@ -429,8 +448,6 @@ function liveAccountContext(
     ]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -452,6 +469,13 @@ function heldIdentifierContext(): {
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
       dispatched.push({ action, payload })
+      if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        return {
+          requestId: `consent-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: consentTerms() }),
+        } as unknown as ActionHandle
+      }
       const identifier = String(payload['identifier'] ?? '')
       const reply =
         action === AUTH_ACTION_DETECT_IDENTIFIER
@@ -465,7 +489,9 @@ function heldIdentifierContext(): {
               registrationBlock: null,
               signInBlock: null,
             }
-          : undefined
+          : action === AUTH_ACTION_LEGAL_CONSENT
+            ? consentTerms()
+            : undefined
 
       return {
         requestId: `req-${dispatched.length}`,
@@ -482,8 +508,6 @@ function heldIdentifierContext(): {
       scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -507,6 +531,13 @@ function expiringLetterContext(lifetimeMs: number): {
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
       dispatched.push({ action, payload })
+      if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        return {
+          requestId: `consent-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: consentTerms() }),
+        } as unknown as ActionHandle
+      }
       const identifier = String(payload['identifier'] ?? '')
       const reply =
         action === AUTH_ACTION_DETECT_IDENTIFIER
@@ -544,8 +575,6 @@ function expiringLetterContext(lifetimeMs: number): {
       ]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -742,8 +771,6 @@ function oauthTripWorld(): TripWorld {
     ]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 
   const providerWindow = {
@@ -1897,8 +1924,6 @@ describe('HilosAuthSurface', () => {
       ]),
       actions: { dispatch: vi.fn() } as unknown as ActionLifecycle,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     })
     const wrapper = mount(HilosAuthSurface, { props: { context } })
     expect(wrapper.find('[data-id="auth-icon-passkey"]').exists()).toBe(true)
@@ -2166,8 +2191,6 @@ function smsContext(): HilosAuthContext {
     scopes: scopesWith([{ key: 'password', name: null }]),
     actions,
     channels: [SMS_CODE_CHANNEL],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -2505,12 +2528,17 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
       'Create an account with a passkey',
     )
     await wrapper.find('[data-id="auth-create-passkey"]').trigger('click')
-    expect(wrapper.text()).toContain('Terms and privacy')
-    expect(dispatched).toEqual([])
+    await flush(wrapper)
+    expect(wrapper.text()).toContain('Before you continue')
+    expect(dispatched).toEqual([
+      { action: AUTH_ACTION_LEGAL_CONSENT, payload: {} },
+    ])
     await wrapper.find('[data-id="auth-consent-accept"]').setValue(true)
     await wrapper.find('form').trigger('submit')
     await flush(wrapper)
-    expect(dispatched[0]?.payload).toEqual({})
+    expect(dispatched[1]?.payload).toEqual({
+      acceptedRevisions: { terms: 'terms-v1', privacy: 'privacy-v1' },
+    })
     expect(
       wrapper.find('[data-id="auth-consent-accept"]').attributes('disabled'),
     ).toBeDefined()
@@ -2602,6 +2630,116 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
     expect(wrapper.text()).not.toContain(
       'Your address is confirmed and you are signed in.',
     )
+    wrapper.unmount()
+  })
+})
+
+describe('HilosAuthSurface loads real consent (HIL-499)', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('keeps the checkbox absent until its text arrives and retries a failed read', async () => {
+    vi.useFakeTimers()
+    const context = registrableIdentifierContext()
+    const original = context.actions.dispatch.bind(context.actions)
+    let rejectRead!: (reason: Error) => void
+    let resolveRead!: (value: {
+      reply: ReturnType<typeof consentTerms>
+    }) => void
+    const read = vi
+      .fn()
+      .mockReturnValueOnce({
+        done: new Promise((_resolve, reject) => {
+          rejectRead = reject
+        }),
+      })
+      .mockImplementationOnce(() => ({
+        done: new Promise((resolve) => {
+          resolveRead = resolve
+        }),
+      }))
+    context.actions.dispatch = ((
+      action: string,
+      payload: Record<string, unknown>,
+      options: unknown,
+    ) =>
+      action === AUTH_ACTION_LEGAL_CONSENT
+        ? read()
+        : original(
+            action,
+            payload,
+            options as never,
+          )) as typeof context.actions.dispatch
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await wrapper
+      .get('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await wrapper.get('form').trigger('submit')
+    await flush(wrapper)
+    expect(wrapper.get('[data-id="auth-consent-identifier"]').text()).toBe(
+      'newcomer@example.com',
+    )
+    expect(wrapper.find('[data-id="legal-consent-loading"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.find('[data-id="auth-consent-accept"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-id="auth-submit"]').attributes('disabled'),
+    ).toBeDefined()
+    rejectRead(new Error('Read failed'))
+    await flush(wrapper)
+    expect(wrapper.get('[data-id="auth-error"]').text()).toContain(
+      'The terms could not be loaded.',
+    )
+    expect(wrapper.get('[data-id="auth-submit"]').text()).toContain('Try again')
+    expect(
+      wrapper.get('[data-id="auth-restart"]').attributes('disabled'),
+    ).toBeUndefined()
+    await wrapper.get('form').trigger('submit')
+    resolveRead({ reply: consentTerms() })
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="legal-consent-loading"]').exists()).toBe(
+      false,
+    )
+    const input = wrapper.get('[data-id="auth-consent-accept"]')
+    expect((input.element as HTMLInputElement).checked).toBe(false)
+    await input.setValue(true)
+    expect(
+      wrapper.get('[data-id="auth-submit"]').attributes('disabled'),
+    ).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('renders the project-selected line below the button without a checkbox', async () => {
+    vi.useFakeTimers()
+    const context = registrableIdentifierContext()
+    const original = context.actions.dispatch.bind(context.actions)
+    context.actions.dispatch = ((
+      action: string,
+      payload: Record<string, unknown>,
+      options: unknown,
+    ) =>
+      action === AUTH_ACTION_LEGAL_CONSENT
+        ? { done: Promise.resolve({ reply: consentTerms('terms-v1', 'line') }) }
+        : original(
+            action,
+            payload,
+            options as never,
+          )) as typeof context.actions.dispatch
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await wrapper
+      .get('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await wrapper.get('form').trigger('submit')
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-consent-accept"]').exists()).toBe(false)
+    expect(wrapper.get('[data-id="auth-consent-line"]').text()).toContain(
+      'By creating an account you accept the',
+    )
+    expect(
+      wrapper.get('[data-id="auth-submit"]').attributes('disabled'),
+    ).toBeUndefined()
     wrapper.unmount()
   })
 })

@@ -33,6 +33,7 @@ use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Legal\LegalConsentProjector;
 use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -722,7 +723,7 @@ final class SessionAckTest extends IntegrationTestCase
         $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email),
+            new RegisterActionDTO($email, LegalConsentProjector::acceptance()),
         );
         $this->deliverLibraryFrames($agent);
     }

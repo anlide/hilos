@@ -21,7 +21,10 @@ final class RegistrationPasskeyActionDTOTest extends TestCase
     #[DataProvider('addresses')]
     public function testBothActionsPreserveTheOptionalAddress(array $address, ?string $expected): void
     {
+        $accepted = ['terms' => 'terms-revision', 'privacy' => 'privacy-revision'];
+        $address['acceptedRevisions'] = $accepted;
         $options = RegistrationPasskeyOptionsActionDTO::fromArray($address);
+        $this->assertSame($accepted, $options->acceptedRevisions);
         $this->assertSame($expected, $options->identifier);
         $this->assertSame($expected, RegistrationPasskeyOptionsActionDTO::fromArray($options->toArray())->identifier);
 
@@ -33,6 +36,7 @@ final class RegistrationPasskeyActionDTOTest extends TestCase
             'userAgent' => 'browser',
         ]);
         $this->assertSame($expected, $complete->identifier);
+        $this->assertSame($accepted, $complete->acceptedRevisions);
         $this->assertSame($complete->toArray(), CompleteRegistrationPasskeyActionDTO::fromArray($complete->toArray())->toArray());
     }
 

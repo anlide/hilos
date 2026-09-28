@@ -28,14 +28,13 @@
 // brings the jump back the moment the next method is added. A lookup asked under
 // different delivery availability is re-asked with the same holding (HIL-1102).
 //
-// This leaf ships the pure core only: no DOM, no wire, no UI strings — the
-// machine emits semantic keys ({@link AuthFlowScreen}, error codes) and the
-// views/backend own all human-facing text. Three seams are delegated to the
-// project: `onDetect` looks an identifier up (HIL-414), `onSubmit` dispatches
-// the active step's form, and `onMethodAction` runs an icon method's ceremony
-// (HIL-418/419). There is NO degraded detection state: transport fails as a
-// whole and the connection gate owns that (rules-and-violations §A) — an
-// unanswered lookup simply reveals nothing.
+// The agnostic machine owns no DOM and delegates transport to four seams:
+// `onDetect` looks an identifier up (HIL-414), `onSubmit` sends the active form,
+// `onMethodAction` runs an icon method's ceremony (HIL-418/419), and
+// `onConsentTerms` loads the current legal documents. Consent failures share
+// their wording with the legal module (HIL-499). There is NO degraded detection
+// state: transport fails as a whole and the connection gate owns that
+// (rules-and-violations §A); an unanswered lookup simply reveals nothing.
 //
 // Method descriptors are pure serializable DATA (no closures): HIL-427 phase 3
 // ships the enabled set from backend settings over the wire, so a closure could
@@ -45,6 +44,13 @@
 // `Object.is` (signal.ts): replace objects on update, never mutate them.
 
 import { toLocal } from '../session/serverClock.js'
+import {
+  hilosLegalConsentAcceptance,
+  LEGAL_CONSENT_LOAD_FAILED_MESSAGE,
+  LEGAL_CONSENT_REVISED_MESSAGE,
+  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
+  type HilosLegalConsentTerms,
+} from '../legal/legalConsent.js'
 import {
   type AuthMethodEntry,
   type CodeDelivery,
@@ -157,6 +163,8 @@ export interface AuthFlowForm {
   readonly newPassword: string
   /** Whether the registration terms are accepted — the `consent` step. */
   readonly consentAccepted: boolean
+  /** Exact revisions the current checkbox or confirmation line accepts. */
+  readonly acceptedRevisions: Readonly<Record<string, string>> | null
   /** Whether the `second_factor` code is a backup code, not a generated one. */
   readonly usingBackupCode: boolean
   /** "Don't ask again on this device" on the `second_factor` step. */
@@ -470,7 +478,15 @@ export type AuthSubmitAction =
   | 'second_factor_cancel'
 
 /** Wiring for {@link createAuthFlow}. */
+/** The server content of the consent step, independent of a submission in flight. */
+export interface AuthConsentState {
+  readonly status: 'loading' | 'ready' | 'failed'
+  readonly terms: HilosLegalConsentTerms | null
+}
+
 export interface AuthFlowOptions {
+  /** Load the current documents on each entrance into consent. */
+  onConsentTerms: () => Promise<HilosLegalConsentTerms>
   /**
    * The sign-in methods the installation offers — enabled and ready (HIL-427,
    * HIL-1080) — live and in button order: what the handshake and the frame of
@@ -561,6 +577,10 @@ export interface AuthFlowOptions {
 
 /** The reactive identifier-first flow a view binds and drives. */
 export interface AuthFlow {
+  /** Current consent content; an answer for an abandoned step is ignored. */
+  readonly consent: ReadonlySignal<AuthConsentState>
+  /** Reload while on consent, retaining the form setting until the next entrance. */
+  refreshConsentTerms(): void
   /** The whole flow state (all axes), atomic. */
   readonly flow: ReadonlySignal<AuthFlowState>
   /** The current form values. */
@@ -768,8 +788,8 @@ export interface AuthFlow {
    * address died with it by design, so there is nothing left to top up and the
    * address is TAKEN AGAIN. What this dispatches is therefore the send that
    * STARTED the flow — a registration, a phone code, a magic link, a recovery
-   * request — which for the last three is byte-identical to what their re-send
-   * already dispatches.
+   * request. Registration carries the accepted revisions the tab knows from
+   * consent or the pending registration step.
    *
    * The send gate still rules it: it belongs to the address and outlives the
    * code, so this is a silent no-op inside the cooldown, exactly like
@@ -972,6 +992,7 @@ const EMPTY_FORM: AuthFlowForm = {
   code: '',
   newPassword: '',
   consentAccepted: false,
+  acceptedRevisions: null,
   usingBackupCode: false,
   trustDevice: false,
   secondFactorLabel: '',
@@ -1400,11 +1421,13 @@ export function applicableChannels(
  * @param flow The current flow state.
  * @param form The current form values.
  * @param detection The current detection state (the identifier step's reveal).
+ * @param consent The loaded registration terms, when the active step is consent.
  */
 export function isFlowSubmittable(
   flow: AuthFlowState,
   form: AuthFlowForm,
   detection: DetectionState,
+  consent?: AuthConsentState,
 ): boolean {
   switch (flow.step) {
     case 'identifier': {
@@ -1434,7 +1457,12 @@ export function isFlowSubmittable(
       return false
     }
     case 'consent':
-      return form.consentAccepted
+      return (
+        consent?.status === 'ready' &&
+        consent.terms !== null &&
+        consent.terms.documents.length > 0 &&
+        (consent.terms.form === 'line' || form.consentAccepted)
+      )
     case 'code':
     case 'second_factor':
     case 'second_factor_setup':
@@ -1596,6 +1624,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     options.externalCancelGraceMs ?? DEFAULT_EXTERNAL_CANCEL_GRACE_MS
   const flow = createSignal<AuthFlowState>(INITIAL_FLOW)
   const form = createSignal<AuthFlowForm>(EMPTY_FORM)
+  const consent = createSignal<AuthConsentState>({
+    status: 'loading',
+    terms: null,
+  })
+  let consentSeq = 0
+  let consentFormForVisit: HilosLegalConsentTerms['form'] | null = null
   // What the backend answered, as it answered it; everything reads the narrowed
   // view below, so a switch of the set re-reads the held reply instead of asking
   // the lookup again (HIL-427).
@@ -1635,7 +1669,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     }
   })
   const submittable = computedSignal(() =>
-    isFlowSubmittable(flow.get(), form.get(), detection.get()),
+    isFlowSubmittable(flow.get(), form.get(), detection.get(), consent.get()),
   )
   const icons = computedSignal(() =>
     visibleMethodIcons(
@@ -1940,7 +1974,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     }
     if (result.status === 'pending') {
       if (moveOnPending) {
-        flow.set({ ...state, step: 'code', intent: 'register' })
+        moveFlow({ ...state, step: 'code', intent: 'register' })
       }
 
       return
@@ -1951,18 +1985,85 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       // registration stands, and one asked because they walked BACK to the
       // field may not take that choice away again (HIL-825).
       if (moveOnPending) {
-        flow.set({ ...state, step: 'set_password', intent: 'register' })
+        moveFlow({ ...state, step: 'set_password', intent: 'register' })
       }
 
       return
     }
     if (result.status === 'none' && result.registerable.length > 0) {
-      flow.set({ ...state, intent: 'register' })
+      moveFlow({ ...state, intent: 'register' })
 
       return
     }
     if (state.intent !== 'login') {
-      flow.set({ ...state, intent: 'login' })
+      moveFlow({ ...state, intent: 'login' })
+    }
+  }
+
+  /** Move the screen and start or abandon its consent read in the same turn. */
+  function moveFlow(next: AuthFlowState): void {
+    const previous = flow.get().step
+    if (previous === 'consent' && next.step !== 'consent') {
+      consentSeq += 1
+      consent.set({ status: 'loading', terms: null })
+      consentFormForVisit = null
+    }
+    flow.set(next)
+    if (next.step === 'consent' && previous !== 'consent') {
+      void loadConsentTerms(false)
+    }
+  }
+
+  /** Read again on entry or reconnect; generations keep late replies out of a newer screen. */
+  async function loadConsentTerms(preserveForm: boolean): Promise<void> {
+    if (flow.get().step !== 'consent') return
+    const sequence = ++consentSeq
+    const previousForm = preserveForm ? consentFormForVisit : null
+    consent.set({ status: 'loading', terms: null })
+    try {
+      const loaded = await options.onConsentTerms()
+      if (sequence !== consentSeq || flow.get().step !== 'consent') return
+      const terms =
+        previousForm === null ? loaded : { ...loaded, form: previousForm }
+      consentFormForVisit = terms.form
+      const acceptedRevisions = hilosLegalConsentAcceptance(terms)
+      const previous = form.get().acceptedRevisions
+      const same =
+        previous !== null &&
+        Object.keys(previous).length ===
+          Object.keys(acceptedRevisions).length &&
+        Object.entries(acceptedRevisions).every(
+          ([document, revision]) => previous[document] === revision,
+        )
+      form.set({
+        ...form.get(),
+        acceptedRevisions,
+        consentAccepted: same && form.get().consentAccepted,
+      })
+      consent.set({ status: 'ready', terms })
+      if (terms.documents.length === 0) {
+        error.set({
+          code: 'terms_unpublished',
+          message: LEGAL_TERMS_UNPUBLISHED_MESSAGE,
+        })
+      } else if (previous !== null && !same) {
+        error.set({
+          code: 'consent_revised',
+          message: LEGAL_CONSENT_REVISED_MESSAGE,
+        })
+      } else if (
+        error.get()?.code === 'consent_load_failed' ||
+        error.get()?.code === 'terms_unpublished'
+      ) {
+        error.set(null)
+      }
+    } catch {
+      if (sequence !== consentSeq || flow.get().step !== 'consent') return
+      consent.set({ status: 'failed', terms: null })
+      error.set({
+        code: 'consent_load_failed',
+        message: LEGAL_CONSENT_LOAD_FAILED_MESSAGE,
+      })
     }
   }
 
@@ -1982,12 +2083,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    */
   function mergeNext(next: Partial<AuthFlowState>): void {
     const from = flow.get().step
-    flow.set({ ...flow.get(), ...next })
+    moveFlow({ ...flow.get(), ...next })
     if (next.step !== undefined) {
       arriveAt(next.step, from)
     }
     if (next.step === 'identifier') {
       refreshDetect()
+    }
+    if (next.step === 'consent' && from === 'consent') {
+      void loadConsentTerms(false)
     }
   }
 
@@ -2044,7 +2148,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    */
   function restore(pending: PendingAuthStep): void {
     const previous = flow.get()
-    flow.set({
+    moveFlow({
       ...previous,
       step: pending.step,
       intent: pending.intent,
@@ -2056,6 +2160,13 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     })
     if (pending.identifier !== null) {
       form.set({ ...form.get(), identifier: pending.identifier })
+    }
+    if (pending.intent === 'register' && pending.acceptedRevisions !== null) {
+      form.set({
+        ...form.get(),
+        acceptedRevisions: pending.acceptedRevisions,
+        consentAccepted: true,
+      })
     }
     arriveAt(pending.step, previous.step)
     if (isSecondFactorStep(pending.step)) {
@@ -2089,7 +2200,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     expiresAt.set(null)
     disarmExpiry()
     holdSecondFactor(null)
-    flow.set({
+    moveFlow({
       ...flow.get(),
       step: 'identifier',
       intent: form.get().identifier.trim() === '' ? 'login' : flow.get().intent,
@@ -2114,11 +2225,18 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    * alone, the refusal having canceled nothing.
    */
   function applyOutcome(outcome: AuthFlowSubmitOutcome): void {
+    if (outcome.code === 'consent_revised') {
+      form.set({ ...form.get(), consentAccepted: false })
+    }
     if (!outcome.ok) {
-      error.set({
-        message: outcome.message ?? null,
-        code: outcome.code ?? null,
-      })
+      error.set(
+        outcome.code === 'consent_required'
+          ? null
+          : {
+              message: outcome.message ?? null,
+              code: outcome.code ?? null,
+            },
+      )
     }
     // The data before the move, for the reason the error is: the screen and what
     // it draws land in one paint. An answer that leaves the second factor's
@@ -2188,7 +2306,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // (HIL-826). Cleared HERE rather than in each caller so a submit, a resend
     // and a channel pick cannot drift apart on it; the server's own `queued`
     // lands a tick later and says the same thing with authority.
-    flow.set({ ...flow.get(), sendProgress: null })
+    moveFlow({ ...flow.get(), sendProgress: null })
     pending.set(true)
     const seq = ++dispatchSeq
     try {
@@ -2231,7 +2349,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // by the step it was ordered from, and handing the wire a state that has
     // already hopped forward would turn a send into a confirm of an empty code.
     const sending = flow.get()
-    flow.set({ ...sending, step: 'code' })
+    moveFlow({ ...sending, step: 'code' })
     const outcome = await dispatch(() =>
       options.onSubmit('submit', sending, form.get()),
     )
@@ -2239,7 +2357,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       return
     }
 
-    flow.set({ ...flow.get(), step: from })
+    moveFlow({ ...flow.get(), step: from })
   }
 
   /** Whether the backend-armed cooldown still blocks sending a code. */
@@ -2295,7 +2413,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     }
     form.set({ ...form.get(), code: '' })
     error.set(null)
-    flow.set({ ...flow.get(), step: 'code_expired' })
+    moveFlow({ ...flow.get(), step: 'code_expired' })
   }
 
   /**
@@ -2331,7 +2449,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // otherwise every control would stay dead behind the pending guard.
     dispatchSeq += 1
     pending.set(false)
-    flow.set({
+    moveFlow({
       ...state,
       step: 'identifier',
       intent: form.get().identifier.trim() === '' ? 'login' : state.intent,
@@ -2371,6 +2489,10 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   return {
     flow,
     form,
+    consent,
+    refreshConsentTerms(): void {
+      void loadConsentTerms(true)
+    },
     detection,
     methods,
     pending,
@@ -2479,7 +2601,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         const kind = classifyIdentifier(identifier)
         dispatchSeq += 1
         pending.set(false)
-        flow.set({ ...INITIAL_FLOW, identifierKind: kind })
+        moveFlow({ ...INITIAL_FLOW, identifierKind: kind })
         form.set({ ...EMPTY_FORM, identifier })
         error.set(null)
         resendAvailableAt.set(null)
@@ -2493,7 +2615,10 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       form.set({ ...form.get(), [field]: value })
     },
     async submit(): Promise<void> {
-      if (pending.get()) {
+      if (
+        pending.get() ||
+        (flow.get().step === 'consent' && !submittable.get())
+      ) {
         return
       }
       const state = flow.get()
@@ -2501,7 +2626,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // Registration does NOT create an account from the identifier step —
         // it moves locally to the terms screen; the real dispatch is consent's.
         error.set(null)
-        flow.set({ ...state, step: 'consent' })
+        moveFlow({ ...state, step: 'consent' })
 
         return
       }
@@ -2554,7 +2679,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
             // A foreign challenge's code must not make this screen submittable
             // the moment it appears, which is what `startRecovery` clears it for.
             form.set({ ...form.get(), code: '' })
-            flow.set({
+            moveFlow({
               ...flow.get(),
               step: stepAfterMethodSend(methodKey),
             })
@@ -2596,7 +2721,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       error.set(null)
-      flow.set({
+      moveFlow({
         ...flow.get(),
         step: 'consent',
         intent: 'register',
@@ -2634,7 +2759,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       // - the method picks the screen on a first send, and this is that same
       // send again. A registration and a phone code name the step themselves and
       // were obeyed above.
-      flow.set({ ...flow.get(), step: 'code' })
+      moveFlow({ ...flow.get(), step: 'code' })
     },
     async chooseMethod(key: string): Promise<void> {
       if (pending.get()) {
@@ -2651,7 +2776,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // method choice is stored and the flow hops to consent locally, exactly
         // as a channel choice does (HIL-417); consent's submit is the send. An
         // account cannot be made by a click that never showed the terms.
-        flow.set({ ...chosenFrom, step: 'consent', methodKey: key })
+        moveFlow({ ...chosenFrom, step: 'consent', methodKey: key })
 
         return
       }
@@ -2660,7 +2785,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       // another way. A superseded ceremony's late outcome is ignored (the
       // generation and park guards); a CANCELED one's is judged by intent
       // ({@link applyLateOutcome}).
-      flow.set({ ...chosenFrom, step: 'external', methodKey: key })
+      moveFlow({ ...chosenFrom, step: 'external', methodKey: key })
       pending.set(true)
       const seq = ++dispatchSeq
       const run: CeremonyRun = {
@@ -2696,7 +2821,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
           // taken from the snapshot above, which predates the merge and would
           // roll the intent back along with the step.
           if (outcome.next === undefined) {
-            flow.set({ ...flow.get(), step: 'identifier', methodKey: null })
+            moveFlow({ ...flow.get(), step: 'identifier', methodKey: null })
           }
 
           return
@@ -2711,7 +2836,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // factor (HIL-494), and then the server NAMED the step, already merged
         // above; its word is later than the method's.
         if (outcome.next === undefined) {
-          flow.set({ ...flow.get(), step: stepAfterMethodSend(key) })
+          moveFlow({ ...flow.get(), step: stepAfterMethodSend(key) })
         }
       } finally {
         if (ceremony === run) {
@@ -2738,7 +2863,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // the channel choice is stored and the flow hops to consent locally;
         // consent's submit is the send (channelKey rides in the state).
         error.set(null)
-        flow.set({ ...state, channelKey: key, step: 'consent' })
+        moveFlow({ ...state, channelKey: key, step: 'consent' })
 
         return
       }
@@ -2746,7 +2871,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       // first (the code screen names it), then the send dispatches and the
       // backend replies with the resend gate. The screen itself opens now rather
       // than on the transport's word (HIL-826) - see sendPhoneCodeFrom().
-      flow.set({ ...state, channelKey: key })
+      moveFlow({ ...state, channelKey: key })
       await sendPhoneCodeFrom(state.step)
     },
     startRecovery(): void {
@@ -2759,7 +2884,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       // (input preservation protects the identifier and password, not a
       // foreign challenge's fields).
       form.set({ ...form.get(), code: '', newPassword: '' })
-      flow.set({
+      moveFlow({
         ...flow.get(),
         intent: 'recovery',
         step: 'code',
@@ -2795,7 +2920,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       error.set(null)
-      flow.set({ ...state, step: 'second_factor_reset' })
+      moveFlow({ ...state, step: 'second_factor_reset' })
     },
     backToSecondFactor(): void {
       const state = flow.get()
@@ -2803,7 +2928,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       error.set(null)
-      flow.set({ ...state, step: 'second_factor' })
+      moveFlow({ ...state, step: 'second_factor' })
     },
     async loadSecondFactorSetup(): Promise<void> {
       if (pending.get() || flow.get().step !== 'second_factor_setup') {
@@ -2814,13 +2939,13 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       )
     },
     resumeHeldRegistration(): void {
-      flow.set({ ...flow.get(), step: 'code', intent: 'register' })
+      moveFlow({ ...flow.get(), step: 'code', intent: 'register' })
     },
     resumeProvenRegistration(): void {
-      flow.set({ ...flow.get(), step: 'set_password', intent: 'register' })
+      moveFlow({ ...flow.get(), step: 'set_password', intent: 'register' })
     },
     reportSendProgress(progress: CodeSendProgress | null): void {
-      flow.set({ ...flow.get(), sendProgress: progress })
+      moveFlow({ ...flow.get(), sendProgress: progress })
     },
     cancelMethod(): void {
       endMethod(null)
@@ -2846,7 +2971,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       ceremony?.controller.abort()
       ceremony = null
       dispatchSeq += 1
-      flow.set(INITIAL_FLOW)
+      moveFlow(INITIAL_FLOW)
       form.set(EMPTY_FORM)
       detectionSource.set(IDLE_DETECTION)
       pending.set(false)

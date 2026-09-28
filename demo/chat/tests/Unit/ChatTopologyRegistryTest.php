@@ -75,6 +75,7 @@ use Hilos\Auth\Library\DTO\ConfirmPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
+use Hilos\Auth\Library\DTO\LegalConsentActionDTO;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
 use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
@@ -845,6 +846,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => HilosAgentType::HILOS_DATA_EXPORT,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_LEGAL_CONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGIN => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_REGISTER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -939,6 +941,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
+            HilosSignalConstants::HILOS_LEGAL_CONSENT => LegalConsentActionDTO::class,
             HilosSignalConstants::HILOS_LOGIN => LoginActionDTO::class,
             HilosSignalConstants::HILOS_REGISTER => RegisterActionDTO::class,
             HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,

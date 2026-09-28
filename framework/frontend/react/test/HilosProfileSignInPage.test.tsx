@@ -40,8 +40,6 @@ function setup(opening: object = NO_STEP) {
     },
     scopes: new ScopeManager(),
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   } as unknown as HilosAuthContext
   const router = {
     pageIdentity: createSignal(undefined),

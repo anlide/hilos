@@ -69,6 +69,10 @@ test('confirms a name change with a code sent to the verified email', async ({
 test('confirms a name change with the connected authenticator app', async ({
   page,
 }) => {
+  // The confirmation code waits out the step spent on enrollment, up to
+  // thirty seconds, which alone is the usual test timeout at scale 1.
+  test.slow()
+
   await signUp(page)
   const app = await connectFirstApp(page)
   await gotoPage(page, '/profile')

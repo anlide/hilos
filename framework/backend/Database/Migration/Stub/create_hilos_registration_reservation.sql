@@ -35,6 +35,9 @@
 -- remembers it durably - a browser that proved an address keeps the right to
 -- finish it across a reload, a closed tab and a daemon restart. NULL while the
 -- hold is still waiting for its code.
+--
+-- `accepted_revisions` is the document-to-revision map accepted at consent. The
+-- account landing writes those exact acceptances in the transaction creating it.
 
 CREATE TABLE `hilos_registration_reservation` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -42,6 +45,7 @@ CREATE TABLE `hilos_registration_reservation` (
     `identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `session_token` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `code_accepted_at` TIMESTAMP NULL DEFAULT NULL,
+    `accepted_revisions` JSON DEFAULT NULL,
     `expires_at` TIMESTAMP NOT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),

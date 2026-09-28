@@ -525,8 +525,56 @@ describe('sessionScope', () => {
       expiresAt: null,
       code: 'identifier_taken',
       secondFactor: null,
+      acceptedRevisions: null,
     })
   })
+
+  it.each(['code', 'set_password'])(
+    'reads accepted revisions on a pending registration %s step',
+    (step) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      const acceptedRevisions = { terms: 'terms-1', privacy: 'privacy-1' }
+      const pending = {
+        identifier: 'ada@b.com',
+        kind: 'email',
+        intent: 'register',
+        step,
+        expiresAt: Date.now() + 60_000,
+      }
+      connection.emitHandshakeResponse({
+        data: { pendingAuthStep: { ...pending, acceptedRevisions } },
+      })
+      expect(sessionPendingAuthStep(scopes).get()?.acceptedRevisions).toEqual(
+        acceptedRevisions,
+      )
+      connection.emitHandshakeResponse({ data: { pendingAuthStep: pending } })
+      expect(sessionPendingAuthStep(scopes).get()?.acceptedRevisions).toBeNull()
+    },
+  )
+
+  it.each([false, 'terms-1', [], ['terms-1'], { terms: '' }, { terms: 3 }])(
+    'drops a pending registration with malformed acceptance %j',
+    (acceptedRevisions) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      connection.emitHandshakeResponse({
+        data: {
+          pendingAuthStep: {
+            identifier: 'ada@b.com',
+            kind: 'email',
+            intent: 'register',
+            step: 'code',
+            expiresAt: Date.now() + 60_000,
+            acceptedRevisions,
+          },
+        },
+      })
+      expect(sessionPendingAuthStep(scopes).get()).toBeNull()
+    },
+  )
 
   it('drops a code step that promises no moment, and an identifier step that promises one', () => {
     // The two halves of the same rule: the screens that count down are unreadable
@@ -637,6 +685,7 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
           trustDeviceDays: 30,
           resetEffectiveAt: LOCAL_NOW + 86_400_000,
         },
+        acceptedRevisions: null,
       })
     } finally {
       applyServerTime(Date.now())
@@ -716,7 +765,11 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
     }
 
     connection.emitHandshakeResponse({ data: { pendingAuthStep: released } })
-    expect(step.get()).toStrictEqual({ ...released, secondFactor: null })
+    expect(step.get()).toStrictEqual({
+      ...released,
+      secondFactor: null,
+      acceptedRevisions: null,
+    })
 
     connection.emitHandshakeResponse({
       data: {

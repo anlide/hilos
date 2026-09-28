@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\DTO;
 
+use Hilos\Auth\Registration\RegistrationConsent;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -22,9 +24,11 @@ final class RequestMagicLinkActionDTO extends ActionPayloadDTO
      * Creates a magic-link request DTO.
      *
      * @param string $email Submitted account email (trimmed)
+     * @param ?array<string, string> $acceptedRevisions Accepted document-to-revision boundary map, or null for a repeat
      */
     public function __construct(
         public readonly string $email,
+        public readonly ?array $acceptedRevisions = null,
     ) {
     }
 
@@ -44,23 +48,26 @@ final class RequestMagicLinkActionDTO extends ActionPayloadDTO
      * @param array<string, mixed> $data Payload data
      * @return static Request DTO instance
      * @throws InvalidFormatException When a field the action needs is absent or not a string
+     * @throws ValidationException When the accepted revision map has an unknown document or invalid revision id
      */
     public static function fromArray(array $data): static
     {
         return new static(
             email: trim(self::requireString($data, 'email')),
+            acceptedRevisions: RegistrationConsent::readPayload(self::optionalArray($data, RegistrationConsent::PAYLOAD_KEY)),
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{email: string} Request payload
+     * @return array<string, mixed> Action payload including the optional accepted revisions
      */
     public function toArray(): array
     {
         return [
             'email' => $this->email,
+            RegistrationConsent::PAYLOAD_KEY => $this->acceptedRevisions,
         ];
     }
 }

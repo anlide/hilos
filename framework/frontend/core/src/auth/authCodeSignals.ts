@@ -44,3 +44,8 @@ export const AUTH_CODE_REASON_CAP_REACHED = 'code_cap_reached'
  * The provider/network detail stays in the agent log, never on the wire.
  */
 export const AUTH_CODE_REASON_SEND_FAILED = 'code_send_failed'
+
+/** Consent refusals from the phone-code owner, before it holds or sends. */
+export const AUTH_CODE_REASON_CONSENT_REQUIRED = 'consent_required'
+export const AUTH_CODE_REASON_CONSENT_REVISED = 'consent_revised'
+export const AUTH_CODE_REASON_TERMS_UNPUBLISHED = 'terms_unpublished'

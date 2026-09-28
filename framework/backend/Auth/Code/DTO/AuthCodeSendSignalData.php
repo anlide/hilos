@@ -6,6 +6,8 @@ namespace Hilos\Auth\Code\DTO;
 
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\BaseDTO;
+use Hilos\Auth\Registration\RegistrationConsent;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -47,6 +49,7 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
      * @param string $channel Code channel name the person chose (see CodeChannel::name())
      * @param string $type Verification type the code is minted for (see VerificationType)
      * @param string $progressTicket Ticket the agent reports this send's steps against
+     * @param ?array<string, string> $acceptedRevisions Accepted document-to-revision boundary map
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -55,11 +58,12 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
         public readonly string $channel,
         public readonly string $type,
         public readonly string $progressTicket,
+        public readonly ?array $acceptedRevisions = null,
     ) {
     }
 
     /**
-     * @return array<string, string> DTO payload for transport
+     * @return array<string, mixed> DTO payload for transport
      */
     public function toArray(): array
     {
@@ -70,18 +74,20 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
             'channel' => $this->channel,
             'type' => $this->type,
             'progressTicket' => $this->progressTicket,
+            RegistrationConsent::PAYLOAD_KEY => $this->acceptedRevisions,
         ];
     }
 
     /**
      * Rebuilds the request the page action handed off.
      *
-     * Every field is required: a request missing any one of them names no target, no
+     * Every addressing field is required: a request missing any one of them names no target, no
      * channel or nobody to answer, and guessing a default would send a real message.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When a field the handoff needs is absent or not a string
+     * @throws InvalidFormatException When an addressing field is absent or mistyped, or acceptance is not an array
+     * @throws ValidationException When the accepted revision map is malformed
      */
     public static function fromArray(array $data): static
     {
@@ -92,6 +98,7 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
             channel: self::requireString($data, 'channel'),
             type: self::requireString($data, 'type'),
             progressTicket: self::requireString($data, 'progressTicket'),
+            acceptedRevisions: RegistrationConsent::readPayload(self::optionalArray($data, RegistrationConsent::PAYLOAD_KEY)),
         );
     }
 }

@@ -60,8 +60,6 @@ function setup(verifiedEmail = false, opening: HilosStepUpOpening = NO_STEP) {
     actions: { dispatch },
     scopes: new ScopeManager(),
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   } as unknown as HilosAuthContext
   const methods = createSignal(
     resolveHilosProfileSignInMethods(

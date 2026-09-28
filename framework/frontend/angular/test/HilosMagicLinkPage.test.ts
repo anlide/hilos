@@ -138,8 +138,6 @@ function relayWorld(confirmOk: boolean): {
       ]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }

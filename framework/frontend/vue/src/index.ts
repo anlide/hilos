@@ -117,3 +117,5 @@ export { default as HilosLegalRevisionPage } from './admin/legal/HilosLegalRevis
 export { default as HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAcceptancesPage.vue'
 
 export { default as HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.vue'
+
+export { default as HilosLegalConsent } from './legal/HilosLegalConsent.vue'

@@ -69,6 +69,10 @@ final class HilosCodeSendAttempt extends RtState
     /** A code was minted but the transport refused it: the surface offers a resend. */
     public const string REASON_SEND_FAILED = 'code_send_failed';
 
+    public const string REASON_CONSENT_REQUIRED = 'consent_required';
+    public const string REASON_CONSENT_REVISED = 'consent_revised';
+    public const string REASON_TERMS_UNPUBLISHED = 'terms_unpublished';
+
     /** The order is placed and nothing has been attempted yet. */
     public const string STATE_QUEUED = 'queued';
 

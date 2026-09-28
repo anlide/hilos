@@ -22,14 +22,14 @@ use PHPUnit\Framework\TestCase;
 final class RegistrationActionDTOTest extends TestCase
 {
     /**
-     * The submit DTO trims the email, and that address is the whole payload.
+     * The submit trims the email and leaves omitted consent absent.
      */
     public function testRegisterFromArrayTrimsEmail(): void
     {
         $dto = RegisterActionDTO::fromArray(['email' => '  Person@Example.test  ']);
 
         $this->assertSame('Person@Example.test', $dto->email);
-        $this->assertSame(['email' => 'Person@Example.test'], $dto->toArray());
+        $this->assertSame(['email' => 'Person@Example.test', 'acceptedRevisions' => null], $dto->toArray());
     }
 
     /**
@@ -45,7 +45,7 @@ final class RegistrationActionDTOTest extends TestCase
             'confirmPassword' => 'something else entirely',
         ]);
 
-        $this->assertSame(['email' => 'person@example.test'], $dto->toArray());
+        $this->assertSame(['email' => 'person@example.test', 'acceptedRevisions' => null], $dto->toArray());
         $this->assertFalse(property_exists($dto, 'password'));
         $this->assertFalse(property_exists($dto, 'confirmPassword'));
     }

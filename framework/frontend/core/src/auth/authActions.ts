@@ -28,6 +28,18 @@
 // taken address is a move to sign-in, not a transport error) has to be read off
 // a resolved dispatch, and a malformed one must not reach the machine as a half
 // outcome.
+import {
+  loadHilosLegalConsentTerms,
+  LEGAL_CONSENT_REVISED_MESSAGE,
+  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
+  type HilosLegalConsentTerms,
+} from '../legal/legalConsent.js'
+import {
+  AUTH_CODE_REASON_CONSENT_REQUIRED,
+  AUTH_CODE_REASON_CONSENT_REVISED,
+  AUTH_CODE_REASON_TERMS_UNPUBLISHED,
+} from './authCodeSignals.js'
+
 import { z } from 'zod'
 
 import { ActionError } from '../connection/actionLifecycle.js'
@@ -134,7 +146,7 @@ const identifierDetectionSchema = z.object({
  * trustworthy source is the outcome itself — the click that started the request may
  * not be the click the person made last.
  */
-interface PhoneCodeOutcome {
+interface PhoneCodeOutcome extends AuthFlowSubmitOutcome {
   /** Whether a code is now on its way (or already was) to the number. */
   readonly ok: boolean
   /** The inline reason a send was refused, or undefined on success. */
@@ -148,16 +160,20 @@ interface PhoneCodeOutcome {
 }
 
 /**
- * The wire of one sign-in surface: the three seams {@link createAuthFlow} takes,
+ * The wire of one sign-in surface: the transport seams {@link createAuthFlow} takes,
  * plus the dispatches a surface makes outside the machine's own steps.
  *
- * The three seams come first because they are the machine's contract; the rest are
+ * The transport seams come first because they are the machine's contract; the rest are
  * the surface's own errands — giving up a registration, relaying a link a mail
  * client opened, watching a channel go unreachable — and they need the same
  * connection and the same action lifecycle, so they are bound from the same
  * context rather than reaching for singletons a project would have to expose.
  */
 export interface HilosAuthActions {
+  /** Load the documents for consent or the admin preview. */
+  onConsentTerms(): Promise<HilosLegalConsentTerms>
+  /** Ask for fresh consent content after the socket completes its handshake. */
+  subscribeConnectionRestored(handler: () => void): () => void
   /**
    * Look an identifier up live, debounced by the machine (HIL-414).
    *
@@ -225,6 +241,9 @@ export interface HilosAuthActions {
  */
 export function createAuthActions(context: HilosAuthContext): HilosAuthActions {
   return {
+    onConsentTerms: () => loadHilosLegalConsentTerms(context),
+    subscribeConnectionRestored: (handler) =>
+      context.connection.on('handshake', handler),
     onDetect: (identifier) => detectIdentifier(context, identifier),
     onSubmit: (action, flow, form, signal) =>
       submitAuthFlow(context, action, flow, form, signal),
@@ -320,12 +339,13 @@ function submitAuthFlow(
       // The terms screen is what sends: a registration dispatched NOTHING before
       // it, whichever way it is being made (HIL-417).
       if (action === 'finish_with_passkey') {
-        return runPasskeyNewAccount(context, null, signal)
+        return runPasskeyNewAccount(context, null, form, signal)
       }
       return flow.identifierKind === 'phone'
         ? sendPhoneCode(context, flow, form)
         : dispatchFlow(context, AUTH_ACTION_REGISTER, {
             email: form.identifier,
+            acceptedRevisions: form.acceptedRevisions,
           })
     case 'code':
       return submitCode(context, action, flow, form)
@@ -342,7 +362,7 @@ function submitAuthFlow(
       // its payload does not choose an account: on this screen the server reads
       // the address off the proved hold, and the payload only names which hold.
       if (action === 'finish_with_passkey') {
-        return runPasskeyNewAccount(context, form.identifier, signal)
+        return runPasskeyNewAccount(context, form.identifier, form, signal)
       }
       // The way PAST the password is asked for by name rather than by intent
       // (HIL-1008): it is the same screen and the same proved hold, but a
@@ -432,6 +452,9 @@ function runAuthMethod(
     // on says the same thing either way.
     return dispatchFlow(context, AUTH_ACTION_REQUEST_MAGIC_LINK, {
       email: form.identifier,
+      ...(form.acceptedRevisions === null
+        ? {}
+        : { acceptedRevisions: form.acceptedRevisions }),
     })
   }
   if (key === PASSKEY_FLOW_METHOD.key) {
@@ -634,14 +657,14 @@ function submitCode(
  * without one — and the hold died at the same instant as the code, deliberately,
  * because an address freed under a live code or held after a dead one would both
  * be bugs nobody could configure their way out of. So there is nothing to top up
- * and the address is taken AGAIN: an ordinary registration on the same address,
- * byte-identical to what the terms screen sends. Since HIL-825 that carries the
- * address alone, so a reloaded tab holding no password can order it too.
+ * and the address is taken AGAIN: the tab's first send repeats with the address
+ * and the accepted revisions it knows from consent or the pending registration
+ * step. A renewal without that map returns to consent.
  *
  * @param context The project auth context the wire dispatches over.
  * @param flow The current flow state (the intent, kind and method that name the
  *   send).
- * @param form The current form values (the identifier).
+ * @param form The current identifier and accepted revisions.
  * @returns The outcome the machine applies — the code step again, with a fresh
  *   gate and a fresh deadline.
  */
@@ -656,6 +679,9 @@ function startCodeFlow(
   if (flow.methodKey === MAGIC_LINK_METHOD_KEY) {
     return dispatchFlow(context, AUTH_ACTION_REQUEST_MAGIC_LINK, {
       email: form.identifier,
+      ...(form.acceptedRevisions === null
+        ? {}
+        : { acceptedRevisions: form.acceptedRevisions }),
     })
   }
   if (flow.intent === 'recovery') {
@@ -666,6 +692,9 @@ function startCodeFlow(
 
   return dispatchFlow(context, AUTH_ACTION_REGISTER, {
     email: form.identifier,
+    ...(form.acceptedRevisions === null
+      ? {}
+      : { acceptedRevisions: form.acceptedRevisions }),
   })
 }
 
@@ -692,9 +721,21 @@ async function sendPhoneCode(
   // Unset only before anything was picked, which the primary channel is the
   // answer to: it is the one the registry marks as reaching a stranger's number.
   const channel = flow.channelKey ?? SMS_CODE_CHANNEL.key
-  const outcome = await requestPhoneCode(context, form.identifier, channel)
+  const outcome = await requestPhoneCode(
+    context,
+    form.identifier,
+    channel,
+    flow.step === 'consent' || flow.step === 'code_expired'
+      ? form.acceptedRevisions
+      : null,
+  )
   if (!outcome.ok) {
-    return { ok: false, message: outcome.message }
+    return {
+      ok: false,
+      code: outcome.code,
+      next: outcome.next,
+      message: outcome.message,
+    }
   }
 
   return {
@@ -738,12 +779,14 @@ async function sendPhoneCode(
  * @param context The project auth context the wire dispatches over.
  * @param phone The number the code is asked for.
  * @param channel The code channel key to send over (see `CodeChannelDescriptor`).
+ * @param acceptedRevisions The accepted map; re-sends omit it, renewals carry it.
  * @returns What became of the request, and over which channel.
  */
 function requestPhoneCode(
   context: HilosAuthContext,
   phone: string,
   channel: string,
+  acceptedRevisions: Readonly<Record<string, string>> | null = null,
 ): Promise<PhoneCodeOutcome> {
   return new Promise<PhoneCodeOutcome>((resolve) => {
     let settled = false
@@ -808,7 +851,11 @@ function requestPhoneCode(
     context.actions
       .dispatch(
         AUTH_ACTION_REQUEST_PHONE_CODE,
-        { phone, channel },
+        {
+          phone,
+          channel,
+          ...(acceptedRevisions === null ? {} : { acceptedRevisions }),
+        },
         { replySchema: codeSendOrderReplySchema },
       )
       .done.then(({ reply }) => {
@@ -847,11 +894,24 @@ function requestPhoneCode(
  * @param reason The stable reason code the outcome signal carried.
  * @returns Whether a code is in play, and the sentence to show when none is.
  */
-function describeCodeOutcome(reason: string): {
-  ok: boolean
-  message?: string
-} {
+function describeCodeOutcome(reason: string): AuthFlowSubmitOutcome {
   switch (reason) {
+    case AUTH_CODE_REASON_CONSENT_REQUIRED:
+    case AUTH_CODE_REASON_CONSENT_REVISED:
+    case AUTH_CODE_REASON_TERMS_UNPUBLISHED:
+      return {
+        ok: false,
+        code: reason,
+        next: { step: 'consent', intent: 'register' },
+        ...(reason === AUTH_CODE_REASON_CONSENT_REQUIRED
+          ? {}
+          : {
+              message:
+                reason === AUTH_CODE_REASON_CONSENT_REVISED
+                  ? LEGAL_CONSENT_REVISED_MESSAGE
+                  : LEGAL_TERMS_UNPUBLISHED_MESSAGE,
+            }),
+      }
     case AUTH_CODE_REASON_SENT:
     case AUTH_CODE_REASON_RATE_LIMITED:
       return { ok: true }
@@ -917,7 +977,10 @@ async function startOAuthProvider(
 async function dispatchFlow(
   context: HilosAuthContext,
   action: string,
-  payload: Record<string, string | boolean>,
+  payload: Record<
+    string,
+    string | boolean | Readonly<Record<string, string>> | null
+  >,
 ): Promise<AuthFlowSubmitOutcome> {
   try {
     const { reply } = await context.actions.dispatch(action, payload, {

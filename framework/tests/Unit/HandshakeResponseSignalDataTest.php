@@ -55,6 +55,26 @@ final class HandshakeResponseSignalDataTest extends TestCase
     /** The passkey policy as the stamp hands it - a yes, so it cannot pass for the unstamped null or the default no. */
     private const bool PASSKEY_ALLOWS_UNPROVEN = true;
 
+    public function testPendingRegistrationConsentSurvivesTheTransportRoundtrip(): void
+    {
+        $accepted = ['terms' => 'terms-1', 'privacy' => 'privacy-1'];
+        $step = self::PENDING_AUTH_STEP + [HandshakeResponseSignalData::acceptedRevisions => $accepted];
+        $payload = new HandshakeResponseSignalData(pendingAuthStep: $step);
+        $restored = HandshakeResponseSignalData::fromArray($payload->toArray());
+
+        self::assertSame($step, $restored->pendingAuthStep);
+        self::assertSame($payload->toArray(), $restored->toArray());
+    }
+
+    public function testPendingRegistrationWithoutConsentDoesNotMintAMap(): void
+    {
+        $payload = new HandshakeResponseSignalData(pendingAuthStep: self::PENDING_AUTH_STEP);
+        $restored = HandshakeResponseSignalData::fromArray($payload->toArray());
+
+        self::assertSame(self::PENDING_AUTH_STEP, $restored->pendingAuthStep);
+        self::assertArrayNotHasKey(HandshakeResponseSignalData::acceptedRevisions, $restored->pendingAuthStep);
+    }
+
     public function testImplementsSignalDataInterface(): void
     {
         $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');

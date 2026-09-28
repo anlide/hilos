@@ -589,7 +589,9 @@ test('keeps the password screen still while the way past the password comes and 
 
 /**
  * Walk a registration from the address to the finished panel, and prove that the
- * main button of every step stands where the first one stood (HIL-1107).
+ * main button of every ordinary step stands where the first one stood (HIL-1107).
+ * Consent carries documents since HIL-499: it may grow the frame, as declared in
+ * styling-rules.md, "The room a step takes"; the next ordinary step restores it.
  *
  * The button is read through the block of actions of the live step and never
  * by its own data-id: the id changes with the step (auth-submit, then
@@ -616,10 +618,21 @@ async function registerWithTheMainButtonStill(page: Page): Promise<void> {
     page.getByTestId('auth-surface'),
   )
 
-  // The terms: a local move, and the shortest step of the path.
+  // The terms may grow the frame. Reading the full text and returning to the
+  // same differences must restore the consent button's own position.
   await clickSubmit(page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-consent-accept')).toBeVisible()
-  await main.unchanged()
+  const consentMain = await watchTopWithin(
+    page.getByTestId('auth-step-actions').locator('.btn-primary'),
+    page.getByTestId('auth-surface'),
+  )
+  await clickSubmit(
+    page.locator('[data-id="legal-consent-read"][data-document="terms"]'),
+  )
+  await expect(page.getByTestId('legal-consent-reading')).toBeVisible()
+  await clickSubmit(page.getByTestId('legal-consent-back'))
+  await expect(page.getByTestId('auth-consent-accept')).toBeVisible()
+  await consentMain.unchanged()
 
   // The code: the address plaque, the send line and the field — the tallest
   // step of the path, and the one the card's room is measured on.
@@ -639,13 +652,13 @@ async function registerWithTheMainButtonStill(page: Page): Promise<void> {
   await main.unchanged()
 }
 
-test('keeps the main button at one height through a registration', async ({
+test('keeps the main button at one height on ordinary registration steps', async ({
   page,
 }) => {
   await registerWithTheMainButtonStill(page)
 })
 
-test('keeps the main button at one height through a registration, on a narrow screen', async ({
+test('keeps the main button at one height on ordinary registration steps, on a narrow screen', async ({
   page,
 }) => {
   // 375 is the narrowest screen the frontend is built for: the leads wrap
@@ -1111,7 +1124,7 @@ test('gives the code back to a tab that returns to an address another tab of the
   await typeInto(second.getByTestId('auth-identifier'), email)
   await expect(second.getByTestId('auth-heading')).toHaveText('Create your account')
   await clickSubmit(second.getByTestId('auth-submit'))
-  await expect(second.getByTestId('auth-heading')).toHaveText('Terms and privacy')
+  await expect(second.getByTestId('auth-heading')).toHaveText('Before you continue')
 
   // Tab A holds the address and sends the one code. Taking a hold broadcasts
   // nothing to the other tabs of the session: hilos_auth_converge only fires on

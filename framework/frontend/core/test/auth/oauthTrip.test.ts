@@ -230,8 +230,6 @@ function tripWorld(): TripWorld {
     scopes,
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 
   // The message listener the machine registers goes through the real window, so

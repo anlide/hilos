@@ -70,8 +70,6 @@ function relayWorld(): RelayWorld {
       scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
     dispatched,
     navigated: [],

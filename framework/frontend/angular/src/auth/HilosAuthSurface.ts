@@ -11,8 +11,8 @@
 // what is revealed is a function of the reply. Everything with a rule to it —
 // the lookup debounce, the re-entry and echo guards, pending, the error, the
 // resend gate, the late-outcome verdict, which screen the axes add up to — lives
-// in the machine; this component reads its signals, draws them, and hands three
-// seams (`authActions`) back to it.
+// in the machine; this component reads its signals, draws them, and hands its
+// transport seams (`authActions`) back to it.
 //
 // Nothing here branches on a method key: the icon rows render `flow.icons`, the
 // channel controls render `flow.channels`, and the main control is whatever
@@ -63,6 +63,8 @@ import {
   formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
+  hilosLegalDocumentLabel,
+  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   isPasskeySupported,
   isPlatformPasskeyAvailable,
   handshakeResponseAck,
@@ -87,6 +89,7 @@ import {
 } from '@hilos/core'
 import type {
   AuthFlow,
+  AuthConsentState,
   AuthFlowError,
   AuthFlowForm,
   AuthFlowMethodDescriptor,
@@ -99,12 +102,14 @@ import type {
   CodeSendProgress,
   DetectionState,
   HilosAuthContext,
+  HilosLegalDocumentKey,
   PendingAuthStep,
   ProjectSignal,
   ReadonlySignal,
   SecondFactorStepData,
 } from '@hilos/core'
 
+import { HilosLegalConsent } from '../legal/HilosLegalConsent.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosLongText } from '../HilosLongText.js'
@@ -138,6 +143,7 @@ const EMPTY_FORM: AuthFlowForm = {
   code: '',
   newPassword: '',
   consentAccepted: false,
+  acceptedRevisions: null,
   usingBackupCode: false,
   trustDevice: false,
   secondFactorLabel: '',
@@ -176,7 +182,7 @@ const HEADINGS: Record<AuthFlowScreen, string> = {
   create_account: 'Create your account',
   held_identifier: 'You already have a code',
   proven_identifier: 'Your address is confirmed',
-  terms: 'Terms and privacy',
+  terms: 'Before you continue',
   confirm_identifier: 'Confirm your email',
   enter_code: 'Enter the code',
   reset_code: 'Reset your password',
@@ -377,6 +383,7 @@ const ERROR_DETAILS_TWIN_CLASS =
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosBackupCodes,
+    HilosLegalConsent,
     HilosCookiesRefused,
     HilosFormError,
     HilosLongText,
@@ -961,59 +968,60 @@ const ERROR_DETAILS_TWIN_CLASS =
               }
             </form>
           } @else if (state().step === 'consent') {
-            <!-- The terms screen. Registration is unreachable without it: the
-        machine's submit on the identifier step moves here, and the dispatch that
-        creates anything happens from this button.
-
-        STOPGAP (HIL-499 in epic HIL-496 replaces it): one never-pre-ticked
-        checkbox covering both documents, links to their full texts, and NO
-        acceptance record of any kind — a record names a revision, and revisions
-        do not exist yet. -->
             <form
               class="d-flex flex-column"
               novalidate
               (submit)="submit($event)"
             >
-              <p class="text-body-secondary small mb-3">
-                This project runs on the standard Hilos terms.
-              </p>
-
-              <div class="form-check mb-3">
-                <input
-                  #consentInput
-                  id="auth-consent-accept"
-                  class="form-check-input"
-                  type="checkbox"
-                  data-id="auth-consent-accept"
-                  [disabled]="pending()"
-                  [checked]="form().consentAccepted"
-                  (change)="updateConsent($event)"
-                />
-                <label class="form-check-label small" for="auth-consent-accept">
-                  I agree to the
-                  <a
-                    [href]="context().termsPath"
-                    target="_blank"
-                    rel="noopener"
+              @if (form().identifier) {
+                <div
+                  class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+                  data-id="auth-consent-identifier"
+                >
+                  <i
+                    [class]="plaqueIcon() + ' text-body-secondary'"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="small fw-semibold flex-grow-1 text-break">{{
+                    form().identifier
+                  }}</span>
+                </div>
+              }
+              @if (consent().status === 'loading') {
+                <div
+                  class="placeholder-glow mb-3"
+                  data-id="legal-consent-loading"
+                  aria-busy="true"
+                >
+                  <span class="visually-hidden">Loading terms…</span>
+                  <span class="placeholder col-12" aria-hidden="true"></span>
+                  <span class="placeholder col-9" aria-hidden="true"></span>
+                  <span class="placeholder col-12" aria-hidden="true"></span>
+                </div>
+              } @else if (consent().terms; as terms) {
+                @if (terms.documents.length === 0) {
+                  <p
+                    class="small text-body-secondary"
+                    data-id="legal-consent-unpublished"
                   >
-                    Terms
-                  </a>
-                  and the
-                  <a
-                    [href]="context().privacyPath"
-                    target="_blank"
-                    rel="noopener"
-                  >
-                    Privacy Policy </a
-                  >.
-                </label>
-              </div>
-
+                    {{ termsUnpublishedMessage }}
+                  </p>
+                } @else {
+                  <hilos-legal-consent
+                    #consentInput
+                    [terms]="terms"
+                    [accepted]="form().consentAccepted"
+                    [reading]="readingConsent()"
+                    [disabled]="pending()"
+                    (acceptedChange)="acceptConsent($event)"
+                    (readingChange)="readingConsent.set($event)"
+                  />
+                }
+              }
               <hilos-form-error
-                [message]="errorMessage()"
+                [message]="consentUnpublished() ? null : errorMessage()"
                 dataId="auth-error"
               />
-
               <div
                 class="d-flex flex-column mt-auto"
                 data-id="auth-step-actions"
@@ -1023,10 +1031,12 @@ const ERROR_DETAILS_TWIN_CLASS =
                   type="submit"
                   class="btn-primary w-100"
                   [loading]="pending()"
-                  [disabled]="!submittable()"
+                  [disabled]="consent().status !== 'failed' && !submittable()"
                   data-id="auth-submit"
                 >
-                  {{ submitLabel() }}
+                  {{
+                    consent().status === 'failed' ? 'Try again' : submitLabel()
+                  }}
                 </button>
                 <div class="hilos-stack mt-2" data-id="auth-step-tail">
                   <div class="d-flex flex-column">
@@ -1041,6 +1051,35 @@ const ERROR_DETAILS_TWIN_CLASS =
                   </div>
                   <ng-container *ngTemplateOutlet="stepTailTwin"></ng-container>
                 </div>
+                @if (consent().terms; as terms) {
+                  @if (terms.form === 'line' && terms.documents.length) {
+                    <p
+                      class="small text-body-secondary mt-2 mb-0"
+                      data-id="auth-consent-line"
+                    >
+                      By creating an account you accept the
+                      @for (
+                        item of terms.documents;
+                        track item.document;
+                        let index = $index
+                      ) {
+                        @if (index) {
+                          and the
+                        }
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0"
+                          data-id="legal-consent-read"
+                          [attr.data-document]="item.document"
+                          (click)="readingConsent.set(item.document)"
+                        >
+                          {{ legalDocumentLabel(item.document) }}
+                        </button>
+                      }
+                      .
+                    </p>
+                  }
+                }
               </div>
             </form>
           } @else if (state().step === 'code') {
@@ -1980,7 +2019,7 @@ const ERROR_DETAILS_TWIN_CLASS =
   `,
 })
 export class HilosAuthSurface {
-  /** The project context: its stores, its method registry, its terms paths. */
+  /** The project context: its stores, its method registry and code channels. */
   readonly context = input.required<HilosAuthContext>()
 
   protected readonly passwordMinLength = PASSWORD_MIN_LENGTH
@@ -2013,6 +2052,7 @@ export class HilosAuthSurface {
       authMethods: sessionAuthMethods(context.scopes),
       channels: context.channels,
       onDetect: (identifier) => actions.onDetect(identifier),
+      onConsentTerms: actions.onConsentTerms,
       onSubmit: actions.onSubmit,
       onMethodAction: actions.onMethodAction,
       secondFactorPolicy: sessionSecondFactorPolicy(context.scopes),
@@ -2046,6 +2086,16 @@ export class HilosAuthSurface {
 
   // The machine's signals mirrored into Angular signals by the effect below.
   protected readonly state = signal<AuthFlowState>(INITIAL_FLOW)
+  protected readonly consent = signal<AuthConsentState>({
+    status: 'loading',
+    terms: null,
+  })
+  protected readonly consentUnpublished = computed(
+    () => this.consent().terms?.documents.length === 0,
+  )
+  protected readonly readingConsent = signal<HilosLegalDocumentKey | null>(null)
+  protected readonly legalDocumentLabel = hilosLegalDocumentLabel
+  protected readonly termsUnpublishedMessage = LEGAL_TERMS_UNPUBLISHED_MESSAGE
   protected readonly form = signal<AuthFlowForm>(EMPTY_FORM)
   protected readonly detection = signal<DetectionState>(IDLE_DETECTION)
   protected readonly pending = signal(false)
@@ -2166,8 +2216,7 @@ export class HilosAuthSurface {
     viewChild<ElementRef<HTMLInputElement>>('codeInput')
   private readonly newPasswordInput =
     viewChild<ElementRef<HTMLInputElement>>('newPasswordInput')
-  private readonly consentInput =
-    viewChild<ElementRef<HTMLInputElement>>('consentInput')
+  private readonly consentInput = viewChild<HilosLegalConsent>('consentInput')
 
   // The step the focus effect last acted on. An Angular effect runs on its first
   // binding exactly as a React effect runs on mount, and the first render must
@@ -2613,6 +2662,7 @@ export class HilosAuthSurface {
       const subscriptions = [
         bind(auth.flow, this.state),
         bind(auth.form, this.form),
+        bind(auth.consent, this.consent),
         bind(auth.detection, this.detection),
         bind(auth.pending, this.pending),
         bind(auth.error, this.error),
@@ -2659,6 +2709,9 @@ export class HilosAuthSurface {
       auth.reportSendProgress(hilosCodeSendProgress.get())
       this.notice.set(null)
       this.unavailableChannels.set(new Set())
+      const stopRefreshingConsent = authActions.subscribeConnectionRestored(
+        () => auth.refreshConsentTerms(),
+      )
 
       const stopWatchingChannels = authActions.subscribeCodeChannelUnavailable(
         (channel) => {
@@ -2772,6 +2825,7 @@ export class HilosAuthSurface {
 
       onCleanup(() => {
         stopWatchingChannels()
+        stopRefreshingConsent()
         stopWatchingConverge()
         stopWatchingHandshake()
         stopWatchingTrip()
@@ -2819,9 +2873,18 @@ export class HilosAuthSurface {
       if (step !== 'done') {
         this.panelRaisedByAck = false
       }
+      if (step !== 'consent') this.readingConsent.set(null)
+      if (step === 'consent') {
+        const body = this.consentInput()
+        if (body && this.focusedStep !== step) {
+          this.focusedStep = step
+          body.focus()
+        }
+        return
+      }
       const field = {
         identifier: this.identifierInput(),
-        consent: this.consentInput(),
+        consent: null,
         code: this.codeInput(),
         // The expired screen has no field left to focus (HIL-828); its one
         // control is the button that orders a new code.
@@ -2982,16 +3045,9 @@ export class HilosAuthSurface {
     )
   }
 
-  /**
-   * Mirror the consent checkbox into the machine.
-   *
-   * @param event The change event.
-   */
-  protected updateConsent(event: Event): void {
-    this.auth().setField(
-      'consentAccepted',
-      (event.target as HTMLInputElement).checked,
-    )
+  /** Mirror the checkbox shown with the current documents into the machine. */
+  protected acceptConsent(accepted: boolean): void {
+    this.auth().setField('consentAccepted', accepted)
   }
 
   /**
@@ -3003,6 +3059,10 @@ export class HilosAuthSurface {
   protected submit(event: Event): void {
     event.preventDefault()
     const auth = this.auth()
+    if (this.state().step === 'consent' && this.consent().status === 'failed') {
+      auth.refreshConsentTerms()
+      return
+    }
     void auth.submit().then(() => this.loadSetupIfMissing(auth))
   }
 

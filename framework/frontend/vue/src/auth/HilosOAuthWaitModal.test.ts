@@ -95,8 +95,6 @@ function tripWorld(): TripWorld {
     ]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 
   vi.spyOn(window, 'open').mockImplementation(() => opened)

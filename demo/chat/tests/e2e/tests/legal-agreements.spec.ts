@@ -9,7 +9,7 @@ test("reads personal agreements and compares published revisions on wide and nar
   await signUpWithVerifiedEmail(page);
   await gotoPage(page, "/profile");
   await expect(page.getByTestId("profile-agreements-summary")).toHaveText(
-    "Nothing accepted on record",
+    "Terms and privacy accepted",
   );
   await clickSubmit(page.getByTestId("profile-agreements-open"));
   await expect(page.getByTestId("profile-agreements-view")).toBeVisible();
@@ -18,7 +18,7 @@ test("reads personal agreements and compares published revisions on wide and nar
     '[data-id="legal-agreement-row"][data-document="terms"]',
   );
   await expect(terms.getByTestId("legal-agreement-state")).toHaveText(
-    "No acceptance on record · revision of 27 September 2026 in force",
+    /^Revision of 27 September 2026 · accepted /,
   );
   await clickSubmit(terms.getByTestId("legal-agreement-open"));
   const text = page.getByTestId("legal-revision-text-modal");

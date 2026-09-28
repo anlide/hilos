@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\DTO;
 
+use Hilos\Auth\Registration\RegistrationConsent;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * RegisterActionDTO - DTO for the registration action payload: an address and nothing else.
+ * RegisterActionDTO - DTO for the registration action payload: an address and its accepted legal revisions.
  *
  * Public (anonymous-reachable) register submit. The email is trimmed here and
  * lowercased by the handler before the reservation write.
@@ -29,9 +31,11 @@ final class RegisterActionDTO extends ActionPayloadDTO
      * Creates register action DTO.
      *
      * @param string $email Submitted account email (trimmed)
+     * @param ?array<string, string> $acceptedRevisions Accepted document-to-revision boundary map, or null for a repeat
      */
     public function __construct(
         public readonly string $email,
+        public readonly ?array $acceptedRevisions = null,
     ) {
     }
 
@@ -51,23 +55,26 @@ final class RegisterActionDTO extends ActionPayloadDTO
      * @param array<string, mixed> $data Payload data
      * @return static Register DTO instance
      * @throws InvalidFormatException When the email is absent or not a string
+     * @throws ValidationException When the accepted revision map has an unknown document or invalid revision id
      */
     public static function fromArray(array $data): static
     {
         return new static(
             email: trim(self::requireString($data, 'email')),
+            acceptedRevisions: RegistrationConsent::readPayload(self::optionalArray($data, RegistrationConsent::PAYLOAD_KEY)),
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{email: string} Register payload
+     * @return array<string, mixed> Action payload including the optional accepted revisions
      */
     public function toArray(): array
     {
         return [
             'email' => $this->email,
+            RegistrationConsent::PAYLOAD_KEY => $this->acceptedRevisions,
         ];
     }
 }

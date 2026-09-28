@@ -361,7 +361,7 @@ abstract class AbstractLibraryCommands
      * @param ?string $plainPassword Password the account signs in with, or null for a way in that carries none
      * @param ?string $landAs Identity a secret-less landing earns (see IdentityType), or null to take the hold's own type
      * @param ?Closure(int): void $withAccount What else the new account is written with, given its user id, or null for nothing
-     * @return ?AuthFlowOutcome The taken-address rollback to answer with, or null when the holder answers
+     * @return ?AuthFlowOutcome Missing-consent or taken-address refusal, or null when the holder answers
      * @throws EmptyValueException When the display name is empty
      * @throws InvalidFormatException When the proven identifier is neither an address nor a number
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
@@ -376,9 +376,19 @@ abstract class AbstractLibraryCommands
         ?string $landAs = null,
         ?Closure $withAccount = null,
     ): ?AuthFlowOutcome {
+        $acceptance = new RegistrationReservationService()->acceptanceForLanding($acting->sessionToken, $identifier);
+        if ($acceptance === null || $acceptance === []) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_CONSENT_REQUIRED,
+                AuthFlowStep::CONSENT,
+                AuthFlowIntent::REGISTER,
+            );
+        }
+
         Database::transactionStart();
         try {
             $userId = $this->library->createUser($displayName);
+            $this->library->legalAcceptanceCommands()->record($userId, $acceptance);
             $losers = new RegistrationReservationService()
                 ->confirmProvenAddress($acting->sessionToken, $identifier, $userId, $plainPassword, $landAs);
             if ($withAccount !== null) {
@@ -432,6 +442,7 @@ abstract class AbstractLibraryCommands
      * @param string $identifier Sign-in method identifier, handed to the project's new-member bookkeeping
      * @param string $displayName Name the new account is created with
      * @param Closure(int): void $withAccount The way in the new account is written with, given its user id
+     * @param array<string, string> $acceptedRevisions Accepted boundary map from the final passkey action
      * @throws EmptyValueException When the display name is empty
      * @throws InvalidArgumentException When the grant frame cannot be named or queued
      * @throws HilosException When the account, project bookkeeping, or reservation write fails, or whatever
@@ -442,10 +453,12 @@ abstract class AbstractLibraryCommands
         string $identifier,
         string $displayName,
         Closure $withAccount,
+        array $acceptedRevisions,
     ): void {
         Database::transactionStart();
         try {
             $userId = $this->library->createUser($displayName);
+            $this->library->legalAcceptanceCommands()->record($userId, $acceptedRevisions);
             $withAccount($userId);
             Database::transactionCommit();
         } catch (HilosException $failure) {

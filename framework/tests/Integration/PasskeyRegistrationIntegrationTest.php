@@ -37,6 +37,8 @@ use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrat
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Legal\LegalCatalogStub;
+use Hilos\Legal\LegalConsentProjector;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
@@ -108,6 +110,8 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
     /** Display name of the marker row written after a refused landing to show its transaction is over. */
     private const string PROBE_NAME = 'transaction-probe';
 
+    private string $previousAppClass;
+
     private ?SignalRouter $previousSignalRouter = null;
 
     private ?RtContext $previousRt = null;
@@ -125,6 +129,8 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousAppClass = Hilos::appClass();
+        PasskeyRegistrationLegalHilos::initBrowser();
         self::runPasskeyStub(down: true);
         self::runPasskeyStub(down: false);
         self::createFixtureUserTable();
@@ -159,6 +165,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      */
     protected function tearDown(): void
     {
+        $this->previousAppClass::initBrowser();
         RtTruthSourceRegistry::unregisterDaemon(StateHilosOAuthTrip::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateRecoveryWaiter::RT_COLLECTION);
@@ -200,6 +207,8 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         $this->assertNull($reply, 'A landing is answered by the session holder, not by the submit');
 
         $userId = $this->theOnlyUser();
+        self::assertCount(1, Hilos::$db->legalAcceptances->ofUser($userId));
+        self::assertSame('2026-09-17', Hilos::$db->legalAcceptances->ofUser($userId)[0]->revisionId);
         $this->assertSame(strstr($email, '@', true), $this->displayNameOf($userId));
         $address = Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email);
         $this->assertSame($userId, $address?->userId, 'The proven address lands as the account\'s own');
@@ -247,6 +256,8 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         $this->assertNull($reply, 'A sign-in is answered by the session holder, not by the submit');
 
         $userId = $this->theOnlyUser();
+        self::assertCount(1, Hilos::$db->legalAcceptances->ofUser($userId));
+        self::assertSame('2026-09-17', Hilos::$db->legalAcceptances->ofUser($userId)[0]->revisionId);
         $name = $options->publicKeyOptions['user']['name'];
         $this->assertMatchesRegularExpression('/^User[1-9]\d{5}$/', $name);
         $this->assertSame($name, $options->publicKeyOptions['user']['displayName']);
@@ -295,6 +306,35 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         $this->assertSame(1, PasskeyRegistrationTestLibrary::usersVisible(), 'One challenge, one account');
         Database::sql('SELECT COUNT(*) AS `total` FROM `hilos_passkey_credential`');
         $this->assertSame(1, (int)(Database::row()['total'] ?? -1), 'The second key was not stored');
+    }
+
+    /**
+     * Both device-entry actions refuse before creating a user or key.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testBothAddresslessPasskeyActionsRefuseMissingOrOutdatedConsent(): void
+    {
+        AuthMethodTestSettings::$passkeyAllowsUnproven = true;
+        foreach ([null, ['terms' => 'outdated']] as $accepted) {
+            $expected = $accepted === null ? AuthFlowOutcome::CODE_CONSENT_REQUIRED : AuthFlowOutcome::CODE_CONSENT_REVISED;
+            $reply = $this->library->onAgentAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS,
+                new RegistrationPasskeyOptionsActionDTO(null, $accepted),
+            );
+            self::assertInstanceOf(AuthFlowOutcome::class, $reply);
+            self::assertSame($expected, $reply->code);
+            self::assertSame(AuthFlowStep::CONSENT, $reply->step);
+            self::assertNull($this->queuedOptions());
+
+            $options = $this->askOptions(null);
+            $reply = $this->complete(null, $options, new WebAuthnTestVectors(), acceptedRevisions: $accepted);
+            self::assertInstanceOf(AuthFlowOutcome::class, $reply);
+            self::assertSame($expected, $reply->code);
+            self::assertSame(AuthFlowStep::CONSENT, $reply->step);
+            $this->assertNothingWritten();
+        }
     }
 
     /**
@@ -563,7 +603,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         $reply = $this->library->onAgentAction(
             self::ACCEPT_KEY,
             HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS,
-            new RegistrationPasskeyOptionsActionDTO($identifier),
+            new RegistrationPasskeyOptionsActionDTO($identifier, LegalConsentProjector::acceptance()),
         );
         $this->assertNull($reply, 'The options travel on the signal, not in the answer');
         $options = $this->queuedOptions();
@@ -580,6 +620,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      * @param WebAuthnTestVectors $vectors The authenticator
      * @param ?string $echoedChallenge Challenge the client data echoes, or null for the one the options named
      * @param ?string $credentialId Raw id of the key made, or null for a fresh one
+     * @param ?array<string, string> $acceptedRevisions Consent on the final action, absent in refusal cases
      * @return mixed What the submit answered
      * @throws HilosException When the command fails
      */
@@ -589,6 +630,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         WebAuthnTestVectors $vectors,
         ?string $echoedChallenge = null,
         ?string $credentialId = null,
+        ?array $acceptedRevisions = ['terms' => '2026-09-17'],
     ): mixed {
         $authData = $vectors->authenticatorData(
             WebAuthnTestVectors::FLAG_USER_PRESENT | WebAuthnTestVectors::FLAG_USER_VERIFIED
@@ -610,6 +652,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
                 Base64Url::encode($clientDataJson),
                 ['internal'],
                 self::USER_AGENT,
+                $acceptedRevisions,
             ),
         );
     }
@@ -650,7 +693,9 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      */
     private function seedProvenHold(string $email): void
     {
-        $this->reservations()->createReservation(IdentityType::PASSWORD, self::SESSION_TOKEN, $email, self::LIVE_FOR_SECONDS);
+        $this->reservations()->createReservation(
+            IdentityType::PASSWORD, self::SESSION_TOKEN, $email, self::LIVE_FOR_SECONDS, LegalConsentProjector::acceptance(),
+        );
         $this->assertTrue(new RegistrationReservationService()->markProven(self::SESSION_TOKEN, $email));
     }
 
@@ -954,4 +999,10 @@ final class PasskeyRegistrationTestConnection extends HilosSessionConnection
     protected function applyOwnDiff(array $diff): void
     {
     }
+}
+
+/** The passkey flow uses the framework example declaration for its accepted text. */
+abstract class PasskeyRegistrationLegalHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = LegalCatalogStub::class;
 }

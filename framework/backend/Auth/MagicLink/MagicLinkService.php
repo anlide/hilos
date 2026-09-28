@@ -19,6 +19,8 @@ use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Random\RandomException;
 
 /**
@@ -79,6 +81,7 @@ final class MagicLinkService
      * @param string $email Address to send the link to (normalized here)
      * @param string $sessionToken Session cookie token of the browser asking for the link
      * @param ?string $progressTicket Ticket the transport reports this letter's steps against (HIL-826)
+     * @param ?array<string, string> $acceptedRevisions Accepted boundary map for a new account, or null for a repeat
      * @return VerificationSendOutcome Whether the link went out, and the seconds until the next may
      * @throws EmptyValueException When the normalized address is empty
      * @throws RandomException When the platform CSPRNG cannot produce a token
@@ -91,16 +94,19 @@ final class MagicLinkService
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      * @throws DbCollectionNotReadableException When nothing here reads the identities, reservations or verifications collection, or its readiness is
      *   on its way
+     * @throws SourceChangeSubscriberException When the registration hold cannot be written or announced
+     * @throws WriteNotAllowedException When the registration hold cannot be written or announced
      */
     public function send(
         string $email,
         string $sessionToken,
         ?string $progressTicket = null,
+        ?array $acceptedRevisions = null,
     ): VerificationSendOutcome {
         $identifier = mb_strtolower(trim($email));
 
         if ($this->identities()->findAccountIdByEmail($identifier) === null) {
-            new RegistrationReservationService()->hold(IdentityType::MAGIC_LINK, $sessionToken, $identifier);
+            new RegistrationReservationService()->hold(IdentityType::MAGIC_LINK, $sessionToken, $identifier, $acceptedRevisions);
         }
 
         return new VerificationService()->issue(

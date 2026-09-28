@@ -13,6 +13,7 @@ use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
 use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Hilos\Auth\MagicLink\MagicLinkService;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Registration\RegistrationConsent;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\EmptyValueException;
@@ -21,7 +22,6 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Identity\IdentityType;
-use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -41,30 +41,15 @@ use Random\RandomException;
 final class MagicLinkCommands extends AbstractLibraryCommands
 {
     /**
-     * Issues an email magic-link sign-in token, always answering generically.
+     * Sends a sign-in link to a member, or holds a free address after current consent.
      *
-     * The passwordless login entry (HIL-283): login-only, so it resolves the
-     * account through the framework's one definition of a taken address
-     * ({@see Identities::findAccountIdByEmail()}) and issues (throttled inside
-     * the service) a token — no user or identity is ever created here. A free
-     * address is HELD by a reservation for the life of the link (HIL-417), and the
-     * hold is THIS BROWSER's since HIL-608: the letter may only finish the
-     * registration of whoever asked for it. An address that already has an account
-     * is not held, there being nothing left to register. The token is delivered as a
-     * clickable URL assembled by the framework
-     * ({@see VerificationService::issue()}), which the /auth/magic route relays back.
-     *
-     * The answer is HONEST now, like every other send on this surface (HIL-421 sent
-     * it blind; the owner reversed that with this leaf): the real remaining cooldown,
-     * and the cap refused out loud. What made the blindness worth its price was that
-     * the letter went only to a known address, so the number leaked whether one
-     * existed. It goes to both now, and the number says only "this address was mailed
-     * recently". Silence, meanwhile, had a price of its own: the resend button
-     * answered "sent" over a send the cap had refused.
+     * Consent refusals name the registration step before any hold or send is made.
+     * The identifier lookup already reveals whether the address is free; the send
+     * keeps that boundary and reports real cooldown and cap outcomes on either road.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param RequestMagicLinkActionDTO $dto Parsed request payload (email)
-     * @return AuthFlowOutcome Moments the resend gate opens and the link dies, or the cap refusal
+     * @return AuthFlowOutcome Send moments, a cap refusal, or a return to registration consent
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws EmptyValueException When the submitted address is empty
      * @throws ValidationException When the link cannot be delivered to the address
@@ -76,18 +61,28 @@ final class MagicLinkCommands extends AbstractLibraryCommands
     {
         $acting = $this->acting($acceptKey);
 
-        $email = strtolower($dto->email);
+        $email = mb_strtolower(trim($dto->email));
+        if ($email === '') {
+            throw new EmptyValueException('Email is required');
+        }
+        $accepted = null;
+        if (!$this->emailBelongsToAccount($email)) {
+            $accepted = $dto->acceptedRevisions ?? new RegistrationReservationService()->ownAcceptance($acting->sessionToken, $email);
+            $refusal = RegistrationConsent::refusal($accepted);
+            if ($refusal !== null) {
+                return $refusal;
+            }
+        }
         $ticket = $this->openCodeSendLine($acting, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
-        $outcome = new MagicLinkService()->send($email, $acting->sessionToken, $ticket);
+        $outcome = new MagicLinkService()->send($email, $acting->sessionToken, $ticket, $accepted);
         $this->closeRefusedCodeSendLine($ticket, StateHilosCodeSendAttempt::CHANNEL_EMAIL, $outcome);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, AuthMessages::SEND_CAP);
         }
 
-        // Answered for a stranger exactly as for a member: the link is issued on both
-        // sides of that question, so this moment says how long the letter is good for
-        // and nothing about whose inbox it went to (HIL-486).
+        // A member and a stranger who accepted the documents receive the same send outcome.
+        // A stranger without current consent was refused before issuing anything.
         return AuthFlowOutcome::sent(
             $outcome->resendAt(),
             new VerificationService()->activeExpiresAt(VerificationType::MAGIC_LINK, $email),

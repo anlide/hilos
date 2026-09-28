@@ -11,8 +11,8 @@
 // what is revealed is a function of the reply. Everything with a rule to it —
 // the lookup debounce, the re-entry and echo guards, pending, the error, the
 // resend gate, the late-outcome verdict, which screen the axes add up to — lives
-// in the machine; this component reads its signals, draws them, and hands three
-// seams (`authActions`) back to it.
+// in the machine; this component reads its signals, draws them, and hands its
+// transport seams (`authActions`) back to it.
 //
 // Nothing here branches on a method key: the icon rows render `flow.icons`, the
 // channel controls render `flow.channels`, and the main control is whatever
@@ -57,6 +57,8 @@ import {
   formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
+  hilosLegalDocumentLabel,
+  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   isPasskeySupported,
   isPlatformPasskeyAvailable,
   handshakeResponseAck,
@@ -80,11 +82,13 @@ import {
   type AuthFlowScreen,
   type CodeSendProgress,
   type HilosAuthContext,
+  type HilosLegalDocumentKey,
   type OAuthTripOutcome,
   type PendingAuthStep,
   type ProjectSignal,
 } from '@hilos/core'
 
+import { HilosLegalConsent } from '../legal/HilosLegalConsent.js'
 import { HilosBackupCodes } from '../HilosBackupCodes.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosLongText } from '../HilosLongText.js'
@@ -131,7 +135,7 @@ const HEADINGS: Record<AuthFlowScreen, string> = {
   create_account: 'Create your account',
   held_identifier: 'You already have a code',
   proven_identifier: 'Your address is confirmed',
-  terms: 'Terms and privacy',
+  terms: 'Before you continue',
   confirm_identifier: 'Confirm your email',
   enter_code: 'Enter the code',
   reset_code: 'Reset your password',
@@ -452,7 +456,7 @@ function channelIcon(key: string): string {
 
 /** Props for {@link HilosAuthSurface}. */
 export interface HilosAuthSurfaceProps {
-  /** The project context: its stores, its method registry, its terms paths. */
+  /** The project context: its stores, its method registry and code channels. */
   context: HilosAuthContext
 }
 
@@ -463,7 +467,7 @@ export interface HilosAuthSurfaceProps {
  * @param props The project's auth context.
  */
 export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
-  // The framework wire, bound to that context: the three seams the machine
+  // The framework wire, bound to that context: the transport seams the machine
   // delegates, plus this surface's own dispatches and the OAuth link it peeks
   // at. Everything born from the context is created ONCE — `useSignal`
   // resubscribes whenever its source changes, and the two session factories
@@ -479,6 +483,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         authMethods: sessionAuthMethods(context.scopes),
         channels: context.channels,
         onDetect: (identifier) => authActions.onDetect(identifier),
+        onConsentTerms: authActions.onConsentTerms,
         onSubmit: authActions.onSubmit,
         onMethodAction: authActions.onMethodAction,
         secondFactorPolicy: sessionSecondFactorPolicy(context.scopes),
@@ -520,6 +525,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
 
   const state = useSignal(auth.flow)
   const form = useSignal(auth.form)
+  const consent = useSignal(auth.consent)
+  const [readingConsent, setReadingConsent] =
+    useState<HilosLegalDocumentKey | null>(null)
   const detection = useSignal(auth.detection)
   const pending = useSignal(auth.pending)
   const error = useSignal(auth.error)
@@ -604,7 +612,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const identifierInput = useRef<HTMLInputElement>(null)
   const codeInput = useRef<HTMLInputElement>(null)
   const newPasswordInput = useRef<HTMLInputElement>(null)
-  const consentInput = useRef<HTMLInputElement>(null)
+  const consentInput = useRef<{ focus(): void }>(null)
 
   // A browser that refuses cookies cannot stay signed in by any method
   // (HIL-1074), so the surface draws the card that says so instead of a form.
@@ -950,6 +958,10 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
    */
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
+    if (state.step === 'consent' && consent.status === 'failed') {
+      auth.refreshConsentTerms()
+      return
+    }
     void auth.submit().then(loadSetupIfMissing)
   }
 
@@ -1074,8 +1086,14 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       panelRaisedByAck.current = false
     }
     previousStep.current = state.step
+    if (state.step !== 'consent') setReadingConsent(null)
     focusStep()
   }, [state.step])
+
+  useEffect(() => {
+    if (consent.status === 'ready' && state.step === 'consent')
+      consentInput.current?.focus()
+  }, [consent.status, state.step])
 
   // Any dispatch settles the news about a move nobody asked for: by then the
   // person is acting on the new screen and whatever answers them belongs in the
@@ -1208,6 +1226,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     auth.reportSendProgress(hilosCodeSendProgress.get())
     setNotice(null)
     setUnavailableChannels(new Set())
+    const stopRefreshingConsent = authActions.subscribeConnectionRestored(() =>
+      auth.refreshConsentTerms(),
+    )
 
     const stopWatchingChannels = authActions.subscribeCodeChannelUnavailable(
       (channel) => {
@@ -1333,6 +1354,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
 
     return () => {
       stopWatchingChannels()
+      stopRefreshingConsent()
       stopWatchingConverge()
       stopWatchingHandshake()
       stopWatchingTrip()
@@ -1902,55 +1924,62 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
               </form>
             ) : null}
 
-            {/* The terms screen. Registration is unreachable without it: the machine's
-          submit on the identifier step moves here, and the dispatch that creates
-          anything happens from this button.
-
-          STOPGAP (HIL-499 in epic HIL-496 replaces it): one never-pre-ticked
-          checkbox covering both documents, links to their full texts, and NO
-          acceptance record of any kind — a record names a revision, and
-          revisions do not exist yet. */}
             {state.step === 'consent' ? (
               <form className="d-flex flex-column" noValidate onSubmit={submit}>
-                <p className="text-body-secondary small mb-3">
-                  This project runs on the standard Hilos terms.
-                </p>
-
-                <div className="form-check mb-3">
-                  <input
-                    id="auth-consent-accept"
-                    ref={consentInput}
-                    className="form-check-input"
-                    type="checkbox"
-                    data-id="auth-consent-accept"
-                    disabled={pending}
-                    checked={form.consentAccepted}
-                    onChange={(event) =>
-                      auth.setField('consentAccepted', event.target.checked)
-                    }
-                  />
-                  <label
-                    className="form-check-label small"
-                    htmlFor="auth-consent-accept"
+                {form.identifier && (
+                  <div
+                    className="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+                    data-id="auth-consent-identifier"
                   >
-                    I agree to the{' '}
-                    <a href={context.termsPath} target="_blank" rel="noopener">
-                      Terms
-                    </a>{' '}
-                    and the{' '}
-                    <a
-                      href={context.privacyPath}
-                      target="_blank"
-                      rel="noopener"
+                    <i
+                      className={`${plaqueIcon} text-body-secondary`}
+                      aria-hidden="true"
+                    />
+                    <span className="small fw-semibold flex-grow-1 text-break">
+                      {form.identifier}
+                    </span>
+                  </div>
+                )}
+                {consent.status === 'loading' && (
+                  <div
+                    className="placeholder-glow mb-3"
+                    data-id="legal-consent-loading"
+                    aria-busy="true"
+                  >
+                    <span className="visually-hidden">Loading terms…</span>
+                    <span className="placeholder col-12" aria-hidden="true" />
+                    <span className="placeholder col-9" aria-hidden="true" />
+                    <span className="placeholder col-12" aria-hidden="true" />
+                  </div>
+                )}
+                {consent.status === 'ready' &&
+                  consent.terms &&
+                  (consent.terms.documents.length === 0 ? (
+                    <p
+                      className="small text-body-secondary"
+                      data-id="legal-consent-unpublished"
                     >
-                      Privacy Policy
-                    </a>
-                    .
-                  </label>
-                </div>
-
-                <HilosFormError message={errorMessage} dataId="auth-error" />
-
+                      {LEGAL_TERMS_UNPUBLISHED_MESSAGE}
+                    </p>
+                  ) : (
+                    <HilosLegalConsent
+                      ref={consentInput}
+                      terms={consent.terms}
+                      accepted={form.consentAccepted}
+                      reading={readingConsent}
+                      disabled={pending}
+                      onAcceptedChange={(value) =>
+                        auth.setField('consentAccepted', value)
+                      }
+                      onReadingChange={setReadingConsent}
+                    />
+                  ))}
+                <HilosFormError
+                  message={
+                    consent.terms?.documents.length === 0 ? null : errorMessage
+                  }
+                  dataId="auth-error"
+                />
                 <div
                   className="d-flex flex-column mt-auto"
                   data-id="auth-step-actions"
@@ -1959,10 +1988,10 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                     type="submit"
                     className="btn-primary w-100"
                     loading={pending}
-                    disabled={!submittable}
+                    disabled={consent.status !== 'failed' && !submittable}
                     data-id="auth-submit"
                   >
-                    {submitLabel}
+                    {consent.status === 'failed' ? 'Try again' : submitLabel}
                   </LoadingButton>
                   <StepTail dataId="auth-step-tail">
                     <button
@@ -1974,6 +2003,30 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                       Back
                     </button>
                   </StepTail>
+                  {consent.terms?.form === 'line' &&
+                    consent.terms.documents.length > 0 && (
+                      <p
+                        className="small text-body-secondary mt-2 mb-0"
+                        data-id="auth-consent-line"
+                      >
+                        By creating an account you accept the{' '}
+                        {consent.terms.documents.map((item, index) => (
+                          <span key={item.document}>
+                            {index > 0 && ' and the '}
+                            <button
+                              type="button"
+                              className="btn btn-link btn-sm p-0"
+                              data-id="legal-consent-read"
+                              data-document={item.document}
+                              onClick={() => setReadingConsent(item.document)}
+                            >
+                              {hilosLegalDocumentLabel(item.document)}
+                            </button>
+                          </span>
+                        ))}
+                        .
+                      </p>
+                    )}
                 </div>
               </form>
             ) : null}

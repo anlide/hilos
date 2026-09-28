@@ -1,4 +1,5 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { consentTermsWithClauses } from '../../../../core/test/legal/consentFixture.js'
 import { createSignal, ScopeManager, type HilosLegalContext } from '@hilos/core'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -112,6 +113,50 @@ describe('legal admin views', () => {
     expect(view.find('[data-id="legal-deviation-row"]').text()).toContain(
       'stricter',
     )
+    view.unmount()
+  })
+
+  it('opens the shared consent preview with both documents and no registration action', async () => {
+    const h = harness()
+    h.scope.data.set('legalDocument', {
+      document: 'terms',
+      declared: true,
+      revision,
+      set: null,
+      newerSet: null,
+      deviations: [],
+    })
+    const dispatch = vi.fn(() => ({
+      done: Promise.resolve({ reply: consentTermsWithClauses() }),
+    }))
+    Object.assign(h.context.actions, { dispatch })
+    const view = mount(HilosLegalDocumentPage, {
+      props: { context: h.context },
+      global: h.global,
+      attachTo: document.body,
+    })
+    await view.get('[data-id="legal-preview-consent"]').trigger('click')
+    await flushPromises()
+    const preview = document.querySelector('[data-id="legal-consent-preview"]')!
+    expect(
+      preview.querySelectorAll('[data-id="legal-consent-deviation"]'),
+    ).toHaveLength(4)
+    expect(preview.querySelector('[data-id="auth-submit"]')).toBeNull()
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledWith(
+      'hilos_legal_consent',
+      {},
+      expect.any(Object),
+    )
+    ;(
+      document.querySelector(
+        '[data-id="legal-consent-preview-close"]',
+      ) as HTMLElement
+    ).click()
+    await flushPromises()
+    expect(
+      document.querySelector('[data-id="legal-consent-preview"]'),
+    ).toBeNull()
     view.unmount()
   })
 

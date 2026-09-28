@@ -1289,7 +1289,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param ?Session $session Session to describe, or null for an anonymous response
      * @return ?array{identifier: ?string, kind: ?string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     channel: ?string, expiresAt: ?int, code: ?string, acceptedRevisions?: array<string, string>,
      *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} Step, or null when there is none
      * @throws HilosException When the reservation, runtime, verification or identity query fails
      */
@@ -1338,7 +1338,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return $this->lostRegistrationStepFor($identifier, $kind);
         }
 
-        return [
+        $step = [
             HandshakeResponseSignalData::identifier => $identifier,
             HandshakeResponseSignalData::kind => $kind,
             HandshakeResponseSignalData::intent => AuthFlowIntent::REGISTER,
@@ -1351,6 +1351,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             HandshakeResponseSignalData::expiresAt => TimeHelper::sqlToMs($reservation->expiresAt),
             HandshakeResponseSignalData::code => null,
         ];
+        $acceptedRevisions = $reservation->acceptedRevisions();
+        if ($acceptedRevisions !== null) {
+            $step[HandshakeResponseSignalData::acceptedRevisions] = $acceptedRevisions;
+        }
+
+        return $step;
     }
 
     /**

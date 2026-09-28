@@ -18,6 +18,7 @@ use Hilos\Auth\Library\DTO\PasskeyRegisterOptionsActionDTO;
 use Hilos\Auth\Library\DTO\RegistrationPasskeyOptionsActionDTO;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Registration\RegistrationConsent;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
 use Hilos\Auth\StepUp\DTO\StepUpPasskeyAnswer;
 use Hilos\Auth\StepUp\StepUpMessages;
@@ -266,6 +267,13 @@ final class PasskeyCommands extends AbstractLibraryCommands
             return $this->addressUnprovenOutcome();
         }
 
+        if ($normalized === null) {
+            $refusal = RegistrationConsent::refusal($dto->acceptedRevisions);
+            if ($refusal !== null) {
+                return $refusal;
+            }
+        }
+
         $config = WebAuthnConfig::fromEnv();
         $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
             $normalized !== null ? WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_PROVEN : WebAuthnChallengeSigner::PURPOSE_NEW_ACCOUNT_UNPROVEN,
@@ -371,6 +379,13 @@ final class PasskeyCommands extends AbstractLibraryCommands
             return $this->addressUnprovenOutcome();
         }
 
+        if ($normalized === null) {
+            $refusal = RegistrationConsent::refusal($dto->acceptedRevisions);
+            if ($refusal !== null) {
+                return $refusal;
+            }
+        }
+
         $attestationObject = Base64Url::decode($dto->attestationObject);
         $clientDataJson = Base64Url::decode($dto->clientDataJson);
         if ($attestationObject === null || $clientDataJson === null) {
@@ -406,6 +421,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
             IdentityType::PASSKEY . ':' . $result->credentialId,
             $this->newAccountName($config, $claims->challenge),
             $storeKey,
+            $dto->acceptedRevisions,
         );
 
         return null;

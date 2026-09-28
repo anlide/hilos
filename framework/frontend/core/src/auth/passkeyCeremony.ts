@@ -24,7 +24,7 @@
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
 import { type HilosAuthContext } from './authContext.js'
-import { type AuthFlowSubmitOutcome } from './authFlow.js'
+import { type AuthFlowForm, type AuthFlowSubmitOutcome } from './authFlow.js'
 import { authFlowOutcomeOf, authFlowOutcomeSchema } from './authFlowReply.js'
 import {
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSKEY,
@@ -67,10 +67,12 @@ export interface HilosPasskeyCeremony {
    * Create an account on a key the device makes now (HIL-1104).
    *
    * @param identifier The address as typed, or null for an account without one.
+   * @param form The consent revisions shown before this ceremony.
    * @param abort Aborted when the person calls the registration off.
    */
   runPasskeyNewAccount(
     identifier: string | null,
+    form: Pick<AuthFlowForm, 'acceptedRevisions'>,
     abort?: AbortSignal,
   ): Promise<AuthFlowSubmitOutcome>
 }
@@ -129,7 +131,7 @@ const PASSKEY_CANCELED_REGISTER_MESSAGE =
 function requestOptions(
   context: HilosAuthContext,
   action: string,
-  payload: Record<string, string>,
+  payload: Record<string, string | Readonly<Record<string, string>> | null>,
   ceremony: PasskeyCeremony,
   abort?: AbortSignal,
 ): Promise<PasskeyOptionsResult> {
@@ -336,12 +338,14 @@ async function runPasskeyRegister(
  *
  * @param context The project auth context the wire dispatches over.
  * @param identifier The address as typed, or null for an account without one.
+ * @param form The consent revisions shown before this ceremony.
  * @param abort Aborted when the person calls the registration off.
  * @returns The outcome the machine applies.
  */
 export async function runPasskeyNewAccount(
   context: HilosAuthContext,
   identifier: string | null,
+  form: Pick<AuthFlowForm, 'acceptedRevisions'>,
   abort?: AbortSignal,
 ): Promise<AuthFlowSubmitOutcome> {
   if (!isPasskeySupported()) {
@@ -351,7 +355,9 @@ export async function runPasskeyNewAccount(
     const requested = await requestOptions(
       context,
       AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
-      identifier === null ? {} : { identifier },
+      identifier === null
+        ? { acceptedRevisions: form.acceptedRevisions }
+        : { identifier },
       PASSKEY_CEREMONY_NEW_ACCOUNT,
       abort,
     )
@@ -369,7 +375,9 @@ export async function runPasskeyNewAccount(
     const { reply } = await context.actions.dispatch(
       AUTH_ACTION_COMPLETE_REGISTRATION_PASSKEY,
       {
-        ...(identifier === null ? {} : { identifier }),
+        ...(identifier === null
+          ? { acceptedRevisions: form.acceptedRevisions }
+          : { identifier }),
         signedChallenge: options.signedChallenge,
         attestationObject: attestation.attestationObject,
         clientDataJson: attestation.clientDataJson,
@@ -433,7 +441,7 @@ export function createPasskeyCeremony(
     runPasskeyDiscoverableLogin: (abort) =>
       runPasskeyDiscoverableLogin(context, abort),
     runPasskeyRegister: () => runPasskeyRegister(context),
-    runPasskeyNewAccount: (identifier, abort) =>
-      runPasskeyNewAccount(context, identifier, abort),
+    runPasskeyNewAccount: (identifier, form, abort) =>
+      runPasskeyNewAccount(context, identifier, form, abort),
   }
 }

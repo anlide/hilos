@@ -302,10 +302,36 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
         $this->assertNotNull($step);
         $this->assertSame(AuthFlowStep::CODE, $step[HandshakeResponseSignalData::step]);
         $this->assertSame(AuthFlowIntent::REGISTER, $step[HandshakeResponseSignalData::intent]);
+        $this->assertArrayNotHasKey(HandshakeResponseSignalData::acceptedRevisions, $step);
         $this->assertNull($step[HandshakeResponseSignalData::code], 'Standing where you left off is not a rollback');
         $this->assertIsInt(
             $step[HandshakeResponseSignalData::expiresAt],
             'A code screen counts down, so the moment travels',
+        );
+    }
+
+    /**
+     * A returning tab receives the consent already carried by its live hold.
+     *
+     * @throws HilosException When the handshake or the fixture write fails
+     */
+    public function testALiveHoldCarriesItsAcceptedRevisionsIntoTheHandshake(): void
+    {
+        self::seedSession(self::ABANDONED_TOKEN, null, self::CREATED_AT, null);
+        self::seedWait(self::ABANDONED_TOKEN, self::IDENTIFIER, 0);
+        self::seedHold(self::ABANDONED_TOKEN, self::IDENTIFIER);
+        Database::sqlRun(
+            'UPDATE `hilos_registration_reservation` SET `accepted_revisions` = ? WHERE `session_token` = ?',
+            ['{"terms":"terms-1","privacy":"privacy-1"}', self::ABANDONED_TOKEN],
+        );
+
+        $step = $this->handshakeStep(self::ABANDONED_TOKEN);
+
+        self::assertNotNull($step);
+        self::assertSame(AuthFlowStep::CODE, $step[HandshakeResponseSignalData::step]);
+        self::assertSame(
+            ['terms' => 'terms-1', 'privacy' => 'privacy-1'],
+            $step[HandshakeResponseSignalData::acceptedRevisions],
         );
     }
 

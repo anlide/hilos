@@ -525,6 +525,9 @@ export {
 } from './auth/authContext.js'
 export {
   AUTH_CODE_REASON_SENT,
+  AUTH_CODE_REASON_CONSENT_REQUIRED,
+  AUTH_CODE_REASON_CONSENT_REVISED,
+  AUTH_CODE_REASON_TERMS_UNPUBLISHED,
   AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
   AUTH_CODE_REASON_RATE_LIMITED,
   AUTH_CODE_REASON_CAP_REACHED,
@@ -609,6 +612,7 @@ export {
 } from './auth/passkeySignals.js'
 export {
   AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_LEGAL_CONSENT,
   AUTH_ACTION_LOGIN,
   AUTH_ACTION_REGISTER,
   AUTH_ACTION_CONFIRM_REGISTER,
@@ -677,6 +681,7 @@ export {
   type AuthFlowOptions,
   type AuthFlowState,
   type AuthFlowForm,
+  type AuthConsentState,
   type AuthFlowField,
   type AuthFlowError,
   type AuthFlowScreen,
@@ -1465,3 +1470,5 @@ export {
 } from './admin/legal/hilosLegal.js'
 
 export { createHilosLegalSettingEdit } from './admin/legal/hilosLegalSettingsEdit.js'
+
+export * from './legal/legalConsent.js'

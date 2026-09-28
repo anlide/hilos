@@ -52,7 +52,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param list<string> $acceptKeys Accept keys of the live connections this state applies to
      * @param ?string $pendingAck Ack the session owes (a {@see SessionAck} value), or null for none
      * @param ?array{identifier: ?string, kind: ?string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     channel: ?string, expiresAt: ?int, code: ?string, acceptedRevisions?: array<string, string>,
      *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} $pendingAuthStep
      *     Authentication step the session has not finished ({@see HandshakeResponseSignalData}), or null
      * @param ?string $rotationTicket Ticket the named socket trades for the rotated cookie, or null when nothing rotated

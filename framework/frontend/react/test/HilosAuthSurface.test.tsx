@@ -10,6 +10,8 @@
 // re-tested here. And one registry with a provider (HIL-926), for where a trip
 // that ended on the park lands: the surface's half of that answer lives only
 // here.
+import { consentTerms } from '../../core/test/legal/consentFixture.js'
+
 import {
   ActionError,
   ActionLifecycle,
@@ -17,6 +19,7 @@ import {
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_LEGAL_CONSENT,
   AUTH_ACTION_LOGIN,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
@@ -161,6 +164,13 @@ function contextAnswering(
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
       dispatched.push({ action, payload })
+      if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        return {
+          requestId: `consent-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: consentTerms() }),
+        } as unknown as ActionHandle
+      }
       const identifier = String(payload['identifier'] ?? '')
       // Only the lookup answers with a domain reply, and it is what reveals the
       // password field: an account that exists and has a password on it.
@@ -210,8 +220,6 @@ function contextAnswering(
       ),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -235,6 +243,13 @@ function expiringLetterContext(lifetimeMs: number): {
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
       dispatched.push({ action, payload })
+      if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        return {
+          requestId: `consent-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: consentTerms() }),
+        } as unknown as ActionHandle
+      }
       const identifier = String(payload['identifier'] ?? '')
       const reply =
         action === AUTH_ACTION_DETECT_IDENTIFIER
@@ -272,8 +287,6 @@ function expiringLetterContext(lifetimeMs: number): {
       ]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -296,6 +309,13 @@ function heldIdentifierContext(): {
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
       dispatched.push({ action, payload })
+      if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        return {
+          requestId: `consent-${dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: consentTerms() }),
+        } as unknown as ActionHandle
+      }
       const identifier = String(payload['identifier'] ?? '')
       const reply =
         action === AUTH_ACTION_DETECT_IDENTIFIER
@@ -326,8 +346,6 @@ function heldIdentifierContext(): {
       scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -381,8 +399,6 @@ function liveAccountContext(
     ]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -430,8 +446,6 @@ function freeIdentifierContext(
     scopes: scopesWith([{ key: 'password', name: null }]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -465,6 +479,8 @@ function provenOnReturnContext(): HilosAuthContext {
           signInBlock: null,
         }
         answered = true
+      } else if (action === AUTH_ACTION_LEGAL_CONSENT) {
+        reply = consentTerms()
       }
 
       return {
@@ -480,8 +496,6 @@ function provenOnReturnContext(): HilosAuthContext {
     scopes: scopesWith([{ key: 'password', name: null }]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -695,8 +709,6 @@ function oauthTripWorld(): TripWorld {
     ]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 
   const providerWindow = {
@@ -1542,8 +1554,6 @@ describe('HilosAuthSurface', () => {
       ]),
       actions: { dispatch: vi.fn() } as unknown as ActionLifecycle,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     })
     render(<HilosAuthSurface context={context} />)
     expect(byId('auth-icon-passkey')).not.toBeNull()
@@ -1702,8 +1712,6 @@ function smsContext(): HilosAuthContext {
     scopes: scopesWith([{ key: 'password', name: null }]),
     actions,
     channels: [SMS_CODE_CHANNEL],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -2210,12 +2218,17 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
       'Create an account with a passkey',
     )
     fireEvent.click(byId('auth-create-passkey')!)
-    expect(document.body.textContent).toContain('Terms and privacy')
-    expect(dispatched).toEqual([])
+    await flush()
+    expect(document.body.textContent).toContain('Before you continue')
+    expect(dispatched).toEqual([
+      { action: AUTH_ACTION_LEGAL_CONSENT, payload: {} },
+    ])
     fireEvent.click(byId('auth-consent-accept')!)
     fireEvent.submit(byId('auth-submit')!.closest('form')!)
     await flush()
-    expect(dispatched[0]?.payload).toEqual({})
+    expect(dispatched[1]?.payload).toEqual({
+      acceptedRevisions: { terms: 'terms-v1', privacy: 'privacy-v1' },
+    })
     expect((byId('auth-consent-accept') as HTMLInputElement).disabled).toBe(
       true,
     )
@@ -2304,4 +2317,56 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
       'Your address is confirmed and you are signed in.',
     )
   })
+})
+
+it('waits for consent content before exposing the checkbox and retries an unanswered read', async () => {
+  vi.useFakeTimers()
+  const context = provenOnReturnContext()
+  const original = context.actions.dispatch.bind(context.actions)
+  let rejectRead!: (reason: Error) => void
+  let requested = 0
+  context.actions.dispatch = ((
+    action: string,
+    payload: Record<string, unknown>,
+    options: unknown,
+  ) => {
+    if (action !== AUTH_ACTION_LEGAL_CONSENT)
+      return original(action, payload, options as never)
+    requested += 1
+    return {
+      done:
+        requested === 1
+          ? new Promise((_resolve, reject) => {
+              rejectRead = reject
+            })
+          : Promise.resolve({ reply: consentTerms('terms-v1', 'line') }),
+    }
+  }) as typeof context.actions.dispatch
+  try {
+    render(<HilosAuthSurface context={context} />)
+    type('auth-identifier', 'newcomer@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    fireEvent.submit(byId('auth-submit')!.closest('form')!)
+    await flush()
+    expect(byId('legal-consent-loading')).not.toBeNull()
+    expect(byId('auth-consent-accept')).toBeNull()
+    expect((byId('auth-submit') as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => {
+      rejectRead(new Error('No reply'))
+    })
+    await flush()
+    expect(byId('auth-submit')!.textContent).toContain('Try again')
+    expect((byId('auth-restart') as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.submit(byId('auth-submit')!.closest('form')!)
+    await flush()
+    expect(byId('auth-consent-line')!.textContent).toContain(
+      'By creating an account you accept the',
+    )
+    expect((byId('auth-submit') as HTMLButtonElement).disabled).toBe(false)
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+  }
 })

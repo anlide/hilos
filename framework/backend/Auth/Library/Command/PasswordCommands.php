@@ -18,6 +18,7 @@ use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
 use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Registration\RegistrationConsent;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -157,12 +158,20 @@ final class PasswordCommands extends AbstractLibraryCommands
             );
         }
 
+        $service = new RegistrationReservationService();
+        $accepted = $dto->acceptedRevisions ?? $service->ownAcceptance($acting->sessionToken, $email);
+        $refusal = RegistrationConsent::refusal($accepted);
+        if ($refusal !== null) {
+            return $refusal;
+        }
+
         $ticket = $this->openCodeSendLine($acting, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
-        $outcome = new RegistrationReservationService()->reserve(
+        $outcome = $service->reserve(
             IdentityType::PASSWORD,
             $acting->sessionToken,
             $email,
             $ticket,
+            $accepted,
         );
         $this->closeRefusedCodeSendLine($ticket, StateHilosCodeSendAttempt::CHANNEL_EMAIL, $outcome);
 

@@ -51,6 +51,7 @@ class RegistrationReservation extends Entity
     public const string identifier = 'identifier';
     public const string session_token = 'session_token';
     public const string code_accepted_at = 'code_accepted_at';
+    public const string accepted_revisions = 'accepted_revisions';
     public const string expires_at = 'expires_at';
 
     public const string _table = 'hilos_registration_reservation';
@@ -61,6 +62,7 @@ class RegistrationReservation extends Entity
         self::identifier,
         self::session_token,
         self::code_accepted_at,
+        self::accepted_revisions,
         self::expires_at,
     ];
 
@@ -70,6 +72,7 @@ class RegistrationReservation extends Entity
         self::identifier => PhpType::STRING->value,
         self::session_token => PhpType::STRING->value,
         self::code_accepted_at => PhpType::DATETIME->value,
+        self::accepted_revisions => PhpType::JSON->value,
         self::expires_at => PhpType::DATETIME->value,
     ];
 
@@ -92,5 +95,6 @@ class RegistrationReservation extends Entity
     public string $identifier;
     public string $session_token;
     public ?string $code_accepted_at = null;
+    public ?string $accepted_revisions = null;
     public string $expires_at;
 }

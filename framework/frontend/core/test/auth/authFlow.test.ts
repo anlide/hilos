@@ -19,6 +19,8 @@
 // HIL-427 moves the method set to the server: the machine builds its
 // descriptors from the live set and reads every reply through it, so a switch
 // reshapes the surface without the lookup being asked again.
+import { consentTerms } from '../legal/consentFixture.js'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applicableChannels,
@@ -60,6 +62,7 @@ const EMPTY_FORM: AuthFlowForm = {
   code: '',
   newPassword: '',
   consentAccepted: false,
+  acceptedRevisions: null,
   usingBackupCode: false,
   trustDevice: false,
   secondFactorLabel: '',
@@ -157,6 +160,7 @@ function detected(
 /** Build a flow with sensible passing stubs; override any seam per test. */
 function setup(options: Partial<AuthFlowOptions> = {}) {
   return createAuthFlow({
+    onConsentTerms: async () => consentTerms(),
     authMethods: createSignal<readonly AuthMethodEntry[]>(ALL_ENTRIES),
     channels: [SMS_CHANNEL, TELEGRAM_CHANNEL],
     onDetect: async (identifier) => detected({ identifier }),
@@ -499,7 +503,10 @@ describe('isFlowSubmittable', () => {
     const flow = { ...INITIAL_FLOW, step: 'consent' as const }
     expect(isFlowSubmittable(flow, EMPTY_FORM, idle)).toBe(false)
     expect(
-      isFlowSubmittable(flow, { ...EMPTY_FORM, consentAccepted: true }, idle),
+      isFlowSubmittable(flow, { ...EMPTY_FORM, consentAccepted: true }, idle, {
+        status: 'ready',
+        terms: consentTerms(),
+      }),
     ).toBe(true)
   })
 
@@ -997,6 +1004,7 @@ describe('registration: consent is a local step before anything is created', () 
     })
     await typeAndDetect(flow, 'new@b.com')
     await flow.submit()
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     expect(flow.submittable.get()).toBe(true)
     await flow.submit()
@@ -1030,6 +1038,7 @@ describe('registration: consent is a local step before anything is created', () 
       channelKey: 'sms',
     })
     expect(onSubmit).not.toHaveBeenCalled()
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
     expect(onSubmit).toHaveBeenCalledWith(
@@ -1071,6 +1080,7 @@ describe('registration: consent is a local step before anything is created', () 
     })
     await typeAndDetect(flow, 'new@b.com')
     await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
     expect(onMethodAction).toHaveBeenCalledWith(
@@ -1096,6 +1106,7 @@ describe('registration: consent is a local step before anything is created', () 
     })
     await typeAndDetect(flow, 'new@b.com')
     await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
     expect(flow.flow.get().step).toBe('consent')
@@ -1419,6 +1430,7 @@ describe('the two return points and cancelMethod', () => {
     })
     await typeAndDetect(flow, 'new@b.com')
     await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     const sending = flow.submit()
     expect(flow.flow.get().step).toBe('consent')
@@ -1475,6 +1487,7 @@ describe('the two return points and cancelMethod', () => {
     })
     await typeAndDetect(flow, 'new@b.com')
     await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     void flow.submit()
     expect(aborted).toEqual([])
@@ -1589,6 +1602,7 @@ describe('an address held by this browser (HIL-651)', () => {
     await typeAndDetect(flow, 'new@b.com')
     expect(flow.screenKey.get()).toBe('create_account')
     await flow.submit()
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
     expect(flow.flow.get().step).toBe('code')
@@ -1719,6 +1733,7 @@ describe('a canceled ceremony that settles anyway', () => {
     let ceremony = flow.chooseMethod('passkey')
     if (registering) {
       await ceremony
+      flow.setField('consentAccepted', true)
       ceremony = flow.submit()
     }
     flow.cancelMethod()
@@ -2012,6 +2027,7 @@ describe('failure surface', () => {
     await typeAndDetect(flow, 'new@b.com')
     await flow.submit()
     expect(flow.flow.get().step).toBe('consent')
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
     expect(flow.flow.get()).toMatchObject({
@@ -2040,6 +2056,7 @@ describe('failure surface', () => {
     })
     await typeAndDetect(flow, 'new@b.com')
     await flow.submit()
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
     expect(flow.flow.get().step).toBe('identifier')
@@ -2111,6 +2128,7 @@ describe('failure surface', () => {
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     flow.setField('newPassword', 'long-enough-1')
     await flow.submit()
@@ -2457,6 +2475,54 @@ describe('reset', () => {
 })
 
 describe('resuming an unfinished auth step', () => {
+  it.each(['code', 'set_password'] as const)(
+    'restores consent from a registration %s step',
+    (step) => {
+      const acceptedRevisions = { terms: 'terms-1', privacy: 'privacy-1' }
+      const flow = setup()
+      flow.resume({
+        identifier: 'ada@b.com',
+        kind: 'email',
+        intent: 'register',
+        step,
+        channel: null,
+        expiresAt: Date.now() + SECOND_MS,
+        code: null,
+        secondFactor: null,
+        acceptedRevisions,
+      })
+      expect(flow.form.get()).toMatchObject({
+        acceptedRevisions,
+        consentAccepted: true,
+      })
+    },
+  )
+
+  it('renews an expired code with the consent restored from its hold', async () => {
+    const acceptedRevisions = { terms: 'terms-1', privacy: 'privacy-1' }
+    const onSubmit = vi.fn(async () => ({ ok: true }))
+    const flow = setup({ onSubmit })
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'register',
+      step: 'code',
+      channel: null,
+      expiresAt: Date.now() + SECOND_MS,
+      code: null,
+      secondFactor: null,
+      acceptedRevisions,
+    })
+    await vi.advanceTimersByTimeAsync(SECOND_MS)
+    expect(flow.flow.get().step).toBe('code_expired')
+    await flow.renewCode()
+    expect(onSubmit).toHaveBeenCalledWith(
+      'resend',
+      expect.objectContaining({ step: 'code_expired' }),
+      expect.objectContaining({ acceptedRevisions, consentAccepted: true }),
+    )
+  })
+
   it('parks on the code screen with the identifier and the expiry back', () => {
     const flow = setup()
     flow.resume({
@@ -2468,6 +2534,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'code',
@@ -2491,6 +2558,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     expect(flow.flow.get()).toMatchObject({
       identifierKind: 'phone',
@@ -2521,6 +2589,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     flow.setField('identifier', 'other@b.com')
     expect(flow.expiresAt.get()).toBeNull()
@@ -2557,6 +2626,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     flow.setField('code', '000000')
     await flow.submit()
@@ -2576,6 +2646,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'set_password',
@@ -2596,6 +2667,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'code',
@@ -2618,6 +2690,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: null,
       code: 'identifier_taken',
       secondFactor: null,
+      acceptedRevisions: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'identifier',
@@ -2645,6 +2718,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: null,
       code: 'identifier_taken',
       secondFactor: null,
+      acceptedRevisions: null,
     })
     expect(flow.detection.get()).toEqual({ status: 'pending', result: null })
     await settleRefresh()
@@ -2669,6 +2743,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     await settleRefresh()
     expect(onDetect).not.toHaveBeenCalled()
@@ -2689,6 +2764,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: Date.now() + 5 * SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
     flow.resume({
       identifier: 'ada@b.com',
@@ -2699,6 +2775,7 @@ describe('resuming an unfinished auth step', () => {
       expiresAt: null,
       code: 'identifier_taken',
       secondFactor: null,
+      acceptedRevisions: null,
     })
     expect(flow.flow.get().step).toBe('identifier')
 
@@ -2834,6 +2911,7 @@ describe('the phone code screen opens at once (HIL-826, Design D7)', () => {
     })
     await typeAndDetect(flow, '+79991234567')
     await flow.chooseChannel('sms')
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
 
     await flow.submit()
@@ -2897,6 +2975,7 @@ describe('a code that ran out says so itself (HIL-828)', () => {
       expiresAt: Date.now() - SECOND_MS,
       code: null,
       secondFactor: null,
+      acceptedRevisions: null,
     })
 
     await vi.advanceTimersByTimeAsync(0)
@@ -3229,6 +3308,7 @@ describe('a passkey account from an empty field (HIL-1106)', () => {
     const onMethodAction = vi.fn<AuthFlowOptions['onMethodAction']>()
     const flow = setup({ onSubmit, onMethodAction })
     flow.createWithPasskey()
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
     expect(onSubmit).toHaveBeenCalledWith(
@@ -3255,6 +3335,7 @@ describe('a passkey account from an empty field (HIL-1106)', () => {
         },
       })
       flow.createWithPasskey()
+      await Promise.resolve()
       flow.setField('consentAccepted', true)
       const running = flow.submit()
       expect(flow.pending.get()).toBe(true)
@@ -3282,6 +3363,7 @@ describe('a passkey account from an empty field (HIL-1106)', () => {
       .mockResolvedValueOnce({ ok: true })
     const flow = setup({ onSubmit })
     flow.createWithPasskey()
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
     expect(flow.flow.get().step).toBe('consent')
@@ -3301,6 +3383,8 @@ describe('a passkey account from an empty field (HIL-1106)', () => {
       }),
     })
     flow.createWithPasskey()
+    await Promise.resolve()
+    flow.setField('consentAccepted', true)
     await flow.submit()
     expect(flow.screenKey.get()).toBe('sign_in')
     expect(flow.error.get()?.code).toBe('passkey_address_unproven')
@@ -3342,4 +3426,137 @@ describe('a passkey account from an empty field (HIL-1106)', () => {
     await running
     expect(flow.canCreateWithPasskey.get()).toBe(true)
   })
+})
+
+describe('current registration consent (HIL-499)', () => {
+  it('blocks submission during loading and after load failure, and retries explicitly', async () => {
+    const onSubmit = vi
+      .fn<AuthFlowOptions['onSubmit']>()
+      .mockResolvedValue({ ok: true })
+    const onConsentTerms = vi
+      .fn<AuthFlowOptions['onConsentTerms']>()
+      .mockRejectedValueOnce(new Error('Offline'))
+      .mockResolvedValueOnce(consentTerms())
+    const flow = setup({ onConsentTerms, onSubmit })
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    expect(flow.consent.get().status).toBe('loading')
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(flow.consent.get().status).toBe('failed')
+    expect(flow.error.get()?.message).toBe('The terms could not be loaded.')
+    flow.refreshConsentTerms()
+    await Promise.resolve()
+    expect(flow.consent.get().status).toBe('ready')
+    expect(flow.form.get().consentAccepted).toBe(false)
+    expect(flow.error.get()).toBeNull()
+    flow.setField('consentAccepted', true)
+    expect(flow.submittable.get()).toBe(true)
+  })
+
+  it('reloads on every entry and preserves acceptance only for the same revisions', async () => {
+    const onConsentTerms = vi
+      .fn<AuthFlowOptions['onConsentTerms']>()
+      .mockResolvedValueOnce(consentTerms())
+      .mockResolvedValueOnce(consentTerms())
+      .mockResolvedValueOnce(consentTerms('terms-v2'))
+    const flow = setup({ onConsentTerms })
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    await Promise.resolve()
+    flow.setField('consentAccepted', true)
+    flow.backToIdentifier()
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    await Promise.resolve()
+    expect(flow.form.get().consentAccepted).toBe(true)
+    flow.refreshConsentTerms()
+    await Promise.resolve()
+    expect(onConsentTerms).toHaveBeenCalledTimes(3)
+    expect(flow.form.get().consentAccepted).toBe(false)
+    expect(flow.form.get().acceptedRevisions).toEqual({
+      terms: 'terms-v2',
+      privacy: 'privacy-v1',
+    })
+    expect(flow.error.get()?.code).toBe('consent_revised')
+  })
+
+  it('applies a changed form setting on the next entry, including overlapping reconnect reads', async () => {
+    const onConsentTerms = vi
+      .fn<AuthFlowOptions['onConsentTerms']>()
+      .mockResolvedValueOnce(consentTerms())
+      .mockResolvedValue(consentTerms('terms-v1', 'line'))
+    const flow = setup({ onConsentTerms })
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    await Promise.resolve()
+    flow.refreshConsentTerms()
+    flow.refreshConsentTerms()
+    await Promise.resolve()
+    expect(flow.consent.get().terms?.form).toBe('checkbox')
+    expect(flow.submittable.get()).toBe(false)
+    flow.backToIdentifier()
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    await Promise.resolve()
+    expect(flow.consent.get().terms?.form).toBe('line')
+    expect(flow.form.get().consentAccepted).toBe(false)
+    expect(flow.submittable.get()).toBe(true)
+  })
+
+  it('drops late content after an identifier edit and when a newer read has won', async () => {
+    let resolveOld!: (terms: ReturnType<typeof consentTerms>) => void
+    const onConsentTerms = vi
+      .fn<AuthFlowOptions['onConsentTerms']>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve
+          }),
+      )
+      .mockResolvedValue(consentTerms('terms-v2'))
+    const flow = setup({ onConsentTerms })
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    flow.setField('identifier', 'other@b.test')
+    flow.refreshConsentTerms()
+    expect(onConsentTerms).toHaveBeenCalledTimes(1)
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    await Promise.resolve()
+    flow.setField('consentAccepted', true)
+    resolveOld(consentTerms())
+    await Promise.resolve()
+    expect(flow.form.get().acceptedRevisions?.['terms']).toBe('terms-v2')
+    expect(flow.form.get().consentAccepted).toBe(true)
+  })
+
+  it('never enables registration for an unpublished project', async () => {
+    const flow = setup({
+      onConsentTerms: async () => ({ form: 'line', documents: [] }),
+    })
+    flow.applyExternal({ step: 'consent', intent: 'register' })
+    await Promise.resolve()
+    flow.setField('consentAccepted', true)
+    expect(flow.submittable.get()).toBe(false)
+    expect(flow.error.get()?.code).toBe('terms_unpublished')
+  })
+
+  it.each(['consent_required', 'consent_revised'])(
+    'obeys the server %s refusal and reloads the documents',
+    async (code) => {
+      const onConsentTerms = vi
+        .fn<AuthFlowOptions['onConsentTerms']>()
+        .mockResolvedValue(consentTerms())
+      const flow = setup({
+        onConsentTerms,
+        onSubmit: async () => ({
+          ok: false,
+          code,
+          next: { step: 'consent', intent: 'register' },
+        }),
+      })
+      flow.applyExternal({ step: 'consent', intent: 'register' })
+      await Promise.resolve()
+      flow.setField('consentAccepted', true)
+      await flow.submit()
+      expect(onConsentTerms).toHaveBeenCalledTimes(2)
+      expect(flow.flow.get().step).toBe('consent')
+      expect(flow.form.get().consentAccepted).toBe(code !== 'consent_revised')
+    },
+  )
 })

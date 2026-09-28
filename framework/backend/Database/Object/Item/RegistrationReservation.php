@@ -30,6 +30,7 @@ use Hilos\Database\SqlParamCollection;
  * @property string $identifier
  * @property string $sessionToken
  * @property-read ?string $codeAcceptedAt
+ * @property ?string $acceptedRevisions
  * @property string $expiresAt
  */
 class RegistrationReservation extends Object_
@@ -40,6 +41,7 @@ class RegistrationReservation extends Object_
     public const string identifier = 'identifier';
     public const string sessionToken = 'sessionToken';
     public const string codeAcceptedAt = 'codeAcceptedAt';
+    public const string acceptedRevisions = 'acceptedRevisions';
     public const string expiresAt = 'expiresAt';
 
     /**
@@ -55,7 +57,7 @@ class RegistrationReservation extends Object_
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, type, identifier, sessionToken, codeAcceptedAt, expiresAt)
+     * @param string $property Property name (id, type, identifier, sessionToken, codeAcceptedAt, acceptedRevisions, expiresAt)
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known RegistrationReservation field
      */
@@ -67,6 +69,7 @@ class RegistrationReservation extends Object_
             self::identifier => $this->entity->identifier,
             self::sessionToken => $this->entity->session_token,
             self::codeAcceptedAt => $this->entity->code_accepted_at,
+            self::acceptedRevisions => $this->entity->accepted_revisions,
             self::expiresAt => $this->entity->expires_at,
             default => parent::__get($property),
         };
@@ -78,7 +81,7 @@ class RegistrationReservation extends Object_
      * The proof mark has no setter here; it is written by {@see markCodeAccepted()},
      * which is the only place allowed to say an address was proved.
      *
-     * @param string $property Property name (type, identifier, sessionToken, expiresAt)
+     * @param string $property Property name (type, identifier, sessionToken, acceptedRevisions, expiresAt)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a RegistrationReservation
      */
@@ -88,9 +91,23 @@ class RegistrationReservation extends Object_
             self::type => $this->entity->type = (string)$value,
             self::identifier => $this->entity->identifier = (string)$value,
             self::sessionToken => $this->entity->session_token = (string)$value,
+            self::acceptedRevisions => $this->entity->accepted_revisions = $value,
             self::expiresAt => $this->entity->expires_at = (string)$value,
             default => parent::__set($property, $value),
         };
+    }
+
+    /**
+     * @return ?array<string, string> Persisted boundary map, or null for a hold predating consent
+     */
+    public function acceptedRevisions(): ?array
+    {
+        if ($this->entity->accepted_revisions === null) {
+            return null;
+        }
+        $accepted = json_decode($this->entity->accepted_revisions, true);
+
+        return is_array($accepted) ? $accepted : null;
     }
 
     /**
@@ -205,7 +222,7 @@ class RegistrationReservation extends Object_
     /**
      * Converts the reservation to an associative array.
      *
-     * @return array<string, mixed> Reservation data (id, type, identifier, sessionToken, codeAcceptedAt, expiresAt)
+     * @return array<string, mixed> Reservation data (id, type, identifier, sessionToken, codeAcceptedAt, acceptedRevisions, expiresAt)
      */
     public function toArray(): array
     {
@@ -215,6 +232,7 @@ class RegistrationReservation extends Object_
             self::identifier => $this->entity->identifier,
             self::sessionToken => $this->entity->session_token,
             self::codeAcceptedAt => $this->entity->code_accepted_at,
+            self::acceptedRevisions => $this->entity->accepted_revisions,
             self::expiresAt => $this->entity->expires_at,
         ];
     }

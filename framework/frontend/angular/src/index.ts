@@ -131,3 +131,5 @@ export { HilosLegalRevisionPage } from './admin/legal/HilosLegalRevisionPage.js'
 export { HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAcceptancesPage.js'
 
 export { HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.js'
+
+export { HilosLegalConsent } from './legal/HilosLegalConsent.js'

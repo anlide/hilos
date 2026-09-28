@@ -109,6 +109,7 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
                 $channel->name(),
                 VerificationType::SMS_LOGIN,
                 $ticket,
+                $dto->acceptedRevisions,
             ),
         );
 

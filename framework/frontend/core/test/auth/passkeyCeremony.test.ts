@@ -14,6 +14,8 @@
 // The expected strings are written out as literals on purpose: importing the
 // module's constants would make any rewording pass green, and rewording is the one
 // thing this file is here to catch.
+import { consentTerms } from '../legal/consentFixture.js'
+
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAuthActions } from '../../src/auth/authActions.js'
 import { createAuthFlow } from '../../src/auth/authFlow.js'
@@ -179,8 +181,6 @@ function passkeyWorld(failure: DOMException): HilosAuthContext {
     scopes: new ScopeManager(),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 }
 
@@ -356,8 +356,6 @@ function newAccountWorld(script: NewAccountWorldScript): {
       scopes: new ScopeManager(),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
     dispatched,
     creates: () => createCalls,
@@ -380,6 +378,7 @@ describe('the passkey door of a new account (HIL-1104)', () => {
     })
     const actions = createAuthActions(world.context)
     const flow = createAuthFlow({
+      onConsentTerms: async () => consentTerms(),
       authMethods: createSignal([{ key: 'passkey', name: null }]),
       channels: [],
       onDetect: actions.onDetect,
@@ -387,12 +386,19 @@ describe('the passkey door of a new account (HIL-1104)', () => {
       onMethodAction: actions.onMethodAction,
     })
     flow.createWithPasskey()
+    await Promise.resolve()
     flow.setField('consentAccepted', true)
     await flow.submit()
 
     expect(world.dispatched).toHaveLength(2)
-    expect(world.dispatched[0]?.payload).toEqual({})
+    expect(world.dispatched[0]?.payload).toEqual({
+      acceptedRevisions: { terms: 'terms-v1', privacy: 'privacy-v1' },
+    })
     expect(world.dispatched[1]?.payload).not.toHaveProperty('identifier')
+    expect(world.dispatched[1]?.payload).toHaveProperty('acceptedRevisions', {
+      terms: 'terms-v1',
+      privacy: 'privacy-v1',
+    })
     expect(flow.flow.get().step).toBe('consent')
   })
 
@@ -401,12 +407,22 @@ describe('the passkey door of a new account (HIL-1104)', () => {
       create: () => Promise.resolve(MADE_CREDENTIAL),
     })
 
-    expect(await runPasskeyNewAccount(world.context, null)).toEqual({
+    expect(
+      await runPasskeyNewAccount(world.context, null, {
+        acceptedRevisions: { terms: 'terms-v1', privacy: 'privacy-v1' },
+      }),
+    ).toEqual({
       ok: true,
     })
     expect(world.dispatched).toHaveLength(2)
-    expect(world.dispatched[0]?.payload).toEqual({})
+    expect(world.dispatched[0]?.payload).toEqual({
+      acceptedRevisions: { terms: 'terms-v1', privacy: 'privacy-v1' },
+    })
     expect(world.dispatched[1]?.payload).not.toHaveProperty('identifier')
+    expect(world.dispatched[1]?.payload).toHaveProperty('acceptedRevisions', {
+      terms: 'terms-v1',
+      privacy: 'privacy-v1',
+    })
     expect(world.dispatched[1]?.payload).toMatchObject({
       signedChallenge: 'signed',
     })
@@ -423,7 +439,9 @@ describe('the passkey door of a new account (HIL-1104)', () => {
       create: () => Promise.resolve(MADE_CREDENTIAL),
     })
 
-    const outcome = await runPasskeyNewAccount(world.context, 'a@b.test')
+    const outcome = await runPasskeyNewAccount(world.context, 'a@b.test', {
+      acceptedRevisions: null,
+    })
 
     expect(outcome).toEqual({
       ok: false,
@@ -445,7 +463,9 @@ describe('the passkey door of a new account (HIL-1104)', () => {
       create: () => Promise.reject(new DOMException('', 'NotAllowedError')),
     })
 
-    const outcome = await runPasskeyNewAccount(world.context, 'a@b.test')
+    const outcome = await runPasskeyNewAccount(world.context, 'a@b.test', {
+      acceptedRevisions: null,
+    })
 
     expect(outcome).toEqual({
       ok: false,
@@ -462,7 +482,9 @@ describe('the passkey door of a new account (HIL-1104)', () => {
       create: () => Promise.resolve(MADE_CREDENTIAL),
     })
 
-    const outcome = await runPasskeyNewAccount(world.context, ' a@b.test ')
+    const outcome = await runPasskeyNewAccount(world.context, ' a@b.test ', {
+      acceptedRevisions: null,
+    })
 
     expect(outcome).toEqual({ ok: true })
     expect(world.dispatched).toHaveLength(2)
@@ -491,6 +513,7 @@ describe('the passkey door of a new account (HIL-1104)', () => {
     const outcome = await runPasskeyNewAccount(
       world.context,
       'a@b.test',
+      { acceptedRevisions: null },
       abort.signal,
     )
 

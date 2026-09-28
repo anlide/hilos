@@ -37,6 +37,10 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** The registration hold on the identifier ran out: the surface moves to the expired-code step. */
     public const string CODE_RESERVATION_EXPIRED = 'reservation_expired';
 
+    public const string CODE_CONSENT_REQUIRED = 'consent_required';
+    public const string CODE_CONSENT_REVISED = 'consent_revised';
+    public const string CODE_TERMS_UNPUBLISHED = 'terms_unpublished';
+
     /**
      * A passkey was asked to start an account on an address nobody proved, and the installation
      * does not allow that (HIL-1104, the setting of HIL-1105): the surface goes back to the address

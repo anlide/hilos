@@ -63,7 +63,12 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('self-user')).toBeVisible()
 
   await openSignIn(page)
-  await submitRegistration(page, email)
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-heading')).toHaveText('Create your account')
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('legal-consent-no-deviations')).toBeVisible()
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
 
   // The surface is on the code step and the session is still a guest: the
   // submit reserved the address, it did not create an account (HIL-415).

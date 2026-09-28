@@ -1,7 +1,10 @@
-import { useContext, useEffect, useMemo } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import {
   computedSignal,
   createHilosLegalRevisionsTable,
+  createHilosLegalConsentPreview,
+  hilosLegalDocumentLabel,
+  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
@@ -10,8 +13,12 @@ import {
   legalAdminDocumentSchema,
   resolveHilosPath,
   type HilosLegalContext,
+  type HilosLegalDocumentKey,
 } from '@hilos/core'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosModal } from '../../HilosModal.js'
+import { HilosFormError } from '../../HilosFormError.js'
+import { HilosLegalConsent } from '../../legal/HilosLegalConsent.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
@@ -37,6 +44,22 @@ export function HilosLegalDocumentPage({
     () => createHilosLegalRevisionsTable(context, document),
     [context, document],
   )
+  const preview = useMemo(
+    () => createHilosLegalConsentPreview(context),
+    [context],
+  )
+  const previewOpen = useSignal(preview.opened)
+  const previewTerms = useSignal(preview.terms)
+  const previewLoading = useSignal(preview.loading)
+  const previewError = useSignal(preview.error)
+  const [accepted, setAccepted] = useState(false)
+  const [reading, setReading] = useState<HilosLegalDocumentKey | null>(null)
+  useEffect(() => () => preview.close(), [preview])
+  function openPreview(): void {
+    setAccepted(false)
+    setReading(null)
+    void preview.open()
+  }
   const raw = useSignal(context.scopes.pageDataSignal(LEGAL_DOCUMENT_SECTION))
   const refusal = useSignal(
     context.scopes.pageDataSignal(LEGAL_CATALOG_REFUSAL_SECTION),
@@ -140,6 +163,18 @@ export function HilosLegalDocumentPage({
                 </div>
               ))}
             </section>
+            <section className="mb-4">
+              <h2 className="h5">How a person sees it</h2>
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                data-id="legal-preview-consent"
+                onClick={openPreview}
+              >
+                <i className="bi bi-eye me-1" aria-hidden="true" />
+                Consent screen at registration
+              </button>
+            </section>
             <HilosViewportTable
               controller={revisions.controller}
               cells={{
@@ -183,6 +218,92 @@ export function HilosLegalDocumentPage({
           </>
         )
       )}
+      <HilosModal
+        open={previewOpen}
+        title="Consent screen at registration"
+        initialFocus="dialog"
+        onClose={() => preview.close()}
+        actions={() => (
+          <>
+            {previewError && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                data-id="legal-consent-preview-retry"
+                onClick={openPreview}
+              >
+                Try again
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              data-id="legal-consent-preview-close"
+              onClick={() => preview.close()}
+            >
+              Close
+            </button>
+          </>
+        )}
+      >
+        <div data-id="legal-consent-preview">
+          <div className="visually-hidden" role="status" aria-live="polite">
+            {previewError ?? (previewLoading ? 'Loading terms…' : '')}
+          </div>
+          {previewLoading && (
+            <div
+              className="placeholder-glow"
+              data-id="legal-consent-loading"
+              aria-busy="true"
+            >
+              <span className="placeholder col-12" aria-hidden="true" />
+              <span className="placeholder col-9" aria-hidden="true" />
+            </div>
+          )}
+          {previewTerms &&
+            (previewTerms.documents.length > 0 ? (
+              <HilosLegalConsent
+                terms={previewTerms}
+                accepted={accepted}
+                reading={reading}
+                onAcceptedChange={setAccepted}
+                onReadingChange={setReading}
+              />
+            ) : (
+              <p data-id="legal-consent-unpublished">
+                {LEGAL_TERMS_UNPUBLISHED_MESSAGE}
+              </p>
+            ))}
+          {previewTerms?.form === 'line' &&
+            previewTerms.documents.length > 0 && (
+              <p
+                className="small text-body-secondary mb-0"
+                data-id="auth-consent-line"
+              >
+                By creating an account you accept the{' '}
+                {previewTerms.documents.map((item, index) => (
+                  <span key={item.document}>
+                    {index > 0 && ' and the '}
+                    <button
+                      type="button"
+                      className="btn btn-link btn-sm p-0"
+                      data-id="legal-consent-read"
+                      data-document={item.document}
+                      onClick={() => setReading(item.document)}
+                    >
+                      {hilosLegalDocumentLabel(item.document)}
+                    </button>
+                  </span>
+                ))}
+                .
+              </p>
+            )}
+          <HilosFormError
+            message={previewError}
+            dataId="legal-consent-preview-error"
+          />
+        </div>
+      </HilosModal>
     </HilosAdminPage>
   )
 }

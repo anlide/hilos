@@ -9,8 +9,8 @@ field is typed, the @hilos/core flow machine (authFlow) looks it up live, and
 what is revealed is a function of the reply. Everything with a rule to it —
 the lookup debounce, the re-entry and echo guards, pending, the error, the
 resend gate, the late-outcome verdict, which screen the axes add up to — lives
-in the machine; this component reads its signals, draws them, and hands three
-seams (`authActions`) back to it.
+in the machine; this component reads its signals, draws them, and hands its
+transport seams (`authActions`) back to it.
 
 Nothing here branches on a method key: the icon rows render `flow.icons`, the
 channel controls render `flow.channels`, and the main control is whatever
@@ -52,6 +52,8 @@ import {
   formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
+  hilosLegalDocumentLabel,
+  LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   isPasskeySupported,
   isPlatformPasskeyAvailable,
   MAGIC_LINK_FLOW_METHOD,
@@ -73,11 +75,13 @@ import {
   toFlowPatch,
   type AuthFlowScreen,
   type HilosAuthContext,
+  type HilosLegalDocumentKey,
   type OAuthTripOutcome,
   type PendingAuthStep,
   type ProjectSignal,
 } from '@hilos/core'
 
+import HilosLegalConsent from '../legal/HilosLegalConsent.vue'
 import HilosBackupCodes from '../HilosBackupCodes.vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosLongText from '../HilosLongText.vue'
@@ -92,7 +96,7 @@ import { hilosAuthGateKey } from './hilosAuthGateKey.js'
 defineOptions({ name: 'HilosAuthSurface' })
 
 const props = defineProps<{
-  /** The project context: its stores, its method registry, its terms paths. */
+  /** The project context: its stores, its method registry and code channels. */
   context: HilosAuthContext
 }>()
 
@@ -101,10 +105,10 @@ const COUNTDOWN_TICK_MS = 1000
 
 // The declarations the project makes and the stores it owns (HIL-409): the ordered
 // method registry that drives the field, the icons and the reveal, the code
-// channels, and where the consent texts are served.
+// channels, and the action lifecycle the consent read uses.
 const context = props.context
 
-// The framework wire, bound to that context: the three seams the machine
+// The framework wire, bound to that context: the transport seams the machine
 // delegates, plus this surface's own dispatches and the OAuth link it peeks at.
 const authActions = createAuthActions(context)
 const oauth = createOAuthLogin(context)
@@ -139,7 +143,7 @@ const HEADINGS: Record<AuthFlowScreen, string> = {
   create_account: 'Create your account',
   held_identifier: 'You already have a code',
   proven_identifier: 'Your address is confirmed',
-  terms: 'Terms and privacy',
+  terms: 'Before you continue',
   confirm_identifier: 'Confirm your email',
   enter_code: 'Enter the code',
   reset_code: 'Reset your password',
@@ -305,6 +309,7 @@ const auth = createAuthFlow({
   authMethods: sessionAuthMethods(context.scopes),
   channels: context.channels,
   onDetect: (identifier) => authActions.onDetect(identifier),
+  onConsentTerms: authActions.onConsentTerms,
   onSubmit: authActions.onSubmit,
   onMethodAction: authActions.onMethodAction,
   secondFactorPolicy: sessionSecondFactorPolicy(context.scopes),
@@ -330,6 +335,8 @@ watch(
 
 const state = useSignal(auth.flow)
 const form = useSignal(auth.form)
+const consent = useSignal(auth.consent)
+const readingConsent = ref<HilosLegalDocumentKey | null>(null)
 const detection = useSignal(auth.detection)
 const pending = useSignal(auth.pending)
 const error = useSignal(auth.error)
@@ -399,7 +406,7 @@ const now = ref(Date.now())
 const identifierInput = ref<HTMLInputElement | null>(null)
 const codeInput = ref<HTMLInputElement | null>(null)
 const newPasswordInput = ref<HTMLInputElement | null>(null)
-const consentInput = ref<HTMLInputElement | null>(null)
+const consentInput = ref<InstanceType<typeof HilosLegalConsent> | null>(null)
 
 // A browser that refuses cookies cannot stay signed in by any method (HIL-1074),
 // so the surface draws the card that says so instead of a form. Read once: the
@@ -865,16 +872,11 @@ function updateNewPassword(event: Event): void {
   auth.setField('newPassword', (event.target as HTMLInputElement).value)
 }
 
-/**
- * Mirror the consent checkbox into the machine.
- *
- * @param event The change event.
- */
-function updateConsent(event: Event): void {
-  auth.setField('consentAccepted', (event.target as HTMLInputElement).checked)
-}
-
 async function submit(): Promise<void> {
+  if (state.value.step === 'consent' && consent.value.status === 'failed') {
+    auth.refreshConsentTerms()
+    return
+  }
   await auth.submit()
   loadSetupIfMissing()
 }
@@ -1141,10 +1143,19 @@ function focusStep(): void {
 watch(
   () => state.value.step,
   (step, previous) => {
+    if (step !== 'consent') readingConsent.value = null
     if (previous === 'done' && step !== 'done') {
       panelRaisedByAck = false
     }
     void nextTick(focusStep)
+  },
+)
+
+watch(
+  () => consent.value.status,
+  (status) => {
+    if (status === 'ready' && state.value.step === 'consent')
+      void nextTick(focusStep)
   },
 )
 
@@ -1255,6 +1266,7 @@ function applyTripOutcome(outcome: OAuthTripOutcome): void {
 }
 
 let stopWatchingChannels: (() => void) | null = null
+let stopRefreshingConsent: (() => void) | null = null
 let stopWatchingConverge: (() => void) | null = null
 let stopWatchingHandshake: (() => void) | null = null
 let stopWatchingTrip: (() => void) | null = null
@@ -1274,6 +1286,9 @@ onMounted(() => {
   auth.reportSendProgress(hilosCodeSendProgress.get())
   notice.value = null
   unavailableChannels.value = new Set()
+  stopRefreshingConsent = authActions.subscribeConnectionRestored(() =>
+    auth.refreshConsentTerms(),
+  )
 
   stopWatchingChannels = authActions.subscribeCodeChannelUnavailable(
     (channel) => {
@@ -1351,6 +1366,8 @@ onUnmounted(() => {
   mounted = false
   stopWatchingChannels?.()
   stopWatchingChannels = null
+  stopRefreshingConsent?.()
+  stopRefreshingConsent = null
   stopWatchingConverge?.()
   stopWatchingConverge = null
   stopWatchingHandshake?.()
@@ -1871,57 +1888,70 @@ onUnmounted(() => {
           </div>
         </form>
 
-        <!-- The terms screen. Registration is unreachable without it: the machine's
-    submit on the identifier step moves here, and the dispatch that creates
-    anything happens from this button.
-
-    STOPGAP (HIL-499 in epic HIL-496 replaces it): one never-pre-ticked checkbox
-    covering both documents, links to their full texts, and NO acceptance record
-    of any kind — a record names a revision, and revisions do not exist yet. -->
         <form
           v-else-if="state.step === 'consent'"
           class="d-flex flex-column"
           novalidate
           @submit.prevent="submit()"
         >
-          <p class="text-body-secondary small mb-3">
-            This project runs on the standard Hilos terms.
-          </p>
-
-          <div class="form-check mb-3">
-            <input
-              id="auth-consent-accept"
-              ref="consentInput"
-              class="form-check-input"
-              type="checkbox"
-              data-id="auth-consent-accept"
-              :disabled="pending"
-              :checked="form.consentAccepted"
-              @change="updateConsent($event)"
+          <div
+            v-if="form.identifier"
+            class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+            data-id="auth-consent-identifier"
+          >
+            <i
+              :class="plaqueIcon"
+              class="text-body-secondary"
+              aria-hidden="true"
             />
-            <label class="form-check-label small" for="auth-consent-accept">
-              I agree to the
-              <a :href="context.termsPath" target="_blank" rel="noopener"
-                >Terms</a
-              >
-              and the
-              <a :href="context.privacyPath" target="_blank" rel="noopener">
-                Privacy Policy </a
-              >.
-            </label>
+            <span class="small fw-semibold flex-grow-1 text-break">{{
+              form.identifier
+            }}</span>
           </div>
-
-          <HilosFormError :message="errorMessage" data-id="auth-error" />
-
+          <div
+            v-if="consent.status === 'loading'"
+            class="placeholder-glow mb-3"
+            data-id="legal-consent-loading"
+            aria-busy="true"
+          >
+            <span class="visually-hidden">Loading terms…</span>
+            <span class="placeholder col-12" aria-hidden="true" />
+            <span class="placeholder col-9" aria-hidden="true" />
+            <span class="placeholder col-12" aria-hidden="true" />
+          </div>
+          <template v-else-if="consent.status === 'ready' && consent.terms">
+            <p
+              v-if="consent.terms.documents.length === 0"
+              class="small text-body-secondary"
+              data-id="legal-consent-unpublished"
+            >
+              {{ LEGAL_TERMS_UNPUBLISHED_MESSAGE }}
+            </p>
+            <HilosLegalConsent
+              v-else
+              ref="consentInput"
+              v-model:reading="readingConsent"
+              :terms="consent.terms"
+              :accepted="form.consentAccepted"
+              :disabled="pending"
+              @update:accepted="auth.setField('consentAccepted', $event)"
+            />
+          </template>
+          <HilosFormError
+            :message="
+              consent.terms?.documents.length === 0 ? null : errorMessage
+            "
+            data-id="auth-error"
+          />
           <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
             <LoadingButton
               type="submit"
               class="btn-primary w-100"
               :loading="pending"
-              :disabled="!submittable"
+              :disabled="consent.status !== 'failed' && !submittable"
               data-id="auth-submit"
             >
-              {{ submitLabel }}
+              {{ consent.status === 'failed' ? 'Try again' : submitLabel }}
             </LoadingButton>
             <HilosAuthStepTail data-id="auth-step-tail">
               <button
@@ -1933,6 +1963,30 @@ onUnmounted(() => {
                 Back
               </button>
             </HilosAuthStepTail>
+            <p
+              v-if="
+                consent.terms?.form === 'line' && consent.terms.documents.length
+              "
+              class="small text-body-secondary mt-2 mb-0"
+              data-id="auth-consent-line"
+            >
+              By creating an account you accept the
+              <template
+                v-for="(item, index) in consent.terms.documents"
+                :key="item.document"
+              >
+                <template v-if="index"> and the </template>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm p-0"
+                  data-id="legal-consent-read"
+                  :data-document="item.document"
+                  @click="readingConsent = item.document"
+                >
+                  {{ hilosLegalDocumentLabel(item.document) }}
+                </button> </template
+              >.
+            </p>
           </div>
         </form>
 

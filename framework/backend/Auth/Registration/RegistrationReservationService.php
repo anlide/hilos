@@ -94,6 +94,35 @@ final class RegistrationReservationService
     }
 
     /**
+     * @param string $sessionToken Browser that is renewing its registration
+     * @param string $identifier Normalized address being held again
+     * @return ?array<string, string> Boundary map from this browser's live hold on the same address
+     * @throws DatabaseException When the reservation query fails
+     * @throws LogicException When the reservations object collection is unavailable
+     * @throws DbCollectionNotReadableException When this process cannot read reservations
+     */
+    public function ownAcceptance(string $sessionToken, string $identifier): ?array
+    {
+        $reservation = $this->findActiveForSession($sessionToken);
+
+        return $reservation?->identifier === $identifier ? $reservation->acceptedRevisions() : null;
+    }
+
+    /**
+     * @param string $sessionToken Browser on which the address proof arrived
+     * @param string $identifier Proven address, before its other holds are removed
+     * @return ?array<string, string> Boundary map from this hold, or the newest live hold on the address
+     * @throws DatabaseException When the reservation query fails
+     * @throws LogicException When the reservations object collection is unavailable
+     * @throws DbCollectionNotReadableException When this process cannot read reservations
+     * @throws InvalidArgumentException When the reservation query has an invalid order direction
+     */
+    public function acceptanceForLanding(string $sessionToken, string $identifier): ?array
+    {
+        return $this->ownAcceptance($sessionToken, $identifier) ?? $this->collection()->freshestAcceptanceOn($identifier);
+    }
+
+    /**
      * Holds an identifier for this browser's registration, sending nothing.
      *
      * The hold on its own, split out of {@see reserve()} because the magic link
@@ -113,6 +142,7 @@ final class RegistrationReservationService
      * @param string $type Reserving method (see IdentityType)
      * @param string $sessionToken Session cookie token of the browser leading this registration
      * @param string $identifier Normalized identifier (lowercased email)
+     * @param ?array<string, string> $acceptedRevisions Accepted boundary map, or null to retain this browser's live acceptance
      * @return ObjectRegistrationReservation This browser's hold on the identifier
      * @throws EmptyValueException When identifier or session token is empty
      * @throws DatabaseException When a reservation query fails
@@ -121,20 +151,25 @@ final class RegistrationReservationService
      * @throws EnvException When the reservation TTL key is missing, outside the catalog, or
      *   not an int
      * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
+     * @throws InvalidArgumentException When the reservation query has an invalid order direction
+     * @throws SourceChangeSubscriberException When a reservation change subscriber fails
+     * @throws WriteNotAllowedException When this process cannot write the reservation
      */
     public function hold(
         string $type,
         string $sessionToken,
         string $identifier,
+        ?array $acceptedRevisions = null,
     ): ObjectRegistrationReservation {
         if ($identifier === '') {
             throw new EmptyValueException('Reservation identifier is required');
         }
 
         $collection = $this->collection();
+        $acceptedRevisions ??= $this->ownAcceptance($sessionToken, $identifier);
 
         try {
-            return $collection->createReservation($type, $sessionToken, $identifier, $this->ttlSeconds());
+            return $collection->createReservation($type, $sessionToken, $identifier, $this->ttlSeconds(), $acceptedRevisions);
         } catch (DuplicateValueException) {
             // Two sockets of one browser inserting at the same instant. There is one
             // registration per browser and this is it, whichever socket wrote it.
@@ -161,6 +196,7 @@ final class RegistrationReservationService
      * @param string $sessionToken Session cookie token of the browser leading this registration
      * @param string $identifier Normalized identifier (lowercased email)
      * @param ?string $progressTicket Ticket the transport reports this letter's steps against (HIL-826)
+     * @param ?array<string, string> $acceptedRevisions Accepted boundary map, or null for a repeat
      * @return VerificationSendOutcome Whether the code went out, and the seconds until the next may
      * @throws EmptyValueException When identifier or session token is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
@@ -172,14 +208,17 @@ final class RegistrationReservationService
      * @throws ValidationException When the confirmation code cannot be delivered to the identifier
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      * @throws DbCollectionNotReadableException When nothing here reads the reservations or verifications collection, or its readiness is on its way
+     * @throws SourceChangeSubscriberException When a reservation change subscriber fails
+     * @throws WriteNotAllowedException When this process cannot write the reservation
      */
     public function reserve(
         string $type,
         string $sessionToken,
         string $identifier,
         ?string $progressTicket = null,
+        ?array $acceptedRevisions = null,
     ): VerificationSendOutcome {
-        $this->hold($type, $sessionToken, $identifier);
+        $this->hold($type, $sessionToken, $identifier, $acceptedRevisions);
 
         return new VerificationService()->issue(
             VerificationType::REGISTER_CONFIRM,

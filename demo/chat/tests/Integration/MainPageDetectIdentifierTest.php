@@ -38,6 +38,7 @@ use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrat
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\HilosException;
+use Hilos\Legal\LegalConsentProjector;
 use Hilos\Mail\MailTransportFactory;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -683,7 +684,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email),
+            new RegisterActionDTO($email, LegalConsentProjector::acceptance()),
         );
         $this->deliverLibraryFrames($agent);
     }

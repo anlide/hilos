@@ -18,12 +18,6 @@ import {
 import { actions, connection } from '../bootstrap/connection'
 import { scopes } from '../bootstrap/session'
 
-/** Where this deployment serves the terms the consent screen links to. */
-const TERMS_PATH = '/terms'
-
-/** Where this deployment serves the privacy policy the consent screen links to. */
-const PRIVACY_PATH = '/privacy'
-
 // The project's ORDERED code delivery channels (HIL-492): adding one is a
 // descriptor here and a setting on the backend, never an edit inside the surface.
 const channels: readonly CodeChannelDescriptor[] = [
@@ -37,6 +31,4 @@ export const hilosAuthContext: HilosAuthContext = createHilosAuthContext({
   scopes,
   actions,
   channels,
-  termsPath: TERMS_PATH,
-  privacyPath: PRIVACY_PATH,
 })

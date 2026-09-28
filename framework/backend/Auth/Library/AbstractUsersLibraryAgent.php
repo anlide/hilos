@@ -53,6 +53,10 @@ use Hilos\Auth\Library\DTO\ConfirmPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
+use Hilos\Auth\Library\DTO\LegalConsentActionDTO;
+use Hilos\Auth\Library\DTO\LegalConsentReplyDTO;
+use Hilos\Legal\LegalConsentProjector;
+use Hilos\Legal\LegalSettings;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
 use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
@@ -242,6 +246,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
+        HilosSignalConstants::HILOS_LEGAL_CONSENT => LegalConsentActionDTO::class,
         HilosSignalConstants::HILOS_LOGIN => LoginActionDTO::class,
         HilosSignalConstants::HILOS_REGISTER => RegisterActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
@@ -1170,6 +1175,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 }
 
                 return $this->detectionCommands()->detectIdentifier($acceptKey, $dto);
+
+            case HilosSignalConstants::HILOS_LEGAL_CONSENT:
+                return new LegalConsentReplyDTO(LegalSettings::consentForm(), LegalConsentProjector::documents());
 
             case HilosSignalConstants::HILOS_LOGIN:
                 if (!$dto instanceof LoginActionDTO) {

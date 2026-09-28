@@ -7,10 +7,13 @@
 // the park lands is the surface's half of that answer.
 // A third world walks the letter to its code screen (HIL-977), for the send
 // line's room: the same four cases, under the same names, as in Vue and React.
+import { consentTerms } from '../../core/test/legal/consentFixture.js'
+
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_ACTION_LEGAL_CONSENT,
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
@@ -127,8 +130,6 @@ function surfaceWorld(): {
       scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -161,7 +162,9 @@ function magicLinkWorld(
               registrationBlock: null,
               signInBlock: null,
             }
-          : undefined
+          : action === AUTH_ACTION_LEGAL_CONSENT
+            ? consentTerms()
+            : undefined
 
       return {
         requestId: 'req-letter',
@@ -185,8 +188,6 @@ function magicLinkWorld(
       ]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -316,8 +317,6 @@ function oauthTripWorld(): TripWorld {
     ]),
     actions,
     channels: [],
-    termsPath: '/terms',
-    privacyPath: '/privacy',
   })
 
   const providerWindow = {
@@ -856,7 +855,9 @@ function registrableWorld(): { context: HilosAuthContext; gate: AuthGate } {
               registrationBlock: null,
               signInBlock: null,
             }
-          : undefined
+          : action === AUTH_ACTION_LEGAL_CONSENT
+            ? consentTerms()
+            : undefined
 
       return {
         requestId: 'req-free',
@@ -877,8 +878,6 @@ function registrableWorld(): { context: HilosAuthContext; gate: AuthGate } {
       scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }
@@ -1436,9 +1435,11 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
     byId(fixture, 'auth-create-passkey')!.click()
     await flush(fixture)
     expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      'Terms and privacy',
+      'Before you continue',
     )
-    expect(dispatched).toEqual([])
+    expect(dispatched).toEqual([
+      { action: AUTH_ACTION_LEGAL_CONSENT, payload: {} },
+    ])
     const consent = byId(fixture, 'auth-consent-accept') as HTMLInputElement
     consent.checked = true
     consent.dispatchEvent(new Event('change', { bubbles: true }))
@@ -1447,7 +1448,9 @@ describe('HilosAuthSurface offers a passkey account on an empty field (HIL-1106)
       .closest('form')!
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flush(fixture)
-    expect(dispatched[0]?.payload).toEqual({})
+    expect(dispatched[1]?.payload).toEqual({
+      acceptedRevisions: { terms: 'terms-v1', privacy: 'privacy-v1' },
+    })
     expect(consent.disabled).toBe(true)
     expect((byId(fixture, 'auth-restart') as HTMLButtonElement).disabled).toBe(
       false,
@@ -1582,4 +1585,68 @@ describe('HilosAuthSurface follows delivery changes (HIL-1102)', () => {
     await Promise.resolve()
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
+})
+
+it('waits for consent content before exposing the checkbox and retries an unanswered read', async () => {
+  vi.useFakeTimers()
+  const world = registrableWorld()
+  const original = world.context.actions.dispatch.bind(world.context.actions)
+  let rejectRead!: (reason: Error) => void
+  let requested = 0
+  world.context.actions.dispatch = ((
+    action: string,
+    payload: Record<string, unknown>,
+    options: unknown,
+  ) => {
+    if (action !== AUTH_ACTION_LEGAL_CONSENT)
+      return original(action, payload, options as never)
+    requested += 1
+    return {
+      done:
+        requested === 1
+          ? new Promise((_resolve, reject) => {
+              rejectRead = reject
+            })
+          : Promise.resolve({ reply: consentTerms('terms-v1', 'line') }),
+    }
+  }) as typeof world.context.actions.dispatch
+  const fixture = mountSurface(world)
+  try {
+    const input = byId(fixture, 'auth-identifier') as HTMLInputElement
+    input.value = 'newcomer@example.com'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(fixture)
+    byId(fixture, 'auth-submit')!
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush(fixture)
+    expect(byId(fixture, 'legal-consent-loading')).not.toBeNull()
+    expect(byId(fixture, 'auth-consent-accept')).toBeNull()
+    expect((byId(fixture, 'auth-submit') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    rejectRead(new Error('No reply'))
+    await flush(fixture)
+    await flush(fixture)
+    expect(byId(fixture, 'auth-submit')!.textContent).toContain('Try again')
+    expect((byId(fixture, 'auth-restart') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    byId(fixture, 'auth-submit')!
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush(fixture)
+    await flush(fixture)
+    expect(byId(fixture, 'auth-consent-line')!.textContent).toContain(
+      'By creating an account you accept the',
+    )
+    expect((byId(fixture, 'auth-submit') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+  } finally {
+    fixture.destroy()
+    TestBed.resetTestingModule()
+    vi.useRealTimers()
+  }
 })

@@ -30,6 +30,11 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Legal\LegalCatalogProviderInterface;
+use Hilos\Legal\LegalConsentProjector;
+use Hilos\Legal\LegalDocument;
+use Hilos\Legal\LegalRevision;
+use Hilos\Legal\LegalSignificance;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
@@ -77,7 +82,7 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
     public const string FIXTURE_USER_TABLE = 'landing_fixture_user';
 
     /** @var list<string> Framework tables this case needs */
-    private const array TABLES = ['hilos_identity', 'hilos_registration_reservation'];
+    private const array TABLES = ['hilos_identity', 'hilos_registration_reservation', 'hilos_legal_acceptance'];
 
     private const string SESSION_TOKEN = 'registration-landing-test-session-token';
 
@@ -116,6 +121,8 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
     /** Display name of the marker row written after the landing to show its transaction is over. */
     private const string PROBE_NAME = 'transaction-probe';
 
+    private string $previousAppClass;
+
     private ?DbContext $previousDb = null;
 
     private ?SignalRouter $previousSignalRouter = null;
@@ -129,6 +136,8 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousAppClass = Hilos::appClass();
+        RegistrationLandingLegalHilos::initBrowser();
 
         self::runStubs(down: true);
         self::runStubs(down: false);
@@ -153,6 +162,7 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
      */
     protected function tearDown(): void
     {
+        $this->previousAppClass::initBrowser();
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
@@ -160,6 +170,106 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
         self::runStubs(down: true);
 
         parent::tearDown();
+    }
+
+    /**
+     * A proof with no consent never reaches account creation.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testLandingWithoutAnyAcceptanceCreatesNothing(): void
+    {
+        $email = $this->uniqueEmail();
+        $this->createFixtureUserTable();
+        try {
+            $library = new RegistrationLandingFixtureLibrary();
+            $reply = new RegistrationLandingTestCommands($library)
+                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Unaccepted', null);
+            self::assertSame(AuthFlowOutcome::CODE_CONSENT_REQUIRED, $reply?->code);
+            self::assertSame(AuthFlowStep::CONSENT, $reply?->step);
+            self::assertSame(0, RegistrationLandingFixtureLibrary::rowsVisible());
+            self::assertNull($library->rowsSeenInsideTransaction);
+        } finally {
+            $this->dropFixtureUserTable();
+        }
+    }
+
+    /**
+     * The transaction records the revisions read by the person, even after publication.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testLandingRecordsTheAcceptedRevisionsWithoutSubstitutingTheCurrentOnes(): void
+    {
+        $email = $this->uniqueEmail();
+        $this->createFixtureUserTable();
+        try {
+            $this->reservations()->createReservation(
+                IdentityType::PASSWORD, self::SESSION_TOKEN, $email, self::LIVE_FOR_SECONDS,
+                ['terms' => 'old', 'privacy' => 'privacy'],
+            );
+            $outcome = new RegistrationLandingTestCommands(new RegistrationLandingFixtureLibrary())
+                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', self::PASSWORD);
+            self::assertNull($outcome);
+            Database::sql('SELECT document, revision_id FROM hilos_legal_acceptance ORDER BY document');
+            self::assertSame([
+                ['document' => 'privacy', 'revision_id' => 'privacy'],
+                ['document' => 'terms', 'revision_id' => 'old'],
+            ], Database::rows());
+            self::assertNull(new RegistrationReservationService()->findActiveForSession(self::SESSION_TOKEN));
+        } finally {
+            $this->dropFixtureUserTable();
+        }
+    }
+
+    /**
+     * A landing borrows live consent before it releases the losing holds.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testASecondBrowserUsesTheNewestLiveAcceptanceBeforeRemovingTheHolds(): void
+    {
+        $email = $this->uniqueEmail();
+        $this->createFixtureUserTable();
+        try {
+            $this->reservations()->createReservation(
+                IdentityType::MAGIC_LINK, 'older-browser', $email, self::LIVE_FOR_SECONDS,
+                ['terms' => 'old', 'privacy' => 'privacy'],
+            );
+            $this->reservations()->createReservation(
+                IdentityType::MAGIC_LINK, 'newer-browser', $email, self::LIVE_FOR_SECONDS, LegalConsentProjector::acceptance(),
+            );
+            // Same-second rows must still have a deterministic order; expired and empty newer rows cannot hide acceptance.
+            $this->reservations()->createReservation(
+                IdentityType::MAGIC_LINK, 'expired-browser', $email, self::EXPIRED_BY_SECONDS,
+                ['terms' => 'old', 'privacy' => 'privacy'],
+            );
+            $this->reservations()->createReservation(IdentityType::MAGIC_LINK, 'empty-browser', $email, self::LIVE_FOR_SECONDS);
+            $outcome = new RegistrationLandingTestCommands(new RegistrationLandingFixtureLibrary())
+                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', null);
+            self::assertNull($outcome);
+            Database::sql('SELECT revision_id FROM hilos_legal_acceptance WHERE document = ?', ['terms']);
+            self::assertSame('current', Database::row()['revision_id']);
+            self::assertNull(new RegistrationReservationService()->findActiveForSession('newer-browser'));
+        } finally {
+            $this->dropFixtureUserTable();
+        }
+    }
+
+    /**
+     * A live repeat preserves consent; another browser or address does not inherit it.
+     *
+     * @throws HilosException When the fixture, catalog or action cannot be evaluated
+     */
+    public function testRenewingAHoldKeepsOnlyThisBrowsersAcceptanceOnThatAddress(): void
+    {
+        $service = new RegistrationReservationService();
+        $email = $this->uniqueEmail();
+        $accepted = LegalConsentProjector::acceptance();
+        $service->hold(IdentityType::MAGIC_LINK, self::SESSION_TOKEN, $email, $accepted);
+        self::assertSame($accepted, $service->hold(IdentityType::MAGIC_LINK, self::SESSION_TOKEN, $email)->acceptedRevisions());
+        self::assertNull($service->hold(IdentityType::MAGIC_LINK, 'other-browser', $email)->acceptedRevisions());
+        self::assertNull($service->hold(IdentityType::MAGIC_LINK, self::SESSION_TOKEN, $this->uniqueEmail())->acceptedRevisions());
     }
 
     /**
@@ -359,6 +469,8 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
             self::assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
             self::assertSame(AuthFlowIntent::LOGIN, $outcome->intent);
             $this->assertTheLandingRolledBackAndClosed($library);
+            Database::sql('SELECT COUNT(*) AS total FROM hilos_legal_acceptance');
+            self::assertSame(0, (int)Database::row()['total'], 'Acceptance rows roll back with the refused account');
         } finally {
             $this->dropFixtureUserTable();
         }
@@ -393,6 +505,8 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
 
             self::assertNotNull($raised, 'A hold that cannot be landed is refused with its failure, not answered');
             $this->assertTheLandingRolledBackAndClosed($library);
+            Database::sql('SELECT COUNT(*) AS total FROM hilos_legal_acceptance');
+            self::assertSame(0, (int)Database::row()['total'], 'Acceptance rows roll back with the refused account');
         } finally {
             $this->dropFixtureUserTable();
         }
@@ -460,7 +574,7 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
         string $identifier,
         int $ttlSeconds = self::LIVE_FOR_SECONDS,
     ): void {
-        $this->reservations()->createReservation($type, $sessionToken, $identifier, $ttlSeconds);
+        $this->reservations()->createReservation($type, $sessionToken, $identifier, $ttlSeconds, LegalConsentProjector::acceptance());
     }
 
     /**
@@ -766,4 +880,28 @@ final class RegistrationLandingTestConnection extends HilosSessionConnection
     protected function applyOwnDiff(array $diff): void
     {
     }
+}
+
+/** Legal revisions that let a landing prove it records the chosen, rather than current, ids. */
+final class RegistrationLandingLegalCatalog implements LegalCatalogProviderInterface
+{
+    /** @return array<string, list<LegalRevision>> Both documents, with an earlier terms revision */
+    public static function revisions(): array
+    {
+        return [
+            'terms' => [
+                new LegalRevision(LegalDocument::TERMS, 'old', '2026-01-01', 1, LegalSignificance::SUBSTANTIAL, '2026-01-01', []),
+                new LegalRevision(LegalDocument::TERMS, 'current', '2026-02-01', 1, LegalSignificance::EDITORIAL, '2026-02-01', []),
+            ],
+            'privacy' => [
+                new LegalRevision(LegalDocument::PRIVACY, 'privacy', '2026-01-01', 1, LegalSignificance::SUBSTANTIAL, '2026-01-01', []),
+            ],
+        ];
+    }
+}
+
+/** Binds the landing fixture's declarations through the ordinary catalog seam. */
+abstract class RegistrationLandingLegalHilos extends Hilos
+{
+    protected const ?string LEGAL_CATALOG = RegistrationLandingLegalCatalog::class;
 }

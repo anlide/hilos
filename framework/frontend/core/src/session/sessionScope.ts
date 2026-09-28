@@ -269,6 +269,8 @@ export interface PendingAuthStep {
    * or `null` on every other step.
    */
   readonly secondFactor: PendingSecondFactor | null
+  /** Accepted revisions on a live registration's code or password step. */
+  readonly acceptedRevisions: Readonly<Record<string, string>> | null
 }
 
 /** The "Access closed" card a session holds after its account was blocked (HIL-289). */
@@ -664,6 +666,7 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
       expiresAt: toLocal(expiresAt),
       code,
       secondFactor,
+      acceptedRevisions: null,
     }
   }
   if (step === 'identifier' && identifier === null && kind === null) {
@@ -680,6 +683,7 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
       expiresAt: null,
       code,
       secondFactor: null,
+      acceptedRevisions: null,
     }
   }
   if (
@@ -697,6 +701,21 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
     return null
   }
 
+  const acceptedRevisions =
+    intent === 'register' && step !== 'identifier'
+      ? (node['acceptedRevisions'] ?? null)
+      : null
+  if (
+    acceptedRevisions !== null &&
+    (typeof acceptedRevisions !== 'object' ||
+      Array.isArray(acceptedRevisions) ||
+      Object.values(acceptedRevisions).some(
+        (revision) => typeof revision !== 'string' || revision === '',
+      ))
+  ) {
+    return null
+  }
+
   return {
     identifier,
     kind,
@@ -706,6 +725,9 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
     expiresAt: typeof expiresAt === 'number' ? toLocal(expiresAt) : null,
     code,
     secondFactor: null,
+    acceptedRevisions: acceptedRevisions as Readonly<
+      Record<string, string>
+    > | null,
   }
 }
 

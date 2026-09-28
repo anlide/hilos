@@ -13,9 +13,10 @@ test("reads the legal catalog, deviations and revision comparison at desktop and
   await signUpAdmin(page);
   await gotoPage(page, "/hilos/legal");
   await expect(shownByTestId(page, "legal-document-row")).toHaveCount(2);
+  // The suite keeps earlier accounts; each document now has at least this administrator's acceptance.
   await expect(shownByTestId(page, "legal-count-covered")).toHaveText([
-    "0",
-    "0",
+    /^[1-9]\d*$/,
+    /^[1-9]\d*$/,
   ]);
   await expect(shownByTestId(page, "legal-count-window")).toHaveText([
     "0",
@@ -47,7 +48,7 @@ test("reads the legal catalog, deviations and revision comparison at desktop and
     page.getByTestId("legal-changes-wide").getByTestId("legal-change-row"),
   ).toHaveCount(1);
   await expect(page.getByTestId("legal-revision-accepted")).toHaveText(
-    "0 acceptances",
+    /^[1-9]\d* acceptances$/,
   );
 
   await page.setViewportSize({ width: 375, height: 812 });
@@ -85,12 +86,14 @@ async function setLegalSetting(
 test("offers complete acceptance filters and merges legal setting changes across tabs", async ({
   page,
 }) => {
-  await signUpAdmin(page);
+  const userId = await signUpAdmin(page);
   await gotoPage(page, "/hilos/legal/acceptances");
   const table = page.getByTestId("legal-acceptances-table");
-  await expect(shownByTestId(table, "hilos-table-empty-title")).toHaveText(
-    "No acceptance records.",
-  );
+  await expect(
+    shownByTestId(table, "legal-acceptance-person").and(
+      page.locator(`[href="/hilos/user/${userId}"]`),
+    ),
+  ).toHaveCount(2);
   const documentFilter = table.getByTestId("hilos-table-filter-document");
   await clickSubmit(documentFilter.getByTestId("hilos-dropdown-toggle"));
   await expect(
@@ -104,7 +107,7 @@ test("offers complete acceptance filters and merges legal setting changes across
   await clickSubmit(revisionFilter.getByTestId("hilos-dropdown-toggle"));
   await expect(
     revisionFilter.getByTestId("hilos-dropdown-option-0"),
-  ).toHaveCount(0);
+  ).toContainText("2026-09-27");
   await clickSubmit(revisionFilter.getByTestId("hilos-dropdown-toggle"));
 
   const other = await page.context().newPage();

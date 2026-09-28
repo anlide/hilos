@@ -80,8 +80,6 @@ function relayWorld(cancelOk: boolean): {
       scopes: new ScopeManager(),
       actions,
       channels: [],
-      termsPath: '/terms',
-      privacyPath: '/privacy',
     }),
   }
 }

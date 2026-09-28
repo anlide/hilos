@@ -18,6 +18,7 @@ use Hilos\Database\Entity\Item\RegistrationReservation as EntityRegistrationRese
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\SqlSortDirection;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -49,7 +50,7 @@ class RegistrationReservations extends Objects
      * Holds an identifier for one browser while the code that proves it travels.
      *
      * Mint write path of the reservation layer. The row carries the address, the
-     * browser leading it and how long the hold lasts, and nothing else: since HIL-825
+     * browser leading it, accepted legal revisions and how long the hold lasts. Since HIL-825
      * the password is asked for after the code, so there is no credential to store
      * and no follow-up write to store it with.
      *
@@ -70,6 +71,7 @@ class RegistrationReservations extends Objects
      * @param string $sessionToken Session cookie token of the browser leading this registration
      * @param string $identifier Normalized identifier (lowercased email)
      * @param int $ttlSeconds Seconds the registration stays held
+     * @param ?array<string, string> $acceptedRevisions Boundary map accepted before holding the address
      * @return ObjectRegistrationReservation The created reservation object
      * @throws EmptyValueException When the identifier or the session token is empty
      * @throws DuplicateValueException When another socket of this session inserted a hold meanwhile
@@ -83,12 +85,18 @@ class RegistrationReservations extends Objects
         string $sessionToken,
         string $identifier,
         int $ttlSeconds,
+        ?array $acceptedRevisions = null,
     ): ObjectRegistrationReservation {
         if ($identifier === '') {
             throw new EmptyValueException('Reservation identifier is required');
         }
         if ($sessionToken === '') {
             throw new EmptyValueException('Reservation session token is required');
+        }
+
+        $encoded = $acceptedRevisions === null ? null : json_encode($acceptedRevisions, JSON_UNESCAPED_UNICODE);
+        if ($encoded === false) {
+            throw new DatabaseException('Accepted legal revisions cannot be encoded');
         }
 
         $standing = $this->findBySessionToken($sessionToken);
@@ -101,6 +109,7 @@ class RegistrationReservations extends Objects
         $reservation->identifier = $identifier;
         $reservation->sessionToken = $sessionToken;
         $reservation->expiresAt = date('Y-m-d H:i:s', time() + $ttlSeconds);
+        $reservation->acceptedRevisions = $encoded;
         try {
             $reservation->sync();
         } catch (DuplicateEntryException) {
@@ -137,6 +146,31 @@ class RegistrationReservations extends Objects
         }
 
         return $reservation;
+    }
+
+    /**
+     * A proof opened in another browser borrows the latest live hold's acceptance on that address.
+     * The list is ordered by DB-owned created_at, with id breaking same-second ties.
+     *
+     * @param string $identifier Proven address whose live holds may supply the accepted map
+     * @return ?array<string, string> Boundary map from the newest live hold carrying acceptance
+     * @throws DatabaseException When the reservation query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function freshestAcceptanceOn(string $identifier): ?array
+    {
+        $now = TimeHelper::getSqlDateTime();
+        foreach ($this->listByIdentifier($identifier) as $reservation) {
+            if (!$reservation->isActive($now)) {
+                continue;
+            }
+            $accepted = $reservation->acceptedRevisions();
+            if ($accepted !== null && $accepted !== []) {
+                return $accepted;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -288,6 +322,7 @@ class RegistrationReservations extends Objects
      * @param string $identifier Normalized identifier (lowercased email)
      * @return list<ObjectRegistrationReservation> Reservation objects (empty when the address is unheld)
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     private function listByIdentifier(string $identifier): array
     {
@@ -295,9 +330,14 @@ class RegistrationReservations extends Objects
             return [];
         }
 
-        $entities = static::entityClass()::get([
-            EntityRegistrationReservation::identifier => $identifier,
-        ]);
+        $entities = static::entityClass()::get(
+            [EntityRegistrationReservation::identifier => $identifier],
+            [],
+            [
+                'created_at' => SqlSortDirection::DESC,
+                EntityRegistrationReservation::id => SqlSortDirection::DESC,
+            ],
+        );
 
         $result = [];
         foreach ($entities as $entity) {

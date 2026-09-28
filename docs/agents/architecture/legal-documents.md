@@ -70,6 +70,56 @@ The users library owns the collection; the sessions library borrows removal
 for account erasure. Erasure removes all of the person's acceptance rows.
 Merging accounts leaves those rows with the account that gave the acceptance.
 
+## Consent at registration
+
+The public `hilos_legal_consent` action on the users library accepts `{}` and
+replies with `{form, documents}`. `form` is `checkbox` or `line`, read from
+`legal.consent_form`. Each document supplies its `document` key, current
+`revision` and composed `clauses` in the shared `LegalWire` shapes. The last
+declared revision is current even when its acceptance deadline is in the future.
+The action is a read and is not an authentication or secret-guessing door.
+
+The first email, phone or magic-link send carries `acceptedRevisions`, a map
+from each declared document to the exact revision shown. Both actions of the
+addressless passkey door carry it too. An unknown address is checked before
+it is reserved or a code is minted; an existing account needs no consent to
+sign in. An installation with registration but no documents refuses registration.
+
+| Refusal | Surface behavior |
+|---|---|
+| `consent_required` | Return to consent, without an error sentence |
+| `consent_revised` | Reload current documents, clear the checkbox and explain that the terms changed |
+| `terms_unpublished` | Explain that the project has not published terms; creating an account stays unavailable |
+
+The phone owner reports these same codes on the closing send-progress row and
+finishes the operation before minting or delivering a code.
+
+`hilos_registration_reservation.accepted_revisions` stores the map while the
+address is held. A re-send at a live hold omits the map and reuses that hold's
+acceptance. A renewal after the hold died is the tab's first send again and
+carries the map the tab holds: from its own consent step, or from
+`acceptedRevisions` on the pending registration step in the handshake or
+session-state frame, read off the live hold. A renewal without a map returns
+to consent. Another browser's map cannot authorize
+a first send. A proof landing without its own live hold can use the newest
+live hold carrying acceptance on that address, ordered by `created_at DESC,
+id DESC`, before any other hold is removed. Without acceptance, landing
+returns to consent and creates no account.
+
+Immediately after `createUser()`, the landing calls `record()` in that same
+transaction. A failure rolls back both account and acceptances. A revision
+published after the first send does not replace what the person accepted;
+re-consent owns the subsequent gap. Registration publishes no personal
+agreement state because the new person has no profile subscribers yet.
+
+All three SDK shells use `HilosLegalConsent` for the live step and the admin
+preview on `/hilos/legal/{documentKey}`. They fold the standard across both
+documents and show the deviations with their standard statements. Full text
+comes from the same answer and opens inside the card. Each entry loads again;
+a reconnect refreshes the revisions while keeping the form choice of this
+visit. Replies from an abandoned step or closed preview are ignored. The
+checkbox is never preselected and is not rendered before its text arrives.
+
 ## Comparison and provenance
 
 `LegalRevisionComparison::between()` compares an earlier declaration with a
@@ -236,7 +286,7 @@ write keeps the modal and draft with its inline error. Closing follows the
 tracked settings-owner reply; the table value follows the DB source. Preview
 controls are disabled illustrations, not a second registration flow.
 
-The consent-form value is consumed by registration (not in the code yet —
-HIL-499). Re-consent and access enforcement consume the refusal policy (not in
+The consent-form value is consumed by registration. Re-consent and access
+enforcement consume the refusal policy (not in
 the code yet — HIL-500 and HIL-945); this section already uses it to name the
 lapsed count. Neither setting changes a revision's text or effective date.

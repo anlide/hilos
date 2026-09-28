@@ -18,7 +18,8 @@ use Hilos\Legal\LegalStandingResolver;
 /**
  * One acceptance write boundary for registration and re-consent (HIL-498).
  *
- * TODO(HIL-499, HIL-500): registration calls record() inside its transaction; re-consent calls accept().
+ * Registration calls record() inside its account transaction.
+ * TODO(HIL-500): re-consent calls accept().
  */
 final class LegalAcceptanceCommands extends AbstractLibraryCommands
 {

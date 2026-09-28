@@ -15,6 +15,8 @@ use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelProbe;
 use Hilos\Auth\MagicLink\MagicLinkService;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Registration\RegistrationConsent;
+use Hilos\Legal\Exception\LegalException;
 use Hilos\Auth\Verification\VerificationIssuedCode;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosAgentType;
@@ -264,6 +266,7 @@ class AuthCodeAgent extends AbstractAgent
      * @throws LogicException When an object collection the hold or the mint needs is unavailable
      * @throws EnvException When a reservation or verification env key is missing, outside the
      *   catalog, or of the wrong type
+     * @throws LegalException When the registration consent catalog cannot be read
      */
     private function advance(int $id, AuthCodeOperation $operation, float $nowMs): void
     {
@@ -296,6 +299,7 @@ class AuthCodeAgent extends AbstractAgent
      * @throws LogicException When an object collection the hold or the mint needs is unavailable
      * @throws EnvException When a reservation or verification env key is missing, outside the
      *   catalog, or of the wrong type
+     * @throws LegalException When the registration consent catalog cannot be read
      */
     private function advanceProbe(int $id, AuthCodeOperation $operation, float $nowMs): void
     {
@@ -344,6 +348,7 @@ class AuthCodeAgent extends AbstractAgent
      * @throws LogicException When an object collection the hold or the mint needs is unavailable
      * @throws EnvException When a reservation or verification env key is missing, outside the
      *   catalog, or of the wrong type
+     * @throws LegalException When the registration consent catalog cannot be read
      */
     private function settleProbe(int $id, AuthCodeOperation $operation, CodeChannelProbe $probe, float $nowMs): void
     {
@@ -355,7 +360,10 @@ class AuthCodeAgent extends AbstractAgent
             return;
         }
 
-        $this->holdIdentifier($operation);
+        $this->holdIdentifier($id, $operation);
+        if (!isset($this->operations[$id])) {
+            return;
+        }
 
         $issued = $this->issue($operation);
         if ($issued->code === null) {
@@ -395,13 +403,16 @@ class AuthCodeAgent extends AbstractAgent
      * first. An asymmetry here would mean the capture is closed for mail and open for
      * a number.
      *
+     * @param int $id Op id to finish when consent is refused
      * @param AuthCodeOperation $operation Operation whose identifier is being held
      * @throws EmptyValueException When the identifier the request names is empty
      * @throws DatabaseException When an identity or reservation query fails
      * @throws LogicException When the identities or reservations object collection is unavailable
      * @throws EnvException When the reservation TTL key is missing, outside the catalog, or not an int
+     * @throws LegalException When the registration consent catalog cannot be read
+     * @throws InvalidArgumentException When the consent refusal cannot be routed
      */
-    private function holdIdentifier(AuthCodeOperation $operation): void
+    private function holdIdentifier(int $id, AuthCodeOperation $operation): void
     {
         $identifier = $operation->request->identifier;
         if ($operation->request->type !== VerificationType::SMS_LOGIN
@@ -409,9 +420,18 @@ class AuthCodeAgent extends AbstractAgent
             return;
         }
 
+        $service = new RegistrationReservationService();
+        $accepted = $operation->request->acceptedRevisions
+            ?? $service->ownAcceptance($operation->request->sessionToken, $identifier);
+        $refusal = RegistrationConsent::refusalCode($accepted);
+        if ($refusal !== null) {
+            $this->finish($id, $operation, $refusal);
+
+            return;
+        }
+
         $operation->registration = true;
-        new RegistrationReservationService()
-            ->hold(IdentityType::SMS, $operation->request->sessionToken, $identifier);
+        $service->hold(IdentityType::SMS, $operation->request->sessionToken, $identifier, $accepted);
     }
 
     /**
@@ -682,10 +702,10 @@ class AuthCodeAgent extends AbstractAgent
     /**
      * Says what one outcome means to the line on the code screen (HIL-826).
      *
-     * Two of the five arms are not refusals of THIS send and still leave a code on its way,
+     * Two of the arms are not refusals of THIS send and still leave a code on its way,
      * which is why the map is not "sent or failed": a rate-limited request is held back
      * precisely because an earlier code already went out, and the screen the person is looking
-     * at is waiting for that one. The other three end with nothing travelling, and the line
+     * at is waiting for that one. The other reasons end with nothing travelling, and the line
      * says so and stops promising - the reason itself is the surface's to word, which it
      * already does by dimming the channel or refusing the cap out loud.
      *
