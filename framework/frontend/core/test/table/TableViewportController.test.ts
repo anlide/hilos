@@ -2601,7 +2601,9 @@ describe('TableViewportController window place', () => {
       slots: {},
     }))
 
-  function makePlaced() {
+  function makePlaced(
+    order: TableSortOrder = [{ field: 'id', direction: 'asc' }],
+  ) {
     const sent: TableViewportDescriptor[] = []
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
@@ -2621,7 +2623,7 @@ describe('TableViewportController window place', () => {
         firstAnchor,
         lastAnchor,
         PAGE_SIZE,
-        undefined,
+        order,
         [],
         rowsBefore,
       )
@@ -2650,6 +2652,111 @@ describe('TableViewportController window place', () => {
     // even though its place is not the last page number the count allows.
     expect(controller.hasNextPage.get()).toBe(false)
     expect(controller.frame.footer.get().hasNextPage).toBe(false)
+  })
+
+  it('keeps Next off when rows are announced above or inside a tail window', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+
+    controller.ingestAnnounce('new-above', 'above', 22, true)
+    expect(controller.hasNextPage.get()).toBe(false)
+    controller.ingestAnnounce('new-inside', 'inside', 23, true)
+    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().totalCount).toBe(23)
+    expect(controller.rowsBefore.get()).toBe(11)
+  })
+
+  it('keeps Next available after deletes above it when the server still finds rows after it', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 23, 10, { id: 12 }, { id: 21 })
+    expect(controller.hasNextPage.get()).toBe(true)
+
+    controller.ingestCount(20, true, true)
+    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
+    controller.ingestCount(19, true, false)
+    expect(controller.hasNextPage.get()).toBe(false)
+  })
+
+  it('does not change the edge for an in-window removal, before or after Apply', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, 10, { id: 12 }, { id: 21 })
+
+    controller.ingestCount(20, true)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'row-12',
+      reason: 'deleted',
+    })
+    expect(controller.hasNextPage.get()).toBe(true)
+    controller.apply()
+    expect(controller.hasNextPage.get()).toBe(true)
+  })
+
+  it('opens Next when an own create pushes a row beyond the window', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+    expect(controller.hasNextPage.get()).toBe(false)
+
+    controller.ingestOwnCreate({ rowKey: 'new', slots: {} }, 0, 22, true)
+
+    expect(controller.hasNextPage.get()).toBe(true)
+  })
+
+  it('keeps a tail append in the window without inventing rows after it', () => {
+    const { controller, open } = makePlaced()
+    open(tail().slice(0, 5), 16, 11, { id: 12 }, { id: 16 })
+
+    controller.ingestAppend({ rowKey: 'new', slots: {} }, 17, true)
+
+    expect(controller.hasNextPage.get()).toBe(false)
+  })
+
+  it('forgets the edge when a count becomes inexact and uses the full-window rule', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+    expect(controller.hasNextPage.get()).toBe(false)
+
+    controller.ingestCount(500, false, false)
+    expect(controller.hasNextPage.get()).toBe(true)
+    controller.ingestCount(21, true, false)
+    expect(controller.hasNextPage.get()).toBe(false)
+
+    open(tail().slice(0, 5), 30, 11, { id: 12 }, { id: 16 })
+    expect(controller.hasNextPage.get()).toBe(true)
+    controller.ingestCount(500, false, true)
+    expect(controller.hasNextPage.get()).toBe(false)
+  })
+
+  it('forgets the edge when an arrival carries an inexact count', () => {
+    const { controller, open } = makePlaced()
+    open(tail().slice(0, 9), 20, 11, { id: 12 }, { id: 20 })
+    controller.ingestAppend({ rowKey: 'new', slots: {} }, 500, false)
+    expect(controller.hasNextPage.get()).toBe(true)
+
+    // A partial window used to have rows after it; an inexact own-create frame must
+    // drop that word too, so the short-window rule takes over.
+    open(tail().slice(0, 5), 30, 11, { id: 12 }, { id: 16 })
+    controller.ingestOwnCreate({ rowKey: 'own', slots: {} }, 0, 500, false)
+    expect(controller.hasNextPage.get()).toBe(false)
+  })
+
+  it('keeps the page-count rule for a window with no order', () => {
+    const { controller, open } = makePlaced([])
+    open(tail(), 21, 11)
+    expect(controller.hasNextPage.get()).toBe(true)
+
+    controller.ingestCount(20, true)
+    expect(controller.hasNextPage.get()).toBe(false)
+  })
+
+  it('forgets the edge with the address when the order changes', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+    expect(controller.hasNextPage.get()).toBe(false)
+
+    controller.setOrder([{ field: 'id', direction: 'desc' }])
+    expect(controller.hasNextPage.get()).toBe(true)
   })
 
   it('keeps Back on wherever anything stands to the left', () => {

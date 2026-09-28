@@ -323,6 +323,7 @@ test('a bot created above the window is announced, and Show brings the window le
   await expect(strip).not.toContainText('above')
   await expect(tabB.getByTestId('hilos-table-announce-show')).toBeVisible()
   await expectTableTotal(tabB, base + 1)
+  await expect(tabB.getByTestId('hilos-table-next')).toBeDisabled()
   expect(await tableRowKeys(tabB)).toEqual(keysBefore)
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
   await rowTop.unchanged()
@@ -337,11 +338,53 @@ test('a bot created above the window is announced, and Show brings the window le
   expect(await tableRowKeys(tabB)).toEqual(keysBefore)
   await rowTop.unchanged()
   await expectTableTotal(tabB, base + 1)
+  await expect(tabB.getByTestId('hilos-table-next')).toBeDisabled()
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
 
   // Cleanup: A shows the bot it made.
   await tabB.close()
   await deleteBot(page, key)
+})
+
+test('Next still reaches the rows below after bots above the window are deleted', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await openBots(page)
+  const base = await tableTotal(page)
+  const stamp = Date.now()
+  const created: string[] = []
+  for (let index = 0; index < 3; index += 1) {
+    const name = nameBeforeAll(stamp + index)
+    await createBot(page, name)
+    created.push(await tableRowKeyByText(page, name))
+  }
+
+  const tabB = await page.context().newPage()
+  await openBots(tabB)
+  await expectTableTotal(tabB, base + created.length)
+  await goToLastPage(tabB)
+  const tailKeys = await tableRowKeys(tabB)
+  expect(tailKeys.length).toBeGreaterThan(0)
+  await pageBackOnce(tabB)
+  const keysBefore = await tableRowKeys(tabB)
+  const next = tabB.getByTestId('hilos-table-next')
+  await expect(next).toBeEnabled()
+
+  // B keeps the delivered window's place. Deleting rows before it must not spend
+  // the rows still standing after it, even when the live count loses a whole page.
+  for (const key of created) {
+    await deleteBot(page, key)
+  }
+  await expectTableTotal(tabB, base)
+  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+  await expect(next).toBeEnabled()
+
+  await next.click()
+  await expect.poll(() => tableRowKeys(tabB)).toEqual(tailKeys)
+  await expect(tabB.getByTestId('hilos-table-empty-page')).toHaveCount(0)
+  await expect(next).toBeDisabled()
+  await tabB.close()
 })
 
 test('after Show the footer names the tail, Next is off, and Back reaches the first row', async ({

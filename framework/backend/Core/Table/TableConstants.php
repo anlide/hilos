@@ -152,4 +152,7 @@ final class TableConstants
      * for a place to be read against.
      */
     public const string RESULT_KEY_ROWS_BEFORE = 'rowsBefore';
+
+    /** Whether the window's set has rows beyond those the window holds. */
+    public const string RESULT_KEY_HAS_ROWS_AFTER = 'hasRowsAfter';
 }

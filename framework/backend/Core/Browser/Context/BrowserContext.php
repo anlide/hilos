@@ -2780,7 +2780,8 @@ abstract class BrowserContext
      *
      * Whether the row is in the window's set is asked of the table once per change and only when
      * someone reads it: the classifier of an arriving row, the count, and the classifier of an
-     * edit share one answer.
+     * edit share one answer. A created row's place is shared too: a row below the window tells
+     * its count frame that rows remain after it; an unreadable place is settled by the recount.
      *
      * Any mutation the table builds marks the window for a facet count recalculation when the
      * connection has declared filters for it: whether a changed or removed row affected a particular
@@ -2879,7 +2880,23 @@ abstract class BrowserContext
             return $inSet;
         };
 
-        if ($this->tryEmitViewportArrival($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership)) {
+        $placementAsked = false;
+        $place = null;
+        $placement = function () use (&$placementAsked, &$place, $table, $viewport, $mutation, $membership): ?TableRowPlacement {
+            if (!$placementAsked) {
+                $placementAsked = true;
+                if ($mutation->type === TableMutationType::Create
+                    && $mutation->row !== null
+                    && !$viewport->hasRow((string) $mutation->rowKey)
+                ) {
+                    $place = $this->viewportPlacement($table, $viewport, $mutation, $this->viewportQuery($viewport), $membership);
+                }
+            }
+
+            return $place;
+        };
+
+        if ($this->tryEmitViewportArrival($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $placement)) {
             if ($followed) {
                 $this->followFocusedRow($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $own, $membership);
             }
@@ -2891,7 +2908,7 @@ abstract class BrowserContext
             $this->emitViewportUnannounce($mutation, $acceptKey, $page, $browserKey);
         }
 
-        $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership);
+        $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership, $placement);
 
         // Ahead of the delta, which forgets a row it takes out of the window: a row the window held
         // when this change came is the delta's to judge, and announcing it as well would be a second answer.
@@ -3305,7 +3322,7 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
-     * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
+     * @param Closure(): ?TableRowPlacement $placement Created row's place, read at most once per change
      * @return bool Whether the row was sent or announced (and no further signal is needed)
      * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
      */
@@ -3316,7 +3333,7 @@ abstract class BrowserContext
         string $acceptKey,
         string $page,
         string $browserKey,
-        Closure $membership,
+        Closure $placement,
     ): bool {
         if ($mutation->type !== TableMutationType::Create || $mutation->row === null) {
             return false;
@@ -3325,17 +3342,17 @@ abstract class BrowserContext
             return false;
         }
         $query = $this->viewportQuery($viewport);
-        $placement = $this->viewportPlacement($table, $viewport, $mutation, $query, $membership);
-        if ($placement === TableRowPlacement::Tail) {
+        $place = $placement();
+        if ($place === TableRowPlacement::Tail) {
             $this->emitViewportAppend($table, $viewport, $mutation, $query, $acceptKey, $page, $browserKey);
 
             return true;
         }
-        if ($placement === TableRowPlacement::Above || $placement === TableRowPlacement::Inside) {
+        if ($place === TableRowPlacement::Above || $place === TableRowPlacement::Inside) {
             $this->emitViewportAnnounce(
                 $viewport,
                 $mutation,
-                $placement,
+                $place,
                 $this->countedTotal($viewport, $viewport->totalCount() + 1),
                 $acceptKey,
                 $page,
@@ -3851,10 +3868,21 @@ abstract class BrowserContext
     }
 
     /**
+     * @param TableViewportSubscription $viewport Connection's window
+     * @return bool Whether a bounded ordered window has a built edge to recount after
+     */
+    private function viewportHasEdge(TableViewportSubscription $viewport): bool
+    {
+        return $viewport->sort !== null
+            && $viewport->limit !== TableConstants::NO_LIMIT
+            && $viewport->lastAnchor() !== null;
+    }
+
+    /**
      * Emits a viewport count shift if mutation arithmetic can settle it, or marks the window for recount.
      *
      * In an exact window with no filter active, the type of the change settles the count by
-     * row-level type (create +1, delete -1, update none) with no re-query — the type is row-level
+     * row-level type (create +1, delete -1, update none), unless the window's edge needs a recount — the type is row-level
      * faithful because each table builds it that way. With a filter active, the row is placed
      * against the set by asking the table about that one row; if that one row settles the count,
      * the count is updated and emitted immediately.
@@ -3881,6 +3909,7 @@ abstract class BrowserContext
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
      * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
+     * @param Closure(): ?TableRowPlacement $placement Created row's place, read at most once per change
      * @throws InvalidArgumentException When the viewport count signal cannot be named
      */
     private function emitViewportCount(
@@ -3891,6 +3920,7 @@ abstract class BrowserContext
         string $page,
         string $browserKey,
         Closure $membership,
+        Closure $placement,
     ): void {
         if (!$viewport->totalExact()) {
             if ($mutation->type !== TableMutationType::Create) {
@@ -3908,6 +3938,7 @@ abstract class BrowserContext
             $acceptKey,
             $browserKey,
             $membership,
+            $placement,
         );
         if ($total === null) {
             return;
@@ -3979,7 +4010,7 @@ abstract class BrowserContext
      * Records a new total count on the viewport and emits table_viewport_count if it changed.
      *
      * @param TableViewportSubscription $viewport Connection's window
-     * @param array{totalCount: int, totalExact: bool} $total Resolved total count and exactness
+     * @param array{totalCount: int, totalExact: bool, hasRowsAfter?: bool} $total Resolved total count and exactness
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
@@ -4008,6 +4039,7 @@ abstract class BrowserContext
                 $totalCount,
                 $totalExact,
                 $this->pageCount($totalCount, $viewport->limit, $totalExact),
+                hasRowsAfter: $total[TableConstants::RESULT_KEY_HAS_ROWS_AFTER] ?? null,
             ),
             $acceptKey,
         );
@@ -4021,23 +4053,32 @@ abstract class BrowserContext
      *
      * @param TableViewportSubscription $viewport Connection's window
      * @param int $totalCount Total the mutation arithmetic arrived at
-     * @return array{totalCount: int, totalExact: bool} Total as it travels, with the word on it
+     * @param ?bool $hasRowsAfter Whether unheld rows follow the window, or null when not established
+     * @return array{totalCount: int, totalExact: bool, hasRowsAfter?: bool} Total as it travels, with the word on it
      */
-    private function countedTotal(TableViewportSubscription $viewport, int $totalCount): array
+    private function countedTotal(TableViewportSubscription $viewport, int $totalCount, ?bool $hasRowsAfter = null): array
     {
         $overCeiling = $viewport->limit !== TableConstants::NO_LIMIT && $totalCount > TableConstants::COUNT_CEILING;
 
-        return [
+        $total = [
             TableConstants::RESULT_KEY_TOTAL_COUNT => $overCeiling ? TableConstants::COUNT_CEILING : $totalCount,
             TableConstants::RESULT_KEY_TOTAL_EXACT => !$overCeiling,
         ];
+        if (!$overCeiling && $hasRowsAfter !== null) {
+            $total[TableConstants::RESULT_KEY_HAS_ROWS_AFTER] = $hasRowsAfter;
+        }
+
+        return $total;
     }
 
     /**
      * Resolves the filtered total after a mutation when one row decides it, or null/marks for recount.
      *
      * With no filter of any kind the mutation type settles it: every row is in the set, so a
-     * create is one more and a delete is one fewer.
+     * create is one more and a delete is one fewer. A delete outside a window with an edge
+     * still needs a recount: the deletion carries no row, so its former place is unknown.
+     * Arithmetic settles the total but cannot settle whether rows remain after this window
+     * (owner decision, HIL-1153). An unreadable create takes the same road.
      *
      * With a filter active the set is not every row, and what the count needs is one bit — is
      * this row in the set now? That is asked of the table, and the answer decides:
@@ -4058,7 +4099,8 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $browserKey Browser table key
      * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
-     * @return ?array{totalCount: int, totalExact: bool} New total with the word on it, or null when unchanged/marked
+     * @param Closure(): ?TableRowPlacement $placement Created row's place, read at most once per change
+     * @return ?array{totalCount: int, totalExact: bool, hasRowsAfter?: bool} New total with the word on it, or null when unchanged/marked
      */
     private function viewportTotalAfterMutation(
         ViewportTable $table,
@@ -4068,12 +4110,35 @@ abstract class BrowserContext
         string $acceptKey,
         string $browserKey,
         Closure $membership,
+        Closure $placement,
     ): ?array {
         $query = $this->viewportQuery($viewport);
-        if ($query->search === null && $viewport->filter === []) {
+        $unfiltered = $query->search === null && $viewport->filter === [];
+        if ($mutation->type === TableMutationType::Create) {
+            $contains = $unfiltered ? true : $membership();
+            if ($contains === null) {
+                return $this->markTotalRecount($acceptKey, $browserKey, $page);
+            }
+            if (!$contains) {
+                return null;
+            }
+            $place = $placement();
+            if ($place === null && $this->viewportHasEdge($viewport)) {
+                return $this->markTotalRecount($acceptKey, $browserKey, $page);
+            }
+
+            return $this->countedTotal(
+                $viewport,
+                $viewport->totalCount() + 1,
+                hasRowsAfter: $place === TableRowPlacement::Below ? true : null,
+            );
+        }
+
+        if ($unfiltered) {
             return match ($mutation->type) {
-                TableMutationType::Create => $this->countedTotal($viewport, $viewport->totalCount() + 1),
-                TableMutationType::Delete => $this->countedTotal($viewport, max(0, $viewport->totalCount() - 1)),
+                TableMutationType::Delete => !$viewport->hasRow((string) $mutation->rowKey) && $this->viewportHasEdge($viewport)
+                    ? $this->markTotalRecount($acceptKey, $browserKey, $page)
+                    : $this->countedTotal($viewport, max(0, $viewport->totalCount() - 1)),
                 TableMutationType::Update => null,
                 default => $this->markTotalRecount($acceptKey, $browserKey, $page),
             };
@@ -4088,7 +4153,6 @@ abstract class BrowserContext
         $oneFewer = $this->countedTotal($viewport, max(0, $viewport->totalCount() - 1));
 
         return match ($mutation->type) {
-            TableMutationType::Create => $contains ? $this->countedTotal($viewport, $viewport->totalCount() + 1) : null,
             TableMutationType::Delete => $inWindow ? $oneFewer : $this->markTotalRecount($acceptKey, $browserKey, $page),
             TableMutationType::Update => $inWindow
                 ? ($contains ? null : $oneFewer)
@@ -4151,13 +4215,18 @@ abstract class BrowserContext
     }
 
     /**
-     * Recomputes the filtered total via a windowed query, or null on failure.
+     * Recounts the set and, for a window with an edge, whether unheld rows follow it.
+     *
+     * The query starts after the last anchor of the build and asks for one more row than the
+     * window holds. Appended rows lie after that anchor too, so only a row the window does not
+     * hold proves there is another page. One query answers both the total and the edge.
+     * A handmade snapshot without rowsBefore has not honored the address and cannot answer it.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
      * @param string $page Subscribed page key
      * @param string $acceptKey Target accept key
-     * @return ?array{totalCount: int, totalExact: bool} Filtered total with the word on it, or null when the query fails
+     * @return ?array{totalCount: int, totalExact: bool, hasRowsAfter?: bool} Filtered total with the word on it, or null when the query fails
      */
     private function viewportFilteredTotal(
         ViewportTable $table,
@@ -4166,12 +4235,35 @@ abstract class BrowserContext
         string $acceptKey,
     ): ?array {
         try {
-            $snapshot = $table->getPage($this->viewportQuery($viewport));
-
-            return [
+            $query = $this->viewportQuery($viewport);
+            $hasEdge = $this->viewportHasEdge($viewport);
+            if ($hasEdge) {
+                $query = new TableQueryDTO(
+                    search: $query->search,
+                    sort: $query->sort,
+                    limit: count($viewport->rowIds()) + 1,
+                    filter: $query->filter,
+                    anchor: $viewport->lastAnchor(),
+                    anchorDirection: TableAnchorDirection::After,
+                    pageIndex: null,
+                );
+            }
+            $snapshot = $table->getPage($query);
+            $total = [
                 TableConstants::RESULT_KEY_TOTAL_COUNT => $snapshot->totalCount,
                 TableConstants::RESULT_KEY_TOTAL_EXACT => $snapshot->totalExact,
             ];
+            if ($hasEdge && $snapshot->totalExact && $snapshot->rowsBefore !== null) {
+                $total[TableConstants::RESULT_KEY_HAS_ROWS_AFTER] = false;
+                foreach ($snapshot->rows as $row) {
+                    if (!$viewport->hasRow((string) $row->requireRowKey())) {
+                        $total[TableConstants::RESULT_KEY_HAS_ROWS_AFTER] = true;
+                        break;
+                    }
+                }
+            }
+
+            return $total;
         } catch (Throwable $e) {
             // Null here means "the count did not change", so a refused re-query is
             // indistinguishable from a steady total: this window's paginator freezes

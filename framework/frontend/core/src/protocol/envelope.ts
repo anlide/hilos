@@ -237,6 +237,8 @@ export type TableViewportDeltaSignalData = z.infer<
  *
  * `pageCount` is absent, not zero, whenever `totalExact` is false: a total that stopped
  * at its ceiling supports no page count, and zero would read as a table with no pages.
+ * `hasRowsAfter` says whether unheld rows follow the window; absent when the count is
+ * inexact or the server did not settle that question.
  */
 export const tableViewportCountSignalDataSchema = z.looseObject({
   page: z.string(),
@@ -244,6 +246,7 @@ export const tableViewportCountSignalDataSchema = z.looseObject({
   totalCount: z.number().int(),
   totalExact: z.boolean(),
   pageCount: z.number().int().optional(),
+  hasRowsAfter: z.boolean().optional(),
 })
 
 export type TableViewportCountSignalData = z.infer<

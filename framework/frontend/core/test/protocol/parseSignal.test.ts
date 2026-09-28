@@ -374,6 +374,35 @@ describe('parseSignal', () => {
     }
   })
 
+  it.each([true, false, undefined])(
+    'parses the optional window edge %s',
+    (hasRowsAfter) => {
+      const result = parseSignal(
+        JSON.stringify({
+          type: 'table_viewport_count',
+          data: {
+            page: 'p',
+            tableKey: 't',
+            totalCount: 3,
+            totalExact: true,
+            hasRowsAfter,
+          },
+        }),
+      )
+      expect(result.ok).toBe(true)
+      if (result.ok && result.signal.kind === 'tableViewportCount') {
+        expect(result.signal.data.hasRowsAfter).toBe(hasRowsAfter)
+      }
+    },
+  )
+
+  it('rejects a count whose word on the edge is not a boolean', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_count","data":{"page":"p","tableKey":"t","totalCount":3,"totalExact":true,"hasRowsAfter":"false"}}',
+    )
+    expect(result.ok).toBe(false)
+  })
+
   it('parses a table_facet_counts frame', () => {
     const result = parseSignal(
       '{"type":"table_facet_counts","data":{"page":"p","tableKey":"t","facets":{"channel":{"any":{"count":500,"exact":false},"options":{"email":{"count":412,"exact":true},"sms":{"count":0,"exact":true}}}}}}',

@@ -262,7 +262,11 @@ function fakeSink(): TableWindowSink & {
     sort: TableSortOrder | undefined
   }>
   deltas: TableViewportDelta[]
-  counts: Array<{ totalCount: number; totalExact: boolean }>
+  counts: Array<{
+    totalCount: number
+    totalExact: boolean
+    hasRowsAfter?: boolean
+  }>
   appends: Array<{ row: TableRow; totalCount: number; totalExact: boolean }>
   ownCreates: Array<{
     row: TableRow
@@ -295,7 +299,11 @@ function fakeSink(): TableWindowSink & {
     sort: TableSortOrder | undefined
   }> = []
   const deltas: TableViewportDelta[] = []
-  const counts: Array<{ totalCount: number; totalExact: boolean }> = []
+  const counts: Array<{
+    totalCount: number
+    totalExact: boolean
+    hasRowsAfter?: boolean
+  }> = []
   const appends: Array<{
     row: TableRow
     totalCount: number
@@ -382,8 +390,8 @@ function fakeSink(): TableWindowSink & {
     ingestDelta(delta): void {
       deltas.push(delta)
     },
-    ingestCount(totalCount, totalExact): void {
-      counts.push({ totalCount, totalExact })
+    ingestCount(totalCount, totalExact, hasRowsAfter): void {
+      counts.push({ totalCount, totalExact, hasRowsAfter })
     },
     ingestAppend(row, totalCount, totalExact): void {
       appends.push({ row, totalCount, totalExact })
@@ -1036,6 +1044,30 @@ describe('bindTableViewport', () => {
 
     expect(sink.counts).toEqual([{ totalCount: 9, totalExact: true }])
   })
+
+  it.each([true, false])(
+    'routes the server edge answer %s with the count',
+    (hasRowsAfter) => {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      scopes.openPage('main')
+      const sink = fakeSink()
+      bind(connection, scopes, sink)
+
+      connection.emitCount({
+        page: 'main',
+        tableKey: 'settings',
+        totalCount: 20,
+        totalExact: true,
+        pageCount: 2,
+        hasRowsAfter,
+      })
+
+      expect(sink.counts).toEqual([
+        { totalCount: 20, totalExact: true, hasRowsAfter },
+      ])
+    },
+  )
 
   it('routes the counts beside the filter options addressed to the table, dropping other tables', () => {
     const connection = fakeConnection()

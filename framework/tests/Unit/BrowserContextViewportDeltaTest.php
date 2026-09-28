@@ -980,9 +980,120 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertSame(ViewportDeltaUnitTable::TABLE, $unannounce->tableKey);
         $this->assertSame('beta', $unannounce->rowKey);
 
-        $this->assertSame(1, $this->nextCount()->totalCount);
+        $count = $this->nextCount();
+        $this->assertSame(1, $count->totalCount);
+        $this->assertNull($count->hasRowsAfter);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
         $this->assertTrue($viewport->hasRow('alpha'));
+    }
+
+    public function testDeletesAboveAnOrderedWindowRecountOnceAndKeepTheRowsAfterIt(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            limit: 2,
+            pageIndex: 1,
+        );
+        $viewport->recordWindow(self::windowOf(['delta', 'echo']), 5, true, self::anchorAt('delta'), self::anchorAt('echo'));
+        $context = $this->bootWithViewport(
+            [self::row('delta', 'Delta'), self::row('echo', 'Echo'), self::row('foxtrot', 'Foxtrot')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha'));
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'bravo'));
+        $context->flushToSignalRouter();
+
+        $this->assertSame('alpha', $this->nextUnannounce()->rowKey);
+        $this->assertSame('bravo', $this->nextUnannounce()->rowKey);
+        $count = $this->nextCount();
+        $this->assertSame(3, $count->totalCount);
+        $this->assertTrue($count->hasRowsAfter);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertCount(1, $table->queries);
+        $query = $table->queries[0];
+        $this->assertSame($viewport->lastAnchor(), $query->anchor);
+        $this->assertSame(TableAnchorDirection::After, $query->anchorDirection);
+        $this->assertNull($query->pageIndex);
+        $this->assertSame(3, $query->limit);
+    }
+
+    public function testDeletingTheLastRowAfterAnOrderedWindowClosesItsEdge(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            limit: 2,
+        );
+        $viewport->recordWindow(self::windowOf(['alpha', 'beta']), 3, true, self::anchorAt('alpha'), self::anchorAt('beta'));
+        $context = $this->bootWithViewport([self::row('alpha', 'Alpha'), self::row('beta', 'Beta')], $viewport);
+
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'gamma'));
+        $context->flushToSignalRouter();
+
+        $this->assertSame('gamma', $this->nextUnannounce()->rowKey);
+        $count = $this->nextCount();
+        $this->assertSame(2, $count->totalCount);
+        $this->assertFalse($count->hasRowsAfter);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testARecountDoesNotMistakeAppendedRowsForRowsBeyondTheWindow(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            limit: 3,
+            pageIndex: 1,
+        );
+        $viewport->recordWindow(self::windowOf(['delta']), 4, true, self::anchorAt('delta'), self::anchorAt('delta'));
+        $context = $this->bootWithViewport(
+            [self::row('alpha', 'Alpha'), self::row('bravo', 'Bravo'), self::row('charlie', 'Charlie'),
+                self::row('delta', 'Delta'), self::row('echo', 'Echo')],
+            $viewport,
+        );
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'echo', ['label' => 'Echo']));
+        $context->flushToSignalRouter();
+        $this->assertSame(5, $this->nextAppend()->totalCount);
+        $this->assertTrue($viewport->hasRow('echo'));
+        $this->assertEquals(self::anchorAt('delta'), $viewport->lastAnchor());
+
+        self::replaceRows([self::row('bravo', 'Bravo'), self::row('charlie', 'Charlie'),
+            self::row('delta', 'Delta'), self::row('echo', 'Echo')]);
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha'));
+        $context->flushToSignalRouter();
+
+        $this->nextUnannounce();
+        $count = $this->nextCount();
+        $this->assertSame(4, $count->totalCount);
+        $this->assertFalse($count->hasRowsAfter);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testACreateWhosePlaceCannotBeReadRecountsTheEdge(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            limit: 1,
+        );
+        // The build has a last anchor to recount after, but no first anchor to classify against.
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, self::anchorAt('alpha'));
+        $context = $this->bootWithViewport([self::row('alpha', 'Alpha'), self::row('beta', 'Beta')], $viewport);
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        $count = $this->nextCount();
+        $this->assertSame(2, $count->totalCount);
+        $this->assertTrue($count->hasRowsAfter);
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertCount(1, $table->queries);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     public function testADeletedRowTheWindowHoldsIsNotUnannounced(): void
@@ -1271,7 +1382,12 @@ final class BrowserContextViewportDeltaTest extends TestCase
 
         // The place is right, but there is no slot to put it in: arriving here would push the
         // last row of the window onto the next page.
-        $this->assertSame(3, $this->nextCount()->totalCount);
+        $count = $this->nextCount();
+        $this->assertSame(3, $count->totalCount);
+        $this->assertTrue($count->hasRowsAfter);
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame([], $table->queries);
         $this->assertFalse($viewport->hasRow('zeta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
@@ -2724,6 +2840,9 @@ final class ViewportDeltaUnitTable extends TableDefinition implements SelfSnapsh
     /** How many times the membership question has been put to this table. */
     public int $setQuestions = 0;
 
+    /** @var list<TableQueryDTO> Queries the fixture was asked to answer. */
+    public array $queries = [];
+
     /**
      * @param list<ViewportDeltaUnitRow> $rows Snapshot rows the table owns
      * @param ?bool $inSet What this table answers about a row's membership, or null when it cannot say
@@ -2855,6 +2974,7 @@ final class ViewportDeltaUnitTable extends TableDefinition implements SelfSnapsh
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
+        $this->queries[] = $query;
         $rows = array_map(static fn(ViewportDeltaUnitRow $row): array => $row->toArray(), $this->rows);
 
         return $this->filterInMemory($rows, $query);

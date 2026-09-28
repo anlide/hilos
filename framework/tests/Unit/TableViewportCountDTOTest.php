@@ -27,6 +27,15 @@ final class TableViewportCountDTOTest extends TestCase
         $this->assertSame(5, $restored->pageCount);
     }
 
+    public function testTheWordOnTheEdgeRoundTripsBothAnswersAndPreservesSilence(): void
+    {
+        foreach ([true, false, null] as $hasRowsAfter) {
+            $wire = new TableViewportCountDTO('bots', 'bots', 20, true, 2, $hasRowsAfter)->toArray();
+            $this->assertSame($hasRowsAfter, TableViewportCountDTO::fromArray($wire)->hasRowsAfter);
+            $this->assertSame($hasRowsAfter !== null, array_key_exists(TableViewportCountDTO::hasRowsAfter, $wire));
+        }
+    }
+
     public function testACountStoppedAtItsCeilingTravelsWithNoPageCountKeyAtAll(): void
     {
         $wire = new TableViewportCountDTO(
@@ -44,6 +53,7 @@ final class TableViewportCountDTOTest extends TestCase
         $this->assertSame(TableConstants::COUNT_CEILING, $restored->totalCount);
         $this->assertFalse($restored->totalExact);
         $this->assertNull($restored->pageCount);
+        $this->assertArrayNotHasKey(TableViewportCountDTO::hasRowsAfter, $wire);
     }
 
     public function testFromArrayRefusesAnEmptyPayloadInsteadOfCountingZero(): void

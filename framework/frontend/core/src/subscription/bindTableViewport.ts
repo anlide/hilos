@@ -185,7 +185,7 @@ export function bindTableViewport(
     if (data.tableKey !== address.tableKey || data.page !== address.page) {
       return
     }
-    sink.ingestCount(data.totalCount, data.totalExact)
+    sink.ingestCount(data.totalCount, data.totalExact, data.hasRowsAfter)
   })
 
   // The counts beside the table's filter options arrive on a frame of their own, after the

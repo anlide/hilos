@@ -22,6 +22,10 @@ use Hilos\Core\Table\TableConstants;
  * {@see TableConstants::COUNT_CEILING} the total is the ceiling and reads as "at least this
  * many", and no page count follows from it — so the key is absent rather than zero, which
  * would read as a table with no pages at all.
+ *
+ * hasRowsAfter says whether rows remain after this window that it does not already hold.
+ * It is absent when the server did not settle that question, and with an inexact total:
+ * a count stopped at the ceiling cannot establish where the set ends.
  */
 final class TableViewportCountDTO extends BaseDTO implements SignalDataInterface
 {
@@ -30,6 +34,7 @@ final class TableViewportCountDTO extends BaseDTO implements SignalDataInterface
     public const string totalCount = 'totalCount';
     public const string totalExact = 'totalExact';
     public const string pageCount = 'pageCount';
+    public const string hasRowsAfter = 'hasRowsAfter';
 
     /**
      * Creates a table viewport count payload.
@@ -39,6 +44,7 @@ final class TableViewportCountDTO extends BaseDTO implements SignalDataInterface
      * @param int $totalCount Total rows matching the filter
      * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
      * @param ?int $pageCount Page count under the window size, or null when the total is not exact
+     * @param ?bool $hasRowsAfter Whether unheld rows follow the window, or null when not established
      */
     public function __construct(
         public readonly string $page,
@@ -46,6 +52,7 @@ final class TableViewportCountDTO extends BaseDTO implements SignalDataInterface
         public readonly int $totalCount,
         public readonly bool $totalExact,
         public readonly ?int $pageCount,
+        public readonly ?bool $hasRowsAfter = null,
     ) {
     }
 
@@ -64,6 +71,9 @@ final class TableViewportCountDTO extends BaseDTO implements SignalDataInterface
         ];
         if ($this->pageCount !== null) {
             $payload[self::pageCount] = $this->pageCount;
+        }
+        if ($this->hasRowsAfter !== null) {
+            $payload[self::hasRowsAfter] = $this->hasRowsAfter;
         }
 
         return $payload;
@@ -84,6 +94,7 @@ final class TableViewportCountDTO extends BaseDTO implements SignalDataInterface
             totalCount: self::requireInt($data, self::totalCount),
             totalExact: self::requireBool($data, self::totalExact),
             pageCount: self::optionalInt($data, self::pageCount),
+            hasRowsAfter: self::optionalBool($data, self::hasRowsAfter),
         );
     }
 }

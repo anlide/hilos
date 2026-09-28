@@ -352,7 +352,11 @@ export interface TableWindowSink {
   ingestProgress(frame: HilosTableProgressFrame): void
   ingestBulkReport(report: HilosTableBulkReport): void
   descriptor(): TableViewportDescriptor | null
-  ingestCount(totalCount: number, totalExact: boolean): void
+  ingestCount(
+    totalCount: number,
+    totalExact: boolean,
+    hasRowsAfter?: boolean,
+  ): void
   ingestFacetCounts(facets: TableFacetCountsByFilter): void
   ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void
   ingestOwnCreate(
@@ -503,6 +507,16 @@ export class TableViewportController<R> implements TableWindowSink {
    * pressed nothing. The next window is what makes it true again.
    */
   private readonly rowsBeforeSignal = createSignal<number | null>(null)
+
+  /**
+   * Whether unheld rows follow this window, or null when its edge is unknown.
+   *
+   * The delivered ordered window establishes it; a live count replaces it only when
+   * the server says so. A frame without that word leaves it alone, because a count
+   * alone does not locate a changed row. An unordered or inexact window has no edge
+   * to read, so it keeps the page-count or full-window rule instead.
+   */
+  private readonly hasRowsAfterSignal = createSignal<boolean | null>(null)
 
   /** Place the window is asked from, or null for the edge {@link anchorDirection} points away from. */
   private anchor: TableAnchor | null = null
@@ -764,10 +778,10 @@ export class TableViewportController<R> implements TableWindowSink {
   /**
    * Whether there is a page after this one to go to.
    *
-   * Where the window reports its place, this is that place plus the rows shown against the
-   * total: "there are rows behind this window" said about the set rather than about a count
-   * of presses. With an exact total and no place reported it is the page number against the
-   * page count. Without an exact total there is no last page to compare against, so the
+   * An ordered window with a known edge reads the server's word that unheld rows follow
+   * it. Its delivered place and a live count describe different moments and cannot
+   * answer that together. Without that word it is the page number against the page
+   * count. Without an exact total there is no last page to compare against, so the
    * answer is read off the window itself: a window filled to its size has rows behind it,
    * and a short one is the end of the set.
    */
@@ -914,14 +928,11 @@ export class TableViewportController<R> implements TableWindowSink {
         : Math.floor(rowsBefore / this.pageSizeSignal.get())
     })
     this.hasNextPage = computedSignal(() => {
-      const rowsBefore = this.rowsBeforeSignal.get()
+      const hasRowsAfter = this.hasRowsAfterSignal.get()
       const shown = this.windowSignal.get().length
-      // The place answers this only for a window that HAS rows. An empty one knows where
-      // it sits but not what lies behind it — "nothing after the address" and "the address
-      // landed past the end" read the same from here — so it falls back to the page count,
-      // which is also what keeps the control off where there is nothing to page from.
-      if (rowsBefore !== null && shown > 0) {
-        return rowsBefore + shown < this.totalCountSignal.get()
+      // An empty answer has no edge to page from; its address and page count decide.
+      if (hasRowsAfter !== null && shown > 0) {
+        return hasRowsAfter
       }
       const pageCount = this.pageCount.get()
 
@@ -1550,6 +1561,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.firstAnchor = null
     this.lastAnchor = null
     this.rowsBeforeSignal.set(null)
+    this.hasRowsAfterSignal.set(null)
     this.placeholdersSignal.set(new Map())
     this.loadedSignal.set(true)
     this.clearWindowPending()
@@ -1625,6 +1637,15 @@ export class TableViewportController<R> implements TableWindowSink {
     this.lastAnchor = lastAnchor
     this.rowsBeforeSignal.set(
       rowsBefore === null ? null : Math.max(0, rowsBefore),
+    )
+    this.hasRowsAfterSignal.set(
+      totalExact &&
+        rowsBefore !== null &&
+        rows.length > 0 &&
+        limit > 0 &&
+        (this.orderSignal.get()?.length ?? 0) > 0
+        ? rowsBefore + rows.length < totalCount
+        : null,
     )
     this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
     this.placeholdersSignal.set(new Map())
@@ -1780,13 +1801,23 @@ export class TableViewportController<R> implements TableWindowSink {
    *
    * @param totalCount Total rows matching the filter.
    * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
+   * @param hasRowsAfter Whether unheld rows follow the window, omitted when the server did not say.
    */
-  ingestCount(totalCount: number, totalExact: boolean): void {
+  ingestCount(
+    totalCount: number,
+    totalExact: boolean,
+    hasRowsAfter?: boolean,
+  ): void {
     if (this.refusalSignal.get() !== null) {
       return
     }
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+    if (!totalExact) {
+      this.hasRowsAfterSignal.set(null)
+    } else if (hasRowsAfter !== undefined) {
+      this.hasRowsAfterSignal.set(hasRowsAfter)
+    }
     this.settleEmptyWindow()
   }
 
@@ -1950,6 +1981,9 @@ export class TableViewportController<R> implements TableWindowSink {
     this.windowSignal.set([...this.windowSignal.get(), row])
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+    if (!totalExact) {
+      this.hasRowsAfterSignal.set(null)
+    }
     this.takeFocusBody(row)
   }
 
@@ -2006,6 +2040,11 @@ export class TableViewportController<R> implements TableWindowSink {
     this.windowSignal.set(rows)
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+    if (!totalExact) {
+      this.hasRowsAfterSignal.set(null)
+    } else if (evicted.length > 0 && this.hasRowsAfterSignal.get() !== null) {
+      this.hasRowsAfterSignal.set(true)
+    }
     this.takeFocusBody(row)
 
     const placeholders = new Map(this.placeholdersSignal.get())
@@ -2776,6 +2815,7 @@ export class TableViewportController<R> implements TableWindowSink {
     if (this.rowsBeforeSignal.get() !== null) {
       this.rowsBeforeSignal.set(0)
     }
+    this.hasRowsAfterSignal.set(null)
     this.clearHighlights()
     this.clearPending()
     this.clearAnnounced()
@@ -2865,6 +2905,7 @@ export class TableViewportController<R> implements TableWindowSink {
     // the set, and the footer says so at once rather than naming the place of a window that
     // belongs to a set nobody is looking at any more. The answer replaces it a moment later.
     this.rowsBeforeSignal.set(0)
+    this.hasRowsAfterSignal.set(null)
   }
 
   private send(): void {
