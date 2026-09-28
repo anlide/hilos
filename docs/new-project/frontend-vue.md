@@ -1,6 +1,8 @@
 # New Hilos frontend: Vue
 
-Reference implementation: [demo/chat/frontend](../../demo/chat/frontend).
+Reference implementations: [demo/chat/frontend](../../demo/chat/frontend), the
+full one, and `demo/binance-btc-tracker/frontend`, the minimal one
+(not in the code yet — HIL-1212).
 Common ground (containers, connection, e2e, stable ids) is in
 [README.md](README.md); this part covers only what is Vue-specific.
 

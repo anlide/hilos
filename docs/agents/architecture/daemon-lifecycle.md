@@ -178,10 +178,12 @@ What the container log is *for* — the watchdog's voice and the details of a da
 and nothing else — is the owner's rule in [logs.md](logs.md), "The Container Log Is A
 Glance, Not The Record"; read it before adding a line to `docker logs` or taking one away.
 
-The cluster harness guards this end to end: `cluster start <node>` reuses the existing
-container instead of recreating it, and scenario 9 (`cluster_e2e.py`) SIGKILLs the daemon
-inside a live container and requires the node to rebind, rejoin the roster, and accept
-placements again — with the same container id.
+The cluster harness guards this end to end: `cluster start <node>` reuses the
+existing container instead of recreating it, and scenario 9 of the shared
+harness (not in the code yet — HIL-1210), run on the ecommerce-shop stand
+(not in the code yet — HIL-1216), SIGKILLs the daemon inside a live container
+and requires the node to rebind, rejoin the roster, and accept placements
+again — with the same container id.
 
 ## WebSocket readiness gate
 
@@ -481,9 +483,10 @@ session resumption — links are few (N−1 per node) and long-lived, and a rest
 everything, as it does for the role and the seeds.
 
 **Rolling out** is one step: a node of the old code and a node of the new simply do not link.
-`PeerProtocol::VERSION` did not move — no frame changed. The stand `demo/cluster` carries its
-own fixtures and a node of a foreign authority, `x1`, which scenario 17 shows refused on both
-ends and listed by nobody (`demo/cluster/README.md`).
+`PeerProtocol::VERSION` did not move — no frame changed. The stand of
+binance-btc-tracker carries its own fixtures and a node of a foreign authority,
+`x1`, which scenario 17 shows refused on both ends and listed by nobody
+(not in the code yet — HIL-1215).
 
 ## Consensus coordinator (HIL-339)
 
@@ -582,13 +585,15 @@ statements; the mechanism they govern is built by HIL-447 and HIL-448.
    capacity, free room for the agent's cost — is the whole hard gate, the one
    implementation both the policy and a placement by node name go through. The word
    "master" appears nowhere in it.
-2. **A master may carry placed work, and carries node replicas today.** A `NODE`-scope
-   replica starts on any node (the placement gate in `WorkerServer::startAgent()` lets
-   it through), and `demo/cluster` runs its `db_probe` replica on two masters in a green
-   scenario (`scenario_11_cross_node_db_fact` writes on m1 and reads on m2) — a replica is
-   not placed by the policy and needs no declared capacity. What the stand's masters do not
-   accept is placed work, and by rule 4: they declare no capacity
-   (`CLUSTER_NODE_CAPABILITIES: ""` in `docker-compose.cluster.yml`).
+2. **A master may carry placed work, and carries node replicas today.** A
+   `NODE`-scope replica starts on any node (the placement gate in
+   `WorkerServer::startAgent()` lets it through), and scenario 11 —
+   `scenario_11_cross_node_db_fact` writes on m1 and reads on m2 — runs the
+   `db_probe` replica on two masters that carry placed work as well, on the
+   online-testing stand (not in the code yet — HIL-1217). A replica is not
+   placed by the policy and needs no declared capacity. The masters of
+   binance-btc-tracker and ecommerce-shop take no placed work, and by rule 4:
+   they declare no capacity (not in the code yet — HIL-1218).
 3. **The leader carries work by construction, and is a legal placement target — last
    among equals.** A `CLUSTER`+`LEADER` singleton runs where leadership sits (see *The
    placement gate* above). For policy placement, among otherwise equal candidates the

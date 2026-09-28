@@ -92,7 +92,7 @@ matrix rather than as options bolted onto the chosen one:
 | Scope | Placement | What it is |
 |---|---|---|
 | `CLUSTER` | `LEADER` | the leader-hosted cluster singleton; every agent that declares nothing |
-| `CLUSTER` | `POLICY` | an entity library; also the delivery pools and the cluster demo's fleet |
+| `CLUSTER` | `POLICY` | an entity library; also the delivery pools and the cluster stands' probe fleet |
 | `NODE` | — | a replica on every node; log rotation, throttle counters, the code pool |
 
 The machinery a `POLICY` library needs is in place on both sides.
@@ -137,11 +137,10 @@ stale row reads it with a query rather than by key.
 Who holds the set *in memory* is the question the library answers; how a node
 learns that its copy of a row is stale is the question it leaves open.
 
-Note what is **not** evidence for this: since HIL-712 every node of `demo/cluster`
-names the one schema `hilos-demo-cluster`, so that stand does hold a shared
-database — but the only table in it is the framework settings table, and the demo
-is a mesh, election and placement harness carrying no shared entity at all. It
-says nothing either way about who holds the set of an entity in memory.
+Note what is **not** evidence for this: every node of a cluster stand names the
+one schema of its demo (HIL-712), so a stand does hold a shared database — but
+its scenarios drive probe agents, not a shared entity, so the stands say nothing
+either way about who holds the set of an entity in memory.
 
 The rule is already the practice in the places that met the problem, and this
 document defends it rather than introducing it:

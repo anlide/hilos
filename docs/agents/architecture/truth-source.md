@@ -97,13 +97,14 @@ else here reads waits its round trip.
 The rule is sufficient and not complete, and says so rather than promise
 otherwise. A co-owner that may add rows as well holds no copy of the rows the
 other owner wrote either, and the absence of `Add` does not catch it. The tree
-has several — the cluster demo's `ClaimerAgent` holds `workerStatuses` whole
-while every `WorkerAgent` holds its own row, and the chat demo holds five
-collections whole under two or three owners at once (its
-`Hilos::SHARED_DB_OWNERS`) — and none of them reads another owner's rows in its
-start hook. No second form of borrowing exists for them until such a holder
-does; a third constant beside `OWNS_RT` was weighed and turned down, because the
-operations already say what borrowing is.
+has several — the `ClaimerAgent` of the cluster stands' probe fleet holds
+`workerStatuses` whole while every `WorkerAgent` holds its own row, with their
+type names and RT keys in the framework (not in the code yet — HIL-1211), and
+the chat demo holds five collections whole under two or three owners at once
+(its `Hilos::SHARED_DB_OWNERS`) — and none of them reads another owner's rows
+in its start hook. No second form of borrowing exists for them until such a
+holder does; a third constant beside `OWNS_RT` was weighed and turned down,
+because the operations already say what borrowing is.
 
 The declaration of ownership is a map, `OWNS_DB`, from a database collection key
 to the operations the owner may perform on its rows, written on the class beside

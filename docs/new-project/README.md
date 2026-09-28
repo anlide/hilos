@@ -9,6 +9,9 @@ minimal to full:
 |---|---|---|---|
 | [demo/tasks](../../demo/tasks) | minimal (1 agent, 1 page) | React | the smallest complete shape — copy this |
 | [demo/polls](../../demo/polls) | minimal (1 agent, 1 page) | Angular | same shape, Angular toolchain |
+| [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the minimal shape on Vue (not in the code yet — HIL-1212); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | empty, like tasks (not in the code yet — HIL-1213); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/online-testing](../../demo/online-testing) | minimal | Angular | empty, like polls (not in the code yet — HIL-1214); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
 
 The frontend specifics are split per view framework:
@@ -147,26 +150,55 @@ always via `--profile "*" down` or profiled services leak.
 `/ws` to the hardcoded `:8092`. Only host-side publishes shift. Current
 registry of taken host ports:
 
-| Stack | mysql | daemon (status/comm/ws) | pma | nginx http/https | FE dev |
-|---|---|---|---|---|---|
-| chat local | 33060 | 8090/8091/8092 (+8093 legacy) | 8080 | 80/443 | 5173 |
-| chat test | 33061 | 8095/8096/8097 | — | 8086/8446 | — |
-| framework test | 33062 | — | — | — | — |
-| tasks local | 33063 | 8098/8099/8100 | 8081 | 81/444 | 5174 |
-| tasks test | 33064 | 8101/8102/8103 | — | 8087/8447 | — |
-| polls local | 33065 | 8104/8105/8106 | 8082 | 82/445 | 5175 |
-| polls test | 33066 | 8107/8108/8109 | — | 8088/8448 | — |
+| Stack | mysql | daemon (status/comm/ws) | pma | mailpit | nginx | FE dev | subnet |
+|---|---|---|---|---|---|---|---|
+| chat local | 33060 | 8090/8091/8092 (+8093 legacy) | 8080 | 8025 (dev 8028) | https 443 | 5173 | 10.196 |
+| chat test | 33061 | 8095/8096/8097 | — | — | http 8086 / https 8446 | — | 10.186 |
+| framework test | 33062 | — | — | — | — | — | — |
+| tasks local | 33063 | 8098/8099/8100 | 8081 | 8026 (dev 8029) | https 444 | 5174 | 10.197 |
+| tasks test | 33064 | 8101/8102/8103 | — | — | http 8087 / https 8447 | — | 10.187 |
+| polls local | 33065 | 8104/8105/8106 | 8082 | 8027 (dev 8030) | https 8445 | 5175 | 10.198 |
+| polls test | 33066 | 8107/8108/8109 | — | — | http 8088 / https 8448 | — | 10.188 |
+| binance-btc-tracker local (not in the code yet — HIL-1212) | 33067 | 8110/8111/8112 | 8119 | 8120 | https 8116 | 5176 | 10.201 |
+| binance-btc-tracker test (not in the code yet — HIL-1212) | 33068 | 8113/8114/8115 | — | — | http 8117 / https 8118 | — | 10.211 |
+| binance-btc-tracker cluster (not in the code yet — HIL-1215) | — | — | — | — | — | — | 10.221 |
+| ecommerce-shop local (not in the code yet — HIL-1213) | 33069 | 8130/8131/8132 | 8139 | 8140 | https 8136 | 5177 | 10.202 |
+| ecommerce-shop test (not in the code yet — HIL-1213) | 33070 | 8133/8134/8135 | — | — | http 8137 / https 8138 | — | 10.212 |
+| ecommerce-shop cluster (not in the code yet — HIL-1216) | — | — | — | — | — | — | 10.222 |
+| online-testing local (not in the code yet — HIL-1214) | 33071 | 8150/8151/8152 | 8159 | 8160 | https 8156 | 5178 | 10.203 |
+| online-testing test (not in the code yet — HIL-1214) | 33072 | 8153/8154/8155 | — | — | http 8157 / https 8158 | — | 10.213 |
+| online-testing cluster (not in the code yet — HIL-1217) | — | — | — | — | — | — | 10.223 |
+| demo/cluster — retires, and 10.185 stays unassigned (not in the code yet — HIL-1218) | — | — | — | — | — | — | 10.185 |
 
-A new project takes the next free block. Each network also needs its own subnet,
-because the cli reaches the daemon by a static IP (`HILOS_DAEMON_HOST`), and that
-subnet must sit **outside Docker's default address pools** (`172.16.0.0/12` and
-`192.168.0.0/16`). A subnet claimed inside a pool Docker also hands out loses the
-race against whichever network came up first, and the stand then fails to start
-with `Pool overlaps with other one on this address space`. `10.0.0.0/8` is never
-auto-assigned, so the ranges live there: `10.185` cluster, `10.186`/`10.187`/
-`10.188` the three test stands, `10.196`/`10.197`/`10.198` the three
-local+prod+dev stands. A new project claims the next free range in the
-`10.19x` row.
+Every number comes from the stack's own compose file — the `${…:-N}` defaults
+of `demo/<demo>/docker/docker-compose.{local,dev,test}.yml` and of
+`framework/docker/docker-compose.yml` — and the subnet from the same files
+(`DOCKER_NETWORK_SUBNET`, `DOCKER_TEST_NETWORK_SUBNET`). Local nginx publishes
+https only; Mailpit is published by the local and dev stacks.
+
+A demo from binance-btc-tracker on takes a block of twenty host ports in the
+81xx range — 8110–8129, 8130–8149, 8150–8169; the next project takes
+8170–8189 — with the same offsets in every block: +0/+1/+2 the local daemon
+status/comm/ws, +3/+4/+5 the test daemon, +6 the local nginx https, +7/+8 the
+test nginx http/https, +9 phpMyAdmin, +10 the local Mailpit, +11…+19 kept for
+the demo's later stacks. mysql and FE dev keep their own rows: the next
+project takes 33073/33074 and 5179. A block, because the rows of the first
+three demos have no room left: the next test http port would be 8089, and
+8090 is already the chat daemon; and the `443+n` scheme for local https is
+dead on Windows, where SMB holds 445 — which is why polls sits on 8445.
+
+Each network also needs its own subnet, because the cli reaches the daemon by
+a static IP (`HILOS_DAEMON_HOST`), and that subnet must sit **outside Docker's
+default address pools** (`172.16.0.0/12` and `192.168.0.0/16`). A subnet
+claimed inside a pool Docker also hands out loses the race against whichever
+network came up first, and the stand then fails to start with `Pool overlaps
+with other one on this address space`. `10.0.0.0/8` is never auto-assigned, so
+the ranges live there. The first three demos sit in the `10.18x` row for test
+and in the `10.19x` row for local+prod+dev; from the second generation on a
+demo takes one column across three rows — `10.20x` local+prod+dev, `10.21x`
+test, `10.22x` the cluster stand — and the column is the demo: 1
+binance-btc-tracker, 2 ecommerce-shop, 3 online-testing. The next project
+takes the next column: `10.204` / `10.214` / `10.224`.
 
 **Worker pool.** The daemon pre-starts `WORKER_MIN_REGULAR` regular and
 `WORKER_MIN_MONOPOLISTIC` monopolistic workers (regular ones scale up to
@@ -192,8 +224,10 @@ of a second or two; zero is a working value, and the catalog default of 2 covers
 an app agent plus the Hilos dashboard of the SDK application shell. The demos do
 not pin it: the warm-up is paid on every node start, one worker a second, and a
 number that grows with the agent roster is exactly what a new feature used to
-have to remember. The cluster stand pins it per role — 1 on the workers, 0 on the
-masters — because there it says what a node is for, not how big a pool is.
+have to remember. The cluster stands pin it by what a node carries, not by its
+rank — 1 on a node with placed work, 0 on a node without; on online-testing the
+masters carry work and take the 1 (not in the code yet — HIL-1217) — because
+there it says what a node is for, not how big a pool is.
 
 The pool grows by one bound: **a monopolistic agent may not be per-instance.** A
 start of a monopolistic agent with an index is refused rather than given a worker

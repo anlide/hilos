@@ -114,6 +114,62 @@ cross-user features testable at all.
    ([wire-protocol.md](wire-protocol.md)). The hardest features require this category to test, so it
    is built in from the start.
 
+### Which demo carries a spec — the account stays, the operation moves
+
+A spec lives on the side of the boundary its feature belongs to (the owner's
+rule, 2026-09-27). The **account** side stays in chat, tasks and polls:
+sign-in, profile, second factor, step-up, passkey, the account itself —
+deletion, merge, export — sessions, connection, the application shell
+(navigation, layout, a11y, prerender, error pages), the stand contracts
+(stand-gateway, stand-model, stand-oauth), and chat's showcase. The
+**operations** side lives in the new demos: backup, protected mode,
+maintenance, logs, settings, users, admin, tables, notifications and
+communications. Every demo keeps its own smoke and its own sign-in.
+
+The demos pair by view framework: chat (Vue) → binance-btc-tracker (Vue),
+tasks (React) → ecommerce-shop (React), polls (Angular) → online-testing
+(Angular). An operations spec lives in the new demo of the same framework as
+the demo it leaves.
+
+| Area | Specs today | Lives in | Leaf |
+|---|---|---|---|
+| Settings, people and admin | chat: settings, users, admin, admin-gating, account-lifecycle | binance-btc-tracker (not in the code yet — HIL-1219) | HIL-1219 |
+| Backup | chat: backup | binance-btc-tracker (not in the code yet — HIL-1220) | HIL-1220 |
+| Protected mode and maintenance | chat: protected-mode | binance-btc-tracker (not in the code yet — HIL-1221) | HIL-1221 |
+| Logs | chat: logs, logs-rotation | binance-btc-tracker (not in the code yet — HIL-1222) | HIL-1222 |
+| Tables | chat: table-lag, table-refusal | binance-btc-tracker (not in the code yet — HIL-1223) | HIL-1223 |
+| Notifications and communications | chat: notifications, communications | binance-btc-tracker (not in the code yet — HIL-1224) | HIL-1224 |
+| The operations half of tasks | tasks: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop (not in the code yet — HIL-1225) | HIL-1225 |
+| The operations half of polls | polls: users, settings, notifications, protected-mode, maintenance, logs | online-testing (not in the code yet — HIL-1226) | HIL-1226 |
+
+`admin-gating` and `account-lifecycle` are the screens of an administrator
+over people, and they go with settings, people and admin: framework-level
+tests, in the owner's words on the HIL-1209 interview, not chat's.
+
+The old demos switch nothing off — only the spec moves; the new demo switches
+on what it tests, plus sign-in.
+
+**A move is a rewrite, not a copy.** Chat's e2e hold on to chat's product:
+`signUp` enters through `message-signin`
+(`demo/chat/tests/e2e/helpers/session.ts`), moderation runs before a rename,
+`message-input` sits inside the notifications specs, and the seeds of
+`test:db-prepare` (`demo/chat/composer.json`: `test:user:seed` for 25 people,
+`test:notification:seed`) shape the data. What is shared comes from the
+toolbox — `framework/frontend/e2e/` and `framework/frontend/scripts/`, "The
+shared toolbox" below — and is not copied across.
+
+**Until the new demo carries an area, its specs — old and new — are written
+where the area lives today, and move together.** The leaf that moves an area
+takes every spec of it, named in its card or not. An area in neither list
+stays in its demo; a new operations area is born in the new demo of its
+framework.
+
+Why: on 2026-09-27 (run 0593) `chat-e2e` took ≈17 of the ≈20 minutes of a full
+run — 243 tests on one Playwright worker, and ≈874 of its ≈998 seconds went to
+the framework's own surfaces rather than to chat's product. A stand per demo
+buys parallelism, and every operations feature gets proved on every view
+framework.
+
 ## Backend state — full reset per test
 
 Each test gets a **full reset of the database and daemon** — the established
@@ -444,15 +500,15 @@ knob can lengthen a timeout and never shorten one.
 This exists because the full run puts **two demo lanes on the box at once**
 (`../testing.md`): a starved host must make the suite slower, not red.
 
-The heuristic is a port of `resolve_timeout_scale()` in
-`demo/cluster/docker/cluster_e2e.py`, and the port is **deliberately half**: that
-suite also retries a scenario that failed purely on a convergence timeout and
-never one that violated an invariant. Playwright gives no cheap way to tell the
-two apart at retry time, so retrying on timeout only cannot be expressed — retries
-stay at 2 in CI, and only the caps move. The cluster scale now reads
-`CLUSTER_E2E_TIMEOUT_SCALE` under the same rule as this one: the runner exports it
-from the same lane count, memory may raise it above that, and the loadavg term
-steps aside whenever it is set.
+The heuristic is a port of `resolve_timeout_scale()` in the cluster harness,
+the one the three stands share (not in the code yet — HIL-1210), and the port
+is **deliberately half**: that suite also retries a scenario that failed purely
+on a convergence timeout and never one that violated an invariant. Playwright
+gives no cheap way to tell the two apart at retry time, so retrying on timeout
+only cannot be expressed — retries stay at 2 in CI, and only the caps move. The
+cluster scale now reads `CLUSTER_E2E_TIMEOUT_SCALE` under the same rule as this
+one: the runner exports it from the same lane count, memory may raise it above
+that, and the loadavg term steps aside whenever it is set.
 
 ## Source vs build
 
