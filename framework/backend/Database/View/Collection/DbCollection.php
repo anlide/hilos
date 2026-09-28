@@ -494,6 +494,17 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
     }
 
     /**
+     * Resolves a declared field name to the entity column it names.
+     *
+     * @param string $field Entity column name, or the object field name standing for it
+     * @return ?string Entity column name, or null when the entity has no such column
+     */
+    public function columnForField(string $field): ?string
+    {
+        return $this->getObjectCollection()?->columnForField($field);
+    }
+
+    /**
      * Returns the items whose column holds one value, as a collection of the same class.
      *
      * The set is read out of the database rather than out of what this process happens to hold,

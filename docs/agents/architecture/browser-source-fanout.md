@@ -130,6 +130,14 @@ fan-out:
 - `previous` — previous values of the fields carried by an update, empty for
   other mutation types.
 
+The `row` and `previous` payloads arrive in two vocabularies: database mutations
+on create and update carry entity columns (`user_id`), database deletes carry the
+object representation (`Object::toArray()`), and runtime mutations carry state
+property names. A list or table declaration names fields using object names
+(`Session::userId`). The fan-out matches a declared field — whether a row key or
+a trigger — under either name, using the same correspondence that reads joins
+(`Objects::columnForField()`).
+
 An update can move a joined item from one logical browser row to another. Fan-out
 rebuilds both the current and previous row keys, while a list anchored to the
 subscribing connection considers only its anchor key and emits neither rows nor

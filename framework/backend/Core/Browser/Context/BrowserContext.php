@@ -2406,7 +2406,7 @@ abstract class BrowserContext
         }
 
         foreach ($triggers as $field) {
-            if (is_string($field) && array_key_exists($field, $change->row)) {
+            if (is_string($field) && $this->changeValueKey($rowConfig, $change, $change->row, $field) !== null) {
                 return true;
             }
         }
@@ -2509,11 +2509,17 @@ abstract class BrowserContext
     /**
      * Resolves a row key value from the source change, current source row, or table params.
      *
+     * Wire dictionaries come in two vocabularies: database create and update mutations carry
+     * entity column names (Object_::sync(), DbSyncApplicator), while database deletes carry
+     * Object::toArray() keys, and runtime mutations carry state property names. List and table
+     * declarations use object field names (e.g. Session::userId).
+     *
      * @param array<string, mixed> $rowConfig Browser row source config
      * @param SourceChange $change Grouped DB/RT source change
      * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sourceValues Current or previous changed field values
      * @return int|string|null Browser row key
+     * @throws PageInternalErrorException When the row source configuration is malformed
      */
     private function rowKeyValue(
         array $rowConfig,
@@ -2531,8 +2537,9 @@ abstract class BrowserContext
             return $this->normalizeKey($change->sourceId);
         }
 
-        if (array_key_exists($rowKey, $sourceValues)) {
-            return $this->normalizeKey($sourceValues[$rowKey]);
+        $key = $this->changeValueKey($rowConfig, $change, $sourceValues, $rowKey);
+        if ($key !== null) {
+            return $this->normalizeKey($sourceValues[$key]);
         }
 
         $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
@@ -2544,6 +2551,56 @@ abstract class BrowserContext
         }
 
         return $this->normalizeKey($change->sourceId);
+    }
+
+    /**
+     * Resolves the key under which a declared field is present in the changed values set.
+     *
+     * Wire dictionaries come in two vocabularies: database create and update mutations carry
+     * entity column names (Object_::sync(), DbSyncApplicator), while database deletes carry
+     * Object::toArray() keys, and runtime mutations carry state property names. List and table
+     * declarations use object field names (e.g. Session::userId).
+     *
+     * The direct declared name is checked first; for database changes, the entity column the
+     * field resolves to ({@see DbCollection::columnForField()}) is checked next.
+     *
+     * @param array<string, mixed> $rowConfig Browser row source config
+     * @param SourceChange $change Grouped DB/RT source change
+     * @param array<string, mixed> $values Current or previous changed field values
+     * @param string $field Declared field name
+     * @return ?string Key under which the value resides in $values, or null when absent
+     * @throws PageInternalErrorException When the row source configuration is malformed
+     */
+    private function changeValueKey(
+        array $rowConfig,
+        SourceChange $change,
+        array $values,
+        string $field,
+    ): ?string {
+        if (array_key_exists($field, $values)) {
+            return $field;
+        }
+
+        if ($change->kind !== SourceChange::KIND_DB) {
+            return null;
+        }
+
+        $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
+        if (!is_array($source) || $this->sourceKey($source) === null) {
+            return null;
+        }
+
+        $collection = $this->sourceCollection($source);
+        if (!$collection instanceof DbCollection) {
+            return null;
+        }
+
+        $column = $collection->columnForField($field);
+        if ($column !== null && array_key_exists($column, $values)) {
+            return $column;
+        }
+
+        return null;
     }
 
     /**

@@ -410,13 +410,16 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * is the one {@see ColumnFilter} already builds SQL by, and the entity's own column list is
      * what decides — a name that resolves to nothing is refused rather than quoted into a query.
      *
+     * Two readers share this correspondence: reading a join out of the table ({@see self::loadByColumn()}),
+     * and the browser fan-out matching a declared field against the columns of a database change.
+     *
      * A collection with no object class behind it names no column at all, which is the honest
      * answer for a base collection nobody configured rather than a reason to fail on its emptiness.
      *
      * @param string $field Entity column name or the object field name standing for it
      * @return ?string Entity column name, or null when the entity has no such column
      */
-    private function columnForField(string $field): ?string
+    public function columnForField(string $field): ?string
     {
         $objectClass = static::OBJECT_CLASS;
         if ($objectClass === '') {

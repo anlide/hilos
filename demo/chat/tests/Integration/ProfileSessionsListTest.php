@@ -26,6 +26,7 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Object\Item\Session;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
@@ -103,11 +104,24 @@ final class ProfileSessionsListTest extends IntegrationTestCase
         self::assertNotNull($otherSession);
         $otherSession->actions->unbindUser();
 
+        $syncData = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if (
+                $signal->data instanceof DbSyncUpdatedSignalData
+                && $signal->data->collectionKey === ChatDbContext::sessions
+                && $signal->data->idString === (string) $otherSessionId
+            ) {
+                $syncData = $signal->data;
+                break;
+            }
+        }
+        self::assertNotNull($syncData);
+
         Hilos::$browser?->record(SourceChange::dbUpdated(
-            ChatDbContext::sessions,
-            (string)$otherSessionId,
-            [Session::userId => null],
-            previous: [Session::userId => $userId],
+            $syncData->collectionKey,
+            $syncData->idString,
+            $syncData->row,
+            previous: $syncData->previous,
         ));
         Hilos::$browser?->flushToSignalRouter();
 

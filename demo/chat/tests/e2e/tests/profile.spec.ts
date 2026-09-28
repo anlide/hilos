@@ -403,6 +403,47 @@ test('signs out every other browser session at once', async ({ browser }) => {
   }
 })
 
+test('ends sessions of closed browsers without a reload (HIL-1180)', async ({
+  browser,
+}) => {
+  const contextA = await browser.newContext()
+  const contextB = await browser.newContext()
+  const contextC = await browser.newContext()
+  try {
+    const pageA = await contextA.newPage()
+    const account = await signUp(pageA)
+    const pageB = await contextB.newPage()
+    await gotoPage(pageB, '/profile/sessions')
+    await login(pageB, account.email)
+    await expect(pageB.getByTestId('profile-sessions')).toBeVisible()
+
+    const pageC = await contextC.newPage()
+    await gotoPage(pageC, '/profile/sessions')
+    await login(pageC, account.email)
+    await expect(pageC.getByTestId('profile-sessions')).toBeVisible()
+
+    await contextB.close()
+    await contextC.close()
+
+    await gotoPage(pageA, '/profile/sessions')
+    await expect(pageA.getByTestId('profile-session-row')).toHaveCount(3)
+
+    await pageA.getByTestId('profile-session-revoke').first().click()
+    await clickSubmit(pageA.getByTestId('profile-session-end-confirm'))
+    await expect(pageA.getByTestId('modal')).toBeHidden()
+    await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
+
+    await pageA.getByTestId('profile-session-revoke').first().click()
+    await clickSubmit(pageA.getByTestId('profile-session-end-confirm'))
+    await expect(pageA.getByTestId('modal')).toBeHidden()
+    await expect(pageA.getByTestId('profile-session-row')).toHaveCount(1)
+  } finally {
+    await contextA.close()
+    await contextB.close()
+    await contextC.close()
+  }
+})
+
 test('opens the push devices page', async ({ page }) => {
   await signUp(page)
   await gotoPage(page, '/profile/devices')

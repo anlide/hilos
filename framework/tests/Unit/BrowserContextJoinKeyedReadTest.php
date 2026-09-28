@@ -178,6 +178,112 @@ final class BrowserContextJoinKeyedReadTest extends TestCase
     }
 
     /**
+     * When a joined row moves between owners in database update columns (snake_case), both the
+     * previous and new owner lists must be refreshed.
+     *
+     * @throws HilosException When the fan-out refuses the change
+     */
+    public function testMovingAJoinedRowWithColumnKeysUpdatesBothOwners(): void
+    {
+        JoinReadNoteEntity::reset([
+            ['id' => 10, 'owner_id' => 1, 'body' => 'first'],
+            ['id' => 11, 'owner_id' => 2, 'body' => 'second'],
+            ['id' => 12, 'owner_id' => 2, 'body' => 'third'],
+        ]);
+
+        Hilos::$sr?->subscribeToPage(
+            JoinReadBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, JoinReadBrowserContext::PAGE),
+        );
+
+        $context = new JoinReadBrowserContext();
+        $context->record(SourceChange::dbUpdated(
+            JoinReadDbContext::notes,
+            '11',
+            ['owner_id' => 2],
+            previous: ['owner_id' => 1],
+        ));
+        $context->flushToSignalRouter();
+
+        $rows = $this->rowsOfNextPageResponse();
+        $this->assertCount(2, $rows);
+
+        $rowsByOwner = [];
+        foreach ($rows as $row) {
+            $rowsByOwner[(int) $row[PagePayload::rowKey]] = $row[PagePayload::slots][JoinReadDbContext::notes];
+        }
+
+        $this->assertSame([['id' => 10, 'body' => 'first']], $rowsByOwner[1]);
+        $this->assertSame([['id' => 11, 'body' => 'second'], ['id' => 12, 'body' => 'third']], $rowsByOwner[2]);
+    }
+
+    /**
+     * When a joined row moves between owners using object field names (camelCase), both the
+     * previous and new owner lists are refreshed.
+     *
+     * @throws HilosException When the fan-out refuses the change
+     */
+    public function testMovingAJoinedRowWithObjectKeysUpdatesBothOwners(): void
+    {
+        JoinReadNoteEntity::reset([
+            ['id' => 10, 'owner_id' => 1, 'body' => 'first'],
+            ['id' => 11, 'owner_id' => 2, 'body' => 'second'],
+            ['id' => 12, 'owner_id' => 2, 'body' => 'third'],
+        ]);
+
+        Hilos::$sr?->subscribeToPage(
+            JoinReadBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, JoinReadBrowserContext::PAGE),
+        );
+
+        $context = new JoinReadBrowserContext();
+        $context->record(SourceChange::dbUpdated(
+            JoinReadDbContext::notes,
+            '11',
+            ['ownerId' => 2],
+            previous: ['ownerId' => 1],
+        ));
+        $context->flushToSignalRouter();
+
+        $rows = $this->rowsOfNextPageResponse();
+        $this->assertCount(2, $rows);
+
+        $rowsByOwner = [];
+        foreach ($rows as $row) {
+            $rowsByOwner[(int) $row[PagePayload::rowKey]] = $row[PagePayload::slots][JoinReadDbContext::notes];
+        }
+
+        $this->assertSame([['id' => 10, 'body' => 'first']], $rowsByOwner[1]);
+        $this->assertSame([['id' => 11, 'body' => 'second'], ['id' => 12, 'body' => 'third']], $rowsByOwner[2]);
+    }
+
+    /**
+     * A row config trigger declared with an object field name reacts when the change arrives
+     * carrying the database column name.
+     *
+     * @throws HilosException When the fan-out refuses the change
+     */
+    public function testATriggerOnAnObjectFieldRecognizesTheChangedColumn(): void
+    {
+        Hilos::$sr?->subscribeToPage(
+            JoinReadBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, JoinReadBrowserContext::PAGE),
+        );
+
+        $context = new JoinReadBrowserContext(triggersDeclared: true);
+        $context->record(SourceChange::dbUpdated(
+            JoinReadDbContext::notes,
+            '12',
+            ['owner_id' => 2],
+        ));
+        $context->flushToSignalRouter();
+
+        $rows = $this->rowsOfNextPageResponse();
+        $this->assertCount(1, $rows);
+        $this->assertSame(2, (int) $rows[0][PagePayload::rowKey]);
+    }
+
+    /**
      * Subscribes the test page and returns the browser rows the subscriber was sent.
      *
      * @param JoinReadBrowserContext $context Context under test
@@ -222,9 +328,12 @@ final class JoinReadBrowserContext extends BrowserContext
 
     /**
      * @param bool $joinColumnDeclared Whether the foreign-key join names the column it joins by
+     * @param bool $triggersDeclared Whether the notes join declares triggers on ownerId
      */
-    public function __construct(private readonly bool $joinColumnDeclared = true)
-    {
+    public function __construct(
+        private readonly bool $joinColumnDeclared = true,
+        private readonly bool $triggersDeclared = false,
+    ) {
         parent::__construct();
     }
 
@@ -272,6 +381,9 @@ final class JoinReadBrowserContext extends BrowserContext
         ];
         if ($this->joinColumnDeclared) {
             $notes[BrowserListFieldKey::ITEM_KEY] = JoinReadNoteObject::ownerId;
+        }
+        if ($this->triggersDeclared) {
+            $notes[BrowserFieldKey::TRIGGERS] = [JoinReadNoteObject::ownerId];
         }
 
         $items = [
