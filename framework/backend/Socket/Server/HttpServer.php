@@ -10,8 +10,6 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\HttpClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
-use Hilos\Socket\SocketException;
-use Hilos\Socket\SocketOperation;
 use Hilos\Utils\Logger;
 
 /**
@@ -159,16 +157,12 @@ class HttpServer extends AbstractServer
      *
      * Closes server socket only. Does NOT close client connections.
      * Clients should complete their requests and disconnect themselves.
-     *
-     * @throws SocketException If socket close fails
      */
     public function stop(): void
     {
         // Close server socket only, don't close client connections
         if ($this->socket !== null) {
             socket_close($this->socket);
-            // Check for errors during close
-            $this->handleSocketError(SocketOperation::CLOSE);
             $this->socket = null;
         }
 

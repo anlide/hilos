@@ -224,7 +224,12 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * Idempotent method - can be called multiple times safely.
      * Sets socket to null after successful close to prevent double close.
      *
-     * @throws SocketException If socket close fails
+     * socket_close() reports no error, so there is nothing of its own to check here.
+     * The last socket error held by this process belongs to an earlier operation,
+     * often the read that found a peer reset. Checking it again raised that failure
+     * a second time and skipped onClose(), leaving a killed worker's agents on the
+     * roster (HIL-1162).
+     *
      * @throws HilosException When the subclass fails to announce the close
      */
     public function close(): void
@@ -248,9 +253,6 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
         // Set to null after successful close to prevent double close
         $this->socket = null;
-
-        // Check if there was an error during close
-        $this->handleSocketError(SocketOperation::CLOSE);
 
         // Call onClose callback
         $this->onClose();
@@ -334,9 +336,9 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     abstract public function onTick(): void;
 
     /**
-     * Called when socket connection is successfully closed.
+     * Called once the socket is closed, however the connection ended: a clean close
+     * by the peer, a reset, or this side dropping it.
      *
-     * This method is called after socket_close() completes without errors.
      * Can be overridden in child classes to perform cleanup or logging.
      *
      * @throws HilosException When the subclass fails to announce the close

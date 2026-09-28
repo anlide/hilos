@@ -11,7 +11,6 @@ use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\SocketException;
-use Hilos\Socket\SocketOperation;
 
 /**
  * WebSocketServer - WebSocket server implementation.
@@ -137,16 +136,12 @@ abstract class WebSocketServer extends AbstractServer
      *
      * Closes server socket only. Does NOT close client connections.
      * Clients should complete their sessions and disconnect themselves.
-     *
-     * @throws SocketException If socket close fails
      */
     public function stop(): void
     {
         // Close server socket only, don't close client connections
         if ($this->socket !== null) {
             socket_close($this->socket);
-            // Check for errors during close
-            $this->handleSocketError(SocketOperation::CLOSE);
             $this->socket = null;
         }
 

@@ -172,8 +172,6 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
 
         if ($this->socket !== null) {
             socket_close($this->socket);
-            // Check for errors during close
-            $this->handleSocketError(SocketOperation::CLOSE);
             $this->socket = null;
         }
 

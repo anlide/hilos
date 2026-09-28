@@ -98,6 +98,8 @@ WORKER_REPORT_INTERVAL_SEC = 5.0
 SLAVE_WORK_GRACE_SEC = 4.0
 AGENT_STARTED_ON_WORKER = re.compile(r"Agent '([^']+)' started on worker #(\d+)")
 WORKER_DIED_HOSTING = re.compile(r"Worker #(\d+) died hosting \d+ agent\(s\): (.*)")
+# How many lines of a victim's log a missing worker-death report prints (HIL-1162).
+EVIDENCE_LINES = 40
 
 # The settings row the per-node probe writes and reads. Non-catalog by construction - this demo
 # registers no settings catalog - so it is a true orphan row and nothing else in the stand is
@@ -474,6 +476,17 @@ def fleet_workers_on(node, members):
     for agent_id, worker_index in latest.items():
         by_worker.setdefault(worker_index, set()).add(agent_id)
     return by_worker
+
+
+def worker_death_evidence(node, offset, worker_index):
+    """Log lines after `offset` about one worker's process, link, and agents.
+
+    Printed when the node never reports the worker's lost agents: the next run starts
+    on a fresh stand, so its node log would otherwise disappear (HIL-1162).
+    """
+    about_worker = re.compile(rf"\b[Ww]orker #{worker_index}\b")
+    return [line for line in node_log(node, offset).splitlines()
+            if about_worker.search(line) or "Error in client" in line or "Suppressed " in line]
 
 
 def newest_row_updates(views):
@@ -1646,8 +1659,14 @@ def scenario_19_worker_death_on_live_node():
         return any(int(match.group(1)) == worker_index
                    for match in WORKER_DIED_HOSTING.finditer(node_log(victim, offset)))
 
-    wait_until(worker_death_reported, CONVERGE_TIMEOUT,
-               f"{victim} names the agents lost with worker #{worker_index}", nodes=[victim])
+    try:
+        wait_until(worker_death_reported, CONVERGE_TIMEOUT,
+                   f"{victim} names the agents lost with worker #{worker_index}", nodes=[victim])
+    except ScenarioTimeout:
+        print(f"    {out.removeprefix('cluster: ')}")
+        for line in worker_death_evidence(victim, offset, worker_index)[-EVIDENCE_LINES:]:
+            print(f"    {victim}: {line}")
+        raise
     reports = [match for match in WORKER_DIED_HOSTING.finditer(node_log(victim, offset))
                if int(match.group(1)) == worker_index]
     named = {agent_id.strip() for agent_id in reports[-1].group(2).split(",")

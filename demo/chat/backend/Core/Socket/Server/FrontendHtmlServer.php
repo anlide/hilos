@@ -8,8 +8,6 @@ use Demo\Chat\Core\Frontend\HtmlCache;
 use Demo\Chat\Core\Frontend\HtmlResolver;
 use Demo\Chat\Core\Socket\Client\FrontendHtmlClient;
 use Hilos\Socket\Server\AbstractServer;
-use Hilos\Socket\SocketException;
-use Hilos\Socket\SocketOperation;
 
 /**
  * FrontendHtmlServer - HTTP server for prerendered frontend HTML.
@@ -95,14 +93,11 @@ final class FrontendHtmlServer extends AbstractServer
 
     /**
      * Stop server and close socket.
-     *
-     * @throws SocketException If socket close fails
      */
     public function stop(): void
     {
         if ($this->socket !== null) {
             socket_close($this->socket);
-            $this->handleSocketError(SocketOperation::CLOSE);
             $this->socket = null;
         }
         $this->isRunning = false;
