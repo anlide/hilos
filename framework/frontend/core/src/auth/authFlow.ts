@@ -778,7 +778,9 @@ export interface AuthFlow {
   /**
    * Re-send the active code. Blocked (a silent no-op) until
    * {@link resendAvailableAt}; the backend re-arms the gate via
-   * `resendAt`. A no-op while pending.
+   * `resendAt`. An accepted send empties the code field — a code typed for the
+   * previous challenge must not make the new screen submittable (HIL-1173); a
+   * refusal leaves it. A no-op while pending.
    */
   resend(): Promise<void>
   /**
@@ -790,6 +792,10 @@ export interface AuthFlow {
    * STARTED the flow — a registration, a phone code, a magic link, a recovery
    * request. Registration carries the accepted revisions the tab knows from
    * consent or the pending registration step.
+   *
+   * An accepted send empties the code field — a code typed for the previous
+   * challenge must not make the new screen submittable (HIL-1173); a refusal
+   * leaves it.
    *
    * The send gate still rules it: it belongs to the address and outlives the
    * code, so this is a silent no-op inside the cooldown, exactly like
@@ -810,8 +816,11 @@ export interface AuthFlow {
    * separate send control), except under a `register` intent on the identifier
    * step, where the choice is stored and the flow hops to consent locally:
    * registration dispatches nothing before the terms screen submits. The
-   * chosen key lives in the state and the code screen names it. A no-op for an
-   * unknown key, while pending, or while the resend cooldown blocks sending.
+   * chosen key lives in the state and the code screen names it. An accepted
+   * send empties the code field — a code typed for the previous challenge must
+   * not make the new screen submittable (HIL-1173); a refusal leaves it. A
+   * no-op for an unknown key, while pending, or while the resend cooldown
+   * blocks sending.
    *
    * @param key The chosen channel key.
    */
@@ -2350,6 +2359,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // already hopped forward would turn a send into a confirm of an empty code.
     const sending = flow.get()
     moveFlow({ ...sending, step: 'code' })
+    form.set({ ...form.get(), code: '' })
     const outcome = await dispatch(() =>
       options.onSubmit('submit', sending, form.get()),
     )
@@ -2700,7 +2710,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
 
         return
       }
-      await dispatch(() => options.onSubmit('submit', flow.get(), form.get()))
+      const outcome = await dispatch(() =>
+        options.onSubmit('submit', flow.get(), form.get()),
+      )
+      if (state.step === 'consent' && outcome !== undefined && outcome.ok) {
+        form.set({ ...form.get(), code: '' })
+      }
     },
     async finishWithoutPassword(): Promise<void> {
       if (pending.get() || !canFinishWithoutPassword.get()) {
@@ -2732,7 +2747,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (pending.get() || isResendBlocked()) {
         return
       }
-      await dispatch(() => options.onSubmit('resend', flow.get(), form.get()))
+      const outcome = await dispatch(() =>
+        options.onSubmit('resend', flow.get(), form.get()),
+      )
+      if (outcome !== undefined && outcome.ok) {
+        form.set({ ...form.get(), code: '' })
+      }
     },
     async renewCode(): Promise<void> {
       if (pending.get() || isResendBlocked()) {
@@ -2744,6 +2764,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       const outcome = await dispatch(() =>
         options.onSubmit('resend', flow.get(), form.get()),
       )
+      if (outcome !== undefined && outcome.ok) {
+        form.set({ ...form.get(), code: '' })
+      }
       if (outcome === undefined || !outcome.ok || outcome.next !== undefined) {
         // Orphaned, refused, or already told where to go. A refusal that names
         // nowhere - the send cap - deliberately leaves the person here, with the

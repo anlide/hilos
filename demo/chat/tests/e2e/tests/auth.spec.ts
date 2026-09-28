@@ -42,6 +42,7 @@ import {
   PASSWORD,
   register,
   registerWithoutPassword,
+  signInByPhone,
   signUp,
   submitFirstPassword,
   submitRegistration,
@@ -1590,6 +1591,32 @@ test('comes back to the phone code screen after a reload, and finishes there', a
   await clickSubmit(page.getByTestId('auth-submit'))
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
+})
+
+test('opens the code screen of a new send with an empty field, even after a code was typed (HIL-1173)', async ({
+  page,
+}) => {
+  const phone = uniquePhone()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await signInByPhone(page, phone)
+  await logout(page)
+  await gotoPage(page, '/profile')
+
+  await typeInto(page.getByTestId('auth-identifier'), phone)
+  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+
+  await typeInto(page.getByTestId('auth-code'), '000000')
+  await expect(page.getByTestId('auth-code')).toHaveValue('000000')
+
+  await page.getByTestId('auth-restart').click()
+  await expect(page.getByTestId('auth-identifier')).toHaveValue(phone)
+
+  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await expect(page.getByTestId('auth-code')).toHaveValue('')
 })
 
 test('counts the code down and comes back to it, still counting, after a reload', async ({

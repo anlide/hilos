@@ -3173,6 +3173,251 @@ describe('a code that ran out says so itself (HIL-828)', () => {
   })
 })
 
+describe('a new code empties the field (HIL-1173)', () => {
+  it('an accepted resend empties the code field', async () => {
+    const onSubmit = vi.fn(async () => ({
+      ok: true,
+      next: { step: 'code' as const },
+      resendAt: Date.now() + 30 * SECOND_MS,
+    }))
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          status: 'active',
+          methods: ['sms'],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+    await flow.chooseChannel('sms')
+    flow.setField('code', '123456')
+
+    await vi.advanceTimersByTimeAsync(31 * SECOND_MS)
+    await flow.resend()
+
+    expect(flow.form.get().code).toBe('')
+  })
+
+  it('a refused resend leaves the typed code in place', async () => {
+    let sends = 0
+    const onSubmit = vi.fn(async () => {
+      sends += 1
+      if (sends === 1) {
+        return {
+          ok: true,
+          next: { step: 'code' as const },
+          resendAt: Date.now() + 30 * SECOND_MS,
+        }
+      }
+      return { ok: false, message: 'Too many attempts' }
+    })
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          status: 'active',
+          methods: ['sms'],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+    await flow.chooseChannel('sms')
+    flow.setField('code', '123456')
+
+    await vi.advanceTimersByTimeAsync(31 * SECOND_MS)
+    await flow.resend()
+
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.form.get().code).toBe('123456')
+  })
+
+  it('owner scenario: reservation_expired leads to code_expired with the typed code, then renewCode empties it', async () => {
+    let mode: 'first' | 'submit_code' | 'renew' = 'first'
+    const onSubmit = vi.fn(async () => {
+      if (mode === 'first') {
+        return {
+          ok: true,
+          next: { step: 'code' as const, intent: 'register' as const },
+        }
+      }
+      if (mode === 'submit_code') {
+        return {
+          ok: false,
+          code: 'reservation_expired',
+          message: 'That registration expired. Ask for a new code.',
+          next: { step: 'code_expired' as const, intent: 'register' as const },
+        }
+      }
+      return {
+        ok: true,
+        next: { step: 'code' as const, intent: 'register' as const },
+        resendAt: Date.now() + 30 * SECOND_MS,
+        expiresAt: Date.now() + 60 * SECOND_MS,
+      }
+    })
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          status: 'none',
+          methods: [],
+        }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('consent')
+    await Promise.resolve()
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('code')
+
+    flow.setField('code', '123456')
+    mode = 'submit_code'
+    await flow.submit()
+
+    expect(flow.flow.get().step).toBe('code_expired')
+    expect(flow.form.get().code).toBe('123456')
+
+    mode = 'renew'
+    await flow.renewCode()
+
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.form.get().code).toBe('')
+  })
+
+  it('a refused renewCode leaves the code field alone and stays on code_expired', async () => {
+    const onSubmit = vi.fn(async () => ({
+      ok: false,
+      message: 'Too many codes for now',
+    }))
+    const flow = setup({ onSubmit })
+    flow.applyExternal({ step: 'code_expired', intent: 'register' })
+    flow.setField('code', '123456')
+
+    await flow.renewCode()
+
+    expect(flow.flow.get().step).toBe('code_expired')
+    expect(flow.form.get().code).toBe('123456')
+  })
+
+  it('renewCode without next (magic link or recovery) empties the code field and moves to code', async () => {
+    const onSubmit = vi.fn(async () => ({
+      ok: true,
+      resendAt: Date.now() + 30 * SECOND_MS,
+      expiresAt: Date.now() + 60 * SECOND_MS,
+    }))
+    const flow = setup({ onSubmit })
+    flow.applyExternal({ step: 'code_expired', intent: 'login' })
+    flow.setField('code', '123456')
+
+    await flow.renewCode()
+
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.form.get().code).toBe('')
+  })
+
+  it('the first send of an email registration from consent empties the code field', async () => {
+    const onSubmit = vi.fn(async () => ({
+      ok: true,
+      next: { step: 'code' as const, intent: 'register' as const },
+    }))
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          status: 'none',
+          methods: [],
+        }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('consent')
+    await Promise.resolve()
+
+    flow.setField('code', '123456')
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.form.get().code).toBe('')
+  })
+
+  it('a phone send empties the code field at once when the code screen opens before reply', async () => {
+    let release = (): void => {}
+    const onSubmit = vi.fn(
+      async () =>
+        await new Promise<AuthFlowSubmitOutcome>((resolve) => {
+          release = () => resolve({ ok: true, next: { step: 'code' as const } })
+        }),
+    )
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          status: 'active',
+          methods: ['sms'],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+    flow.setField('code', '123456')
+
+    const sending = flow.chooseChannel('sms')
+
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.form.get().code).toBe('')
+
+    release()
+    await sending
+
+    expect(flow.form.get().code).toBe('')
+  })
+
+  it('a wrong code refusal leaves the typed code in the field', async () => {
+    let mode: 'first' | 'verify' = 'first'
+    const onSubmit = vi.fn(async () => {
+      if (mode === 'first') {
+        return {
+          ok: true,
+          next: { step: 'code' as const, intent: 'login' as const },
+        }
+      }
+      return { ok: false, message: 'Invalid code. Try again.' }
+    })
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          status: 'active',
+          methods: ['sms'],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+    await flow.chooseChannel('sms')
+    expect(flow.flow.get().step).toBe('code')
+
+    flow.setField('code', '123456')
+    mode = 'verify'
+    await flow.submit()
+
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.form.get().code).toBe('123456')
+    expect(flow.error.get()?.message).toBe('Invalid code. Try again.')
+  })
+})
+
 describe('the passkey ending of a registration (HIL-1104)', () => {
   it('is offered on the password screen of a registration while passkeys are on', () => {
     const flow = setup()
