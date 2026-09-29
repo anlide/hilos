@@ -70,7 +70,7 @@ where it is today — a hook the project implements.
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
 | The tombstone of a merged account and "is this account already folded" (`assertMergeable()`, the merge table `hilos_user_merge`), the refusals to a folded account | HIL-1199 |
 | Erasing a person — the framework deletes the person's row last, after the project's rows ([account-deletion.md](account-deletion.md)) | (not in the code yet — HIL-1200) |
-| The people table and the merge-candidates table in the admin section | (not in the code yet — HIL-1201) |
+| The people table and the merge-candidates table in the admin section | HIL-1201 |
 | Foreign keys onto the person from every framework table that points at one | (not in the code yet — HIL-1202) |
 | `name` and `lastActivity` on the frontend `User` entity | HIL-1193 |
 

@@ -15,9 +15,9 @@ use Hilos\Tables\Users\AbstractHilosUsersTable;
 /**
  * Framework user list and user detail admin pages.
  *
- * The rows themselves stay project-owned - who a user is differs per project - so the
- * framework requires the project's table to extend its base and leaves the shape alone.
- * The detail page carries no framework table class to name, so its binding is required
+ * The rows and the reading of the people are the framework's: every project keeps its people
+ * in the framework's own table. The project extends the users table only to name its runtime
+ * connections collection, whose key is its own. The detail page carries no framework table class to name, so its binding is required
  * without naming a target: what it is bound to is the project's own browser table.
  *
  * The presence source is a requirement rather than an optional extra because the user list

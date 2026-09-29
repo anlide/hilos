@@ -10,9 +10,9 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 /**
  * One account the Hilos user page may offer as a merge loser (HIL-411).
  *
- * The project-owned user fields stay together so {@see AbstractHilosMergeCandidatesTable}
- * can put them in the entity-bearing `users` slot. The framework-owned identity projection is
- * kept beside them for the inline `merge` slot. Search-only fields never enter either slot.
+ * The user fields stay together so {@see HilosMergeCandidatesTable} can put them in the
+ * entity-bearing `users` slot. The identity projection is kept beside them for the inline
+ * `merge` slot. Search-only fields never enter either slot.
  */
 final class HilosMergeCandidateTableRow extends AbstractTableRow
 {
@@ -20,7 +20,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
     public const string exactUserId = 'exactUserId';
 
     /**
-     * @param array<string, mixed> $userFields Project user payload, including its numeric id
+     * @param array<string, mixed> $userFields User payload, including its numeric id
      * @param list<array{type: string, identifier: string, provider: ?string, verified: bool}> $identities Safe identity metadata
      * @param bool $hasPassword Whether the account has a password identity
      * @param ?int $exactUserId User id only when it exactly matches a numeric search term
@@ -36,13 +36,13 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
     /** @return int Stable candidate user id */
     public function getRowKey(): int
     {
-        return (int) $this->userFields[AbstractHilosUserTableRow::id];
+        return (int) $this->userFields[HilosUserTableRow::id];
     }
 
     /** @return string Payload key the candidate id travels under */
     public static function keyField(): string
     {
-        return AbstractHilosUserTableRow::id;
+        return HilosUserTableRow::id;
     }
 
     /**
@@ -51,8 +51,8 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
     public function toArray(): array
     {
         return $this->userFields + [
-            AbstractHilosMergeCandidatesTable::FIELD_IDENTITIES => $this->identities,
-            AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD => $this->hasPassword,
+            HilosMergeCandidatesTable::FIELD_IDENTITIES => $this->identities,
+            HilosMergeCandidatesTable::FIELD_HAS_PASSWORD => $this->hasPassword,
             self::identityAddresses => implode(' ', array_column($this->identities, 'identifier')),
             self::exactUserId => $this->exactUserId,
         ];
@@ -65,13 +65,13 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
-        self::requireInt($data, AbstractHilosUserTableRow::id);
-        $identities = self::optionalArray($data, AbstractHilosMergeCandidatesTable::FIELD_IDENTITIES) ?? [];
-        $hasPassword = self::requireBool($data, AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD);
+        self::requireInt($data, HilosUserTableRow::id);
+        $identities = self::optionalArray($data, HilosMergeCandidatesTable::FIELD_IDENTITIES) ?? [];
+        $hasPassword = self::requireBool($data, HilosMergeCandidatesTable::FIELD_HAS_PASSWORD);
         $exactUserId = self::optionalInt($data, self::exactUserId);
         unset(
-            $data[AbstractHilosMergeCandidatesTable::FIELD_IDENTITIES],
-            $data[AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD],
+            $data[HilosMergeCandidatesTable::FIELD_IDENTITIES],
+            $data[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD],
             $data[self::identityAddresses],
             $data[self::exactUserId],
         );

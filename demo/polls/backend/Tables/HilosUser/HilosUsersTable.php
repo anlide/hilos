@@ -4,56 +4,30 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Tables\HilosUser;
 
-use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Demo\Polls\Browser\PollsBrowserSource;
-use Hilos\Database\Object\Item\User as ObjectUser;
-use Demo\Polls\Database\PollsDbContext;
-use Hilos\Database\View\Item\User as DbUser;
-use Demo\Polls\Hilos;
 use Demo\Polls\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Polls\Runtime\View\Context\PollsRtContext;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
-use Hilos\Core\Source\SourceChange;
-use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
-use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
-use Hilos\Core\Table\DTO\TableSnapshotDTO;
-use Hilos\Core\Table\TableConstants;
-use Hilos\Database\DatabaseException;
-use Hilos\Database\Settings\Exception\SettingException;
-use Hilos\HilosException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
-use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
+use Hilos\Tables\Users\HilosUserTableRow;
 
 /**
  * Polls activation of the framework Hilos users table.
  *
- * Binds the demo DB users and RT connections to the framework presence-merge
- * engine and projects them into the polls user row (the framework
- * admin/block/presence fields plus the polls profile fields).
+ * The project names its RT connections collection - the key is its own - and declares the
+ * browser sources over it; reading the people, building their rows, and merging presence are
+ * the framework's.
  */
 final class HilosUsersTable extends AbstractHilosUsersTable
 {
     public const array BROWSER = [
         BrowserTableConfigKey::SOURCES => [
-            PollsBrowserSource::DB_USERS,
+            self::USERS_SOURCE,
             PollsBrowserSource::RT_CONNECTIONS,
         ],
         BrowserTableConfigKey::ROWS => [
-            [
-                BrowserTableFieldKey::SOURCE => PollsBrowserSource::DB_USERS,
-                BrowserTableFieldKey::ROW_KEY => ObjectUser::id,
-                BrowserTableFieldKey::FIELDS => [
-                    ObjectUser::id => HilosUserTableRow::id,
-                    ObjectUser::admin => HilosUserTableRow::admin,
-                    ObjectUser::block => HilosUserTableRow::block,
-                    ObjectUser::name => HilosUserTableRow::name,
-                    ObjectUser::lastActivity => HilosUserTableRow::lastActivity,
-                ],
-            ],
+            self::USERS_ROW,
             [
                 BrowserTableFieldKey::SOURCE => PollsBrowserSource::RT_CONNECTIONS,
                 BrowserTableFieldKey::ROW_KEY => ConnectionState::userId,
@@ -69,150 +43,10 @@ final class HilosUsersTable extends AbstractHilosUsersTable
     ];
 
     /**
-     * Binds the demo DB users collection as this table's user source.
-     */
-    protected function usersSourceKey(): string
-    {
-        return PollsDbContext::users;
-    }
-
-    /**
-     * Binds the demo RT connections collection as this table's presence source.
+     * Binds the polls RT connections collection as this table's presence source.
      */
     protected function presenceSourceKey(): string
     {
         return PollsRtContext::connections;
-    }
-
-    /**
-     * The demo RT connections collection, which implements the presence source.
-     */
-    protected function presenceSource(): HilosPresenceSource
-    {
-        return Hilos::$rt->connections;
-    }
-
-    /**
-     * Builds the current row for a user id from the demo DB users collection.
-     *
-     * @param int $userId User id to project into a row
-     * @return ?HilosUserTableRow Current row, or null when the user no longer exists
-     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
-     * @throws HilosException When the bound presence source cannot read its runtime state
-     */
-    protected function rowForUserId(int $userId): ?HilosUserTableRow
-    {
-        $dbUser = Hilos::$db->users[$userId] ?? null;
-
-        return $dbUser === null ? null : $this->rowFromUser($dbUser);
-    }
-
-    /**
-     * Resolves the affected user id from a connection source change.
-     *
-     * On create the row carries the user id; an update may carry a narrow diff
-     * without it, so fall back to the live RT row.
-     *
-     * @param SourceChange $change Runtime connection source change
-     * @return int Affected user id, or 0 when it cannot be resolved
-     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
-     */
-    protected function resolveUserIdForPresence(SourceChange $change): int
-    {
-        $userId = (int) ($change->row[ConnectionState::userId] ?? 0);
-        if ($userId > 0) {
-            return $userId;
-        }
-
-        return Hilos::$rt->connections[$change->sourceId]?->userId ?? 0;
-    }
-
-    /**
-     * Builds the Hilos users row from DB fields plus runtime presence.
-     *
-     * @param DbUser $user User DB item to project into the Hilos users table
-     * @return HilosUserTableRow Runtime-enriched Hilos users table row
-     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
-     * @throws HilosException When the bound presence source cannot read its runtime state
-     */
-    public function rowFromUser(DbUser $user): HilosUserTableRow
-    {
-        $summary = $this->presenceForUser((int) $user->id);
-
-        return new HilosUserTableRow(
-            id: (int) $user->id,
-            admin: $user->admin,
-            block: $user->block,
-            name: $user->name,
-            lastActivity: $user->lastActivity,
-            onlineSessionCount: $summary->onlineSessionCount,
-            presence: $summary->presence,
-        );
-    }
-
-    /**
-     * Queries demo users for the Hilos users table.
-     *
-     * @param TableQueryDTO $query Table query parameters
-     * @return TableSnapshotDTO Hilos users table snapshot
-     * @throws DatabaseException When user query execution fails
-     * @throws SettingException When the refusal setting a lapsed filter reads is invalid
-     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
-     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
-     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
-     * @throws InvalidArgumentException When a loaded user object does not match the collection
-     * @throws LogicException When the user collection is not configured
-     */
-    protected function query(TableQueryDTO $query): TableSnapshotDTO
-    {
-        $result = Hilos::$db->users->queryPageItems(new TableQueryDTO());
-
-        return $this->filterInMemory(
-            rows: $this->narrowByLapsed(
-                array_map(
-                    fn(DbUser $user): array => $this->rowFromUser($user)->toArray(),
-                    $result[TableConstants::RESULT_KEY_ROWS],
-                ),
-                $query->filter,
-            ),
-            query: $query,
-        );
-    }
-
-    /**
-     * Declares the shared sortable columns and the two this demo adds to the shared row.
-     *
-     * @return array<string, string> Wire row fields mapped to the payload keys they order by
-     */
-    protected function sortableFields(): array
-    {
-        return [
-            ...parent::sortableFields(),
-            HilosUserTableRow::name => HilosUserTableRow::name,
-            HilosUserTableRow::lastActivity => HilosUserTableRow::lastActivity,
-        ];
-    }
-
-    /**
-     * Declares what a user row is searched by: the name this demo adds to the shared row.
-     *
-     * The base row carries nothing written in words - a key, two flags and two counts - so the
-     * declaration belongs here, where the name is, rather than on the table every demo shares.
-     *
-     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
-     */
-    protected function searchableFields(): array
-    {
-        return [
-            HilosUserTableRow::name => HilosUserTableRow::name,
-        ];
-    }
-
-    /**
-     * Configures the row shape used by the Hilos users table.
-     */
-    protected function init(): void
-    {
-        $this->setRowClass(HilosUserTableRow::class);
     }
 }

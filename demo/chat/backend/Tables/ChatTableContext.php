@@ -13,7 +13,6 @@ use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\AdminUsersTable;
 use Demo\Chat\Tables\Bot\BotsTable;
-use Demo\Chat\Tables\HilosUser\HilosMergeCandidatesTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Hilos\Core\Table\Context\TableContext;
@@ -32,6 +31,7 @@ use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosMergeCandidatesTable;
 
 /**
  * ChatTableContext - App-specific table context ($table layer).

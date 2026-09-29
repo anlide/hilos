@@ -4,34 +4,54 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Users;
 
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
-use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Database\View\Item\User as DbUser;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalDocument;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
+use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
+use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Users\AccountStandingResolver;
+use OutOfBoundsException;
 use Throwable;
 
 /**
- * Base definition for the Hilos users table: the presence-merge engine.
+ * Base definition for the Hilos users table: the people of the framework's own table.
  *
- * The framework owns the source-change dispatch — a DB user create/update/delete
- * projects to a row mutation, and a connection lifecycle event refreshes the
- * user's presence as an update. A project binds the concrete pieces: its DB user
- * source and RT presence source, how a user id resolves to a row, and how a
- * presence change resolves to the affected user id. This keeps the framework
- * free of any project user/connection type while reusing the merge logic.
+ * The framework reads the people, builds their rows, and selects, sorts, and searches them; a
+ * DB user create/update/delete projects to a row mutation, and a connection lifecycle event
+ * refreshes the user's presence as an update. A project names one thing: the key of its runtime
+ * connections collection, which is the project's own by the way runtime keys are laid out. How
+ * presence is read out of that collection and how a connection leads to its person are defaults
+ * here too; a project whose presence is a collection of another kind overrides them.
  */
 abstract class AbstractHilosUsersTable extends TableDefinition implements ViewportTable
 {
@@ -57,38 +77,29 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      */
     public const string FILTER_LAPSED = 'lapsed';
 
-    /**
-     * The source key of the project DB user collection this table projects.
-     */
-    abstract protected function usersSourceKey(): string;
+    /** The framework's people, as a browser source every project declares the same way. */
+    public const array USERS_SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => HilosDbContext::users,
+    ];
 
     /**
-     * The source key of the project RT presence collection this table merges.
-     */
-    abstract protected function presenceSourceKey(): string;
-
-    /**
-     * The project presence source bound to this table (its RT connections).
-     */
-    abstract protected function presenceSource(): HilosPresenceSource;
-
-    /**
-     * Builds the current row for a user id, or null when the user is gone.
+     * The browser row of a person: what `hilos_user` puts into the users slot.
      *
-     * @param int $userId User id to project into a row
-     * @return ?AbstractHilosUserTableRow Current row, or null when the user no longer exists
-     * @throws HilosException Whatever the project's row builder raises
+     * A project's table joins it with the row of its own connections collection; the merge
+     * candidates window reads the same row.
      */
-    abstract protected function rowForUserId(int $userId): ?AbstractHilosUserTableRow;
-
-    /**
-     * Resolves the user id affected by a presence (connection) source change.
-     *
-     * @param SourceChange $change Presence source change
-     * @return int Affected user id, or 0 when it cannot be resolved
-     * @throws HilosException Whatever the project's presence resolution raises
-     */
-    abstract protected function resolveUserIdForPresence(SourceChange $change): int;
+    public const array USERS_ROW = [
+        BrowserTableFieldKey::SOURCE => self::USERS_SOURCE,
+        BrowserTableFieldKey::ROW_KEY => ObjectUser::id,
+        BrowserTableFieldKey::FIELDS => [
+            ObjectUser::id => HilosUserTableRow::id,
+            ObjectUser::admin => HilosUserTableRow::admin,
+            ObjectUser::block => HilosUserTableRow::block,
+            ObjectUser::name => HilosUserTableRow::name,
+            ObjectUser::lastActivity => HilosUserTableRow::lastActivity,
+        ],
+    ];
 
     /**
      * Declares how many rows the first window of the Hilos users table carries.
@@ -107,7 +118,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      */
     public function defaultSort(): ?TableSortOrderDTO
     {
-        return TableSortOrderDTO::of(new TableSortDTO(AbstractHilosUserTableRow::id));
+        return TableSortOrderDTO::of(new TableSortDTO(HilosUserTableRow::id));
     }
 
     /**
@@ -115,11 +126,11 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      *
      * @param SourceChange $change Source change that may affect this table
      * @return ?TableRowMutationDTO Row mutation to fan out, or null when unaffected
-     * @throws Throwable Propagated from the project row builder or presence resolution
+     * @throws Throwable Propagated from the row builder or presence resolution
      */
     final public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($change->sourceKey === $this->usersSourceKey()) {
+        if ($change->sourceKey === HilosDbContext::users) {
             return $this->mutationForUser($change);
         }
         if ($change->sourceKey === $this->presenceSourceKey()) {
@@ -147,18 +158,18 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      * @param AbstractTableRow $row Users-table row from this table's window or mutation
      * @return array{rowKey: int|string, sources: array<string, mixed>, staleSources?: list<string>} Internal browser-row envelope
      * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
-     * @throws HilosException When the project presence source cannot read its runtime state
+     * @throws HilosException When the presence source cannot be found or cannot read its runtime state
      */
     public function browserRow(AbstractTableRow $row): array
     {
         $fields = $row->toArray();
         $connections = [
-            AbstractHilosUserTableRow::presence => $fields[AbstractHilosUserTableRow::presence] ?? null,
-            AbstractHilosUserTableRow::onlineSessionCount => $fields[AbstractHilosUserTableRow::onlineSessionCount] ?? 0,
+            HilosUserTableRow::presence => $fields[HilosUserTableRow::presence] ?? null,
+            HilosUserTableRow::onlineSessionCount => $fields[HilosUserTableRow::onlineSessionCount] ?? 0,
         ];
         unset(
-            $fields[AbstractHilosUserTableRow::presence],
-            $fields[AbstractHilosUserTableRow::onlineSessionCount],
+            $fields[HilosUserTableRow::presence],
+            $fields[HilosUserTableRow::onlineSessionCount],
         );
 
         $rowKey = $row->requireRowKey();
@@ -177,29 +188,160 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * Declares the sortable columns every project's users row carries, which here are the row payload keys themselves.
+     * Builds the Hilos users row from DB fields plus runtime presence.
+     *
+     * @param DbUser $user User DB item to project into the Hilos users table
+     * @return HilosUserTableRow Runtime-enriched Hilos users table row
+     * @throws HilosException When the presence source cannot be found or cannot read its runtime state
+     */
+    public function rowFromUser(DbUser $user): HilosUserTableRow
+    {
+        $summary = $this->presenceForUser((int) $user->id);
+
+        return new HilosUserTableRow(
+            id: (int) $user->id,
+            admin: $user->admin,
+            block: $user->block,
+            name: $user->name,
+            lastActivity: $user->lastActivity,
+            onlineSessionCount: $summary->onlineSessionCount,
+            presence: $summary->presence,
+        );
+    }
+
+    /**
+     * The key of the project's runtime connections collection, which this table merges presence from.
+     */
+    abstract protected function presenceSourceKey(): string;
+
+    /**
+     * The presence source this table merges: the runtime collection under {@see self::presenceSourceKey()}.
+     *
+     * A project's connections are a collection of the framework's {@see ViewHilosConnections},
+     * which reports presence, so the key is all the table needs. A project whose presence is a
+     * collection of another kind overrides this.
+     *
+     * @return HilosPresenceSource Runtime collection reporting presence
+     * @throws LogicException When the key names no collection that reports presence
+     * @throws RtCollectionNotFoundException When nothing is mounted under the key
+     * @throws RtCollectionNotReadableException When nothing in this process reads the collection, or its state is still on its way
+     */
+    protected function presenceSource(): HilosPresenceSource
+    {
+        $key = $this->presenceSourceKey();
+        try {
+            $source = Hilos::$rt->{$key};
+        } catch (OutOfBoundsException $exception) {
+            throw $this->notAPresenceSource($key, $exception);
+        }
+        if (!$source instanceof HilosPresenceSource) {
+            throw $this->notAPresenceSource($key);
+        }
+
+        return $source;
+    }
+
+    /**
+     * Resolves the user id affected by a presence (connection) source change.
+     *
+     * On create the row carries the user id; an update may carry a narrow diff without it, so
+     * the live runtime row answers. A project whose presence is a collection of another kind
+     * overrides this together with {@see self::presenceSource()}.
+     *
+     * @param SourceChange $change Presence source change
+     * @return int Affected user id, or 0 when it cannot be resolved
+     * @throws LogicException When the key names no collection that reports presence
+     * @throws RtCollectionNotFoundException When nothing is mounted under the key
+     * @throws RtCollectionNotReadableException When nothing in this process reads the collection, or its state is still on its way
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     */
+    protected function resolveUserIdForPresence(SourceChange $change): int
+    {
+        $userId = (int) ($change->row[StateHilosConnection::userId] ?? 0);
+        if ($userId > 0) {
+            return $userId;
+        }
+
+        $source = $this->presenceSource();
+
+        return $source instanceof ViewHilosConnections ? ($source[$change->sourceId]?->userId ?? 0) : 0;
+    }
+
+    /**
+     * Queries the people for the Hilos users table.
+     *
+     * @param TableQueryDTO $query Table query parameters
+     * @return TableSnapshotDTO Hilos users table snapshot
+     * @throws DatabaseException When user query execution fails
+     * @throws SettingException When the refusal setting a lapsed filter reads is invalid
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws InvalidArgumentException When a loaded user object does not match the collection
+     * @throws LogicException When the user collection is not configured, or the presence key names no collection that reports presence
+     * @throws HilosException When the presence source cannot be found or cannot read its runtime state
+     */
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
+    {
+        $result = Hilos::$db->users->queryPageItems(new TableQueryDTO());
+
+        return $this->filterInMemory(
+            rows: $this->narrowByLapsed(
+                array_map(
+                    fn(DbUser $user): array => $this->rowFromUser($user)->toArray(),
+                    $result[TableConstants::RESULT_KEY_ROWS],
+                ),
+                $query->filter,
+            ),
+            query: $query,
+        );
+    }
+
+    /**
+     * Declares the sortable columns of the users row, which here are the row payload keys themselves.
      *
      * The rows are ordered in PHP by the in-memory filter, where a field name is an array key and
      * no identifier is built out of it. Presence and the session count are computed on the fly
      * and could not be handed to an index, but a set filtered in memory needs none
-     * (`docs/agents/frontend/table-sort-orders.md`). A project row adds its own fields - a name,
-     * a last activity - in its subclass, where it declares what they are searched by.
+     * (`docs/agents/frontend/table-sort-orders.md`).
      *
      * @return array<string, string> Wire row fields mapped to the payload keys they order by
      */
     protected function sortableFields(): array
     {
         return [
-            AbstractHilosUserTableRow::id => AbstractHilosUserTableRow::id,
-            AbstractHilosUserTableRow::presence => AbstractHilosUserTableRow::presence,
-            AbstractHilosUserTableRow::onlineSessionCount => AbstractHilosUserTableRow::onlineSessionCount,
+            HilosUserTableRow::id => HilosUserTableRow::id,
+            HilosUserTableRow::presence => HilosUserTableRow::presence,
+            HilosUserTableRow::onlineSessionCount => HilosUserTableRow::onlineSessionCount,
+            HilosUserTableRow::name => HilosUserTableRow::name,
+            HilosUserTableRow::lastActivity => HilosUserTableRow::lastActivity,
         ];
+    }
+
+    /**
+     * Declares what a user row is searched by: the name, the one field of the row written in words.
+     *
+     * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory
+     */
+    protected function searchableFields(): array
+    {
+        return [
+            HilosUserTableRow::name => HilosUserTableRow::name,
+        ];
+    }
+
+    /**
+     * Configures the row shape used by the Hilos users table.
+     */
+    protected function init(): void
+    {
+        $this->setRowClass(HilosUserTableRow::class);
     }
 
     /**
      * Keeps the rows of the people past the deadline of the document the window filters on (HIL-945).
      *
-     * A project's query hands its rows here before the in-memory filter, the way a table applies its
+     * The query hands its rows here before the in-memory filter, the way a table applies its
      * own filters. A window that names no document is not narrowed; a value that names no document
      * this framework knows empties it - a filter that cannot be judged shows nobody rather than
      * everybody.
@@ -225,8 +367,34 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
 
         return array_values(array_filter(
             $rows,
-            static fn (array $row): bool => isset($row[AbstractHilosUserTableRow::id]) && isset($lapsed[(int) $row[AbstractHilosUserTableRow::id]]),
+            static fn (array $row): bool => isset($row[HilosUserTableRow::id]) && isset($lapsed[(int) $row[HilosUserTableRow::id]]),
         ));
+    }
+
+    /**
+     * Summarizes a user's runtime presence through the bound presence source.
+     *
+     * @param int $userId User id to summarize
+     * @return HilosUserPresenceSummary Presence and active session count
+     * @throws HilosException When the presence source cannot be found or cannot read its runtime state
+     */
+    protected function presenceForUser(int $userId): HilosUserPresenceSummary
+    {
+        return $this->presenceSource()->summaryForUser($userId);
+    }
+
+    /**
+     * Builds the current row for a user id, or null when the user is gone.
+     *
+     * @param int $userId User id to project into a row
+     * @return ?HilosUserTableRow Current row, or null when the user no longer exists
+     * @throws HilosException When the user or the presence source cannot be read
+     */
+    private function rowForUserId(int $userId): ?HilosUserTableRow
+    {
+        $dbUser = Hilos::$db->users[$userId] ?? null;
+
+        return $dbUser === null ? null : $this->rowFromUser($dbUser);
     }
 
     /**
@@ -273,14 +441,16 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * Summarizes a user's runtime presence through the bound presence source.
-     *
-     * @param int $userId User id to summarize
-     * @return HilosUserPresenceSummary Presence and active session count
-     * @throws HilosException When the project presence source cannot read its runtime state
+     * @param string $key Runtime key the project named
+     * @param ?Throwable $previous Refusal of the key itself, when reading it raised one
+     * @return LogicException Refusal naming the key and the table that named it
      */
-    protected function presenceForUser(int $userId): HilosUserPresenceSummary
+    private function notAPresenceSource(string $key, ?Throwable $previous = null): LogicException
     {
-        return $this->presenceSource()->summaryForUser($userId);
+        return new LogicException(
+            message: "The users table presence source '{$key}' does not report presence: " . static::class
+                . ' must name a runtime collection implementing ' . HilosPresenceSource::class,
+            previous: $previous,
+        );
     }
 }

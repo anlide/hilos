@@ -9,7 +9,6 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Hilos\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\Connection;
-use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
@@ -18,8 +17,8 @@ use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Database\Object\Item\Identity;
 use Hilos\Database\Object\Item\AccountDeletion;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
-use Hilos\Tables\Users\AbstractHilosUserTableRow;
-use Hilos\Tables\Users\AbstractHilosMergeCandidatesTable;
+use Hilos\Tables\Users\HilosUserTableRow;
+use Hilos\Tables\Users\HilosMergeCandidatesTable;
 
 /**
  * Browser table config for a single Hilos user detail page.
@@ -80,7 +79,7 @@ final class UserDetailBrowserTable
                     Identity::userId,
                 ],
                 BrowserTableFieldKey::COMPUTED => [
-                    AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD,
+                    HilosMergeCandidatesTable::FIELD_HAS_PASSWORD,
                 ],
             ],
             [
@@ -93,7 +92,7 @@ final class UserDetailBrowserTable
                     AccountDeletion::userId,
                 ],
                 BrowserTableFieldKey::COMPUTED => [
-                    AbstractHilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
+                    HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
                 ],
             ],
         ],

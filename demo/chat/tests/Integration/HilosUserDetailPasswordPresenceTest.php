@@ -20,7 +20,7 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Identity;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
-use Hilos\Tables\Users\AbstractHilosMergeCandidatesTable;
+use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /** Integration coverage for password presence on the Hilos user detail row. */
@@ -89,7 +89,7 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
             $identity = $rows[0][PagePayload::slots][HilosDbContext::identities] ?? null;
             $this->assertIsArray($identity);
 
-            return $identity[AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD] ?? false;
+            return $identity[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD] ?? false;
         }
 
         $this->fail('The user-detail subscription answered with no page response.');

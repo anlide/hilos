@@ -101,7 +101,7 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RtItem;
-use Hilos\Tables\Users\AbstractHilosUserTableRow;
+use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -2171,7 +2171,7 @@ abstract class BrowserContext
         array $browserParams,
         array $sources,
     ): mixed {
-        if ($field === AbstractHilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT) {
+        if ($field === HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT) {
             try {
                 $deletion = Hilos::$db->accountDeletions->liveOf((int) $rowKey);
 

@@ -14,7 +14,6 @@ use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
-use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -35,7 +34,7 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Pages\Logs\DTO\HilosLogsKeysSignalData;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
-use Hilos\Tables\Users\AbstractHilosUserTableRow;
+use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -94,9 +93,9 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         $slots = $this->declarativeRow($frames)[PagePayload::slots];
         $user = $slots[ChatDbContext::users];
         self::assertTrue(HiddenValue::isMark($user[HilosUserTableRow::name]));
-        self::assertSame($this->personId, $user[AbstractHilosUserTableRow::id]);
-        self::assertFalse($user[AbstractHilosUserTableRow::admin]);
-        self::assertTrue($user[AbstractHilosUserTableRow::block]);
+        self::assertSame($this->personId, $user[HilosUserTableRow::id]);
+        self::assertFalse($user[HilosUserTableRow::admin]);
+        self::assertTrue($user[HilosUserTableRow::block]);
         self::assertArrayHasKey(HilosUserTableRow::lastActivity, $user);
         self::assertFalse(HiddenValue::isMark($user[HilosUserTableRow::lastActivity]));
         // Presence comes from RT and is computed; nobody declared it not personal yet (HIL-1254).
@@ -122,7 +121,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         foreach ($rows as $row) {
             foreach ($row[PagePayload::slots] as $slot) {
                 foreach ($slot as $field => $value) {
-                    self::assertSame($field === AbstractHilosUserTableRow::id, !HiddenValue::isMark($value), "field {$field}");
+                    self::assertSame($field === HilosUserTableRow::id, !HiddenValue::isMark($value), "field {$field}");
                 }
             }
         }

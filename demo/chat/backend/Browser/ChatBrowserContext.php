@@ -14,7 +14,7 @@ use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Database\DatabaseException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
-use Hilos\Tables\Users\AbstractHilosMergeCandidatesTable;
+use Hilos\Tables\Users\HilosMergeCandidatesTable;
 
 /**
  * Chat demo browser-facing context.
@@ -47,7 +47,7 @@ final class ChatBrowserContext extends BrowserContext
         array $browserParams,
         array $sources,
     ): mixed {
-        if ($field === AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD) {
+        if ($field === HilosMergeCandidatesTable::FIELD_HAS_PASSWORD) {
             try {
                 return Hilos::$db->identities->findPasswordByUser((int) $rowKey) !== null;
             } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {

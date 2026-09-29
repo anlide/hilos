@@ -5,22 +5,19 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
-use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChange;
-use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\DTO\TableSnapshotDTO;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
-use Hilos\Tables\Users\AbstractHilosUserTableRow;
+use Hilos\Tables\Users\HilosUserTableRow;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the framework Hilos users table presence-merge engine.
+ * Unit tests for the framework Hilos users table that need no database.
  *
- * Source keys, the row builder, and presence resolution are bound by a test
- * subclass; the assertions exercise the framework dispatch only.
+ * The presence source is bound by a test subclass; the cases over the people themselves -
+ * reading them, building their rows, selecting them - read the framework's own table and live
+ * in the integration suite (`HilosUsersTableIntegrationTest`).
  */
 final class AbstractHilosUsersTableTest extends TestCase
 {
@@ -33,91 +30,26 @@ final class AbstractHilosUsersTableTest extends TestCase
         $this->assertNull($mutation);
     }
 
-    public function testDbUserDeleteProjectsDeleteMutation(): void
-    {
-        $mutation = $this->table()->buildMutationForSourceEvent(
-            SourceChange::dbDeleted('users', '5'),
-        );
-
-        $this->assertNotNull($mutation);
-        $this->assertSame(TableMutationType::Delete, $mutation->type);
-        $this->assertSame(5, $mutation->rowKey);
-        $this->assertNull($mutation->row);
-    }
-
-    public function testDbUserUpdateProjectsRowMutation(): void
-    {
-        $mutation = $this->table()->buildMutationForSourceEvent(
-            SourceChange::dbUpdated('users', '5', []),
-        );
-
-        $this->assertNotNull($mutation);
-        $this->assertSame(TableMutationType::Update, $mutation->type);
-        $this->assertSame(5, $mutation->rowKey);
-        $this->assertNotNull($mutation->row);
-        $this->assertSame(5, $mutation->row->getRowKey());
-    }
-
-    public function testInvalidUserIdIsIgnored(): void
-    {
-        $this->assertNull(
-            $this->table()->buildMutationForSourceEvent(SourceChange::dbUpdated('users', '0', [])),
-        );
-    }
-
-    public function testMissingUserIsIgnored(): void
-    {
-        $this->assertNull(
-            $this->table(missingUserId: 99)->buildMutationForSourceEvent(
-                SourceChange::dbUpdated('users', '99', []),
-            ),
-        );
-    }
-
-    public function testPresenceChangeRefreshesRowAsUpdate(): void
-    {
-        $mutation = $this->table()->buildMutationForSourceEvent(
-            SourceChange::rtUpdated('connections', 'accept-key', ['userId' => 7]),
-        );
-
-        $this->assertNotNull($mutation);
-        $this->assertSame(TableMutationType::Update, $mutation->type);
-        $this->assertSame(7, $mutation->rowKey);
-        $this->assertNotNull($mutation->row);
-    }
-
-    public function testPresenceChangeWithoutUserIsIgnored(): void
-    {
-        $this->assertNull(
-            $this->table()->buildMutationForSourceEvent(
-                SourceChange::rtUpdated('connections', 'accept-key', []),
-            ),
-        );
-    }
-
     public function testBrowserRowSplitsIntoUserAndConnectionsSlots(): void
     {
-        $table = $this->table();
-        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbUpdated('users', '5', []));
-        $this->assertNotNull($mutation);
-        $this->assertNotNull($mutation->row);
-
         $this->assertSame(
             [
                 BrowserPageSignalData::rowKey => 5,
                 BrowserPageSignalData::sources => [
                     AbstractHilosUsersTable::SLOT_USER => [
-                        AbstractHilosUserTableRow::id => 5,
-                        AbstractHilosUserTableRow::admin => false,
-                        AbstractHilosUserTableRow::block => false,
+                        HilosUserTableRow::id => 5,
+                        HilosUserTableRow::admin => false,
+                        HilosUserTableRow::block => false,
+                        HilosUserTableRow::name => 'Ann',
+                        HilosUserTableRow::lastActivity => null,
                     ],
                     AbstractHilosUsersTable::SLOT_CONNECTIONS => [
-                        AbstractHilosUserTableRow::presence => null,
-                        AbstractHilosUserTableRow::onlineSessionCount => 0,
+                        HilosUserTableRow::presence => null,
+                        HilosUserTableRow::onlineSessionCount => 0,
                     ],
                 ],
             ],
-            $table->browserRow($mutation->row),
+            $this->table()->browserRow(new HilosUserTableRow(5, name: 'Ann')),
         );
     }
 
@@ -127,12 +59,7 @@ final class AbstractHilosUsersTableTest extends TestCase
      */
     public function testBrowserRowNamesTheConnectionsSlotWhenPresenceIsFrozen(): void
     {
-        $table = $this->table(presenceStale: true);
-        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbUpdated('users', '5', []));
-        $this->assertNotNull($mutation);
-        $this->assertNotNull($mutation->row);
-
-        $browserRow = $table->browserRow($mutation->row);
+        $browserRow = $this->table(presenceStale: true)->browserRow(new HilosUserTableRow(5, name: 'Ann'));
 
         $this->assertSame(
             [AbstractHilosUsersTable::SLOT_CONNECTIONS],
@@ -142,35 +69,24 @@ final class AbstractHilosUsersTableTest extends TestCase
 
     public function testBrowserRowOfAUserWhosePresenceIsCurrentCarriesNoFreshnessKey(): void
     {
-        $table = $this->table();
-        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbUpdated('users', '5', []));
-        $this->assertNotNull($mutation);
-        $this->assertNotNull($mutation->row);
-
         $this->assertArrayNotHasKey(
             BrowserPageSignalData::staleSources,
-            $table->browserRow($mutation->row),
+            $this->table()->browserRow(new HilosUserTableRow(5, name: 'Ann')),
         );
     }
 
     /**
-     * Builds a test users table bound to in-memory sources.
+     * Builds a test users table bound to an in-memory presence source.
      *
-     * @param ?int $missingUserId User id the row builder treats as gone, or null
      * @param bool $presenceStale Whether the bound presence source reports a frozen summary
-     * @return AbstractHilosUsersTable Concrete table over fixed source keys
+     * @return AbstractHilosUsersTable Concrete table over a fixed presence key
      */
-    private function table(?int $missingUserId = null, bool $presenceStale = false): AbstractHilosUsersTable
+    private function table(bool $presenceStale = false): AbstractHilosUsersTable
     {
-        return new class($missingUserId, $presenceStale) extends AbstractHilosUsersTable {
-            public function __construct(public ?int $missingUserId, public bool $presenceStale)
+        return new class($presenceStale) extends AbstractHilosUsersTable {
+            public function __construct(public bool $presenceStale)
             {
                 parent::__construct();
-            }
-
-            protected function usersSourceKey(): string
-            {
-                return 'users';
             }
 
             protected function presenceSourceKey(): string
@@ -192,38 +108,9 @@ final class AbstractHilosUsersTableTest extends TestCase
                 };
             }
 
-            protected function rowForUserId(int $userId): ?AbstractHilosUserTableRow
-            {
-                if ($userId === $this->missingUserId) {
-                    return null;
-                }
-
-                return new class($userId) extends AbstractHilosUserTableRow {
-                    public function toArray(): array
-                    {
-                        return $this->baseFields();
-                    }
-
-                    /**
-                     * @param array<string, mixed> $data Raw row payload
-                     * @return static Restored row
-                     * @throws InvalidFormatException When the payload carries no user id
-                     */
-                    public static function fromArray(array $data): static
-                    {
-                        return new static(self::requireInt($data, self::id));
-                    }
-                };
-            }
-
             protected function resolveUserIdForPresence(SourceChange $change): int
             {
                 return (int) ($change->row['userId'] ?? 0);
-            }
-
-            protected function query(TableQueryDTO $query): TableSnapshotDTO
-            {
-                return new TableSnapshotDTO();
             }
         };
     }

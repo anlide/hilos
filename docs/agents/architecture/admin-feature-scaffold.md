@@ -48,13 +48,13 @@ for a project to clone. Two contract shapes recur:
   owns the merge engine, the row contract, and the data — the people table
   `hilos_user`; the project binds only its
   presence. Hilos-users is this shape: `Hilos\Tables\Users\AbstractHilosUsersTable`
-  is abstract with five hooks, of which the two over the users source become
-  the framework's (not in the code yet — HIL-1201); `AbstractHilosUserTableRow`
-  fixes the base `id`/`admin`/`block` fields, and presence flows through the
-  `Hilos\Runtime\View\Collection\HilosPresenceSource` interface returning a
-  `Hilos\Runtime\View\DTO\HilosUserPresenceSummary`. Bound is not "inventing a
-  table" — it is implementing a framework contract. The rules of the table
-  itself are in [people-table.md](people-table.md).
+  is abstract with one hook — the presence collection's key; the rest, presence
+  included, are the base's defaults. `HilosUserTableRow` is the one row of every
+  project (`id`/`admin`/`block`/`name`/`lastActivity` + presence), and presence
+  flows through the `Hilos\Runtime\View\Collection\HilosPresenceSource`
+  interface returning a `Hilos\Runtime\View\DTO\HilosUserPresenceSummary`.
+  Bound is not "inventing a table" — it is implementing a framework contract.
+  The rules of the table itself are in [people-table.md](people-table.md).
 
 ## Generation recipe
 
@@ -134,14 +134,18 @@ requires, in dependency order (the table merges sources that must exist first):
    project `RtContext`, returned from `createRuntime()`. *(Contract Gate: RT item
    shape.)* Presence comes from this project RT collection — never framework
    analytics, which is process-local and not user-keyed.
-4. **Table.** Generate a subclass of `AbstractHilosUsersTable` implementing the
-   presence hooks (`presenceSourceKey`, `presenceSource`,
-   `resolveUserIdForPresence`) and a subclass of `AbstractHilosUserTableRow`
-   that folds the base fields via `baseFields()` and adds the project columns.
-   The two hooks over the users source, `usersSourceKey` and `rowForUserId`,
-   are the framework's, since the source is the framework's table (not in the
-   code yet — HIL-1201); until that leaf lands the project implements all five.
-   The merge dispatch is `final` in the base — do not re-implement it.
+4. **Table.** Generate a subclass of `AbstractHilosUsersTable` with two things:
+   a `BROWSER` built from the base's `USERS_SOURCE` and `USERS_ROW` plus the row
+   of the project's own connections collection (its `userId` as the row key,
+   `presence` and `onlineSessionCount` computed), and `presenceSourceKey()`
+   naming that collection. There is no row subclass: `HilosUserTableRow` is
+   `final`, one shape for every project. Override `presenceSource()` and
+   `resolveUserIdForPresence()` only for presence kept in a collection of
+   another kind than the framework's `HilosConnections`. Reading the people,
+   the query, sort and search, and the merge dispatch are the base's — do not
+   re-implement them. A project that merges accounts registers the candidates
+   window as the framework class itself, `Hilos\Tables\Users\HilosMergeCandidatesTable`,
+   the way it registers `HilosSettingsTable`.
 5. **Page.** Generate thin concrete pages — `extends Hilos\Pages\Users\AbstractHilosUsersPage`
    / `AbstractHilosUserPage`; the subscribe and the action lifecycle stay
    framework-owned.
@@ -553,17 +557,21 @@ final class AppBrowserContext extends Hilos\Core\Browser\Context\BrowserContext
 {
 }
 
-// bound: the generated subclass implements the presence hooks; the merge stays
-// in the base, and so do the hooks over the users source — usersSourceKey() and
-// rowForUserId() read the framework's own table (not in the code yet — HIL-1201).
+// bound: the generated subclass declares its browser sources and names its
+// connections; reading the people, the presence defaults, and the merge stay in
+// the base.
 final class UsersTable extends Hilos\Tables\Users\AbstractHilosUsersTable
 {
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [self::USERS_SOURCE, AppBrowserSource::RT_CONNECTIONS],
+        BrowserTableConfigKey::ROWS => [
+            self::USERS_ROW,
+            // the connections row: userId as the row key, presence and
+            // onlineSessionCount computed
+        ],
+    ];
+
     protected function presenceSourceKey(): string { return RtContext::connections; }
-    protected function presenceSource(): Hilos\Runtime\View\Collection\HilosPresenceSource
-    {
-        return Hilos::$rt->connections;
-    }
-    // resolveUserIdForPresence() — bind the source, do not re-merge.
 }
 ```
 

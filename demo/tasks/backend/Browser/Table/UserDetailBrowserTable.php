@@ -9,7 +9,6 @@ use Demo\Tasks\Browser\TasksBrowserSource;
 use Demo\Tasks\Browser\TasksBrowserTable;
 use Hilos\Database\Object\Item\User;
 use Demo\Tasks\Runtime\State\Item\Connection;
-use Demo\Tasks\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
@@ -17,7 +16,7 @@ use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Database\Object\Item\AccountDeletion;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
-use Hilos\Tables\Users\AbstractHilosUserTableRow;
+use Hilos\Tables\Users\HilosUserTableRow;
 
 /**
  * Browser table config for a single Hilos user detail page.
@@ -80,7 +79,7 @@ final class UserDetailBrowserTable
                     AccountDeletion::userId,
                 ],
                 BrowserTableFieldKey::COMPUTED => [
-                    AbstractHilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
+                    HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
                 ],
             ],
         ],
