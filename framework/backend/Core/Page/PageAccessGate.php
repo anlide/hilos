@@ -6,11 +6,13 @@ namespace Hilos\Core\Page;
 
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\Exception\ActionViewModeException;
+use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\AccountStandingResolver;
 
 /**
  * Enforces a page's declared ACCESS_LEVEL for one connection.
@@ -19,7 +21,9 @@ use Hilos\HilosException;
  * ({@see self::verdict()}): the connection may look and act
  * ({@see PageAccessVerdict::ALLOW}), it may only look - a viewer of the admin view
  * mode on an ADMIN page ({@see PageAccessVerdict::VIEW}) - or it is refused with
- * 401/403, as an exception. Two questions are asked of it.
+ * 401/403, as an exception; a frozen person meets the freeze's own 403 on every
+ * page that is not public and not open while frozen ({@see AccountStandingResolver}).
+ * Two questions are asked of it.
  *
  * May the connection LOOK ({@see self::assert()}, where VIEW passes): asked from
  * {@see PageSignalRouter::dispatchPageSubscribe} (before onSubscribe, so the page
@@ -49,17 +53,25 @@ final class PageAccessGate
      * Decides what the connection may do on a page of the given class.
      *
      * In this order: a PUBLIC page allows; a viewer of the admin view mode views; an
-     * anonymous session is refused 401; an ADMIN page refuses a non-admin 403; anything
-     * else allows. With the mode off the viewer question answers no without reading
-     * anything, and the rest is the path the gate has always taken - a failed admin lookup
-     * included. With the mode on a failed lookup makes a viewer, never an admin.
+     * anonymous session is refused 401; a frozen person is refused with the freeze's own
+     * 403 unless the page is open while frozen (HIL-945); an ADMIN page refuses a non-admin
+     * 403; anything else allows. With the mode off the viewer question answers no without
+     * reading anything, and the rest is the path the gate has always taken - a failed admin
+     * lookup included. With the mode on a failed lookup makes a viewer, never an admin.
+     *
+     * The freeze is asked after "who is this" and before "is this an admin", so a frozen
+     * administrator hears that they are frozen rather than that they lack a right. The person
+     * judged is the one the session acts as - under impersonation the represented person, whose
+     * eyes the administrator sees the product through. A viewer of the view mode never gets
+     * that far: a viewer changes nothing, and the page is shown to them without an account.
      *
      * @param class-string<AbstractPage> $pageClass Page class declaring ACCESS_LEVEL
      * @param string $acceptKey Acting connection accept key
      * @return PageAccessVerdict Whether the connection may act or only look
      * @throws PageUnauthorizedException When the level requires a user and the session is anonymous (or no browser context is mounted)
+     * @throws PageAccountFrozenException When the person is frozen and the page is not open while frozen
      * @throws PageForbiddenException When the level is ADMIN and the authenticated user lacks the admin privilege
-     * @throws HilosException When the administrator lookup fails with the admin view mode off
+     * @throws HilosException When the administrator lookup fails with the admin view mode off, or the person's standing cannot be read
      */
     public static function verdict(string $pageClass, string $acceptKey): PageAccessVerdict
     {
@@ -77,6 +89,10 @@ final class PageAccessGate
             throw new PageUnauthorizedException('Authentication required');
         }
 
+        if (!$pageClass::OPEN_WHILE_FROZEN && AccountStandingResolver::isFrozen($userId)) {
+            throw new PageAccountFrozenException();
+        }
+
         if ($level === PageAccessLevel::ADMIN && Hilos::$browser?->isAdmin($userId) !== true) {
             throw new PageForbiddenException('Access forbidden');
         }
@@ -90,8 +106,9 @@ final class PageAccessGate
      * @param class-string<AbstractPage> $pageClass Page class declaring ACCESS_LEVEL
      * @param string $acceptKey Acting connection accept key
      * @throws PageUnauthorizedException When the level requires a user and the session is anonymous (or no browser context is mounted)
+     * @throws PageAccountFrozenException When the person is frozen and the page is not open while frozen
      * @throws PageForbiddenException When the level is ADMIN and the authenticated user lacks the admin privilege
-     * @throws HilosException When the administrator lookup fails with the admin view mode off
+     * @throws HilosException When the administrator lookup fails with the admin view mode off, or the person's standing cannot be read
      */
     public static function assert(string $pageClass, string $acceptKey): void
     {
@@ -108,9 +125,10 @@ final class PageAccessGate
      * @param string $acceptKey Acting connection accept key
      * @param string $action Name of the action the connection asked for
      * @throws PageUnauthorizedException When the level requires a user and the session is anonymous (or no browser context is mounted)
+     * @throws PageAccountFrozenException When the person is frozen and the page is not open while frozen
      * @throws PageForbiddenException When the level is ADMIN and the authenticated user lacks the admin privilege
      * @throws ActionViewModeException When the connection is a viewer and the action is not declared reading
-     * @throws HilosException When the administrator lookup fails with the admin view mode off
+     * @throws HilosException When the administrator lookup fails with the admin view mode off, or the person's standing cannot be read
      */
     public static function assertAction(string $pageClass, string $acceptKey, string $action): void
     {

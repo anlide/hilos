@@ -5,8 +5,11 @@
 // markup, so a project mounts it by passing its HilosUsersContext. The framework
 // owns every cell except the trailing actions cell, which a project fills through
 // an `<ng-template #rowActions let-row>` (e.g. a link to the detail page) — the
-// framework's own row action, the takeover, is drawn ahead of it. Bootstrap classes
-// only (styling-rules.md).
+// framework's own row action, the takeover, is drawn ahead of it. The bar's "Past
+// deadline on" filter narrows the list to the people past one legal document's
+// deadline and lives in the address too (`/hilos/users/terms`, HIL-945): the
+// legal section's root links its count there, and changing the filter rewrites
+// the address. Bootstrap classes only (styling-rules.md).
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -14,6 +17,7 @@ import {
   computed,
   contentChild,
   effect,
+  inject,
   input,
   signal,
 } from '@angular/core'
@@ -32,6 +36,7 @@ import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { HILOS_ROUTER } from '../../hilosRouterToken.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
 /** The context a HilosUsersPage `#rowActions` template receives. */
@@ -145,8 +150,12 @@ export class HilosUsersPage {
   readonly context = input.required<HilosUsersContext>()
 
   protected readonly page = HilosPages.USERS
+  // The lapsed filter is read from the address the page opened on and written
+  // back as it changes; mounted without a navigator, the list opens whole and
+  // leaves the address alone.
+  private readonly router = inject(HILOS_ROUTER, { optional: true })
   protected readonly users = computed(() =>
-    createHilosUsersTable(this.context()),
+    createHilosUsersTable(this.context(), this.router ?? undefined),
   )
   protected readonly rowActions =
     contentChild<TemplateRef<UsersRowActionsContext>>('rowActions')

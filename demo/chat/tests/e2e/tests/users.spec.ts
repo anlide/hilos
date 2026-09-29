@@ -1,8 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import {
+  dismissToasts,
+  shownByTestId,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
-import { clickSubmit, typeInto } from '../helpers/session'
+import { clickSubmit, signUp, typeInto } from '../helpers/session'
 import { goToLastPage } from '../helpers/table'
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
@@ -385,4 +389,80 @@ test('takes a user over from the users table and shows the shell banner', async 
   // brings the admin gear back.
   await expect(page.getByTestId('impersonation-banner')).toBeHidden()
   await expect(page.getByTestId('nav-admin')).toBeVisible()
+})
+
+// HIL-945: the card reads one verdict of the person's standing — the badge in its
+// header names the standing shown, and the freeze has its own row beside the
+// block. A blocked person can still be taken over (the handshake asks about the
+// person at the keyboard, and that is the administrator), and the takeover strip
+// turns red for them. Blocked outranks a scheduled deletion: the badge says
+// "Deletion scheduled" only once the block is lifted. A freeze cannot be reached
+// from a browser here — no catalog carries a second substantial revision — so the
+// frozen cases live in framework/tests/Integration/AccountStandingIntegrationTest.php.
+test("shows a person's standing on the card and in the takeover strip", async ({
+  browser,
+  page,
+}) => {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+  const personPage = await personContext.newPage()
+  try {
+    await signUpAdmin(page)
+    const person = await signUp(personPage)
+    await gotoPage(page, `/hilos/user/${person.userId}`)
+    const badge = page.getByTestId('user-standing-badge')
+    await expect(page.getByTestId('hilos-user-frozen-state')).toContainText(
+      'Not frozen',
+    )
+    await expect(badge).toHaveCount(0)
+
+    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(badge).toHaveText('Blocked')
+    await expect(page.getByTestId('hilos-user-frozen-state')).toContainText(
+      'Not frozen',
+    )
+
+    // The takeover strip and the ring by the header avatar take the color of
+    // the person taken over.
+    await dismissToasts(page)
+    await gotoPage(page, '/hilos/users')
+    await typeInto(page.getByTestId('hilos-table-search'), person.name)
+    await clickSubmit(
+      shownByTestId(page, `hilos-users-impersonate-${person.userId}`),
+    )
+    let sockets = 0
+    page.on('websocket', () => {
+      sockets += 1
+    })
+    await clickSubmit(page.getByTestId('hilos-users-impersonate-confirm'))
+    const strip = page.getByTestId('impersonation-banner')
+    await expect(strip).toHaveClass(/\balert-danger\b/)
+    await expect(
+      page.getByTestId('nav-profile').getByTestId('avatar-mark'),
+    ).toHaveClass(/\btext-danger-emphasis\b/)
+    await expect.poll(() => sockets).toBeGreaterThan(0)
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await clickSubmit(page.getByTestId('impersonation-stop'))
+    await expect(strip).toBeHidden()
+    await expect(page.getByTestId('nav-admin')).toBeVisible()
+
+    await gotoPage(page, `/hilos/user/${person.userId}`)
+    await clickSubmit(page.getByTestId('hilos-user-deletion-open'))
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(page.getByTestId('hilos-user-deletion-open')).toHaveText(
+      'Cancel deletion',
+    )
+    await expect(badge).toHaveText('Blocked')
+
+    await dismissToasts(page)
+    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(badge).toHaveText('Deletion scheduled')
+  } finally {
+    await personContext.close()
+  }
 })

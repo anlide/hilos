@@ -55,6 +55,15 @@ final class HandshakeResponseSignalDataTest extends TestCase
     /** The passkey policy as the stamp hands it - a yes, so it cannot pass for the unstamped null or the default no. */
     private const bool PASSKEY_ALLOWS_UNPROVEN = true;
 
+    /** A frozen person with a deletion scheduled: every fact named, the freeze shown (HIL-945). */
+    private const array STANDING = [
+        'shown' => 'frozen',
+        'blocked' => false,
+        'frozen' => true,
+        'deletionEffectiveAt' => 1_767_225_600_000,
+        'lapsed' => [['document' => 'terms', 'deadline' => '2026-03-01']],
+    ];
+
     public function testPendingRegistrationConsentSurvivesTheTransportRoundtrip(): void
     {
         $accepted = ['terms' => 'terms-1', 'privacy' => 'privacy-1'];
@@ -104,6 +113,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'authMethods' => null,
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
+                    'accountStanding' => null,
                 ],
             ],
             $data->toArray(),
@@ -139,6 +149,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'authMethods' => null,
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
+                    'accountStanding' => null,
                 ],
             ],
             $data->toArray(),
@@ -185,6 +196,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'authMethods' => null,
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
+                    'accountStanding' => null,
                 ],
             ],
             $data->toArray(),
@@ -223,6 +235,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'authMethods' => null,
                 'passkeyAllowsUnproven' => null,
                 'accountBlocked' => null,
+                'accountStanding' => null,
             ],
             $data->toArray()['data'],
         );
@@ -292,6 +305,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'authMethods' => self::AUTH_METHODS,
                 'passkeyAllowsUnproven' => self::PASSKEY_ALLOWS_UNPROVEN,
                 'accountBlocked' => null,
+                'accountStanding' => null,
             ],
             $data->toArray()['data'],
         );
@@ -471,6 +485,37 @@ final class HandshakeResponseSignalDataTest extends TestCase
             ->withPendingAck(null);
 
         $this->assertSame(['identifier' => 'maria@example.com', 'dataExport' => null], $data->accountBlocked);
+    }
+
+    public function testTheStandingTravelsInTheDataSectionAndSurvivesTheRoundtrip(): void
+    {
+        $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false)->withAccountStanding(self::STANDING);
+
+        $this->assertSame(self::STANDING, $data->toArray()['data']['accountStanding']);
+        $this->assertSame(self::STANDING, HandshakeResponseSignalData::fromArray($data->toArray())->accountStanding);
+        $this->assertNull(HandshakeResponseSignalData::fromArray(new HandshakeResponseSignalData()->toArray())->accountStanding);
+    }
+
+    public function testTheStandingSurvivesTheStampReAddressingAndTheCard(): void
+    {
+        // Stamped last on the send path, and none of the other three axes may take it off again.
+        $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false)
+            ->withAccountStanding(self::STANDING)
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->withPendingAck(null)
+            ->withAccountBlocked(null);
+
+        $this->assertSame(self::STANDING, $data->accountStanding);
+    }
+
+    public function testRoundtripRejectsAStandingWithoutItsFacts(): void
+    {
+        $payload = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false)->toArray();
+        $payload['data']['accountStanding'] = ['shown' => 'frozen'];
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
     }
 
     public function testRoundtripRejectsABlockedCardThatIsNotANode(): void

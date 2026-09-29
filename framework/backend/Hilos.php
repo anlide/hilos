@@ -78,6 +78,7 @@ use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Users\AccountStandingChangeSubscriber;
 use Hilos\Users\AdminAudience;
 
 /**
@@ -1117,6 +1118,7 @@ abstract class Hilos implements TruthSourceOwner
         SourceChangeBus::subscribe(new LogWriteLevelSubscriber());
         SourceChangeBus::subscribe(new SettingPresetChangeSubscriber());
         SourceChangeBus::subscribe(new LegalAcceptanceChangeSubscriber());
+        SourceChangeBus::subscribe(new AccountStandingChangeSubscriber());
 
         static::validateTopologyReferences();
     }

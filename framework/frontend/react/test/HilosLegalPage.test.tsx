@@ -110,3 +110,72 @@ it('opens both consent documents in a read-only React preview', async () => {
   )
   expect(document.querySelector('[data-id="legal-consent-preview"]')).toBeNull()
 })
+
+it('links the past-deadline count to the people it counts, only when there are any (HIL-945)', () => {
+  const h = harness()
+  const windowListeners: ((signal: { data: unknown }) => void)[] = []
+  Object.assign(h.context.connection, {
+    on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'tableWindow') {
+        windowListeners.push(
+          listener as unknown as (signal: { data: unknown }) => void,
+        )
+      }
+
+      return () => {}
+    },
+  })
+  const revision = {
+    revisionId: 'current',
+    publishedOn: '2026-09-27',
+    effectiveOn: '2026-09-27',
+    significance: 'editorial',
+    setVersion: 1,
+    deviationCount: 0,
+  }
+  const view = render(
+    <HilosRouterContext.Provider value={h.router}>
+      <HilosLegalPage context={h.context} />
+    </HilosRouterContext.Provider>,
+  )
+
+  act(() => {
+    for (const listener of windowListeners) {
+      listener({
+        data: {
+          page: 'hilos_legal',
+          tableKey: 'hilosLegalDocuments',
+          rows: [
+            { rowKey: 'terms', covered: 1, window: 0, lapsed: 2 },
+            { rowKey: 'privacy', covered: 3, window: 0, lapsed: 0 },
+          ].map(({ rowKey, ...counts }) => ({
+            rowKey,
+            slots: { document: { declared: true, revision, ...counts } },
+          })),
+          totalCount: 2,
+        },
+      })
+    }
+  })
+
+  // The table draws each cell twice — its rows and its narrow-screen cards — so
+  // every copy is checked, not the first.
+  const links = Array.from(
+    view.container.querySelectorAll('[data-id="legal-count-lapsed-link"]'),
+  )
+  expect(links.length).toBeGreaterThan(0)
+  for (const link of links) {
+    expect(link.getAttribute('href')).toBe('/hilos/users/terms')
+    expect(link.getAttribute('data-document')).toBe('terms')
+    expect(
+      link.querySelector('[data-id="legal-count-lapsed"]')?.textContent,
+    ).toBe('2')
+  }
+  const unlinked = Array.from(
+    view.container.querySelectorAll('[data-id="legal-count-lapsed"]'),
+  )
+    .filter((count) => count.closest('a') === null)
+    .map((count) => count.textContent)
+  expect(unlinked.length).toBeGreaterThan(0)
+  expect(new Set(unlinked)).toEqual(new Set(['0']))
+})

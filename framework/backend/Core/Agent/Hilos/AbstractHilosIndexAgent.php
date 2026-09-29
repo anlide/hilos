@@ -16,8 +16,10 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Pages\Users\AccountStandingAudience;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
 /**
  * AbstractHilosIndexAgent - Abstract agent for Hilos dashboard, settings, i18n, and non-logs admin pages.
@@ -97,7 +99,8 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     ];
 
     /**
-     * Finishes any protected-mode drive in flight.
+     * Finishes any protected-mode drive in flight, and keeps the open people surfaces in step with
+     * the standing of the people they show (HIL-945).
      *
      * @throws HilosException Whatever the concrete agent's tick raises
      */
@@ -107,6 +110,28 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 
         $this->tickProtectedModeTestDriver();
         $this->tickProtectedModeOperator();
+        AccountStandingAudience::onAgentTick($this);
+    }
+
+    /**
+     * Lets go of a closed connection's place among the people surfaces it had open (HIL-945).
+     *
+     * @param WebSocketCloseSignalDTO $data Closed connection
+     * @param string $source Signal origin
+     * @param string $name Connection-close signal name
+     * @throws HilosException When the parent close handler fails
+     */
+    public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
+    {
+        parent::onSignalConnectionClose($data, $source, $name);
+        AccountStandingAudience::removeSubscriber($data->acceptKey);
+    }
+
+    /** Forgets the people surfaces before another instance uses this worker. */
+    public function onStop(): void
+    {
+        parent::onStop();
+        AccountStandingAudience::reset();
     }
 
     /**

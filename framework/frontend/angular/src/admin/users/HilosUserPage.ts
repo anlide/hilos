@@ -11,8 +11,11 @@
 // name it sent over the live table, closing the modal); a failure surfaces from the
 // backend fail ack inside the modal. The context arrives via input and
 // carries core signals, so — like HilosTable — an effect builds the selectors
-// once it binds and mirrors them into Angular signals. Bootstrap classes only
-// (styling-rules.md).
+// once it binds and mirrors them into Angular signals. The person's standing is
+// one verdict (createHilosUserStanding, HIL-945): the badge beside the presence
+// in the header shows the standing shown, and the access section draws the
+// block, the freeze — a fact with no control — and the deletion from the same
+// verdict. Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -25,7 +28,10 @@ import {
 import {
   ACCOUNT_DELETION_TICK_MS,
   createHilosUserLifecycle,
+  createHilosUserStanding,
   HILOS_USER_LIFECYCLE_COPY,
+  hilosStandingBadge,
+  hilosUserFrozenRow,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
@@ -47,6 +53,7 @@ import {
 } from '@hilos/core'
 import type {
   HilosAccountMerge,
+  HilosAccountStanding,
   HilosMergeCandidateIdentity,
   HilosMergeCandidateRow,
   HilosMergeCandidates,
@@ -120,6 +127,16 @@ function noticeText(live: RowEditState<UserEditFields>): string {
               detail.name
             }}</span>
             <span class="badge text-bg-secondary">{{ detail.presence }}</span>
+            @if (standingBadge(); as badge) {
+              <span
+                class="badge"
+                [class]="'text-bg-' + badge.tone"
+                data-id="user-standing-badge"
+              >
+                <i class="bi me-1" [class]="badge.icon" aria-hidden="true"></i
+                >{{ badge.label }}
+              </span>
+            }
             <button
               type="button"
               class="btn btn-outline-primary btn-sm ms-auto"
@@ -198,6 +215,41 @@ function noticeText(live: RowEditState<UserEditFields>): string {
                     </div>
                   </div>
                 </div>
+                <!-- The freeze stands between the block and the deletion, and
+                offers nothing to press: only the person's own acceptance lifts
+                it. -->
+                @if (row.key === 'block') {
+                  @if (frozenRow(); as frozen) {
+                    <div class="d-flex flex-wrap align-items-start gap-3 py-2">
+                      <div
+                        class="flex-grow-1"
+                        data-id="hilos-user-frozen-state"
+                      >
+                        <h3 class="h6 mb-1">
+                          {{ frozen.title }}
+                          <span class="badge text-bg-secondary">{{
+                            frozen.state ? lifecycleCopy.yes : lifecycleCopy.no
+                          }}</span>
+                        </h3>
+                        @if (frozen.hint !== null) {
+                          <p class="small text-body-secondary mb-0">
+                            {{ frozen.hint }}
+                          </p>
+                        }
+                        @if (frozen.lapsed.length > 0) {
+                          <ul
+                            class="list-unstyled small text-body-secondary mb-0"
+                            data-id="hilos-user-frozen-lapsed"
+                          >
+                            @for (line of frozen.lapsed; track line) {
+                              <li>{{ line }}</li>
+                            }
+                          </ul>
+                        }
+                      </div>
+                    </div>
+                  }
+                }
               }
             </div>
           </section>
@@ -565,6 +617,15 @@ export class HilosUserPage {
   protected readonly lifecycleCopy = HILOS_USER_LIFECYCLE_COPY
   private readonly graceDays = signal<number | null>(null)
   private readonly lifecycleNow = signal(Date.now())
+  private readonly standing = signal<HilosAccountStanding | null>(null)
+  protected readonly standingBadge = computed(() => {
+    const standing = this.standing()
+
+    return standing === null ? null : hilosStandingBadge(standing.shown)
+  })
+  protected readonly frozenRow = computed(() =>
+    hilosUserFrozenRow(this.standing()),
+  )
   protected readonly lifecycleSections = computed<
     readonly HilosUserLifecycleSection[]
   >(() =>
@@ -573,6 +634,7 @@ export class HilosUserPage {
       this.currentUserId(),
       this.graceDays(),
       this.lifecycleNow(),
+      this.standing(),
     ),
   )
   private rename: HilosUserRename | undefined
@@ -707,6 +769,9 @@ export class HilosUserPage {
       const lifecycle = createHilosUserLifecycle(context)
       this.lifecycle = lifecycle
       this.graceDays.set(lifecycle.graceDays.get())
+      const userStanding = createHilosUserStanding(context)
+      userStanding.start()
+      this.standing.set(userStanding.standing.get())
       this.mergeCandidatesController.set(mergeCandidates.controller)
       this.detail.set(detailSignal.get())
       this.renameError.set(rename.renameError.get())
@@ -716,6 +781,15 @@ export class HilosUserPage {
         subscribeSignal(lifecycle.graceDays, (value) =>
           this.graceDays.set(value),
         ),
+        subscribeSignal(userStanding.standing, (value) => {
+          if (
+            value?.deletionEffectiveAt !==
+            untracked(this.standing)?.deletionEffectiveAt
+          ) {
+            this.lifecycleNow.set(Date.now())
+          }
+          this.standing.set(value)
+        }),
         subscribeSignal(detailSignal, (value) => {
           this.lifecycleNow.set(Date.now())
           this.detail.set(value)
@@ -740,6 +814,7 @@ export class HilosUserPage {
         for (const unsubscribe of subscriptions) {
           unsubscribe()
         }
+        userStanding.dispose()
       })
     })
 

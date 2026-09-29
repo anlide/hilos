@@ -5,6 +5,7 @@ import {
   createHilosLegalSettingsTable,
   describeHilosLegalCheck,
   hilosLegalDocumentLabel,
+  hilosLegalLapsedHref,
   HilosLegalSettingKey,
   HilosPages,
   LEGAL_CATALOG_REFUSAL_SECTION,
@@ -93,8 +94,18 @@ onUnmounted(() => {
         <template #cell-window="{ row }"
           ><span data-id="legal-count-window">{{ row.window }}</span></template
         >
+        <!-- The count of the people past the deadline opens them in the
+        people list (HIL-945); nobody to open, nothing to follow. -->
         <template #cell-lapsed="{ row }"
-          ><span data-id="legal-count-lapsed">{{ row.lapsed }}</span>
+          ><HilosLink
+            v-if="row.lapsed > 0"
+            :to="hilosLegalLapsedHref(row.rowKey)"
+            data-id="legal-count-lapsed-link"
+            :data-document="row.rowKey"
+            ><span data-id="legal-count-lapsed">{{
+              row.lapsed
+            }}</span></HilosLink
+          ><span v-else data-id="legal-count-lapsed">{{ row.lapsed }}</span>
           <span class="small text-body-secondary">{{
             lapsedLabel
           }}</span></template

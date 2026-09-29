@@ -197,6 +197,16 @@ final class FrameworkReadDeclarationTest extends TestCase
             SourceChange::KIND_DB,
             HilosDbContext::users,
         ));
+        // What a person's standing is composed of beside the block: the freeze guard reads it
+        // wherever it stands, and a write to it drops the standing remembered there (HIL-945).
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::accountDeletions,
+        ));
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::legalAcceptances,
+        ));
     }
 
     /**

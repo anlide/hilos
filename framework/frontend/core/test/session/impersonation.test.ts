@@ -111,7 +111,11 @@ describe('hilosImpersonation', () => {
 
     booted.connection.emitHandshakeResponse(TAKEOVER)
 
-    expect(hilosImpersonation.get()).toEqual({ userName: 'Bob' })
+    // No standing named: the strip keeps its plain yellow (HIL-945).
+    expect(hilosImpersonation.get()).toEqual({
+      userName: 'Bob',
+      tone: 'warning',
+    })
   })
 
   it('goes back to null when the slot clears', () => {

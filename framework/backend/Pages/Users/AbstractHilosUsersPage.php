@@ -18,6 +18,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -100,6 +101,16 @@ abstract class AbstractHilosUsersPage extends AbstractHilosPage
     }
 
     /**
+     * Lets go of the connection's place among the lists kept in step.
+     *
+     * @param string $acceptKey WebSocket accept key
+     */
+    public function onUnsubscribe(string $acceptKey): void
+    {
+        AccountStandingAudience::removeSubscriber($acceptKey);
+    }
+
+    /**
      * Answers the admin whose takeover the library has finished (HIL-824).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
@@ -120,6 +131,20 @@ abstract class AbstractHilosUsersPage extends AbstractHilosPage
         }
 
         $this->answerHandover($data->data);
+    }
+
+    /**
+     * Holds the connection among the lists kept in step with who is past a deadline (HIL-945).
+     *
+     * A window narrowed to the people past one document's deadline is sent again when they change
+     * ({@see AccountStandingAudience}); an unnarrowed one follows the person table as it did.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param PageRouteParams $params Route params (unused)
+     */
+    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        AccountStandingAudience::addListSubscriber($acceptKey);
     }
 
     /**

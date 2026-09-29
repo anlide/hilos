@@ -26,6 +26,8 @@ test("reads the legal catalog, deviations and revision comparison at desktop and
     "0",
     "0",
   ]);
+  // A lapsed count leads to the people past the deadline only when there are any (HIL-945).
+  await expect(page.getByTestId("legal-count-lapsed-link")).toHaveCount(0);
   await expect(shownByTestId(page, "legal-check-row")).toHaveCount(4);
   await clickSubmit(
     shownByTestId(page, "legal-document-open").and(

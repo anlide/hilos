@@ -9,6 +9,7 @@ import {
   type HilosLegalRevision,
 } from '../../legal/legalAgreements.js'
 import { HilosPages } from '../../routing/hilosPages.js'
+import { hilosUsersPath } from '../users/hilosUsers.js'
 import {
   readBoolean,
   readNumber,
@@ -479,6 +480,17 @@ function tableFor<R>(
     document,
     revisionId,
   )
+}
+
+/**
+ * Where the third count of a document on the section's root leads (HIL-945):
+ * the people list narrowed to those past that document's deadline — exactly the
+ * people the count counted, whatever the refusal setting says.
+ *
+ * @param document The document key of the row.
+ */
+export function hilosLegalLapsedHref(document: string): string {
+  return hilosUsersPath(document)
 }
 
 const DOCUMENT_COLUMNS: HilosTableColumnOf<HilosLegalDocumentRow>[] = [

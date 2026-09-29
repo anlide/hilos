@@ -41,11 +41,15 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  * this browser lost is a mark on the session row. No place that builds a frame passes it - the
  * library stamps it on every frame at the one door they all leave through, so a frame built
  * without it cannot take the "Access closed" card down by forgetting it.
+ *
+ * {@see self::$accountStanding} is stamped at the same door (HIL-945): the standing of the person
+ * the session acts as, composed by the framework, so no place that builds a frame passes it.
  */
 final class SessionStateSignalData extends BaseDTO implements SignalDataInterface
 {
     public const string sessionId = 'sessionId';
     public const string accountBlocked = 'accountBlocked';
+    public const string accountStanding = 'accountStanding';
 
     /**
      * @param string $sessionToken Session cookie token the named sockets belong to now
@@ -63,6 +67,9 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?array<string, mixed> $outcome Reply the answer carries ({@see AuthFlowOutcome::toArray()}), or null
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked Blocked account the session lost, named by its confirmed
      *     address or not at all, or null when the session holds no such card
+     * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding Standing of the person
+     *     the session acts as, or null when it is anonymous
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -76,6 +83,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?string $action = null,
         public readonly ?array $outcome = null,
         public readonly ?array $accountBlocked = null,
+        public readonly ?array $accountStanding = null,
     ) {
     }
 
@@ -100,6 +108,33 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             action: $this->action,
             outcome: $this->outcome,
             accountBlocked: $accountBlocked,
+            accountStanding: $this->accountStanding,
+        );
+    }
+
+    /**
+     * Returns the same frame stamped with the standing of the person the session acts as (HIL-945).
+     *
+     * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
+     *     Standing of the person the session acts as, or null when it is anonymous
+     * @return self The same frame carrying that standing
+     */
+    public function withAccountStanding(?array $accountStanding): self
+    {
+        return new self(
+            sessionToken: $this->sessionToken,
+            sessionId: $this->sessionId,
+            userId: $this->userId,
+            acceptKeys: $this->acceptKeys,
+            pendingAck: $this->pendingAck,
+            pendingAuthStep: $this->pendingAuthStep,
+            rotationTicket: $this->rotationTicket,
+            requestId: $this->requestId,
+            action: $this->action,
+            outcome: $this->outcome,
+            accountBlocked: $this->accountBlocked,
+            accountStanding: $accountStanding,
         );
     }
 
@@ -122,6 +157,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             'action' => $this->action,
             'outcome' => $this->outcome,
             self::accountBlocked => $this->accountBlocked,
+            self::accountStanding => $this->accountStanding,
         ];
     }
 
@@ -157,6 +193,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             action: self::optionalString($data, 'action'),
             outcome: self::optionalArray($data, 'outcome'),
             accountBlocked: HandshakeResponseSignalData::readAccountBlocked($data),
+            accountStanding: HandshakeResponseSignalData::readAccountStanding($data),
         );
     }
 

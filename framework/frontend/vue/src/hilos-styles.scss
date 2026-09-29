@@ -313,3 +313,17 @@ body.modal-open .toast-container > * {
   height: 4rem;
   font-size: 1.5rem;
 }
+
+// WHY: the mark sits over the corner of the avatar circle, so it needs a
+// font-size below every Bootstrap step and an overhang past the circle's own
+// box, which no offset utility expresses — the stock .bottom-0/.end-0 sit flush
+// and carry !important besides.
+// WHAT: the icon of the standing mark by the header avatar (HIL-945), laid out
+// as in mockups/framework/layout ("метка у аватара"). Position and color stay
+// stock utilities; only what they cannot say lives here.
+.hilos-avatar-mark {
+  font-size: 0.6rem;
+  right: -0.1rem;
+  bottom: -0.1rem;
+  line-height: 1;
+}

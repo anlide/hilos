@@ -99,6 +99,12 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
       params: {},
       admin: true,
     })
+    // The optional tail narrows the list to the people past a deadline (HIL-945).
+    expect(router.match('/hilos/users/terms')).toEqual({
+      page: HilosPages.USERS,
+      params: { lapsed: 'terms' },
+      admin: true,
+    })
     expect(router.match('/hilos/user/5')).toEqual({
       page: HilosPages.USER,
       params: { userId: '5' },

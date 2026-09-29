@@ -13,6 +13,8 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Users\AccountStanding;
+use Hilos\Users\AccountStandingResolver;
 
 /**
  * HandshakeResponseSignalData - Signal data for the session handshake response.
@@ -103,6 +105,13 @@ use Hilos\Core\Router\SignalDataInterface;
  * because the browser that lost an account is anonymous by then; a response carrying null takes
  * the card down, so a stamp that forgot it would too, which is why the framework stamps it
  * ({@see withAccountBlocked()}) rather than the project.
+ *
+ * `accountStanding` is the standing of the person the session acts as (HIL-945) - under
+ * impersonation the represented one: the three facts and the one shown, in the shape
+ * {@see AccountStanding::toArray()} writes. Null for an anonymous session. The shell draws the
+ * deletion strip, the impersonation strip's tone and the avatar ring from it, and the freeze
+ * screen reads it; the framework stamps it ({@see withAccountStanding()}) for the same reason it
+ * stamps the card.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -133,6 +142,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string trustDeviceDays = 'trustDeviceDays';
     public const string resetEffectiveAt = 'resetEffectiveAt';
     public const string accountBlocked = 'accountBlocked';
+    public const string accountStanding = 'accountStanding';
 
     /**
      * Creates handshake response signal data.
@@ -167,6 +177,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     or null before the session context is stamped
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
      *     Blocked account the session lost, or null when it holds no card
+     * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
+     *     Standing of the person the session acts as ({@see AccountStanding}), or null when it is anonymous
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -181,6 +194,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?array $authMethods = null,
         public readonly ?bool $passkeyAllowsUnproven = null,
         public readonly ?array $accountBlocked = null,
+        public readonly ?array $accountStanding = null,
     ) {
     }
 
@@ -210,6 +224,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             authMethods: $this->authMethods,
             passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
             accountBlocked: $this->accountBlocked,
+            accountStanding: $this->accountStanding,
         );
     }
 
@@ -239,6 +254,38 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             authMethods: $this->authMethods,
             passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
             accountBlocked: $accountBlocked,
+            accountStanding: $this->accountStanding,
+        );
+    }
+
+    /**
+     * Returns the same response carrying the standing of the person the session acts as (HIL-945).
+     *
+     * A fourth axis beside the card: the standing is composed by the framework in one place
+     * ({@see AccountStandingResolver}) and arrives on the state frame, so the framework stamps it
+     * on every send path and the project never builds it. Null for an anonymous session.
+     *
+     * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
+     *     Standing of the person the session acts as, or null when it is anonymous
+     * @return self The same response carrying that standing
+     */
+    public function withAccountStanding(?array $accountStanding): self
+    {
+        return new self(
+            selfId: $this->selfId,
+            selfName: $this->selfName,
+            selfAdmin: $this->selfAdmin,
+            impersonatorId: $this->impersonatorId,
+            impersonatorName: $this->impersonatorName,
+            pendingAck: $this->pendingAck,
+            serverTimeMs: $this->serverTimeMs,
+            pendingAuthStep: $this->pendingAuthStep,
+            codeDelivery: $this->codeDelivery,
+            authMethods: $this->authMethods,
+            passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
+            accountBlocked: $this->accountBlocked,
+            accountStanding: $accountStanding,
         );
     }
 
@@ -282,6 +329,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             authMethods: $authMethods,
             passkeyAllowsUnproven: $passkeyAllowsUnproven,
             accountBlocked: $this->accountBlocked,
+            accountStanding: $this->accountStanding,
         );
     }
 
@@ -316,6 +364,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::authMethods => $this->authMethods,
                 self::passkeyAllowsUnproven => $this->passkeyAllowsUnproven,
                 self::accountBlocked => $this->accountBlocked,
+                self::accountStanding => $this->accountStanding,
             ],
         ];
     }
@@ -354,6 +403,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $authMethods = self::readAuthMethods($section);
         $passkeyAllowsUnproven = self::optionalBool($section, self::passkeyAllowsUnproven);
         $accountBlocked = self::readAccountBlocked($section);
+        $accountStanding = self::readAccountStanding($section);
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
@@ -363,6 +413,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 authMethods: $authMethods,
                 passkeyAllowsUnproven: $passkeyAllowsUnproven,
                 accountBlocked: $accountBlocked,
+                accountStanding: $accountStanding,
             );
         }
 
@@ -379,6 +430,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             authMethods: $authMethods,
             passkeyAllowsUnproven: $passkeyAllowsUnproven,
             accountBlocked: $accountBlocked,
+            accountStanding: $accountStanding,
         );
     }
 
@@ -403,6 +455,45 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return [
             self::identifier => self::optionalString($node, self::identifier),
             DataExportStateSignalData::dataExport => DataExportStateSignalData::fromArray($node)->dataExport,
+        ];
+    }
+
+    /**
+     * Reads the standing of the person the session acts as back into its declared shape (HIL-945).
+     *
+     * Shared with {@see SessionStateSignalData}, which carries the same node under the same key. A
+     * present node comes back with all five members: the verdict names every fact, not only the one
+     * it shows.
+     *
+     * @param array<string, mixed> $section Map holding the node under `accountStanding`
+     * @return ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
+     *     lapsed: list<array{document: string, deadline: ?string}>} Node, or null for an anonymous session
+     * @throws InvalidFormatException When the node or one of its members is not of the declared type
+     */
+    public static function readAccountStanding(array $section): ?array
+    {
+        $node = self::optionalArray($section, self::accountStanding);
+        if ($node === null) {
+            return null;
+        }
+
+        $lapsed = [];
+        foreach (self::requireArray($node, AccountStanding::lapsed) as $document) {
+            if (!is_array($document)) {
+                throw new InvalidFormatException('A lapsed document of the account standing is not an object');
+            }
+            $lapsed[] = [
+                AccountStanding::document => self::requireString($document, AccountStanding::document),
+                AccountStanding::deadline => self::optionalString($document, AccountStanding::deadline),
+            ];
+        }
+
+        return [
+            AccountStanding::shown => self::requireString($node, AccountStanding::shown),
+            AccountStanding::blocked => self::requireBool($node, AccountStanding::blocked),
+            AccountStanding::frozen => self::requireBool($node, AccountStanding::frozen),
+            AccountStanding::deletionEffectiveAt => self::optionalInt($node, AccountStanding::deletionEffectiveAt),
+            AccountStanding::lapsed => $lapsed,
         ];
     }
 

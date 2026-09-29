@@ -14,6 +14,11 @@
 // under the maintenance surface, Stop tracked and disabled until its reply, a
 // refusal that leaves the strip and toasts, and no live region of its own.
 //
+// The third describe is the account standing (HIL-945), under the Vue shell's
+// case names: the deletion strip's words and their minute tick, its place in the
+// region, none under a takeover or maintenance, Keep my account tracked, a
+// refusal that toasts, and the impersonation strip colored by the standing.
+//
 // Order is read off the shell's child order rather than off heights: jsdom does
 // not lay out, so every height there is zero and a measurement would pass on a
 // broken region too.
@@ -25,8 +30,11 @@ import { Component } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import {
   ActionLifecycle,
+  applyServerTime,
   bindAccountBlocked,
+  bindAccountStanding,
   bindImpersonation,
+  formatCalendarDate,
   bindSessionScope,
   bindSignOut,
   hilosToasts,
@@ -43,7 +51,7 @@ import {
   type ProtectedModeStatus,
   type RtStalenessStatus,
 } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosLayout } from '../src/HilosLayout.js'
 
@@ -308,6 +316,7 @@ function bindSession() {
   const actions = new ActionLifecycle(source)
   const unbindStrip = bindImpersonation(scopes, actions)
   const unbindCard = bindAccountBlocked(scopes, actions, handshakes)
+  const unbindStanding = bindAccountStanding(scopes, actions)
   const unbindSignOut = bindSignOut(scopes, actions)
 
   return {
@@ -315,6 +324,7 @@ function bindSession() {
     unbind(): void {
       unbindStrip()
       unbindCard()
+      unbindStanding()
       unbindSignOut()
     },
     handshake(payload: Record<string, unknown>): void {
@@ -497,6 +507,242 @@ describe('HilosLayout impersonation strip', () => {
     expect(up.querySelector('[data-id="impersonation-banner"]')).not.toBeNull()
     expect(up.querySelectorAll(live).length).toBe(liveWithout)
   })
+})
+
+/** One day, in ms. */
+const DAY_MS = 86_400_000
+
+/** The browser clock the standing cases are parked at. */
+const NOW = 1_800_000_000_000
+
+/**
+ * A handshake of Bob's session carrying a standing.
+ *
+ * @param shown The standing shown.
+ * @param impersonated Whether Ada stands behind the session.
+ * @param deletionEffectiveAt The server moment of a scheduled erasure, or null.
+ * @returns The handshake payload.
+ */
+function standingHandshake(
+  shown: string,
+  impersonated = false,
+  deletionEffectiveAt: number | null = null,
+): Record<string, unknown> {
+  return {
+    data: {
+      serverTimeMs: NOW,
+      accountStanding: {
+        shown,
+        blocked: shown === 'blocked',
+        frozen: shown === 'frozen',
+        deletionEffectiveAt,
+        lapsed: [],
+      },
+    },
+    entities: {
+      currentUser: { id: 2, name: 'Bob' },
+      impersonatedBy: impersonated ? { id: 1, name: 'Ada' } : null,
+    },
+  }
+}
+
+describe('HilosLayout account standing (HIL-945)', () => {
+  let unbind: (() => void) | undefined
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+    hilosToasts.clear()
+    applyServerTime(Date.now())
+    vi.useRealTimers()
+  })
+
+  it('says when the own account is deleted and how many days are left', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+    const session = bindSession()
+    unbind = session.unbind
+    const effectiveAt = NOW + 12 * DAY_MS
+    session.handshake(
+      standingHandshake('deletion_scheduled', false, effectiveAt),
+    )
+
+    const root = mountShell().nativeElement as HTMLElement
+
+    const strip = root.querySelector('[data-id="account-deletion-strip"]')
+    expect(strip).not.toBeNull()
+    expect(strip?.classList.contains('alert-warning')).toBe(true)
+    expect(strip?.querySelector('.bi-trash')).not.toBeNull()
+    expect(
+      strip
+        ?.querySelector('[data-id="account-deletion-strip-text"]')
+        ?.textContent?.trim(),
+    ).toBe(
+      `Your account will be deleted on ${formatCalendarDate(effectiveAt)} — 12 days left`,
+    )
+    expect(
+      strip
+        ?.querySelector('[data-id="account-deletion-strip-keep"]')
+        ?.textContent?.trim(),
+    ).toBe('Keep my account')
+  })
+
+  it('counts the days left again once a minute', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(
+      standingHandshake('deletion_scheduled', false, NOW + 2 * DAY_MS),
+    )
+    const fixture = mountShell()
+    const text = () =>
+      (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-id="account-deletion-strip-text"]',
+      )?.textContent
+    expect(text()).toContain('2 days left')
+
+    vi.setSystemTime(NOW + 1.5 * DAY_MS)
+    vi.advanceTimersByTime(60_000)
+    fixture.detectChanges()
+
+    expect(text()).toContain('1 day left')
+  })
+
+  it('stands after the framework strips and before the project strip', () => {
+    // It never meets the impersonation strip: a takeover takes it down.
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(
+      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
+    )
+
+    const fixture = TestBed.createComponent(BannerHost)
+    fixture.componentInstance.connection = fakeConnection(ADMITTED)
+    fixture.detectChanges()
+
+    const region = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="app-banner"]',
+    )
+    const order = Array.from(region?.children ?? []).map((child) =>
+      child.getAttribute('data-id'),
+    )
+    expect(order).toEqual([
+      'protected-mode-banner',
+      'account-deletion-strip',
+      'test-banner',
+    ])
+  })
+
+  it('draws no deletion strip under a takeover, nor under maintenance', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(
+      standingHandshake('deletion_scheduled', true, NOW + 3 * DAY_MS),
+    )
+
+    const taken = mountShell()
+    const takenRoot = taken.nativeElement as HTMLElement
+    expect(
+      takenRoot.querySelector('[data-id="impersonation-banner"]'),
+    ).not.toBeNull()
+    expect(
+      takenRoot.querySelector('[data-id="account-deletion-strip"]'),
+    ).toBeNull()
+    taken.destroy()
+
+    session.handshake(
+      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
+    )
+    const frozenNode = mountShell(FROZEN).nativeElement as HTMLElement
+    expect(
+      frozenNode.querySelector('[data-id="account-deletion-strip"]'),
+    ).toBeNull()
+  })
+
+  it('sends Keep my account tracked, busy until the reply, and toasts nothing on success', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(
+      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
+    )
+    const fixture = mountShell()
+    const root = fixture.nativeElement as HTMLElement
+    const keep = root.querySelector(
+      '[data-id="account-deletion-strip-keep"]',
+    ) as HTMLButtonElement
+
+    keep.click()
+    fixture.detectChanges()
+
+    expect(session.source.sent).toHaveLength(1)
+    expect(session.source.sent[0]?.action).toBe('hilos_account_deletion_cancel')
+    expect(session.source.sent[0]?.data).toEqual({})
+    expect(session.source.sent[0]?.requestId).toBeTruthy()
+    expect(keep.disabled).toBe(true)
+
+    session.source.succeed(
+      session.source.sent[0]?.requestId,
+      'hilos_account_deletion_cancel',
+    )
+    session.handshake(standingHandshake('none'))
+    await settle()
+    fixture.detectChanges()
+
+    expect(root.querySelector('[data-id="account-deletion-strip"]')).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('leaves the strip standing on a refusal and says why in a toast', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(
+      standingHandshake('deletion_scheduled', false, NOW + 3 * DAY_MS),
+    )
+    const fixture = mountShell()
+    const root = fixture.nativeElement as HTMLElement
+    const keep = root.querySelector(
+      '[data-id="account-deletion-strip-keep"]',
+    ) as HTMLButtonElement
+
+    keep.click()
+    fixture.detectChanges()
+    session.source.refuse(
+      session.source.sent[0]?.requestId,
+      'No deletion is scheduled',
+      'hilos_account_deletion_cancel',
+    )
+    await settle()
+    fixture.detectChanges()
+
+    expect(
+      root.querySelector('[data-id="account-deletion-strip"]'),
+    ).not.toBeNull()
+    expect(keep.disabled).toBe(false)
+    expect(
+      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
+    ).toEqual([['error', 'No deletion is scheduled']])
+  })
+
+  it.each([
+    ['none', 'alert-warning'],
+    ['blocked', 'alert-danger'],
+    ['frozen', 'alert-info'],
+  ])(
+    'colors the impersonation strip of a %s person %s',
+    (shown, alertClass) => {
+      const session = bindSession()
+      unbind = session.unbind
+      session.handshake(standingHandshake(shown, true))
+
+      const root = mountShell().nativeElement as HTMLElement
+
+      const strip = root.querySelector('[data-id="impersonation-banner"]')
+      expect(strip?.classList.contains(alertClass)).toBe(true)
+      expect(strip?.classList.contains('alert')).toBe(true)
+      expect(strip?.querySelector('strong')?.textContent).toBe('Bob')
+    },
+  )
 })
 
 describe('HilosLayout sign-out', () => {

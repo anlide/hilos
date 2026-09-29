@@ -14,9 +14,13 @@ use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\HilosException;
+use Hilos\Legal\LegalDocument;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Users\AccountStandingResolver;
 use Throwable;
 
 /**
@@ -42,6 +46,16 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      * admin CONNECTIONS_SLOT). It carries no entity id, so it stays inline.
      */
     public const string SLOT_CONNECTIONS = 'connections';
+
+    /**
+     * Filter-map key: narrow the people to those past the deadline of one legal document (HIL-945).
+     *
+     * The value is the document's key (`terms`, `privacy`). The people are those the legal section's
+     * root counts in its third number for that document, whatever the refusal setting says, and the
+     * list is judged the same way ({@see AccountStandingResolver::lapsedUserIds()}), so the link from
+     * the number opens exactly the people it counted.
+     */
+    public const string FILTER_LAPSED = 'lapsed';
 
     /**
      * The source key of the project DB user collection this table projects.
@@ -180,6 +194,39 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             AbstractHilosUserTableRow::presence => AbstractHilosUserTableRow::presence,
             AbstractHilosUserTableRow::onlineSessionCount => AbstractHilosUserTableRow::onlineSessionCount,
         ];
+    }
+
+    /**
+     * Keeps the rows of the people past the deadline of the document the window filters on (HIL-945).
+     *
+     * A project's query hands its rows here before the in-memory filter, the way a table applies its
+     * own filters. A window that names no document is not narrowed; a value that names no document
+     * this framework knows empties it - a filter that cannot be judged shows nobody rather than
+     * everybody.
+     *
+     * @param list<array<string, mixed>> $rows Rows of the whole table
+     * @param array<string, mixed> $filters Open filter map of the window
+     * @return list<array<string, mixed>> Rows the window asked for
+     * @throws DatabaseException When the acceptance records or the setting cannot be read
+     * @throws SettingException When the refusal setting is invalid
+     */
+    protected function narrowByLapsed(array $rows, array $filters): array
+    {
+        $value = $filters[self::FILTER_LAPSED] ?? null;
+        if ($value === null) {
+            return $rows;
+        }
+        $document = is_string($value) ? LegalDocument::tryFrom($value) : null;
+        if ($document === null) {
+            return [];
+        }
+
+        $lapsed = array_flip(AccountStandingResolver::lapsedUserIds($document));
+
+        return array_values(array_filter(
+            $rows,
+            static fn (array $row): bool => isset($row[AbstractHilosUserTableRow::id]) && isset($lapsed[(int) $row[AbstractHilosUserTableRow::id]]),
+        ));
     }
 
     /**

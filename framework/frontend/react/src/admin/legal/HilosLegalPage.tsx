@@ -10,6 +10,7 @@ import {
   LEGAL_CATALOG_REFUSAL_SECTION,
   describeHilosLegalCheck,
   hilosLegalDocumentLabel,
+  hilosLegalLapsedHref,
   resolveHilosPath,
   type HilosLegalContext,
 } from '@hilos/core'
@@ -107,9 +108,21 @@ export function HilosLegalPage({ context }: { context: HilosLegalContext }) {
               [HilosLegalRowKey.window]: (row) => (
                 <span data-id="legal-count-window">{row.window}</span>
               ),
+              // The count of the people past the deadline opens them in the
+              // people list (HIL-945); nobody to open, nothing to follow.
               [HilosLegalRowKey.lapsed]: (row) => (
                 <>
-                  <span data-id="legal-count-lapsed">{row.lapsed}</span>{' '}
+                  {row.lapsed > 0 ? (
+                    <HilosLink
+                      to={hilosLegalLapsedHref(row.rowKey)}
+                      data-id="legal-count-lapsed-link"
+                      data-document={row.rowKey}
+                    >
+                      <span data-id="legal-count-lapsed">{row.lapsed}</span>
+                    </HilosLink>
+                  ) : (
+                    <span data-id="legal-count-lapsed">{row.lapsed}</span>
+                  )}{' '}
                   <span className="small text-body-secondary">
                     {lapsedLabel}
                   </span>

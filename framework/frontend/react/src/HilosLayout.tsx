@@ -7,9 +7,12 @@
 // its tracked sign-out control while a person stands behind the session;
 // a full-width banner region below the nav carrying, in this order, the
 // framework's own protected-mode strip, its impersonation strip (drawn from the
-// session, with a Stop that waits for the server's answer), and the app-wide
-// status strip a project fills (e.g. a trial notice) through the banner prop —
-// one live region for all, empty and zero-height while none is up — the
+// session, with a Stop that waits for the server's answer, colored by the
+// standing of the person taken over), its account deletion strip (the session's
+// own scheduled deletion, with a "Keep my account" that waits the same way,
+// HIL-945), and the app-wide status strip a project fills (e.g. a trial notice)
+// through the banner prop — one live region for all, empty and zero-height
+// while none is up — the
 // content, and a footer of the public framework pages (HILOS_FOOTER_LINKS). The
 // shell is a fixed-height viewport column (vh-100): the nav, banner, and footer
 // never scroll (flex-shrink-0) and the main region grows and scrolls its own
@@ -37,14 +40,19 @@ import type {
   PageRouteMatch,
 } from '@hilos/core'
 import {
+  ACCOUNT_DELETION_TICK_MS,
+  ACCOUNT_STANDING_STRIP_COPY,
+  formatHilosDeletionStrip,
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
   HilosPages,
   createSignal,
   hilosAccountBlocked,
+  hilosDeletionStrip,
   hilosImpersonation,
   hilosSignedIn,
   IMPERSONATION_STRIP_COPY,
+  keepMyAccount,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
@@ -52,7 +60,7 @@ import {
   SIGN_OUT_COPY,
   stopImpersonation,
 } from '@hilos/core'
-import { useContext, useEffect } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { HilosAccountBlocked } from './HilosAccountBlocked.js'
@@ -199,6 +207,38 @@ export function HilosLayout({
       return
     }
     void impersonationStop.run(stopImpersonation())
+  }
+
+  // The third framework strip (HIL-945): the session's own account is scheduled
+  // for deletion, so the person is told when, and how long there is left to
+  // think, on every page — the product still works, and the state lives beside
+  // the work. Not under a takeover: the shell then speaks about the person taken
+  // over, and the core leaves the strip down. "Keep my account" is the
+  // impersonation strip's Stop once more — busy at once, a refusal is the error
+  // toast, and success needs no toast: the strip leaves with the handshake that
+  // no longer carries the deletion. The days left are counted again once a
+  // minute while it stands.
+  const deletionStrip = useSignal(hilosDeletionStrip)
+  const deletionStanding = deletionStrip !== null
+  const [deletionNow, setDeletionNow] = useState(() => Date.now())
+  useEffect(() => {
+    setDeletionNow(Date.now())
+    if (!deletionStanding) {
+      return
+    }
+    const tick = setInterval(
+      () => setDeletionNow(Date.now()),
+      ACCOUNT_DELETION_TICK_MS,
+    )
+
+    return () => clearInterval(tick)
+  }, [deletionStanding])
+  const keepAccount = useTrackedAction()
+  const onKeepAccount = (): void => {
+    if (keepAccount.busy) {
+      return
+    }
+    void keepAccount.run(keepMyAccount())
   }
 
   const signedIn = useSignal(hilosSignedIn)
@@ -382,7 +422,7 @@ export function HilosLayout({
             )}
             {impersonation !== null && !underMaintenance && (
               <div
-                className="alert alert-warning border-0 rounded-0 mb-0 py-2"
+                className={`alert alert-${impersonation.tone} border-0 rounded-0 mb-0 py-2`}
                 data-id="impersonation-banner"
               >
                 <div className="container d-flex flex-wrap align-items-center justify-content-center gap-3">
@@ -401,6 +441,27 @@ export function HilosLayout({
                     onClick={onImpersonationStop}
                   >
                     {IMPERSONATION_STRIP_COPY.stop}
+                  </LoadingButton>
+                </div>
+              </div>
+            )}
+            {deletionStrip !== null && !underMaintenance && (
+              <div
+                className="alert alert-warning border-0 rounded-0 mb-0 py-2"
+                data-id="account-deletion-strip"
+              >
+                <div className="container d-flex flex-wrap align-items-center justify-content-center gap-3">
+                  <span data-id="account-deletion-strip-text">
+                    <i className="bi bi-trash me-1" aria-hidden="true"></i>{' '}
+                    {formatHilosDeletionStrip(deletionStrip, deletionNow)}
+                  </span>
+                  <LoadingButton
+                    className="btn-sm btn-outline-dark"
+                    data-id="account-deletion-strip-keep"
+                    loading={keepAccount.busy}
+                    onClick={onKeepAccount}
+                  >
+                    {ACCOUNT_STANDING_STRIP_COPY.keep}
                   </LoadingButton>
                 </div>
               </div>

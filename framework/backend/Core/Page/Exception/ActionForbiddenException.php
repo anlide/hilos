@@ -20,8 +20,11 @@ use Throwable;
  * {@see PageSubscriptionException}: the action dispatcher
  * ({@see PageSignalRouter::dispatchAction}) converts it into the client
  * `action_error`, carrying 403 semantics through the exception code.
+ *
+ * Open to one narrower reason: {@see ActionAccountFrozenException} is a 403 with a code of
+ * its own, and whatever answers a forbidden action answers it too.
  */
-final class ActionForbiddenException extends PageException
+class ActionForbiddenException extends PageException
 {
     /** Machine-readable error code carried to the client action_error. */
     public const string ERROR_CODE = 'forbidden';

@@ -9,6 +9,13 @@
 // (the `users` entity slot and the inline `connections` slot). A project supplies
 // a HilosUsersContext — its scope manager, its connection, its action lifecycle,
 // and its typed user collection — and the framework owns the rest.
+//
+// The card reads a person's standing as ONE verdict (HIL-945): the page's
+// `accountStanding` data and the live `hilos_account_standing_state` frame after
+// it. The rows of the access section and the badge in the card's header are
+// drawn from it, so what the rows say and what the badge shows cannot differ.
+
+import { z } from 'zod'
 
 import {
   type ActionHandle,
@@ -17,11 +24,28 @@ import {
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatCalendarDate } from '../../format/date.js'
 import {
+  formatHilosLegalDate,
+  hilosLegalDocumentLabel,
+  type HilosLegalDocumentKey,
+} from '../../legal/legalAgreements.js'
+import {
   accountDeletionDaysLeft,
   formatAccountDeletionDays,
 } from '../../profile/accountDeletion.js'
+import { type ProjectSignal } from '../../protocol/parseSignal.js'
+import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { sessionUserId } from '../../session/sessionScope.js'
+import { type PageRouteMatch } from '../../routing/PageRouter.js'
+import {
+  hilosStandingTone,
+  type HilosStandingTone,
+} from '../../session/accountStanding.js'
+import {
+  readHilosAccountStanding,
+  sessionUserId,
+  type HilosAccountStanding,
+  type HilosAccountStandingKind,
+} from '../../session/sessionScope.js'
 import { toLocal } from '../../session/serverClock.js'
 import { type User } from '../../state/entity.js'
 import { type EntityCollection } from '../../state/EntityCollection.js'
@@ -38,6 +62,7 @@ import {
   computedSignal,
   createSignal,
   type ReadonlySignal,
+  subscribeSignal,
 } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -157,6 +182,45 @@ export const USER_HAS_PASSWORD_FIELD = 'hasPassword'
 
 /** Candidate-table filter key that excludes the account whose card is open. */
 export const USER_MERGE_SURVIVOR_FILTER = 'survivor'
+
+/**
+ * Users-table filter key narrowing the list to the people past one legal
+ * document's deadline, whatever the refusal setting says (PHP
+ * `AbstractHilosUsersTable::FILTER_LAPSED`, HIL-945). Its value is the document
+ * key, and the same key names the optional tail of the list's address.
+ */
+export const HILOS_USERS_LAPSED_FILTER = 'lapsed'
+
+/**
+ * Page data key of the standing of the person the card shows (PHP
+ * `AbstractHilosUserPage::ACCOUNT_STANDING`, HIL-945).
+ */
+export const HILOS_USER_STANDING_SECTION = 'accountStanding'
+
+/**
+ * Server→client (WS_USER): the standing of the person a card shows, whenever it
+ * changed (PHP `HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE`, HIL-945).
+ */
+export const SIGNAL_ACCOUNT_STANDING_STATE = 'hilos_account_standing_state'
+
+/**
+ * The live standing frame (PHP `AccountStandingStateSignalData`). Both members
+ * are read past the parse boundary rather than at it: a viewer of the admin
+ * view mode is sent hidden marks in their place, and such a frame is still one
+ * to take — it says the standing cannot be read ({@link readHilosAccountStanding}).
+ */
+export const accountStandingStateSchema = z.looseObject({
+  userId: z.unknown(),
+  accountStanding: z.unknown(),
+})
+
+/**
+ * The live standing frame keyed for a connection's `projectSchemas`.
+ * {@link createHilosConnection} merges it in.
+ */
+export const ACCOUNT_STANDING_SIGNAL_SCHEMAS = {
+  [SIGNAL_ACCOUNT_STANDING_STATE]: accountStandingStateSchema,
+}
 
 /**
  * Row slot key of the inline connection summary.
@@ -331,6 +395,53 @@ export function resolveHilosMergeCandidateRow<TUser extends User>(
   }
 }
 
+/**
+ * Where the users list reads and writes its address (HIL-945). The lapsed filter
+ * lives in the address as an optional tail — `/hilos/users/terms` — so the link
+ * from the legal section's root opens the list narrowed, and a reload or a
+ * copied link opens what is on the screen. {@link HilosRouter} is a structural
+ * fit; a test passes a fake. Rewriting rather than navigating keeps the page
+ * subscribed — the filter narrows the same table.
+ */
+export interface HilosUsersAddress {
+  /** The matched route, whose params carry the lapsed filter when the address names one. */
+  readonly currentRoute: ReadonlySignal<PageRouteMatch>
+  /**
+   * Rewrite the current address without re-subscribing the page.
+   *
+   * @param pathname The address the current lapsed filter resolves to.
+   */
+  replacePath(pathname: string): void
+}
+
+/**
+ * Read the lapsed filter an address names: a legal document key, or `''` for
+ * the whole list. An unknown tail reads as no tail rather than as a refusal:
+ * the address came from outside, and the filter has no other value to land on.
+ *
+ * @param params The route params of the users-list route.
+ */
+export function readHilosUsersAddress(
+  params: Record<string, string>,
+): HilosLegalDocumentKey | '' {
+  const value = params[HILOS_USERS_LAPSED_FILTER]
+
+  return value === 'terms' || value === 'privacy' ? value : ''
+}
+
+/**
+ * The address of the users list narrowed to the people past a document's
+ * deadline, or of the whole list for `''`.
+ *
+ * @param lapsed The document key, `''` when none.
+ */
+export function hilosUsersPath(lapsed: string): string {
+  return resolveHilosPath(
+    HilosPages.USERS,
+    lapsed === '' ? {} : { [HILOS_USERS_LAPSED_FILTER]: lapsed },
+  )
+}
+
 /** The users table handle a users view drives: the controller plus its mount lifecycle. */
 export interface HilosUsersTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
@@ -397,6 +508,38 @@ const USERS_FRAME: HilosTableFrame = {
   search: { placeholder: 'Search users…' },
   columns: USERS_COLUMNS,
   empty: { title: 'No users yet.' },
+  filters: [
+    {
+      kind: 'select',
+      key: HILOS_USERS_LAPSED_FILTER,
+      // One label for both refusal settings: the list page carries no setting,
+      // and "past deadline" is true of everybody the filter keeps under either.
+      label: 'Past deadline on',
+      anyLabel: 'All',
+      options: () =>
+        (['terms', 'privacy'] as const).map((document) => ({
+          value: document,
+          label: hilosLegalDocumentLabel(document),
+        })),
+    },
+  ],
+}
+
+/**
+ * The users-table controller, whose reset returns the WHOLE list. An address
+ * carrying a lapsed tail opens the table with that filter as its preset — so
+ * the unfiltered first window is never shown — but the filter is one of the
+ * bar's own, and resetting back to the preset would leave its badge and its
+ * reset control saying what they said before the press.
+ */
+class HilosUsersController extends TableViewportController<HilosUserRow> {
+  override resetFilters(): void {
+    this.setFilters(
+      Object.fromEntries(
+        Object.keys(this.filter.get()).map((key) => [key, null]),
+      ),
+    )
+  }
 }
 
 /** Candidate columns shared by all three account-merge views. */
@@ -434,12 +577,23 @@ const MERGE_CANDIDATES_FRAME: HilosTableFrame = {
  * requests the first window; `dispose` unbinds it (the view calls them on mount /
  * unmount).
  *
+ * The lapsed filter lives in the address too (HIL-945): an address carrying a
+ * document tail opens the table with that filter, and whenever the filter moves
+ * — by its control or by a reset — the address is rewritten in place to match.
+ * Without a navigator there is neither a preset nor a rewrite.
+ *
  * @param context The project context (connection, scopes, and user collection).
+ * @param address The navigator the lapsed filter is read from and written to, or none.
  */
 export function createHilosUsersTable<TUser extends User>(
   context: HilosUsersContext<TUser>,
+  address?: HilosUsersAddress,
 ): HilosUsersTable {
-  const controller = new TableViewportController<HilosUserRow>({
+  const entered =
+    address === undefined
+      ? ''
+      : readHilosUsersAddress(address.currentRoute.get().params)
+  const controller = new HilosUsersController({
     resolve: (row) => resolveHilosUserRow(row, context.users),
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
@@ -454,6 +608,13 @@ export function createHilosUsersTable<TUser extends User>(
         rendered,
       ),
     frame: USERS_FRAME,
+    initialFilter:
+      entered === '' ? undefined : { [HILOS_USERS_LAPSED_FILTER]: entered },
+  })
+  const lapsed = computedSignal(() => {
+    const value = controller.filter.get()[HILOS_USERS_LAPSED_FILTER]
+
+    return typeof value === 'string' ? value : ''
   })
   const teardown: Array<() => void> = []
 
@@ -471,6 +632,17 @@ export function createHilosUsersTable<TUser extends User>(
           { entityTypes: { [USER_SLOT]: context.users.type } },
         ),
       )
+      if (address !== undefined) {
+        teardown.push(
+          subscribeSignal(lapsed, (value) => {
+            if (
+              value !== readHilosUsersAddress(address.currentRoute.get().params)
+            ) {
+              address.replacePath(hilosUsersPath(value))
+            }
+          }),
+        )
+      }
     },
     dispose() {
       for (const off of teardown.splice(0)) {
@@ -570,6 +742,122 @@ export function createHilosUserDetail<TUser extends User>(
           : readBoolean(identities, USER_HAS_PASSWORD_FIELD),
     }
   })
+}
+
+/** The standing of the person a card shows, and its mount lifecycle (HIL-945). */
+export interface HilosUserStanding {
+  /**
+   * The standing, or `null` before the page answered and wherever it cannot be
+   * read — a viewer of the admin view mode is sent it hidden.
+   */
+  readonly standing: ReadonlySignal<HilosAccountStanding | null>
+  /** Start taking the standing from the page data and the live frames — call on mount. */
+  start(): void
+  /** Stop taking it and forget it — call on unmount. */
+  dispose(): void
+}
+
+/**
+ * The one verdict a user card reads its person's standing from (HIL-945): the
+ * page's `accountStanding` data, then every `hilos_account_standing_state`
+ * frame after it — whichever arrived last. A frame naming another person than
+ * the card's row is a late one from the card left behind and is not taken.
+ *
+ * @param context The project context (the scope stores and the connection the frames ride).
+ */
+export function createHilosUserStanding(
+  context: Pick<HilosUsersContext, 'scopes' | 'connection'>,
+): HilosUserStanding {
+  const standing = createSignal<HilosAccountStanding | null>(null)
+  const detailRows = context.scopes.pageTableSignal(USER_DETAIL_TABLE)
+  let stop: (() => void) | null = null
+
+  /**
+   * Whether a frame speaks about the person the card shows: the card's row names
+   * them once it has arrived, and until then the frame is this card's by address.
+   *
+   * @param userId The person the frame names.
+   */
+  function aboutShownPerson(userId: unknown): boolean {
+    const row = detailRows.get()[0]
+
+    return row === undefined || Number(row.rowKey) === userId
+  }
+
+  return {
+    standing,
+    start() {
+      stop?.()
+      const section = context.scopes.pageDataSignal(HILOS_USER_STANDING_SECTION)
+      standing.set(readHilosAccountStanding(section.get()))
+      const offSection = subscribeSignal(section, (raw) =>
+        standing.set(readHilosAccountStanding(raw)),
+      )
+      const offFrames = context.connection.on(
+        'projectSignal',
+        (signal: ProjectSignal) => {
+          if (signal.type !== SIGNAL_ACCOUNT_STANDING_STATE) {
+            return
+          }
+          const frame = signal.data as z.infer<
+            typeof accountStandingStateSchema
+          >
+          if (aboutShownPerson(frame.userId)) {
+            standing.set(readHilosAccountStanding(frame.accountStanding))
+          }
+        },
+      )
+      stop = () => {
+        offSection()
+        offFrames()
+      }
+    },
+    dispose() {
+      stop?.()
+      stop = null
+      standing.set(null)
+    },
+  }
+}
+
+/** The badge a card's header shows for the standing shown (HIL-945). */
+export interface HilosStandingBadge {
+  /** The badge's word. */
+  readonly label: 'Blocked' | 'Frozen' | 'Deletion scheduled'
+  /** The Bootstrap color of the badge, the one the shell uses for the same standing. */
+  readonly tone: HilosStandingTone
+  /** The Bootstrap Icon beside the word. */
+  readonly icon: 'bi-slash-circle' | 'bi-snow' | 'bi-trash'
+}
+
+/**
+ * The badge beside the presence in a card's header: one, for the standing
+ * shown, in the color and with the icon the shell uses for it — or `null` for
+ * an account with nothing standing against it.
+ *
+ * @param kind The standing shown.
+ */
+export function hilosStandingBadge(
+  kind: HilosAccountStandingKind,
+): HilosStandingBadge | null {
+  switch (kind) {
+    case 'blocked':
+      return {
+        label: 'Blocked',
+        tone: hilosStandingTone(kind),
+        icon: 'bi-slash-circle',
+      }
+    case 'frozen':
+      return { label: 'Frozen', tone: hilosStandingTone(kind), icon: 'bi-snow' }
+    case 'deletion_scheduled':
+      return {
+        label: 'Deletion scheduled',
+        tone: hilosStandingTone(kind),
+        icon: 'bi-trash',
+      }
+    default:
+      return null
+  }
 }
 
 /**
@@ -720,6 +1008,11 @@ export const HILOS_USER_LIFECYCLE_COPY = {
   deletionScheduled: 'Deletion scheduled',
   deletionSummary: 'Erased on {date} — {days} left',
   deletionNone: 'No deletion is scheduled',
+  frozen: 'Frozen',
+  frozenNone: 'Not frozen',
+  pastDeadline: 'Past deadline',
+  remindersOnly: 'reminders only',
+  lapsedLine: '{document} — deadline passed {date}',
   yes: 'Yes',
   no: 'No',
   grant: 'Grant rights',
@@ -818,6 +1111,26 @@ export interface HilosUserLifecycleRow {
   readonly reasonSpace: string
 }
 
+/**
+ * The freeze row of the access section (HIL-945): a fact without a control —
+ * only the person's own acceptance lifts a freeze, and an administrator has
+ * nothing to press. It is drawn between the block row and the deletion row.
+ */
+export interface HilosUserFrozenRow {
+  readonly key: 'frozen'
+  readonly title: string
+  /** Whether the account is frozen. */
+  readonly state: boolean
+  /**
+   * What the row says under its title: nothing more while frozen (the lapsed
+   * lines say it), "Past deadline — reminders only" while a deadline has passed
+   * under the reminding setting, "Not frozen" otherwise.
+   */
+  readonly hint: string | null
+  /** One line per document whose deadline has passed: the document and the day. */
+  readonly lapsed: readonly string[]
+}
+
 /** One account-card section, rendered alike by all three SDKs. */
 export interface HilosUserLifecycleSection {
   readonly key: 'rights' | 'access'
@@ -827,21 +1140,33 @@ export interface HilosUserLifecycleSection {
 
 /**
  * Present the three independent states and the controls the current card offers.
+ *
+ * The block and the deletion are read from the person's standing when the card
+ * has one (HIL-945) — the verdict the header badge shows too — and from the
+ * committed row only while it has none, as before the verdict existed.
+ *
  * @param detail The committed user row, absent until the table arrives.
  * @param currentUserId The person behind this session.
  * @param graceDays The subscription's grace-period snapshot.
  * @param now The current local epoch milliseconds, for the remaining days.
+ * @param standing The person's standing, or `null` while the card has none.
  */
 export function hilosUserLifecycleSections(
   detail: HilosUserDetailRow | undefined,
   currentUserId: number | null,
   graceDays: number | null,
   now: number,
+  standing: HilosAccountStanding | null = null,
 ): readonly HilosUserLifecycleSection[] {
   if (!detail) return []
   const copy = HILOS_USER_LIFECYCLE_COPY
   const own = detail.id === currentUserId
-  const scheduled = detail.deletionEffectiveAt !== null
+  const blocked = standing?.blocked ?? detail.block
+  const deletionEffectiveAt =
+    standing === null
+      ? detail.deletionEffectiveAt
+      : standing.deletionEffectiveAt
+  const scheduled = deletionEffectiveAt !== null
   const deletionReason = scheduled
     ? null
     : own
@@ -875,27 +1200,24 @@ export function hilosUserLifecycleSections(
           key: 'block',
           title: copy.blocked,
           hint: copy.blockedHint,
-          state: detail.block,
-          choice: detail.block ? 'unblock' : 'block',
-          disabled: own && !detail.block,
-          reason: own && !detail.block ? copy.ownBlockReason : null,
+          state: blocked,
+          choice: blocked ? 'unblock' : 'block',
+          disabled: own && !blocked,
+          reason: own && !blocked ? copy.ownBlockReason : null,
           reasonSpace: copy.ownBlockReason,
         },
         {
           key: 'deletion',
           title: copy.deletionScheduled,
           hint:
-            detail.deletionEffectiveAt === null
+            deletionEffectiveAt === null
               ? copy.deletionNone
               : copy.deletionSummary
-                  .replace(
-                    '{date}',
-                    formatCalendarDate(detail.deletionEffectiveAt),
-                  )
+                  .replace('{date}', formatCalendarDate(deletionEffectiveAt))
                   .replace(
                     '{days}',
                     formatAccountDeletionDays(
-                      accountDeletionDaysLeft(detail.deletionEffectiveAt, now),
+                      accountDeletionDaysLeft(deletionEffectiveAt, now),
                     ),
                   ),
           state: scheduled,
@@ -908,6 +1230,43 @@ export function hilosUserLifecycleSections(
       ],
     },
   ]
+}
+
+/**
+ * The freeze row of a card (HIL-945), or `null` while the card has no standing
+ * to read it from — a freeze is computed on the backend and nowhere else, so
+ * there is no row flag to fall back to.
+ *
+ * Frozen: the lapsed documents with the day each deadline passed. Past a
+ * deadline under the reminding setting: "Past deadline — reminders only" and the
+ * same lines. Otherwise "Not frozen".
+ *
+ * @param standing The person's standing, or `null` while the card has none.
+ */
+export function hilosUserFrozenRow(
+  standing: HilosAccountStanding | null,
+): HilosUserFrozenRow | null {
+  if (standing === null) {
+    return null
+  }
+  const copy = HILOS_USER_LIFECYCLE_COPY
+  const lapsed = standing.lapsed.map((lapse) =>
+    copy.lapsedLine
+      .replace('{document}', hilosLegalDocumentLabel(lapse.document))
+      .replace('{date}', formatHilosLegalDate(lapse.deadline)),
+  )
+
+  return {
+    key: 'frozen',
+    title: copy.frozen,
+    state: standing.frozen,
+    hint: standing.frozen
+      ? null
+      : lapsed.length > 0
+        ? `${copy.pastDeadline} — ${copy.remindersOnly}`
+        : copy.frozenNone,
+    lapsed,
+  }
 }
 
 /**

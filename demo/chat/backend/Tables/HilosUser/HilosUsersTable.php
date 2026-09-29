@@ -22,6 +22,7 @@ use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
@@ -155,6 +156,7 @@ final class HilosUsersTable extends AbstractHilosUsersTable
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Hilos users table snapshot
      * @throws DatabaseException When user query execution fails
+     * @throws SettingException When the refusal setting a lapsed filter reads is invalid
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
@@ -166,9 +168,12 @@ final class HilosUsersTable extends AbstractHilosUsersTable
         $result = Hilos::$db->users->queryPageItems(new TableQueryDTO());
 
         return $this->filterInMemory(
-            rows: array_map(
-                fn(DbUser $user): array => $this->rowFromUser($user)->toArray(),
-                $result[TableConstants::RESULT_KEY_ROWS],
+            rows: $this->narrowByLapsed(
+                array_map(
+                    fn(DbUser $user): array => $this->rowFromUser($user)->toArray(),
+                    $result[TableConstants::RESULT_KEY_ROWS],
+                ),
+                $query->filter,
             ),
             query: $query,
         );

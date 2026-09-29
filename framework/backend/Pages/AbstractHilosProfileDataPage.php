@@ -34,6 +34,9 @@ abstract class AbstractHilosProfileDataPage extends AbstractPage
     /** Signed-in-only surface; see {@see AbstractHilosProfilePage} for why this must stay explicit. */
     public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
 
+    /** An exit of a freeze (HIL-945): a frozen person still takes a copy of their own data. */
+    public const bool OPEN_WHILE_FROZEN = true;
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE_DATA,
     ];

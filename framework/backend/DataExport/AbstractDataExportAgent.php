@@ -66,6 +66,12 @@ abstract class AbstractDataExportAgent extends AbstractAgent
     ];
 
     public const array AGENT_ACTIONS = [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class];
+
+    /**
+     * An exit of a freeze (HIL-945): a frozen person still orders a copy of their own data. The order
+     * is outside AUTH_ACTIONS today, so nothing closes it yet; declared, it stays open when it joins.
+     */
+    public const array FROZEN_EXIT_ACTIONS = [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER];
     public const array AGENT_SIGNALS = [HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => DataExportForgetUserSignalData::class];
 
     public const array AGENT_HTTP_ROUTES = [HttpConstants::METHOD_GET => [DataExportHttp::DOWNLOAD_PATH]];

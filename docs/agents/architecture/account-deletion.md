@@ -40,14 +40,21 @@ account no code can reach starts without one.
 
 Cancel stands outside the gate on purpose: changing one's mind must be easier
 than deleting, and a frozen account must be able to do it. It refuses only an
-impersonated session (`StepUpGate::isImpersonated()`).
+impersonated session (`StepUpGate::isImpersonated()`). For the same reason it is
+an exit of the freeze: the users library lists it, and only it, in
+`FROZEN_EXIT_ACTIONS`, while open, code and start are closed to a frozen person
+like every other `AUTH_ACTIONS` name
+([account-standing.md](account-standing.md)).
 
 Every start and cancel fans `hilos_account_deletion_state` to the person's
 group (`AccountDeletionGroup`); the profile page that draws the danger zone
 carries the same state as its `accountDeletion` section and joins the group.
 The frontend reads both through `createHilosAccountDeletionStore`, and the
 window's steps are `createHilosAccountDeletionFlow` in the core, drawn by
-`HilosAccountDeletion` in each SDK.
+`HilosAccountDeletion` in each SDK. Away from the profile the shell says the
+same from the session's standing: a strip under the navigation with the date and
+the days left, whose "Keep my account" is this cancel, and a mark by the header
+avatar ([account-standing.md](account-standing.md), *Who Draws What*).
 
 The grace period is the setting `auth.account_deletion.grace_days` — 30 by
 default, 1 to 365 (`AccountDeletionSettingsCatalog`, folded into the project's

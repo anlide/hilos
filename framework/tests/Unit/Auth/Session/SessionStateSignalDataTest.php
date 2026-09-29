@@ -54,6 +54,26 @@ final class SessionStateSignalDataTest extends TestCase
         self::assertNull(SessionStateSignalData::fromArray($frame->toArray())->accountBlocked);
     }
 
+    public function testRoundtripKeepsTheStandingBesideTheCard(): void
+    {
+        $standing = [
+            'shown' => 'deletion_scheduled',
+            'blocked' => false,
+            'frozen' => false,
+            'deletionEffectiveAt' => 1_767_225_600_000,
+            'lapsed' => [],
+        ];
+        $frame = new SessionStateSignalData('token', 17, 41, ['accept-key'])
+            ->withAccountStanding($standing)
+            ->withAccountBlocked(null);
+
+        $read = SessionStateSignalData::fromArray($frame->toArray());
+
+        self::assertSame($standing, $read->accountStanding);
+        self::assertEquals($frame, $read);
+        self::assertNull(SessionStateSignalData::fromArray(new SessionStateSignalData('token', 17, null, [])->toArray())->accountStanding);
+    }
+
     public function testMissingSessionIdIsRefused(): void
     {
         $this->expectException(InvalidFormatException::class);

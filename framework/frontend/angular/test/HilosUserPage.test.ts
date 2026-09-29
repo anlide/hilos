@@ -59,6 +59,7 @@ function userContext(accountMerge = false): {
   renameElsewhere: (name: string) => void
   removeRow: () => void
   failRename: () => void
+  standingFrame: (data: Record<string, unknown>) => void
   sent: Array<{ action: string; data: unknown }>
 } {
   const scopes = new ScopeManager()
@@ -82,10 +83,17 @@ function userContext(accountMerge = false): {
   // The rename's fail ack arrives as an unknown signal; keep its listeners to
   // answer a refusal.
   const unknownListeners: Array<(signal: { type: string }) => void> = []
+  // The live standing frame (HIL-945) arrives as a project signal.
+  const projectListeners: Array<(signal: Record<string, unknown>) => void> = []
   const on = connection.on.bind(connection)
   vi.spyOn(connection, 'on').mockImplementation((event, listener) => {
     if (event === 'unknownSignal') {
       unknownListeners.push(listener as (signal: { type: string }) => void)
+    }
+    if (event === 'projectSignal') {
+      projectListeners.push(
+        listener as (signal: Record<string, unknown>) => void,
+      )
     }
 
     return on(event, listener)
@@ -108,6 +116,15 @@ function userContext(accountMerge = false): {
     failRename(): void {
       for (const listener of unknownListeners) {
         listener({ type: 'hilos_user_update_fail' })
+      }
+    },
+    standingFrame(data: Record<string, unknown>): void {
+      for (const listener of projectListeners) {
+        listener({
+          kind: 'project',
+          type: 'hilos_account_standing_state',
+          data,
+        })
       }
     },
     sent,
@@ -513,5 +530,169 @@ describe('HilosUserPage lifecycle', () => {
       resolve({ message: 'Account blocked. Sessions ended: 1' })
     })
     expect(find('hilos-user-lifecycle-confirm')).toBeNull()
+  })
+})
+
+describe('HilosUserPage standing (HIL-945)', () => {
+  /**
+   * A standing as the wire carries it.
+   *
+   * @param facts The facts that differ from a plain account.
+   */
+  function standing(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      shown: 'none',
+      blocked: false,
+      frozen: false,
+      deletionEffectiveAt: null,
+      lapsed: [],
+      ...facts,
+    }
+  }
+
+  /**
+   * Mount the card on a context.
+   *
+   * @param context The project context the card reads.
+   * @returns The fixture and a helper that applies a change and settles the view.
+   */
+  function mountCard(context: HilosUsersContext): {
+    fixture: ComponentFixture<HilosUserPage>
+    change: (fn: () => void) => Promise<void>
+  } {
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+
+    return {
+      fixture,
+      async change(fn: () => void): Promise<void> {
+        fn()
+        await Promise.resolve()
+        fixture.detectChanges()
+        await fixture.whenStable()
+        fixture.detectChanges()
+      },
+    }
+  }
+
+  it('shows one badge for the standing shown and the freeze as a row without a control', async () => {
+    const { context, standingFrame } = userContext()
+    const { fixture, change } = mountCard(context)
+    const find = (id: string) => el(fixture, id)
+    const badge = () => find('user-standing-badge')
+
+    // No verdict yet: no badge and no freeze row.
+    expect(badge()).toBeNull()
+    expect(find('hilos-user-frozen-state')).toBeNull()
+
+    await change(() => {
+      context.scopes.page()?.data.set(
+        'accountStanding',
+        standing({
+          shown: 'frozen',
+          frozen: true,
+          lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+        }),
+      )
+    })
+    expect(badge()?.textContent?.trim()).toBe('Frozen')
+    expect(badge()?.classList.contains('text-bg-info')).toBe(true)
+    expect(badge()?.querySelector('.bi-snow')).not.toBeNull()
+    expect(find('hilos-user-frozen-state')?.textContent).toContain('Yes')
+    expect(find('hilos-user-frozen-lapsed')?.textContent).toContain(
+      'Terms of use — deadline passed 1 September 2026',
+    )
+    expect(find('hilos-user-frozen-open')).toBeNull()
+    const states = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        '[data-id="hilos-user-access"] [data-id$="-state"]',
+      ),
+    ).map((node) => node.getAttribute('data-id'))
+    expect(states).toEqual([
+      'hilos-user-block-state',
+      'hilos-user-frozen-state',
+      'hilos-user-deletion-state',
+    ])
+
+    // A live frame about the person moves the badge and the rows together.
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({ shown: 'blocked', blocked: true }),
+      })
+    })
+    expect(badge()?.textContent?.trim()).toBe('Blocked')
+    expect(badge()?.classList.contains('text-bg-danger')).toBe(true)
+    expect(find('hilos-user-block-state')?.textContent).toContain('Yes')
+    expect(find('hilos-user-block-open')?.textContent).toContain(
+      'Lift the block',
+    )
+    expect(find('hilos-user-frozen-state')?.textContent).toContain('Not frozen')
+
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({
+          lapsed: [{ document: 'privacy', deadline: '2026-09-15' }],
+        }),
+      })
+    })
+    expect(badge()).toBeNull()
+    expect(find('hilos-user-frozen-state')?.textContent).toContain(
+      'Past deadline — reminders only',
+    )
+    expect(find('hilos-user-frozen-lapsed')?.textContent).toContain(
+      'Privacy policy — deadline passed 15 September 2026',
+    )
+
+    // Hidden from a viewer of the admin view mode: no standing to show.
+    await change(() => {
+      standingFrame({
+        userId: { _hidden: true },
+        accountStanding: { _hidden: true },
+      })
+    })
+    expect(badge()).toBeNull()
+    expect(find('hilos-user-frozen-state')).not.toBeNull()
+    await change(() => {
+      standingFrame({ userId: 1, accountStanding: { _hidden: true } })
+    })
+    expect(find('hilos-user-frozen-state')).toBeNull()
+  })
+
+  it('reads a scheduled deletion from the verdict', async () => {
+    const { context } = userContext()
+    const { fixture, change } = mountCard(context)
+    const find = (id: string) => el(fixture, id)
+    const effectiveAt = Date.now() + 5 * 86_400_000
+
+    await change(() => {
+      context.scopes.page()?.data.set(
+        'accountStanding',
+        standing({
+          shown: 'deletion_scheduled',
+          deletionEffectiveAt: effectiveAt,
+        }),
+      )
+    })
+
+    expect(find('user-standing-badge')?.textContent?.trim()).toBe(
+      'Deletion scheduled',
+    )
+    expect(
+      find('user-standing-badge')?.classList.contains('text-bg-warning'),
+    ).toBe(true)
+    expect(find('hilos-user-deletion-state')?.textContent).toContain(
+      '5 days left',
+    )
+    expect(find('hilos-user-deletion-open')?.textContent).toContain(
+      'Cancel deletion',
+    )
   })
 })

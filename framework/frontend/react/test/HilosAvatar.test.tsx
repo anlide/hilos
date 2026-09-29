@@ -33,6 +33,53 @@ describe('HilosAvatar', () => {
     expect(container.querySelector(`.hilos-avatar-${size}`)).not.toBeNull()
   })
 
+  it('draws no mark by default', () => {
+    const { container } = render(<HilosAvatar name="Ada" />)
+    const circle = container.querySelector('[data-id="hilos-avatar"]')!
+
+    expect(container.querySelector('[data-id="avatar-mark"]')).toBeNull()
+    expect(circle.classList.contains('border')).toBe(false)
+  })
+
+  it.each([
+    [{ tone: 'warning', icon: 'bi-trash' }],
+    [{ tone: 'danger', icon: 'bi-people-fill' }],
+    [{ tone: 'info', icon: 'bi-people-fill' }],
+  ] as const)(
+    'rings the circle and puts the icon in its corner for %j (HIL-945)',
+    (mark) => {
+      const { container, rerender } = render(
+        <HilosAvatar name="Ada" mark={mark} />,
+      )
+      const circle = container.querySelector('[data-id="hilos-avatar"]')!
+
+      for (const name of [
+        'position-relative',
+        'border',
+        'border-2',
+        `border-${mark.tone}`,
+      ]) {
+        expect(circle.classList.contains(name)).toBe(true)
+      }
+      const icon = container.querySelector('[data-id="avatar-mark"]')!
+      for (const name of [
+        'bi',
+        mark.icon,
+        'position-absolute',
+        'hilos-avatar-mark',
+        `text-${mark.tone}-emphasis`,
+      ]) {
+        expect(icon.classList.contains(name)).toBe(true)
+      }
+      expect(circle.textContent).toBe('A')
+      expect(circle.getAttribute('aria-hidden')).toBe('true')
+
+      rerender(<HilosAvatar name="Ada" mark={null} />)
+      expect(container.querySelector('[data-id="avatar-mark"]')).toBeNull()
+      expect(circle.classList.contains(`border-${mark.tone}`)).toBe(false)
+    },
+  )
+
   it('updates the initials and fallback when the name changes', () => {
     const { container, rerender } = render(
       <HilosAvatar name="Alexander Baranov" />,

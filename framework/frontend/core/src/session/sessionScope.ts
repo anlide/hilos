@@ -15,6 +15,10 @@ import {
 import { z } from 'zod'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
+  legalDocumentSchema,
+  type HilosLegalDocumentKey,
+} from '../legal/legalAgreements.js'
+import {
   scopePayloadSchema,
   type ScopePayloadWire,
 } from '../protocol/scopePayload.js'
@@ -86,6 +90,14 @@ const PASSKEY_ALLOWS_UNPROVEN_KEY = 'passkeyAllowsUnproven'
  * takes the card down by overwriting the key — no frame of its own is needed.
  */
 const ACCOUNT_BLOCKED_KEY = 'accountBlocked'
+
+/**
+ * Plain session-scope key carrying the standing of the person the session acts
+ * as (HIL-945) — under a takeover, of the person taken over — or `null` for an
+ * anonymous session. The backend stamps it on every handshake, like the card
+ * beside it, so a newer handshake replaces it whole.
+ */
+const ACCOUNT_STANDING_KEY = 'accountStanding'
 
 /**
  * The settings library, and the OAuth provider page → every connection: the
@@ -281,6 +293,63 @@ export interface AccountBlockedNotice {
   /** Archive node carried with the card, still in server time. */
   readonly dataExport: DataExportNode | null
 }
+
+/**
+ * The one fact of an account's standing that is shown (HIL-945), the one that
+ * takes the most away: blocked, then frozen, then a scheduled deletion. Byte-equal
+ * to the backend `AccountStandingKind`.
+ */
+export type HilosAccountStandingKind =
+  | 'none'
+  | 'blocked'
+  | 'frozen'
+  | 'deletion_scheduled'
+
+/** One legal document whose acceptance deadline has passed (HIL-945). */
+export interface HilosAccountStandingLapse {
+  /** The document the person has not accepted in time. */
+  readonly document: HilosLegalDocumentKey
+  /** The calendar day the deadline fell on, `YYYY-MM-DD`. */
+  readonly deadline: string
+}
+
+/**
+ * An account's standing (HIL-945): three independent facts and the one of them
+ * shown. Composed in one place on the backend and read in the same shape by the
+ * shell (the session's own), the admin card and its live frame.
+ */
+export interface HilosAccountStanding {
+  /** The one fact shown, the one that takes the most away. */
+  readonly shown: HilosAccountStandingKind
+  /** Whether an administrator blocked the account. */
+  readonly blocked: boolean
+  /** Whether a lapsed acceptance freezes the account under the refusal setting. */
+  readonly frozen: boolean
+  /** The LOCAL epoch-ms moment the scheduled erasure falls due, or `null` when none is scheduled. */
+  readonly deletionEffectiveAt: number | null
+  /** Documents whose deadline has passed, whatever the refusal setting says. */
+  readonly lapsed: readonly HilosAccountStandingLapse[]
+}
+
+/**
+ * The standing as the wire carries it (PHP `AccountStanding::toArray()`); the
+ * erasure moment is SERVER epoch ms here. The lapsed documents are read one by
+ * one ({@link readHilosAccountStanding}), so a document this client does not
+ * know drops out alone instead of taking the whole standing with it.
+ */
+export const accountStandingSchema = z.looseObject({
+  shown: z.enum(['none', 'blocked', 'frozen', 'deletion_scheduled']),
+  blocked: z.boolean(),
+  frozen: z.boolean(),
+  deletionEffectiveAt: z.number().nullable(),
+  lapsed: z.array(z.unknown()),
+})
+
+/** One lapsed document as the wire carries it. */
+const accountStandingLapseSchema = z.looseObject({
+  document: legalDocumentSchema,
+  deadline: z.string(),
+})
 
 /** What a sign-in held on its second factor carries into the step it is restored to (HIL-494). */
 export interface PendingSecondFactor {
@@ -907,6 +976,64 @@ export function sessionAccountBlocked(
       dataExport: dataExport.success ? dataExport.data : null,
     }
   })
+}
+
+/**
+ * Read a standing as the wire carried it — the session's own, the admin card's
+ * page data or its live frame — or `null` when what arrived is not one.
+ *
+ * `null` is also what an anonymous session carries, and what a viewer of the
+ * admin view mode reads where the backend put a hidden mark in the standing's
+ * place: an unreadable standing is an absent one. The erasure moment comes back
+ * on the LOCAL clock.
+ *
+ * @param raw The standing as the wire carried it.
+ */
+export function readHilosAccountStanding(
+  raw: unknown,
+): HilosAccountStanding | null {
+  const parsed = accountStandingSchema.safeParse(raw)
+  if (!parsed.success) {
+    return null
+  }
+  const lapsed: HilosAccountStandingLapse[] = []
+  for (const entry of parsed.data.lapsed) {
+    const lapse = accountStandingLapseSchema.safeParse(entry)
+    if (lapse.success) {
+      lapsed.push({
+        document: lapse.data.document,
+        deadline: lapse.data.deadline,
+      })
+    }
+  }
+  const deletionEffectiveAt = parsed.data.deletionEffectiveAt
+
+  return {
+    shown: parsed.data.shown,
+    blocked: parsed.data.blocked,
+    frozen: parsed.data.frozen,
+    deletionEffectiveAt:
+      deletionEffectiveAt === null ? null : toLocal(deletionEffectiveAt),
+    lapsed,
+  }
+}
+
+/**
+ * The standing of the person this session acts as (HIL-945), or `null` for an
+ * anonymous session.
+ *
+ * Under a takeover it is the standing of the person taken over: the session
+ * carries their identity, so the shell speaks about them. Live: every handshake
+ * writes the key.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionAccountStanding(
+  scopes: ScopeManager,
+): ReadonlySignal<HilosAccountStanding | null> {
+  const slot = scopes.session.data.signal(ACCOUNT_STANDING_KEY)
+
+  return computedSignal(() => readHilosAccountStanding(slot.get()))
 }
 
 /**

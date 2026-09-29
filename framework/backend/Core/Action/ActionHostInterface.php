@@ -44,6 +44,11 @@ interface ActionHostInterface
     public function authActions(): array;
 
     /**
+     * @return list<string> Action names of this host a frozen person may still run (HIL-945)
+     */
+    public function frozenExitActions(): array;
+
+    /**
      * @return SignalSourceInterface Signal source every frame this host sends goes out from
      */
     public function getAgentSignalSource(): SignalSourceInterface;

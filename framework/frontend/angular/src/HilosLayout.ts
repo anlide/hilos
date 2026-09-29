@@ -7,10 +7,13 @@
 // its tracked sign-out control while a person stands behind the session;
 // a full-width banner region below the nav carrying, in this order, the
 // framework's own protected-mode strip, its impersonation strip (drawn from the
-// session, with a Stop that waits for the server's answer), and the app-wide
-// status strip a project fills (e.g. a trial notice) through a projected
-// [banner] node — one live region for all, empty and zero-height while none is
-// up — the content, and a footer of the public framework pages
+// session, with a Stop that waits for the server's answer, colored by the
+// standing of the person taken over), its account deletion strip (the session's
+// own scheduled deletion, with a "Keep my account" that waits the same way,
+// HIL-945), and the app-wide status strip a project fills (e.g. a trial notice)
+// through a projected [banner] node — one live region for all, empty and
+// zero-height while none is up — the content, and a footer of the public
+// framework pages
 // (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100):
 // the nav, banner, and footer never scroll (flex-shrink-0) and the main region
 // grows and scrolls its own overflow (min-h-0 + overflow-auto), so a page
@@ -38,6 +41,7 @@ import {
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core'
 import type {
   ConnectionState,
@@ -47,15 +51,20 @@ import type {
   RtStalenessStatus,
 } from '@hilos/core'
 import {
+  ACCOUNT_DELETION_TICK_MS,
+  ACCOUNT_STANDING_STRIP_COPY,
+  formatHilosDeletionStrip,
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
   HilosPages,
   hilosAccountBlocked,
+  hilosDeletionStrip,
   hilosImpersonation,
   hilosSignedIn,
   IMPERSONATION_STRIP_COPY,
+  keepMyAccount,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
@@ -224,7 +233,8 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           @if (impersonation(); as strip) {
             @if (!underMaintenance()) {
               <div
-                class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+                class="alert border-0 rounded-0 mb-0 py-2"
+                [class]="'alert-' + strip.tone"
                 data-id="impersonation-banner"
               >
                 <div
@@ -246,6 +256,30 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 </div>
               </div>
             }
+          }
+          @if (deletionStrip() !== null && !underMaintenance()) {
+            <div
+              class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+              data-id="account-deletion-strip"
+            >
+              <div
+                class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
+              >
+                <span data-id="account-deletion-strip-text">
+                  <i class="bi bi-trash me-1" aria-hidden="true"></i>
+                  {{ deletionStripText() }}
+                </span>
+                <button
+                  hilosLoadingButton
+                  class="btn-sm btn-outline-dark"
+                  data-id="account-deletion-strip-keep"
+                  [loading]="keepAccount.busy()"
+                  (click)="onKeepAccount()"
+                >
+                  {{ standingCopy.keep }}
+                </button>
+              </div>
+            </div>
           }
           <ng-content select="[banner]" />
         </div>
@@ -360,6 +394,29 @@ export class HilosLayout {
   protected readonly impersonation = hilosSignal(hilosImpersonation)
   protected readonly impersonationStop = createHilosTrackedAction()
   protected readonly stripCopy = IMPERSONATION_STRIP_COPY
+  // The third framework strip (HIL-945): the session's own account is scheduled
+  // for deletion, so the person is told when, and how long there is left to
+  // think, on every page — the product still works, and the state lives beside
+  // the work. Not under a takeover: the shell then speaks about the person taken
+  // over, and the core leaves the strip down. "Keep my account" is the
+  // impersonation strip's Stop once more — busy at once, a refusal is the error
+  // toast, and success needs no toast: the strip leaves with the handshake that
+  // no longer carries the deletion. The days left are counted again once a
+  // minute while it stands (the constructor's tick).
+  protected readonly deletionStrip = hilosSignal(hilosDeletionStrip)
+  private readonly deletionStanding = computed(
+    () => this.deletionStrip() !== null,
+  )
+  private readonly deletionNow = signal(Date.now())
+  protected readonly deletionStripText = computed(() => {
+    const strip = this.deletionStrip()
+
+    return strip === null
+      ? ''
+      : formatHilosDeletionStrip(strip, this.deletionNow())
+  })
+  protected readonly keepAccount = createHilosTrackedAction()
+  protected readonly standingCopy = ACCOUNT_STANDING_STRIP_COPY
   protected readonly signedIn = hilosSignal(hilosSignedIn)
   protected readonly signOutAction = createHilosTrackedAction()
   protected readonly signOutCopy = SIGN_OUT_COPY
@@ -507,6 +564,21 @@ export class HilosLayout {
       )
     })
 
+    // Count the deletion strip's days left again once a minute while it stands,
+    // and afresh whenever it goes up.
+    effect((onCleanup) => {
+      const standing = this.deletionStanding()
+      untracked(() => this.deletionNow.set(Date.now()))
+      if (!standing) {
+        return
+      }
+      const tick = setInterval(
+        () => this.deletionNow.set(Date.now()),
+        ACCOUNT_DELETION_TICK_MS,
+      )
+      onCleanup(() => clearInterval(tick))
+    })
+
     // Track the page title onto the document title across no-refresh navigation.
     effect(() => {
       const title = this.pageTitle()
@@ -522,6 +594,14 @@ export class HilosLayout {
       return
     }
     void this.impersonationStop.run(stopImpersonation())
+  }
+
+  /** Keep the account through the tracked driver; a second press while busy is dropped. */
+  protected onKeepAccount(): void {
+    if (this.keepAccount.busy()) {
+      return
+    }
+    void this.keepAccount.run(keepMyAccount())
   }
 
   /** Sign out through the tracked driver; a second press while busy is dropped. */

@@ -74,6 +74,53 @@ describe('legal admin views', () => {
     },
   )
 
+  it('links the past-deadline count to the people it counts, only when there are any (HIL-945)', () => {
+    const h = harness()
+    const rows = [
+      {
+        rowKey: 'terms',
+        declared: true,
+        revision,
+        covered: 1,
+        window: 0,
+        lapsed: 2,
+      },
+      {
+        rowKey: 'privacy',
+        declared: true,
+        revision,
+        covered: 3,
+        window: 0,
+        lapsed: 0,
+      },
+    ]
+    // Draws the third count's cell for two document rows; the other tables pass.
+    const documentTable = {
+      setup: () => ({ rows }),
+      template: `<div><template v-if="$slots['cell-lapsed']"><div v-for="row in rows" :key="row.rowKey" :data-row="row.rowKey"><slot name="cell-lapsed" :row="row" /></div></template></div>`,
+    }
+    const view = mount(HilosLegalPage, {
+      props: { context: h.context },
+      global: {
+        ...h.global,
+        stubs: { ...h.global.stubs, HilosViewportTable: documentTable },
+      },
+    })
+
+    const link = view.find(
+      '[data-row="terms"] [data-id="legal-count-lapsed-link"]',
+    )
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('to')).toBe('/hilos/users/terms')
+    expect(link.find('[data-id="legal-count-lapsed"]').text()).toBe('2')
+    const privacy = view.find('[data-row="privacy"]')
+    expect(privacy.find('[data-id="legal-count-lapsed-link"]').exists()).toBe(
+      false,
+    )
+    expect(privacy.find('[data-id="legal-count-lapsed"]').text()).toBe('0')
+    view.unmount()
+  })
+
   it('renders the adopted set and the reason for each deviation', () => {
     const h = harness()
     h.scope.data.set('legalDocument', {

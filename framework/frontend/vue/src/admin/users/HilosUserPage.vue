@@ -9,14 +9,20 @@ shared row-edit helper (rowEdit.ts, conflict-resolution.md) and says what
 happened elsewhere on one line of room held in advance (HilosEditNotice). Success
 is state-driven (the committed name reaches the name it sent over the live
 table, closing the modal); a failure surfaces from the backend fail ack inside the
-modal. Bootstrap classes only (styling-rules.md). -->
+modal. The person's standing is one verdict (createHilosUserStanding, HIL-945):
+the badge beside the presence in the header shows the standing shown, and the
+access section draws the block, the freeze — a fact with no control — and the
+deletion from the same verdict. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import {
   ACCOUNT_DELETION_TICK_MS,
   createHilosUserLifecycle,
+  createHilosUserStanding,
   HILOS_USER_LIFECYCLE_COPY,
+  hilosStandingBadge,
+  hilosUserFrozenRow,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
@@ -91,9 +97,18 @@ const lifecycleAction = useTrackedAction()
 const lifecyclePrompt = ref<HilosUserLifecyclePrompt | null>(null)
 const graceDays = useSignal(lifecycle.graceDays)
 const lifecycleUserId = useSignal(lifecycle.currentUserId)
+const userStanding = createHilosUserStanding(props.context)
+const standing = useSignal(userStanding.standing)
+const standingBadge = computed(() =>
+  standing.value === null ? null : hilosStandingBadge(standing.value.shown),
+)
+const frozenRow = computed(() => hilosUserFrozenRow(standing.value))
 const lifecycleNow = ref(Date.now())
 watch(
-  () => detail.value?.deletionEffectiveAt,
+  [
+    () => detail.value?.deletionEffectiveAt,
+    () => standing.value?.deletionEffectiveAt,
+  ],
   () => {
     lifecycleNow.value = Date.now()
   },
@@ -105,6 +120,7 @@ const lifecycleSections = computed(() =>
     lifecycleUserId.value,
     graceDays.value,
     lifecycleNow.value,
+    standing.value,
   ),
 )
 const lifecycleOpen = computed({
@@ -115,11 +131,13 @@ const lifecycleOpen = computed({
 })
 let lifecycleTick: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
+  userStanding.start()
   lifecycleTick = setInterval(() => {
     lifecycleNow.value = Date.now()
   }, ACCOUNT_DELETION_TICK_MS)
 })
 onUnmounted(() => {
+  userStanding.dispose()
   clearInterval(lifecycleTick)
 })
 
@@ -397,6 +415,19 @@ watch(error, (reason) => {
             detail.name
           }}</span>
           <span class="badge text-bg-secondary">{{ detail.presence }}</span>
+          <span
+            v-if="standingBadge !== null"
+            class="badge"
+            :class="`text-bg-${standingBadge.tone}`"
+            data-id="user-standing-badge"
+          >
+            <i
+              class="bi me-1"
+              :class="standingBadge.icon"
+              aria-hidden="true"
+            ></i
+            >{{ standingBadge.label }}
+          </span>
           <button
             type="button"
             class="btn btn-outline-primary btn-sm ms-auto"
@@ -431,48 +462,76 @@ watch(error, (reason) => {
       >
         <div class="card-body">
           <h2 class="h5">{{ section.title }}</h2>
-          <div
-            v-for="row in section.rows"
-            :key="row.key"
-            class="d-flex flex-wrap align-items-start gap-3 py-2"
-          >
-            <div class="flex-grow-1" :data-id="`hilos-user-${row.key}-state`">
-              <h3 class="h6 mb-1">
-                {{ row.title }}
-                <span class="badge text-bg-secondary">{{
-                  row.state ? lifecycleCopy.yes : lifecycleCopy.no
-                }}</span>
-              </h3>
-              <p class="small text-body-secondary mb-0">{{ row.hint }}</p>
-            </div>
-            <div>
-              <button
-                type="button"
-                class="btn btn-sm"
-                :class="
-                  lifecycleCopy.confirmations[row.choice].danger
-                    ? 'btn-outline-danger'
-                    : 'btn-primary'
-                "
-                :disabled="row.disabled"
-                :aria-describedby="`hilos-user-${row.key}-reason`"
-                :data-id="`hilos-user-${row.key}-open`"
-                @click="openLifecycle(row.choice)"
-              >
-                {{ lifecycleCopy[row.choice] }}
-              </button>
-              <div class="hilos-stack small text-body-secondary mt-1">
-                <span class="invisible" aria-hidden="true">{{
-                  row.reasonSpace
-                }}</span>
-                <span
-                  :id="`hilos-user-${row.key}-reason`"
-                  :data-id="`hilos-user-${row.key}-reason`"
-                  >{{ row.reason }}</span
+          <template v-for="row in section.rows" :key="row.key">
+            <div class="d-flex flex-wrap align-items-start gap-3 py-2">
+              <div class="flex-grow-1" :data-id="`hilos-user-${row.key}-state`">
+                <h3 class="h6 mb-1">
+                  {{ row.title }}
+                  <span class="badge text-bg-secondary">{{
+                    row.state ? lifecycleCopy.yes : lifecycleCopy.no
+                  }}</span>
+                </h3>
+                <p class="small text-body-secondary mb-0">{{ row.hint }}</p>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  :class="
+                    lifecycleCopy.confirmations[row.choice].danger
+                      ? 'btn-outline-danger'
+                      : 'btn-primary'
+                  "
+                  :disabled="row.disabled"
+                  :aria-describedby="`hilos-user-${row.key}-reason`"
+                  :data-id="`hilos-user-${row.key}-open`"
+                  @click="openLifecycle(row.choice)"
                 >
+                  {{ lifecycleCopy[row.choice] }}
+                </button>
+                <div class="hilos-stack small text-body-secondary mt-1">
+                  <span class="invisible" aria-hidden="true">{{
+                    row.reasonSpace
+                  }}</span>
+                  <span
+                    :id="`hilos-user-${row.key}-reason`"
+                    :data-id="`hilos-user-${row.key}-reason`"
+                    >{{ row.reason }}</span
+                  >
+                </div>
               </div>
             </div>
-          </div>
+            <!-- The freeze stands between the block and the deletion, and offers
+          nothing to press: only the person's own acceptance lifts it. -->
+            <div
+              v-if="row.key === 'block' && frozenRow !== null"
+              class="d-flex flex-wrap align-items-start gap-3 py-2"
+            >
+              <div class="flex-grow-1" data-id="hilos-user-frozen-state">
+                <h3 class="h6 mb-1">
+                  {{ frozenRow.title }}
+                  <span class="badge text-bg-secondary">{{
+                    frozenRow.state ? lifecycleCopy.yes : lifecycleCopy.no
+                  }}</span>
+                </h3>
+                <p
+                  v-if="frozenRow.hint !== null"
+                  class="small text-body-secondary mb-0"
+                >
+                  {{ frozenRow.hint }}
+                </p>
+                <ul
+                  v-if="frozenRow.lapsed.length > 0"
+                  class="list-unstyled small text-body-secondary mb-0"
+                  data-id="hilos-user-frozen-lapsed"
+                >
+                  <li v-for="line in frozenRow.lapsed" :key="line">
+                    {{ line }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </template>
         </div>
       </section>
       <section

@@ -445,6 +445,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
     ];
 
+    /**
+     * The one command of this library a frozen person still runs (HIL-945): calling off their own
+     * deletion. Closing it would build a trap - to keep the account one would first have to accept
+     * the terms of an account one is leaving.
+     */
+    public const array FROZEN_EXIT_ACTIONS = [
+        HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
+    ];
+
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
     private const string SECOND_FACTOR_RESET_SWEEP_RULE = 'hilos_second_factor_reset_sweep';
 

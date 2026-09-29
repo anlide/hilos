@@ -94,8 +94,11 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
      * @var list<string> Framework tables this case needs. `hilos_setting` is the one framework
      *     collection loaded eagerly, so mounting the context reaches for it; `hilos_second_factor`
      *     is asked by every sign-in the holder grants (HIL-494), and has to be there to be empty.
+     *     The people and their deletion requests join for the same reason (HIL-945): every state
+     *     frame the holder sends carries the standing of the person the session acts as, composed
+     *     from the person's block and their scheduled deletion.
      */
-    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_second_factor'];
+    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_second_factor', 'hilos_user', 'hilos_account_deletion'];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;

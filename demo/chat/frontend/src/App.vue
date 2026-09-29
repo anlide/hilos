@@ -25,6 +25,7 @@ import {
   AUTH_OAUTH_CALLBACK_PATH,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  hilosSessionAvatarMark,
 } from '@hilos/core'
 import type { AuthGate } from '@hilos/core'
 import type { Component } from 'vue'
@@ -179,6 +180,9 @@ const isSecondFactorCancelRoute = computed(
 const userName = useSignal(currentUserName)
 const isAdmin = useSignal(currentUserIsAdmin)
 const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
+// The standing mark by the avatar (HIL-945): a takeover, or the session's own
+// scheduled deletion, in the color of the strip that says it in words.
+const avatarMark = useSignal(hilosSessionAvatarMark)
 </script>
 
 <template>
@@ -193,7 +197,7 @@ const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
         data-id="nav-profile"
         :title="userName"
       >
-        <HilosAvatar :name="userName" />
+        <HilosAvatar :name="userName" :mark="avatarMark" />
         <span class="visually-hidden">{{ userName }}</span>
       </HilosLink>
     </template>

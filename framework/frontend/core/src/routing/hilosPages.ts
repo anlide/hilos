@@ -244,7 +244,9 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}/{anchor?}',
     admin: true,
   },
-  [HilosPages.USERS]: { path: '/hilos/users', admin: true },
+  // The optional tail narrows the list to the people past one legal document's
+  // deadline (HIL-945): the legal section's root links its count here.
+  [HilosPages.USERS]: { path: '/hilos/users/{lapsed?}', admin: true },
   [HilosPages.USER]: { path: '/hilos/user/{userId}', admin: true },
   [HilosPages.MCP_SKILLS]: { path: '/hilos/mcp-skills', admin: true },
   [HilosPages.MCP_SKILLS_MCP]: {

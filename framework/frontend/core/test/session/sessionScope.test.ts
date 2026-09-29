@@ -14,6 +14,7 @@ import {
   sessionEnabledAuthMethods,
   sessionPasskeyAllowsUnproven,
   sessionAccountBlocked,
+  sessionAccountStanding,
   sessionSecondFactorPolicy,
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
@@ -431,6 +432,68 @@ describe('sessionScope', () => {
     // Anything that is not a node reads as no card.
     connection.emitHandshakeResponse({ data: { accountBlocked: 'blocked' } })
     expect(card.get()).toBeNull()
+  })
+
+  it('reads the standing every handshake writes, on the local clock (HIL-945)', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(LOCAL_NOW)
+    try {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      const standing = sessionAccountStanding(scopes)
+
+      // Nothing said yet, and an anonymous session: no standing.
+      expect(standing.get()).toBeNull()
+      connection.emitHandshakeResponse({ data: { accountStanding: null } })
+      expect(standing.get()).toBeNull()
+
+      connection.emitHandshakeResponse({
+        data: {
+          serverTimeMs: LOCAL_NOW + SERVER_DRIFT_MS,
+          accountStanding: {
+            shown: 'frozen',
+            blocked: false,
+            frozen: true,
+            deletionEffectiveAt: LOCAL_NOW + SERVER_DRIFT_MS + 86_400_000,
+            lapsed: [
+              { document: 'terms', deadline: '2026-09-01' },
+              // A document this client does not know drops out alone.
+              { document: 'cookies', deadline: '2026-09-01' },
+              { document: 'privacy', deadline: null },
+            ],
+          },
+        },
+      })
+      expect(standing.get()).toEqual({
+        shown: 'frozen',
+        blocked: false,
+        frozen: true,
+        deletionEffectiveAt: LOCAL_NOW + 86_400_000,
+        lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+      })
+
+      // A hidden mark, or any shape that is not a standing, reads as none.
+      connection.emitHandshakeResponse({
+        data: { accountStanding: { _hidden: true } },
+      })
+      expect(standing.get()).toBeNull()
+      connection.emitHandshakeResponse({
+        data: {
+          accountStanding: {
+            shown: 'suspended',
+            blocked: false,
+            frozen: false,
+            deletionEffectiveAt: null,
+            lapsed: [],
+          },
+        },
+      })
+      expect(standing.get()).toBeNull()
+    } finally {
+      applyServerTime(Date.now())
+      vi.useRealTimers()
+    }
   })
 
   it('offers only the ready methods and keeps the unready ones enabled (HIL-1080)', () => {

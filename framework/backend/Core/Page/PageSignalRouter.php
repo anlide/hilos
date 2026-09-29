@@ -28,10 +28,12 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\ActionAccountFrozenException;
 use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\ActionViewModeException;
+use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
@@ -75,6 +77,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -973,6 +976,7 @@ class PageSignalRouter
      * @param ActionPayloadDTO $dto Parsed action payload
      * @param ?string $requestId Client-minted request id, or null for an untracked action
      * @throws ActionForbiddenException When the page's ADMIN level denies the acting user
+     * @throws ActionAccountFrozenException When a frozen person asks for an action that is not an exit
      * @throws ActionUnauthorizedException When the page or the action requires a session the caller has not got
      * @throws ActionViewModeException When a viewer of the admin view mode asks for an action the page did not declare reading
      * @throws FramePopOrderException When the handler leaves the execution frame stack imbalanced
@@ -2012,10 +2016,18 @@ class PageSignalRouter
      * model. The connection→user resolution stays project-owned through the
      * browser context seam.
      *
+     * The same list is what a freeze closes (HIL-945): a frozen person is refused every listed
+     * action with the freeze's own 403, unless the owner declared it an exit
+     * ({@see ActionHostInterface::frozenExitActions()}) or it belongs to a page open while
+     * frozen. That is how a page everyone may read still closes its writes to a frozen
+     * person - the chat's message, say, is closed by this list and by nothing else.
+     *
      * @param ActionHostInterface $host Owner the action was routed to
      * @param string $action Dispatched action name
      * @param string $acceptKey Acting connection accept key
      * @throws ActionUnauthorizedException When a guarded action is invoked by an anonymous session
+     * @throws ActionAccountFrozenException When a guarded action that is not an exit is invoked by a frozen person
+     * @throws HilosException When the person's standing cannot be read
      */
     private function assertActionAuthorized(ActionHostInterface $host, string $action, string $acceptKey): void
     {
@@ -2023,8 +2035,17 @@ class PageSignalRouter
             return;
         }
 
-        if (Hilos::$browser?->resolveActionUserId($acceptKey) === null) {
+        $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
+        if ($userId === null) {
             throw new ActionUnauthorizedException();
+        }
+
+        if (
+            !in_array($action, $host->frozenExitActions(), true)
+            && !($host instanceof AbstractPage && $host::OPEN_WHILE_FROZEN)
+            && AccountStandingResolver::isFrozen($userId)
+        ) {
+            throw new ActionAccountFrozenException();
         }
     }
 
@@ -2044,9 +2065,10 @@ class PageSignalRouter
      * @param string $acceptKey Acting connection accept key
      * @param string $action Name of the action about to run
      * @throws ActionUnauthorizedException When the level requires a user and the acting session is anonymous
+     * @throws ActionAccountFrozenException When the acting person is frozen and the page is not open while frozen
      * @throws ActionForbiddenException When the level is ADMIN and the acting user lacks the admin privilege
      * @throws ActionViewModeException When a viewer of the admin view mode asks for an action the page did not declare reading
-     * @throws HilosException When the administrator lookup fails with the admin view mode off
+     * @throws HilosException When the administrator lookup fails with the admin view mode off, or the person's standing cannot be read
      */
     private function assertPageAccessLevel(AbstractPage $page, string $acceptKey, string $action): void
     {
@@ -2054,6 +2076,8 @@ class PageSignalRouter
             PageAccessGate::assertAction($page::class, $acceptKey, $action);
         } catch (PageUnauthorizedException $e) {
             throw new ActionUnauthorizedException(previous: $e);
+        } catch (PageAccountFrozenException $e) {
+            throw new ActionAccountFrozenException(previous: $e);
         } catch (PageForbiddenException $e) {
             throw new ActionForbiddenException(previous: $e);
         }

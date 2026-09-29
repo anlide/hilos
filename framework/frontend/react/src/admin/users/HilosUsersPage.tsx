@@ -5,9 +5,12 @@
 // markup, so a project mounts it by passing its HilosUsersContext. The framework
 // owns every cell except the trailing actions cell, which a project fills through
 // the `rowActions` render prop (e.g. a link to the detail page) — the framework's
-// own row action, the takeover, is drawn ahead of it. Bootstrap classes only
-// (styling-rules.md).
-import { useEffect, useMemo, useState } from 'react'
+// own row action, the takeover, is drawn ahead of it. The bar's "Past deadline
+// on" filter narrows the list to the people past one legal document's deadline
+// and lives in the address too (`/hilos/users/terms`, HIL-945): the legal
+// section's root links its count there, and changing the filter rewrites the
+// address. Bootstrap classes only (styling-rules.md).
+import { useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   HILOS_TABLE_ACTIONS_KEY,
@@ -23,6 +26,7 @@ import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
+import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -41,7 +45,14 @@ export interface HilosUsersPageProps {
  * @param props The project context and the optional trailing-actions renderer.
  */
 export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
-  const users = useMemo(() => createHilosUsersTable(context), [context])
+  // The lapsed filter is read from the address the page opened on and written
+  // back as it changes; mounted without a navigator, the list opens whole and
+  // leaves the address alone.
+  const router = useContext(HilosRouterContext)
+  const users = useMemo(
+    () => createHilosUsersTable(context, router ?? undefined),
+    [context, router],
+  )
 
   // Bind the server-windowed table to the connection on mount, request the first
   // window, and unbind on unmount.

@@ -15,6 +15,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
@@ -25,17 +26,20 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeActionDTO;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\DTO\AccountStandingStateSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\HilosUserAdminSetActionDTO;
 use Hilos\Users\DTO\HilosUserBlockSetActionDTO;
@@ -67,6 +71,9 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
 
     public const string ACCOUNT_DELETION_GRACE_DAYS = 'accountDeletionGraceDays';
 
+    /** Page data key of the standing of the person the card shows (HIL-945): the one verdict the card reads. */
+    public const string ACCOUNT_STANDING = 'accountStanding';
+
     public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
@@ -86,6 +93,22 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => HandoverAnswerSignalData::class,
         ],
     ];
+
+    /**
+     * The standing frame one subscriber of the card is sent, past the view mode's bridge, or null when it is sent nothing.
+     *
+     * The card's own road for what {@see AccountStandingAudience} sends between page answers: the
+     * gate is asked for this connection now, and a viewer gets the frame hidden
+     * ({@see AbstractPage::frameForViewer()}).
+     *
+     * @param string $acceptKey Connection the frame goes to
+     * @param AccountStandingStateSignalData $data Frame as an admin receives it
+     * @return ?SignalDataInterface The frame, its hidden copy for a viewer, or null when the gate refuses the connection now
+     */
+    public static function standingFrame(string $acceptKey, AccountStandingStateSignalData $data): ?SignalDataInterface
+    {
+        return static::frameForViewer($acceptKey, $data, AccountStandingStateSignalData::wireFields());
+    }
 
     /**
      * Hands account lifecycle actions to their owning libraries.
@@ -209,6 +232,16 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     }
 
     /**
+     * Lets go of the connection's place among the cards kept in step with their person's standing.
+     *
+     * @param string $acceptKey WebSocket accept key
+     */
+    public function onUnsubscribe(string $acceptKey): void
+    {
+        AccountStandingAudience::removeSubscriber($acceptKey);
+    }
+
+    /**
      * Sends an untracked rename's outcome as the two named acks the card has always listened
      * for, the refusal and the success both - a tracked one is answered on its request id instead.
      *
@@ -235,21 +268,35 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     }
 
     /**
-     * Carries the deletion confirmation's grace period in the subscription's first answer.
+     * Carries the deletion confirmation's grace period and the person's standing in the subscription's first answer.
+     *
+     * The standing is the one verdict the card reads its block, freeze and scheduled deletion from
+     * (HIL-945); later changes arrive as {@see HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE}.
+     * A viewer of the admin view mode is shown it hidden: the page declares no field of its data
+     * open, and the people's fields are opened by HIL-1254.
      *
      * @param string $acceptKey Subscribing connection (unused)
-     * @param PageRouteParams $params Route params (unused)
-     * @return ?PagePayload Grace period snapshot, supplemented by the page's identity
-     * @throws DatabaseException When the stored setting cannot be read
+     * @param PageRouteParams $params Route params naming the person
+     * @return ?PagePayload Grace period and standing snapshot, supplemented by the page's identity
+     * @throws MissingPageRouteParamException When `userId` is absent
+     * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
+     * @throws DatabaseException When the stored setting or the person's standing cannot be read
      * @throws SettingException When the setting catalog or value is invalid
+     * @throws HilosException When the person's standing cannot be read
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
-        return new PagePayload(data: [self::ACCOUNT_DELETION_GRACE_DAYS => AccountDeletionSettings::graceDays()]);
+        $userId = HilosUserPageSubscribeParams::fromPageRouteParams($params)->userId;
+
+        return new PagePayload(data: [
+            self::ACCOUNT_DELETION_GRACE_DAYS => AccountDeletionSettings::graceDays(),
+            self::ACCOUNT_STANDING => AccountStandingResolver::of($userId)->toArray(),
+        ]);
     }
 
     /**
-     * Parses route params and runs the typed hook, once the client has been answered.
+     * Parses route params, keeps the card in step with its person's standing, and runs the typed
+     * hook, once the client has been answered.
      *
      * Final: subclasses customize subscribe behavior through
      * {@see self::onHilosUserSubscribe()}, not this method.
@@ -262,10 +309,9 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      */
     final protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {
-        $this->onHilosUserSubscribe(
-            $acceptKey,
-            HilosUserPageSubscribeParams::fromPageRouteParams($params),
-        );
+        $parsed = HilosUserPageSubscribeParams::fromPageRouteParams($params);
+        AccountStandingAudience::addSubscriber($acceptKey, $parsed->userId);
+        $this->onHilosUserSubscribe($acceptKey, $parsed);
     }
 
     /**

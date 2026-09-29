@@ -21,6 +21,7 @@ import {
   AUTH_SECOND_FACTOR_CANCEL_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
   HilosPages,
+  hilosSessionAvatarMark,
   type AuthGate,
 } from "@hilos/core";
 import { useContext } from "react";
@@ -139,6 +140,9 @@ export interface AppProps {
 export default function App({ authGate }: AppProps) {
   const isAdmin = useSignal(currentUserIsAdmin);
   const userName = useSignal(currentUserName);
+  // The standing mark by the avatar (HIL-945): a takeover, or the session's own
+  // scheduled deletion, in the color of the strip that says it in words.
+  const avatarMark = useSignal(hilosSessionAvatarMark);
 
   // The magic-link confirm route (HIL-283) and the OAuth callback route
   // (HIL-281). Neither carries a page of its own — the router falls both back to
@@ -165,7 +169,7 @@ export default function App({ authGate }: AppProps) {
           <>
             <HilosNotificationBell connection={connection} />
             <span className="small" data-id="nav-profile-name" title={userName}>
-              <HilosAvatar name={userName} />
+              <HilosAvatar name={userName} mark={avatarMark} />
               <span className="visually-hidden">{userName}</span>
             </span>
           </>

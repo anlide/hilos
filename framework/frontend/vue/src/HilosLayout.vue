@@ -6,9 +6,11 @@ the SDK owns (core-and-connection.md), and, last, its tracked sign-out control
 while a person stands behind the session; a full-width banner region below the nav
 carrying, in this order, the framework's own protected-mode strip, its
 impersonation strip (drawn from the session, with a Stop that waits for the
-server's answer), and the app-wide status strip a project fills (e.g. a trial
-notice) through the #banner slot — one live region for all, empty and
-zero-height while none is up — the
+server's answer, colored by the standing of the person taken over), its account
+deletion strip (the session's own scheduled deletion, with a "Keep my account"
+that waits the same way, HIL-945), and the app-wide status strip a project
+fills (e.g. a trial notice) through the #banner slot — one live region for all,
+empty and zero-height while none is up — the
 routed page content in the default slot, and a footer of the public framework pages
 (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100): the
 nav, banner, and footer never scroll (flex-shrink-0) and the main region grows
@@ -33,13 +35,18 @@ like Bootstrap. -->
 <script setup lang="ts">
 import type { ConnectionState, HilosConnection } from '@hilos/core'
 import {
+  ACCOUNT_DELETION_TICK_MS,
+  ACCOUNT_STANDING_STRIP_COPY,
+  formatHilosDeletionStrip,
   HILOS_FOOTER_LINKS,
   HILOS_PAGE_ROUTES,
   HilosPages,
   hilosAccountBlocked,
+  hilosDeletionStrip,
   hilosImpersonation,
   hilosSignedIn,
   IMPERSONATION_STRIP_COPY,
+  keepMyAccount,
   protectedModeBannerCopy,
   RECONNECT_DRAGGING_COPY,
   rtStalenessLabel,
@@ -47,7 +54,7 @@ import {
   SIGN_OUT_COPY,
   stopImpersonation,
 } from '@hilos/core'
-import { computed, inject, watch } from 'vue'
+import { computed, inject, onUnmounted, ref, watch } from 'vue'
 
 import HilosAccountBlocked from './HilosAccountBlocked.vue'
 import HilosLink from './HilosLink.vue'
@@ -127,6 +134,45 @@ const onImpersonationStop = (): void => {
     return
   }
   void runImpersonationStop(stopImpersonation())
+}
+
+// The third framework strip (HIL-945): the session's own account is scheduled
+// for deletion, so the person is told when, and how long there is left to think,
+// on every page — the product still works, and the state lives beside the work.
+// Not under a takeover: the shell then speaks about the person taken over, and
+// the core leaves the strip down. "Keep my account" is the impersonation strip's
+// Stop once more — busy at once, a refusal is the error toast, and success needs
+// no toast: the strip leaves with the handshake that no longer carries the
+// deletion. The days left are counted again once a minute while it stands.
+const deletionStrip = useSignal(hilosDeletionStrip)
+const deletionNow = ref(Date.now())
+let deletionTick: ReturnType<typeof setInterval> | undefined
+watch(
+  () => deletionStrip.value !== null,
+  (standing) => {
+    clearInterval(deletionTick)
+    deletionTick = undefined
+    deletionNow.value = Date.now()
+    if (standing) {
+      deletionTick = setInterval(() => {
+        deletionNow.value = Date.now()
+      }, ACCOUNT_DELETION_TICK_MS)
+    }
+  },
+  { immediate: true },
+)
+onUnmounted(() => clearInterval(deletionTick))
+const deletionStripText = computed(() =>
+  deletionStrip.value === null
+    ? ''
+    : formatHilosDeletionStrip(deletionStrip.value, deletionNow.value),
+)
+const { busy: keepAccountBusy, run: runKeepAccount } = useTrackedAction()
+const onKeepAccount = (): void => {
+  if (keepAccountBusy.value) {
+    return
+  }
+  void runKeepAccount(keepMyAccount())
 }
 
 const signedIn = useSignal(hilosSignedIn)
@@ -345,7 +391,8 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       </div>
       <div
         v-if="impersonation !== null && !underMaintenance"
-        class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+        class="alert border-0 rounded-0 mb-0 py-2"
+        :class="`alert-${impersonation.tone}`"
         data-id="impersonation-banner"
       >
         <div
@@ -363,6 +410,28 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             @click="onImpersonationStop"
           >
             {{ IMPERSONATION_STRIP_COPY.stop }}
+          </LoadingButton>
+        </div>
+      </div>
+      <div
+        v-if="deletionStrip !== null && !underMaintenance"
+        class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+        data-id="account-deletion-strip"
+      >
+        <div
+          class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
+        >
+          <span data-id="account-deletion-strip-text">
+            <i class="bi bi-trash me-1" aria-hidden="true"></i>
+            {{ deletionStripText }}
+          </span>
+          <LoadingButton
+            class="btn-sm btn-outline-dark"
+            data-id="account-deletion-strip-keep"
+            :loading="keepAccountBusy"
+            @click="onKeepAccount"
+          >
+            {{ ACCOUNT_STANDING_STRIP_COPY.keep }}
           </LoadingButton>
         </div>
       </div>

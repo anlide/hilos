@@ -23,6 +23,7 @@ import {
   AUTH_SECOND_FACTOR_CANCEL_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
   HilosPages,
+  hilosSessionAvatarMark,
 } from "@hilos/core";
 
 import { AuthSurface } from "./auth/authSurface";
@@ -81,7 +82,7 @@ import { Users } from "./views/hilos/users/users";
       @if (userName()) {
         <hilos-notification-bell [connection]="connection" />
         <span class="small" data-id="nav-profile-name" [title]="userName()">
-          <hilos-avatar [name]="userName()" />
+          <hilos-avatar [name]="userName()" [mark]="avatarMark()" />
           <span class="visually-hidden">{{ userName() }}</span>
         </span>
       } @else {
@@ -120,6 +121,10 @@ export class App {
   protected readonly isAdmin = hilosSignal(currentUserIsAdmin);
 
   protected readonly userName = hilosSignal(currentUserName);
+
+  // The standing mark by the avatar (HIL-945): a takeover, or the session's own
+  // scheduled deletion, in the color of the strip that says it in words.
+  protected readonly avatarMark = hilosSignal(hilosSessionAvatarMark);
 
   /**
    * The application's auth gate. Injected and not taken as an input: the root

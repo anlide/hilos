@@ -70,6 +70,7 @@ function userContext(
   removeCandidate: () => void
   answerMerge: (reason?: string) => void
   failRename: () => void
+  standingFrame: (data: Record<string, unknown>) => void
   sent: Array<{ action: string; data: unknown; requestId?: string }>
 } {
   const scopes = new ScopeManager()
@@ -222,6 +223,13 @@ function userContext(
     },
     failRename(): void {
       emit('unknownSignal', { type: 'hilos_user_update_fail' })
+    },
+    standingFrame(data: Record<string, unknown>): void {
+      emit('projectSignal', {
+        kind: 'project',
+        type: 'hilos_account_standing_state',
+        data,
+      })
     },
     sent,
   }
@@ -750,5 +758,150 @@ describe('HilosUserPage lifecycle', () => {
       resolve({ message: 'Account blocked. Sessions ended: 1' })
     })
     expect(find('hilos-user-lifecycle-confirm')).toBeNull()
+  })
+})
+
+describe('HilosUserPage standing (HIL-945)', () => {
+  /**
+   * A standing as the wire carries it.
+   *
+   * @param facts The facts that differ from a plain account.
+   */
+  function standing(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      shown: 'none',
+      blocked: false,
+      frozen: false,
+      deletionEffectiveAt: null,
+      lapsed: [],
+      ...facts,
+    }
+  }
+
+  it('shows one badge for the standing shown and the freeze as a row without a control', async () => {
+    const { context, standingFrame } = userContext()
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    const settle = async () => {
+      await nextTick()
+      await flushPromises()
+    }
+    const badge = () => modalEl('user-standing-badge')
+
+    // No verdict yet: no badge and no freeze row.
+    await settle()
+    expect(badge()).toBeNull()
+    expect(modalEl('hilos-user-frozen-state')).toBeNull()
+
+    context.scopes.page()?.data.set(
+      'accountStanding',
+      standing({
+        shown: 'frozen',
+        frozen: true,
+        lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+      }),
+    )
+    await settle()
+    expect(badge()?.textContent?.trim()).toBe('Frozen')
+    expect(badge()?.classList.contains('text-bg-info')).toBe(true)
+    expect(badge()?.querySelector('.bi-snow')).not.toBeNull()
+    expect(modalEl('hilos-user-frozen-state')?.textContent).toContain('Yes')
+    expect(modalEl('hilos-user-frozen-lapsed')?.textContent).toContain(
+      'Terms of use — deadline passed 1 September 2026',
+    )
+    expect(modalEl('hilos-user-frozen-open')).toBeNull()
+    const states = Array.from(
+      document.querySelectorAll(
+        '[data-id="hilos-user-access"] [data-id$="-state"]',
+      ),
+    ).map((node) => node.getAttribute('data-id'))
+    expect(states).toEqual([
+      'hilos-user-block-state',
+      'hilos-user-frozen-state',
+      'hilos-user-deletion-state',
+    ])
+
+    // A live frame about the person moves the badge and the rows together.
+    standingFrame({
+      userId: 1,
+      accountStanding: standing({ shown: 'blocked', blocked: true }),
+    })
+    await settle()
+    expect(badge()?.textContent?.trim()).toBe('Blocked')
+    expect(badge()?.classList.contains('text-bg-danger')).toBe(true)
+    expect(modalEl('hilos-user-block-state')?.textContent).toContain('Yes')
+    expect(modalEl('hilos-user-block-open')?.textContent).toContain(
+      'Lift the block',
+    )
+    expect(modalEl('hilos-user-frozen-state')?.textContent).toContain(
+      'Not frozen',
+    )
+
+    standingFrame({
+      userId: 1,
+      accountStanding: standing({
+        lapsed: [{ document: 'privacy', deadline: '2026-09-15' }],
+      }),
+    })
+    await settle()
+    expect(badge()).toBeNull()
+    expect(modalEl('hilos-user-frozen-state')?.textContent).toContain(
+      'Past deadline — reminders only',
+    )
+    expect(modalEl('hilos-user-frozen-lapsed')?.textContent).toContain(
+      'Privacy policy — deadline passed 15 September 2026',
+    )
+
+    // Hidden from a viewer of the admin view mode: no standing to show.
+    standingFrame({
+      userId: { _hidden: true },
+      accountStanding: { _hidden: true },
+    })
+    await settle()
+    expect(badge()).toBeNull()
+    expect(modalEl('hilos-user-frozen-state')).not.toBeNull()
+    standingFrame({ userId: 1, accountStanding: { _hidden: true } })
+    await settle()
+    expect(modalEl('hilos-user-frozen-state')).toBeNull()
+  })
+
+  it('reads a scheduled deletion from the verdict', async () => {
+    const { context } = userContext()
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    const effectiveAt = Date.now() + 5 * 86_400_000
+
+    context.scopes.page()?.data.set(
+      'accountStanding',
+      standing({
+        shown: 'deletion_scheduled',
+        deletionEffectiveAt: effectiveAt,
+      }),
+    )
+    await nextTick()
+    await flushPromises()
+
+    expect(modalEl('user-standing-badge')?.textContent?.trim()).toBe(
+      'Deletion scheduled',
+    )
+    expect(
+      modalEl('user-standing-badge')?.classList.contains('text-bg-warning'),
+    ).toBe(true)
+    expect(modalEl('hilos-user-deletion-state')?.textContent).toContain(
+      '5 days left',
+    )
+    expect(modalEl('hilos-user-deletion-open')?.textContent).toContain(
+      'Cancel deletion',
+    )
   })
 })

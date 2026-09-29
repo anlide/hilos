@@ -107,6 +107,35 @@ class LegalAcceptances extends Objects
     }
 
     /**
+     * The same judgement as {@see self::heldCounts()}, named by person instead of counted.
+     *
+     * @param string $document Stored document key
+     * @param list<string> $declaredIds Revision keys in declaration order, from the catalog boundary
+     * @return array<int, string> Latest accepted declared revision per person, keyed by user id
+     * @throws DatabaseException When the query fails
+     */
+    public function heldByUser(string $document, array $declaredIds): array
+    {
+        if ($declaredIds === []) {
+            return [];
+        }
+        $cases = [];
+        foreach ($declaredIds as $index => $id) {
+            $cases[] = 'WHEN ? THEN ' . ($index + 1);
+        }
+        $held = [];
+        foreach (Database::sql(
+            'SELECT user_id, MAX(CASE revision_id ' . implode(' ', $cases) . ' ELSE 0 END) AS held FROM '
+            . EntityLegalAcceptance::_table . ' WHERE document = ? GROUP BY user_id HAVING held > 0 ORDER BY user_id',
+            [...$declaredIds, $document],
+        )->rows() as $row) {
+            $held[(int) $row[EntityLegalAcceptance::user_id]] = $declaredIds[(int) $row['held'] - 1];
+        }
+
+        return $held;
+    }
+
+    /**
      * @param string $document Stored document key, including an undeclared document
      * @return array<string, int> Persisted record counts by revision, without hydrating objects
      * @throws DatabaseException When the histogram query fails

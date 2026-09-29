@@ -41,6 +41,7 @@ use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserMerges as DbCollectionUserMerges;
 use Hilos\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AdminAudience;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
@@ -485,7 +486,7 @@ abstract class HilosDbContext extends DbContext
     /**
      * Names the framework collections read from any process at all.
      *
-     * Eight, and each for its own seam. Sessions and identities answer "whose session is this",
+     * Ten, and each for its own seam. Sessions and identities answer "whose session is this",
      * which {@see SessionCarrier} asks in every process a frame arrives in - outside any agent
      * and before any page subscription, so nothing else declares them. Settings is read by seams
      * everywhere and is the one eager collection of the three, so a worker holding it unaddressed
@@ -522,6 +523,13 @@ abstract class HilosDbContext extends DbContext
      * is refused rights and a block, and left out of the administrators' circle, wherever those
      * are asked. They load by the folded account and stay inert where nobody was ever merged.
      *
+     * Deletion requests and acceptance records (HIL-945) are read by the freeze guard, which stands
+     * in whatever worker serves a page or runs an action a signed-in person asks for, and composes
+     * the person's standing out of them ({@see AccountStandingResolver}). The same process keeps
+     * that standing in memory, and a write to either table is what drops it there: undeclared, the
+     * write would reach only the worker that made it, and the guard elsewhere would go on judging
+     * by the request or the acceptance that was there before.
+     *
      * Named rather than counted: what is here is what the framework is known to read that way,
      * and a seam this list forgets shows up as a refused read rather than as a stale row.
      *
@@ -539,6 +547,8 @@ abstract class HilosDbContext extends DbContext
             self::verifierCircle,
             self::users,
             self::userMerges,
+            self::accountDeletions,
+            self::legalAcceptances,
         ];
     }
 

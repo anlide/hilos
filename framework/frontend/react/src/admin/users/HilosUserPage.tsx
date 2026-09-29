@@ -9,13 +9,19 @@
 // says what happened elsewhere on one line of room held in advance
 // (HilosEditNotice). Success is state-driven (the committed name reaches the
 // name it sent over the live table, closing the modal); a failure surfaces from
-// the backend fail ack inside the modal. Bootstrap classes only
-// (styling-rules.md).
-import { useEffect, useMemo, useState } from 'react'
+// the backend fail ack inside the modal. The person's standing is one verdict
+// (createHilosUserStanding, HIL-945): the badge beside the presence in the
+// header shows the standing shown, and the access section draws the block, the
+// freeze — a fact with no control — and the deletion from the same verdict.
+// Bootstrap classes only (styling-rules.md).
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
   createHilosUserLifecycle,
+  createHilosUserStanding,
   HILOS_USER_LIFECYCLE_COPY,
+  hilosStandingBadge,
+  hilosUserFrozenRow,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
@@ -102,16 +108,30 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     useState<HilosUserLifecyclePrompt | null>(null)
   const graceDays = useSignal(lifecycle.graceDays)
   const lifecycleUserId = useSignal(lifecycle.currentUserId)
+  const userStanding = useMemo(
+    () => createHilosUserStanding(context),
+    [context],
+  )
+  const standing = useSignal(userStanding.standing)
+  useEffect(() => {
+    userStanding.start()
+
+    return () => userStanding.dispose()
+  }, [userStanding])
+  const standingBadge =
+    standing === null ? null : hilosStandingBadge(standing.shown)
+  const frozenRow = hilosUserFrozenRow(standing)
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now())
   useEffect(() => {
     setLifecycleNow(Date.now())
-  }, [detail?.deletionEffectiveAt])
+  }, [detail?.deletionEffectiveAt, standing?.deletionEffectiveAt])
   const lifecycleCopy = HILOS_USER_LIFECYCLE_COPY
   const lifecycleSections = hilosUserLifecycleSections(
     detail,
     lifecycleUserId,
     graceDays,
     lifecycleNow,
+    standing,
   )
   useEffect(() => {
     const tick = setInterval(
@@ -390,6 +410,18 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 {detail.name}
               </span>
               <span className="badge text-bg-secondary">{detail.presence}</span>
+              {standingBadge !== null && (
+                <span
+                  className={`badge text-bg-${standingBadge.tone}`}
+                  data-id="user-standing-badge"
+                >
+                  <i
+                    className={`bi ${standingBadge.icon} me-1`}
+                    aria-hidden="true"
+                  />
+                  {standingBadge.label}
+                </span>
+              )}
               <button
                 type="button"
                 className="btn btn-outline-primary btn-sm ms-auto"
@@ -429,48 +461,82 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               <div className="card-body">
                 <h2 className="h5">{section.title}</h2>
                 {section.rows.map((row) => (
-                  <div
-                    key={row.key}
-                    className="d-flex flex-wrap align-items-start gap-3 py-2"
-                  >
-                    <div
-                      className="flex-grow-1"
-                      data-id={`hilos-user-${row.key}-state`}
-                    >
-                      <h3 className="h6 mb-1">
-                        {row.title}{' '}
-                        <span className="badge text-bg-secondary">
-                          {row.state ? lifecycleCopy.yes : lifecycleCopy.no}
-                        </span>
-                      </h3>
-                      <p className="small text-body-secondary mb-0">
-                        {row.hint}
-                      </p>
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        className={`btn btn-sm ${lifecycleCopy.confirmations[row.choice].danger ? 'btn-outline-danger' : 'btn-primary'}`}
-                        disabled={row.disabled}
-                        aria-describedby={`hilos-user-${row.key}-reason`}
-                        data-id={`hilos-user-${row.key}-open`}
-                        onClick={() => openLifecycle(row.choice)}
+                  <Fragment key={row.key}>
+                    <div className="d-flex flex-wrap align-items-start gap-3 py-2">
+                      <div
+                        className="flex-grow-1"
+                        data-id={`hilos-user-${row.key}-state`}
                       >
-                        {lifecycleCopy[row.choice]}
-                      </button>
-                      <div className="hilos-stack small text-body-secondary mt-1">
-                        <span className="invisible" aria-hidden="true">
-                          {row.reasonSpace}
-                        </span>
-                        <span
-                          id={`hilos-user-${row.key}-reason`}
-                          data-id={`hilos-user-${row.key}-reason`}
+                        <h3 className="h6 mb-1">
+                          {row.title}{' '}
+                          <span className="badge text-bg-secondary">
+                            {row.state ? lifecycleCopy.yes : lifecycleCopy.no}
+                          </span>
+                        </h3>
+                        <p className="small text-body-secondary mb-0">
+                          {row.hint}
+                        </p>
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${lifecycleCopy.confirmations[row.choice].danger ? 'btn-outline-danger' : 'btn-primary'}`}
+                          disabled={row.disabled}
+                          aria-describedby={`hilos-user-${row.key}-reason`}
+                          data-id={`hilos-user-${row.key}-open`}
+                          onClick={() => openLifecycle(row.choice)}
                         >
-                          {row.reason}
-                        </span>
+                          {lifecycleCopy[row.choice]}
+                        </button>
+                        <div className="hilos-stack small text-body-secondary mt-1">
+                          <span className="invisible" aria-hidden="true">
+                            {row.reasonSpace}
+                          </span>
+                          <span
+                            id={`hilos-user-${row.key}-reason`}
+                            data-id={`hilos-user-${row.key}-reason`}
+                          >
+                            {row.reason}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                    {/* The freeze stands between the block and the deletion,
+                    and offers nothing to press: only the person's own
+                    acceptance lifts it. */}
+                    {row.key === 'block' && frozenRow !== null && (
+                      <div className="d-flex flex-wrap align-items-start gap-3 py-2">
+                        <div
+                          className="flex-grow-1"
+                          data-id="hilos-user-frozen-state"
+                        >
+                          <h3 className="h6 mb-1">
+                            {frozenRow.title}{' '}
+                            <span className="badge text-bg-secondary">
+                              {frozenRow.state
+                                ? lifecycleCopy.yes
+                                : lifecycleCopy.no}
+                            </span>
+                          </h3>
+                          {frozenRow.hint !== null && (
+                            <p className="small text-body-secondary mb-0">
+                              {frozenRow.hint}
+                            </p>
+                          )}
+                          {frozenRow.lapsed.length > 0 && (
+                            <ul
+                              className="list-unstyled small text-body-secondary mb-0"
+                              data-id="hilos-user-frozen-lapsed"
+                            >
+                              {frozenRow.lapsed.map((line) => (
+                                <li key={line}>{line}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </Fragment>
                 ))}
               </div>
             </section>

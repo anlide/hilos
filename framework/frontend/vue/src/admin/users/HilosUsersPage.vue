@@ -5,8 +5,11 @@ headless's (createHilosUsersTable / HilosUserRow); this view owns only the marku
 so a project mounts it by passing its HilosUsersContext. The framework owns every
 cell except the trailing actions cell, which a project fills through the
 `#row-actions` slot (e.g. a link to the detail page) — the framework's own row
-action, the takeover, is drawn ahead of that slot. Bootstrap classes only
-(styling-rules.md). -->
+action, the takeover, is drawn ahead of that slot. The bar's "Past deadline on"
+filter narrows the list to the people past one legal document's deadline and
+lives in the address too (`/hilos/users/terms`, HIL-945): the legal section's
+root links its count there, and changing the filter rewrites the address.
+Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosImpersonate,
@@ -15,12 +18,13 @@ import {
   type HilosUserRow,
   type HilosUsersContext,
 } from '@hilos/core'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
+import { hilosRouterKey } from '../../hilosRouterKey.js'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -35,7 +39,11 @@ defineSlots<{
   'row-actions'(props: { row: HilosUserRow }): unknown
 }>()
 
-const users = createHilosUsersTable(props.context)
+// The lapsed filter is read from the address the page opened on and written
+// back as it changes; mounted without a navigator, the list opens whole and
+// leaves the address alone.
+const router = inject(hilosRouterKey, undefined)
+const users = createHilosUsersTable(props.context, router)
 const usersTable = users.controller
 
 // Bind the server-windowed table to the connection on mount, request the first

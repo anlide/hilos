@@ -14,6 +14,10 @@
 // two counters would mint the same ids and mix up the replies. The server
 // answers Stop off the session state frame, behind the identity it announces,
 // so by the time the reply settles the strip has already gone by itself.
+//
+// The strip's color follows the person taken over (HIL-945): red while they are
+// blocked, blue while they are frozen, yellow otherwise. The color is about the
+// person whose name is in the strip, not about the takeover.
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -25,7 +29,9 @@ import {
   type ReadonlySignal,
   subscribeSignal,
 } from '../state/signal.js'
+import { hilosStandingTone, type HilosStandingTone } from './accountStanding.js'
 import {
+  sessionAccountStanding,
   sessionImpersonating,
   sessionUserName,
   type SessionScopeOptions,
@@ -44,6 +50,8 @@ export const IMPERSONATION_STRIP_COPY = {
 export interface ImpersonationStrip {
   /** The user the session is acting as. */
   readonly userName: string
+  /** The strip's color: the tone of the standing shown for the user taken over (HIL-945). */
+  readonly tone: HilosStandingTone
 }
 
 const impersonation = createSignal<ImpersonationStrip | null>(null)
@@ -86,8 +94,14 @@ export function bindImpersonation(
 ): () => void {
   const impersonating = sessionImpersonating(scopes, options)
   const userName = sessionUserName(scopes, options)
+  const standing = sessionAccountStanding(scopes)
   const strip = computedSignal<ImpersonationStrip | null>(() =>
-    impersonating.get() ? { userName: userName.get() } : null,
+    impersonating.get()
+      ? {
+          userName: userName.get(),
+          tone: hilosStandingTone(standing.get()?.shown ?? 'none'),
+        }
+      : null,
   )
   boundActions = actions
   impersonation.set(strip.get())

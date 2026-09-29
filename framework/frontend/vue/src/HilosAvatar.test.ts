@@ -29,6 +29,49 @@ describe('HilosAvatar', () => {
     expect(wrapper.classes()).toContain(`hilos-avatar-${size}`)
   })
 
+  it('draws no mark by default', () => {
+    const wrapper = mount(HilosAvatar, { props: { name: 'Ada' } })
+
+    expect(wrapper.find('[data-id="avatar-mark"]').exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('border')
+  })
+
+  it.each([
+    [{ tone: 'warning', icon: 'bi-trash' }],
+    [{ tone: 'danger', icon: 'bi-people-fill' }],
+    [{ tone: 'info', icon: 'bi-people-fill' }],
+  ] as const)(
+    'rings the circle and puts the icon in its corner for %j (HIL-945)',
+    async (mark) => {
+      const wrapper = mount(HilosAvatar, { props: { name: 'Ada', mark } })
+
+      expect(wrapper.classes()).toEqual(
+        expect.arrayContaining([
+          'position-relative',
+          'border',
+          'border-2',
+          `border-${mark.tone}`,
+        ]),
+      )
+      const icon = wrapper.find('[data-id="avatar-mark"]')
+      expect(icon.classes()).toEqual(
+        expect.arrayContaining([
+          'bi',
+          mark.icon,
+          'position-absolute',
+          'hilos-avatar-mark',
+          `text-${mark.tone}-emphasis`,
+        ]),
+      )
+      expect(wrapper.text()).toBe('A')
+      expect(wrapper.attributes('aria-hidden')).toBe('true')
+
+      await wrapper.setProps({ mark: null })
+      expect(wrapper.find('[data-id="avatar-mark"]').exists()).toBe(false)
+      expect(wrapper.classes()).not.toContain(`border-${mark.tone}`)
+    },
+  )
+
   it('updates the initials and fallback when the name changes', async () => {
     const wrapper = mount(HilosAvatar, { props: { name: 'Alexander Baranov' } })
 

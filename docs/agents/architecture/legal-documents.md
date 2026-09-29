@@ -41,7 +41,8 @@ acceptance timestamp, decides which revision is held.
 The deadline is the minimum outstanding substantial effective date. Publishing
 another revision does not extend an earlier deadline. This calculation reports
 coverage only; enforcement, re-consent, and the treatment of accounts without
-acceptances belong to their consuming flows.
+acceptances belong to their consuming flows. The enforcement — the freeze of a
+person past a deadline — is [account-standing.md](account-standing.md).
 
 ## Recording an acceptance
 
@@ -204,12 +205,15 @@ PHP needs one entry per revision rather than one per person or acceptance.
   nearest deadline is still ahead.
 - `lapsed` counts holdings whose deadline has arrived. Its label is `Frozen`
   for `legal.refusal_after_deadline=freeze`, or `Past deadline` for `remind`.
+  Above zero it links to the people list narrowed to that document,
+  `/hilos/users/{documentKey}`; zero is plain text.
 - A revision's `heldCount` counts people whose latest declared acceptance is
   that revision. For an undeclared revision it counts its records; the unique
   person/document/revision key makes that a count of people too.
 - `acceptedCount` is the number of records for the exact revision, regardless
   of later acceptances. People with no recorded acceptance are outside these
-  tallies; their enforcement belongs to HIL-945.
+  tallies, and the freeze does not reach them either (proposal P-448;
+  [account-standing.md](account-standing.md)).
 
 The four checks identify accepted revisions missing from code, substantial
 non-first revisions with zero-length windows, newer framework standard sets,
@@ -286,7 +290,9 @@ write keeps the modal and draft with its inline error. Closing follows the
 tracked settings-owner reply; the table value follows the DB source. Preview
 controls are disabled illustrations, not a second registration flow.
 
-The consent-form value is consumed by registration. Re-consent and access
-enforcement consume the refusal policy (not in
-the code yet — HIL-500 and HIL-945); this section already uses it to name the
-lapsed count. Neither setting changes a revision's text or effective date.
+The consent-form value is consumed by registration. The refusal policy is
+consumed by access enforcement, which freezes a person past a deadline under
+`freeze` ([account-standing.md](account-standing.md)), and by this section, which
+names the lapsed count with it. Re-consent — the freeze screen and its
+acceptance — consumes it too (not in the code yet — HIL-500). Neither setting
+changes a revision's text or effective date.

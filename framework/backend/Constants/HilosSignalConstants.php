@@ -95,6 +95,7 @@ use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\DTO\AccountStandingStateSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 
 /**
@@ -1291,6 +1292,16 @@ final class HilosSignalConstants
      * {deletion: {requestedAt, effectiveAt} | null}, carried by {@see AccountDeletionStateSignalData}.
      */
     public const string HILOS_ACCOUNT_DELETION_STATE = 'hilos_account_deletion_state';
+
+    /**
+     * Server → client (WS_USER): the standing of the person an admin card shows (HIL-945).
+     *
+     * Sent to each subscriber of the card /hilos/user/{userId} when that person's standing changes
+     * under the open card - a block, a scheduled or canceled deletion, an acceptance, a deadline
+     * that passed. Payload {userId, accountStanding}, the standing in the one shape it has on the
+     * session frame and in the card's page answer; carried by {@see AccountStandingStateSignalData}.
+     */
+    public const string HILOS_ACCOUNT_STANDING_STATE = 'hilos_account_standing_state';
 
     /**
      * Server → client (WS_GROUP): whole acceptance state for one person (HIL-498).

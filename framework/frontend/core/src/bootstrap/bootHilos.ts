@@ -31,6 +31,7 @@ import {
 } from '../session/sessionScope.js'
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
 import { bindAccountBlocked } from '../session/accountBlocked.js'
+import { bindAccountStanding } from '../session/accountStanding.js'
 import { bindImpersonation } from '../session/impersonation.js'
 import { bindSignOut } from '../session/signOut.js'
 import {
@@ -138,6 +139,12 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // and its Sign out runs on the application's own lifecycle. One behavior, no
   // option: a project that never blocks anybody is never sent a card.
   bindAccountBlocked(config.scopes, config.actions, config.connection)
+  // The account's standing (HIL-945) is the shell's too: the server stamps it
+  // on every handshake, the shell draws the deletion strip and the avatar mark
+  // from it, and "Keep my account" runs on the application's own lifecycle. One
+  // behavior, no option: an account with nothing standing against it draws
+  // nothing.
+  bindAccountStanding(config.scopes, config.actions, config.session)
   // The sign-out control (HIL-1063) is the shell's, drawn in every SDK while a
   // person stands behind the session, on the application's own lifecycle. One
   // behavior, no option: a project without sign-in never has a person behind

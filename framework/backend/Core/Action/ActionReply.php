@@ -10,6 +10,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Core\Page\Exception\ActionAccountFrozenException;
 use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
@@ -247,7 +248,9 @@ final class ActionReply
      * Sends the error frame of an untracked action, which has no request id to correlate.
      *
      * Carries no detail ever: the detail is read in the modal the action was sent from, and
-     * an untracked action has no correlation to find its way back to one.
+     * an untracked action has no correlation to find its way back to one. A frozen account is
+     * still named by its code (HIL-945): the shell tells a freeze from a failure whichever way
+     * the action was sent.
      *
      * @param string $acceptKey Accept key of the initiating connection
      * @param string $action Action name that failed
@@ -262,7 +265,9 @@ final class ActionReply
             new PageActionErrorSignalData(
                 $action,
                 ActionFailureReason::forClient($e),
-                errorCode: $e instanceof ActionUnauthorizedException || $e instanceof ActionViewModeException ? $e->errorCode : null,
+                errorCode: $e instanceof ActionUnauthorizedException
+                    || $e instanceof ActionViewModeException
+                    || $e instanceof ActionAccountFrozenException ? $e->errorCode : null,
             ),
         );
     }

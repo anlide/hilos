@@ -2,6 +2,9 @@
 // profile, a window that asks for the operation's confirmation only when the
 // account has something stronger than its address, a code to that address, the
 // warning with the date in every open tab, and "Keep my account" in one press.
+// Away from the profile the shell says the same (HIL-945): a strip under the
+// navigation with the date and the days left, a ring by the header avatar, and
+// the strip's own "Keep my account" that takes both away.
 // The code is read from the stand mailbox, never a backdoor. Erasure in chat
 // is covered by demo/chat/tests/Integration/AccountErasureTest.php; live erasure
 // runs in the polls and tasks e2e suites through test:account:force-purge.
@@ -52,10 +55,29 @@ test('starts a deletion with a code and calls it off in one press, in every tab'
   )
   await expect(other.getByTestId('account-deletion-scheduled')).toBeVisible()
 
-  await clickSubmit(page.getByTestId('account-deletion-manage'))
-  await clickSubmit(page.getByTestId('account-deletion-keep'))
+  // The strip on another page names the day the profile names and the days
+  // left, and the ring by the header avatar carries the trash in the strip's
+  // color.
+  const zone = await page
+    .getByTestId('account-deletion-scheduled')
+    .textContent()
+  const date = /deleted on (.+?) —/.exec(zone ?? '')?.[1]
+  expect(date).toBeTruthy()
+  await gotoPage(other, '/')
+  await expect(other.getByTestId('account-deletion-strip-text')).toHaveText(
+    `Your account will be deleted on ${date} — 30 days left`,
+  )
+  const ring = other.getByTestId('nav-profile').getByTestId('avatar-mark')
+  await expect(ring).toHaveClass(/\bbi-trash\b/)
+  await expect(ring).toHaveClass(/\btext-warning-emphasis\b/)
+
+  // Keep in the strip calls the deletion off: the strip and the ring leave, and
+  // the profile in the first tab is back to the plain danger zone.
+  await clickSubmit(other.getByTestId('account-deletion-strip-keep'))
+  await expect(other.getByTestId('account-deletion-strip')).toHaveCount(0)
+  await expect(ring).toHaveCount(0)
   await expect(page.getByTestId('account-deletion-open')).toBeVisible()
-  await expect(other.getByTestId('account-deletion-open')).toBeVisible()
+  await expect(page.getByTestId('account-deletion-strip')).toHaveCount(0)
 })
 
 test('asks the password of a password account before anything else', async ({

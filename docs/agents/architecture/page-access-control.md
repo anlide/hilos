@@ -53,6 +53,7 @@ mandatory — silence would open the profile to guests.
   load-bearing: most admin pages declare no browser guards at all.
 - **actions** — `PageSignalRouter::dispatchAction`, before `AUTH_ACTIONS`, through
   `PageAccessGate::assertAction()`: a guest gets 401 `ActionUnauthorizedException`,
+  a frozen person 403 `account_frozen` (`ActionAccountFrozenException`, below),
   an authenticated non-admin 403 `ActionForbiddenException`, and — with the admin
   view mode on — a viewer of an `ADMIN` page 403 `view_mode`
   (`ActionViewModeException`) for every action the page did not declare in
@@ -71,6 +72,25 @@ Identity comes from two `BrowserContext` seams (see the identity hook below):
 answered by the framework from `hilos_user.admin` — answers "is that user an
 admin". A project without a mounted browser context fails **closed**: nothing
 resolves, the surface denies.
+
+## The freeze step (a frozen account)
+
+Between 401 and 403 the gate asks one more question (HIL-945): is the person the
+session acts as frozen — past a legal deadline under
+`legal.refusal_after_deadline = freeze`? If so, every `AUTHENTICATED` and `ADMIN`
+page refuses them with `PageAccountFrozenException`, 403 `account_frozen`. The
+step comes after 401, so an anonymous visitor is asked to sign in, and before the
+admin 403, so a frozen administrator is told about the freeze and stays out of
+the admin. A `PUBLIC` page passes, and a viewer of the admin view mode never
+reaches the step.
+
+The exits are declared at their place, never in a list beside the gate. A page
+that stays open to a frozen person declares `OPEN_WHILE_FROZEN = true`, and its
+actions go with it. An action that stays open is listed in its owner's
+`FROZEN_EXIT_ACTIONS`, beside `AUTH_ACTIONS`: that same list closes every
+`AUTH_ACTIONS` name of a page or an agent to a frozen person with
+`ActionAccountFrozenException`. What the freeze is, the one place that composes
+it, and the exact exits: [account-standing.md](account-standing.md).
 
 ## The view verdict (the admin view mode)
 
@@ -223,6 +243,10 @@ internal-error sentence for a 500). The frontend picks what to show by the codes
   does not wait for an access reassessment that nobody can answer. The client draws the same refusal for a page its view layer has not built (`HILOS_UNBUILT_PAGES`), without sending a subscription frame.
 - 403 `forbidden` — `PageForbiddenException`: authenticated but lacks rights.
   This is the admin gate — a guest is authenticated by its cookie, just not admin.
+- 403 `account_frozen` — `PageAccountFrozenException`, a `PageForbiddenException`
+  with a code of its own: the person is frozen and the page is not open while
+  frozen ([account-standing.md](account-standing.md)). It opens no sign-in, and
+  every place that handles a 403 handles it unchanged.
 - 401 `unauthorized` — `PageUnauthorizedException`: not authenticated at all.
   Raised by the `AUTHENTICATED`/`ADMIN` access levels and the `AUTHENTICATED`
   guard; the frontend mounts the in-place sign-in surface over the page.
@@ -235,10 +259,11 @@ internal-error sentence for a 500). The frontend picks what to show by the codes
   indistinguishable from a plain page.
 
 An action the gate refuses is answered on `action_error`, not here, with the
-codes of the page — 401 `unauthorized`, 403 `forbidden` — and one of its own:
-403 `view_mode` (`ActionViewModeException`), the refusal of a viewer of the
-admin view mode, whose reason is the impersonal sentence and never the
-exception's text.
+codes of the page — 401 `unauthorized`, 403 `forbidden`, 403 `account_frozen`
+(`ActionAccountFrozenException`, carried on a tracked and an untracked action's
+error alike) — and one of its own: 403 `view_mode` (`ActionViewModeException`),
+the refusal of a viewer of the admin view mode, whose reason is the impersonal
+sentence and never the exception's text.
 
 ## Guards run on EVERY delivery path
 
@@ -403,6 +428,17 @@ connection on the node announces nothing. The one caller is
 agents are resumed: a page is answered by the agent that serves it, and while the agents
 stand nobody would. Closing the window back and the final lift do not call it — behind
 the stub nothing of a page is visible, and the lift reloads the pages on the client.
+
+**A freeze that sets in or lifts is one more trigger, and it names the person**
+(HIL-945). No right moves, but the gate's answer does: a deadline passing or the
+refusal setting changing sets a freeze in, an acceptance lifts it. Nobody writes
+such a change as an announcement, so the sessions library finds it on its tick,
+comparing each person's standing with what their tabs were told
+([account-standing.md](account-standing.md), *Who Keeps Open Surfaces In Step*),
+and where `frozen` changed calls `PageAccessReassessment::forUser($userId)` — the
+by-user criterion of a rights change, unchanged. The pages a freeze closes get the
+`account_frozen` refusal, and once it lifts they are answered again with a full
+`page_response`, without a reload.
 
 **The reach is node-local, and that is the whole operation's reach.** The other half of a
 rights change — the handshake re-send — is delivered by this node's WebSocket server, so a

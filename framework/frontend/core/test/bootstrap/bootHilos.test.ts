@@ -4,6 +4,7 @@ import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type NavigationEnvironment } from '../../src/routing/HilosRouter.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
+import { hilosAccountStanding } from '../../src/session/accountStanding.js'
 import { hilosImpersonation } from '../../src/session/impersonation.js'
 import { hilosSignedIn } from '../../src/session/signOut.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
@@ -246,12 +247,40 @@ describe('bootHilos', () => {
         impersonatedBy: { id: 1, name: 'Ada' },
       },
     })
-    expect(hilosImpersonation.get()).toEqual({ userName: 'Bob' })
+    expect(hilosImpersonation.get()).toEqual({
+      userName: 'Bob',
+      tone: 'warning',
+    })
 
     connection.emitProjectSignal('handshake_response', {
       entities: { currentUser: { id: 1, name: 'Ada' }, impersonatedBy: null },
     })
     expect(hilosImpersonation.get()).toBeNull()
+  })
+
+  it('binds the account standing so it follows the handshake (HIL-945)', () => {
+    const connection = fakeConnection()
+    boot(connection)
+
+    connection.emitProjectSignal('handshake_response', {
+      data: {
+        accountStanding: {
+          shown: 'frozen',
+          blocked: false,
+          frozen: true,
+          deletionEffectiveAt: null,
+          lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+        },
+      },
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+    })
+    expect(hilosAccountStanding.get()?.shown).toBe('frozen')
+
+    connection.emitProjectSignal('handshake_response', {
+      data: { accountStanding: null },
+      entities: { currentUser: null },
+    })
+    expect(hilosAccountStanding.get()).toBeNull()
   })
 
   it('binds the sign-out control so it follows the handshake', () => {

@@ -40,6 +40,23 @@ import {
   ACCOUNT_BLOCKED_ACTION_DISMISS,
   ACCOUNT_BLOCKED_COPY,
   OAUTH_REASON_ACCOUNT_BLOCKED,
+  bindAccountStanding,
+  hilosAccountStanding,
+  hilosDeletionStrip,
+  hilosSessionAvatarMark,
+  hilosStandingTone,
+  keepMyAccount,
+  sessionAccountStanding,
+  readHilosAccountStanding,
+  ACCOUNT_FROZEN_ERROR_CODE,
+  ACCOUNT_STANDING_STRIP_COPY,
+  HILOS_FROZEN_OPEN_PAGES,
+  createHilosUserStanding,
+  hilosStandingBadge,
+  hilosUserFrozenRow,
+  hilosUsersPath,
+  hilosLegalLapsedHref,
+  SIGNAL_ACCOUNT_STANDING_STATE,
   bindUploads,
   cancelUpload,
   uploadFile,
@@ -87,6 +104,23 @@ it('exports the @hilos/core public surface', () => {
   expect(ACCOUNT_BLOCKED_ACTION_DISMISS).toBe('hilos_dismiss_account_blocked')
   expect(ACCOUNT_BLOCKED_COPY.title).toBe('Access closed')
   expect(OAUTH_REASON_ACCOUNT_BLOCKED).toBe('account_blocked')
+  expect(bindAccountStanding).toBeTypeOf('function')
+  expect(hilosAccountStanding.get()).toBeNull()
+  expect(hilosDeletionStrip.get()).toBeNull()
+  expect(hilosSessionAvatarMark.get()).toBeNull()
+  expect(hilosStandingTone('frozen')).toBe('info')
+  expect(keepMyAccount).toBeTypeOf('function')
+  expect(sessionAccountStanding).toBeTypeOf('function')
+  expect(readHilosAccountStanding(null)).toBeNull()
+  expect(ACCOUNT_FROZEN_ERROR_CODE).toBe('account_frozen')
+  expect(ACCOUNT_STANDING_STRIP_COPY.keep).toBe('Keep my account')
+  expect(HILOS_FROZEN_OPEN_PAGES).toHaveLength(7)
+  expect(createHilosUserStanding).toBeTypeOf('function')
+  expect(hilosStandingBadge('none')).toBeNull()
+  expect(hilosUserFrozenRow(null)).toBeNull()
+  expect(hilosUsersPath('privacy')).toBe('/hilos/users/privacy')
+  expect(hilosLegalLapsedHref('terms')).toBe('/hilos/users/terms')
+  expect(SIGNAL_ACCOUNT_STANDING_STATE).toBe('hilos_account_standing_state')
   expect(bindUploads).toBeTypeOf('function')
   expect(uploadFile).toBeTypeOf('function')
   expect(cancelUpload).toBeTypeOf('function')

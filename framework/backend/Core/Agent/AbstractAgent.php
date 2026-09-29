@@ -19,6 +19,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Page\Exception\ActionAccountFrozenException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -239,6 +240,14 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     invoked from an anonymous session is denied 401 before the handler runs.
      */
     public const array AUTH_ACTIONS = [];
+
+    /**
+     * @var list<string> Action names of this agent a frozen person may still run (HIL-945). Read by the
+     *     action dispatcher exactly as a page's FROZEN_EXIT_ACTIONS is: a freeze refuses every action of
+     *     {@see self::AUTH_ACTIONS} with {@see ActionAccountFrozenException} except the ones listed here.
+     *     An exit is declared by the agent that owns the action, next to the action.
+     */
+    public const array FROZEN_EXIT_ACTIONS = [];
 
     /**
      * @var list<string> Action names of this agent the anti-abuse layer rate-limits (HIL-420).
@@ -497,8 +506,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * offset against, the registration step the session left unfinished, whether this
      * installation can deliver a one-time code at all, the sign-in methods it offers and
      * whether a passkey may start an account on an unconfirmed address, the success ack
-     * the socket still owes, and the "Access closed" card the session holds (HIL-486, HIL-422,
-     * HIL-830, HIL-427, HIL-1105, HIL-289).
+     * the socket still owes, the "Access closed" card the session holds, and the standing of the
+     * person the session acts as (HIL-486, HIL-422, HIL-830, HIL-427, HIL-1105, HIL-289, HIL-945).
      *
      * It lives here, and every send path goes through it, so that no project can ship a
      * response without the stamp. That guarantee used to come from a final method on the
@@ -532,7 +541,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                     PasskeyAddressPolicy::allowsUnproven(),
                 )
                 ->withPendingAck($state->pendingAck)
-                ->withAccountBlocked($state->accountBlocked),
+                ->withAccountBlocked($state->accountBlocked)
+                ->withAccountStanding($state->accountStanding),
         );
     }
 
@@ -1367,6 +1377,14 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public function authActions(): array
     {
         return static::AUTH_ACTIONS;
+    }
+
+    /**
+     * @return list<string> Action names of this agent a frozen person may still run
+     */
+    public function frozenExitActions(): array
+    {
+        return static::FROZEN_EXIT_ACTIONS;
     }
 
     /**

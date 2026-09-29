@@ -143,6 +143,8 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Users\AccountStanding;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
@@ -565,6 +567,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private const string ACCOUNT_DELETION_SWEEP_CRON = '* * * * *';
 
+    /**
+     * People whose standing one tick compares with what their tabs were sent (HIL-945). A pass over
+     * everyone with a live tab spreads over as many ticks as it takes: a comparison costs nothing
+     * while the standing is remembered, but after a new epoch each one reads the person's facts.
+     */
+    private const int STANDING_CHECKS_PER_TICK = 20;
+
     /** @var string What a browser is told when its connection carries no session to act on */
     private const string SESSION_NOT_ON_CONNECTION_MESSAGE
         = 'The session behind this tab could not be found; reload the page and try again';
@@ -583,6 +592,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** Whether a full sweep batch with removals asks the next tick to continue immediately */
     private bool $sessionSweepBacklog = false;
+
+    /** @var array<int, AccountStanding> Standing last sent to every tab of each person with a live tab here (HIL-945) */
+    private array $publishedStanding = [];
+
+    /** @var list<int> People the running pass has still to compare, in the order it takes them */
+    private array $standingQueue = [];
 
     /**
      * Arms the three scheduled sweeps, and ends what a predecessor left open.
@@ -723,6 +738,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepSessionRotations();
         $this->sweepSessionToasts();
         $this->sweepEndedSessions();
+        $this->republishChangedStanding();
         if (!$this->hasSignInSurface()) {
             return;
         }
@@ -1183,6 +1199,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * nowhere else. A frame is built in more than a dozen places, and a card left off one of them
      * would be taken down by it; stamped at the one door they all leave through, no ending - a
      * sign-out, a handshake, a refused sign-in, the card's own dismissal - can leave without it.
+     * The standing of the person the session acts as is stamped at the same door, for the same
+     * reason (HIL-945), and recorded as what that person's tabs were told unless a pass is
+     * already on its way to telling all of them something newer.
      *
      * @param SessionStateSignalData $state What the session is now, and whom to answer
      * @throws InvalidArgumentException When the frame cannot be named or queued
@@ -1207,12 +1226,74 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
             }
         }
+        $standing = $state->userId === null ? null : AccountStandingResolver::of($state->userId);
+        if ($standing !== null) {
+            $this->publishedStanding[$state->userId] ??= $standing;
+        }
         $this->sendToAgent(
             HilosSignalConstants::HILOS_SESSION_STATE,
-            $state->withAccountBlocked($card),
+            $state->withAccountBlocked($card)->withAccountStanding($standing?->toArray()),
         );
         if ($state->requestId !== null) {
             $this->deferActionReply();
+        }
+    }
+
+    /**
+     * Tells the tabs of a person whose standing moved what it is now, a few people a tick (HIL-945).
+     *
+     * Nobody announces a standing: a block, a deletion request and an acceptance are written by
+     * whoever writes them, and a deadline passes on its own. Every such change drops the verdict
+     * the resolver remembers ({@see AccountStandingResolver}), so comparing what each person's tabs
+     * were sent with what the resolver answers now finds every change - and costs nothing while
+     * nothing changed. The people compared are those with a live tab on this node; whoever is left
+     * without one leaves the record with the next pass. A person seen for the first time is
+     * recorded, not told: their tabs were given the standing with the frame that brought them.
+     *
+     * A change reaches every session of the person, the ones where an administrator represents
+     * them included - the impersonation strip turns with it. A freeze that set in or lifted also
+     * sends the person's open pages back through the gate, as a change of rights does.
+     *
+     * @throws HilosException When a standing, a session or its state cannot be read, or a frame cannot be queued
+     */
+    private function republishChangedStanding(): void
+    {
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        if ($connections === null) {
+            return;
+        }
+        if ($this->standingQueue === []) {
+            $people = [];
+            foreach ($connections->findAuthenticated() as $connection) {
+                $people[(int)$connection->userId] = true;
+            }
+            $this->publishedStanding = array_intersect_key($this->publishedStanding, $people);
+            $this->standingQueue = array_keys($people);
+        }
+
+        foreach (array_splice($this->standingQueue, 0, self::STANDING_CHECKS_PER_TICK) as $userId) {
+            $standing = AccountStandingResolver::of($userId);
+            $published = $this->publishedStanding[$userId] ?? null;
+            $this->publishedStanding[$userId] = $standing;
+            if ($published === null || $published->toArray() === $standing->toArray()) {
+                continue;
+            }
+
+            $tokens = [];
+            foreach ($connections->findByUser($userId) as $connection) {
+                if ($connection->sessionToken !== null) {
+                    $tokens[$connection->sessionToken] = true;
+                }
+            }
+            foreach (array_keys($tokens) as $token) {
+                $session = Hilos::$db->sessions->findByToken((string)$token);
+                if ($session !== null) {
+                    $this->publishBlockedCardState($session, null, null, null, null);
+                }
+            }
+            if ($published->frozen !== $standing->frozen) {
+                PageAccessReassessment::forUser($userId);
+            }
         }
     }
 

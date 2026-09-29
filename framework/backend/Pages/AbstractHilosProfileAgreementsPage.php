@@ -27,6 +27,9 @@ abstract class AbstractHilosProfileAgreementsPage extends AbstractPage
     public const PageReach REACH = PageReach::ROUTE;
     public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
 
+    /** An exit of a freeze (HIL-945): what the person agreed to is read before accepting the new terms. */
+    public const bool OPEN_WHILE_FROZEN = true;
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE_AGREEMENTS,
     ];

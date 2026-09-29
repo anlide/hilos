@@ -20,6 +20,7 @@ use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\ActionViewModeException;
+use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -92,6 +93,14 @@ abstract class AbstractPage implements ActionHostInterface
     public const array AUTH_ACTIONS = [];
 
     /**
+     * @var list<string> Names of this page's actions a frozen person may still run (HIL-945). A freeze
+     *     closes every action that needs a signed-in session ({@see self::AUTH_ACTIONS}) and leaves only the
+     *     exits: an action is one when its owner lists it here. A page open while frozen
+     *     ({@see self::OPEN_WHILE_FROZEN}) needs no list - all its actions are exits with it.
+     */
+    public const array FROZEN_EXIT_ACTIONS = [];
+
+    /**
      * @var list<string> Names of this page's actions that only read: they write nothing - no database,
      *     no RT, no file - and send nothing to anyone. With the admin view mode on, a viewer runs these
      *     and nothing else; every other action of an ADMIN page is refused to them with
@@ -112,6 +121,17 @@ abstract class AbstractPage implements ActionHostInterface
      * closing every hilos page unless it explicitly declares otherwise.
      */
     public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::PUBLIC;
+
+    /**
+     * Whether a frozen person may still open this page and run its actions (HIL-945).
+     *
+     * A freeze takes away using the product and nothing else. {@see PageAccessGate} refuses a
+     * frozen person every page for signed-in people or administrators with
+     * {@see PageAccountFrozenException}, except the exits: the pages that declare themselves open
+     * here - the person's data, their agreements and the history of those agreements. A PUBLIC page
+     * is open to a frozen person anyway, the same as to a guest.
+     */
+    public const bool OPEN_WHILE_FROZEN = false;
 
     /**
      * Action names on this page that the anti-abuse layer rate-limits (HIL-420).
@@ -287,6 +307,14 @@ abstract class AbstractPage implements ActionHostInterface
     public function authActions(): array
     {
         return static::AUTH_ACTIONS;
+    }
+
+    /**
+     * @return list<string> Action names of this page a frozen person may still run
+     */
+    public function frozenExitActions(): array
+    {
+        return static::FROZEN_EXIT_ACTIONS;
     }
 
     /**

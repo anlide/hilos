@@ -17,6 +17,7 @@ import {
   LEGAL_CATALOG_REFUSAL_SECTION,
   describeHilosLegalCheck,
   hilosLegalDocumentLabel,
+  hilosLegalLapsedHref,
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalContext,
@@ -83,8 +84,19 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
               row.window
             }}</span></ng-template
           >
-          <ng-template [hilosTableCell]="keys.lapsed" let-row
-            ><span data-id="legal-count-lapsed">{{ row.lapsed }}</span>
+          <!-- The count of the people past the deadline opens them in the
+          people list (HIL-945); nobody to open, nothing to follow. -->
+          <ng-template [hilosTableCell]="keys.lapsed" let-row>
+            @if (row.lapsed > 0) {
+              <a
+                [hilosLink]="lapsedHref(row.rowKey)"
+                data-id="legal-count-lapsed-link"
+                [attr.data-document]="row.rowKey"
+                ><span data-id="legal-count-lapsed">{{ row.lapsed }}</span></a
+              >
+            } @else {
+              <span data-id="legal-count-lapsed">{{ row.lapsed }}</span>
+            }
             <span class="small text-body-secondary">{{
               lapsedLabel()
             }}</span></ng-template
@@ -150,6 +162,7 @@ export class HilosLegalPage {
   protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
   protected readonly path = resolveHilosPath
   protected readonly documentLabel = hilosLegalDocumentLabel
+  protected readonly lapsedHref = hilosLegalLapsedHref
   protected readonly describeCheck = describeHilosLegalCheck
   protected readonly refusal = signal<string | null>(null)
   protected readonly lapsedLabel = signal('Frozen')
