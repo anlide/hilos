@@ -9,9 +9,13 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
@@ -20,7 +24,10 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
@@ -28,12 +35,25 @@ use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 
-/** Account-card writes run under the real sessions library's claim and answer the waiting page. */
+/**
+ * Account-card writes run under the real sessions library's claim and answer the waiting page.
+ *
+ * The ones that take something away ask the administrator's fresh confirmation first, as the
+ * installation's list of operations says (HIL-1275).
+ */
 final class AccountLifecycleCardTest extends IntegrationTestCase
 {
+    private const string SETTINGS_AGENT_ID = 'test-lifecycle-settings-writer';
+
+    /** Lifetime of a seeded confirmation, in seconds; longer than any case runs. */
+    private const int CONFIRMATION_TTL_SECONDS = 900;
+
     private ChatAgent $holder;
     private int $adminId;
     private int $userId;
+
+    /** Session token of the administrator's browser, the one every confirmation below belongs to. */
+    private string $adminToken;
 
     protected function setUp(): void
     {
@@ -46,12 +66,13 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         $this->adminId = (int) Hilos::$db->users->actions->createWithName('Administrator')->id;
         Hilos::$db->users[$this->adminId]->actions->setAdmin(true);
         $this->userId = (int) Hilos::$db->users->actions->createWithName('Candidate')->id;
-        $this->signIn('admin-ak', $this->adminId);
+        $this->adminToken = $this->signIn('admin-ak', $this->adminId);
         $this->drainSignals();
     }
 
     protected function tearDown(): void
     {
+        $this->switchOn(null);
         Hilos::$rt->connections->actions->clear();
         parent::tearDown();
     }
@@ -128,6 +149,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
 
     public function testAMergedAccountCannotBeUnblockedOrGrantedRights(): void
     {
+        $this->confirm(StepUpOperationKey::GRANT_ADMIN);
         $this->fold($this->userId, $this->adminId);
         self::assertSame('This account was merged into another one', $this->block($this->userId, false)->error);
         self::assertSame('This account was merged into another one', $this->rights($this->userId, true)->error);
@@ -137,6 +159,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
 
     public function testDeletionRefusesAnAdministratorFirstAndThenAMergedAccount(): void
     {
+        $this->confirm(StepUpOperationKey::DELETE_OTHER_ACCOUNT);
         Hilos::$db->users[$this->userId]->actions->setAdmin(true);
         self::assertSame('Remove the admin rights first', $this->deletion($this->userId)->error);
         $mergedId = (int) Hilos::$db->users->actions->createWithName('Folded')->id;
@@ -148,6 +171,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
 
     public function testRightsCountTabsAndKeepThePersonsSession(): void
     {
+        $this->confirm(StepUpOperationKey::GRANT_ADMIN);
         $token = $this->signIn('user-a', $this->userId);
         Hilos::$rt->connections->actions->register('user-b', $this->userId, $token);
         self::assertSame('Admin rights granted. Open tabs updated: 2', $this->rights($this->userId, true)->successMessage);
@@ -177,6 +201,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
 
     public function testRightsWithoutOpenTabsStateWhenTheyWillApply(): void
     {
+        $this->confirm(StepUpOperationKey::GRANT_ADMIN);
         self::assertSame(
             'Admin rights granted. No open tabs: they apply at the next sign-in',
             $this->rights($this->userId, true)->successMessage,
@@ -189,6 +214,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
 
     public function testAPartialAnnouncementKeepsTheWriteAndReportsOnlyToldTabs(): void
     {
+        $this->confirm(StepUpOperationKey::GRANT_ADMIN);
         $token = $this->signIn('user-a', $this->userId);
         Hilos::$rt->connections->actions->register('user-b', $this->userId, $token);
         $this->signIn('user-c', $this->userId);
@@ -200,6 +226,102 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
             'Admin rights granted, but not every tab was told: 2 updated, the rest learn on reconnect',
             $reply->successMessage,
         );
+    }
+
+    /**
+     * Granting rights asks the administrator's fresh confirmation, and without one nothing is written (HIL-1275).
+     */
+    public function testGrantingRightsAsksTheAdministratorsFreshConfirmation(): void
+    {
+        self::assertSame(StepUpMessages::EXPIRED, $this->rights($this->userId, true)->error);
+        self::assertFalse(Hilos::$db->users[$this->userId]->admin);
+
+        $this->confirm(StepUpOperationKey::REVOKE_ADMIN);
+        self::assertSame(StepUpMessages::EXPIRED, $this->rights($this->userId, true)->error, 'Another operation opens nothing');
+
+        $this->confirm(StepUpOperationKey::GRANT_ADMIN);
+        self::assertNull($this->rights($this->userId, true)->error);
+        self::assertTrue(Hilos::$db->users[$this->userId]->admin);
+    }
+
+    /**
+     * Removing rights and blocking are declared off: they pass without a confirmation until an
+     * administrator switches them on, and then they ask (HIL-1275).
+     */
+    public function testRemovingRightsAndBlockingAskOnlyOnceSwitchedOn(): void
+    {
+        Hilos::$db->users[$this->userId]->actions->setAdmin(true);
+        self::assertNull($this->rights($this->userId, false)->error);
+        self::assertNull($this->block($this->userId, true)->error);
+        self::assertNull($this->block($this->userId, false)->error);
+
+        Hilos::$db->users[$this->userId]->actions->setAdmin(true);
+        $this->switchOn(StepUpOperationKey::REVOKE_ADMIN . ',' . StepUpOperationKey::BLOCK_ACCOUNT);
+        self::assertSame(StepUpMessages::EXPIRED, $this->rights($this->userId, false)->error);
+        self::assertSame(StepUpMessages::EXPIRED, $this->block($this->userId, true)->error);
+        self::assertTrue(Hilos::$db->users[$this->userId]->admin);
+        self::assertFalse(Hilos::$db->users[$this->userId]->block);
+
+        $this->confirm(StepUpOperationKey::BLOCK_ACCOUNT);
+        self::assertNull($this->block($this->userId, true)->error);
+        self::assertTrue(Hilos::$db->users[$this->userId]->block);
+    }
+
+    /**
+     * Lifting a block gives back rather than takes away: it never asks, even with blocking switched on (HIL-1275).
+     */
+    public function testLiftingABlockNeverAsks(): void
+    {
+        $this->switchOn(StepUpOperationKey::BLOCK_ACCOUNT);
+        Hilos::$db->users[$this->userId]->actions->setBlock(true);
+
+        self::assertNull($this->block($this->userId, false)->error);
+        self::assertFalse(Hilos::$db->users[$this->userId]->block);
+    }
+
+    /**
+     * Seeds the administrator's live confirmation of one operation in their browser.
+     *
+     * What the confirmation step would have written, without the step: these cases are about
+     * the action once it is open, not about the proof.
+     *
+     * @param string $operation Declared operation key
+     * @throws HilosException When the confirmation row cannot be written
+     */
+    private function confirm(string $operation): void
+    {
+        Hilos::$db->stepUps->actions->confirm(
+            ProtectedModeRuntime::hashSessionToken($this->adminToken),
+            $this->adminId,
+            $operation,
+            date('Y-m-d H:i:s', time() + self::CONFIRMATION_TTL_SECONDS),
+        );
+    }
+
+    /**
+     * Stores the list of operations switched on among those declared off, as the security screen's switch would.
+     *
+     * The settings library writes that row, so the fixture's own writer does, and the agent under test is
+     * current again afterwards.
+     *
+     * @param ?string $enabled Stored value, or null to delete the row
+     * @throws HilosException When the settings write fails
+     */
+    private function switchOn(?string $enabled): void
+    {
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
+        $previous = ExecutionContext::currentAgentId();
+        ExecutionContext::setCurrentAgentId(self::SETTINGS_AGENT_ID);
+
+        try {
+            Hilos::$db->settings[StepUpSettings::ENABLED_KEY]?->actions->delete();
+            if ($enabled !== null) {
+                Hilos::$db->settings->actions->add(StepUpSettings::ENABLED_KEY, $enabled, Hilos::$setting->catalog());
+            }
+        } finally {
+            TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
+            ExecutionContext::setCurrentAgentId($previous);
+        }
     }
 
     private function signIn(string $acceptKey, int $userId): string

@@ -18,6 +18,12 @@
 import { z } from 'zod'
 
 import {
+  createHilosStepUpActions,
+  createHilosStepUpStep,
+  type HilosStepUpOpenOutcome,
+  type HilosStepUpStep,
+} from '../../auth/stepUp.js'
+import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
@@ -1319,5 +1325,71 @@ export function submitHilosUserLifecycle(
       return lifecycle.setDeletion(prompt.userId, true)
     case 'cancelDeletion':
       return lifecycle.setDeletion(prompt.userId, false)
+  }
+}
+
+/**
+ * The step-up operation behind each account-card window that takes something
+ * away from the person (HIL-1275). Lifting a block and calling a deletion off
+ * give back rather than take, so their windows have no operation.
+ */
+export const HILOS_USER_CARD_STEP_UP_OPERATIONS = {
+  merge: 'merge_accounts',
+  grant: 'grant_admin',
+  revoke: 'revoke_admin',
+  block: 'block_account',
+  delete: 'delete_other_account',
+} as const
+
+/** A window of the account card: one of the six confirmations, or the merge. */
+export type HilosUserCardWindow = HilosUserLifecycleChoice | 'merge'
+
+/** The confirmation step of one account-card window (HIL-1275). */
+export interface HilosUserCardStepUp {
+  /** The step the window draws while it asks; the shared step-up body binds to it. */
+  readonly step: HilosStepUpStep
+  /**
+   * Ask the server whether the window's operation needs a fresh confirmation of
+   * the administrator. A window without an operation answers `skip` and sends
+   * nothing; every other window asks, whatever the installation's list says —
+   * which windows ask is the list's answer, not the view's.
+   *
+   * @param window The window being opened.
+   */
+  open(window: HilosUserCardWindow): Promise<HilosStepUpOpenOutcome>
+}
+
+/** The operation a window confirms, or undefined for a window that gives back. */
+function cardOperation(window: HilosUserCardWindow): string | undefined {
+  switch (window) {
+    case 'unblock':
+    case 'cancelDeletion':
+      return undefined
+    default:
+      return HILOS_USER_CARD_STEP_UP_OPERATIONS[window]
+  }
+}
+
+/**
+ * The confirmation step an account-card window opens with (HIL-1275): the
+ * administrator confirms it is them before an action over another person's
+ * account, by the method their own account can prove.
+ *
+ * @param context The project context whose action lifecycle carries the step.
+ */
+export function createHilosUserCardStepUp(
+  context: HilosUsersContext,
+): HilosUserCardStepUp {
+  const step = createHilosStepUpStep(createHilosStepUpActions(context.actions))
+
+  return {
+    step,
+    open(window) {
+      const operation = cardOperation(window)
+
+      return operation === undefined
+        ? Promise.resolve('skip')
+        : step.open(operation)
+    },
   }
 }

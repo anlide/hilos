@@ -49,9 +49,18 @@ function router(): HilosRouter {
 // `seed` is false the table is empty and the page shows its loading state. The
 // name rides the `user` entity, so a rename elsewhere is an entity upsert and a
 // deleted user is the row leaving the table.
+/** The refusal a window meets when its administrator has nothing to confirm with. */
+const STEP_UP_REFUSAL =
+  'Add a password, an email or a phone to your account to do this'
+
+/**
+ * The card's context. A window that takes something away opens on the server's
+ * word about the administrator's confirmation (HIL-1275); `stepUp` is that word.
+ */
 function userContext(
   seed: boolean,
   accountMerge = false,
+  stepUp: 'skip' | 'ask' | 'refused' = 'skip',
 ): HilosUsersContext & {
   renameElsewhere: (name: string) => void
   removeRow: () => void
@@ -74,11 +83,39 @@ function userContext(
   const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
   const connection = new HilosConnection({ url: 'ws://test/ws' })
   const sent: Array<{ action: string; data: unknown }> = []
-  vi.spyOn(connection, 'sendAction').mockImplementation((action, data) => {
-    sent.push({ action, data })
+  const actionListeners = new Map<string, Array<(signal: unknown) => void>>()
+  // The server's word on the step, answered on the next microtask as a socket would.
+  const answerStepUp = (action: string, requestId?: string): void => {
+    const refused = action === 'hilos_step_up_start' && stepUp === 'refused'
+    const signal = refused
+      ? { kind: 'actionError', action, requestId, reason: STEP_UP_REFUSAL }
+      : {
+          kind: 'actionSuccess',
+          action,
+          requestId,
+          reply:
+            action === 'hilos_step_up_start'
+              ? {
+                  required: stepUp === 'ask',
+                  purpose: 'grant admin rights',
+                  method: 'password',
+                }
+              : undefined,
+        }
+    for (const listener of actionListeners.get(signal.kind) ?? []) {
+      listener(signal)
+    }
+  }
+  vi.spyOn(connection, 'sendAction').mockImplementation(
+    (action, data, requestId) => {
+      sent.push({ action, data })
+      if (action.startsWith('hilos_step_up_')) {
+        queueMicrotask(() => answerStepUp(action, requestId))
+      }
 
-    return true
-  })
+      return true
+    },
+  )
   // The rename's fail ack arrives as an unknown signal; keep its listeners to
   // answer a refusal.
   const unknownListeners: Array<(signal: { type: string }) => void> = []
@@ -93,6 +130,12 @@ function userContext(
       projectListeners.push(
         listener as (signal: Record<string, unknown>) => void,
       )
+    }
+    if (event === 'actionSuccess' || event === 'actionError') {
+      actionListeners.set(event, [
+        ...(actionListeners.get(event) ?? []),
+        listener as (signal: unknown) => void,
+      ])
     }
 
     return on(event, listener)
@@ -183,7 +226,7 @@ describe('HilosUserPage', () => {
     ).toBe('2')
   })
 
-  it('shows the merge zone only when enabled and locks Next without a candidate', () => {
+  it('shows the merge zone only when enabled and locks Next without a candidate', async () => {
     const disabled = renderPage(userContext(true))
     expect(
       disabled.container.querySelector('[data-id="hilos-user-merge-zone"]'),
@@ -195,7 +238,9 @@ describe('HilosUserPage', () => {
       '[data-id="hilos-user-merge-open"]',
     ) as Element
     expect(open).not.toBeNull()
-    fireEvent.click(open)
+    await act(async () => {
+      fireEvent.click(open)
+    })
     expect((byId('hilos-user-merge-next') as HTMLButtonElement).disabled).toBe(
       true,
     )
@@ -501,6 +546,8 @@ describe('HilosUserPage lifecycle', () => {
     }
     let resolve!: (value: ActionResult) => void
     let reject!: (reason: unknown) => void
+    await click('hilos-user-block-open')
+    expect(find('modal')?.textContent).toContain('No reason is stored')
     const dispatch = vi
       .spyOn(context.actions, 'dispatch')
       .mockImplementation(() => ({
@@ -511,8 +558,6 @@ describe('HilosUserPage lifecycle', () => {
           reject = no
         }),
       }))
-    await click('hilos-user-block-open')
-    expect(find('modal')?.textContent).toContain('No reason is stored')
     await click('hilos-user-lifecycle-confirm')
     expect(dispatch).toHaveBeenLastCalledWith('hilos_user_block_set', {
       userId: 1,
@@ -548,6 +593,117 @@ describe('HilosUserPage lifecycle', () => {
       resolve({ message: 'Account blocked. Sessions ended: 1' })
     })
     expect(find('hilos-user-lifecycle-confirm')).toBeNull()
+  })
+})
+
+describe('HilosUserPage confirmation step (HIL-1275)', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+  })
+
+  async function click(id: string): Promise<void> {
+    await act(async () => {
+      fireEvent.click(byId(id) as Element)
+    })
+  }
+
+  async function typePassword(text: string): Promise<void> {
+    await act(async () => {
+      fireEvent.change(byId('step-up-password') as Element, {
+        target: { value: text },
+      })
+    })
+  }
+
+  it('asks by the merge operation and shows no other account before the step is passed', async () => {
+    const context = userContext(true, true, 'ask')
+    const register = vi.spyOn(context.connection, 'registerTableWindow')
+    const candidatesAsked = () =>
+      register.mock.calls.some(([tableKey]) => tableKey === 'mergeCandidates')
+    renderPage(context)
+    await click('hilos-user-merge-open')
+
+    expect(context.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      data: { operation: 'merge_accounts' },
+    })
+    expect(byId('modal')?.textContent).toContain("Confirm it's you")
+    expect(byId('step-up-password')).not.toBeNull()
+    expect(byId('hilos-user-merge-next')).toBeNull()
+    expect(candidatesAsked()).toBe(false)
+
+    await typePassword('secret')
+    await click('hilos-user-merge-step-up-confirm')
+
+    expect(
+      context.sent.find((entry) => entry.action === 'hilos_step_up_confirm'),
+    ).toMatchObject({
+      data: { operation: 'merge_accounts', password: 'secret' },
+    })
+    expect(byId('step-up-password')).toBeNull()
+    expect(byId('hilos-user-merge-next')).not.toBeNull()
+    expect(candidatesAsked()).toBe(true)
+  })
+
+  it('opens the merge on its first step when no confirmation is needed', async () => {
+    const context = userContext(true, true, 'skip')
+    renderPage(context)
+    await click('hilos-user-merge-open')
+
+    expect(context.sent[0]?.action).toBe('hilos_step_up_start')
+    expect(byId('step-up')).toBeNull()
+    expect(byId('hilos-user-merge-next')).not.toBeNull()
+  })
+
+  it('draws a refusal with Cancel alone', async () => {
+    renderPage(userContext(true, true, 'refused'))
+    await click('hilos-user-merge-open')
+
+    expect(byId('step-up-error')?.textContent).toContain(STEP_UP_REFUSAL)
+    expect(byId('hilos-user-merge-cancel')).not.toBeNull()
+    expect(byId('hilos-user-merge-step-up-confirm')).toBeNull()
+    expect(byId('hilos-user-merge-next')).toBeNull()
+  })
+
+  it('asks before granting rights, then shows the confirmation text; Enter in the field confirms', async () => {
+    const context = userContext(true, false, 'ask')
+    renderPage(context)
+    await click('hilos-user-admin-open')
+
+    expect(context.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      data: { operation: 'grant_admin' },
+    })
+    expect(byId('hilos-user-lifecycle-step-up-confirm')).not.toBeNull()
+    expect(byId('hilos-user-lifecycle-confirm')).toBeNull()
+
+    await typePassword('secret')
+    await act(async () => {
+      fireEvent.submit(byId('hilos-user-lifecycle-step-up') as Element)
+    })
+
+    expect(
+      context.sent.find((entry) => entry.action === 'hilos_step_up_confirm'),
+    ).toMatchObject({ data: { operation: 'grant_admin' } })
+    expect(byId('step-up')).toBeNull()
+    expect(byId('hilos-user-lifecycle-confirm')).not.toBeNull()
+    expect(byId('modal')?.textContent).not.toContain("Confirm it's you")
+  })
+
+  it('opens Lift the block without asking the server', async () => {
+    const context = userContext(true, false, 'ask')
+    renderPage(context)
+    await act(async () => {
+      context.scopes
+        .page()
+        ?.entities.upsert({ type: 'user', id: 1 }, { block: true })
+    })
+    await click('hilos-user-block-open')
+
+    expect(context.sent).toEqual([])
+    expect(byId('step-up')).toBeNull()
+    expect(byId('hilos-user-lifecycle-confirm')).not.toBeNull()
   })
 })
 

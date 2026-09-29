@@ -6,7 +6,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
-import { clickSubmit, signUp, typeInto } from '../helpers/session'
+import { clickSubmit, PASSWORD, signUp, typeInto } from '../helpers/session'
 import { goToLastPage } from '../helpers/table'
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
@@ -450,6 +450,9 @@ test("shows a person's standing on the card and in the takeover strip", async ({
 
     await gotoPage(page, `/hilos/user/${person.userId}`)
     await clickSubmit(page.getByTestId('hilos-user-deletion-open'))
+    // Scheduling someone else's deletion is the administrator's to confirm (HIL-1275).
+    await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-step-up-confirm'))
     await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(page.getByTestId('hilos-user-deletion-open')).toHaveText(

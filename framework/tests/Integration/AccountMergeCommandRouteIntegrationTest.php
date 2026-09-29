@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Auth\StepUp\StepUpSettings;
+use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
@@ -24,12 +29,19 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\AdminAudience;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -55,7 +67,9 @@ use Hilos\Utils\Helpers\RandomHelper;
  *
  * The browser half is the same core through another door, so it is driven here too: success,
  * refusal and password-choice branches answer the page's named handover frame rather than the
- * operator's socket.
+ * operator's socket. That door alone asks who is at it: an active administrator with a fresh
+ * confirmation of the merge in their browser, unless the installation switched the merge off
+ * (HIL-1275). The operator's command asks neither - the console has nothing to confirm with.
  */
 final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -71,8 +85,17 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     /** An id no person carries. */
     private const int NOBODY_USER_ID = 99;
 
+    /** The administrator who asks for every browser merge below (HIL-1275). */
+    public const int ADMIN_USER_ID = 14;
+
     /** Accept key standing in for the browser that submitted the admin-table action. */
-    private const string ACCEPT_KEY = 'accept-1';
+    public const string ACCEPT_KEY = 'accept-1';
+
+    /** Session token of that browser: the administrator's confirmation belongs to it (HIL-1275). */
+    public const string ADMIN_SESSION_TOKEN = 'ad0000000000000000000000000001275';
+
+    /** Lifetime of a seeded confirmation, in seconds; longer than any case runs. */
+    private const int CONFIRMATION_TTL_SECONDS = 900;
 
     /**
      * Id the library's own claims are registered under. A test process starts no library, and
@@ -93,7 +116,9 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      *     both (HIL-1199); the merge table's keys hold the people, so it comes after them and is
      *     dropped before them. A device key hangs on its anchor by a foreign key, so
      *     `hilos_passkey_credential` comes right after `hilos_identity` and is dropped before it
-     *     (HIL-1132).
+     *     (HIL-1132). A browser merge asks the administrator's confirmation, so
+     *     `hilos_step_up` is there too, and `hilos_second_factor` the gate reads to choose the
+     *     proof it would ask for (HIL-1275).
      */
     private const array TABLES = [
         'hilos_user',
@@ -102,6 +127,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         'hilos_passkey_credential',
         'hilos_session',
         'hilos_setting',
+        'hilos_step_up',
+        'hilos_second_factor',
     ];
 
     /** @var ?DbContext Database context to restore after the test */
@@ -109,6 +136,15 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
 
     /** @var ?SignalRouter Signal router to restore after the test */
     private ?SignalRouter $previousSignalRouter = null;
+
+    /** @var ?RtContext Runtime to restore after the test */
+    private ?RtContext $previousRt = null;
+
+    /** @var ?SettingsAccessor Settings accessor to restore after the test */
+    private ?SettingsAccessor $previousSetting = null;
+
+    /** @var class-string<Hilos> Facade class to restore after the test */
+    private string $previousAppClass = Hilos::class;
 
     /** @var int Rolling source of unique addresses within one case */
     private int $emailCounter = 0;
@@ -123,17 +159,24 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::runStubs(down: true);
         self::runStubs(down: false);
         Database::sqlRun(
-            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Survivor'), (?, 'Loser'), (?, 'Third')",
-            [self::SURVIVOR_USER_ID, self::LOSER_USER_ID, self::THIRD_USER_ID],
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Survivor'), (?, 'Loser'), (?, 'Third'), (?, 'Admin')",
+            [self::SURVIVOR_USER_ID, self::LOSER_USER_ID, self::THIRD_USER_ID, self::ADMIN_USER_ID],
         );
+        self::seedSession(self::ADMIN_SESSION_TOKEN, self::ADMIN_USER_ID);
 
         $this->previousDb = Hilos::$db;
         $this->previousSignalRouter = Hilos::$sr;
+        $this->previousRt = Hilos::$rt;
+        $this->previousSetting = Hilos::$setting;
+        $this->previousAppClass = Hilos::appClass();
 
         $db = new AccountMergeRouteTestDbContext();
         $db->configure();
         Hilos::$db = $db;
         Hilos::$sr = new SignalRouter();
+        Hilos::$setting = new SettingsAccessor(StepUpSettingsCatalog::class);
+        AccountMergeRouteTestHilos::initBrowser();
+        AccountMergeRouteTestAdminAudience::$ids = [self::ADMIN_USER_ID];
         OwnershipDeclaration::claimDb(AccountMergeRouteTestHost::class, self::LIBRARY_ID);
     }
 
@@ -144,6 +187,9 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     {
         TruthSourceRegistry::unregisterAgent(self::LIBRARY_ID);
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::LIBRARY_ID));
+        $this->previousAppClass::initBrowser();
+        Hilos::$setting = $this->previousSetting;
+        Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
 
@@ -459,6 +505,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     public function testTheBrowsersWayInAnswersOnAFrameAndNotOnTheSocket(): void
     {
+        self::openAdministratorsTab();
+        self::confirmMerge();
         $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
         $agent = new AccountMergeRouteTestAgent();
 
@@ -488,6 +536,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     public function testARefusedBrowserMergeHandsBackTheSentence(): void
     {
+        self::openAdministratorsTab();
+        self::confirmMerge();
         $agent = new AccountMergeRouteTestAgent();
         self::seedMerge(self::LOSER_USER_ID, self::THIRD_USER_ID);
 
@@ -510,6 +560,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     public function testBrowserMergeWithTwoPasswordsAndNoFateAsksForAChoice(): void
     {
+        self::openAdministratorsTab();
+        self::confirmMerge();
         $this->seedPassword(self::SURVIVOR_USER_ID);
         $this->seedPassword(self::LOSER_USER_ID);
         $agent = new AccountMergeRouteTestAgent();
@@ -532,6 +584,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     public function testBrowserMergeWithANamedFateCompletes(): void
     {
+        self::openAdministratorsTab();
+        self::confirmMerge();
         $survivorEmail = $this->seedPassword(self::SURVIVOR_USER_ID);
         $this->seedPassword(self::LOSER_USER_ID);
         $agent = new AccountMergeRouteTestAgent();
@@ -545,6 +599,101 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         $result = $this->consumeMergeAnswer();
         self::assertNull($result->error);
         self::assertSame($survivorEmail, $this->identities()->findPasswordByUser(self::SURVIVOR_USER_ID)?->identifier);
+    }
+
+    /**
+     * Without the administrator's fresh confirmation the browser's merge is refused, and nothing
+     * moves (HIL-1275).
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testABrowserMergeWithoutAConfirmationIsRefusedAndMovesNothing(): void
+    {
+        self::openAdministratorsTab();
+        $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
+        $agent = new AccountMergeRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData($this->browserRequest()),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+        );
+
+        $result = $this->consumeMergeAnswer();
+        self::assertSame(StepUpMessages::EXPIRED, $result->error);
+        self::assertNull($agent->vouchedFor);
+        self::assertNull($agent->moved);
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+        self::assertSame(
+            self::LOSER_USER_ID,
+            $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail)?->userId,
+        );
+    }
+
+    /**
+     * A confirmation of another operation does not open the merge (HIL-1275).
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testAConfirmationOfAnotherOperationDoesNotOpenTheMerge(): void
+    {
+        self::openAdministratorsTab();
+        self::seedConfirmation(StepUpOperationKey::GRANT_ADMIN);
+        $agent = new AccountMergeRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData($this->browserRequest()),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+        );
+
+        self::assertSame(StepUpMessages::EXPIRED, $this->consumeMergeAnswer()->error);
+        self::assertNull($agent->moved);
+    }
+
+    /**
+     * The merge re-checks who asked, as the card's other actions do: a person who is no longer
+     * an administrator is refused before the confirmation is even read (HIL-1275).
+     *
+     * @throws HilosException When the merge fails
+     */
+    public function testABrowserMergeFromSomebodyNoLongerAnAdministratorIsRefused(): void
+    {
+        self::openAdministratorsTab();
+        self::confirmMerge();
+        AccountMergeRouteTestAdminAudience::$ids = [];
+        $agent = new AccountMergeRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData($this->browserRequest()),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+        );
+
+        self::assertSame('Only an active administrator can do this', $this->consumeMergeAnswer()->error);
+        self::assertNull($agent->moved);
+    }
+
+    /**
+     * An installation that switched the merge off merges without a confirmation (HIL-1275).
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testASwitchedOffMergeCompletesWithoutAConfirmation(): void
+    {
+        self::openAdministratorsTab();
+        Hilos::$setting = new SettingsAccessor(AccountMergeRouteTestMergeOffCatalog::class);
+        $this->seedMagicLink(self::LOSER_USER_ID);
+        $agent = new AccountMergeRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData($this->browserRequest()),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+        );
+
+        self::assertNull($this->consumeMergeAnswer()->error);
+        self::assertSame(self::SURVIVOR_USER_ID, self::survivorOf(self::LOSER_USER_ID));
     }
 
     /**
@@ -768,6 +917,52 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
+     * Mounts the runtime of the administrator's one tab, the browser a browser merge is asked from.
+     *
+     * Only the browser's cases mount it: the operator's command has no tab, and a runtime with
+     * nothing but connections in it would stand in the way of the sign-out the command does.
+     */
+    private static function openAdministratorsTab(): void
+    {
+        $rt = new AccountMergeRouteTestRtContext();
+        $rt->configure();
+        $rt->bindStateCollectionNames();
+        Hilos::$rt = $rt;
+    }
+
+    /**
+     * Seeds the administrator's live confirmation of the merge in their browser.
+     *
+     * @throws DatabaseException When the insert fails
+     */
+    private static function confirmMerge(): void
+    {
+        self::seedConfirmation(StepUpOperationKey::MERGE_ACCOUNTS);
+    }
+
+    /**
+     * Inserts what the confirmation step would have written for the administrator's browser.
+     *
+     * Past the users library, which owns the table: the case is about what the merge does once
+     * confirmed, not about the proof.
+     *
+     * @param string $operation Declared operation key
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedConfirmation(string $operation): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`) VALUES (?, ?, ?, ?)',
+            [
+                ProtectedModeRuntime::hashSessionToken(self::ADMIN_SESSION_TOKEN),
+                self::ADMIN_USER_ID,
+                $operation,
+                date('Y-m-d H:i:s', time() + self::CONFIRMATION_TTL_SECONDS),
+            ],
+        );
+    }
+
+    /**
      * Inserts a session row the way the handshake would have.
      *
      * @param string $token Session cookie token
@@ -948,4 +1143,106 @@ final class AccountMergeRouteTestAgent extends AccountMergeRouteTestHost
  */
 final class AccountMergeRouteTestUnwiredAgent extends AccountMergeRouteTestHost
 {
+}
+
+/**
+ * Runtime holding the administrator's one tab, the browser every browser merge is asked from (HIL-1275).
+ */
+final class AccountMergeRouteTestRtContext extends RtContext
+{
+    /**
+     * Mounts the administrator's tab.
+     */
+    public function configure(): void
+    {
+        $connections = AccountMergeRouteTestConnections::init();
+        $connections->add(AccountMergeRouteTestConnection::create(
+            AccountMergeCommandRouteIntegrationTest::ACCEPT_KEY,
+            AccountMergeCommandRouteIntegrationTest::ADMIN_USER_ID,
+            AccountMergeCommandRouteIntegrationTest::ADMIN_SESSION_TOKEN,
+        ));
+        $this->_stateCollections[AccountMergeRouteTestConnections::RT_COLLECTION] = $connections;
+    }
+}
+
+/**
+ * Session-stage connection collection of the fixture.
+ */
+final class AccountMergeRouteTestConnections extends HilosSessionConnections
+{
+    public const string RT_COLLECTION = 'accountMergeRouteTestConnections';
+    public const string STATE_CLASS = AccountMergeRouteTestConnection::class;
+}
+
+/**
+ * Session-stage connection row adding no project fields.
+ */
+final class AccountMergeRouteTestConnection extends HilosSessionConnection
+{
+    protected function initOwn(): void
+    {
+    }
+
+    /**
+     * @param array<string, mixed> $row Serialized runtime row
+     */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /**
+     * @return array<string, mixed> No project fields
+     */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $diff Incoming field changes
+     */
+    protected function applyOwnDiff(array $diff): void
+    {
+    }
+}
+
+/** The fixture's administrators, declared by the case rather than read from a table. */
+final class AccountMergeRouteTestAdminAudience extends AdminAudience
+{
+    /** @var list<int> Active administrators */
+    public static array $ids = [AccountMergeCommandRouteIntegrationTest::ADMIN_USER_ID];
+
+    /**
+     * @return list<int> Active administrators
+     */
+    protected static function userIds(): array
+    {
+        return self::$ids;
+    }
+}
+
+/**
+ * Facade of the fixture: the framework's own everything, with the fixture's administrators.
+ */
+abstract class AccountMergeRouteTestHilos extends Hilos
+{
+    protected const string ADMIN_AUDIENCE = AccountMergeRouteTestAdminAudience::class;
+}
+
+/**
+ * The step-up catalog of an installation that switched the merge off.
+ */
+final class AccountMergeRouteTestMergeOffCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> Fixture settings catalog
+     */
+    public static function getCatalog(): array
+    {
+        $catalog = StepUpSettingsCatalog::getCatalog();
+        $catalog[StepUpSettings::DISABLED_KEY][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE]
+            = StepUpOperationKey::MERGE_ACCOUNTS;
+
+        return $catalog;
+    }
 }

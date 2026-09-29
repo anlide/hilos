@@ -24,8 +24,46 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::EXPORT_DATA,
             StepUpOperationKey::ADD_AUTHENTICATOR_APP,
             StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            StepUpOperationKey::MERGE_ACCOUNTS,
+            StepUpOperationKey::GRANT_ADMIN,
+            StepUpOperationKey::REVOKE_ADMIN,
+            StepUpOperationKey::BLOCK_ACCOUNT,
+            StepUpOperationKey::DELETE_OTHER_ACCOUNT,
             StepUpTestDirectory::PROJECT_OPERATION,
         ], StepUpTestDirectory::keys());
+    }
+
+    /**
+     * The administrator's operations on another person's account: three declared on, the two an
+     * administrator undoes with one action declared off (HIL-1275).
+     */
+    public function testAdministratorOperationsCarryTheirCopyAndTheirDefaults(): void
+    {
+        $expected = [
+            StepUpOperationKey::MERGE_ACCOUNTS => ['Merge accounts', 'merge an account into this one', true],
+            StepUpOperationKey::GRANT_ADMIN => ['Grant admin rights', 'grant admin rights', true],
+            StepUpOperationKey::REVOKE_ADMIN => ['Remove admin rights', 'remove admin rights', false],
+            StepUpOperationKey::BLOCK_ACCOUNT => ['Block an account', 'block this account', false],
+            StepUpOperationKey::DELETE_OTHER_ACCOUNT => ["Delete another person's account", 'delete this account', true],
+        ];
+        foreach ($expected as $key => [$label, $purpose, $enabledByDefault]) {
+            $operation = StepUpTestDirectory::get($key);
+
+            self::assertSame($label, $operation->label, $key);
+            self::assertSame($purpose, $operation->purpose, $key);
+            self::assertSame($enabledByDefault, $operation->enabledByDefault, $key);
+            self::assertFalse($operation->opensWithAddressCode, $key);
+            self::assertFalse($operation->opensOnBlockedCard, $key);
+            self::assertFalse($operation->passesWithNothingToConfirm, $key);
+            self::assertFalse($operation->opensWithSecondFactorProof, $key);
+            self::assertTrue(StepUpTestDirectory::isFramework($key), $key);
+        }
+    }
+
+    public function testAnOperationIsDeclaredOnUnlessItSaysOtherwise(): void
+    {
+        self::assertTrue(StepUpTestDirectory::get(StepUpOperationKey::CHANGE_PASSWORD)->enabledByDefault);
+        self::assertTrue(StepUpTestDirectory::get(StepUpTestDirectory::PROJECT_OPERATION)->enabledByDefault);
     }
 
     public function testDescriptorCarriesAdministrationAndConfirmationCopy(): void

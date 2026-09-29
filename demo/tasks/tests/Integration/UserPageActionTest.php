@@ -8,7 +8,9 @@ use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\AgentSignalData;
@@ -20,6 +22,8 @@ use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Database\Entity\Item\UserRename as EntityUserRename;
 use Hilos\Users\DTO\HilosUserUpdateActionDTO;
@@ -85,7 +89,8 @@ final class UserPageActionTest extends IntegrationTestCase
         $adminId = (int) Hilos::$db->users->actions->registerAdmin()->id;
         $targetId = (int) Hilos::$db->users->actions->createWithName('Target administrator')->id;
         Hilos::$db->users[$targetId]->actions->setAdmin(true);
-        Hilos::$rt->connections->actions->register('lifecycle-admin', $adminId);
+        // The card's actions confirm against the administrator's browser (HIL-1275): the socket carries one.
+        Hilos::$rt->connections->actions->register('lifecycle-admin', $adminId, RandomHelper::hex(16));
         self::assertContains($adminId, Hilos::adminAudienceClass()::all());
         self::assertContains($targetId, Hilos::adminAudienceClass()::all());
         $library = $this->sessionsLibrary();
@@ -117,7 +122,15 @@ final class UserPageActionTest extends IntegrationTestCase
         $adminId = (int) Hilos::$db->users->actions->registerAdmin()->id;
         $targetId = (int) Hilos::$db->users->actions->createWithName('Target administrator')->id;
         Hilos::$db->users[$targetId]->actions->setAdmin(true);
-        Hilos::$rt->connections->actions->register('lifecycle-admin', $adminId);
+        $token = RandomHelper::hex(16);
+        Hilos::$rt->connections->actions->register('lifecycle-admin', $adminId, $token);
+        // Scheduling someone else's deletion asks the administrator's confirmation first (HIL-1275).
+        Hilos::$db->stepUps->actions->confirm(
+            ProtectedModeRuntime::hashSessionToken($token),
+            $adminId,
+            StepUpOperationKey::DELETE_OTHER_ACCOUNT,
+            date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_HOUR),
+        );
         $library = new UsersLibraryAgent();
         $this->startAgent($library);
         ExecutionContext::run(new ExecutionFrame(agentId: $library->getId()), static fn () => $library->onSignalAgent(

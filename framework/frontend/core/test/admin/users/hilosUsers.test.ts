@@ -4,13 +4,16 @@ import {
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserDetail,
+  createHilosUserCardStepUp,
   createHilosUserLifecycle,
   createHilosUsersTable,
   createHilosUserStanding,
   hilosStandingBadge,
   hilosUserFrozenRow,
+  HILOS_USER_CARD_STEP_UP_OPERATIONS,
   hilosUserLifecycleSections,
   resolveHilosMergeCandidateRow,
+  type HilosUserCardWindow,
   type HilosUserDetailRow,
   type HilosUsersContext,
 } from '../../../src/admin/users/hilosUsers.js'
@@ -20,7 +23,10 @@ import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { type PageRouteMatch } from '../../../src/routing/PageRouter.js'
 import { type HilosAccountStanding } from '../../../src/session/sessionScope.js'
 import { createSignal } from '../../../src/state/signal.js'
-import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
+import {
+  ActionError,
+  type ActionHandle,
+} from '../../../src/connection/actionLifecycle.js'
 import {
   type HilosConnection,
   type TableViewportDescriptor,
@@ -638,5 +644,98 @@ describe('createHilosUsersTable lapsed filter (HIL-945)', () => {
   it('is where the legal root sends its third count', () => {
     expect(hilosLegalLapsedHref('terms')).toBe('/hilos/users/terms')
     expect(hilosLegalLapsedHref('privacy')).toBe('/hilos/users/privacy')
+  })
+})
+
+describe('createHilosUserCardStepUp', () => {
+  /** A context whose start action answers with the given word, recording what was sent. */
+  function stepUpContext(answer: { required: boolean } | ActionError): {
+    context: HilosUsersContext
+    calls: Array<{ action: string; payload: Record<string, unknown> }>
+  } {
+    const calls: Array<{ action: string; payload: Record<string, unknown> }> =
+      []
+    const context = {
+      actions: {
+        dispatch(
+          action: string,
+          payload: Record<string, unknown>,
+        ): ActionHandle {
+          calls.push({ action, payload })
+          const done =
+            answer instanceof ActionError
+              ? Promise.reject(answer)
+              : Promise.resolve({
+                  reply: {
+                    ...answer,
+                    purpose: 'merge an account into this one',
+                    method: 'password',
+                  },
+                })
+
+          return { done } as unknown as ActionHandle
+        },
+      },
+    } as unknown as HilosUsersContext
+
+    return { context, calls }
+  }
+
+  it('names the operation of every window that takes something away', () => {
+    expect(HILOS_USER_CARD_STEP_UP_OPERATIONS).toEqual({
+      merge: 'merge_accounts',
+      grant: 'grant_admin',
+      revoke: 'revoke_admin',
+      block: 'block_account',
+      delete: 'delete_other_account',
+    })
+  })
+
+  it('opens a window that gives back without asking the server', async () => {
+    const { context, calls } = stepUpContext({ required: true })
+    const stepUp = createHilosUserCardStepUp(context)
+
+    expect(await stepUp.open('unblock')).toBe('skip')
+    expect(await stepUp.open('cancelDeletion')).toBe('skip')
+    expect(calls).toEqual([])
+  })
+
+  it('asks the server by the operation of every other window, whatever the list says', async () => {
+    const { context, calls } = stepUpContext({ required: false })
+    const stepUp = createHilosUserCardStepUp(context)
+    const windows: (keyof typeof HILOS_USER_CARD_STEP_UP_OPERATIONS &
+      HilosUserCardWindow)[] = ['merge', 'grant', 'revoke', 'block', 'delete']
+
+    for (const window of windows) {
+      expect(await stepUp.open(window)).toBe('skip')
+    }
+    expect(calls).toEqual(
+      windows.map((window) => ({
+        action: 'hilos_step_up_start',
+        payload: { operation: HILOS_USER_CARD_STEP_UP_OPERATIONS[window] },
+      })),
+    )
+  })
+
+  it('draws the step when the server asks, and the refusal when it refuses', async () => {
+    const asking = createHilosUserCardStepUp(
+      stepUpContext({ required: true }).context,
+    )
+    expect(await asking.open('merge')).toBe('ask')
+    expect(asking.step.opening.get()?.method).toBe('password')
+
+    const refusing = createHilosUserCardStepUp(
+      stepUpContext(
+        new ActionError(
+          'hilos_step_up_start',
+          'fail',
+          'Add a password, an email or a phone to your account to do this',
+        ),
+      ).context,
+    )
+    expect(await refusing.open('grant')).toBe('refused')
+    expect(refusing.step.refusal.get()).toBe(
+      'Add a password, an email or a phone to your account to do this',
+    )
   })
 })

@@ -16,10 +16,12 @@ final class StepUpTestHilos extends Hilos
 
     /**
      * @param ?string $disabled Stored switched-off list, or null for no stored row
+     * @param ?string $enabled Stored switched-on list, or null for no stored row
      */
-    public static function mount(?string $disabled): void
+    public static function mount(?string $disabled, ?string $enabled = null): void
     {
         StepUpTestSettings::$disabled = $disabled;
+        StepUpTestSettings::$enabled = $enabled;
         static::$setting = new StepUpTestSettings();
         static::initBrowser();
     }
@@ -30,6 +32,7 @@ final class StepUpTestHilos extends Hilos
     public static function unmount(): void
     {
         StepUpTestSettings::$disabled = null;
+        StepUpTestSettings::$enabled = null;
         static::$setting = null;
         Hilos::initBrowser();
         Hilos::resetBrowser();

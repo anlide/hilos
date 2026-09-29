@@ -72,7 +72,11 @@ reply carries the project's own tally under the project's own names — in chat,
 It is also the one command of the six with a second way in: an admin table submits the same
 merge as the `hilos_user_merge` action on the single-user page, the page forwards it to the
 library on `hilos_account_merge`, and the outcome comes back to that page on
-`hilos_account_merge_done` so the tracked action is completed where it began.
+`hilos_account_merge_done` so the tracked action is completed where it began. That
+second way in asks what the command does not: an active administrator and their fresh
+confirmation of the merge (the step-up operation `merge_accounts`, see
+[step-up.md](../architecture/step-up.md)) — the operator at the console has nothing to
+confirm with.
 
 ## Test-only commands
 

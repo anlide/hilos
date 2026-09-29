@@ -19,6 +19,7 @@ export {
   type HilosStepUpOpening,
   type HilosStepUpAnswer,
   type HilosStepUpActions,
+  type HilosStepUpOpenOutcome,
   type HilosStepUpStep,
 } from './auth/stepUp.js'
 export {
@@ -963,7 +964,9 @@ export {
   createHilosMergeCandidates,
   createHilosAccountMerge,
   createHilosUserLifecycle,
+  createHilosUserCardStepUp,
   createHilosUserStanding,
+  HILOS_USER_CARD_STEP_UP_OPERATIONS,
   HILOS_USER_LIFECYCLE_COPY,
   HILOS_USER_STANDING_SECTION,
   HILOS_USERS_LAPSED_FILTER,
@@ -981,6 +984,8 @@ export {
   type HilosUserFrozenRow,
   type HilosUsersAddress,
   type HilosUserStanding,
+  type HilosUserCardStepUp,
+  type HilosUserCardWindow,
   type HilosUserLifecycle,
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,

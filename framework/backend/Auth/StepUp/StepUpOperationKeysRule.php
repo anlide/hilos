@@ -9,9 +9,11 @@ use Hilos\Database\Settings\Validation\SettingValueRuleInterface;
 use Hilos\Hilos;
 
 /**
- * Refuses a switched-off list that names an operation the project did not declare (HIL-495).
+ * Refuses an operation list that names an operation the project did not declare (HIL-495, HIL-1275).
+ *
+ * The rule of both lists of {@see StepUpSettings}: the switched-off and the switched-on one.
  */
-final class StepUpDisabledRule implements SettingValueRuleInterface
+final class StepUpOperationKeysRule implements SettingValueRuleInterface
 {
     /** Refusal text for an unknown operation; the key follows the colon. */
     private const string REFUSAL_UNKNOWN = 'Unknown operation: %s';

@@ -26,7 +26,7 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 
 /**
- * Declared protected operations narrowed by the installation setting (HIL-495).
+ * Declared protected operations, each moved off its declared position by one of two settings (HIL-495, HIL-1275).
  */
 final class HilosSecurityStepUpTable extends TableDefinition implements SelfSnapshotTable
 {
@@ -55,7 +55,7 @@ final class HilosSecurityStepUpTable extends TableDefinition implements SelfSnap
             return null;
         }
         $key = $change->row[ObjectSetting::key] ?? $this->settingKeyOf($change->sourceId);
-        if ($key !== StepUpSettings::DISABLED_KEY) {
+        if ($key !== StepUpSettings::DISABLED_KEY && $key !== StepUpSettings::ENABLED_KEY) {
             return null;
         }
 

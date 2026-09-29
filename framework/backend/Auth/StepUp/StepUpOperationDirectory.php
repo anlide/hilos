@@ -10,7 +10,8 @@ use Hilos\Hilos;
 /**
  * The code-side directory of operations a project protects with step-up (HIL-495).
  *
- * The framework declares its account operations. A project points
+ * The framework declares the person's operations on their own account, then the
+ * administrator's operations on another person's account (HIL-1275). A project points
  * {@see Hilos::STEP_UP_OPERATION_DIRECTORY} at a subclass and appends its own entries.
  * The order is the order of the administration table.
  */
@@ -63,6 +64,38 @@ abstract class StepUpOperationDirectory
                 'add a way to sign in',
                 false,
                 passesWithNothingToConfirm: true,
+            ),
+            StepUpOperationKey::MERGE_ACCOUNTS => new StepUpOperation(
+                StepUpOperationKey::MERGE_ACCOUNTS,
+                'Merge accounts',
+                'merge an account into this one',
+                false,
+            ),
+            StepUpOperationKey::GRANT_ADMIN => new StepUpOperation(
+                StepUpOperationKey::GRANT_ADMIN,
+                'Grant admin rights',
+                'grant admin rights',
+                false,
+            ),
+            StepUpOperationKey::REVOKE_ADMIN => new StepUpOperation(
+                StepUpOperationKey::REVOKE_ADMIN,
+                'Remove admin rights',
+                'remove admin rights',
+                false,
+                enabledByDefault: false,
+            ),
+            StepUpOperationKey::BLOCK_ACCOUNT => new StepUpOperation(
+                StepUpOperationKey::BLOCK_ACCOUNT,
+                'Block an account',
+                'block this account',
+                false,
+                enabledByDefault: false,
+            ),
+            StepUpOperationKey::DELETE_OTHER_ACCOUNT => new StepUpOperation(
+                StepUpOperationKey::DELETE_OTHER_ACCOUNT,
+                "Delete another person's account",
+                'delete this account',
+                false,
             ),
         ];
     }

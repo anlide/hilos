@@ -11,11 +11,13 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\SettingsAccessor;
 
 /**
- * Step-up settings accessor with a scripted persisted disabled list.
+ * Step-up settings accessor with scripted persisted disabled and enabled lists.
  */
 final class StepUpTestSettings extends SettingsAccessor
 {
     public static ?string $disabled = null;
+
+    public static ?string $enabled = null;
 
     public function __construct()
     {
@@ -32,6 +34,9 @@ final class StepUpTestSettings extends SettingsAccessor
     {
         if ($key === StepUpSettings::DISABLED_KEY && self::$disabled !== null) {
             return self::$disabled;
+        }
+        if ($key === StepUpSettings::ENABLED_KEY && self::$enabled !== null) {
+            return self::$enabled;
         }
 
         return parent::effectiveValueFor($key);

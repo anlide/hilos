@@ -8,7 +8,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 
 /**
- * Framework settings-catalog fragment for operation-level step-up (HIL-495).
+ * Framework settings-catalog fragment for operation-level step-up (HIL-495, HIL-1275).
  */
 final class StepUpSettingsCatalog implements CatalogProviderInterface
 {
@@ -21,7 +21,12 @@ final class StepUpSettingsCatalog implements CatalogProviderInterface
             StepUpSettings::DISABLED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
-                SettingsCatalogConstants::CATALOG_ENTRY_RULE => StepUpDisabledRule::class,
+                SettingsCatalogConstants::CATALOG_ENTRY_RULE => StepUpOperationKeysRule::class,
+            ],
+            StepUpSettings::ENABLED_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
+                SettingsCatalogConstants::CATALOG_ENTRY_RULE => StepUpOperationKeysRule::class,
             ],
         ];
     }

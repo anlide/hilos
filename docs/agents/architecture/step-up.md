@@ -16,13 +16,21 @@ available. Both default to false. `export_data` declares both (see
 [data-export.md](data-export.md)). `opensWithSecondFactorProof` says the
 operation's own first step asks a code from a connected authenticator app, so
 an account holding one is not asked twice; it defaults to false, and
-`add_authenticator_app` declares it (HIL-1138).
+`add_authenticator_app` declares it (HIL-1138). `enabledByDefault` says where
+the operation stands before an administrator touches the list: `true`, the
+default, for one that asks until it is switched off; `false` for one that asks
+only once it is switched on (HIL-1275, see *Administration*).
 
 The framework's own operations are the person's operations on their own
 account: changing the password or the email, deleting the account, exporting
 its data, connecting an authenticator app (`add_authenticator_app`) and adding
 a way to sign in (`add_sign_in_method`, one operation for a password, a phone,
-a device key and a provider link).
+a device key and a provider link). After them come the administrator's
+operations on another person's account: merging an account into the one on the
+card (`merge_accounts`), granting and removing administrator rights
+(`grant_admin`, `revoke_admin`), blocking an account (`block_account`) and
+scheduling another person's deletion (`delete_other_account`) — see
+*Operations on another person's account*.
 
 Declaring an operation does not protect it by itself. Every server action that
 belongs to the operation calls `requireStepUp($acceptKey, $operation)` before it
@@ -95,11 +103,70 @@ that outlives the session, and every add is such a way.
   administrator requires on the way in, both happen where the person has just
   proved who they are.
 
+## Operations on another person's account
+
+An administrator's action that takes something away from another person is a
+step-up operation declared in the framework directory, and which of these
+actions ask is the administrator's to decide with the list, not the code's
+(decision of the owner, 27.09.2026, HIL-1275). The threat is the one the
+person's own operations answer: the browser of a signed-in administrator, with
+someone else at it.
+
+- **Declared on** — when the real administrator, back at the browser, cannot
+  undo it with one action. A merge cannot be undone at all. A new administrator
+  acts on their own from then on, up to removing the real one's rights. A
+  scheduled deletion runs to its end through the grace period, and a person
+  confirms deleting their own account, so an administrator confirms deleting
+  someone else's.
+- **Declared off** — when one action gives it back: removing rights, blocking.
+  They stand in the list so that an administrator can switch them on.
+- **Never an operation** — an action that gives back rather than takes: lifting
+  a block, calling a deletion off, as calling off one's own deletion stands
+  outside the gate (HIL-302).
+
+A new action of this kind — the next one the card grows — is declared the same
+way and takes its position by the same test.
+
+The check stands in the library that owns the write, not in the page that
+forwards it: after the library re-checks who pressed — an active administrator,
+not under impersonation — `AskingAdministrator::confirmed()` asks the gate for
+the action's operation, before any guard of the action itself. It confirms the
+ADMINISTRATOR of this browser, by the method the administrator's own account can
+prove, never the person on the card. None of these operations passes an account
+with nothing to confirm with: such an administrator is refused. The operator's
+console commands (`account:merge`, `admin:grant`, `admin:revoke`) stand outside
+the check: at the console there is nothing to confirm with.
+
+On the card the window of such an action opens on the step
+(`createHilosUserCardStepUp`): the view asks the server by its window's
+operation every time, and the list answers whether a step is needed.
+
 ## Administration
 
-Every declared operation is enabled by default. The
-`auth.step_up.disabled` setting can only narrow that code-declared directory;
-it cannot invent an operation. The security administration table labels each
-row as framework- or project-owned and writes the disabled list through the
-settings library. Disabling an operation makes its gate pass immediately;
-enabling it makes the next action require a live confirmation.
+The security administration table lists every declared operation, labels each
+row as framework- or project-owned and gives it a switch. A setting can move an
+operation away from its declared position but can never invent one. Two
+settings hold those departures, one per position:
+
+- `auth.step_up.disabled` — operations switched off among those declared on;
+- `auth.step_up.enabled` — operations switched on among those declared off.
+
+An operation is protected when it is declared on and absent from the first
+list, or declared off and present in the second
+(`StepUpSettings::isEnabled()`). A switch writes the list of its operation's
+side only (`StepUpSettings::listKeyFor()`), through the settings library:
+departing from the declared position lists the operation, returning to it takes
+the operation out, and the list keeps operations of its own side in directory
+order. `StepUpOperationKeysRule` refuses a list that names an undeclared
+operation, on both keys.
+
+Two lists and not one, because a setting's value is its stored row when there is
+one and the catalog default otherwise, and the row appears with the first switch.
+A single list of switched-off operations could keep an operation declared off
+only by naming it, and one that joins the directory after the first switch would
+be missing from the stored list — on, whatever its declaration said. With a list
+per side, an operation added later stands where it was declared, whatever was
+switched before it.
+
+Switching an operation off makes its gate pass immediately; switching it on
+makes the next action require a live confirmation.

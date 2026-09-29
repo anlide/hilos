@@ -61,6 +61,9 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     public const int ADMIN_USER_ID = 1139;
     public const string ADMIN_ACCEPT_KEY = 'accept-profile-admin';
 
+    /** The administrator's own browser: an administrator's action confirms against it (HIL-1275). */
+    public const string ADMIN_SESSION_TOKEN = 'dd0000000000000000000000000001137';
+
     /** Another account, holding what the person under test is refused. */
     protected const int OTHER_USER_ID = 1138;
 
@@ -119,6 +122,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         self::seedSession(self::SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null);
         self::seedSession(self::OTHER_SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null);
         self::seedSession(self::ANONYMOUS_SESSION_TOKEN, null, self::CREATED_AT, null);
+        self::seedSession(self::ADMIN_SESSION_TOKEN, self::ADMIN_USER_ID, self::CREATED_AT, null);
         $this->library = new ProfileIntegrationLibrary();
     }
 
@@ -200,13 +204,14 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
      *
      * @param string $operation Declared operation key
      * @param string $token Session token of the browser the confirmation belongs to
+     * @param int $userId Person who confirmed - the administrator for an action on someone else's account
      * @throws HilosException When the confirmation row cannot be written
      */
-    protected function confirmStepUp(string $operation, string $token = self::SESSION_TOKEN): void
+    protected function confirmStepUp(string $operation, string $token = self::SESSION_TOKEN, int $userId = self::USER_ID): void
     {
         Hilos::$db->stepUps->actions->confirm(
             ProtectedModeRuntime::hashSessionToken($token),
-            self::USER_ID,
+            $userId,
             $operation,
             date('Y-m-d H:i:s', time() + self::TTL_SECONDS),
         );
@@ -331,6 +336,7 @@ final class ProfileIntegrationRtContext extends RtContext
         $connections->add(ProfileIntegrationConnection::create(
             ProfileIntegrationTestCase::ADMIN_ACCEPT_KEY,
             ProfileIntegrationTestCase::ADMIN_USER_ID,
+            ProfileIntegrationTestCase::ADMIN_SESSION_TOKEN,
         ));
         $connections->add(ProfileIntegrationConnection::create(
             ProfileIntegrationTestCase::ANONYMOUS_ACCEPT_KEY,

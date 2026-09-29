@@ -4508,9 +4508,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Runs the merge the Hilos user page asked for, and hands the outcome back to it.
      *
-     * The second way into one core (HIL-378, HIL-411). The password fate is read at the write
-     * boundary. When both accounts have a password and the action named none, the browser gets
-     * its own instruction before the CLI-shaped core can emit its command-line wording.
+     * The second way into one core (HIL-378, HIL-411). The administrator is re-checked and their
+     * fresh confirmation of the merge is asked first ({@see AskingAdministrator::confirmed()},
+     * HIL-1275); the command-line way stands outside it - the operator at the console has nothing
+     * to confirm with. The password fate is read at the write boundary. When both accounts have a
+     * password and the action named none, the browser gets its own instruction before the
+     * CLI-shaped core can emit its command-line wording.
      *
      * A refusal is answered rather than thrown because the page deferred its ack. Internal
      * failures are logged here, where the write context is known, and travel through the same
@@ -4522,6 +4525,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function handleAccountMergeRequest(AccountMergeSignalData $request): void
     {
         try {
+            AskingAdministrator::confirmed($request->acceptKey, StepUpOperationKey::MERGE_ACCOUNTS);
             $passwordFate = $request->passwordFate === null ? null : PasswordFate::tryFrom($request->passwordFate);
             if ($request->passwordFate !== null && $passwordFate === null) {
                 throw new ValidationException('Unknown account-merge password fate');
@@ -6742,7 +6746,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function handleAdminSetRequest(AccountAdminSetSignalData $request): void
     {
         try {
-            $by = AskingAdministrator::of($request->acceptKey);
+            $by = AskingAdministrator::confirmed(
+                $request->acceptKey,
+                $request->admin ? StepUpOperationKey::GRANT_ADMIN : StepUpOperationKey::REVOKE_ADMIN,
+            );
             if (!$request->admin) {
                 if ($request->userId === $by) {
                     throw new ValidationException('You cannot remove your own admin rights');
@@ -6795,7 +6802,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function handleBlockSetRequest(AccountBlockSetSignalData $request): void
     {
         try {
-            $by = AskingAdministrator::of($request->acceptKey);
+            // Lifting a block gives back rather than takes away, so it is no operation to confirm (HIL-1275).
+            $by = $request->block
+                ? AskingAdministrator::confirmed($request->acceptKey, StepUpOperationKey::BLOCK_ACCOUNT)
+                : AskingAdministrator::of($request->acceptKey);
             if ($request->userId === $by) {
                 throw new ValidationException('You cannot block yourself');
             }

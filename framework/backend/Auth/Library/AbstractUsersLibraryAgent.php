@@ -111,6 +111,7 @@ use Hilos\Auth\SecondFactor\SecondFactorResetSweeper;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -1988,7 +1989,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private function handleDeletionSetRequest(AccountDeletionSetSignalData $request): void
     {
         try {
-            $by = AskingAdministrator::of($request->acceptKey);
+            // Calling a deletion off gives back rather than takes away, so it is no operation to confirm (HIL-1275).
+            $by = $request->scheduled
+                ? AskingAdministrator::confirmed($request->acceptKey, StepUpOperationKey::DELETE_OTHER_ACCOUNT)
+                : AskingAdministrator::of($request->acceptKey);
             if ($request->scheduled) {
                 if ($request->userId === $by) {
                     throw new ValidationException('Delete your own account from your profile');

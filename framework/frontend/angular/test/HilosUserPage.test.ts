@@ -54,7 +54,18 @@ function router(): HilosRouter {
  * name through the `user` entity — so a rename elsewhere is an entity upsert and
  * a deleted user is the row leaving the table.
  */
-function userContext(accountMerge = false): {
+/** The refusal a window meets when its administrator has nothing to confirm with. */
+const STEP_UP_REFUSAL =
+  'Add a password, an email or a phone to your account to do this'
+
+/**
+ * A window that takes something away opens on the server's word about the
+ * administrator's confirmation (HIL-1275); `stepUp` is that word.
+ */
+function userContext(
+  accountMerge = false,
+  stepUp: 'skip' | 'ask' | 'refused' = 'skip',
+): {
   context: HilosUsersContext
   renameElsewhere: (name: string) => void
   removeRow: () => void
@@ -75,11 +86,39 @@ function userContext(accountMerge = false): {
   const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
   const connection = new HilosConnection({ url: 'ws://test/ws' })
   const sent: Array<{ action: string; data: unknown }> = []
-  vi.spyOn(connection, 'sendAction').mockImplementation((action, data) => {
-    sent.push({ action, data })
+  const actionListeners = new Map<string, Array<(signal: unknown) => void>>()
+  // The server's word on the step, answered on the next microtask as a socket would.
+  const answerStepUp = (action: string, requestId?: string): void => {
+    const refused = action === 'hilos_step_up_start' && stepUp === 'refused'
+    const signal = refused
+      ? { kind: 'actionError', action, requestId, reason: STEP_UP_REFUSAL }
+      : {
+          kind: 'actionSuccess',
+          action,
+          requestId,
+          reply:
+            action === 'hilos_step_up_start'
+              ? {
+                  required: stepUp === 'ask',
+                  purpose: 'grant admin rights',
+                  method: 'password',
+                }
+              : undefined,
+        }
+    for (const listener of actionListeners.get(signal.kind) ?? []) {
+      listener(signal)
+    }
+  }
+  vi.spyOn(connection, 'sendAction').mockImplementation(
+    (action, data, requestId) => {
+      sent.push({ action, data })
+      if (action.startsWith('hilos_step_up_')) {
+        queueMicrotask(() => answerStepUp(action, requestId))
+      }
 
-    return true
-  })
+      return true
+    },
+  )
   // The rename's fail ack arrives as an unknown signal; keep its listeners to
   // answer a refusal.
   const unknownListeners: Array<(signal: { type: string }) => void> = []
@@ -94,6 +133,12 @@ function userContext(accountMerge = false): {
       projectListeners.push(
         listener as (signal: Record<string, unknown>) => void,
       )
+    }
+    if (event === 'actionSuccess' || event === 'actionError') {
+      actionListeners.set(event, [
+        ...(actionListeners.get(event) ?? []),
+        listener as (signal: unknown) => void,
+      ])
     }
 
     return on(event, listener)
@@ -164,6 +209,14 @@ function saveButton(fixture: ComponentFixture<unknown>): HTMLButtonElement {
   return el(fixture, 'hilos-user-save') as HTMLButtonElement
 }
 
+/** Let the step's answer arrive and draw what it opened. */
+async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
+  await new Promise((done) => setTimeout(done, 0))
+  fixture.detectChanges()
+  await fixture.whenStable()
+  fixture.detectChanges()
+}
+
 function typeDraft(fixture: ComponentFixture<unknown>, text: string): void {
   const input = nameInput(fixture)
   input.value = text
@@ -172,7 +225,7 @@ function typeDraft(fixture: ComponentFixture<unknown>, text: string): void {
 }
 
 describe('HilosUserPage rename modal', () => {
-  it('shows the merge zone only when enabled and locks Next without a candidate', () => {
+  it('shows the merge zone only when enabled and locks Next without a candidate', async () => {
     const fixture = openModal(userContext().context)
     expect(el(fixture, 'hilos-user-merge-zone')).toBeNull()
 
@@ -180,7 +233,7 @@ describe('HilosUserPage rename modal', () => {
     fixture.detectChanges()
     expect(el(fixture, 'hilos-user-merge-zone')).not.toBeNull()
     el(fixture, 'hilos-user-merge-open')?.click()
-    fixture.detectChanges()
+    await settle(fixture)
     expect(
       (el(fixture, 'hilos-user-merge-next') as HTMLButtonElement).disabled,
     ).toBe(true)
@@ -430,7 +483,8 @@ describe('HilosUserPage lifecycle', () => {
     await change(() => {
       context.scopes.page()?.data.set('accountDeletionGraceDays', 30)
     })
-    await click('hilos-user-deletion-open')
+    find('hilos-user-deletion-open')?.click()
+    await settle(fixture)
     expect(find('modal')?.textContent).toContain('After 30 days')
     await click('hilos-user-lifecycle-cancel')
     const effectiveAt = Date.now() + 30 * 86_400_000
@@ -483,6 +537,9 @@ describe('HilosUserPage lifecycle', () => {
     }
     let resolve!: (value: ActionResult) => void
     let reject!: (reason: unknown) => void
+    find('hilos-user-block-open')?.click()
+    await settle(fixture)
+    expect(find('modal')?.textContent).toContain('No reason is stored')
     const dispatch = vi
       .spyOn(context.actions, 'dispatch')
       .mockImplementation(() => ({
@@ -493,8 +550,6 @@ describe('HilosUserPage lifecycle', () => {
           reject = no
         }),
       }))
-    await click('hilos-user-block-open')
-    expect(find('modal')?.textContent).toContain('No reason is stored')
     await click('hilos-user-lifecycle-confirm')
     expect(dispatch).toHaveBeenLastCalledWith('hilos_user_block_set', {
       userId: 1,
@@ -530,6 +585,131 @@ describe('HilosUserPage lifecycle', () => {
       resolve({ message: 'Account blocked. Sessions ended: 1' })
     })
     expect(find('hilos-user-lifecycle-confirm')).toBeNull()
+  })
+})
+
+describe('HilosUserPage confirmation step (HIL-1275)', () => {
+  /** Mount the card with the fixture's step-up answer. */
+  function mountCard(
+    accountMerge: boolean,
+    stepUp: 'skip' | 'ask' | 'refused',
+  ): {
+    fixture: ComponentFixture<HilosUserPage>
+    world: ReturnType<typeof userContext>
+  } {
+    const world = userContext(accountMerge, stepUp)
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', world.context)
+    fixture.detectChanges()
+
+    return { fixture, world }
+  }
+
+  async function click(
+    fixture: ComponentFixture<unknown>,
+    id: string,
+  ): Promise<void> {
+    el(fixture, id)?.click()
+    await settle(fixture)
+  }
+
+  function typePassword(
+    fixture: ComponentFixture<unknown>,
+    text: string,
+  ): void {
+    const input = el(fixture, 'step-up-password') as HTMLInputElement
+    input.value = text
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    fixture.detectChanges()
+  }
+
+  it('asks by the merge operation and shows no other account before the step is passed', async () => {
+    const { fixture, world } = mountCard(true, 'ask')
+    const register = vi.spyOn(world.context.connection, 'registerTableWindow')
+    const candidatesAsked = () =>
+      register.mock.calls.some(([tableKey]) => tableKey === 'mergeCandidates')
+    await click(fixture, 'hilos-user-merge-open')
+
+    expect(world.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      data: { operation: 'merge_accounts' },
+    })
+    expect(el(fixture, 'modal')?.textContent).toContain("Confirm it's you")
+    expect(el(fixture, 'step-up-password')).not.toBeNull()
+    expect(el(fixture, 'hilos-user-merge-next')).toBeNull()
+    expect(candidatesAsked()).toBe(false)
+
+    typePassword(fixture, 'secret')
+    await click(fixture, 'hilos-user-merge-step-up-confirm')
+
+    expect(
+      world.sent.find((entry) => entry.action === 'hilos_step_up_confirm'),
+    ).toMatchObject({
+      data: { operation: 'merge_accounts', password: 'secret' },
+    })
+    expect(el(fixture, 'step-up-password')).toBeNull()
+    expect(el(fixture, 'hilos-user-merge-next')).not.toBeNull()
+    expect(candidatesAsked()).toBe(true)
+  })
+
+  it('opens the merge on its first step when no confirmation is needed', async () => {
+    const { fixture, world } = mountCard(true, 'skip')
+    await click(fixture, 'hilos-user-merge-open')
+
+    expect(world.sent[0]?.action).toBe('hilos_step_up_start')
+    expect(el(fixture, 'step-up')).toBeNull()
+    expect(el(fixture, 'hilos-user-merge-next')).not.toBeNull()
+  })
+
+  it('draws a refusal with Cancel alone', async () => {
+    const { fixture } = mountCard(true, 'refused')
+    await click(fixture, 'hilos-user-merge-open')
+
+    expect(el(fixture, 'step-up-error')?.textContent).toContain(STEP_UP_REFUSAL)
+    expect(el(fixture, 'hilos-user-merge-cancel')).not.toBeNull()
+    expect(el(fixture, 'hilos-user-merge-step-up-confirm')).toBeNull()
+    expect(el(fixture, 'hilos-user-merge-next')).toBeNull()
+  })
+
+  it('asks before granting rights, then shows the confirmation text; Enter in the field confirms', async () => {
+    const { fixture, world } = mountCard(false, 'ask')
+    await click(fixture, 'hilos-user-admin-open')
+
+    expect(world.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      data: { operation: 'grant_admin' },
+    })
+    expect(el(fixture, 'hilos-user-lifecycle-step-up-confirm')).not.toBeNull()
+    expect(el(fixture, 'hilos-user-lifecycle-confirm')).toBeNull()
+
+    typePassword(fixture, 'secret')
+    el(fixture, 'hilos-user-lifecycle-step-up')?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await settle(fixture)
+
+    expect(
+      world.sent.find((entry) => entry.action === 'hilos_step_up_confirm'),
+    ).toMatchObject({ data: { operation: 'grant_admin' } })
+    expect(el(fixture, 'step-up')).toBeNull()
+    expect(el(fixture, 'hilos-user-lifecycle-confirm')).not.toBeNull()
+    expect(el(fixture, 'modal')?.textContent).not.toContain("Confirm it's you")
+  })
+
+  it('opens Lift the block without asking the server', async () => {
+    const { fixture, world } = mountCard(false, 'ask')
+    world.context.scopes
+      .page()
+      ?.entities.upsert({ type: 'user', id: 1 }, { block: true })
+    await settle(fixture)
+    await click(fixture, 'hilos-user-block-open')
+
+    expect(world.sent).toEqual([])
+    expect(el(fixture, 'step-up')).toBeNull()
+    expect(el(fixture, 'hilos-user-lifecycle-confirm')).not.toBeNull()
   })
 })
 

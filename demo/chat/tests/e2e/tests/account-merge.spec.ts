@@ -68,6 +68,10 @@ test('merges another account into the user on the admin card', async ({
 
     await gotoPage(page, `/hilos/user/${survivor.userId}`)
     await clickSubmit(page.getByTestId('hilos-user-merge-open'))
+    // The merge cannot be undone, so the administrator confirms it is them
+    // first, with their own password (HIL-1275).
+    await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+    await clickSubmit(page.getByTestId('hilos-user-merge-step-up-confirm'))
     await typeInto(page.getByTestId('hilos-table-search'), loser.email)
     const loserChoiceId = `hilos-user-merge-row-${loser.userId}`
     const loserChoice = shownByTestId(page, loserChoiceId)

@@ -12,12 +12,18 @@
 // the backend fail ack inside the modal. The person's standing is one verdict
 // (createHilosUserStanding, HIL-945): the badge beside the presence in the
 // header shows the standing shown, and the access section draws the block, the
-// freeze — a fact with no control — and the deletion from the same verdict.
-// Bootstrap classes only (styling-rules.md).
-import { Fragment, useEffect, useMemo, useState } from 'react'
+// freeze — a fact with no control — and the deletion from the same verdict. A
+// window whose action takes something away — the merge, rights, the block, the
+// deletion — first asks the server whether the administrator must confirm it is
+// them, and opens on that step when it must (createHilosUserCardStepUp,
+// HIL-1275). Bootstrap classes only (styling-rules.md).
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
+  createHilosUserCardStepUp,
   createHilosUserLifecycle,
+  focusInitial,
+  HILOS_STEP_UP_COPY,
   createHilosUserStanding,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
@@ -25,6 +31,7 @@ import {
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
+  type HilosStepUpOpenOutcome,
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   HILOS_TABLE_ACTIONS_KEY,
@@ -50,6 +57,7 @@ import type {
   RowEditStep,
 } from '@hilos/core'
 
+import { HilosStepUpStep } from '../../auth/HilosStepUpStep.js'
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
@@ -88,6 +96,19 @@ function noticeText(live: RowEditState<UserEditFields>): string {
       return 'Updated just now'
     default:
       return ''
+  }
+}
+
+/**
+ * Move the focus into a window whose step changed under it; the modal itself
+ * places focus only when it opens.
+ *
+ * @param body An element inside the window, drawn at the new step.
+ */
+function focusWindow(body: HTMLElement | null): void {
+  const dialog = body?.closest<HTMLElement>('[role="dialog"]')
+  if (dialog) {
+    focusInitial(dialog)
   }
 }
 
@@ -141,10 +162,53 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     return () => clearInterval(tick)
   }, [])
 
-  function openLifecycle(choice: HilosUserLifecycleChoice): void {
-    if (!detail || lifecycleAction.busy) return
+  // The confirmation step the window opens with (HIL-1275): `ask` draws it,
+  // `refused` draws its refusal, `skip` the window's own content.
+  const lifecycleStepUp = useMemo(
+    () => createHilosUserCardStepUp(context),
+    [context],
+  )
+  const lifecycleStepUpBusy = useSignal(lifecycleStepUp.step.busy)
+  const lifecycleStepUpRefusal = useSignal(lifecycleStepUp.step.refusal)
+  const [lifecycleProof, setLifecycleProof] =
+    useState<HilosStepUpOpenOutcome>('skip')
+  // The proof as the async confirmation sees it, past the render it was set in.
+  const lifecycleProofRef = useRef<HilosStepUpOpenOutcome>('skip')
+  function moveLifecycleProof(next: HilosStepUpOpenOutcome): void {
+    lifecycleProofRef.current = next
+    setLifecycleProof(next)
+  }
+  // The window whose button waits for the server's word; a second press sends nothing.
+  const [lifecycleOpening, setLifecycleOpening] =
+    useState<HilosUserLifecycleChoice | null>(null)
+  const lifecycleOpeningRef = useRef(false)
+  const lifecycleBody = useRef<HTMLDivElement>(null)
+  useEffect(() => focusWindow(lifecycleBody.current), [lifecycleProof])
+
+  async function openLifecycle(
+    choice: HilosUserLifecycleChoice,
+  ): Promise<void> {
+    if (!detail || lifecycleAction.busy || lifecycleOpeningRef.current) return
     lifecycleAction.clearError()
-    setLifecyclePrompt(hilosUserLifecyclePrompt(detail, choice, graceDays))
+    const prompt = hilosUserLifecyclePrompt(detail, choice, graceDays)
+    lifecycleOpeningRef.current = true
+    setLifecycleOpening(choice)
+    const proof = await lifecycleStepUp.open(choice)
+    lifecycleOpeningRef.current = false
+    setLifecycleOpening(null)
+    moveLifecycleProof(proof)
+    setLifecyclePrompt(prompt)
+  }
+
+  /** Send the step's proof; the window's own content follows a success. */
+  async function confirmLifecycleStep(): Promise<void> {
+    if (
+      lifecycleProofRef.current === 'ask' &&
+      (await lifecycleStepUp.step.confirm()) &&
+      lifecycleProofRef.current === 'ask'
+    ) {
+      moveLifecycleProof('skip')
+    }
   }
 
   function closeLifecycle(): void {
@@ -182,6 +246,28 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const currentUserId = useSignal(currentUserIdSignal)
   const mergeAction = useTrackedAction()
   const [mergeOpen, setMergeOpen] = useState(false)
+  // Whether the window stands open, as the async confirmation sees it.
+  const mergeOpenRef = useRef(false)
+  function showMerge(open: boolean): void {
+    mergeOpenRef.current = open
+    setMergeOpen(open)
+  }
+  const mergeStepUp = useMemo(
+    () => createHilosUserCardStepUp(context),
+    [context],
+  )
+  const mergeStepUpBusy = useSignal(mergeStepUp.step.busy)
+  const mergeStepUpRefusal = useSignal(mergeStepUp.step.refusal)
+  const [mergeProof, setMergeProof] = useState<HilosStepUpOpenOutcome>('skip')
+  const mergeProofRef = useRef<HilosStepUpOpenOutcome>('skip')
+  function moveMergeProof(next: HilosStepUpOpenOutcome): void {
+    mergeProofRef.current = next
+    setMergeProof(next)
+  }
+  const [mergeOpening, setMergeOpening] = useState(false)
+  const mergeOpeningRef = useRef(false)
+  const mergeBody = useRef<HTMLDivElement>(null)
+  useEffect(() => focusWindow(mergeBody.current), [mergeProof])
   const [mergeStep, setMergeStep] = useState<1 | 2>(1)
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(
     null,
@@ -254,22 +340,48 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     return identity.provider ?? identity.type
   }
 
-  function openMerge(): void {
-    if (!detail) {
+  async function openMerge(): Promise<void> {
+    if (!detail || mergeOpeningRef.current) {
       return
     }
+    const survivorId = detail.id
     mergeCandidates.dispose()
     mergeAction.clearError()
     setMergeStep(1)
     setSelectedCandidateId(null)
     setSelectedSnapshot(null)
     setPasswordFate(null)
-    setMergeOpen(true)
-    mergeCandidates.start(detail.id)
+    mergeOpeningRef.current = true
+    setMergeOpening(true)
+    const proof = await mergeStepUp.open('merge')
+    mergeOpeningRef.current = false
+    setMergeOpening(false)
+    moveMergeProof(proof)
+    showMerge(true)
+    // Other accounts are shown only once the administrator stands confirmed.
+    if (proof === 'skip') {
+      mergeCandidates.start(survivorId)
+    }
+  }
+
+  /** Send the step's proof; the choice of an account follows a success. */
+  async function confirmMergeStep(): Promise<void> {
+    if (!detail || mergeProofRef.current !== 'ask') {
+      return
+    }
+    const survivorId = detail.id
+    if (
+      (await mergeStepUp.step.confirm()) &&
+      mergeOpenRef.current &&
+      mergeProofRef.current === 'ask'
+    ) {
+      moveMergeProof('skip')
+      mergeCandidates.start(survivorId)
+    }
   }
 
   function closeMerge(): void {
-    setMergeOpen(false)
+    showMerge(false)
     mergeCandidates.dispose()
   }
 
@@ -478,16 +590,16 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                         </p>
                       </div>
                       <div>
-                        <button
-                          type="button"
-                          className={`btn btn-sm ${lifecycleCopy.confirmations[row.choice].danger ? 'btn-outline-danger' : 'btn-primary'}`}
+                        <LoadingButton
+                          className={`btn-sm ${lifecycleCopy.confirmations[row.choice].danger ? 'btn-outline-danger' : 'btn-primary'}`}
+                          loading={lifecycleOpening === row.choice}
                           disabled={row.disabled}
                           aria-describedby={`hilos-user-${row.key}-reason`}
                           data-id={`hilos-user-${row.key}-open`}
-                          onClick={() => openLifecycle(row.choice)}
+                          onClick={() => void openLifecycle(row.choice)}
                         >
                           {lifecycleCopy[row.choice]}
-                        </button>
+                        </LoadingButton>
                         <div className="hilos-stack small text-body-secondary mt-1">
                           <span className="invisible" aria-hidden="true">
                             {row.reasonSpace}
@@ -552,14 +664,14 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                   Its sign-in methods and messages move here; the other account
                   is closed for good.
                 </p>
-                <button
-                  type="button"
-                  className="btn btn-outline-danger"
+                <LoadingButton
+                  className="btn-outline-danger"
+                  loading={mergeOpening}
                   data-id="hilos-user-merge-open"
-                  onClick={openMerge}
+                  onClick={() => void openMerge()}
                 >
                   Merge an account into this…
-                </button>
+                </LoadingButton>
               </div>
             </section>
           ) : null}
@@ -573,8 +685,12 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       <HilosModal
         open={lifecyclePrompt !== null}
         onClose={closeLifecycle}
-        title={lifecyclePrompt?.title}
-        initialFocus="dialog"
+        title={
+          lifecycleProof === 'skip'
+            ? lifecyclePrompt?.title
+            : HILOS_STEP_UP_COPY.title
+        }
+        initialFocus="inner"
         closeOnBackdrop={!lifecycleAction.busy}
         closeOnEsc={!lifecycleAction.busy}
         actions={({ requestClose }) => (
@@ -588,31 +704,64 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             >
               {lifecycleCopy.cancel}
             </button>
-            <LoadingButton
-              className={lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'}
-              loading={lifecycleAction.loading}
-              disabled={
-                lifecycleAction.busy || detail?.id !== lifecyclePrompt?.userId
-              }
-              data-id="hilos-user-lifecycle-confirm"
-              onClick={() => void submitLifecycle()}
-            >
-              {lifecyclePrompt?.confirm}
-            </LoadingButton>
+            {lifecycleProof === 'ask' ? (
+              <LoadingButton
+                className="btn-primary"
+                type="submit"
+                form="hilos-user-lifecycle-proof"
+                loading={lifecycleStepUpBusy}
+                data-id="hilos-user-lifecycle-step-up-confirm"
+              >
+                {HILOS_STEP_UP_COPY.confirm}
+              </LoadingButton>
+            ) : lifecycleProof === 'skip' ? (
+              <LoadingButton
+                className={
+                  lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'
+                }
+                loading={lifecycleAction.loading}
+                disabled={
+                  lifecycleAction.busy || detail?.id !== lifecyclePrompt?.userId
+                }
+                data-id="hilos-user-lifecycle-confirm"
+                onClick={() => void submitLifecycle()}
+              >
+                {lifecyclePrompt?.confirm}
+              </LoadingButton>
+            ) : null}
           </>
         )}
       >
-        <div className="visually-hidden" role="alert" aria-live="assertive">
-          {lifecycleAction.error}
-        </div>
-        {lifecyclePrompt?.paragraphs.map((paragraph) => (
-          <p key={paragraph}>{paragraph}</p>
-        ))}
-        <div data-id="hilos-user-lifecycle-error">
-          <HilosActionError
-            action={lifecycleAction}
-            detailsTitle="Account change refused"
-          />
+        <div ref={lifecycleBody}>
+          <div className="visually-hidden" role="alert" aria-live="assertive">
+            {lifecycleProof === 'skip'
+              ? lifecycleAction.error
+              : lifecycleStepUpRefusal}
+          </div>
+          {lifecycleProof === 'skip' ? (
+            <>
+              {lifecyclePrompt?.paragraphs.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+              <div data-id="hilos-user-lifecycle-error">
+                <HilosActionError
+                  action={lifecycleAction}
+                  detailsTitle="Account change refused"
+                />
+              </div>
+            </>
+          ) : (
+            <form
+              id="hilos-user-lifecycle-proof"
+              data-id="hilos-user-lifecycle-step-up"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void confirmLifecycleStep()
+              }}
+            >
+              <HilosStepUpStep controller={lifecycleStepUp.step} />
+            </form>
+          )}
         </div>
       </HilosModal>
 
@@ -702,7 +851,11 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       <HilosModal
         open={mergeOpen}
         title={
-          detail ? `Merge an account into ${detail.name}` : 'Merge an account'
+          mergeProof !== 'skip'
+            ? HILOS_STEP_UP_COPY.title
+            : detail
+              ? `Merge an account into ${detail.name}`
+              : 'Merge an account'
         }
         confirmOnClose={selectedCandidateId !== null}
         closeOnBackdrop={!mergeAction.busy}
@@ -721,7 +874,17 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             >
               Cancel
             </button>
-            {mergeStep === 1 ? (
+            {mergeProof === 'ask' ? (
+              <LoadingButton
+                className="btn-primary"
+                type="submit"
+                form="hilos-user-merge-proof"
+                loading={mergeStepUpBusy}
+                data-id="hilos-user-merge-step-up-confirm"
+              >
+                {HILOS_STEP_UP_COPY.confirm}
+              </LoadingButton>
+            ) : mergeProof === 'refused' ? null : mergeStep === 1 ? (
               <button
                 type="button"
                 className="btn btn-primary"
@@ -756,14 +919,30 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           </>
         )}
       >
-        <div className="visually-hidden" role="alert" aria-live="assertive">
-          {mergeAction.error}
+        <div
+          ref={mergeBody}
+          className="visually-hidden"
+          role="alert"
+          aria-live="assertive"
+        >
+          {mergeProof === 'skip' ? mergeAction.error : mergeStepUpRefusal}
         </div>
         <HilosActionError
           action={mergeAction}
           detailsTitle="Couldn't merge the accounts"
         />
-        {mergeStep === 1 ? (
+        {mergeProof !== 'skip' ? (
+          <form
+            id="hilos-user-merge-proof"
+            data-id="hilos-user-merge-step-up"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void confirmMergeStep()
+            }}
+          >
+            <HilosStepUpStep controller={mergeStepUp.step} />
+          </form>
+        ) : mergeStep === 1 ? (
           <div role="radiogroup" aria-label="Account to merge">
             <HilosViewportTable
               controller={mergeCandidates.controller}

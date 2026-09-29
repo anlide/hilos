@@ -77,6 +77,12 @@ export function createHilosStepUpActions(
   }
 }
 
+/**
+ * What opening a step answers: no step is needed, the step asks, or the
+ * operation is refused before its own form begins.
+ */
+export type HilosStepUpOpenOutcome = 'skip' | 'ask' | 'refused'
+
 export interface HilosStepUpStep {
   readonly opening: ReadonlySignal<HilosStepUpOpening | null>
   readonly code: WritableSignal<string>
@@ -84,7 +90,7 @@ export interface HilosStepUpStep {
   readonly backupCode: WritableSignal<boolean>
   readonly busy: ReadonlySignal<boolean>
   readonly refusal: ReadonlySignal<string | null>
-  open(operation: string): Promise<'skip' | 'ask' | 'refused'>
+  open(operation: string): Promise<HilosStepUpOpenOutcome>
   confirm(): Promise<boolean>
 }
 

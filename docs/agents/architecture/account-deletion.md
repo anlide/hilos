@@ -63,6 +63,9 @@ catalog).
 The admin user card schedules the same request and grace period through
 `scheduleFor()`, and cancels it through `cancelFor()`. Both publish the same
 state to the person; either the administrator or the person may call it off.
+Scheduling asks the administrator's fresh confirmation first (the step-up
+operation `delete_other_account`, see [step-up.md](step-up.md)); calling it off
+asks none.
 
 ## The Erasure
 

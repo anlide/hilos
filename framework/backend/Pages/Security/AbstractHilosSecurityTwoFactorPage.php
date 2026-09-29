@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Pages\Security;
 
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
+use Hilos\Auth\StepUp\StepUpOperation;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -83,7 +84,7 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
      * @throws InvalidActionPayloadException When the action payload does not match the action name
      * @throws TableActionException When the key is not one of the six
      * @throws InvalidArgumentException When the write cannot be handed to the library
-     * @throws DatabaseException When the disabled operation list cannot be read
+     * @throws DatabaseException When an operation list cannot be read
      * @throws SettingException When its setting catalog or stored value is invalid
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -163,24 +164,34 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
     }
 
     /**
+     * Writes the list of the operation's declared position: departing from it lists the operation, returning takes it out.
+     *
+     * An operation declared on is listed among the switched-off, one declared off among the
+     * switched-on (HIL-1275), so an operation added to the directory later stands where it was
+     * declared, whatever was switched before it ({@see StepUpSettings}). The list keeps only
+     * operations of its own side, in directory order.
+     *
      * @param string $acceptKey Requesting administrator
      * @param HilosStepUpOperationSetActionDTO $dto Operation switch payload
      * @throws TableActionException When the operation is not declared
      * @throws InvalidArgumentException When the write cannot be handed to the library
-     * @throws DatabaseException When the disabled operation list cannot be read
+     * @throws DatabaseException When the operation list cannot be read
      * @throws SettingException When its setting catalog or stored value is invalid
      */
     private function handleStepUpSet(string $acceptKey, HilosStepUpOperationSetActionDTO $dto): void
     {
-        $keys = Hilos::stepUpOperationDirectoryClass()::keys();
-        if (!in_array($dto->operationKey, $keys, true)) {
-            throw new TableActionException("Unknown operation: {$dto->operationKey}");
-        }
+        $operations = Hilos::stepUpOperationDirectoryClass()::all();
+        $operation = $operations[$dto->operationKey] ?? throw new TableActionException("Unknown operation: {$dto->operationKey}");
 
-        $disabled = StepUpSettings::disabledKeys();
-        $disabled = $dto->enabled
-            ? array_diff($disabled, [$dto->operationKey])
-            : [...$disabled, $dto->operationKey];
+        $listKey = StepUpSettings::listKeyFor($dto->operationKey);
+        $listed = $listKey === StepUpSettings::DISABLED_KEY ? StepUpSettings::disabledKeys() : StepUpSettings::enabledKeys();
+        $listed = $dto->enabled === $operation->enabledByDefault
+            ? array_diff($listed, [$dto->operationKey])
+            : [...$listed, $dto->operationKey];
+        $side = array_keys(array_filter(
+            $operations,
+            static fn (StepUpOperation $declared): bool => $declared->enabledByDefault === $operation->enabledByDefault,
+        ));
 
         $this->forward(
             HilosSignalConstants::HILOS_SETTING_WRITE,
@@ -190,8 +201,8 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
                 requestId: $this->currentActionRequestId(),
                 action: HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET,
                 successMessage: null,
-                key: StepUpSettings::DISABLED_KEY,
-                value: StepUpSettings::format(array_values(array_intersect($keys, $disabled))),
+                key: $listKey,
+                value: StepUpSettings::format(array_values(array_intersect($side, $listed))),
             ),
         );
     }

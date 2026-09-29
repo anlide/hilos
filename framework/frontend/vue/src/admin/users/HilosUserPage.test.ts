@@ -2,7 +2,9 @@
 // reloads a pristine modal and says so, a typed one conflicts and answers Keep
 // mine / Take theirs without Merge, a card whose row went locks save as
 // "Deleted", and the modal asks before discarding a changed draft. The account
-// merge cases below cover the separate live two-step modal.
+// merge cases below cover the separate live two-step modal. A window that takes
+// something away opens on the server's word about the administrator's
+// confirmation (HIL-1275); the fixture answers it by `stepUp`.
 import { flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -62,6 +64,7 @@ function userContext(
   options: {
     detailHasPassword?: boolean
     candidateHasPassword?: boolean
+    stepUp?: 'skip' | 'ask' | 'refused'
   } = {},
 ): {
   context: HilosUsersContext
@@ -144,9 +147,39 @@ function userContext(
       },
     })
   }
+  // The server's word on the step, answered on the next microtask as a socket would.
+  const answerStepUp = (action: string, requestId?: string): void => {
+    const stepUp = options.stepUp ?? 'skip'
+    if (action === 'hilos_step_up_start' && stepUp === 'refused') {
+      emit('actionError', {
+        kind: 'actionError',
+        action,
+        requestId,
+        reason: STEP_UP_REFUSAL,
+      })
+
+      return
+    }
+    emit('actionSuccess', {
+      kind: 'actionSuccess',
+      action,
+      requestId,
+      reply:
+        action === 'hilos_step_up_start'
+          ? {
+              required: stepUp === 'ask',
+              purpose: 'grant admin rights',
+              method: 'password',
+            }
+          : undefined,
+    })
+  }
   const connection = {
     sendAction(action: string, data: unknown, requestId?: string): boolean {
       sent.push({ action, data, requestId })
+      if (action.startsWith('hilos_step_up_')) {
+        queueMicrotask(() => answerStepUp(action, requestId))
+      }
 
       return true
     },
@@ -234,6 +267,10 @@ function userContext(
     sent,
   }
 }
+
+/** The refusal a window meets when its administrator has nothing to confirm with. */
+const STEP_UP_REFUSAL =
+  'Add a password, an email or a phone to your account to do this'
 
 const mounted: ReturnType<typeof mount>[] = []
 
@@ -330,6 +367,7 @@ describe('HilosUserPage rename modal', () => {
     mounted.push(passwordWrapper)
     await nextTick()
     modalEl('hilos-user-merge-open')?.click()
+    await flushPromises()
     await nextTick()
 
     expect(
@@ -387,6 +425,7 @@ describe('HilosUserPage rename modal', () => {
     mounted.push(plainWrapper)
     await nextTick()
     modalEl('hilos-user-merge-open')?.click()
+    await flushPromises()
     await nextTick()
     modalEl('hilos-user-merge-row-2')?.click()
     await nextTick()
@@ -711,6 +750,8 @@ describe('HilosUserPage lifecycle', () => {
     }
     let resolve!: (value: ActionResult) => void
     let reject!: (reason: unknown) => void
+    await click('hilos-user-block-open')
+    expect(find('modal')?.textContent).toContain('No reason is stored')
     const dispatch = vi
       .spyOn(context.actions, 'dispatch')
       .mockImplementation(() => ({
@@ -721,8 +762,6 @@ describe('HilosUserPage lifecycle', () => {
           reject = no
         }),
       }))
-    await click('hilos-user-block-open')
-    expect(find('modal')?.textContent).toContain('No reason is stored')
     await click('hilos-user-lifecycle-confirm')
     expect(dispatch).toHaveBeenLastCalledWith('hilos_user_block_set', {
       userId: 1,
@@ -758,6 +797,129 @@ describe('HilosUserPage lifecycle', () => {
       resolve({ message: 'Account blocked. Sessions ended: 1' })
     })
     expect(find('hilos-user-lifecycle-confirm')).toBeNull()
+  })
+})
+
+describe('HilosUserPage confirmation step (HIL-1275)', () => {
+  /** Mount the card with the fixture's step-up answer. */
+  function mountCard(
+    stepUp: 'skip' | 'ask' | 'refused',
+    accountMerge = false,
+  ): ReturnType<typeof userContext> {
+    const world = userContext(accountMerge, { stepUp })
+    mounted.push(
+      mount(HilosUserPage, {
+        props: { context: markRaw(world.context) },
+        attachTo: document.body,
+        global: { provide: { [hilosRouterKey as symbol]: router() } },
+      }),
+    )
+
+    return world
+  }
+
+  async function click(id: string): Promise<void> {
+    modalEl(id)?.click()
+    await flushPromises()
+    await nextTick()
+  }
+
+  async function typePassword(text: string): Promise<void> {
+    const input = modalEl('step-up-password') as HTMLInputElement
+    input.value = text
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+  }
+
+  it('asks by the merge operation and shows no other account before the step is passed', async () => {
+    const world = mountCard('ask', true)
+    await nextTick()
+    await click('hilos-user-merge-open')
+
+    expect(world.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      data: { operation: 'merge_accounts' },
+    })
+    expect(modalEl('modal')?.textContent).toContain("Confirm it's you")
+    expect(modalEl('step-up-password')).not.toBeNull()
+    expect(modalEl('hilos-user-merge-row-2')).toBeNull()
+    expect(modalEl('hilos-user-merge-next')).toBeNull()
+
+    await typePassword('secret')
+    await click('hilos-user-merge-step-up-confirm')
+
+    expect(
+      world.sent.find((entry) => entry.action === 'hilos_step_up_confirm'),
+    ).toMatchObject({
+      data: { operation: 'merge_accounts', password: 'secret' },
+    })
+    expect(modalEl('step-up-password')).toBeNull()
+    expect(modalEl('hilos-user-merge-row-2')).not.toBeNull()
+    expect(modalEl('hilos-user-merge-next')).not.toBeNull()
+  })
+
+  it('opens the merge on its first step when no confirmation is needed', async () => {
+    const world = mountCard('skip', true)
+    await nextTick()
+    await click('hilos-user-merge-open')
+
+    expect(world.sent[0]?.action).toBe('hilos_step_up_start')
+    expect(modalEl('step-up')).toBeNull()
+    expect(modalEl('hilos-user-merge-row-2')).not.toBeNull()
+  })
+
+  it('draws a refusal with Cancel alone', async () => {
+    mountCard('refused', true)
+    await nextTick()
+    await click('hilos-user-merge-open')
+
+    expect(modalEl('step-up-error')?.textContent).toContain(STEP_UP_REFUSAL)
+    expect(modalEl('hilos-user-merge-cancel')).not.toBeNull()
+    expect(modalEl('hilos-user-merge-step-up-confirm')).toBeNull()
+    expect(modalEl('hilos-user-merge-next')).toBeNull()
+    expect(modalEl('hilos-user-merge-row-2')).toBeNull()
+  })
+
+  it('asks before granting rights, then shows the confirmation text; Enter in the field confirms', async () => {
+    const world = mountCard('ask')
+    await nextTick()
+    await click('hilos-user-admin-open')
+
+    expect(world.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      data: { operation: 'grant_admin' },
+    })
+    expect(modalEl('hilos-user-lifecycle-step-up-confirm')).not.toBeNull()
+    expect(modalEl('hilos-user-lifecycle-confirm')).toBeNull()
+
+    await typePassword('secret')
+    modalEl('hilos-user-lifecycle-step-up')?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await flushPromises()
+    await nextTick()
+
+    expect(
+      world.sent.find((entry) => entry.action === 'hilos_step_up_confirm'),
+    ).toMatchObject({ data: { operation: 'grant_admin' } })
+    expect(modalEl('step-up')).toBeNull()
+    expect(modalEl('hilos-user-lifecycle-confirm')).not.toBeNull()
+    expect(modalEl('modal')?.textContent).not.toContain("Confirm it's you")
+  })
+
+  it('opens Lift the block without asking the server', async () => {
+    const world = mountCard('ask')
+    await nextTick()
+    world.context.scopes
+      .page()
+      ?.entities.upsert({ type: 'user', id: 1 }, { block: true })
+    await flushPromises()
+    await nextTick()
+    await click('hilos-user-block-open')
+
+    expect(world.sent).toEqual([])
+    expect(modalEl('step-up')).toBeNull()
+    expect(modalEl('hilos-user-lifecycle-confirm')).not.toBeNull()
   })
 })
 

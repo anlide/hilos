@@ -12,13 +12,27 @@ table, closing the modal); a failure surfaces from the backend fail ack inside t
 modal. The person's standing is one verdict (createHilosUserStanding, HIL-945):
 the badge beside the presence in the header shows the standing shown, and the
 access section draws the block, the freeze — a fact with no control — and the
-deletion from the same verdict. Bootstrap classes only (styling-rules.md). -->
+deletion from the same verdict. A window whose action takes something away —
+the merge, rights, the block, the deletion — first asks the server whether the
+administrator must confirm it is them, and opens on that step when it must
+(createHilosUserCardStepUp, HIL-1275). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  type Ref,
+} from 'vue'
 
 import {
   ACCOUNT_DELETION_TICK_MS,
+  createHilosUserCardStepUp,
   createHilosUserLifecycle,
+  focusInitial,
+  HILOS_STEP_UP_COPY,
   createHilosUserStanding,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
@@ -26,6 +40,7 @@ import {
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
+  type HilosStepUpOpenOutcome,
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   createHilosUserDetail,
@@ -47,6 +62,7 @@ import {
   type RowEditStep,
 } from '@hilos/core'
 
+import HilosStepUpStep from '../../auth/HilosStepUpStep.vue'
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -92,9 +108,29 @@ const rename = createHilosUserRename(props.context)
 
 const detail = useSignal(userDetail)
 const error = useSignal(rename.renameError)
+/** Move the focus into a window whose step changed under it. */
+function focusWindow(body: Ref<HTMLElement | null>): void {
+  void nextTick(() => {
+    const dialog = body.value?.closest<HTMLElement>('[role="dialog"]')
+    if (dialog) {
+      focusInitial(dialog)
+    }
+  })
+}
+
 const lifecycle = createHilosUserLifecycle(props.context)
 const lifecycleAction = useTrackedAction()
 const lifecyclePrompt = ref<HilosUserLifecyclePrompt | null>(null)
+// The confirmation step the window opens with (HIL-1275): `ask` draws it,
+// `refused` draws its refusal, `skip` the window's own content.
+const lifecycleStepUp = createHilosUserCardStepUp(props.context)
+const lifecycleStepUpBusy = useSignal(lifecycleStepUp.step.busy)
+const lifecycleStepUpRefusal = useSignal(lifecycleStepUp.step.refusal)
+const lifecycleProof = ref<HilosStepUpOpenOutcome>('skip')
+// The window whose button waits for the server's word; a second press sends nothing.
+const lifecycleOpening = ref<HilosUserLifecycleChoice | null>(null)
+const lifecycleBody = ref<HTMLElement | null>(null)
+watch(lifecycleProof, () => focusWindow(lifecycleBody))
 const graceDays = useSignal(lifecycle.graceDays)
 const lifecycleUserId = useSignal(lifecycle.currentUserId)
 const userStanding = createHilosUserStanding(props.context)
@@ -141,14 +177,30 @@ onUnmounted(() => {
   clearInterval(lifecycleTick)
 })
 
-function openLifecycle(choice: HilosUserLifecycleChoice): void {
-  if (!detail.value || lifecycleAction.busy.value) return
-  lifecycleAction.clearError()
-  lifecyclePrompt.value = hilosUserLifecyclePrompt(
-    detail.value,
-    choice,
-    graceDays.value,
+async function openLifecycle(choice: HilosUserLifecycleChoice): Promise<void> {
+  if (
+    !detail.value ||
+    lifecycleAction.busy.value ||
+    lifecycleOpening.value !== null
   )
+    return
+  lifecycleAction.clearError()
+  const prompt = hilosUserLifecyclePrompt(detail.value, choice, graceDays.value)
+  lifecycleOpening.value = choice
+  lifecycleProof.value = await lifecycleStepUp.open(choice)
+  lifecycleOpening.value = null
+  lifecyclePrompt.value = prompt
+}
+
+/** Send the step's proof; the window's own content follows a success. */
+async function confirmLifecycleStep(): Promise<void> {
+  if (
+    lifecycleProof.value === 'ask' &&
+    (await lifecycleStepUp.step.confirm()) &&
+    lifecyclePrompt.value !== null
+  ) {
+    lifecycleProof.value = 'skip'
+  }
 }
 
 function closeLifecycle(): void {
@@ -174,6 +226,13 @@ const mergeCandidates = createHilosMergeCandidates(props.context)
 const mergeRows = useSignal(mergeCandidates.controller.rows)
 const accountMerge = createHilosAccountMerge(props.context)
 const mergeAction = useTrackedAction()
+const mergeStepUp = createHilosUserCardStepUp(props.context)
+const mergeStepUpBusy = useSignal(mergeStepUp.step.busy)
+const mergeStepUpRefusal = useSignal(mergeStepUp.step.refusal)
+const mergeProof = ref<HilosStepUpOpenOutcome>('skip')
+const mergeOpening = ref(false)
+const mergeBody = ref<HTMLElement | null>(null)
+watch(mergeProof, () => focusWindow(mergeBody))
 const currentUserId = useSignal(sessionUserId(props.context.scopes))
 const mergeOpen = ref(false)
 const mergeStep = ref<1 | 2>(1)
@@ -223,9 +282,9 @@ function identityTitle(identity: HilosMergeCandidateIdentity): string {
   return identity.provider ?? identity.type
 }
 
-function openMerge(): void {
+async function openMerge(): Promise<void> {
   const survivor = detail.value
-  if (!survivor) {
+  if (!survivor || mergeOpening.value) {
     return
   }
   mergeCandidates.dispose()
@@ -234,8 +293,28 @@ function openMerge(): void {
   selectedCandidateId.value = null
   selectedSnapshot.value = null
   passwordFate.value = null
+  mergeOpening.value = true
+  mergeProof.value = await mergeStepUp.open('merge')
+  mergeOpening.value = false
   mergeOpen.value = true
-  mergeCandidates.start(survivor.id)
+  // Other accounts are shown only once the administrator stands confirmed.
+  if (mergeProof.value === 'skip') {
+    mergeCandidates.start(survivor.id)
+  }
+}
+
+/** Send the step's proof; the choice of an account follows a success. */
+async function confirmMergeStep(): Promise<void> {
+  const survivor = detail.value
+  if (
+    survivor &&
+    mergeProof.value === 'ask' &&
+    (await mergeStepUp.step.confirm()) &&
+    mergeOpen.value
+  ) {
+    mergeProof.value = 'skip'
+    mergeCandidates.start(survivor.id)
+  }
 }
 
 function closeMerge(): void {
@@ -474,21 +553,21 @@ watch(error, (reason) => {
                 <p class="small text-body-secondary mb-0">{{ row.hint }}</p>
               </div>
               <div>
-                <button
-                  type="button"
-                  class="btn btn-sm"
+                <LoadingButton
+                  class="btn-sm"
                   :class="
                     lifecycleCopy.confirmations[row.choice].danger
                       ? 'btn-outline-danger'
                       : 'btn-primary'
                   "
+                  :loading="lifecycleOpening === row.choice"
                   :disabled="row.disabled"
                   :aria-describedby="`hilos-user-${row.key}-reason`"
                   :data-id="`hilos-user-${row.key}-open`"
                   @click="openLifecycle(row.choice)"
                 >
                   {{ lifecycleCopy[row.choice] }}
-                </button>
+                </LoadingButton>
                 <div class="hilos-stack small text-body-secondary mt-1">
                   <span class="invisible" aria-hidden="true">{{
                     row.reasonSpace
@@ -545,14 +624,14 @@ watch(error, (reason) => {
             Its sign-in methods and messages move here; the other account is
             closed for good.
           </p>
-          <button
-            type="button"
-            class="btn btn-outline-danger"
+          <LoadingButton
+            class="btn-outline-danger"
+            :loading="mergeOpening"
             data-id="hilos-user-merge-open"
             @click="openMerge"
           >
             Merge an account into this…
-          </button>
+          </LoadingButton>
         </div>
       </section>
     </template>
@@ -562,23 +641,43 @@ watch(error, (reason) => {
 
     <HilosModal
       v-model="lifecycleOpen"
-      :title="lifecyclePrompt?.title"
-      initial-focus="dialog"
+      :title="
+        lifecycleProof === 'skip'
+          ? lifecyclePrompt?.title
+          : HILOS_STEP_UP_COPY.title
+      "
+      initial-focus="inner"
       :close-on-backdrop="!lifecycleAction.busy.value"
       :close-on-esc="!lifecycleAction.busy.value"
       @cancel="closeLifecycle"
     >
-      <div class="visually-hidden" role="alert" aria-live="assertive">
-        {{ lifecycleAction.error.value }}
-      </div>
-      <p v-for="paragraph in lifecyclePrompt?.paragraphs" :key="paragraph">
-        {{ paragraph }}
-      </p>
-      <div data-id="hilos-user-lifecycle-error">
-        <HilosActionError
-          :action="lifecycleAction"
-          details-title="Account change refused"
-        />
+      <div ref="lifecycleBody">
+        <div class="visually-hidden" role="alert" aria-live="assertive">
+          {{
+            lifecycleProof === 'skip'
+              ? lifecycleAction.error.value
+              : lifecycleStepUpRefusal
+          }}
+        </div>
+        <form
+          v-if="lifecycleProof !== 'skip'"
+          id="hilos-user-lifecycle-proof"
+          data-id="hilos-user-lifecycle-step-up"
+          @submit.prevent="confirmLifecycleStep()"
+        >
+          <HilosStepUpStep :controller="lifecycleStepUp.step" />
+        </form>
+        <template v-else>
+          <p v-for="paragraph in lifecyclePrompt?.paragraphs" :key="paragraph">
+            {{ paragraph }}
+          </p>
+          <div data-id="hilos-user-lifecycle-error">
+            <HilosActionError
+              :action="lifecycleAction"
+              details-title="Account change refused"
+            />
+          </div>
+        </template>
       </div>
       <template #actions="{ requestClose }">
         <button
@@ -591,6 +690,16 @@ watch(error, (reason) => {
           {{ lifecycleCopy.cancel }}
         </button>
         <LoadingButton
+          v-if="lifecycleProof === 'ask'"
+          class="btn-primary"
+          type="submit"
+          form="hilos-user-lifecycle-proof"
+          :loading="lifecycleStepUpBusy"
+          data-id="hilos-user-lifecycle-step-up-confirm"
+          >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
+        >
+        <LoadingButton
+          v-else-if="lifecycleProof === 'skip'"
           :class="lifecyclePrompt?.danger ? 'btn-danger' : 'btn-primary'"
           :loading="lifecycleAction.loading.value"
           :disabled="
@@ -679,7 +788,11 @@ watch(error, (reason) => {
     <HilosModal
       v-model="mergeOpen"
       :title="
-        detail ? `Merge an account into ${detail.name}` : 'Merge an account'
+        mergeProof !== 'skip'
+          ? HILOS_STEP_UP_COPY.title
+          : detail
+            ? `Merge an account into ${detail.name}`
+            : 'Merge an account'
       "
       :confirm-on-close="selectedCandidateId !== null"
       :close-on-backdrop="!mergeAction.busy.value"
@@ -688,14 +801,29 @@ watch(error, (reason) => {
       size="wide"
       @cancel="closeMerge"
     >
-      <div class="visually-hidden" role="alert" aria-live="assertive">
-        {{ mergeAction.error.value }}
+      <div
+        ref="mergeBody"
+        class="visually-hidden"
+        role="alert"
+        aria-live="assertive"
+      >
+        {{
+          mergeProof === 'skip' ? mergeAction.error.value : mergeStepUpRefusal
+        }}
       </div>
       <HilosActionError
         :action="mergeAction"
         details-title="Couldn't merge the accounts"
       />
-      <template v-if="mergeStep === 1">
+      <form
+        v-if="mergeProof !== 'skip'"
+        id="hilos-user-merge-proof"
+        data-id="hilos-user-merge-step-up"
+        @submit.prevent="confirmMergeStep()"
+      >
+        <HilosStepUpStep :controller="mergeStepUp.step" />
+      </form>
+      <template v-else-if="mergeStep === 1">
         <div role="radiogroup" aria-label="Account to merge">
           <HilosViewportTable
             :controller="mergeCandidates.controller"
@@ -807,8 +935,17 @@ watch(error, (reason) => {
         >
           Cancel
         </button>
+        <LoadingButton
+          v-if="mergeProof === 'ask'"
+          class="btn-primary"
+          type="submit"
+          form="hilos-user-merge-proof"
+          :loading="mergeStepUpBusy"
+          data-id="hilos-user-merge-step-up-confirm"
+          >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
+        >
         <button
-          v-if="mergeStep === 1"
+          v-else-if="mergeProof === 'skip' && mergeStep === 1"
           type="button"
           class="btn btn-primary"
           :disabled="selectedCandidate === null"
@@ -817,7 +954,7 @@ watch(error, (reason) => {
         >
           Next
         </button>
-        <template v-else>
+        <template v-else-if="mergeProof === 'skip'">
           <button
             type="button"
             class="btn btn-secondary"

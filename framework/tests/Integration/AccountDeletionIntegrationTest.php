@@ -72,6 +72,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 
     public function testAdministratorSchedulesTheSameGraceAndPublishesThePersonsState(): void
     {
+        $this->confirmAdministrator();
         $reply = $this->adminDeletion(self::USER_ID, true);
         self::assertNull($reply->error);
         self::assertSame('Deletion scheduled: the account is erased in 30 days', $reply->successMessage);
@@ -94,6 +95,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 
     public function testAdministratorCanCancelAndThePersonCanCancelAnAdministratorsRequest(): void
     {
+        $this->confirmAdministrator();
         $this->adminDeletion(self::USER_ID, true);
         $this->stateFrames();
         self::assertNull($this->adminDeletion(self::USER_ID, false)->error);
@@ -110,6 +112,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 
     public function testAdministratorCannotScheduleSelfAnotherAdministratorOrAnExistingRequest(): void
     {
+        $this->confirmAdministrator();
         self::assertSame('Delete your own account from your profile', $this->adminDeletion(self::ADMIN_USER_ID, true)->error);
         ProfileIntegrationAdminAudience::$ids[] = self::USER_ID;
         self::assertSame('Remove the admin rights first', $this->adminDeletion(self::USER_ID, true)->error);
@@ -131,6 +134,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 
     public function testOrdinaryAndAnonymousConnectionsCannotScheduleOrCancel(): void
     {
+        $this->confirmAdministrator();
         self::assertSame(
             'Only an active administrator can do this',
             $this->adminDeletion(self::OTHER_USER_ID, true, self::ACCEPT_KEY)->error,
@@ -143,6 +147,49 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
             $this->adminDeletion(self::USER_ID, false, self::ACCEPT_KEY)->error,
         );
         self::assertNotNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+    }
+
+    /**
+     * Scheduling someone else's deletion asks the administrator's fresh confirmation of exactly
+     * that operation, and without one nothing is scheduled (HIL-1275).
+     */
+    public function testAdministratorSchedulesOnlyWithAFreshConfirmationAndCancelsWithout(): void
+    {
+        self::assertSame(StepUpMessages::EXPIRED, $this->adminDeletion(self::USER_ID, true)->error);
+        self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+        self::assertSame([], $this->stateFrames());
+
+        $this->confirmStepUp(StepUpOperationKey::DELETE_ACCOUNT, self::ADMIN_SESSION_TOKEN, self::ADMIN_USER_ID);
+        self::assertSame(
+            StepUpMessages::EXPIRED,
+            $this->adminDeletion(self::USER_ID, true)->error,
+            "The person's own deletion is another operation",
+        );
+
+        $this->confirmAdministrator();
+        self::assertNull($this->adminDeletion(self::USER_ID, true)->error);
+        self::assertNotNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+    }
+
+    /**
+     * Calling a deletion off gives back rather than takes away: no confirmation is asked (HIL-1275).
+     */
+    public function testAdministratorCancelsWithoutAConfirmation(): void
+    {
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+
+        self::assertNull($this->adminDeletion(self::USER_ID, false)->error);
+        self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+    }
+
+    /**
+     * Seeds the administrator's live confirmation of deleting someone else's account, in their own browser.
+     *
+     * @throws HilosException When the confirmation row cannot be written
+     */
+    private function confirmAdministrator(): void
+    {
+        $this->confirmStepUp(StepUpOperationKey::DELETE_OTHER_ACCOUNT, self::ADMIN_SESSION_TOKEN, self::ADMIN_USER_ID);
     }
 
     private function adminDeletion(int $userId, bool $scheduled, string $acceptKey = self::ADMIN_ACCEPT_KEY): HandoverAnswerSignalData
