@@ -13,7 +13,7 @@ import {
 // what it would see in production. Appending to the file from here instead would
 // prove only that a file grew.
 //
-// The round trip shared with adminGrant.ts, notifications.ts and protectedMode.ts
+// The round trip shared with adminGrant.ts and notifications.ts
 // lives in the framework's node-side scripts; this helper keeps only the chat
 // address, command name and reply window.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'chat-test'

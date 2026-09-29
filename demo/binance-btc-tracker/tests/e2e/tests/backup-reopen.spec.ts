@@ -1,21 +1,20 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-import { signUpAdmin } from '../helpers/adminGrant'
+import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant'
 import { gotoMaintenance, gotoPage } from '../helpers/page'
 import {
   enterProtectedMode,
   leaveProtectedMode,
   mintProtectedModePass,
   openProtectedModeIfAny,
-  sessionTokenOf,
 } from '../helpers/protectedMode'
 
 // The backup page's block in the verification window (HIL-676): the operator who
 // started the restore is offered the lever that reopens the system, and nobody
-// else is. It lived in protected-mode.spec.ts and stayed here when that spec moved
-// to binance-btc-tracker (HIL-1221), because it belongs to the backup area rather
-// than to the freeze; it moves to binance-btc-tracker with the backup area itself
+// else is. It lived in chat's protected-mode.spec.ts and stayed in chat when that
+// spec moved here (HIL-1221), because it belongs to the backup area rather than to
+// the freeze; it came to binance-btc-tracker with the backup area itself
 // (HIL-1220).
 //
 // It drives a freeze all the same, and the whole node freezes with it, so it runs
@@ -44,15 +43,14 @@ test('the verification window offers the reopen block to the operator, and to no
   // the whole decision lives on the session behind the connection.
   //
   // Both accounts are made BEFORE the freeze: under it there is no signing up.
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
   await gotoPage(page, BACKUP_URL)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  const operatorSession = await sessionTokenOf(page.context())
-  expect(operatorSession).not.toBe('')
+  const operatorSession = await sessionToken(page)
 
   const verifierContext = await browser.newContext()
   const verifier = await verifierContext.newPage()
-  await signUpAdmin(verifier)
+  await grantAdminToSelf(verifier)
   await gotoPage(verifier, BACKUP_URL)
   await expect(verifier.getByTestId('hilos-viewport-table')).toBeVisible()
 

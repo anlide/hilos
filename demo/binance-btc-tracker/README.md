@@ -17,15 +17,17 @@ on Vue — the one to copy (`docs/new-project/README.md`):
 - **Home page** that says who is looking: "Browsing anonymously" for a visitor,
   "Signed in as …" with an account.
 - **Admin dashboard** at `/hilos` with the **Maintenance** section — the
-  verifier circle a protected-mode freeze lets through; the other admin
-  sections arrive one by one.
+  verifier circle a protected-mode freeze lets through — and the **Backup**
+  section: database archives created, deleted and, outside prod, restored,
+  kept as files in `data/backup`. The other admin sections arrive one by one.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
 
 The backend is the base set: one app agent owning the connections and the
-home page, the Hilos index agent with the dashboard, the Maintenance section
-and the footer pages, and the framework sign-in libraries. It keeps no table of
-its own — people, sessions, the tables of signing in and the verifier circle
-are the framework's.
+home page, the Hilos index agent with the dashboard, the Maintenance and Backup
+sections and the footer pages, the framework backup agent, and the framework
+sign-in libraries. It keeps no table of its own — people, sessions, the tables
+of signing in and the verifier circle are the framework's, and the archives are
+files.
 
 ### What it is going to show
 

@@ -10,6 +10,7 @@ use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\SessionsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\UsersLibraryAgent;
 use Demo\BinanceBtcTracker\Auth\BinanceBtcTrackerAuthMethodDirectory;
+use Demo\BinanceBtcTracker\Backup\BackupCatalog;
 use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserContext;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -20,6 +21,7 @@ use Demo\BinanceBtcTracker\Environment\BinanceBtcTrackerEnvCatalog;
 use Demo\BinanceBtcTracker\Fs\BinanceBtcTrackerFsContext;
 use Demo\BinanceBtcTracker\Legal\BinanceBtcTrackerLegalCatalog;
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
@@ -30,6 +32,8 @@ use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
 use Demo\BinanceBtcTracker\Tables\BinanceBtcTrackerTableContext;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -46,15 +50,16 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 
 /**
  * Hilos - Main app facade for data access.
  *
  * The smallest complete shape of a project: sign-in by password, an empty home, the admin
- * dashboard and the four public footer pages. One admin section is activated so far - Maintenance,
- * the verifier circle a freeze lets through - and the others arrive one by one, each with the leaf
- * that moves its e2e onto this demo.
+ * dashboard and the four public footer pages. Two admin sections are activated so far -
+ * Maintenance, the verifier circle a freeze lets through, and Backup, the database archives - and
+ * the others arrive one by one, each with the leaf that moves its e2e onto this demo.
  *
  * Usage:
  * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string()
@@ -76,14 +81,18 @@ final class Hilos extends HilosFacade
 
     protected const ?string LEGAL_CATALOG = BinanceBtcTrackerLegalCatalog::class;
 
+    protected const ?string BACKUP_CATALOG = BackupCatalog::class;
+
     protected const array FEATURES = [
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
+        HilosFeature::BACKUP,
     ];
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
@@ -126,6 +135,11 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
+        BackupAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => BackupAgent::class,
+            AgentRegistryKey::DAEMON => BackupAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
     ];
 
     /**
@@ -157,10 +171,14 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        BinanceBtcTrackerTableContext::hilosBackups => HilosBackupHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
     ];
 
     public const array PAGE_TABLES = [
+        BackupPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosBackups => [],
+        ],
         MaintenancePage::PAGE => [
             BinanceBtcTrackerTableContext::hilosVerifierCircle => [],
         ],

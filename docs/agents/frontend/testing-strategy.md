@@ -134,7 +134,7 @@ the demo it leaves.
 | Area | Specs today | Lives in | Leaf |
 |---|---|---|---|
 | Settings, people and admin | chat: settings, users, admin, admin-gating, account-lifecycle | binance-btc-tracker (not in the code yet — HIL-1219) | HIL-1219 |
-| Backup | chat: backup, backup-reopen | binance-btc-tracker (not in the code yet — HIL-1220) | HIL-1220 |
+| Backup | binance-btc-tracker: backup, backup-reopen | binance-btc-tracker | HIL-1220 |
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | chat: logs, logs-rotation | binance-btc-tracker (not in the code yet — HIL-1222) | HIL-1222 |
 | Tables | chat: table-lag, table-refusal | binance-btc-tracker (not in the code yet — HIL-1223) | HIL-1223 |

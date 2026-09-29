@@ -4,9 +4,9 @@ import {
   shownByTestId,
   watchFirstRowTop,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { setAdmin } from '../helpers/adminGrant'
+import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { clickSubmit, signUp } from '../helpers/session'
-import { gotoPage } from '../helpers/page'
+import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 
 // Backup admin e2e (/hilos/backup): the one flow a human would try — press the
 // button, watch the run, read the row, delete it. It is deliberately end-to-end
@@ -19,12 +19,11 @@ import { gotoPage } from '../helpers/page'
 // so the spec cleans up after itself by deleting the backup it made. Scope
 // schema-only keeps the dump small.
 
-/** Sign up, become admin, and open the backup page with its live table. */
+/** Become admin, and open the backup page with its live table. */
 async function openBackups(
   page: import('@playwright/test').Page,
 ): Promise<void> {
-  const { userId } = await signUp(page)
-  await setAdmin(userId, true)
+  await grantAdminToSelf(page)
 
   await gotoPage(page, '/hilos/backup')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -241,8 +240,7 @@ test('shuts the open backup page the moment the admin flag is revoked', async ({
   // subscribe time; this one asks it of a page that is ALREADY open. The verdict
   // used to be reached once and then only re-checked as a gate on delivery, so a
   // revoke left the archive list readable until the person reloaded.
-  const { userId } = await signUp(page)
-  await setAdmin(userId, true)
+  const userId = await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/backup')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
@@ -253,7 +251,7 @@ test('shuts the open backup page the moment the admin flag is revoked', async ({
   // answered with, and the archive list is gone rather than hidden behind it.
   // This is the losing half, which the client draws ahead of the server. The
   // gaining half needs the server's answer to pass at all, and stands directly
-  // below - in chat it also crosses two workers (HIL-644).
+  // below - here it also crosses two workers (HIL-644).
   const error = page.getByTestId('page-error')
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')
@@ -269,12 +267,15 @@ test('opens the refused backup page the moment admin is granted', async ({
 }) => {
   // HIL-644 acceptance, and the case the revoke above cannot make: the gaining
   // half only ever arrives from the server, so nothing the client draws by itself
-  // can stand in for it. In chat it also crosses two workers - /hilos/backup is
-  // served by hilos_index while setAdmin is written in the chat worker - which is
-  // exactly the seam that made HIL-621's sweep miss this page and leave a spinner
-  // where the honest 403 used to be.
-  const { userId } = await signUp(page)
-  await gotoPage(page, '/hilos/backup')
+  // can stand in for it. It also crosses two workers - /hilos/backup is served by
+  // the hilos index agent while the grant is written by the sessions library on
+  // its own monopolistic worker (HIL-729) - which is exactly the seam that made
+  // HIL-621's sweep miss this page and leave a spinner where the honest 403 used
+  // to be. The visitor is made an admin and revoked first, so the refused page is
+  // a person's who holds an account: the grant is the same re-decision either way.
+  const userId = await grantAdminToSelf(page)
+  await setAdmin(userId, false)
+  await gotoPage(page, '/hilos/backup', PAGE_REFUSED)
   const error = page.getByTestId('page-error')
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')
