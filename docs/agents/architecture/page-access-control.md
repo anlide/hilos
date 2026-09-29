@@ -75,7 +75,8 @@ With the admin view mode on, the gate answers an `ADMIN` page with a third
 verdict for a connection that did not prove an admin — *view*, beside allow and
 refuse (not in the code yet — HIL-1251). The subscription, its update and every
 delivery are let through, and each frame that leaves for such a viewer passes
-the personal-data bridge (not in the code yet — HIL-1250). An action is refused
+the personal-data bridge, asked per delivery by
+`BrowserContext::isAdminViewModeViewer()`. An action is refused
 with the view mode as the reason, except the ones the page declares reading
 (not in the code yet — HIL-1251); the error text of a failed action goes by the
 actor, not by the page's level (not in the code yet — HIL-1251). With the mode

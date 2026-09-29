@@ -122,7 +122,7 @@ change the body of that question, not the mode around it.
   workers, each handed the row when it comes up and kept current through the
   RT sync. The environment of a living process cannot change, so the row, not
   the variable, is the node's mode; the one place that asks "is this viewer in
-  the mode?" is built on it (not in the code yet — HIL-1250).
+  the mode?" — `BrowserContext::isAdminViewModeViewer()` — is built on it.
 - On a stand the lever `test:admin-view-mode on|off` turns the mode on and off
   until the daemon restarts, and touches no latch; the next start decides from
   the variable again. In a production-like environment the lever is refused,
@@ -196,9 +196,12 @@ nobody is asked*).
 
 - For a viewer the server writes the hidden mark in place of every field that
   is personal, or about which nothing says whether it is; an admin receives
-  exactly what they receive today (not in the code yet — HIL-1250). This page
-  calls the placeholder *the hidden mark*: its form on the wire is HIL-1250's,
-  and the word the screen shows is HIL-1260's.
+  exactly what they receive today. The hidden mark is the object
+  `{"_hidden": true}` in place of the value (`HiddenValue`); the word the
+  screen shows is HIL-1260's. It lives in the value itself, not in a side list
+  of hidden names, because the frontend files a fragment that carries an id
+  into its entity store by (type, id) and a side list would not survive that;
+  the leading underscore is a reserved name, like the entity's `_standalone`.
 - The source is the marking that already exists: `_pii` and `_piiNotPersonal`
   on an Entity, collected by `PiiRegistry` — the same verdict a restore
   anonymizes by ([backup-anonymization.md](backup-anonymization.md)). There is
@@ -208,23 +211,74 @@ nobody is asked*).
   is shown; a column in neither is hidden.
 - A wire field is shown only when something said *not personal*: the verdict
   of the column it came from, or a declaration on the field itself — for a
-  computed field and for one that came from RT
-  (not in the code yet — HIL-1250). The form of that declaration is
-  HIL-1250's.
+  computed field and for one that came from RT. The declaration is a map of
+  wire name to `WireField`: `WireField::column($collection, $field)` for a
+  value copied out of a column (the Object field of a mounted collection;
+  its verdict decides, the declaration never does),
+  `WireField::notPersonal()` for a computed or RT field, and
+  `WireField::each($fields)` for a nested object or a list of them. A key the
+  map does not name is hidden, and so is a scalar where `each` was declared.
+  The walk is one function for every point below (`ViewerFields::hide()`).
 - The strategy does not travel on the wire: a viewer sees the hidden mark —
   not a fake name, not a mask of the kind `a•••@gmail.com`, not a truncated
   value (the owner's word, 2026-09-26).
-- Where: all three points of the wire — the declarative fields of a source,
-  the row of a typed table (built for each window separately, so hiding is
-  per viewer), and the page's own data — plus the frames of pages that keep a
-  subscriber set of their own and send through `sendToUser` (the logs pages,
-  the setting presets). No frame of an `ADMIN` page reaches a viewer past the
-  bridge (not in the code yet — HIL-1250).
-- "Is this viewer in the mode?" is asked in one place of the server
-  (not in the code yet — HIL-1250); a page does not read the variable itself.
+- Where: all three points of the wire, plus the frames of pages that keep a
+  subscriber set of their own. No frame of an `ADMIN` page reaches a viewer
+  past the bridge.
+  - The row of a typed table, declared by `TableDefinition::wireFields()` (the
+    row's own field names, the words the sort and the search use). It is
+    hidden in the one place a row turns into its wire form, so every frame it
+    rides — the window, the window section of the page answer, the delta, the
+    append, the author's own create, the body of a row held in focus — and
+    every digest of a delivered row are of the hidden form: a change to a
+    hidden field raises no delta. The row's key field travels as it is where
+    it holds the row's own key — the address of the row, the same value as
+    the row key; the same name holding a related entity's id is judged like
+    any other field.
+  - The declarative fields of a source: the row is hidden once it is whole,
+    after every VIA join has read the real values. A field a database source
+    projects is judged by its column; a field of an RT source and a computed
+    one is shown only when the row config names it in the `notPersonal` key
+    (`BrowserFieldKey::NOT_PERSONAL`). `notPersonal` naming a field a database
+    source projects is refused at the start.
+  - The page's own data, declared by `AbstractPage::dataFields()`; the page's
+    other sections (entities, lists, tables) are hidden whole.
+  - The frames of pages with a subscriber set of their own (the logs pages,
+    the setting presets, the Legal acceptances): `AbstractPage::frameForViewer()`
+    on every send, by the frame DTO's static `wireFields()`. A viewer's frame
+    goes out untyped (`SignalData`) under the same signal name: a typed frame
+    is rebuilt on the master by its own `fromArray()`, and a typed reader takes
+    the mark for a malformed value.
+- The window of a viewer is not sorted or searched by a field hidden from
+  them: the places a window reports carry the values of its sort fields, and
+  a search over a hidden field says, row by row, whether the hidden value
+  holds the term. `BrowserContext::viewportForViewer()` narrows the window
+  wherever it is remembered: the order loses its components over hidden
+  fields (a single component left is served, two or more left of a longer
+  order are no order at all), and the search reads only the searched fields
+  the viewer is shown — with none of them shown the window is served
+  unsearched rather than refused. The window section of the page answer names
+  the order actually served. The place a tab pages on from stays: a table
+  compares it only over the fields of the order it serves. The filters are not
+  touched: no filter stands on a personal column. Unlike the question below,
+  this narrowing is remembered with the window: a window remembered before a
+  grant or a revoke keeps its scope until the page is subscribed again, which
+  narrows it anew.
+- The detail of a table's progress bar is the project's payload; a viewer is
+  shown it by `TableDefinition::progressDetailFields()`, and the count of the
+  work (current, total, ended) always.
+- "Is this viewer in the mode?" is asked in one place of the server —
+  `BrowserContext::isAdminViewModeViewer()`: an `ADMIN` page, the node's mode
+  on, and a connection whose user is not an admin (a session without an
+  account included). With the mode off nothing else is read. A failed admin
+  lookup answers yes: the bridge closes rather than opens. It is asked on
+  every delivery and never remembered, so a grant or a revoke is what the
+  next frame goes by. A page does not read the variable itself.
 - The page's shell fields — label, subtitle, breadcrumbs, child pages — are
-  not personal, so a page stays recognizable to a viewer
-  (not in the code yet — HIL-1250).
+  not personal, so a page stays recognizable to a viewer. For a viewer the
+  catalog's shell is laid over the page's hidden data and wins, so a key of
+  the page's own under a shell name never reaches them. The dashboard
+  declares its sections not personal: they are the catalog too.
 - Why *not said* means *hidden*: a surface added later is safe from birth, and
   marking only opens. That is also the order that holds production: the
   variable turned on in production (HIL-1249) opens nothing until the verdict
@@ -290,15 +344,19 @@ Five things — to be useful to a viewer:
 
 1. Declare its reading actions (not in the code yet — HIL-1251).
 2. Declare the not-personal fields of its rows and frames — by the verdict of
-   the column or by a declaration on the field — and never declare a column
-   holding a person's data not-personal for the viewer's sake
-   (not in the code yet — HIL-1250).
+   the column or by a declaration on the field: `TableDefinition::wireFields()`
+   for a typed table's row, the `notPersonal` key for a declarative row's RT
+   and computed fields, `AbstractPage::dataFields()` for the page's own data,
+   a static `wireFields()` on the DTO of a frame sent to its own subscriber
+   set — and never declare a column holding a person's data not-personal for
+   the viewer's sake.
 3. Build every mutation out of the controls of the mode
    (not in the code yet — HIL-1261).
 4. Put no exception text into a frame by itself
    (not in the code yet — HIL-1251).
-5. Send its frames by the page's path, never past the bridge
-   (not in the code yet — HIL-1250).
+5. Send its frames by the page's path, never past the bridge: a frame sent to
+   the page's own subscriber set goes through `AbstractPage::frameForViewer()`
+   for every connection.
 
 Prove it with an integration test under a viewer: the frames carry nothing
 personal, and a writing action is refused. That is how the section leaves of

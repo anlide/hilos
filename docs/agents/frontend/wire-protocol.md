@@ -320,6 +320,18 @@ each optional and omitted when empty:
   the client in one shape whichever frame brings it
   ([table-subscription.md](table-subscription.md)).
 
+**A viewer of the admin view mode receives hidden values in these same shapes**
+([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)). In
+place of the value of a slot, of a field inside a slot or an entity fragment, or
+of a key of `data`, the server writes the object `{"_hidden": true}`; a row's key
+is never hidden, nor, in a typed table's row, its key field where it holds that
+key. The frame of a page with a subscriber set of
+its own keeps its signal name and its shape, with the same object in place of a
+hidden value. A viewer's window may be served without the order or the search it
+asked for — neither runs over a field hidden from them — and the window section
+of the answer names the order that was served. Reading the object and drawing it
+is HIL-1260's.
+
 **Every accepted subscription is answered exactly once**, and the answer is the
 last frame the subscription produces: a page that contributes no payload sends
 `page_response` with an empty one, after its browser snapshot. The frame is

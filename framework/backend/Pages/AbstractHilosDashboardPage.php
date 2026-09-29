@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -69,5 +70,17 @@ abstract class AbstractHilosDashboardPage extends AbstractHilosPage
         }
 
         return new PagePayload(data: [PageCatalogConstants::WIRE_DASHBOARD_SECTIONS => $sections]);
+    }
+
+    /**
+     * Declares the sections not personal: they are the page catalog - titles, descriptions and the
+     * identity of each page - and without them the landing of the admin section would show a viewer of
+     * the admin view mode nothing at all (HIL-1250).
+     *
+     * @return array<string, WireField> The sections, shown as they are
+     */
+    protected function dataFields(): array
+    {
+        return [PageCatalogConstants::WIRE_DASHBOARD_SECTIONS => WireField::notPersonal()];
     }
 }

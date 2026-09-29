@@ -68,6 +68,7 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableViewportAnnounceDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
@@ -107,6 +108,14 @@ use Throwable;
 use ArrayAccess;
 use Closure;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\AdminViewMode\HiddenValue;
+use Hilos\AdminViewMode\ViewerFields;
+use Hilos\AdminViewMode\WireField;
+use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Backup\Exception\AnonymizationConfigException;
+use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\HilosException;
 
 /**
  * Base browser-facing context.
@@ -186,6 +195,19 @@ abstract class BrowserContext
 
     /** @var class-string<Hilos> Active project facade class for topology registry reads. */
     private string $hilosClass = Hilos::class;
+
+    /**
+     * Personal-data verdicts a viewer's columns are judged by, collected on the first question (HIL-1250).
+     *
+     * Null before that question, and for good when the collection failed.
+     */
+    private ?PiiRegistry $viewerPiiRegistry = null;
+
+    /** Whether the verdicts were asked for once already, collected or not. */
+    private bool $viewerPiiRegistryAsked = false;
+
+    /** @var array<string, array<string, bool>> Whether a viewer is shown a column, by collection and field, once judged */
+    private array $viewerColumnVerdicts = [];
 
     /**
      * Starts with an empty worker-local browser source-change buffer.
@@ -381,6 +403,7 @@ abstract class BrowserContext
         $tables = [];
         $windows = [];
         $refusedWindows = [];
+        $viewer = $this->isPageViewer($page, $acceptKey);
         foreach ($this->pageBindings($page) as $pageBinding) {
             $browserKey = $pageBinding->browserKey;
 
@@ -421,6 +444,7 @@ abstract class BrowserContext
                     acceptKey: $acceptKey,
                     pageParams: $pageParams,
                     browserParams: $browserParams,
+                    viewer: $viewer,
                 ),
             ];
         }
@@ -545,7 +569,7 @@ abstract class BrowserContext
         // froze on the live road is not frozen any more once one of them is on its way.
         Hilos::$sr->clearTableViewportFrozen($acceptKey, $viewport->tableKey);
 
-        $window = $this->buildTableWindow($table, $viewport, $page);
+        $window = $this->buildTableWindow($table, $viewport, $page, $acceptKey);
         if ($window === null) {
             $this->sendTableWindowRefusal(
                 $page,
@@ -829,12 +853,14 @@ abstract class BrowserContext
                 return;
             }
 
+            // The drawn digests are of the rows as this connection was given them, hidden ones included.
+            $viewerTable = $this->viewerTableOf($page, $acceptKey, $table);
             foreach ($table->getPage($this->viewportQuery($viewport))->rows as $row) {
                 if (!$row instanceof AbstractTableRow) {
                     continue;
                 }
                 $browserRow = $table->browserRow($row);
-                $wireRows[(string) $browserRow[BrowserPageSignalData::rowKey]] = $this->browserRowToWire($browserRow);
+                $wireRows[(string) $browserRow[BrowserPageSignalData::rowKey]] = $this->browserRowToWire($browserRow, $viewerTable);
             }
         } catch (Throwable $e) {
             // Without this line a table whose badge still rises over fields nobody draws would look
@@ -979,17 +1005,20 @@ abstract class BrowserContext
      * @param ViewportTable $table Table the window is taken from
      * @param TableViewportSubscription $viewport Window descriptor; its delivered rows are updated
      * @param string $page Page the table belongs to, named in the failure line
+     * @param string $acceptKey Connection the window is built for, whose rows a viewer is shown hidden
      * @return ?BrowserTableWindow The built window, or null when the table could not build it
      */
     private function buildTableWindow(
         ViewportTable $table,
         TableViewportSubscription $viewport,
         string $page,
+        string $acceptKey,
     ): ?BrowserTableWindow {
         try {
             $this->refuseUnderTestLever($viewport->tableKey);
             $query = $this->viewportQuery($viewport);
             $snapshot = $table->getPage($query);
+            $viewerTable = $this->viewerTableOf($page, $acceptKey, $table);
 
             $rows = [];
             $wireRows = [];
@@ -999,7 +1028,7 @@ abstract class BrowserContext
                     continue;
                 }
                 $browserRow = $table->browserRow($row);
-                $wireRow = $this->browserRowToWire($browserRow);
+                $wireRow = $this->browserRowToWire($browserRow, $viewerTable);
                 $rowKey = (string) $browserRow[BrowserPageSignalData::rowKey];
                 $rows[] = $wireRow;
                 $wireRows[$rowKey] = $wireRow;
@@ -1089,7 +1118,7 @@ abstract class BrowserContext
         ViewportTable $table,
         ?TableWindowDescriptorDTO $reported,
     ): ?array {
-        $viewport = $this->subscriptionViewport($acceptKey, $tableKey, $table, $reported);
+        $viewport = $this->viewportForViewer($page, $acceptKey, $this->subscriptionViewport($acceptKey, $tableKey, $table, $reported));
         Hilos::$sr?->setTableViewport($acceptKey, $viewport);
         // The answer carries this table either in `windows` or in `refusedWindows`, and both
         // replace the rows the client holds, so a window frozen on the live road thaws here.
@@ -1100,7 +1129,7 @@ abstract class BrowserContext
             Hilos::$sr?->setTableFacets($acceptKey, $tableKey, $reported->facets);
         }
 
-        $window = $this->buildTableWindow($table, $viewport, $page);
+        $window = $this->buildTableWindow($table, $viewport, $page, $acceptKey);
         if ($window === null) {
             return null;
         }
@@ -1123,6 +1152,9 @@ abstract class BrowserContext
 
         try {
             $progress = $table->progressSnapshot();
+            if ($this->isPageViewer($page, $acceptKey)) {
+                $progress = array_map(fn(TableProgressDTO $bar): TableProgressDTO => $this->progressForViewer($bar, $table), $progress);
+            }
         } catch (Throwable $e) {
             // Contained apart from the window and narrower than it: the rows are already built
             // and the table is worth showing without its bars, which the tab reads as nothing
@@ -1213,6 +1245,7 @@ abstract class BrowserContext
             anchor: $viewport->anchor,
             anchorDirection: $viewport->anchorDirection,
             pageIndex: $viewport->pageIndex,
+            shownFields: $viewport->shownFields,
         );
     }
 
@@ -1229,14 +1262,25 @@ abstract class BrowserContext
      * row is the overwhelmingly common one, and it pays nothing: no key, no bytes,
      * and no digest change to raise a content delta out of (HIL-800).
      *
+     * For a viewer of the admin view mode the slots are hidden here, by the table's
+     * declaration of its fields, and nowhere else (HIL-1250). Being the one point every
+     * frame of a row and every digest of a delivered row is taken from, it is also what
+     * keeps a change to a hidden field from raising a delta: the viewer's digest is of the
+     * hidden form, and the hidden form did not change.
+     *
      * @param array{rowKey: int|string, sources: array<string, mixed>, staleSources?: list<string>} $browserRow Internal browser row
+     * @param ?ViewportTable $viewerTable Table whose declaration hides the row from a viewer, or null for a
+     *     connection that is not one
      * @return array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} Wire row
      */
-    private function browserRowToWire(array $browserRow): array
+    private function browserRowToWire(array $browserRow, ?ViewportTable $viewerTable = null): array
     {
+        $slots = $browserRow[BrowserPageSignalData::sources];
         $wireRow = [
             PagePayload::rowKey => $browserRow[BrowserPageSignalData::rowKey],
-            PagePayload::slots => $browserRow[BrowserPageSignalData::sources],
+            PagePayload::slots => $viewerTable === null
+                ? $slots
+                : $this->slotsForViewer($slots, $viewerTable, $browserRow[BrowserPageSignalData::rowKey]),
         ];
 
         $staleSources = $this->staleSourcesOfRow($browserRow);
@@ -1245,6 +1289,134 @@ abstract class BrowserContext
         }
 
         return $wireRow;
+    }
+
+    /**
+     * Hides the slots of one typed row from a viewer of the admin view mode.
+     *
+     * A slot is a fragment of the row keyed by the row's field names: one object, a list of them, or a
+     * lone value standing under the slot's own name. Each is hidden by the table's declaration of its
+     * fields ({@see ViewportTable::wireFields()}). The row's key field travels as it is wherever it holds
+     * the row's own key: that is the address of the row, the same value the frame carries as the row key
+     * anyway, and the frontend files an entity fragment under it. The same field name holding another
+     * value - the id of a related entity in a list slot - is judged like any other field.
+     *
+     * @param array<string, mixed> $slots Row slots as they would travel to an admin
+     * @param ViewportTable $table Table whose declaration hides them
+     * @param int|string $rowKey Key of the row
+     * @return array<string, mixed> Slots with every field the declaration does not open marked hidden
+     */
+    private function slotsForViewer(array $slots, ViewportTable $table, int|string $rowKey): array
+    {
+        $fields = $table->wireFields();
+        $keyField = $table instanceof TableDefinition ? $table->getRowClass()::keyField() : null;
+        $hidden = [];
+        foreach ($slots as $slotKey => $slot) {
+            if (!is_array($slot)) {
+                $hidden[$slotKey] = $slotKey === $keyField && self::isRowKey($slot, $rowKey)
+                    ? $slot
+                    : $this->hideForViewer([$slotKey => $slot], $fields)[$slotKey];
+            } elseif ($slot !== [] && array_is_list($slot)) {
+                $hidden[$slotKey] = array_map(
+                    fn(mixed $element): array => is_array($element)
+                        ? $this->rowFragmentForViewer($element, $fields, $keyField, $rowKey)
+                        : HiddenValue::mark(),
+                    $slot,
+                );
+            } else {
+                $hidden[$slotKey] = $this->rowFragmentForViewer($slot, $fields, $keyField, $rowKey);
+            }
+        }
+
+        return $hidden;
+    }
+
+    /**
+     * Hides one object of a row slot from a viewer, keeping the row's key field where it holds the row's key.
+     *
+     * @param array<array-key, mixed> $fragment Object of the slot as it would travel to an admin
+     * @param array<string, WireField> $fields Table's declaration of its row fields
+     * @param ?string $keyField Row's key field, or null when the table names none
+     * @param int|string $rowKey Key of the row
+     * @return array<array-key, mixed> The object with every field the declaration does not open marked hidden
+     */
+    private function rowFragmentForViewer(array $fragment, array $fields, ?string $keyField, int|string $rowKey): array
+    {
+        $hidden = $this->hideForViewer($fragment, $fields);
+        if ($keyField !== null && array_key_exists($keyField, $fragment) && self::isRowKey($fragment[$keyField], $rowKey)) {
+            $hidden[$keyField] = $fragment[$keyField];
+        }
+
+        return $hidden;
+    }
+
+    /**
+     * Whether a value in a row fragment is the row's own key, which travels to a viewer as the row key anyway.
+     *
+     * @param mixed $value Value under the row's key field
+     * @param int|string $rowKey Key of the row
+     * @return bool Whether the value is that key, compared as the frontend compares keys
+     */
+    private static function isRowKey(mixed $value, int|string $rowKey): bool
+    {
+        return (is_int($value) || is_string($value)) && (string)$value === (string)$rowKey;
+    }
+
+    /**
+     * Whether a connection looks at one page as a viewer of the admin view mode.
+     *
+     * The page key resolves to its class the way the page guards resolve it
+     * ({@see self::assertPageGuards()}); a key that names no page class has no level to be judged by
+     * and no viewer.
+     *
+     * @param string $page Page key the frame belongs to
+     * @param string $acceptKey Connection the frame goes to
+     * @return bool Whether the frame has to pass the bridge before it leaves
+     */
+    private function isPageViewer(string $page, string $acceptKey): bool
+    {
+        $pageClass = $this->hilosClass::PAGES[$page] ?? null;
+
+        return is_string($pageClass) && $this->isAdminViewModeViewer($pageClass, $acceptKey);
+    }
+
+    /**
+     * Names the table whose declaration hides a row from this connection, or null when nothing is hidden.
+     *
+     * Asked once per frame being built, not once per row: the rows of one frame go to one connection.
+     *
+     * @param string $page Page key the frame belongs to
+     * @param string $acceptKey Connection the frame goes to
+     * @param ViewportTable $table Table the rows are taken from
+     * @return ?ViewportTable The table when the connection is a viewer, null otherwise
+     */
+    private function viewerTableOf(string $page, string $acceptKey, ViewportTable $table): ?ViewportTable
+    {
+        return $this->isPageViewer($page, $acceptKey) ? $table : null;
+    }
+
+    /**
+     * Returns one progress bar as a viewer of the admin view mode receives it.
+     *
+     * The count of the work stays; the detail - the project's payload, which the framework never
+     * reads - is hidden by the table's declaration of it ({@see ViewportTable::progressDetailFields()}).
+     *
+     * @param TableProgressDTO $bar Bar as it would travel to an admin
+     * @param ViewportTable $table Table the bar belongs to
+     * @return TableProgressDTO The same bar with its detail hidden
+     * @throws InvalidArgumentException Never for a bar that was built: its place and row are carried over unchanged
+     */
+    private function progressForViewer(TableProgressDTO $bar, ViewportTable $table): TableProgressDTO
+    {
+        return new TableProgressDTO(
+            scope: $bar->scope,
+            progressKey: $bar->progressKey,
+            rowKey: $bar->rowKey,
+            current: $bar->current,
+            total: $bar->total,
+            ended: $bar->ended,
+            detail: $this->hideForViewer($bar->detail, $table->progressDetailFields()),
+        );
     }
 
     /**
@@ -1658,6 +1830,7 @@ abstract class BrowserContext
             return;
         }
 
+        $viewer = $this->isPageViewer($page, $acceptKey);
         foreach ($this->pageBindings($page) as $pageBinding) {
             $browserKey = $pageBinding->browserKey;
 
@@ -1728,6 +1901,7 @@ abstract class BrowserContext
                     pageParams: $pageParams,
                     browserParams: $browserParams,
                     joinedItems: [],
+                    viewer: $viewer,
                 );
 
                 if ($row === null) {
@@ -1784,6 +1958,7 @@ abstract class BrowserContext
             return;
         }
 
+        $viewer = $this->isPageViewer($page, $acceptKey);
         foreach ($this->pageBindings($page) as $pageBinding) {
             $browserKey = $pageBinding->browserKey;
 
@@ -1846,6 +2021,7 @@ abstract class BrowserContext
                     pageParams: $pageParams,
                     browserParams: $browserParams,
                     joinedItems: [],
+                    viewer: $viewer,
                 );
                 if ($row !== null) {
                     $this->addBrowserRow($signalTables, $acceptKey, $page, $browserKey, $rowKey, $row);
@@ -2616,6 +2792,7 @@ abstract class BrowserContext
      * @param array<string, array<string, array<string, list<mixed>>>> $joinedItems Joined db items
      *     already read for the whole snapshot, by source key, join column and join value; empty
      *     when the row is built alone
+     * @param bool $viewer Whether the row goes to a viewer of the admin view mode, who is sent it hidden
      * @return ?array{rowKey: int|string, sources: array<string, mixed>} Browser row payload, or null when row is absent
      * @throws PageInternalErrorException When a page or source declaration is malformed
      * @throws DatabaseException When reading a joined database source fails
@@ -2630,6 +2807,7 @@ abstract class BrowserContext
         array $pageParams,
         array $browserParams,
         array $joinedItems,
+        bool $viewer,
     ): ?array {
         $sources = [];
         $staleSources = [];
@@ -2714,13 +2892,91 @@ abstract class BrowserContext
 
         $browserRow = [
             BrowserPageSignalData::rowKey => $rowKey,
-            BrowserPageSignalData::sources => $sources,
+            BrowserPageSignalData::sources => $viewer ? $this->sourcesForViewer($browserConfig, $sources) : $sources,
         ];
         if ($staleSources !== []) {
             $browserRow[BrowserPageSignalData::staleSources] = $staleSources;
         }
 
         return $browserRow;
+    }
+
+    /**
+     * Hides the fragments of one assembled declarative row from a viewer of the admin view mode (HIL-1250).
+     *
+     * Run on the row once it is whole and never on the way: a VIA join reads the values of the fragments
+     * already projected, and a join over a field a viewer does not see must still find its row. Each
+     * fragment - one object, or a list of them for a MANY source - is hidden by the map its own config
+     * gives ({@see self::declarativeWireFields()}).
+     *
+     * @param BrowserSourceConfig $browserConfig Browser source config the row was built from
+     * @param array<string, mixed> $sources Row fragments by source key, as an admin receives them
+     * @return array<string, mixed> The fragments with every field nothing opened marked hidden
+     */
+    private function sourcesForViewer(BrowserSourceConfig $browserConfig, array $sources): array
+    {
+        $fieldsBySource = [];
+        foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
+            $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
+            $sourceKey = is_array($source) ? $this->sourceKey($source) : null;
+            if ($sourceKey !== null) {
+                $fieldsBySource[$sourceKey] = $this->declarativeWireFields($rowConfig, $source);
+            }
+        }
+
+        $hidden = [];
+        foreach ($sources as $sourceKey => $fragment) {
+            $fields = $fieldsBySource[$sourceKey] ?? [];
+            if (!is_array($fragment)) {
+                $hidden[$sourceKey] = HiddenValue::mark();
+            } elseif ($fragment !== [] && array_is_list($fragment)) {
+                $hidden[$sourceKey] = array_map(
+                    fn(mixed $item): array => is_array($item) ? $this->hideForViewer($item, $fields) : HiddenValue::mark(),
+                    $fragment,
+                );
+            } else {
+                $hidden[$sourceKey] = $this->hideForViewer($fragment, $fields);
+            }
+        }
+
+        return $hidden;
+    }
+
+    /**
+     * Says where each field of one declarative fragment comes from, as its config declares it.
+     *
+     * A field a database source projects is the column it was read from: the source's collection and the
+     * Object field named in FIELDS, so its own verdict decides. A field of a runtime source, and a computed
+     * one, has no column to ask, and is shown only when the config names it in NOT_PERSONAL.
+     *
+     * @param array<string, mixed> $rowConfig One row config of the declarative table
+     * @param array<string, mixed> $source Its source declaration
+     * @return array<string, WireField> Wire field name to where it comes from
+     */
+    private function declarativeWireFields(array $rowConfig, array $source): array
+    {
+        $wireFields = [];
+        $sourceKey = $this->sourceKey($source);
+        $fields = $rowConfig[BrowserFieldKey::FIELDS] ?? [];
+        if ($this->sourceType($source) === BrowserSourceType::DB && $sourceKey !== null && is_array($fields)) {
+            foreach ($fields as $sourceField => $targetField) {
+                if (is_int($sourceField)) {
+                    $sourceField = $targetField;
+                }
+                if (is_string($sourceField) && is_string($targetField)) {
+                    $wireFields[$targetField] = WireField::column($sourceKey, $sourceField);
+                }
+            }
+        }
+
+        $notPersonal = $rowConfig[BrowserFieldKey::NOT_PERSONAL] ?? [];
+        foreach (is_array($notPersonal) ? $notPersonal : [] as $field) {
+            if (is_string($field)) {
+                $wireFields[$field] = WireField::notPersonal();
+            }
+        }
+
+        return $wireFields;
     }
 
     /**
@@ -2758,6 +3014,7 @@ abstract class BrowserContext
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $browserParams Resolved table params for this page subscription
+     * @param bool $viewer Whether the rows go to a viewer of the admin view mode, who is sent them hidden
      * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Current browser rows
      * @throws PageInternalErrorException When a page or source declaration is malformed
      * @throws DatabaseException When reading a joined database source fails
@@ -2770,6 +3027,7 @@ abstract class BrowserContext
         string $acceptKey,
         array $pageParams,
         array $browserParams,
+        bool $viewer,
     ): array {
         $rows = [];
         $rowKeys = $this->snapshotRowKeys($browserConfig, $acceptKey, $pageParams, $browserParams);
@@ -2783,6 +3041,7 @@ abstract class BrowserContext
                 pageParams: $pageParams,
                 browserParams: $browserParams,
                 joinedItems: $joinedItems,
+                viewer: $viewer,
             );
             if ($row !== null) {
                 $rows[] = $row;
@@ -2982,7 +3241,7 @@ abstract class BrowserContext
             $placement,
         );
 
-        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own, $focused, $membership);
+        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $acceptKey, $browserKey, $own, $focused, $membership);
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
@@ -3062,7 +3321,7 @@ abstract class BrowserContext
         string $acceptKey,
         string $browserKey,
     ): void {
-        $window = $this->buildTableWindow($table, $viewport, $page);
+        $window = $this->buildTableWindow($table, $viewport, $page, $acceptKey);
         if ($window === null) {
             $this->frozenThisFlush[$acceptKey][$browserKey] = true;
 
@@ -3124,7 +3383,7 @@ abstract class BrowserContext
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_MOVED_OUT,
                 $own,
-                $this->browserRowToWire($table->browserRow($mutation->row)),
+                $this->browserRowToWire($table->browserRow($mutation->row), $this->viewerTableOf($page, $acceptKey, $table)),
             );
         } else {
             $delta = $this->focusedRowDelta($table, $mutation->rowKey, $page, $acceptKey, $browserKey, $own, $membership());
@@ -3166,7 +3425,9 @@ abstract class BrowserContext
     ): ?TableViewportDeltaDTO {
         try {
             $row = $table->findRow($rowKey);
-            $wireRow = $row === null ? null : $this->browserRowToWire($table->browserRow($row));
+            $wireRow = $row === null
+                ? null
+                : $this->browserRowToWire($table->browserRow($row), $this->viewerTableOf($page, $acceptKey, $table));
         } catch (Throwable $e) {
             Logger::error(
                 "A row a tab holds in focus could not be read from its table: table={$browserKey}, "
@@ -3227,6 +3488,9 @@ abstract class BrowserContext
     ): void {
         try {
             $progress = $table->buildProgressForSourceEvent($change);
+            if ($progress !== null && $this->isPageViewer($page, $acceptKey)) {
+                $progress = $this->progressForViewer($progress, $table);
+            }
         } catch (Throwable $e) {
             // Contained for the reason the snapshot road contains it ({@see tableWindowSection()}):
             // a table that cannot name its work costs the tab that bar, not the change - the rows
@@ -3315,13 +3579,14 @@ abstract class BrowserContext
         $rowAnchors = [];
         $position = null;
         $wireRow = null;
+        $viewerTable = $this->viewerTableOf($page, $acceptKey, $table);
         foreach ($snapshot->rows as $row) {
             if (!$row instanceof AbstractTableRow) {
                 continue;
             }
             $browserRow = $table->browserRow($row);
             $windowRowKey = (string) $browserRow[BrowserPageSignalData::rowKey];
-            $windowWireRow = $this->browserRowToWire($browserRow);
+            $windowWireRow = $this->browserRowToWire($browserRow, $viewerTable);
             if ($windowRowKey === $rowKey) {
                 $position = count($wireRows);
                 $wireRow = $windowWireRow;
@@ -3540,7 +3805,7 @@ abstract class BrowserContext
         $counted = $this->countedTotal($viewport, $viewport->totalCount() + 1);
         $totalCount = $counted[TableConstants::RESULT_KEY_TOTAL_COUNT];
         $totalExact = $counted[TableConstants::RESULT_KEY_TOTAL_EXACT];
-        $wireRow = $this->browserRowToWire($table->browserRow($mutation->row));
+        $wireRow = $this->browserRowToWire($table->browserRow($mutation->row), $this->viewerTableOf($page, $acceptKey, $table));
         $viewport->recordTotal($totalCount, $totalExact);
         $viewport->recordRow((string) $mutation->rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
 
@@ -4394,6 +4659,7 @@ abstract class BrowserContext
                     anchor: $viewport->lastAnchor(),
                     anchorDirection: TableAnchorDirection::After,
                     pageIndex: null,
+                    shownFields: $query->shownFields,
                 );
             }
             $snapshot = $table->getPage($query);
@@ -4464,6 +4730,7 @@ abstract class BrowserContext
      * @param ViewportTable $table Viewport table the window is on
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
+     * @param string $acceptKey Connection the delta is for, whose rows a viewer is shown hidden
      * @param string $browserKey Browser table key
      * @param bool $own Whether this receiver authored the change (applies at once, never gated)
      * @param bool $focused Whether this receiver holds the row in focus for an open dialog, so a removal carries the row
@@ -4476,6 +4743,7 @@ abstract class BrowserContext
         ViewportTable $table,
         TableRowMutationDTO $mutation,
         string $page,
+        string $acceptKey,
         string $browserKey,
         bool $own,
         bool $focused,
@@ -4503,6 +4771,7 @@ abstract class BrowserContext
         }
 
         $query = $this->viewportQuery($viewport);
+        $viewerTable = $this->viewerTableOf($page, $acceptKey, $table);
         $narrowed = $query->search !== null || $viewport->filter !== [];
         if ($narrowed && $membership() === false) {
             // Asked before the digest: a row can leave a narrowed set over a field the rendered
@@ -4516,11 +4785,11 @@ abstract class BrowserContext
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_LEFT_SET,
                 $own,
-                $focused ? $this->browserRowToWire($table->browserRow($mutation->row)) : null,
+                $focused ? $this->browserRowToWire($table->browserRow($mutation->row), $viewerTable) : null,
             );
         }
 
-        $wireRow = $this->browserRowToWire($table->browserRow($mutation->row));
+        $wireRow = $this->browserRowToWire($table->browserRow($mutation->row), $viewerTable);
         if ($viewport->matchesRow($rowKey, $wireRow)) {
             return null;
         }
@@ -5702,6 +5971,172 @@ abstract class BrowserContext
     public function isAdmin(int $userId): bool
     {
         return (Hilos::$db?->users[$userId] ?? null)?->admin === true;
+    }
+
+    /**
+     * Whether a connection looks at an admin page in the admin view mode - the one place the question is asked.
+     *
+     * Three facts together: the page is `ADMIN`, the mode of this node is on, and the user behind the
+     * connection is not an admin ({@see self::isAdmin()}). A session without an account is a viewer too.
+     * The cheap fact goes first: with the mode off the answer is no and nothing else is read - not the
+     * page, not the database - so a node without the mode sends every frame exactly as before. The mode
+     * is the node's runtime row `hilosAdminViewModeRuntime`, not the variable: the environment of a living
+     * process cannot change, the row can, and a page never reads the variable itself.
+     *
+     * Asked on every delivery and never remembered on the subscription: a grant, a revoke or the lever
+     * pulled on a living node is what the very next frame goes by. A failed admin lookup answers yes -
+     * the bridge closes rather than opens - and says so in the journal.
+     *
+     * Not final for one reason: a test double answers yes to see the viewer's frames before the gate
+     * lets a viewer in (HIL-1251). Who is an admin is a project's to decide through isAdmin(), not here.
+     *
+     * @param class-string<AbstractPage> $pageClass Class of the page the frame belongs to
+     * @param string $acceptKey Connection the frame goes to
+     * @return bool Whether the frame has to pass the bridge before it leaves
+     */
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        if (Hilos::$rt?->hilosAdminViewModeRuntime?->enabled !== true) {
+            return false;
+        }
+        if ($pageClass::ACCESS_LEVEL !== PageAccessLevel::ADMIN) {
+            return false;
+        }
+
+        $userId = $this->resolveActionUserId($acceptKey);
+        if ($userId === null) {
+            return true;
+        }
+
+        try {
+            return !$this->isAdmin($userId);
+        } catch (HilosException $e) {
+            Logger::error(
+                "Admin view mode: whether the user of {$acceptKey} is an admin could not be read ({$e->getMessage()}), "
+                . 'so the connection is treated as a viewer.',
+            );
+
+            return true;
+        }
+    }
+
+    /**
+     * Hides the fields of a fragment a viewer may not see.
+     *
+     * The caller has asked {@see self::isAdminViewModeViewer()} already; this only walks the declaration
+     * ({@see ViewerFields::hide()}) with the column verdicts of this installation.
+     *
+     * @param array<array-key, mixed> $payload Fragment as it would travel to an admin
+     * @param array<string, WireField> $fields Declaration of the fragment's fields
+     * @return array<array-key, mixed> Fragment with every value nothing opened replaced by the hidden mark
+     */
+    public function hideForViewer(array $payload, array $fields): array
+    {
+        return ViewerFields::hide($payload, $fields, $this->viewerColumnShown(...));
+    }
+
+    /**
+     * Narrows a window a connection is about to hold to what it may be served as a viewer of the admin view mode.
+     *
+     * Asked wherever a window is remembered for a connection - a window frame from the tab, a page
+     * subscribing it cold or as the tab reported it, a page sent again - so the window that is held is
+     * the window that is served. A viewer is not sorted or searched by a field hidden from them: the
+     * places a window reports carry the values of the fields it is sorted by, and a search over a
+     * hidden field says, row by row, whether the hidden value holds the term. So the order loses what
+     * runs over a hidden field ({@see TableSortOrderDTO::within()}), and the window remembers the
+     * fields it may be searched by - the ones the table's declaration shows, and its key.
+     *
+     * A connection that is not a viewer holds the window it asked for; one that stopped being a viewer
+     * since its window was remembered holds it without the viewer's limit.
+     *
+     * @param string $page Page key the window belongs to
+     * @param string $acceptKey Connection the window is for
+     * @param TableViewportSubscription $viewport Window as the connection asked for it
+     * @return TableViewportSubscription The same window, or its copy narrowed for a viewer
+     */
+    public function viewportForViewer(string $page, string $acceptKey, TableViewportSubscription $viewport): TableViewportSubscription
+    {
+        if (!$this->isPageViewer($page, $acceptKey)) {
+            return $viewport->shownFields === null ? $viewport : $viewport->withViewerScope($viewport->sort, null);
+        }
+
+        $table = $this->viewportTable($viewport->tableKey);
+        $shown = $table === null ? [] : ViewerFields::shownNames($table->wireFields(), $this->viewerColumnShown(...));
+        if ($table instanceof TableDefinition) {
+            $shown[] = $table->getRowClass()::keyField();
+        }
+        $shown = array_values(array_unique($shown));
+
+        return $viewport->withViewerScope($viewport->sort?->within($shown), $shown);
+    }
+
+    /**
+     * Returns the personal-data verdicts a viewer's columns are judged by.
+     *
+     * Collected lazily, once per context, on the first column a viewer is shown or refused - so a node
+     * with the mode off never collects them. A verdict that cannot be collected (a malformed one in a
+     * project without backup, where no start guard catches it) hides every column for good, with one
+     * ERROR line in the journal. Test doubles override this with a registry of their own; nothing else
+     * does.
+     *
+     * @return ?PiiRegistry Verdicts of this installation, or null when they could not be collected
+     */
+    protected function viewerPiiRegistry(): ?PiiRegistry
+    {
+        if ($this->viewerPiiRegistryAsked) {
+            return $this->viewerPiiRegistry;
+        }
+
+        $this->viewerPiiRegistryAsked = true;
+        try {
+            $this->viewerPiiRegistry = PiiRegistry::collect();
+        } catch (AnonymizationConfigException $e) {
+            Logger::error(
+                "Admin view mode: the personal-data verdicts could not be collected ({$e->getMessage()}), "
+                . 'so every column is hidden from a viewer.',
+            );
+        }
+
+        return $this->viewerPiiRegistry;
+    }
+
+    /**
+     * Whether a column of a collection is shown to a viewer.
+     *
+     * The field resolves to its column the way the object layer resolves it, the column to its table,
+     * and the table's verdict on the primary database says: shown only when the column is in
+     * `_piiNotPersonal` of its entity. A column in `_pii`, every column of a purged table, a column in
+     * neither, a collection that is not mounted and a field that is not a column are all hidden.
+     *
+     * @param string $collection Collection name as mounted on the database context
+     * @param string $field Object field or column name
+     * @return bool Whether the column's verdict says it holds nothing personal
+     */
+    private function viewerColumnShown(string $collection, string $field): bool
+    {
+        return $this->viewerColumnVerdicts[$collection][$field] ??= $this->judgeViewerColumn($collection, $field);
+    }
+
+    /**
+     * Judges one column for {@see self::viewerColumnShown()}, which keeps the answer: neither the verdicts
+     * nor the columns of a collection change while the process lives.
+     *
+     * @param string $collection Collection name as mounted on the database context
+     * @param string $field Object field or column name
+     * @return bool Whether the column's verdict says it holds nothing personal
+     */
+    private function judgeViewerColumn(string $collection, string $field): bool
+    {
+        $objects = Hilos::$db?->mountedObjectCollection($collection);
+        $column = $objects?->columnForField($field);
+        $registry = $this->viewerPiiRegistry();
+        if ($objects === null || $column === null || $registry === null) {
+            return false;
+        }
+
+        $notPersonal = $registry->notPersonalColumns(DatabaseConnectionDefaults::PRIMARY_INDEX, $objects->getTableName());
+
+        return in_array($column, $notPersonal ?? [], true);
     }
 
     /**

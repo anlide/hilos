@@ -35,6 +35,8 @@ readonly class TableQueryDTO
      * @param array<string, string|TableSearchField> $searchableFields Fields the search reads, `wire row-field
      *     name => column`, each column bare or paired with its way of matching, as the table declared them; empty
      *     until the table's own declaration is put in
+     * @param ?list<string> $shownFields Row fields a viewer of the admin view mode is shown, the only ones the
+     *     window may be sorted or searched by, or null when the reader sees every field (HIL-1250)
      */
     public function __construct(
         public ?string $search = null,
@@ -45,6 +47,7 @@ readonly class TableQueryDTO
         public TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
         public ?int $pageIndex = null,
         public array $searchableFields = [],
+        public ?array $shownFields = null,
     ) {
     }
 
@@ -71,6 +74,31 @@ readonly class TableQueryDTO
             $this->anchorDirection,
             $this->pageIndex,
             $searchableFields,
+            $this->shownFields,
+        );
+    }
+
+    /**
+     * Returns the same window with its search term taken off.
+     *
+     * What a viewer of the admin view mode is served when every field the table searches is hidden
+     * from them (HIL-1250): a search over a hidden field would say, row by row, whether the hidden
+     * value holds the term, so the window is served unsearched rather than refused.
+     *
+     * @return self Same window, searched by nothing
+     */
+    public function withoutSearch(): self
+    {
+        return new self(
+            null,
+            $this->sort,
+            $this->limit,
+            $this->filter,
+            $this->anchor,
+            $this->anchorDirection,
+            $this->pageIndex,
+            [],
+            $this->shownFields,
         );
     }
 
@@ -95,6 +123,7 @@ readonly class TableQueryDTO
             $this->anchorDirection,
             $this->pageIndex,
             $this->searchableFields,
+            $this->shownFields,
         );
     }
 
@@ -122,6 +151,7 @@ readonly class TableQueryDTO
             $this->anchorDirection,
             $this->pageIndex,
             $this->searchableFields,
+            $this->shownFields,
         );
     }
 
@@ -149,6 +179,7 @@ readonly class TableQueryDTO
             $this->anchorDirection,
             $this->pageIndex,
             $this->searchableFields,
+            $this->shownFields,
         );
     }
 }

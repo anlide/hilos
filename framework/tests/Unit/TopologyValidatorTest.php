@@ -931,6 +931,25 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    public function testANotPersonalDeclarationOpensOnlyRuntimeAndComputedFieldsOfItsRow(): void
+    {
+        $path = 'BROWSER_TABLES[' . TopologyBrowserNotPersonalTable::TABLE . '] class '
+            . TopologyBrowserNotPersonalTable::class . '::BROWSER';
+
+        // Row 2 is the valid case: a runtime field opened, and nothing reported for it.
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserNotPersonalHilos::validateTopology();
+            },
+            [
+                "{$path} rows[0] notPersonal names label, which comes from a database column; "
+                    . "the column's verdict decides whether it is personal",
+                "{$path} rows[0] notPersonal names ghost, which is not a field of this row",
+                "{$path} rows[1] notPersonal must be a list of field names",
+            ],
+        );
+    }
+
     public function testBrowserBindingParamNamesAreCrossChecked(): void
     {
         $path = 'PAGE_LISTS[' . TopologyBrowserBindingPage::PAGE . '][' . TopologyBrowserBindingList::LIST . ']';
@@ -3481,6 +3500,78 @@ final class TopologyBrowserBrokenListHilos extends HilosFacade
 {
     public const array BROWSER_LISTS = [
         TopologyBrowserBrokenList::LIST => TopologyBrowserBrokenList::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserNotPersonalTable
+{
+    public const string TABLE = 'browser_not_personal_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'owners',
+            ],
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                BrowserSourceKey::KEY => 'presence',
+            ],
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => ['id', 'name' => 'label'],
+                BrowserTableFieldKey::COMPUTED => ['score'],
+                BrowserTableFieldKey::NOT_PERSONAL => ['label', 'score', 'ghost'],
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                    BrowserSourceKey::KEY => 'presence',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => ['online'],
+                BrowserTableFieldKey::NOT_PERSONAL => 'online',
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                    BrowserSourceKey::KEY => 'presence',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => ['online'],
+                BrowserTableFieldKey::NOT_PERSONAL => ['online'],
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserNotPersonalHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    public const array BROWSER_TABLES = [
+        TopologyBrowserNotPersonalTable::TABLE => TopologyBrowserNotPersonalTable::class,
     ];
 
     /**

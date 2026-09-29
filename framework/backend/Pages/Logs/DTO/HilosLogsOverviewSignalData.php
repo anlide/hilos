@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Logs\DTO;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\LogAggregatorAgent;
@@ -211,6 +213,20 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             self::filesystemTotalBytes => $this->filesystemTotalBytes,
             self::freeSpaceThresholdPercent => $this->freeSpaceThresholdPercent,
         ];
+    }
+
+    /**
+     * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * A viewer is sent the frame untyped, every field this map does not open replaced by the hidden mark
+     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. The map is empty until the
+     * leaf that classifies the logs overview opens it (HIL-1257), so a viewer sees none of it yet.
+     *
+     * @return array<string, WireField> Frame field name to where it comes from
+     */
+    public static function wireFields(): array
+    {
+        return [];
     }
 
     /**

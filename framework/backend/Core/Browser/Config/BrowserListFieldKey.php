@@ -17,4 +17,11 @@ final class BrowserListFieldKey
     public const string WHERE = 'where';
     public const string VIA = 'via';
     public const string MANY = 'many';
+
+    /**
+     * Wire names of the row's fields that came from an RT source or are computed, shown to a viewer of the admin
+     * view mode as they are (HIL-1250). A field copied out of a database column is never named here: whether it
+     * is personal is its column's verdict.
+     */
+    public const string NOT_PERSONAL = 'notPersonal';
 }

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\DTO;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Settings\Preset\SettingPreset;
 use Hilos\Database\Settings\Preset\SettingPresetDifference;
@@ -91,6 +93,20 @@ final class HilosSettingPresetsSignalData extends BaseDTO implements SignalDataI
                 $this->differences,
             ),
         ];
+    }
+
+    /**
+     * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * A viewer is sent the frame untyped, every field this map does not open replaced by the hidden mark
+     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. The map is empty until the
+     * leaf that classifies the setting presets opens it (HIL-1255), so a viewer sees none of it yet.
+     *
+     * @return array<string, WireField> Frame field name to where it comes from
+     */
+    public static function wireFields(): array
+    {
+        return [];
     }
 
     /**

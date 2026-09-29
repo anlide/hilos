@@ -248,7 +248,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW,
             $acceptKey,
-            self::buildCatalog(),
+            static::frameForViewer($acceptKey, self::buildCatalog(), HilosLogsViewCatalogSignalData::wireFields()),
         );
     }
 
@@ -295,7 +295,10 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
             signalSource: $agent->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW),
-            signalData: new WebSocketSignalData(data: $catalog, targetAcceptKey: $acceptKey),
+            signalData: new WebSocketSignalData(
+                data: static::frameForViewer($acceptKey, $catalog, HilosLogsViewCatalogSignalData::wireFields()),
+                targetAcceptKey: $acceptKey,
+            ),
         );
     }
 

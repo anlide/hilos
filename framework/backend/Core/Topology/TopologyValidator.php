@@ -1480,6 +1480,7 @@ final class TopologyValidator
                         $errors[] = "{$rowPath} {$listKey} must be an array";
                     }
                 }
+                $this->validateBrowserNotPersonal($row, $rowPath, $errors);
 
                 foreach ([BrowserFieldKey::WHERE, BrowserFieldKey::VIA] as $mapKey) {
                     $map = $row[$mapKey] ?? [];
@@ -1515,6 +1516,52 @@ final class TopologyValidator
                 $errors[] = "{$path} {$sourcesKey} must list exactly the sources {$rowsKey} reference"
                     . ' (missing: ' . $this->browserSourceList($missing)
                     . '; unused: ' . $this->browserSourceList($unused) . ')';
+            }
+        }
+    }
+
+    /**
+     * Validates the fields one declarative row declares not personal for a viewer of the admin view mode (HIL-1250).
+     *
+     * The declaration opens a field to a viewer, so a wrong one is a leak rather than a blank cell, and it
+     * is refused at the start. It may name a field that came from a runtime source or is computed - no
+     * column verdict covers those. It may not name a field a database source projects: whether a column
+     * is personal is its own verdict, declared on its entity where a restore reads it too, and a second
+     * say beside it would be the second marking the mode was built without. Nor may it name a field the
+     * row does not have, which is a declaration that opens nothing today and whatever takes the name
+     * tomorrow.
+     *
+     * @param array<string, mixed> $row One row declaration
+     * @param string $rowPath Path of the row, for the message
+     * @param list<string> $errors Accumulated errors
+     */
+    private function validateBrowserNotPersonal(array $row, string $rowPath, array &$errors): void
+    {
+        if (!array_key_exists(BrowserFieldKey::NOT_PERSONAL, $row)) {
+            return;
+        }
+
+        $key = BrowserFieldKey::NOT_PERSONAL;
+        $names = $row[$key];
+        if (!is_array($names) || !array_is_list($names) || array_filter($names, is_string(...)) !== $names) {
+            $errors[] = "{$rowPath} {$key} must be a list of field names";
+
+            return;
+        }
+
+        $source = $row[BrowserFieldKey::SOURCE] ?? null;
+        $fromDatabase = is_array($source) && ($source[BrowserSourceKey::TYPE] ?? null) === BrowserSourceType::DB;
+        // A FIELDS entry is `source => wire` or a bare name that is both, so its value is the wire name either way.
+        $fields = $row[BrowserFieldKey::FIELDS] ?? [];
+        $projected = is_array($fields) ? array_values($fields) : [];
+        $computed = $row[BrowserFieldKey::COMPUTED] ?? [];
+
+        foreach ($names as $field) {
+            if (in_array($field, $projected, true) && $fromDatabase) {
+                $errors[] = "{$rowPath} {$key} names {$field}, which comes from a database column; "
+                    . "the column's verdict decides whether it is personal";
+            } elseif (!in_array($field, $projected, true) && !(is_array($computed) && in_array($field, $computed, true))) {
+                $errors[] = "{$rowPath} {$key} names {$field}, which is not a field of this row";
             }
         }
     }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\Definition;
 
+use Hilos\AdminViewMode\WireField;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Source\SourceChange;
@@ -277,6 +279,24 @@ interface ViewportTable
      * @throws HilosException When the table's own sources refuse the reads its fragments need
      */
     public function browserRow(AbstractTableRow $row): array;
+
+    /**
+     * Declares where each field of this table's rows comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Read at the one point a row turns into its wire form ({@see BrowserContext::hideForViewer()}): every
+     * field it does not open reaches a viewer as the hidden mark, and the row's key field travels as it
+     * is. The keys are the row's own field names, the words the sort and the search use.
+     *
+     * @return array<string, WireField> Row field name to where it comes from; empty hides every field but the key
+     */
+    public function wireFields(): array;
+
+    /**
+     * Declares the fields of the detail this table's progress bars carry, for a viewer of the admin view mode.
+     *
+     * @return array<string, WireField> Detail field name to where it comes from; empty hides the detail whole
+     */
+    public function progressDetailFields(): array;
 
     /**
      * Declares the mass operations this table accepts, by the action name each one runs under.

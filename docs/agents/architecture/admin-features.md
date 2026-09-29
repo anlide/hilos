@@ -149,15 +149,17 @@ useful:
 
 - declare its reading actions (not in the code yet — HIL-1251);
 - declare the not-personal fields of its rows and frames, by the verdict of the
-  column or by a declaration on the field, and never declare a column holding
-  a person's data not-personal for the viewer's sake
-  (not in the code yet — HIL-1250);
+  column or by a declaration on the field — `TableDefinition::wireFields()`,
+  the `notPersonal` key of a declarative row, `AbstractPage::dataFields()`, a
+  frame DTO's static `wireFields()` — and never declare a column holding a
+  person's data not-personal for the viewer's sake;
 - build every mutation out of the controls of the mode
   (not in the code yet — HIL-1261);
 - put no exception text into a frame by itself
   (not in the code yet — HIL-1251);
-- send its frames by the page's path, never past the personal-data bridge
-  (not in the code yet — HIL-1250).
+- send its frames by the page's path, never past the personal-data bridge: a
+  frame to the page's own subscriber set goes through
+  `AbstractPage::frameForViewer()`.
 
 An integration test under a viewer — frames without anything personal, a
 writing action refused — travels with the section, not as a leaf of its own.

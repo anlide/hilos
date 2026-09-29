@@ -600,6 +600,9 @@ class PageSignalRouter
             pageIndex: $data->pageIndex,
             rendered: $data->rendered,
         );
+        // A viewer of the admin view mode holds the window narrowed to what they may be served, so the
+        // window held and the window served are one window (HIL-1250).
+        $viewport = Hilos::$browser?->viewportForViewer($name, $data->acceptKey, $viewport) ?? $viewport;
         Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
         if (Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport) === false) {
             // The refusal frame already left sendTableWindow when the table is not served

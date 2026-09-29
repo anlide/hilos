@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionHostInterface;
@@ -21,12 +22,14 @@ use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableBulkAcceptedReplyDTO;
 use Hilos\Core\Table\DTO\TableBulkActionDTO;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -360,7 +363,7 @@ abstract class AbstractPage implements ActionHostInterface
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->onSubscribeBeforeResponse($acceptKey, $params);
-        $payload = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params));
+        $payload = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params), $acceptKey);
         Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
         $this->sendToUser(
             SignalTypeConstants::PAGE_RESPONSE,
@@ -397,6 +400,25 @@ abstract class AbstractPage implements ActionHostInterface
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         return null;
+    }
+
+    /**
+     * Declares where each key of this page's own `data` section comes from, for a viewer of the admin view mode.
+     *
+     * The keys are those {@see buildPagePayload()} writes into `data`; each value says what the key is, the
+     * way a table declares its row ({@see TableDefinition::wireFields()}): {@see WireField::column()} for a
+     * value copied out of a column, whose own verdict decides, {@see WireField::notPersonal()} for a
+     * computed value or one from RT, {@see WireField::each()} for a nested object or list. A key it does not
+     * name reaches a viewer as the hidden mark. The other sections a page may build - entities, lists,
+     * tables - are hidden from a viewer whole. The shell the framework lays over the page - its label, lead,
+     * breadcrumb and children, from the page catalog - is not personal and needs no declaration here
+     * (HIL-1250).
+     *
+     * @return array<string, WireField> Data key to where it comes from; empty by default, which hides the whole section
+     */
+    protected function dataFields(): array
+    {
+        return [];
     }
 
     /**
@@ -942,6 +964,34 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
+     * Returns the frame one connection of this page's own subscriber set is sent (HIL-1250).
+     *
+     * A page that keeps a subscriber set of its own sends its frames past the page answer, and this is the
+     * bridge on that road: a viewer of the admin view mode gets the frame with every field its declaration
+     * does not open replaced by the hidden mark, an admin gets it as it is. Asked for every connection on
+     * every send, never remembered, so a grant or a revoke is what the next frame goes by.
+     *
+     * The viewer's frame is untyped. A typed frame is carried to the master, which holds the socket, and
+     * rebuilt there by its own fromArray(), and a typed reader takes the mark for a malformed value - it
+     * turns it into null or refuses the frame. An untyped one travels as the array it is, under the same
+     * signal name.
+     *
+     * @param string $acceptKey Connection the frame goes to
+     * @param SignalDataInterface $frame Frame as an admin receives it
+     * @param array<string, WireField> $fields Where each field of the frame comes from
+     * @return SignalDataInterface The frame itself, or its untyped copy hidden for a viewer
+     */
+    protected static function frameForViewer(string $acceptKey, SignalDataInterface $frame, array $fields): SignalDataInterface
+    {
+        $browser = Hilos::$browser;
+        if ($browser === null || !$browser->isAdminViewModeViewer(static::class, $acceptKey)) {
+            return $frame;
+        }
+
+        return new SignalData($browser->hideForViewer($frame->toArray(), $fields));
+    }
+
+    /**
      * Keeps catalog cards whose page keys the active project serves.
      *
      * @param list<array<string, mixed>> $cards Catalog cards in display order
@@ -964,28 +1014,46 @@ abstract class AbstractPage implements ActionHostInterface
      * not know - a public footer page, a project page outside the admin tree - passes through
      * unchanged, which is not an error but the ordinary case for most of a project's pages.
      *
+     * A viewer of the admin view mode is sent the page's own sections hidden (HIL-1250): `data` by the
+     * page's declaration ({@see self::dataFields()}), everything else whole. The union is turned around
+     * for them - the catalog wins - so the shell stays recognizable, and a key of the page's own that
+     * shares a name with the shell never reaches a viewer.
+     *
      * @param ?PagePayload $payload Payload the page built, or null when it built none
+     * @param string $acceptKey Connection the payload goes to
      * @return PagePayload Payload carrying the page identity the catalog holds
      */
-    private function withPageIdentity(?PagePayload $payload): PagePayload
+    private function withPageIdentity(?PagePayload $payload, string $acceptKey): PagePayload
     {
         $payload ??= new PagePayload();
+        $viewer = Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true;
+        if ($viewer) {
+            $payload = new PagePayload(
+                entities: Hilos::$browser->hideForViewer($payload->entities, []),
+                data: Hilos::$browser->hideForViewer($payload->data, $this->dataFields()),
+                lists: Hilos::$browser->hideForViewer($payload->lists, []),
+                tables: Hilos::$browser->hideForViewer($payload->tables, []),
+            );
+        }
+
         $identity = PageCatalogResolver::identity(static::PAGE);
         if ($identity === null) {
             return $payload;
         }
 
+        $shell = [
+            PageCatalogConstants::WIRE_PAGE_LABEL => $identity[PageCatalogConstants::CATALOG_ENTRY_LABEL],
+            PageCatalogConstants::WIRE_PAGE_LEAD => $identity[PageCatalogConstants::CATALOG_ENTRY_LEAD],
+            PageCatalogConstants::WIRE_PAGE_BREADCRUMB => PageCatalogResolver::breadcrumb(static::PAGE),
+            PageCatalogConstants::WIRE_PAGE_CHILDREN => static::servedPageCards(
+                PageCatalogResolver::children(static::PAGE),
+                PageCatalogConstants::WIRE_CHILD_PAGE,
+            ),
+        ];
+
         return new PagePayload(
             entities: $payload->entities,
-            data: $payload->data + [
-                PageCatalogConstants::WIRE_PAGE_LABEL => $identity[PageCatalogConstants::CATALOG_ENTRY_LABEL],
-                PageCatalogConstants::WIRE_PAGE_LEAD => $identity[PageCatalogConstants::CATALOG_ENTRY_LEAD],
-                PageCatalogConstants::WIRE_PAGE_BREADCRUMB => PageCatalogResolver::breadcrumb(static::PAGE),
-                PageCatalogConstants::WIRE_PAGE_CHILDREN => static::servedPageCards(
-                    PageCatalogResolver::children(static::PAGE),
-                    PageCatalogConstants::WIRE_CHILD_PAGE,
-                ),
-            ],
+            data: $viewer ? $shell + $payload->data : $payload->data + $shell,
             lists: $payload->lists,
             tables: $payload->tables,
         );

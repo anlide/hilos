@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\DTO;
 
+use Hilos\Core\Table\TableSortWhitelist;
+
 /**
  * The order one table window runs in: a sequence of components, the first one deciding.
  *
@@ -85,6 +87,33 @@ final readonly class TableSortOrderDTO
     public function withComponents(array $components): self
     {
         return new self($components);
+    }
+
+    /**
+     * Returns the order a reader limited to some fields may be served in (HIL-1250).
+     *
+     * A viewer of the admin view mode is not sorted by a field hidden from them: the places a window
+     * reports - its anchors - carry the values of the fields it is sorted by, and the order itself
+     * says which of two hidden values is the greater. The components over hidden fields are taken
+     * out. What is left is served only when it is one component or the whole order: two or more
+     * components that remain of a longer order make a combination nobody offered
+     * ({@see TableSortWhitelist::holdComposite()} would refuse it), and the answer is then no order.
+     *
+     * @param list<string> $fields Row fields the reader is shown
+     * @return ?self This same order when every component is shown, the one shown component that is
+     *     left, or null when nothing servable is left
+     */
+    public function within(array $fields): ?self
+    {
+        $shown = array_values(array_filter(
+            $this->components,
+            static fn(TableSortDTO $component): bool => in_array($component->field, $fields, true),
+        ));
+        if (count($shown) === count($this->components)) {
+            return $this;
+        }
+
+        return count($shown) === 1 ? new self($shown) : null;
     }
 
     /**

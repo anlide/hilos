@@ -84,6 +84,9 @@ final class TableViewportSubscription
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
      * @param ?int $pageIndex Zero-based page the window jumped to, or null when it is paged by anchor
      * @param list<string> $rendered Fields inside the row slots the tab draws, empty when it declared none
+     * @param ?list<string> $shownFields Row fields shown to the connection when it is a viewer of the admin
+     *     view mode - the only ones its window is sorted or searched by - or null when it sees every field
+     *     (HIL-1250)
      */
     public function __construct(
         public readonly string $tableKey,
@@ -94,6 +97,7 @@ final class TableViewportSubscription
         public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
         public readonly ?int $pageIndex = null,
         public readonly array $rendered = [],
+        public readonly ?array $shownFields = null,
     ) {
     }
 
@@ -217,6 +221,7 @@ final class TableViewportSubscription
             anchorDirection: $this->anchorDirection,
             pageIndex: $this->pageIndex,
             rendered: $rendered,
+            shownFields: $this->shownFields,
         );
         $declared->rowDigests = $this->rowDigests;
         $declared->rowAnchors = $this->rowAnchors;
@@ -239,6 +244,35 @@ final class TableViewportSubscription
         }
 
         return $declared;
+    }
+
+    /**
+     * Returns the same descriptor narrowed to what a viewer of the admin view mode may be served (HIL-1250).
+     *
+     * Only the descriptor is carried and nothing recorded: the order changes here, and the rows,
+     * places and totals recorded under the old one would describe a window that is not served any
+     * more. Every caller builds the window right after, which records it again. The place the
+     * window was asked from stays: a table compares an anchor only over the fields of the order
+     * it serves, so an anchor value of a field the narrowed order dropped is never read, and the
+     * tab paging on through a window served without the order it asked for keeps its place.
+     *
+     * @param ?TableSortOrderDTO $sort Order the window is served in, or null for no order
+     * @param ?list<string> $shownFields Row fields shown to the connection, or null when it sees every field
+     * @return self Descriptor of the window the connection is served
+     */
+    public function withViewerScope(?TableSortOrderDTO $sort, ?array $shownFields): self
+    {
+        return new self(
+            tableKey: $this->tableKey,
+            filter: $this->filter,
+            sort: $sort,
+            limit: $this->limit,
+            anchor: $this->anchor,
+            anchorDirection: $this->anchorDirection,
+            pageIndex: $this->pageIndex,
+            rendered: $this->rendered,
+            shownFields: $shownFields,
+        );
     }
 
     /**

@@ -38,8 +38,9 @@ The verdict has a second reader: the admin view mode
 ([admin-view-mode.md](admin-view-mode.md)). A non-admin viewer of the admin
 section is shown the hidden mark for a column in `_pii`, the value for a column
 in `_piiNotPersonal`, and the hidden mark for a column in neither; the strategy
-does not travel to the browser — no fake, no mask, only hidden
-(not in the code yet — HIL-1250). For the author of a verdict this means
+does not travel to the browser — no fake, no mask, only hidden. A field reaches
+that question through its declaration, `WireField::column()`, which names the
+column and leaves the verdict to it. For the author of a verdict this means
 `_piiNotPersonal` now also opens a column to a non-admin: name a column there
 only because it holds nothing personal, never so that a viewer may see it.
 

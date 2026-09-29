@@ -148,7 +148,10 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
                 signalSource: $agent->getAgentSignalSource(),
                 signalType: new SignalType(SignalTypeConstants::WS_USER),
                 signalName: new SignalName($signalName),
-                signalData: new WebSocketSignalData(data: $data, targetAcceptKey: $acceptKey),
+                signalData: new WebSocketSignalData(
+                    data: static::frameForViewer($acceptKey, $data, HilosSettingPresetsSignalData::wireFields()),
+                    targetAcceptKey: $acceptKey,
+                ),
             );
         }
     }
@@ -210,7 +213,11 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
-        $this->sendToUser(static::subscriptionSignalName(), $acceptKey, static::buildPresetsSignalData());
+        $this->sendToUser(
+            static::subscriptionSignalName(),
+            $acceptKey,
+            static::frameForViewer($acceptKey, static::buildPresetsSignalData(), HilosSettingPresetsSignalData::wireFields()),
+        );
     }
 
     /**

@@ -12,6 +12,7 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -209,11 +210,19 @@ final class LegalAdminAudience
                         // A reassessment keeps the subscription alive while its current verdict denies delivery.
                         continue;
                     }
+                    // A viewer of the admin view mode gets the filters untyped and hidden, so the frame is per
+                    // connection for them alone; everyone else shares the one typed frame (HIL-1250).
+                    $frame = Hilos::$browser?->isAdminViewModeViewer($pageClass, $acceptKey) === true
+                        ? new SignalData(Hilos::$browser->hideForViewer(
+                            $data->toArray(),
+                            HilosLegalAcceptanceFiltersSignalData::wireFields(),
+                        ))
+                        : $data;
                     Hilos::$sr->queueSignal(
                         signalSource: $agent->getAgentSignalSource(),
                         signalType: new SignalType(SignalTypeConstants::WS_USER),
                         signalName: new SignalName(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES),
-                        signalData: new WebSocketSignalData(data: $data, targetAcceptKey: $acceptKey),
+                        signalData: new WebSocketSignalData(data: $frame, targetAcceptKey: $acceptKey),
                     );
                 }
                 self::$filtersFingerprint = $fingerprint;

@@ -13,6 +13,7 @@ use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Pages\Legal\DTO\HilosLegalAcceptanceFiltersSignalData;
 
 /**
  * ADMIN subscription for immutable acceptance records; independent of catalog validity.
@@ -42,7 +43,11 @@ abstract class AbstractHilosLegalAcceptancesPage extends AbstractHilosPage
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
-        $this->sendToUser(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES, $acceptKey, LegalAdminAudience::filters());
+        $this->sendToUser(
+            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES,
+            $acceptKey,
+            static::frameForViewer($acceptKey, LegalAdminAudience::filters(), HilosLegalAcceptanceFiltersSignalData::wireFields()),
+        );
     }
 
     /**

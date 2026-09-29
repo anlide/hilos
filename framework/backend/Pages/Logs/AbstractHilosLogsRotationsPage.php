@@ -251,7 +251,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS,
             $acceptKey,
-            self::buildHeader(),
+            static::frameForViewer($acceptKey, self::buildHeader(), HilosLogsRotationsSignalData::wireFields()),
         );
     }
 
@@ -456,7 +456,10 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
             signalSource: $agent->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS),
-            signalData: new WebSocketSignalData(data: $header, targetAcceptKey: $acceptKey),
+            signalData: new WebSocketSignalData(
+                data: static::frameForViewer($acceptKey, $header, HilosLogsRotationsSignalData::wireFields()),
+                targetAcceptKey: $acceptKey,
+            ),
         );
     }
 

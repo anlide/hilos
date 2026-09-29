@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\Definition;
 
 use ArrayAccess;
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
@@ -283,6 +284,49 @@ abstract class TableDefinition implements ArrayAccess
      * @return array<string, string|TableSearchField> Searched fields mapped to their columns; empty by default
      */
     protected function searchableFields(): array
+    {
+        return [];
+    }
+
+    /**
+     * Declares where each field of this table's rows comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The keys are the names a row payload is keyed by - the same words {@see sortableFields()},
+     * {@see searchableFields()} and the anchors use - and each value says what the field is:
+     *
+     * - {@see WireField::column()} for a value copied out of a column, named by the Object field of the
+     *   collection it came from. Whether it is shown is that column's verdict (`_piiNotPersonal` of its
+     *   entity), not this declaration's.
+     * - {@see WireField::notPersonal()} for a computed field or one that came from RT, which no column
+     *   verdict covers.
+     * - {@see WireField::each()} for a nested object or a list of them, declared field by field.
+     *
+     * What must never be written here: a column holding a person's data declared not personal for the
+     * viewer's sake. A field that needs to be shown and is not is a verdict to change on its entity, in
+     * the open, where a restore reads it too.
+     *
+     * The empty map is the default and a full declaration: a viewer then sees every field of the row
+     * hidden but its key, which is where every table starts and what keeps a table added later safe.
+     * A viewer's window is sorted and searched only by the fields this map shows them.
+     *
+     * @return array<string, WireField> Row field name to where it comes from; empty by default
+     */
+    public function wireFields(): array
+    {
+        return [];
+    }
+
+    /**
+     * Declares the fields of the detail this table's progress bars carry, for a viewer of the admin view mode.
+     *
+     * The detail of a bar is the project's payload and the framework never reads it, so a viewer is
+     * shown none of it until the table says where its fields come from - the same map
+     * {@see wireFields()} takes. The count of the work (current, total, ended) is not part of it and is
+     * always shown.
+     *
+     * @return array<string, WireField> Detail field name to where it comes from; empty by default
+     */
+    public function progressDetailFields(): array
     {
         return [];
     }
@@ -573,8 +617,13 @@ abstract class TableDefinition implements ArrayAccess
      * forgotten one. A window that carries no term is handed back untouched, so a table with no
      * search is only ever refused when something actually asked it to search.
      *
+     * A window of a viewer of the admin view mode searches only the declared fields it is shown, and
+     * when none of them is shown it is served without the search rather than refused: the table does
+     * search, and the reader just may not use it.
+     *
      * @param TableQueryDTO $query Window query the search travels in
-     * @return TableQueryDTO Query carrying the declared fields, or the same one when nothing is searched
+     * @return TableQueryDTO Query carrying the declared fields, the same one when nothing is searched, or
+     *     the query without its term when a viewer is shown none of the searched fields
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      */
     public function scopeSearch(TableQueryDTO $query): TableQueryDTO
@@ -586,6 +635,14 @@ abstract class TableDefinition implements ArrayAccess
         $searchableFields = $this->searchableFields();
         if ($searchableFields === []) {
             throw new TableSearchNotSupportedException(static::class);
+        }
+        if ($query->shownFields !== null) {
+            // A viewer of the admin view mode searches only what they are shown: a term matched against a
+            // hidden field would tell them, row by row, whether the hidden value holds it (HIL-1250).
+            $searchableFields = array_intersect_key($searchableFields, array_flip($query->shownFields));
+            if ($searchableFields === []) {
+                return $query->withoutSearch();
+            }
         }
 
         return $query->withSearchScope($searchableFields);
@@ -619,6 +676,11 @@ abstract class TableDefinition implements ArrayAccess
         $sortableFields = $this->sortableFields();
         $sort = TableSortWhitelist::holdComposite($query->sort, $this->sortOrders(), $sortableFields, static::class);
         $sort = TableSortWhitelist::resolve($sort, $sortableFields, static::class);
+        if ($query->shownFields !== null) {
+            // The window of a viewer of the admin view mode already comes without the order over a field
+            // hidden from them; this is the second lock, for a query that did not come through it (HIL-1250).
+            $sort = $sort?->within($query->shownFields);
+        }
         if ($sort !== $query->sort) {
             $query = new TableQueryDTO(
                 search: $query->search,
@@ -628,6 +690,7 @@ abstract class TableDefinition implements ArrayAccess
                 anchor: $query->anchor,
                 anchorDirection: $query->anchorDirection,
                 pageIndex: $query->pageIndex,
+                shownFields: $query->shownFields,
             );
         }
 
