@@ -24,7 +24,7 @@ describe('ConflictActions', () => {
     expect(
       container.querySelector('[data-id="conflict-accept-theirs"]'),
     ).not.toBeNull()
-    expect(container.querySelector('[data-id="conflict-merge"]')).not.toBeNull()
+    expect(container.querySelector('[data-id="conflict-merge"]')).toBeNull()
   })
 
   it('calls the chosen resolution handler', () => {
@@ -77,16 +77,19 @@ describe('ConflictActions', () => {
     expect(container.querySelector('[data-id="conflict-save"]')).toBeNull()
   })
 
-  it('hides the merge button when mergeable is false', () => {
-    const { container } = render(<ConflictActions conflict mergeable={false} />)
+  it('shows merge only when the surface asks for it (mergeable: true)', () => {
+    const { container, rerender } = render(<ConflictActions conflict />)
     expect(
       container.querySelector('[data-id="conflict-accept-mine"]'),
     ).not.toBeNull()
     expect(container.querySelector('[data-id="conflict-merge"]')).toBeNull()
+
+    rerender(<ConflictActions conflict mergeable />)
+    expect(container.querySelector('[data-id="conflict-merge"]')).not.toBeNull()
   })
 
   it('shapes the root as a button group and renders resolution buttons without btn-sm', () => {
-    const { container } = render(<ConflictActions conflict />)
+    const { container } = render(<ConflictActions conflict mergeable />)
     const root = container.firstElementChild as HTMLElement
     expect(root.classList.contains('hilos-button-group')).toBe(true)
     expect(root.classList.contains('d-md-flex')).toBe(true)

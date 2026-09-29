@@ -191,7 +191,6 @@ let inputSequence = 0
             hilosConflictActions
             [conflict]="state().conflict"
             [disableSave]="!state().dirty || action.busy() || state().gone"
-            [mergeable]="false"
             [saveLabel]="state().gone ? 'Deleted' : 'Save'"
             (save)="save()"
             (acceptMine)="editor().keepMine()"

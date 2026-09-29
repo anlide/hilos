@@ -576,7 +576,7 @@ export function createHilosUserDetail<TUser extends User>(
  * The rename action surface for the user-detail view. The backend acks a rename
  * through dedicated project signals rather than the framework action_error, so
  * success is observed state-driven in the view (the committed name reaches the
- * draft) while a failure is surfaced here from the fail ack. The fail signal has
+ * name it sent) while a failure is surfaced here from the fail ack. The fail signal has
  * no registered schema, so it arrives as an `unknownSignal`; we react to its type
  * only and never read its raw payload (the parse boundary stays the one place
  * that interprets a frame — wire-protocol.md).

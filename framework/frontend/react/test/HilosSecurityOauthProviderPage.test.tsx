@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { HilosPages, ScopeManager, createSignal } from '@hilos/core'
+import {
+  ActionLifecycle,
+  HilosPages,
+  ScopeManager,
+  createSignal,
+} from '@hilos/core'
 import type {
   ActionHandle,
-  ActionLifecycle,
   ActionResult,
   HilosConnection,
   HilosRouter,
+  HilosSecurityOauthContext,
   PageRouteMatch,
 } from '@hilos/core'
 
@@ -79,6 +84,9 @@ function makeConnection(): {
     tableWindowDescriptors: () => ({}),
     sendTableViewport(): void {},
     sendTableRendered(): void {},
+    sendTableRowFocus(): boolean {
+      return true
+    },
   } as unknown as HilosConnection
 
   return {
@@ -388,5 +396,371 @@ describe('HilosSecurityOauthProviderPage', () => {
       expect(text).toBe('Set')
     }
     expect(document.body.textContent).not.toContain('s3cret')
+  })
+})
+
+// The row-edit modal (HIL-1134), the React peer of
+// vue/src/admin/security/HilosSecurityOauthProviderPage.test.ts.
+
+const CLIENT_ID_KEY = `${PROVIDER}/client_id`
+const SECRET_KEY = `${PROVIDER}/client_secret`
+
+/** A field row's slot: the client id with the given value, or the secret. */
+function fieldSlot(
+  field: 'client_id' | 'client_secret',
+  value: string | null = null,
+): Record<string, unknown> {
+  const secret = field === 'client_secret'
+
+  return {
+    providerKey: PROVIDER,
+    field,
+    label: secret ? 'Client secret' : 'Client ID',
+    type: 'string',
+    secret,
+    value: secret ? null : value,
+    source: 'db',
+    setState: true,
+  }
+}
+
+/** The provider's own row of the providers table. */
+const PROVIDER_SLOT: Record<string, unknown> = {
+  providerKey: PROVIDER,
+  label: 'GitHub',
+  builtIn: true,
+  configured: true,
+  missingFields: 0,
+  secretSet: true,
+  clientIdSource: 'db',
+}
+
+function seededContext(clientId: string | null): {
+  context: HilosSecurityOauthContext
+  pushUpdate: (value: string | null) => void
+  pushRemove: (rowKey: string) => void
+  sent: Array<{ action: string; payload: Record<string, unknown> }>
+  focus: string[]
+} {
+  let fields = new Map<string, Record<string, unknown>>([
+    [CLIENT_ID_KEY, fieldSlot('client_id', clientId)],
+    [SECRET_KEY, fieldSlot('client_secret')],
+  ])
+  const focus: string[] = []
+  const scopes = new ScopeManager()
+  scopes.openPage(HilosPages.SECURITY_OAUTH_PROVIDER)
+  const windowListeners = new Set<(signal: { data: unknown }) => void>()
+  const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const serveWindow = (tableKey: string): void => {
+    const rows =
+      tableKey === FIELDS_TABLE
+        ? [...fields].map(([rowKey, field]) => ({ rowKey, slots: { field } }))
+        : [{ rowKey: PROVIDER, slots: { provider: PROVIDER_SLOT } }]
+    const data = {
+      page: HilosPages.SECURITY_OAUTH_PROVIDER,
+      tableKey,
+      rows,
+      totalCount: rows.length,
+      totalExact: true,
+      firstAnchor: null,
+      lastAnchor: null,
+      offset: 0,
+      limit: 10,
+    }
+    for (const listener of windowListeners) {
+      listener({ data })
+    }
+  }
+  const pushDelta = (data: Record<string, unknown>): void => {
+    for (const listener of deltaListeners) {
+      listener({
+        data: {
+          page: HilosPages.SECURITY_OAUTH_PROVIDER,
+          tableKey: FIELDS_TABLE,
+          ...data,
+        },
+      })
+    }
+  }
+
+  const connection = {
+    registerTableWindow(tableKey: string): void {
+      serveWindow(tableKey)
+    },
+    unregisterTableWindow(): void {},
+    tableWindowDescriptors: () => ({}),
+    sendTableViewport(_page: string, tableKey: string): boolean {
+      serveWindow(tableKey)
+
+      return true
+    },
+    sendTableRendered(): boolean {
+      return true
+    },
+    sendTableRowFocus(
+      _page: string,
+      _tableKey: string,
+      rowKey: string,
+    ): boolean {
+      focus.push(rowKey)
+
+      return true
+    },
+    on(
+      event: string,
+      listener: (signal: { data: unknown }) => void,
+    ): () => void {
+      if (event === 'tableWindow') {
+        windowListeners.add(listener)
+
+        return () => windowListeners.delete(listener)
+      }
+      if (event === 'tableViewportDelta') {
+        deltaListeners.add(listener)
+
+        return () => deltaListeners.delete(listener)
+      }
+
+      return () => {}
+    },
+  }
+  const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
+  const source = {
+    sendAction: (action: string, payload: Record<string, unknown>) => {
+      sent.push({ action, payload })
+
+      return true
+    },
+    on: (event: string, listener: (state: string) => void) => {
+      if (event === 'state') {
+        drops.push(() => listener('disconnected'))
+      }
+
+      return () => {}
+    },
+  }
+  const actions = new ActionLifecycle(
+    source as unknown as ConstructorParameters<typeof ActionLifecycle>[0],
+  )
+
+  return {
+    context: {
+      connection:
+        connection as unknown as HilosSecurityOauthContext['connection'],
+      scopes,
+      actions,
+    },
+    pushUpdate(value: string | null): void {
+      const field = fieldSlot('client_id', value)
+      fields = new Map(fields).set(CLIENT_ID_KEY, field)
+      pushDelta({
+        kind: 'row_updated',
+        rowKey: CLIENT_ID_KEY,
+        row: { rowKey: CLIENT_ID_KEY, slots: { field } },
+      })
+    },
+    pushRemove(rowKey: string): void {
+      fields = new Map(fields)
+      fields.delete(rowKey)
+      pushDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
+    },
+    sent,
+    focus,
+  }
+}
+
+// Drops every connection a case left an action in flight on, so the lifecycle
+// fails the action and stops its deferred-loading timer before the page goes.
+const drops: Array<() => void> = []
+
+afterEach(() => {
+  act(() => {
+    for (const drop of drops.splice(0)) {
+      drop()
+    }
+  })
+  cleanup()
+  document.body.classList.remove('modal-open')
+})
+
+function byId(id: string): HTMLElement | null {
+  return document.querySelector(`[data-id="${id}"]`)
+}
+
+function valueInput(): HTMLInputElement {
+  return byId('hilos-oauth-field-input') as HTMLInputElement
+}
+
+function saveButton(): HTMLButtonElement {
+  return byId('hilos-oauth-field-save') as HTMLButtonElement
+}
+
+function notice(): HTMLElement | null {
+  return byId('hilos-oauth-field-edit-notice')
+}
+
+function typeDraft(text: string): void {
+  fireEvent.change(valueInput(), { target: { value: text } })
+}
+
+/**
+ * Mount the page and open the modal of one field. The row's controls stand in
+ * the document twice — the table and the narrow-screen card — so the button is
+ * looked up through the table.
+ */
+function openModal(
+  context: HilosSecurityOauthContext,
+  field: 'client_id' | 'client_secret',
+): void {
+  render(
+    <HilosRouterContext.Provider value={router()}>
+      <HilosSecurityOauthProviderPage context={context} />
+    </HilosRouterContext.Provider>,
+  )
+  fireEvent.click(
+    document.querySelector(
+      `table [data-id="hilos-oauth-field-edit-${field}"]`,
+    ) as Element,
+  )
+}
+
+describe('HilosSecurityOauthProviderPage field modal', () => {
+  it('opens on the live value with save locked and the message line empty', () => {
+    const { context, focus } = seededContext('Iv1.a')
+    openModal(context, 'client_id')
+
+    expect(valueInput().value).toBe('Iv1.a')
+    expect(saveButton().disabled).toBe(true)
+    expect(notice()).toBeNull()
+    expect(focus).toEqual([CLIENT_ID_KEY])
+  })
+
+  it('sends nothing on Enter while a conflict stands', () => {
+    const { context, pushUpdate, sent } = seededContext('Iv1.a')
+    openModal(context, 'client_id')
+    typeDraft('Iv1.mine')
+    act(() => {
+      pushUpdate('Iv1.b')
+    })
+
+    fireEvent.submit(valueInput().form as HTMLFormElement)
+
+    expect(sent).toHaveLength(0)
+    expect(byId('conflict-badge')).not.toBeNull()
+  })
+
+  it('reloads a pristine edit when the value changes elsewhere and says so', () => {
+    const { context, pushUpdate } = seededContext('Iv1.a')
+    openModal(context, 'client_id')
+
+    act(() => {
+      pushUpdate('Iv1.b')
+    })
+
+    expect(valueInput().value).toBe('Iv1.b')
+    expect(notice()?.textContent).toContain('Updated just now')
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('surfaces a conflict on a changed edit, without Merge, and Keep mine sends mine', () => {
+    const { context, pushUpdate, sent } = seededContext('Iv1.a')
+    openModal(context, 'client_id')
+    typeDraft('Iv1.mine')
+
+    act(() => {
+      pushUpdate(null)
+    })
+
+    expect(byId('conflict-badge')).not.toBeNull()
+    expect(notice()?.textContent).toContain('Changed elsewhere to "—"')
+    expect(byId('conflict-merge')).toBeNull()
+    expect(saveButton().disabled).toBe(true)
+
+    fireEvent.click(byId('conflict-accept-mine') as Element)
+    fireEvent.click(saveButton())
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.action).toBe('security_oauth_provider_set')
+    expect(sent[0]?.payload).toMatchObject({
+      providerKey: PROVIDER,
+      field: 'client_id',
+      value: 'Iv1.mine',
+    })
+  })
+
+  it('Take theirs puts the live value in, says so, and locks save', () => {
+    const { context, pushUpdate } = seededContext('Iv1.a')
+    openModal(context, 'client_id')
+    typeDraft('Iv1.mine')
+    act(() => {
+      pushUpdate('Iv1.b')
+    })
+
+    fireEvent.click(byId('conflict-accept-theirs') as Element)
+
+    expect(valueInput().value).toBe('Iv1.b')
+    expect(notice()?.textContent).toContain('Updated just now')
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('locks save as Deleted and keeps the draft when the row goes, and lets the row go on close', () => {
+    const { context, pushRemove, focus } = seededContext('Iv1.a')
+    openModal(context, 'client_id')
+    typeDraft('Iv1.mine')
+    act(() => {
+      pushRemove(CLIENT_ID_KEY)
+    })
+
+    expect(notice()?.textContent).toContain('Deleted elsewhere')
+    expect(saveButton().textContent?.trim()).toBe('Deleted')
+    expect(saveButton().disabled).toBe(true)
+    expect(valueInput().value).toBe('Iv1.mine')
+
+    fireEvent.click(byId('modal-close') as Element)
+    expect(byId('modal')).toBeNull()
+    expect(focus).toEqual([CLIENT_ID_KEY, ''])
+  })
+})
+
+describe('HilosSecurityOauthProviderPage secret modal', () => {
+  it('opens empty with save locked, and a typed secret opens save and sends', () => {
+    const { context, sent, focus } = seededContext('Iv1.a')
+    openModal(context, 'client_secret')
+
+    expect(focus).toEqual([SECRET_KEY])
+    expect(valueInput().value).toBe('')
+    expect(saveButton().disabled).toBe(true)
+    expect(byId('conflict-badge')).toBeNull()
+
+    typeDraft('s3cret')
+    expect(saveButton().disabled).toBe(false)
+    fireEvent.click(saveButton())
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.payload).toMatchObject({
+      field: 'client_secret',
+      value: 's3cret',
+    })
+  })
+
+  it('sends nothing on Enter while the input is empty', () => {
+    const { context, sent } = seededContext('Iv1.a')
+    openModal(context, 'client_secret')
+
+    fireEvent.submit(valueInput().form as HTMLFormElement)
+
+    expect(sent).toHaveLength(0)
+  })
+
+  it('says only that the row is gone, and locks save as Deleted', () => {
+    const { context, pushRemove } = seededContext('Iv1.a')
+    openModal(context, 'client_secret')
+    typeDraft('s3cret')
+    act(() => {
+      pushRemove(SECRET_KEY)
+    })
+
+    expect(notice()?.textContent).toContain('Deleted elsewhere')
+    expect(saveButton().textContent?.trim()).toBe('Deleted')
+    expect(saveButton().disabled).toBe(true)
+    expect(byId('conflict-badge')).toBeNull()
   })
 })

@@ -8,8 +8,9 @@
 // through the shared row-edit helper (rowEdit.ts, conflict-resolution.md) and
 // says what happened elsewhere on one line of room held in advance
 // (HilosEditNotice). Success is state-driven (the committed name reaches the
-// draft over the live table, closing the modal); a failure surfaces from the
-// backend fail ack inside the modal. Bootstrap classes only (styling-rules.md).
+// name it sent over the live table, closing the modal); a failure surfaces from
+// the backend fail ack inside the modal. Bootstrap classes only
+// (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
@@ -207,6 +208,9 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
+  // The name the rename in flight sent — what the success effect waits for;
+  // null while nothing is in flight.
+  const [sentName, setSentName] = useState<string | null>(null)
   const [editBaseline, setEditBaseline] = useState<
     RowEditBaseline<UserEditFields>
   >(() => openRowEdit<UserEditFields>({ name: '' }))
@@ -297,6 +301,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     setDraft(name)
     setEditBaseline(openRowEdit<UserEditFields>({ name }))
     setLoading(false)
+    setSentName(null)
     setEditing(true)
   }
 
@@ -331,6 +336,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   function closeEdit(): void {
     setEditing(false)
     setLoading(false)
+    setSentName(null)
     rename.clearRenameError()
   }
 
@@ -346,23 +352,30 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       return
     }
 
-    setLoading(rename.submitRename(detail.id, trimmed))
+    const sent = rename.submitRename(detail.id, trimmed)
+    setLoading(sent)
+    setSentName(sent ? trimmed : null)
   }
 
   // Success is state-driven: the rename has landed once the committed name (over
-  // the live table) reaches the submitted draft; that closes the modal.
+  // the live table) reaches the name it sent; that closes the modal. The draft
+  // is not part of it: Take theirs while the rename flies rewrites the draft,
+  // and the modal still waits for its own name.
   const committedName = detail?.name
   useEffect(() => {
-    if (loading && committedName === draft.trim()) {
+    if (loading && committedName === sentName) {
       setLoading(false)
+      setSentName(null)
       setEditing(false)
     }
-  }, [committedName, loading, draft])
+  }, [committedName, loading, sentName])
 
-  // A rejected rename releases the button and keeps the modal open to retry.
+  // A rejected rename releases the button, forgets the name it sent, and keeps
+  // the modal open to retry.
   useEffect(() => {
     if (error !== null) {
       setLoading(false)
+      setSentName(null)
     }
   }, [error])
 
@@ -556,7 +569,6 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             <ConflictActions
               conflict={live.conflict}
               disableSave={!valid || !dirty || loading || live.gone}
-              mergeable={false}
               saveLabel={saveLabel}
               onSave={submit}
               onAcceptMine={acceptMine}

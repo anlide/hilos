@@ -417,7 +417,6 @@ async function submitDelete(): Promise<void> {
         <ConflictActions
           :conflict="live.conflict"
           :disable-save="!editDirty || editBusy || live.gone"
-          :mergeable="false"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"

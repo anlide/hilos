@@ -342,7 +342,6 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             <ConflictActions
               conflict={live.conflict}
               disableSave={!editDirty || edit.busy || live.gone}
-              mergeable={false}
               saveLabel={editSaveLabel}
               onSave={() => void submitEdit()}
               onAcceptMine={acceptMine}

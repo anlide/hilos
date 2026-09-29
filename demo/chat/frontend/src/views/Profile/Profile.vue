@@ -25,14 +25,21 @@ import {
   HilosPages,
   sessionAuthMethods,
   startHilosNotificationPreferences,
-  threeWayMerge,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
+  takeTheirsRowEdit,
   type HilosSecondFactorContext,
+  type RowEditBaseline,
+  type RowEditState,
+  type RowEditStep,
 } from '@hilos/core'
 import {
   ConflictActions,
   ConflictHeader,
   HilosAccountDeletion,
   HilosAvatar,
+  HilosEditNotice,
   HilosFormError,
   HilosLink,
   HilosModal,
@@ -131,7 +138,9 @@ function sectionSummary(page: string): string {
     case HilosPages.PROFILE_NOTIFICATIONS:
       return describeHilosNotificationChannels(channels.value)
     case HilosPages.PROFILE_SESSIONS:
-      return sessionsCount.value === 1 ? '1 active sign-in' : `${sessionsCount.value} active sign-ins`
+      return sessionsCount.value === 1
+        ? '1 active sign-in'
+        : `${sessionsCount.value} active sign-ins`
     case HilosPages.PROFILE_DEVICES:
       return `${devicesCount.value} subscribed to push`
     case HilosPages.PROFILE_AGREEMENTS:
@@ -158,19 +167,50 @@ onUnmounted(() => {
   dataExport.dispose()
 })
 
+/** The one field the rename modal edits: the display name. */
+interface ProfileEditFields {
+  name: string
+}
+
+/** The one line the modal says about the other side, for what the helper found. */
+function noticeText(live: RowEditState<ProfileEditFields>): string {
+  switch (live.notice?.kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return `Changed elsewhere to "${live.fields.name.incoming}".`
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
+
 const editing = ref(false)
 const renameReady = ref(false)
 const renameBody = ref<HTMLElement | null>(null)
 const draft = ref('')
-// The committed name captured when the modal opened — the 3-way merge baseline.
-const baseline = ref('')
-const loading = ref(false)
-
-const merge = computed(() =>
-  threeWayMerge(baseline.value, draft.value.trim(), committed.value),
+// The snapshot the rename modal merges against, taken when the form shows.
+const editBaseline = ref<RowEditBaseline<ProfileEditFields>>(
+  openRowEdit<ProfileEditFields>({ name: '' }),
 )
-const conflict = computed(() => merge.value.conflict)
-const dirty = computed(() => draft.value.trim() !== baseline.value)
+const loading = ref(false)
+// The name the rename in flight sent — what the success watch waits for; null
+// while nothing is in flight.
+const sentName = ref<string | null>(null)
+
+// The live row is the profile's own name; gone once the profile has none.
+const live = computed(() =>
+  resolveRowEdit(
+    detail.value ? { name: committed.value } : undefined,
+    editBaseline.value,
+    { name: draft.value.trim() },
+  ),
+)
+const dirty = computed(() => live.value.dirty)
+const editNotice = computed(() => live.value.notice?.kind ?? null)
+const editNoticeText = computed(() => noticeText(live.value))
+const saveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 const valid = computed(() => {
   const trimmed = draft.value.trim()
 
@@ -226,77 +266,110 @@ function focusStep(body: HTMLElement | null): void {
   })
 }
 
+// The form shows (the step-up skipped or confirmed): the draft and the snapshot
+// are the live name at this moment, not at the Change click.
+function startRenameForm(): void {
+  draft.value = committed.value
+  editBaseline.value = openRowEdit<ProfileEditFields>({
+    name: committed.value,
+  })
+  renameReady.value = true
+}
+
 async function openEdit(): Promise<void> {
   clearRenameError()
-  baseline.value = committed.value
-  draft.value = committed.value
   loading.value = false
+  sentName.value = null
+  renameReady.value = false
   const outcome = await profileStepUp.open('change_name')
-  renameReady.value = outcome === 'skip'
+  if (outcome === 'skip') {
+    startRenameForm()
+  }
   editing.value = true
 }
 
 async function confirmRenameStepUp(): Promise<void> {
   if (await profileStepUp.confirm()) {
-    renameReady.value = true
+    startRenameForm()
     focusStep(renameBody.value)
   }
 }
 
+// Put a step of the helper into the modal: the snapshot moves, and a name the
+// step takes lands in the input.
+function applyStep(step: RowEditStep<ProfileEditFields>): void {
+  editBaseline.value = step.baseline
+  if (step.take.name !== undefined) {
+    draft.value = step.take.name
+  }
+}
+
+// The helper hands a step whenever the other side moved the name while the
+// person left it alone, or both arrived at the same one; the modal applies it
+// at once while the form shows.
+watch(
+  () => live.value.settle,
+  (settle) => {
+    if (editing.value && renameReady.value && settle) {
+      applyStep(settle)
+    }
+  },
+)
+
 function submit(): void {
-  if (!valid.value || !dirty.value || conflict.value || loading.value) {
+  if (!valid.value || loading.value || live.value.gone || live.value.conflict) {
+    return
+  }
+  // No change: close without a round-trip (also keeps the state-driven success
+  // watch from waiting on a name that will never change).
+  if (!live.value.dirty) {
+    editing.value = false
+
     return
   }
 
-  loading.value = sendRename(draft.value.trim())
+  const name = draft.value.trim()
+  loading.value = sendRename(name)
+  sentName.value = loading.value ? name : null
 }
 
-// Success is state-driven: while a submit is in flight, the rename has landed
-// once the committed name reaches the draft. Outside the modal, keep the
-// baseline synced so the next open starts fresh.
+// Success is state-driven: the rename has landed once the committed name
+// reaches the name it sent, which closes the modal. The draft is not part of
+// it: Take theirs while the rename flies rewrites the draft, and the modal
+// still waits for its own name.
 watch(committed, (name) => {
-  if (loading.value && name === draft.value.trim()) {
+  if (loading.value && name === sentName.value) {
     loading.value = false
+    sentName.value = null
     editing.value = false
-  } else if (!editing.value) {
-    baseline.value = name
-    draft.value = name
   }
 })
 
-// A rejected rename arrives as a framework action_error: release the button and
-// keep the modal open so the user can retry from their draft.
+// A rejected rename arrives as a framework action_error: release the button,
+// forget the name it sent, and keep the modal open so the user can retry from
+// their draft.
 watch(error, (reason) => {
   if (reason !== null) {
     loading.value = false
+    sentName.value = null
   }
 })
 
-// Closing the modal clears the in-flight flag (the draft resets on the next open).
+// Closing the modal clears the in-flight flag and the name it sent (the form
+// takes a fresh snapshot on the next open).
 watch(editing, (open) => {
   if (!open) {
     loading.value = false
+    sentName.value = null
   }
 })
 
-// Conflict resolutions: each sets the baseline so the merge no longer conflicts.
 function acceptMine(): void {
-  baseline.value = committed.value
+  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
 }
 
 function acceptTheirs(): void {
-  draft.value = committed.value
-  baseline.value = committed.value
-}
-
-function mergeBoth(): void {
-  const mine = draft.value.trim()
-  const theirs = committed.value
-  draft.value =
-    mine !== '' && theirs !== '' && mine !== theirs
-      ? `${mine} / ${theirs}`
-      : mine || theirs
-  baseline.value = committed.value
+  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
 }
 </script>
 
@@ -412,7 +485,7 @@ function mergeBoth(): void {
         <h2 v-if="!renameReady" class="modal-title h5 mb-0">
           Confirm it's you
         </h2>
-        <ConflictHeader v-else title="Change name" :conflict="conflict" />
+        <ConflictHeader v-else title="Change name" :conflict="live.conflict" />
       </template>
 
       <!-- This dialog's own voice: the page region above is under the backdrop,
@@ -446,14 +519,11 @@ function mergeBoth(): void {
           <div class="form-text">
             Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
           </div>
-          <div
-            v-if="conflict"
-            class="alert alert-warning mt-2 mb-0"
-            data-id="profile-conflict-note"
-          >
-            The name changed elsewhere to “{{ committed }}”. Choose how to
-            resolve.
-          </div>
+          <HilosEditNotice
+            :kind="editNotice"
+            :text="editNoticeText"
+            data-id="profile-edit-notice"
+          />
           <HilosFormError :message="error" data-id="profile-rename-error" />
         </form>
       </div>
@@ -478,27 +548,37 @@ function mergeBoth(): void {
             Confirm
           </LoadingButton>
         </template>
-        <ConflictActions
-          v-else
-          :conflict="conflict"
-          :disable-save="!valid || !dirty"
-          @save="submit"
-          @accept-mine="acceptMine"
-          @accept-theirs="acceptTheirs"
-          @merge="mergeBoth"
-        >
-          <template #save-button="{ disabled, onSave }">
-            <LoadingButton
-              class="btn-primary"
-              :loading="loading"
-              :disabled="disabled"
-              data-id="profile-rename-save"
-              @click="onSave"
-            >
-              Save
-            </LoadingButton>
-          </template>
-        </ConflictActions>
+        <template v-else>
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            :disabled="loading"
+            data-id="profile-rename-cancel"
+            @click="requestClose"
+          >
+            Cancel
+          </button>
+          <ConflictActions
+            :conflict="live.conflict"
+            :disable-save="!valid || !dirty || loading || live.gone"
+            :save-label="saveLabel"
+            @save="submit"
+            @accept-mine="acceptMine"
+            @accept-theirs="acceptTheirs"
+          >
+            <template #save-button="{ disabled, onSave }">
+              <LoadingButton
+                class="btn-primary"
+                :loading="loading"
+                :disabled="disabled"
+                data-id="profile-rename-save"
+                @click="onSave"
+              >
+                {{ saveLabel }}
+              </LoadingButton>
+            </template>
+          </ConflictActions>
+        </template>
       </template>
     </HilosModal>
 

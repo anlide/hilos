@@ -278,6 +278,12 @@ export function createHilosSecurityTwoFactorTable(
         TWO_FACTOR_TABLE,
         rendered,
       ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.SECURITY_2FA,
+        TWO_FACTOR_TABLE,
+        rowKey,
+      ),
     frame: TWO_FACTOR_FRAME,
   })
   let teardown: Array<() => void> = []

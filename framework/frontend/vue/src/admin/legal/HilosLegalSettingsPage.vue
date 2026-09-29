@@ -214,7 +214,6 @@ async function save(): Promise<void> {
         <ConflictActions
           :conflict="state.conflict"
           :disable-save="!state.dirty || busy || state.gone"
-          :mergeable="false"
           :save-label="state.gone ? 'Deleted' : 'Save'"
           @save="save"
           @accept-mine="editor.keepMine"

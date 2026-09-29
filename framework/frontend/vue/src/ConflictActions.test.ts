@@ -19,7 +19,7 @@ describe('ConflictActions', () => {
     expect(wrapper.find('[data-id="conflict-accept-theirs"]').exists()).toBe(
       true,
     )
-    expect(wrapper.find('[data-id="conflict-merge"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="conflict-merge"]').exists()).toBe(false)
   })
 
   it('emits the chosen resolution', async () => {
@@ -34,16 +34,19 @@ describe('ConflictActions', () => {
     expect(wrapper.emitted('save')).toHaveLength(1)
   })
 
-  it('hides the merge button when mergeable is false', () => {
-    const wrapper = mount(ConflictActions, {
-      props: { conflict: true, mergeable: false },
-    })
+  it('shows merge only when the surface asks for it (mergeable: true)', async () => {
+    const wrapper = mount(ConflictActions, { props: { conflict: true } })
     expect(wrapper.find('[data-id="conflict-accept-mine"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="conflict-merge"]').exists()).toBe(false)
+
+    await wrapper.setProps({ mergeable: true })
+    expect(wrapper.find('[data-id="conflict-merge"]').exists()).toBe(true)
   })
 
   it('shapes the root as a button group and renders resolution buttons without btn-sm', () => {
-    const wrapper = mount(ConflictActions, { props: { conflict: true } })
+    const wrapper = mount(ConflictActions, {
+      props: { conflict: true, mergeable: true },
+    })
     const root = wrapper.element as HTMLElement
     expect(root.classList.contains('hilos-button-group')).toBe(true)
     expect(root.classList.contains('d-md-flex')).toBe(true)

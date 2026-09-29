@@ -180,7 +180,6 @@ export function HilosLegalSettingsPage({
             <ConflictActions
               conflict={state.conflict}
               disableSave={!state.dirty || action.busy || state.gone}
-              mergeable={false}
               saveLabel={state.gone ? 'Deleted' : 'Save'}
               onSave={() => void save()}
               onAcceptMine={editor.keepMine}

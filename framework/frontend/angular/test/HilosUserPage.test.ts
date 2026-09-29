@@ -58,6 +58,7 @@ function userContext(accountMerge = false): {
   context: HilosUsersContext
   renameElsewhere: (name: string) => void
   removeRow: () => void
+  failRename: () => void
   sent: Array<{ action: string; data: unknown }>
 } {
   const scopes = new ScopeManager()
@@ -78,6 +79,17 @@ function userContext(accountMerge = false): {
 
     return true
   })
+  // The rename's fail ack arrives as an unknown signal; keep its listeners to
+  // answer a refusal.
+  const unknownListeners: Array<(signal: { type: string }) => void> = []
+  const on = connection.on.bind(connection)
+  vi.spyOn(connection, 'on').mockImplementation((event, listener) => {
+    if (event === 'unknownSignal') {
+      unknownListeners.push(listener as (signal: { type: string }) => void)
+    }
+
+    return on(event, listener)
+  })
 
   return {
     context: {
@@ -92,6 +104,11 @@ function userContext(accountMerge = false): {
     },
     removeRow(): void {
       page.tables.delete('userDetail', 1)
+    },
+    failRename(): void {
+      for (const listener of unknownListeners) {
+        listener({ type: 'hilos_user_update_fail' })
+      }
     },
     sent,
   }
@@ -242,6 +259,48 @@ describe('HilosUserPage rename modal', () => {
     expect(saveButton(fixture).disabled).toBe(true)
     expect(saveButton(fixture).textContent?.trim()).toBe('Deleted')
     expect(nameInput(fixture).value).toBe('Mine')
+    expect(el(fixture, 'modal')).not.toBeNull()
+  })
+
+  it('waits for the name it sent: Take theirs in flight keeps the modal open until that name lands', () => {
+    const { context, renameElsewhere, sent } = userContext()
+    const fixture = openModal(context)
+    typeDraft(fixture, 'Mine')
+    saveButton(fixture).click()
+    fixture.detectChanges()
+    expect(sent.at(-1)?.data).toEqual({ id: 1, name: 'Mine' })
+
+    renameElsewhere('Theirs')
+    fixture.detectChanges()
+    el(fixture, 'conflict-accept-theirs')?.click()
+    fixture.detectChanges()
+    // The draft now matches the live name, but that is not the name this rename sent.
+    expect(nameInput(fixture).value).toBe('Theirs')
+    expect(el(fixture, 'modal')).not.toBeNull()
+
+    renameElsewhere('Other')
+    fixture.detectChanges()
+    expect(nameInput(fixture).value).toBe('Other')
+    expect(el(fixture, 'modal')).not.toBeNull()
+
+    renameElsewhere('Mine')
+    fixture.detectChanges()
+    expect(el(fixture, 'modal')).toBeNull()
+  })
+
+  it('forgets the name it sent once the rename is refused', () => {
+    const { context, renameElsewhere, failRename } = userContext()
+    const fixture = openModal(context)
+    typeDraft(fixture, 'Mine')
+    saveButton(fixture).click()
+    fixture.detectChanges()
+
+    failRename()
+    fixture.detectChanges()
+    expect(saveButton(fixture).disabled).toBe(false)
+
+    renameElsewhere('Mine')
+    fixture.detectChanges()
     expect(el(fixture, 'modal')).not.toBeNull()
   })
 

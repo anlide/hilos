@@ -379,7 +379,6 @@ export function HilosCommunicationsChannelPage({
             <ConflictActions
               conflict={live.conflict}
               disableSave={!live.dirty || edit.busy || live.gone}
-              mergeable={false}
               saveLabel={editSaveLabel}
               onSave={() => void submitEdit()}
               onAcceptMine={acceptMine}

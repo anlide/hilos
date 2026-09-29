@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createHilosOAuthProviderFields,
+  createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
   resolveHilosOAuthFieldRow,
   resolveHilosOAuthProviderRow,
   resolveHilosOAuthRedirectRow,
   type HilosSecurityOauthContext,
 } from '../../../src/admin/security/hilosSecurityOauth.js'
-import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
+import {
+  type ActionHandle,
+  type ActionLifecycle,
+} from '../../../src/connection/actionLifecycle.js'
+import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
+import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 /** Build a row whose inline slot of the given name carries the given fields. */
@@ -137,6 +145,112 @@ describe('resolveHilosOAuthRedirectRow', () => {
       source: 'env',
       setState: true,
     })
+  })
+})
+
+describe('row focus on the tables a dialog edits over', () => {
+  type Focus = { page: string; tableKey: string; rowKey: string }
+
+  /** A context whose connection records every row-focus frame it is asked to send. */
+  function focusContext(focus: Focus[]): HilosSecurityOauthContext {
+    const connection = {
+      sendTableViewport: () => true,
+      sendTableRendered: () => true,
+      sendTableRowFocus: (page: string, tableKey: string, rowKey: string) =>
+        focus.push({ page, tableKey, rowKey }) > 0,
+    } as unknown as HilosConnection
+
+    return {
+      connection,
+      scopes: new ScopeManager(),
+      actions: {} as unknown as ActionLifecycle,
+    }
+  }
+
+  it('hands the return-address row into focus to the dialog over it, and lets it go with an empty key', () => {
+    const focus: Focus[] = []
+    const redirect = createHilosOAuthRedirect(focusContext(focus))
+    redirect.controller.ingestSubscriptionWindow(
+      [
+        slotRow('oauth_redirect_uri', 'redirect', {
+          value: 'https://app.example/auth/callback',
+          source: 'db',
+          setState: true,
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    expect(redirect.controller.focusRow('oauth_redirect_uri')?.value).toBe(
+      'https://app.example/auth/callback',
+    )
+    redirect.controller.releaseFocus()
+
+    expect(focus).toEqual([
+      {
+        page: 'hilos_security_oauth',
+        tableKey: 'hilosSecurityOauthRedirect',
+        rowKey: 'oauth_redirect_uri',
+      },
+      {
+        page: 'hilos_security_oauth',
+        tableKey: 'hilosSecurityOauthRedirect',
+        rowKey: '',
+      },
+    ])
+  })
+
+  it('hands a provider field row into focus to the dialog over it, and lets it go with an empty key', () => {
+    const focus: Focus[] = []
+    const fields = createHilosOAuthProviderFields(
+      focusContext(focus),
+      createSignal('oauth:github'),
+    )
+    // The table opens with the provider preset, so its rows come in the answer to the
+    // viewport it asks for, not in the page's own window.
+    fields.controller.ingestWindow(
+      [
+        slotRow('oauth:github/client_id', 'field', {
+          providerKey: 'oauth:github',
+          field: 'client_id',
+          label: 'Client ID',
+          type: 'string',
+          secret: false,
+          value: 'abc123',
+          source: 'db',
+          setState: true,
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+
+    expect(fields.controller.focusRow('oauth:github/client_id')?.value).toBe(
+      'abc123',
+    )
+    fields.controller.releaseFocus()
+
+    expect(focus).toEqual([
+      {
+        page: 'hilos_security_oauth_provider',
+        tableKey: 'hilosSecurityOauthProviderFields',
+        rowKey: 'oauth:github/client_id',
+      },
+      {
+        page: 'hilos_security_oauth_provider',
+        tableKey: 'hilosSecurityOauthProviderFields',
+        rowKey: '',
+      },
+    ])
   })
 })
 

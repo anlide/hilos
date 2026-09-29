@@ -476,7 +476,6 @@ async function submitDelete(): Promise<void> {
           <ConflictActions
             :conflict="formConflict"
             :disable-save="saveDisabled"
-            :mergeable="false"
             :save-label="saveLabel"
             @save="submitForm"
             @accept-mine="acceptMine"

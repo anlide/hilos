@@ -42,7 +42,7 @@ class ConflictActionsHost {
   readonly conflict = signal(false)
   readonly disableSave = signal(false)
   readonly saveLabel = signal('Save')
-  readonly mergeable = signal(true)
+  readonly mergeable = signal(false)
   readonly useCustomSave = signal(false)
 
   saveCalls = 0
@@ -101,7 +101,7 @@ describe('ConflictActions', () => {
     expect(
       document.querySelector('[data-id="conflict-accept-theirs"]'),
     ).not.toBeNull()
-    expect(document.querySelector('[data-id="conflict-merge"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="conflict-merge"]')).toBeNull()
   })
 
   it('emits the chosen resolution', () => {
@@ -141,21 +141,25 @@ describe('ConflictActions', () => {
     expect(document.querySelector('[data-id="conflict-save"]')).toBeNull()
   })
 
-  it('hides the merge button when mergeable is false', () => {
+  it('shows merge only when the surface asks for it (mergeable: true)', () => {
     const fixture = mountHost()
     fixture.componentInstance.conflict.set(true)
-    fixture.componentInstance.mergeable.set(false)
     fixture.detectChanges()
 
     expect(
       document.querySelector('[data-id="conflict-accept-mine"]'),
     ).not.toBeNull()
     expect(document.querySelector('[data-id="conflict-merge"]')).toBeNull()
+
+    fixture.componentInstance.mergeable.set(true)
+    fixture.detectChanges()
+    expect(document.querySelector('[data-id="conflict-merge"]')).not.toBeNull()
   })
 
   it('shapes the root as a button group and renders resolution buttons without btn-sm', () => {
     const fixture = mountHost()
     fixture.componentInstance.conflict.set(true)
+    fixture.componentInstance.mergeable.set(true)
     fixture.detectChanges()
 
     const root = document.querySelector(

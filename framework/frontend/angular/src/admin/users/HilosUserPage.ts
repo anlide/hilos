@@ -8,7 +8,7 @@
 // through the shared row-edit helper (rowEdit.ts, conflict-resolution.md) and
 // says what happened elsewhere on one line of room held in advance
 // (HilosEditNotice). Success is state-driven (the committed name reaches the
-// draft over the live table, closing the modal); a failure surfaces from the
+// name it sent over the live table, closing the modal); a failure surfaces from the
 // backend fail ack inside the modal. The context arrives via input and
 // carries core signals, so — like HilosTable — an effect builds the selectors
 // once it binds and mirrors them into Angular signals. Bootstrap classes only
@@ -295,7 +295,6 @@ function noticeText(live: RowEditState<UserEditFields>): string {
             hilosConflictActions
             [conflict]="live().conflict"
             [disableSave]="!valid() || !dirty() || loading() || live().gone"
-            [mergeable]="false"
             [saveLabel]="saveLabel()"
             (save)="submit()"
             (acceptMine)="acceptMine()"
@@ -626,6 +625,9 @@ export class HilosUserPage {
   protected readonly editing = signal(false)
   protected readonly draft = signal('')
   protected readonly loading = signal(false)
+  // The name the rename in flight sent — what the success effect waits for;
+  // null while nothing is in flight.
+  private readonly sentName = signal<string | null>(null)
   protected readonly editBaseline = signal<RowEditBaseline<UserEditFields>>(
     openRowEdit<UserEditFields>({ name: '' }),
   )
@@ -760,23 +762,27 @@ export class HilosUserPage {
     })
 
     // Success is state-driven: the rename has landed once the committed name (over
-    // the live table) reaches the submitted draft, which closes the modal. Track
-    // only the name; read the form state untracked so the effect mirrors the Vue
-    // watch-on-name.
+    // the live table) reaches the name it sent, which closes the modal. The draft
+    // is not part of it: Take theirs while the rename flies rewrites the draft,
+    // and the modal still waits for its own name. Track only the name; read the
+    // form state untracked so the effect mirrors the Vue watch-on-name.
     effect(() => {
       const name = this.detail()?.name
       untracked(() => {
-        if (this.loading() && name === this.draft().trim()) {
+        if (this.loading() && name === this.sentName()) {
           this.loading.set(false)
+          this.sentName.set(null)
           this.editing.set(false)
         }
       })
     })
 
-    // A rejected rename releases the button and keeps the modal open to retry.
+    // A rejected rename releases the button, forgets the name it sent, and keeps
+    // the modal open to retry.
     effect(() => {
       if (this.renameError() !== null) {
         this.loading.set(false)
+        this.sentName.set(null)
       }
     })
 
@@ -800,6 +806,7 @@ export class HilosUserPage {
     this.draft.set(name)
     this.editBaseline.set(openRowEdit<UserEditFields>({ name }))
     this.loading.set(false)
+    this.sentName.set(null)
     this.editing.set(true)
   }
 
@@ -827,6 +834,7 @@ export class HilosUserPage {
     }
     this.editing.set(false)
     this.loading.set(false)
+    this.sentName.set(null)
     this.rename?.clearRenameError()
   }
 
@@ -844,9 +852,10 @@ export class HilosUserPage {
       return
     }
 
-    this.loading.set(
-      this.rename?.submitRename(current.id, this.draft().trim()) ?? false,
-    )
+    const name = this.draft().trim()
+    const sent = this.rename?.submitRename(current.id, name) ?? false
+    this.loading.set(sent)
+    this.sentName.set(sent ? name : null)
   }
 
   protected onDraftInput(event: Event): void {

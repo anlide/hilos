@@ -14,7 +14,12 @@
 // (createHilosSecurityOauthActions): the value redraws from the reactive table after
 // the backend echo, never optimistically, and a refusal surfaces with the backend's
 // domain phrase. Editing happens in a modal — inline forms are forbidden
-// (rules-and-violations.md section E). Bootstrap classes only (styling-rules.md).
+// (rules-and-violations.md section E) — and the modal holds its row in focus and
+// merges against it through the shared row-edit helper (rowEdit.ts,
+// conflict-resolution.md), saying what happened elsewhere on one line of room
+// held in advance (HilosEditNotice). The secret never reads back, so its live
+// value is always empty: there is nothing to merge, and the dialog only says when
+// the row is gone. Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -23,6 +28,7 @@ import {
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core'
 import {
   HilosPages,
@@ -30,18 +36,28 @@ import {
   createHilosOAuthProviderFields,
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
   subscribeSignal,
+  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
   HilosOAuthFieldRow,
   HilosOAuthProviderRow,
   HilosSecurityOauthContext,
   OAuthValueSource,
+  RowEditBaseline,
+  RowEditNoticeKind,
+  RowEditStep,
   TableViewportRow,
 } from '@hilos/core'
 
+import { ConflictActions } from '../../ConflictActions.js'
+import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -57,6 +73,33 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
   default: 'Default',
 }
 
+/** Human-readable effective value of a field that is not the secret. */
+function displayValue(row: HilosOAuthFieldRow): string {
+  return row.value === null || row.value === '' ? '—' : row.value
+}
+
+/** The one field the dialog edits; the secret reads as empty. */
+interface FieldEditFields {
+  value: string
+}
+
+/** The one line the dialog says about the other side, for what the helper found. */
+function noticeText(
+  kind: RowEditNoticeKind | null,
+  liveRow: HilosOAuthFieldRow | undefined,
+): string {
+  switch (kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return liveRow ? `Changed elsewhere to "${displayValue(liveRow)}".` : ''
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
+
 /** The framework OAuth provider page: one provider's fields table and its recipe. */
 @Component({
   selector: 'hilos-security-oauth-provider-page',
@@ -64,10 +107,13 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
   imports: [
     HilosAdminPage,
     HilosActionError,
+    HilosEditNotice,
     HilosModal,
     HilosTableCell,
     HilosViewportTable,
     LoadingButton,
+    ConflictActions,
+    ConflictHeader,
   ],
   template: `
     <hilos-admin-page [page]="page">
@@ -191,10 +237,16 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="editOpen.set($event)"
-        [title]="editTitle()"
-        (cancel)="closeEdit()"
+        (openChange)="$event ? editOpen.set(true) : closeEdit()"
+        [confirmOnClose]="live().dirty"
+        [ariaLabel]="editTitle()"
       >
+        <h5
+          hilosConflictHeader
+          modalHeader
+          [title]="editTitle()"
+          [conflict]="live().conflict"
+        ></h5>
         <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
@@ -216,6 +268,11 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
                 The current secret is never shown. What you enter replaces it.
               </p>
             }
+            <hilos-edit-notice
+              [kind]="editNotice()"
+              [text]="editNoticeText()"
+              dataId="hilos-oauth-field-edit-notice"
+            />
           </form>
         }
         <ng-template #modalActions let-requestClose="requestClose">
@@ -227,16 +284,32 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
           >
             Cancel
           </button>
-          <button
-            hilosLoadingButton
-            class="btn-primary"
-            [loading]="edit.loading()"
-            [disabled]="edit.busy()"
-            data-id="hilos-oauth-field-save"
-            (click)="submitEdit()"
+          <div
+            hilosConflictActions
+            [conflict]="live().conflict"
+            [disableSave]="!live().dirty || edit.busy() || live().gone"
+            [saveLabel]="editSaveLabel()"
+            (save)="submitEdit()"
+            (acceptMine)="acceptMine()"
+            (acceptTheirs)="acceptTheirs()"
           >
-            Save
-          </button>
+            <ng-template
+              #saveButton
+              let-disabled="disabled"
+              let-onSave="onSave"
+            >
+              <button
+                hilosLoadingButton
+                class="btn-primary"
+                [loading]="edit.loading()"
+                [disabled]="disabled"
+                data-id="hilos-oauth-field-save"
+                (click)="onSave()"
+              >
+                {{ editSaveLabel() }}
+              </button>
+            </ng-template>
+          </div>
         </ng-template>
       </hilos-modal>
     </hilos-admin-page>
@@ -299,6 +372,9 @@ export class HilosSecurityOauthProviderPage {
   protected readonly editOpen = signal(false)
   protected readonly editRow = signal<HilosOAuthFieldRow | null>(null)
   protected readonly editValue = signal('')
+  protected readonly editBaseline = signal<RowEditBaseline<FieldEditFields>>(
+    openRowEdit<FieldEditFields>({ value: '' }),
+  )
   protected readonly edit = createHilosTrackedAction()
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
@@ -307,6 +383,29 @@ export class HilosSecurityOauthProviderPage {
       ? `${row.secret ? 'Replace' : 'Edit'} · ${row.label}`
       : 'Edit field'
   })
+  // The live row the open dialog is about: the row the table holds in focus, which
+  // the server follows wherever it goes; undefined once the row is gone. Mirrored
+  // the way the summary rows are.
+  protected readonly liveRow = signal<HilosOAuthFieldRow | undefined>(undefined)
+  protected readonly live = computed(() => {
+    const row = this.liveRow()
+
+    // An empty value reads as '' the way the input shows it.
+    return resolveRowEdit(
+      row ? { value: row.value ?? '' } : undefined,
+      this.editBaseline(),
+      { value: this.editValue() },
+    )
+  })
+  protected readonly editNotice = computed(
+    () => this.live().notice?.kind ?? null,
+  )
+  protected readonly editNoticeText = computed(() =>
+    noticeText(this.editNotice(), this.liveRow()),
+  )
+  protected readonly editSaveLabel = computed(() =>
+    this.live().gone ? 'Deleted' : 'Save',
+  )
 
   constructor() {
     // Bind both tables to the connection and request their windows once the
@@ -318,7 +417,11 @@ export class HilosSecurityOauthProviderPage {
       fields.start()
       this.summaryRows.set(summary.controller.rows.get())
       this.summaryLoaded.set(summary.controller.loaded.get())
+      this.liveRow.set(fields.controller.focusedRow.get())
       const unsubscribes = [
+        subscribeSignal(fields.controller.focusedRow, (row) => {
+          this.liveRow.set(row)
+        }),
         subscribeSignal(summary.controller.rows, (next) => {
           this.summaryRows.set(next)
         }),
@@ -332,6 +435,18 @@ export class HilosSecurityOauthProviderPage {
         }
         summary.dispose()
         fields.dispose()
+      })
+    })
+    // The helper hands a step whenever the other side moved the value while the
+    // person left it alone, or both arrived at the same one; the dialog applies
+    // it at once.
+    effect(() => {
+      const settle = this.live().settle
+      const open = this.editOpen()
+      untracked(() => {
+        if (open && settle) {
+          this.applyStep(settle)
+        }
       })
     })
   }
@@ -348,7 +463,7 @@ export class HilosSecurityOauthProviderPage {
 
   /** Human-readable effective value of a field that is not the secret. */
   protected displayValue(row: HilosOAuthFieldRow): string {
-    return row.value === null || row.value === '' ? '—' : row.value
+    return displayValue(row)
   }
 
   protected resetField(row: HilosOAuthFieldRow): void {
@@ -358,9 +473,18 @@ export class HilosSecurityOauthProviderPage {
   }
 
   protected openEdit(row: HilosOAuthFieldRow): void {
+    // Flush pending and take the row into focus, so the dialog edits the latest
+    // committed row and follows it from here; a row that is gone declines to open.
+    const fresh = this.fields().controller.focusRow(row.key)
+    if (!fresh) {
+      return
+    }
     this.edit.clearError()
-    this.editRow.set(row)
-    this.editValue.set(row.secret ? '' : (row.value ?? ''))
+    this.editRow.set(fresh)
+    // The secret never reads back: its value is null and its dialog opens empty.
+    const value = fresh.value ?? ''
+    this.editValue.set(value)
+    this.editBaseline.set(openRowEdit<FieldEditFields>({ value }))
     this.editOpen.set(true)
   }
 
@@ -368,12 +492,36 @@ export class HilosSecurityOauthProviderPage {
     this.editOpen.set(false)
     // The secret typed into the dialog is not kept once it is closed.
     this.editValue.set('')
+    this.fields().controller.releaseFocus()
+  }
+
+  // Put a step of the helper into the dialog: the snapshot moves, and a value
+  // the step takes lands in the input.
+  private applyStep(step: RowEditStep<FieldEditFields>): void {
+    this.editBaseline.set(step.baseline)
+    if (step.take.value !== undefined) {
+      this.editValue.set(step.take.value)
+    }
+  }
+
+  protected acceptMine(): void {
+    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+  }
+
+  protected acceptTheirs(): void {
+    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
   }
 
   protected async submitEdit(event?: Event): Promise<void> {
     event?.preventDefault()
     const row = this.editRow()
-    if (!row || this.edit.busy()) {
+    if (!row || this.edit.busy() || this.live().gone || this.live().conflict) {
+      return
+    }
+    // Nothing to save (for the secret: nothing typed) closes without a request.
+    if (!this.live().dirty) {
+      this.closeEdit()
+
       return
     }
     if (

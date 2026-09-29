@@ -5,11 +5,14 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createHilosSecurityTwoFactorActions,
+  createHilosSecurityTwoFactorTable,
   describeHilosSecondFactorSetting,
   HilosSecondFactorSettingKey,
   resolveHilosTwoFactorSettingRow,
 } from '../../../src/admin/security/hilosSecurityTwoFactor.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
+import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
 
 describe('resolveHilosTwoFactorSettingRow', () => {
   it('maps the setting slot onto the view-model', () => {
@@ -42,6 +45,62 @@ describe('resolveHilosTwoFactorSettingRow', () => {
       value: '',
       defaultValue: '',
     })
+  })
+})
+
+describe('createHilosSecurityTwoFactorTable', () => {
+  it('hands a setting row into focus to the dialog over it, and lets it go with an empty key', () => {
+    const focus: Array<{ page: string; tableKey: string; rowKey: string }> = []
+    const connection = {
+      sendTableViewport: () => true,
+      sendTableRendered: () => true,
+      sendTableRowFocus: (page: string, tableKey: string, rowKey: string) =>
+        focus.push({ page, tableKey, rowKey }) > 0,
+    } as unknown as HilosConnection
+    const table = createHilosSecurityTwoFactorTable({
+      connection,
+      scopes: new ScopeManager(),
+      actions: {} as unknown as ActionLifecycle,
+    })
+    table.controller.ingestSubscriptionWindow(
+      [
+        {
+          rowKey: HilosSecondFactorSettingKey.trustDays,
+          slots: {
+            setting: {
+              rowKey: HilosSecondFactorSettingKey.trustDays,
+              value: '14',
+              defaultValue: '30',
+            },
+          },
+        },
+      ],
+      1,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    expect(
+      table.controller.focusRow(HilosSecondFactorSettingKey.trustDays)?.value,
+    ).toBe('14')
+    table.controller.releaseFocus()
+
+    expect(focus).toEqual([
+      {
+        page: 'hilos_security_2fa',
+        tableKey: 'hilosSecurityTwoFactor',
+        rowKey: 'auth.second_factor.trust_days',
+      },
+      {
+        page: 'hilos_security_2fa',
+        tableKey: 'hilosSecurityTwoFactor',
+        rowKey: '',
+      },
+    ])
   })
 })
 

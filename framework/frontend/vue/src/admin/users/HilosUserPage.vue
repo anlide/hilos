@@ -7,8 +7,8 @@ createHilosUserRename); this view owns only the markup, so a project mounts it b
 passing its HilosUsersContext. The modal merges against the live row through the
 shared row-edit helper (rowEdit.ts, conflict-resolution.md) and says what
 happened elsewhere on one line of room held in advance (HilosEditNotice). Success
-is state-driven (the committed name reaches the draft over the live table,
-closing the modal); a failure surfaces from the backend fail ack inside the
+is state-driven (the committed name reaches the name it sent over the live
+table, closing the modal); a failure surfaces from the backend fail ack inside the
 modal. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -268,6 +268,9 @@ async function submitMerge(): Promise<void> {
 const editing = ref(false)
 const draft = ref('')
 const loading = ref(false)
+// The name the rename in flight sent — what the success watch waits for; null
+// while nothing is in flight.
+const sentName = ref<string | null>(null)
 const editBaseline = ref<RowEditBaseline<UserEditFields>>(
   openRowEdit<UserEditFields>({ name: '' }),
 )
@@ -300,6 +303,7 @@ function openEdit(): void {
   draft.value = name
   editBaseline.value = openRowEdit<UserEditFields>({ name })
   loading.value = false
+  sentName.value = null
   editing.value = true
 }
 
@@ -336,6 +340,7 @@ function acceptTheirs(): void {
 function closeEdit(): void {
   editing.value = false
   loading.value = false
+  sentName.value = null
   rename.clearRenameError()
 }
 
@@ -352,25 +357,32 @@ function submit(): void {
     return
   }
 
-  loading.value = rename.submitRename(current.id, draft.value.trim())
+  const name = draft.value.trim()
+  loading.value = rename.submitRename(current.id, name)
+  sentName.value = loading.value ? name : null
 }
 
 // Success is state-driven: the rename has landed once the committed name (over
-// the live table) reaches the submitted draft, which closes the modal.
+// the live table) reaches the name it sent, which closes the modal. The draft
+// is not part of it: Take theirs while the rename flies rewrites the draft, and
+// the modal still waits for its own name.
 watch(
   () => detail.value?.name,
   (name) => {
-    if (loading.value && name === draft.value.trim()) {
+    if (loading.value && name === sentName.value) {
       loading.value = false
+      sentName.value = null
       editing.value = false
     }
   },
 )
 
-// A rejected rename releases the button and keeps the modal open to retry.
+// A rejected rename releases the button, forgets the name it sent, and keeps
+// the modal open to retry.
 watch(error, (reason) => {
   if (reason !== null) {
     loading.value = false
+    sentName.value = null
   }
 })
 </script>
@@ -585,7 +597,6 @@ watch(error, (reason) => {
         <ConflictActions
           :conflict="live.conflict"
           :disable-save="!valid || !dirty || loading || live.gone"
-          :mergeable="false"
           :save-label="saveLabel"
           @save="submit"
           @accept-mine="acceptMine"

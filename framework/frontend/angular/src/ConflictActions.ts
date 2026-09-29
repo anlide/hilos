@@ -5,8 +5,8 @@
 // `<ng-template #saveButton>` to supply a custom one, e.g. a LoadingButton; it
 // receives the computed `disabled` and an `onSave` handler through the template
 // context) and, only while a conflict is unresolved, the three resolution
-// choices: keep mine, take theirs, or merge. Save stays disabled until the
-// conflict is resolved. The outputs fire the choice; the parent form applies it
+// choices: keep mine, take theirs, and merge where the surface asks for it.
+// Save stays disabled until the conflict is resolved. The outputs fire the choice; the parent form applies it
 // against the core threeWayMerge result. Bootstrap classes only.
 import {
   ChangeDetectionStrategy,
@@ -90,11 +90,12 @@ export class ConflictActions {
   /** Save button label. */
   readonly saveLabel = input('Save')
   /**
-   * Whether the Merge resolution is offered. Settings hide it: splicing two
-   * typed values is not a value the server will accept. Defaults to true so
-   * surfaces that can merge (a display name) keep the button without opting in.
+   * Whether the Merge resolution is offered. Only a surface that asks for it
+   * shows the button — one where splicing the two values makes sense. A typed
+   * value (a setting, a field, a name) never asks: the splice is not a value.
+   * Defaults to false.
    */
-  readonly mergeable = input(true)
+  readonly mergeable = input(false)
 
   /** Save the resolved draft. */
   readonly save = output<void>()

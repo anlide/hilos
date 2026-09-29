@@ -6,8 +6,11 @@
 // a value a setting's rule refuses stays in the modal with the refusal above it.
 // The table, the row view-model, the edit round-trip and the words are the core
 // headless's; this view owns only the markup, so a project mounts it by passing
-// its HilosTwoFactorContext. The screen is built from text: the mockup's node is
-// a debt (D-115). Bootstrap classes only (styling-rules.md).
+// its HilosTwoFactorContext. The modal holds its row in focus and merges against
+// it through the shared row-edit helper (rowEdit.ts, conflict-resolution.md),
+// saying what happened elsewhere on one line of room held in advance
+// (HilosEditNotice). The screen is built from text: the mockup's node is a debt
+// (D-115). Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
   createHilosSecurityTwoFactorActions,
@@ -21,19 +24,30 @@ import {
   HILOS_STEP_UP_ADMIN_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
+  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
   HilosStepUpOperationRow,
+  RowEditBaseline,
+  RowEditNoticeKind,
+  RowEditStep,
 } from '@hilos/core'
 
+import { ConflictActions } from '../../ConflictActions.js'
+import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
 /** Props for {@link HilosSecurity2faPage}. */
@@ -49,6 +63,33 @@ export interface HilosSecurity2faPageProps {
  */
 function labelOf(row: HilosTwoFactorSettingRow): string {
   return HILOS_SECOND_FACTOR_SETTING_COPY[row.rowKey]?.label ?? row.rowKey
+}
+
+/** The one field the edit modal edits. */
+interface SettingEditFields {
+  value: string
+}
+
+/**
+ * The one line the modal says about the other side, for what the helper found;
+ * a value in words, the way its cell says it.
+ */
+function noticeText(
+  kind: RowEditNoticeKind | null,
+  liveRow: HilosTwoFactorSettingRow | undefined,
+): string {
+  switch (kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return liveRow
+        ? `Changed elsewhere to "${describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
+        : ''
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
 }
 
 /**
@@ -107,21 +148,77 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [editRow, setEditRow] = useState<HilosTwoFactorSettingRow | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [editBaseline, setEditBaseline] = useState<
+    RowEditBaseline<SettingEditFields>
+  >(() => openRowEdit<SettingEditFields>({ value: '' }))
   const edit = useTrackedAction()
 
+  // The live row the open modal is about: the row the table holds in focus, which
+  // the server follows wherever it goes; undefined once the row is gone.
+  const liveRow = useSignal(settings.controller.focusedRow)
+  const live = resolveRowEdit(
+    liveRow ? { value: liveRow.value } : undefined,
+    editBaseline,
+    { value: editValue.trim() },
+  )
+  const editNotice = live.notice?.kind ?? null
+  const editNoticeText = noticeText(editNotice, liveRow)
+  const editSaveLabel = live.gone ? 'Deleted' : 'Save'
+  const editTitle = editRow ? labelOf(editRow) : 'Edit setting'
+
+  // Put a step of the helper into the modal: the snapshot moves, and a value the
+  // step takes lands in the input.
+  function applyStep(step: RowEditStep<SettingEditFields>): void {
+    setEditBaseline(step.baseline)
+    if (step.take.value !== undefined) {
+      setEditValue(step.take.value)
+    }
+  }
+
+  // The helper hands a step whenever the other side moved the value while the
+  // person left it alone, or both arrived at the same one; the modal applies it
+  // at once.
+  const settle = live.settle
+  useEffect(() => {
+    if (editOpen && settle) {
+      applyStep(settle)
+    }
+  }, [editOpen, settle])
+
   function openEdit(row: HilosTwoFactorSettingRow): void {
+    // Flush pending and take the row into focus, so the modal edits the latest
+    // committed row and follows it from here; a row that is gone declines to open.
+    const fresh = settings.controller.focusRow(row.rowKey)
+    if (!fresh) {
+      return
+    }
     edit.clearError()
-    setEditRow(row)
-    setEditValue(row.value)
+    setEditRow(fresh)
+    setEditValue(fresh.value)
+    setEditBaseline(openRowEdit<SettingEditFields>({ value: fresh.value }))
     setEditOpen(true)
   }
 
   function closeEdit(): void {
     setEditOpen(false)
+    settings.controller.releaseFocus()
+  }
+
+  function acceptMine(): void {
+    setEditBaseline(keepMineRowEdit(live, editBaseline))
+  }
+
+  function acceptTheirs(): void {
+    applyStep(takeTheirsRowEdit(live, editBaseline))
   }
 
   async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy) {
+    if (!editRow || edit.busy || live.gone || live.conflict) {
+      return
+    }
+    if (!live.dirty) {
+      closeEdit()
+
       return
     }
     if (
@@ -201,8 +298,10 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
 
       <HilosModal
         open={editOpen}
-        title={editRow ? labelOf(editRow) : 'Edit setting'}
+        confirmOnClose={live.dirty}
+        ariaLabel={editTitle}
         onClose={closeEdit}
+        header={<ConflictHeader title={editTitle} conflict={live.conflict} />}
         actions={({ requestClose }) => (
           <>
             <button
@@ -213,15 +312,25 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
             >
               Cancel
             </button>
-            <LoadingButton
-              className="btn-primary"
-              loading={edit.loading}
-              disabled={edit.busy}
-              data-id="hilos-2fa-save"
-              onClick={() => void submitEdit()}
-            >
-              Save
-            </LoadingButton>
+            <ConflictActions
+              conflict={live.conflict}
+              disableSave={!live.dirty || edit.busy || live.gone}
+              saveLabel={editSaveLabel}
+              onSave={() => void submitEdit()}
+              onAcceptMine={acceptMine}
+              onAcceptTheirs={acceptTheirs}
+              saveButton={({ disabled, onSave }) => (
+                <LoadingButton
+                  className="btn-primary"
+                  loading={edit.loading}
+                  disabled={disabled}
+                  data-id="hilos-2fa-save"
+                  onClick={onSave}
+                >
+                  {editSaveLabel}
+                </LoadingButton>
+              )}
+            />
           </>
         )}
       >
@@ -271,6 +380,11 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
               )}
               .
             </p>
+            <HilosEditNotice
+              kind={editNotice}
+              text={editNoticeText}
+              dataId="hilos-2fa-edit-notice"
+            />
           </form>
         ) : null}
       </HilosModal>

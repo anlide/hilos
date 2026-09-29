@@ -39,7 +39,10 @@ export function sendBotCreate(input: BotInput): ActionHandle {
 }
 
 /**
- * Update a bot's fields as a tracked action.
+ * Update a bot's fields as a tracked action. The update carries every field,
+ * and an optional field left empty goes as '' rather than null: the backend
+ * reads null as "leave it as it is" and '' as "write it empty", so only ''
+ * erases what the field held.
  *
  * @param id The bot id to update.
  * @param input The bot's new fields.
@@ -47,7 +50,15 @@ export function sendBotCreate(input: BotInput): ActionHandle {
 export function sendBotUpdate(id: number, input: BotInput): ActionHandle {
   // Own-change is decided server-side: the backend tags this tab's own echo `own`
   // (page action origin), so it auto-applies while other tabs keep the pending gate.
-  return actions.dispatch(BOT_UPDATE, { id, ...input })
+  return actions.dispatch(BOT_UPDATE, {
+    id,
+    name: input.name,
+    description: input.description ?? '',
+    style: input.style ?? '',
+    topics: input.topics ?? '',
+    personality: input.personality ?? '',
+    active: input.active,
+  })
 }
 
 /**

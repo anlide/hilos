@@ -114,6 +114,9 @@ test('renames the current user through the edit modal', async ({ page }) => {
 
   await page.getByTestId('profile-edit').click()
   await confirmStepUp(page, 'profile-name-step-up-confirm')
+  // Nothing to save until the name differs from the live one.
+  await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+  await expect(page.getByTestId('profile-rename-cancel')).toBeVisible()
   await typeInto(page.getByTestId('profile-name-input'), newName)
   await page.getByTestId('profile-rename-save').click()
 
@@ -222,12 +225,26 @@ test('surfaces a conflict when the name changes in another tab', async ({
   await tabA.getByTestId('profile-rename-save').click()
   await expect(tabA.getByTestId('profile-name')).toHaveText(tabAName)
 
-  // Tab B's open modal sees the incoming change and flags a conflict.
+  // Tab B's open modal sees the incoming change, flags a conflict, and says it on
+  // its one line of messages; Merge is not offered for a name.
   await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
+  await expect(tabB.getByTestId('profile-edit-notice')).toContainText(
+    'Changed elsewhere to',
+  )
+  await expect(tabB.getByTestId('conflict-merge')).toHaveCount(0)
+  await expect(tabB.getByTestId('profile-rename-save')).toBeDisabled()
 
-  // Taking theirs adopts Tab A's name and clears the conflict.
+  // Taking theirs adopts Tab A's name, clears the conflict, and leaves nothing to
+  // save.
   await tabB.getByTestId('conflict-accept-theirs').click()
   await expect(tabB.getByTestId('conflict-badge')).toBeHidden()
+  await expect(tabB.getByTestId('profile-edit-notice')).toContainText(
+    'Updated just now',
+  )
+  await expect(tabB.getByTestId('profile-rename-save')).toBeDisabled()
+
+  await tabB.getByTestId('profile-rename-cancel').click()
+  await expect(tabB.getByTestId('modal')).toBeHidden()
 })
 
 for (const signOutOthers of [true, false]) {

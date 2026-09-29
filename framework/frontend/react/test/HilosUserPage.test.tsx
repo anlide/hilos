@@ -55,6 +55,7 @@ function userContext(
 ): HilosUsersContext & {
   renameElsewhere: (name: string) => void
   removeRow: () => void
+  failRename: () => void
   sent: Array<{ action: string; data: unknown }>
 } {
   const scopes = new ScopeManager()
@@ -77,6 +78,17 @@ function userContext(
 
     return true
   })
+  // The rename's fail ack arrives as an unknown signal; keep its listeners to
+  // answer a refusal.
+  const unknownListeners: Array<(signal: { type: string }) => void> = []
+  const on = connection.on.bind(connection)
+  vi.spyOn(connection, 'on').mockImplementation((event, listener) => {
+    if (event === 'unknownSignal') {
+      unknownListeners.push(listener as (signal: { type: string }) => void)
+    }
+
+    return on(event, listener)
+  })
 
   return {
     scopes,
@@ -89,6 +101,11 @@ function userContext(
     },
     removeRow(): void {
       page.tables.delete('userDetail', 1)
+    },
+    failRename(): void {
+      for (const listener of unknownListeners) {
+        listener({ type: 'hilos_user_update_fail' })
+      }
     },
     sent,
   }
@@ -278,6 +295,50 @@ describe('HilosUserPage', () => {
     expect(saveButton().disabled).toBe(true)
     expect(saveButton().textContent?.trim()).toBe('Deleted')
     expect(nameInput().value).toBe('Mine')
+    expect(byId('modal')).not.toBeNull()
+  })
+
+  it('waits for the name it sent: Take theirs in flight keeps the modal open until that name lands', () => {
+    const context = userContext(true)
+    openModal(context)
+    fireEvent.change(nameInput(), { target: { value: 'Mine' } })
+    fireEvent.click(saveButton())
+    expect(context.sent.at(-1)?.data).toEqual({ id: 1, name: 'Mine' })
+
+    act(() => {
+      context.renameElsewhere('Theirs')
+    })
+    fireEvent.click(byId('conflict-accept-theirs') as Element)
+    // The draft now matches the live name, but that is not the name this rename sent.
+    expect(nameInput().value).toBe('Theirs')
+    expect(byId('modal')).not.toBeNull()
+
+    act(() => {
+      context.renameElsewhere('Other')
+    })
+    expect(nameInput().value).toBe('Other')
+    expect(byId('modal')).not.toBeNull()
+
+    act(() => {
+      context.renameElsewhere('Mine')
+    })
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('forgets the name it sent once the rename is refused', () => {
+    const context = userContext(true)
+    openModal(context)
+    fireEvent.change(nameInput(), { target: { value: 'Mine' } })
+    fireEvent.click(saveButton())
+
+    act(() => {
+      context.failRename()
+    })
+    expect(saveButton().disabled).toBe(false)
+
+    act(() => {
+      context.renameElsewhere('Mine')
+    })
     expect(byId('modal')).not.toBeNull()
   })
 

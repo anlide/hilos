@@ -69,6 +69,7 @@ function userContext(
   removeRow: () => void
   removeCandidate: () => void
   answerMerge: (reason?: string) => void
+  failRename: () => void
   sent: Array<{ action: string; data: unknown; requestId?: string }>
 } {
   const scopes = new ScopeManager()
@@ -218,6 +219,9 @@ function userContext(
         requestId,
         reason,
       })
+    },
+    failRename(): void {
+      emit('unknownSignal', { type: 'hilos_user_update_fail' })
     },
     sent,
   }
@@ -486,6 +490,53 @@ describe('HilosUserPage rename modal', () => {
     expect(saveButton().disabled).toBe(true)
     expect(saveButton().textContent?.trim()).toBe('Deleted')
     expect(nameInput().value).toBe('Mine')
+    expect(modalEl('modal')).not.toBeNull()
+  })
+
+  it('waits for the name it sent: Take theirs in flight keeps the modal open until that name lands', async () => {
+    const { context, renameElsewhere, sent } = userContext()
+    await openModal(context)
+    await typeDraft('Mine')
+    saveButton().click()
+    await nextTick()
+    expect(sent.at(-1)?.data).toEqual({ id: 1, name: 'Mine' })
+
+    renameElsewhere('Theirs')
+    await nextTick()
+    await nextTick()
+    modalEl('conflict-accept-theirs')?.click()
+    await nextTick()
+    expect(nameInput().value).toBe('Theirs')
+    expect(modalEl('modal')).not.toBeNull()
+
+    // A third name lands in the untouched form: the draft matches the live name
+    // again, but that is not the name this rename sent.
+    renameElsewhere('Other')
+    await nextTick()
+    await nextTick()
+    expect(nameInput().value).toBe('Other')
+    expect(modalEl('modal')).not.toBeNull()
+
+    renameElsewhere('Mine')
+    await nextTick()
+    await nextTick()
+    expect(modalEl('modal')).toBeNull()
+  })
+
+  it('forgets the name it sent once the rename is refused', async () => {
+    const { context, renameElsewhere, failRename } = userContext()
+    await openModal(context)
+    await typeDraft('Mine')
+    saveButton().click()
+    await nextTick()
+
+    failRename()
+    await nextTick()
+    expect(saveButton().disabled).toBe(false)
+
+    renameElsewhere('Mine')
+    await nextTick()
+    await nextTick()
     expect(modalEl('modal')).not.toBeNull()
   })
 

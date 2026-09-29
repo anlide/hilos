@@ -269,7 +269,6 @@ function noticeText(
             hilosConflictActions
             [conflict]="live().conflict"
             [disableSave]="!live().dirty || edit.busy() || live().gone"
-            [mergeable]="false"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"

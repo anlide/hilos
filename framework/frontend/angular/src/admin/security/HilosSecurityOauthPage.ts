@@ -12,8 +12,11 @@
 // mirrors the return-address row into an Angular signal. The address is edited in a
 // modal — inline forms are forbidden (rules-and-violations.md section E) — as a
 // tracked action: it redraws from the reactive table after the backend echo, never
-// optimistically, and a refusal surfaces with the backend's domain phrase.
-// Bootstrap classes only (styling-rules.md).
+// optimistically, and a refusal surfaces with the backend's domain phrase. The
+// modal holds the address row in focus and merges against it through the shared
+// row-edit helper (rowEdit.ts, conflict-resolution.md), saying what happened
+// elsewhere on one line of room held in advance (HilosEditNotice). Bootstrap
+// classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -21,25 +24,36 @@ import {
   effect,
   input,
   signal,
+  untracked,
 } from '@angular/core'
 import {
   HilosPages,
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
+  keepMineRowEdit,
+  openRowEdit,
   resolveHilosPath,
+  resolveRowEdit,
   subscribeSignal,
+  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
   HilosOAuthProviderRow,
   HilosOAuthRedirectRow,
   HilosSecurityOauthContext,
   OAuthValueSource,
+  RowEditBaseline,
+  RowEditNoticeKind,
+  RowEditStep,
   TableViewportRow,
 } from '@hilos/core'
 
+import { ConflictActions } from '../../ConflictActions.js'
+import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
@@ -54,6 +68,30 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
   default: 'Default',
 }
 
+/** The one field the return-address dialog edits. */
+interface RedirectEditFields {
+  value: string
+}
+
+/** The one line the dialog says about the other side, for what the helper found. */
+function noticeText(
+  kind: RowEditNoticeKind | null,
+  liveValue: string | undefined,
+): string {
+  switch (kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return liveValue === undefined
+        ? ''
+        : `Changed elsewhere to "${liveValue === '' ? '—' : liveValue}".`
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
+
 /** The framework OAuth providers page: the return address and the providers table. */
 @Component({
   selector: 'hilos-security-oauth-page',
@@ -61,11 +99,14 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
   imports: [
     HilosAdminPage,
     HilosActionError,
+    HilosEditNotice,
     HilosLink,
     HilosModal,
     HilosTableCell,
     HilosViewportTable,
     LoadingButton,
+    ConflictActions,
+    ConflictHeader,
   ],
   template: `
     <hilos-admin-page [page]="page">
@@ -171,9 +212,16 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="editOpen.set($event)"
-        [title]="'Edit · Return address'"
+        (openChange)="$event ? editOpen.set(true) : closeEdit()"
+        [confirmOnClose]="live().dirty"
+        ariaLabel="Edit · Return address"
       >
+        <h5
+          hilosConflictHeader
+          modalHeader
+          title="Edit · Return address"
+          [conflict]="live().conflict"
+        ></h5>
         <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         <form (submit)="submitEdit($event)">
           <label class="form-label" for="hilos-oauth-redirect-input">
@@ -189,6 +237,11 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
             [value]="editValue()"
             (input)="onValueInput($event)"
           />
+          <hilos-edit-notice
+            [kind]="editNotice()"
+            [text]="editNoticeText()"
+            dataId="hilos-oauth-redirect-edit-notice"
+          />
         </form>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
@@ -199,16 +252,32 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
           >
             Cancel
           </button>
-          <button
-            hilosLoadingButton
-            class="btn-primary"
-            [loading]="edit.loading()"
-            [disabled]="edit.busy()"
-            data-id="hilos-oauth-redirect-save"
-            (click)="submitEdit()"
+          <div
+            hilosConflictActions
+            [conflict]="live().conflict"
+            [disableSave]="!live().dirty || edit.busy() || live().gone"
+            [saveLabel]="editSaveLabel()"
+            (save)="submitEdit()"
+            (acceptMine)="acceptMine()"
+            (acceptTheirs)="acceptTheirs()"
           >
-            Save
-          </button>
+            <ng-template
+              #saveButton
+              let-disabled="disabled"
+              let-onSave="onSave"
+            >
+              <button
+                hilosLoadingButton
+                class="btn-primary"
+                [loading]="edit.loading()"
+                [disabled]="disabled"
+                data-id="hilos-oauth-redirect-save"
+                (click)="onSave()"
+              >
+                {{ editSaveLabel() }}
+              </button>
+            </ng-template>
+          </div>
         </ng-template>
       </hilos-modal>
     </hilos-admin-page>
@@ -245,7 +314,34 @@ export class HilosSecurityOauthPage {
   // Edit dialog: the return address.
   protected readonly editOpen = signal(false)
   protected readonly editValue = signal('')
+  protected readonly editBaseline = signal<RowEditBaseline<RedirectEditFields>>(
+    openRowEdit<RedirectEditFields>({ value: '' }),
+  )
   protected readonly edit = createHilosTrackedAction()
+  // The live row the open dialog is about: the row the table holds in focus, which
+  // the server follows wherever it goes; undefined once the row is gone. Mirrored
+  // the way the rows are.
+  protected readonly liveRow = signal<HilosOAuthRedirectRow | undefined>(
+    undefined,
+  )
+  protected readonly live = computed(() => {
+    const row = this.liveRow()
+
+    return resolveRowEdit(
+      row ? { value: row.value } : undefined,
+      this.editBaseline(),
+      { value: this.editValue() },
+    )
+  })
+  protected readonly editNotice = computed(
+    () => this.live().notice?.kind ?? null,
+  )
+  protected readonly editNoticeText = computed(() =>
+    noticeText(this.editNotice(), this.liveRow()?.value),
+  )
+  protected readonly editSaveLabel = computed(() =>
+    this.live().gone ? 'Deleted' : 'Save',
+  )
 
   constructor() {
     // Bind both server-windowed tables to the connection and request their first
@@ -256,13 +352,33 @@ export class HilosSecurityOauthPage {
       providers.start()
       redirect.start()
       this.redirectRows.set(redirect.controller.rows.get())
-      const unsubscribe = subscribeSignal(redirect.controller.rows, (rows) =>
-        this.redirectRows.set(rows),
-      )
+      this.liveRow.set(redirect.controller.focusedRow.get())
+      const unsubscribers = [
+        subscribeSignal(redirect.controller.rows, (rows) =>
+          this.redirectRows.set(rows),
+        ),
+        subscribeSignal(redirect.controller.focusedRow, (row) =>
+          this.liveRow.set(row),
+        ),
+      ]
       onCleanup(() => {
-        unsubscribe()
+        for (const unsubscribe of unsubscribers) {
+          unsubscribe()
+        }
         providers.dispose()
         redirect.dispose()
+      })
+    })
+    // The helper hands a step whenever the other side moved the address while the
+    // person left it alone, or both arrived at the same one; the dialog applies
+    // it at once.
+    effect(() => {
+      const settle = this.live().settle
+      const open = this.editOpen()
+      untracked(() => {
+        if (open && settle) {
+          this.applyStep(settle)
+        }
       })
     })
   }
@@ -289,18 +405,58 @@ export class HilosSecurityOauthPage {
   }
 
   protected openEdit(): void {
+    const row = this.redirectRow()
+    if (!row) {
+      return
+    }
+    // Flush pending and take the row into focus, so the dialog edits the latest
+    // committed row and follows it from here; a row that is gone declines to open.
+    const fresh = this.redirect().controller.focusRow(row.key)
+    if (!fresh) {
+      return
+    }
     this.edit.clearError()
-    this.editValue.set(this.redirectRow()?.value ?? '')
+    this.editValue.set(fresh.value)
+    this.editBaseline.set(
+      openRowEdit<RedirectEditFields>({ value: fresh.value }),
+    )
     this.editOpen.set(true)
+  }
+
+  protected closeEdit(): void {
+    this.editOpen.set(false)
+    this.redirect().controller.releaseFocus()
+  }
+
+  // Put a step of the helper into the dialog: the snapshot moves, and a value
+  // the step takes lands in the input.
+  private applyStep(step: RowEditStep<RedirectEditFields>): void {
+    this.editBaseline.set(step.baseline)
+    if (step.take.value !== undefined) {
+      this.editValue.set(step.take.value)
+    }
+  }
+
+  protected acceptMine(): void {
+    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+  }
+
+  protected acceptTheirs(): void {
+    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
   }
 
   protected async submitEdit(event?: Event): Promise<void> {
     event?.preventDefault()
-    if (this.edit.busy()) {
+    if (this.edit.busy() || this.live().gone || this.live().conflict) {
+      return
+    }
+    if (!this.live().dirty) {
+      this.closeEdit()
+
       return
     }
     if (await this.edit.run(this.actions().sendRedirectSet(this.editValue()))) {
-      this.editOpen.set(false)
+      this.closeEdit()
     }
   }
 

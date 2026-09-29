@@ -280,6 +280,17 @@ test('a bot created here takes the place the sort gives it, and edits and delete
   expect((await tableRowKeys(page))[0]).toBe(key)
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
+  // Erase the description: an optional field left empty is written empty, not
+  // skipped, so the cell clears and the dialog reopens on an empty field.
+  await editBotDescription(page, key, '')
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).not.toContainText(
+    description,
+  )
+  await page.getByTestId(`admin-bots-edit-${key}`).click()
+  await expect(page.getByTestId('admin-bots-description')).toHaveValue('')
+  await page.getByTestId('modal-close').click()
+  await expect(page.getByTestId('modal')).toBeHidden()
+
   // Delete: the bot leaves the window and the count goes back.
   await deleteBot(page, key)
   await expectTableTotal(page, base)

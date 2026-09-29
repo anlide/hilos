@@ -396,7 +396,6 @@ async function submitEdit(): Promise<void> {
         <ConflictActions
           :conflict="live.conflict"
           :disable-save="!live.dirty || editBusy || live.gone"
-          :mergeable="false"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"

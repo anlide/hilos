@@ -469,6 +469,8 @@ function controllerFor<R>(
       context.connection.sendTableViewport(page, tableKey, descriptor),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(page, tableKey, rendered),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(page, tableKey, rowKey),
     ...(provider !== undefined
       ? { initialFilter: { [FILTER_PROVIDER]: provider.get() } }
       : {}),

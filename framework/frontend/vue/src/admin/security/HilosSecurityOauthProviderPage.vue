@@ -12,7 +12,12 @@ recipe is shown as reference, without actions. Writes are tracked actions
 (createHilosSecurityOauthActions): the value redraws from the reactive table after
 the backend echo, never optimistically, and a refusal surfaces with the backend's
 domain phrase. Editing happens in a modal — inline forms are forbidden
-(rules-and-violations.md section E). Bootstrap classes only (styling-rules.md). -->
+(rules-and-violations.md section E) — and the modal holds its row in focus and
+merges against it through the shared row-edit helper (rowEdit.ts,
+conflict-resolution.md), saying what happened elsewhere on one line of room held
+in advance (HilosEditNotice). The secret never reads back, so its live value is
+always empty: there is nothing to merge, and the dialog only says when the row is
+gone. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computedSignal,
@@ -20,13 +25,23 @@ import {
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
   HilosPages,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
+  takeTheirsRowEdit,
   type HilosOAuthFieldRow,
   type HilosSecurityOauthContext,
+  type RowEditBaseline,
+  type RowEditNoticeKind,
+  type RowEditStep,
 } from '@hilos/core'
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 
+import ConflictActions from '../../ConflictActions.vue'
+import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -90,6 +105,28 @@ function displayValue(row: HilosOAuthFieldRow): string {
   return row.value === null || row.value === '' ? '—' : row.value
 }
 
+/** The one field the dialog edits; the secret reads as empty. */
+interface FieldEditFields {
+  value: string
+}
+
+/** The one line the dialog says about the other side, for what the helper found. */
+function noticeText(
+  kind: RowEditNoticeKind | null,
+  liveRow: HilosOAuthFieldRow | undefined,
+): string {
+  switch (kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return liveRow ? `Changed elsewhere to "${displayValue(liveRow)}".` : ''
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
+
 const resetAction = useTrackedAction()
 
 function resetField(row: HilosOAuthFieldRow): void {
@@ -100,6 +137,9 @@ function resetField(row: HilosOAuthFieldRow): void {
 const editOpen = ref(false)
 const editRow = ref<HilosOAuthFieldRow | null>(null)
 const editValue = ref('')
+const editBaseline = ref<RowEditBaseline<FieldEditFields>>(
+  openRowEdit<FieldEditFields>({ value: '' }),
+)
 const editAction = useTrackedAction()
 const {
   loading: editLoading,
@@ -108,10 +148,40 @@ const {
   clearError: clearEditError,
 } = editAction
 
+// The live row the open dialog is about: the row the table holds in focus, which
+// the server follows wherever it goes; undefined once the row is gone. An empty
+// value reads as '' the way the input shows it.
+const liveRow = useSignal(fields.controller.focusedRow)
+const live = computed(() =>
+  resolveRowEdit(
+    liveRow.value ? { value: liveRow.value.value ?? '' } : undefined,
+    editBaseline.value,
+    { value: editValue.value },
+  ),
+)
+const editNotice = computed(() => live.value.notice?.kind ?? null)
+const editNoticeText = computed(() =>
+  noticeText(editNotice.value, liveRow.value),
+)
+const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
+const editTitle = computed(() =>
+  editRow.value
+    ? `${editRow.value.secret ? 'Replace' : 'Edit'} · ${editRow.value.label}`
+    : 'Edit field',
+)
+
 function openEdit(row: HilosOAuthFieldRow): void {
+  // Flush pending and take the row into focus, so the dialog edits the latest
+  // committed row and follows it from here; a row that is gone declines to open.
+  const fresh = fields.controller.focusRow(row.key)
+  if (!fresh) {
+    return
+  }
   clearEditError()
-  editRow.value = row
-  editValue.value = row.secret ? '' : (row.value ?? '')
+  editRow.value = fresh
+  // The secret never reads back: its value is null and its dialog opens empty.
+  editValue.value = fresh.value ?? ''
+  editBaseline.value = openRowEdit<FieldEditFields>({ value: editValue.value })
   editOpen.value = true
 }
 
@@ -119,11 +189,47 @@ function closeEdit(): void {
   editOpen.value = false
   // The secret typed into the dialog is not kept once it is closed.
   editValue.value = ''
+  fields.controller.releaseFocus()
+}
+
+// Put a step of the helper into the dialog: the snapshot moves, and a value the
+// step takes lands in the input.
+function applyStep(step: RowEditStep<FieldEditFields>): void {
+  editBaseline.value = step.baseline
+  if (step.take.value !== undefined) {
+    editValue.value = step.take.value
+  }
+}
+
+// The helper hands a step whenever the other side moved the value while the
+// person left it alone, or both arrived at the same one; the dialog applies it
+// at once.
+watch(
+  () => live.value.settle,
+  (settle) => {
+    if (editOpen.value && settle) {
+      applyStep(settle)
+    }
+  },
+)
+
+function acceptMine(): void {
+  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+}
+
+function acceptTheirs(): void {
+  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
 }
 
 async function submitEdit(): Promise<void> {
   const row = editRow.value
-  if (!row || editBusy.value) {
+  if (!row || editBusy.value || live.value.gone || live.value.conflict) {
+    return
+  }
+  // Nothing to save (for the secret: nothing typed) closes without a request.
+  if (!live.value.dirty) {
+    closeEdit()
+
     return
   }
   if (
@@ -251,13 +357,13 @@ async function submitEdit(): Promise<void> {
 
     <HilosModal
       v-model="editOpen"
-      :title="
-        editRow
-          ? `${editRow.secret ? 'Replace' : 'Edit'} · ${editRow.label}`
-          : 'Edit field'
-      "
+      :confirm-on-close="live.dirty"
+      :aria-label="editTitle"
       @cancel="closeEdit"
     >
+      <template #header>
+        <ConflictHeader :title="editTitle" :conflict="live.conflict" />
+      </template>
       <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <label class="form-label" for="hilos-oauth-field-input">
@@ -275,6 +381,11 @@ async function submitEdit(): Promise<void> {
         <p v-if="editRow.secret" class="form-text mb-0">
           The current secret is never shown. What you enter replaces it.
         </p>
+        <HilosEditNotice
+          :kind="editNotice"
+          :text="editNoticeText"
+          data-id="hilos-oauth-field-edit-notice"
+        />
       </form>
       <template #actions="{ requestClose }">
         <button
@@ -285,15 +396,26 @@ async function submitEdit(): Promise<void> {
         >
           Cancel
         </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="editLoading"
-          :disabled="editBusy"
-          data-id="hilos-oauth-field-save"
-          @click="submitEdit"
+        <ConflictActions
+          :conflict="live.conflict"
+          :disable-save="!live.dirty || editBusy || live.gone"
+          :save-label="editSaveLabel"
+          @save="submitEdit"
+          @accept-mine="acceptMine"
+          @accept-theirs="acceptTheirs"
         >
-          Save
-        </LoadingButton>
+          <template #save-button="{ disabled, onSave }">
+            <LoadingButton
+              class="btn-primary"
+              :loading="editLoading"
+              :disabled="disabled"
+              data-id="hilos-oauth-field-save"
+              @click="onSave"
+            >
+              {{ editSaveLabel }}
+            </LoadingButton>
+          </template>
+        </ConflictActions>
       </template>
     </HilosModal>
   </HilosAdminPage>

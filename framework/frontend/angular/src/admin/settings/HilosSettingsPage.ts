@@ -261,7 +261,6 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
             hilosConflictActions
             [conflict]="live().conflict"
             [disableSave]="!editDirty() || edit.busy() || live().gone"
-            [mergeable]="false"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"

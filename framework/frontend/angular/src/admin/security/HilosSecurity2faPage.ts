@@ -6,8 +6,11 @@
 // a value a setting's rule refuses stays in the modal with the refusal above it.
 // The table, the row view-model, the edit round-trip and the words are the core
 // headless's; this view owns only the markup, so a project mounts it by passing
-// its HilosTwoFactorContext. The screen is built from text: the mockup's node is
-// a debt (D-115). Bootstrap classes only (styling-rules.md).
+// its HilosTwoFactorContext. The modal holds its row in focus and merges against
+// it through the shared row-edit helper (rowEdit.ts, conflict-resolution.md),
+// saying what happened elsewhere on one line of room held in advance
+// (HilosEditNotice). The screen is built from text: the mockup's node is a debt
+// (D-115). Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -15,6 +18,7 @@ import {
   effect,
   input,
   signal,
+  untracked,
 } from '@angular/core'
 import {
   createHilosSecurityTwoFactorActions,
@@ -28,21 +32,59 @@ import {
   HILOS_STEP_UP_ADMIN_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
+  subscribeSignal,
+  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
   HilosStepUpOperationRow,
+  RowEditBaseline,
+  RowEditNoticeKind,
+  RowEditStep,
 } from '@hilos/core'
 
+import { ConflictActions } from '../../ConflictActions.js'
+import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
+
+/** The one field the edit modal edits. */
+interface SettingEditFields {
+  value: string
+}
+
+/**
+ * The one line the modal says about the other side, for what the helper found;
+ * a value in words, the way its cell says it.
+ */
+function noticeText(
+  kind: RowEditNoticeKind | null,
+  liveRow: HilosTwoFactorSettingRow | undefined,
+): string {
+  switch (kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return liveRow
+        ? `Changed elsewhere to "${describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
+        : ''
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
 
 /** The framework two-step verification page: six settings, each edited in a modal. */
 @Component({
@@ -51,11 +93,14 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
   imports: [
     HilosAdminPage,
     HilosActionError,
+    HilosEditNotice,
     HilosModal,
     HilosSwitch,
     HilosTableCell,
     HilosViewportTable,
     LoadingButton,
+    ConflictActions,
+    ConflictHeader,
   ],
   template: `
     <hilos-admin-page [page]="page">
@@ -119,10 +164,16 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="editOpen.set($event)"
-        [title]="editTitle()"
-        (cancel)="closeEdit()"
+        (openChange)="$event ? editOpen.set(true) : closeEdit()"
+        [confirmOnClose]="live().dirty"
+        [ariaLabel]="editTitle()"
       >
+        <h5
+          hilosConflictHeader
+          modalHeader
+          [title]="editTitle()"
+          [conflict]="live().conflict"
+        ></h5>
         <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
@@ -160,6 +211,11 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
               {{ hintOf(row.rowKey) }} Default:
               {{ describe(row.rowKey, row.defaultValue) }}.
             </p>
+            <hilos-edit-notice
+              [kind]="editNotice()"
+              [text]="editNoticeText()"
+              dataId="hilos-2fa-edit-notice"
+            />
           </form>
         }
         <ng-template #modalActions let-requestClose="requestClose">
@@ -171,16 +227,32 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
           >
             Cancel
           </button>
-          <button
-            hilosLoadingButton
-            class="btn-primary"
-            [loading]="edit.loading()"
-            [disabled]="edit.busy()"
-            data-id="hilos-2fa-save"
-            (click)="submitEdit()"
+          <div
+            hilosConflictActions
+            [conflict]="live().conflict"
+            [disableSave]="!live().dirty || edit.busy() || live().gone"
+            [saveLabel]="editSaveLabel()"
+            (save)="submitEdit()"
+            (acceptMine)="acceptMine()"
+            (acceptTheirs)="acceptTheirs()"
           >
-            Save
-          </button>
+            <ng-template
+              #saveButton
+              let-disabled="disabled"
+              let-onSave="onSave"
+            >
+              <button
+                hilosLoadingButton
+                class="btn-primary"
+                [loading]="edit.loading()"
+                [disabled]="disabled"
+                data-id="hilos-2fa-save"
+                (click)="onSave()"
+              >
+                {{ editSaveLabel() }}
+              </button>
+            </ng-template>
+          </div>
         </ng-template>
       </hilos-modal>
     </hilos-admin-page>
@@ -221,18 +293,64 @@ export class HilosSecurity2faPage {
 
     return row ? this.labelOf(row) : 'Edit setting'
   })
+  protected readonly editBaseline = signal<RowEditBaseline<SettingEditFields>>(
+    openRowEdit<SettingEditFields>({ value: '' }),
+  )
+  // The live row the open modal is about: the row the table holds in focus, which
+  // the server follows wherever it goes; undefined once the row is gone. Mirrored
+  // from the controller: the handle arrives through a computed, so hilosSignal
+  // cannot take it at field init.
+  protected readonly liveRow = signal<HilosTwoFactorSettingRow | undefined>(
+    undefined,
+  )
+  protected readonly live = computed(() => {
+    const row = this.liveRow()
+
+    return resolveRowEdit(
+      row ? { value: row.value } : undefined,
+      this.editBaseline(),
+      { value: this.editValue().trim() },
+    )
+  })
+  protected readonly editNotice = computed(
+    () => this.live().notice?.kind ?? null,
+  )
+  protected readonly editNoticeText = computed(() =>
+    noticeText(this.editNotice(), this.liveRow()),
+  )
+  protected readonly editSaveLabel = computed(() =>
+    this.live().gone ? 'Deleted' : 'Save',
+  )
 
   constructor() {
-    // Bind the table to the connection once the context input is bound; unbind
-    // on destroy / swap.
+    // Bind the table to the connection once the context input is bound, and
+    // mirror the row in focus; unbind on destroy / swap.
     effect((onCleanup) => {
       const settings = this.settings()
       const operations = this.operations()
       settings.start()
       operations.start()
+      this.liveRow.set(settings.controller.focusedRow.get())
+      const unsubscribe = subscribeSignal(
+        settings.controller.focusedRow,
+        (row) => this.liveRow.set(row),
+      )
       onCleanup(() => {
+        unsubscribe()
         settings.dispose()
         operations.dispose()
+      })
+    })
+    // The helper hands a step whenever the other side moved the value while the
+    // person left it alone, or both arrived at the same one; the modal applies
+    // it at once.
+    effect(() => {
+      const settle = this.live().settle
+      const open = this.editOpen()
+      untracked(() => {
+        if (open && settle) {
+          this.applyStep(settle)
+        }
       })
     })
   }
@@ -266,20 +384,52 @@ export class HilosSecurity2faPage {
   }
 
   protected openEdit(row: HilosTwoFactorSettingRow): void {
+    // Flush pending and take the row into focus, so the modal edits the latest
+    // committed row and follows it from here; a row that is gone declines to open.
+    const fresh = this.settings().controller.focusRow(row.rowKey)
+    if (!fresh) {
+      return
+    }
     this.edit.clearError()
-    this.editRow.set(row)
-    this.editValue.set(row.value)
+    this.editRow.set(fresh)
+    this.editValue.set(fresh.value)
+    this.editBaseline.set(
+      openRowEdit<SettingEditFields>({ value: fresh.value }),
+    )
     this.editOpen.set(true)
   }
 
   protected closeEdit(): void {
     this.editOpen.set(false)
+    this.settings().controller.releaseFocus()
+  }
+
+  // Put a step of the helper into the modal: the snapshot moves, and a value the
+  // step takes lands in the input.
+  private applyStep(step: RowEditStep<SettingEditFields>): void {
+    this.editBaseline.set(step.baseline)
+    if (step.take.value !== undefined) {
+      this.editValue.set(step.take.value)
+    }
+  }
+
+  protected acceptMine(): void {
+    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+  }
+
+  protected acceptTheirs(): void {
+    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
   }
 
   protected async submitEdit(event?: Event): Promise<void> {
     event?.preventDefault()
     const row = this.editRow()
-    if (!row || this.edit.busy()) {
+    if (!row || this.edit.busy() || this.live().gone || this.live().conflict) {
+      return
+    }
+    if (!this.live().dirty) {
+      this.closeEdit()
+
       return
     }
     if (

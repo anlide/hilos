@@ -331,7 +331,8 @@ async function submitForm(): Promise<void> {
 
     return
   }
-  if (formId.value === null || live.value.gone) {
+  // A conflict stands until Keep mine / Take theirs: Enter does not save past it.
+  if (formId.value === null || live.value.gone || live.value.conflict) {
     return
   }
   if (!live.value.dirty) {
@@ -576,7 +577,6 @@ async function submitDelete(): Promise<void> {
           <ConflictActions
             :conflict="formConflict"
             :disable-save="saveDisabled"
-            :mergeable="false"
             :save-label="saveLabel"
             @save="submitForm"
             @accept-mine="acceptMine"
