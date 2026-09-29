@@ -41,8 +41,10 @@ mounting it under the framework's `users` key
 ([../orm/inheritance.md](../orm/inheritance.md)). Not a side table of
 additions, not a copy of the table under a project name.
 
-The first live example is the chat demo: its subclass keeps `merged_into` on the
-person until the merge tombstone table takes the fact over (HIL-1199).
+No project extends the person today. The chat demo's subclass, the one that kept
+`merged_into` on it, left when the merge table took that fact over (HIL-1199); the
+first project chain over a people table is the chat demo's on the rename journal
+(not in the code yet — HIL-1196).
 
 ## Who Owns The Row
 
@@ -65,7 +67,7 @@ where it is today — a hook the project implements.
 | Renaming a person — the write, the journal row, the notification (`renameUser()`, `afterUserRenamed()`) | HIL-1195 |
 | Creating the first administrator (`ensureAdminUser()`), granting and removing rights (`applyAdminGrant()`), blocking (`applyAccountBlock()`), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197 |
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
-| The tombstone of a merged account and "is this account already folded" | (not in the code yet — HIL-1199) |
+| The tombstone of a merged account and "is this account already folded" (`assertMergeable()`, the merge table `hilos_user_merge`), the refusals to a folded account | HIL-1199 |
 | Erasing a person — the framework deletes the person's row last, after the project's rows ([account-deletion.md](account-deletion.md)) | (not in the code yet — HIL-1200) |
 | The people table and the merge-candidates table in the admin section | (not in the code yet — HIL-1201) |
 | Foreign keys onto the person from every framework table that points at one | (not in the code yet — HIL-1202) |
@@ -118,14 +120,43 @@ rename to the row of its feed is the first case (not in the code yet — HIL-119
 ## A Merged Account
 
 The tombstone of an account folded into another is a framework table, one row
-per folded account — who, into whom, when — and not a column on `hilos_user`
-(not in the code yet — HIL-1199). The owner's decision D (2026-09-24), in the
-owner's words rendered in English: *I do not want to spend a whole column on a
-rare operation; let us plan a 1:1 table for it.*
+per folded account, and not a column on `hilos_user` (HIL-1199). The owner's
+decision D (2026-09-24), in the owner's words rendered in English: *I do not
+want to spend a whole column on a rare operation; let us plan a 1:1 table for
+it.*
 
-With the table, "is this account already folded" and the tombstone itself are
-framework code; the project moves only its own rows. The table's name and columns
-are HIL-1199's to introduce.
+The table is `hilos_user_merge`, mounted as `userMerges`: which account was
+folded (`user_id`, the key of the row), into which (`survivor_user_id`), when
+(`merged_at`). Keyed by the folded account, so an account is folded at most once
+and "is this account merged" is `Hilos::$db->userMerges[$userId] !== null`. Two
+columns are null by design: `merged_at` on the rows carried over from the chat
+demo's former column, which never recorded the moment, and `survivor_user_id`
+once the survivor's account is erased.
+
+Its two keys onto `hilos_user` are chosen apart. The folded account is
+`RESTRICT`: its row goes only with the account's own erasure, which removes it
+among the framework's rows, and a forgotten merge row stops that erasure loudly.
+The survivor is `SET NULL`: erasing the survivor must pass, and the accounts
+folded into it stay folded — a `CASCADE` would bring them back as candidates,
+with rights and a block that could be lifted.
+
+The table is the sessions library's whole, and the whole operation is framework
+code (`AbstractSessionsLibraryAgent::mergeAccounts()`): whether the two accounts
+may be merged — both exist, neither is folded already (`assertMergeable()`) —
+then the passwords, then one transaction: the ways in, the project's own rows
+(`applyAccountMerge()`, the one seam a project answers), and the tombstone. The
+tombstone writes the merge row FIRST and the loser's block flag second: the
+merge-candidates table hears of the merge by the change of the person's row, and
+reads "is this account merged" from the table at that moment. The flag is
+written straight, not as a block: a merged loser is not a punished person.
+
+A folded account is refused, both ways, the admin flag and the block
+(`applyAdminGrant()`, `applyAccountBlock()`), an administrator's deletion after
+the refusal to an administrator (`assertAdministratorMayDelete()`), and a place
+in the administrators' circle (`AdminAudience`) — the last one asked by name
+even though the merge blocked it, since the flag can be lifted past the library.
+The table is read process-wide beside the people for that reason. The person's
+data copy carries both sides of their merges in its `merges` section.
 
 ## Foreign Keys Onto The Person
 

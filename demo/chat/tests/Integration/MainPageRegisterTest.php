@@ -7,7 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Demo\Chat\Database\Entity\Item\User as EntityUser;
+use Hilos\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;

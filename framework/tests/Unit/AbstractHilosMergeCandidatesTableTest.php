@@ -85,7 +85,7 @@ final class AbstractHilosMergeCandidatesTableTest extends TestCase
     public function testAUserThatBecameIneligibleIsDeletedFromTheCandidateTable(): void
     {
         $mutation = $this->table()->buildMutationForSourceEvent(
-            SourceChange::dbUpdated('users', '3', ['mergedInto' => 1]),
+            SourceChange::dbUpdated('users', '3', ['block' => true]),
         );
 
         self::assertNotNull($mutation);

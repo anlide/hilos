@@ -10,8 +10,8 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Database\Object\Item\User as ObjectUser;
-use Demo\Chat\Database\View\Item\User as DbUser;
+use Hilos\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\View\Item\User as DbUser;
 use Demo\Chat\Hilos;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
@@ -26,8 +26,9 @@ use Hilos\Tables\Users\AbstractHilosUserTableRow;
 /**
  * Chat activation of the framework account-merge candidate table.
  *
- * The project supplies its user collection and excludes tombstones. Identity metadata,
- * password presence, search, survivor filtering, and live mutations remain framework-owned.
+ * The project supplies its user collection and excludes the accounts folded into another one,
+ * by the framework's merge table (HIL-1199). Identity metadata, password presence, search,
+ * survivor filtering, and live mutations remain framework-owned.
  */
 final class HilosMergeCandidatesTable extends AbstractHilosMergeCandidatesTable
 {
@@ -66,7 +67,7 @@ final class HilosMergeCandidatesTable extends AbstractHilosMergeCandidatesTable
     }
 
     /**
-     * @return iterable<int> Current chat user ids, including tombstones rejected by the row seam
+     * @return iterable<int> Current chat user ids, including merged accounts rejected by the row seam
      * @throws DatabaseException When the user query fails
      * @throws InvalidArgumentException When a loaded user object does not match the collection
      * @throws LogicException When the user collection is not configured
@@ -91,7 +92,7 @@ final class HilosMergeCandidatesTable extends AbstractHilosMergeCandidatesTable
     protected function candidateRowForUserId(int $userId): ?AbstractHilosUserTableRow
     {
         $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null || $user->mergedInto !== null) {
+        if ($user === null || Hilos::$db->userMerges[$userId] !== null) {
             return null;
         }
 

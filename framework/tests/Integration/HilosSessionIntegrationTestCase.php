@@ -37,11 +37,14 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *     the person who asked for it; the table has to be there to be empty. Their rename
      *     journal joins because the export writes a person's renames and the users library
      *     writes the journal with the name (HIL-1195); its keys hold hilos_user, so it comes
-     *     after it and is dropped before it.
+     *     after it and is dropped before it. Their merges join for the same two reasons
+     *     (HIL-1199): the export writes both sides of a person's merges, and who the
+     *     administrators are leaves out a merged account.
      */
     private const array TABLES = [
         'hilos_user',
         'hilos_user_rename',
+        'hilos_user_merge',
         'hilos_session',
         'hilos_identity',
         'hilos_setting',

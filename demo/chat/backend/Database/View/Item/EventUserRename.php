@@ -11,6 +11,7 @@ use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\HilosException;
+use Hilos\Database\View\Item\User;
 
 /**
  * EventUserRename - Db item for user rename event details.

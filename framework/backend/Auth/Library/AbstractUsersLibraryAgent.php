@@ -730,15 +730,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Refuses an administrator's deletion of an account that is missing or is an administrator.
+     * Refuses an administrator's deletion of an account that is missing, is an administrator, or
+     * was merged into another one.
      *
-     * What the framework checks on its own `hilos_user` row. A project with a refusal of its own
-     * overrides this and calls the parent first - the chat refuses a merged account until the
-     * merge table takes that over (HIL-1199).
+     * What the framework checks on its own tables, in that order: the `hilos_user` row, then the
+     * merge table (HIL-1199) - a folded account's deletion is the account it became's to ask for.
+     * A project with a refusal of its own overrides this and calls the parent first.
      *
      * @param int $userId Account an administrator wants to schedule for deletion
      * @throws ItemNotFoundForUpdateException When the account does not exist
-     * @throws ValidationException When the account is an administrator
+     * @throws ValidationException When the account is an administrator, or was merged into another one
      * @throws HilosException When the account cannot be read
      */
     protected function assertAdministratorMayDelete(int $userId): void
@@ -749,6 +750,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         }
         if ($user->admin === true) {
             throw new ValidationException('Remove the admin rights first');
+        }
+        if (Hilos::$db->userMerges[$userId] !== null) {
+            throw new ValidationException(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
     }
 

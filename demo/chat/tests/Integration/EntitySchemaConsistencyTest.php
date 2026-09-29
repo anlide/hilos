@@ -32,8 +32,11 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
     /** PSR-4 namespace of the demo's own Entity directory. */
     private const string OWN_ENTITY_NAMESPACE = 'Demo\\Chat\\Database\\Entity\\Item\\';
 
-    /** Lower bound so an empty discovery cannot masquerade as "no drift". */
-    private const int MIN_OWN_ENTITY_COUNT = 8;
+    /**
+     * Lower bound so an empty discovery cannot masquerade as "no drift". Seven: the person is the
+     * framework's table whole since HIL-1199, which took the last chat column off it.
+     */
+    private const int MIN_OWN_ENTITY_COUNT = 7;
 
     /** Lower bound so an unmigrated database cannot masquerade as "no drift" either. */
     private const int MIN_TABLE_COUNT = 40;

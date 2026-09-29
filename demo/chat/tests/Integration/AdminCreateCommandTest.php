@@ -85,7 +85,7 @@ final class AdminCreateCommandTest extends IntegrationTestCase
         self::assertIsInt($mintedId);
         $minted = Hilos::$db->users[$mintedId];
         self::assertTrue($minted?->admin);
-        self::assertNull($minted?->mergedInto);
+        self::assertNull(Hilos::$db->userMerges[$mintedId]);
         // The bind is what makes the mint usable: without it the operator owns an
         // administrator and no browser that is one.
         self::assertSame($mintedId, Hilos::$db->sessions->findByToken($sessionToken)?->userId);

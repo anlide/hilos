@@ -22,6 +22,7 @@ use Hilos\Database\Entity\Item\SecondFactorReset;
 use Hilos\Database\Entity\Item\SecondFactorSetting;
 use Hilos\Database\Entity\Item\SecondFactorTrust;
 use Hilos\Database\Entity\Item\StepUp;
+use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Database\Entity\Item\UserRename;
 use Hilos\Database\Entity\Item\UserVerification;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
@@ -106,6 +107,7 @@ final class AuthFeature extends FeatureDefinition
                 LegalAcceptance::_table,
                 DataExport::_table,
                 UserRename::_table,
+                UserMerge::_table,
             ],
         );
     }

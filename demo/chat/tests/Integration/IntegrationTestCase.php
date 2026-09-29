@@ -79,7 +79,7 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(ChatDbContext::bots, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(ChatDbContext::moderatorPromptPieces, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // Framework tables these cases write through their real writers - a login, a code, a
-        // notification - and not through the library that owns them. The guard asks on every
+        // notification, a merge - and not through the library that owns them. The guard asks on every
         // table since HIL-716, while a test process runs the writers under this harness id
         // rather than under a library's, so the harness claims them once for everybody.
         TruthSourceRegistry::register(HilosDbContext::sessions, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -93,6 +93,7 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(HilosDbContext::notificationPreferences, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::legalAcceptances, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::stepUps, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::userMerges, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::attachmentDrafts, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // Owned by the framework rather than the project (HIL-582), and written by any case

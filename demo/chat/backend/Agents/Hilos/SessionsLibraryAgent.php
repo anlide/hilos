@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\Hilos;
 
-use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Database\DatabaseException;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatCommandConstants;
@@ -15,7 +12,6 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
@@ -27,26 +23,23 @@ use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
- * The chat demo's sessions library - the merge, the erasure, and a merged account's refusal
- * on top of the framework's writes (HIL-710, HIL-729, HIL-302, HIL-1197).
+ * The chat demo's sessions library - the merge and the erasure of what a chat keeps for a
+ * person (HIL-710, HIL-729, HIL-302, HIL-1199).
  *
  * Everything a session is went into {@see AbstractSessionsLibraryAgent} whole: resolving a
  * handshake cookie, rotating a token, raising a session to a person and reverting it. So did
  * the operations over the person (HIL-1197): {@see CliCommands::ADMIN_CREATE}, the grant pair,
  * the block and the takeover check write and read `hilos_user` in the framework, the same in
  * this demo as in the other two. Before that this demo refused admin:create, and it was the one
- * way out of an installation whose every sign-in method is switched off.
+ * way out of an installation whose every sign-in method is switched off. So did whether two
+ * accounts may be merged, the loser's tombstone and every refusal to a merged account
+ * (HIL-1199): they live in the framework's merge table, not in a chat column.
  *
- * What stays here on top of them is one refusal: an account merged into another one gets no
- * rights and no block, because `mergedInto` is a chat column the framework cannot see. It is
- * checked before the parent writes, until the merge table takes it over (HIL-1199).
+ * The merge is where this demo's answer is largest, and it is still not the operation: the
+ * framework checks both accounts, moves the ways in, tombstones the loser and signs it out, and
+ * asks this demo the one thing only it knows - what a chat keeps for a person.
  *
- * The merge pair is where this demo's answer is largest, and it is still not the operation:
- * the framework moves the ways in and signs the loser out, and asks this demo the two things
- * only it knows - whether these two accounts may be merged at all, and what a chat keeps for a
- * person.
- *
- * The erasure is the merge's opposite and asks the same second question the other way round
+ * The erasure is the merge's opposite and asks the same question the other way round
  * (HIL-302): when a person's account deletion falls due, the framework erases the ways in and
  * signs them out, and this demo deletes what a chat keeps for them - their messages with the
  * attachments, the events about them, their row - and names the files to remove.
@@ -79,10 +72,8 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        // TODO(HIL-630): borrowed claim - the users library owns the account set. Beside the
-        // framework's share, this library tombstones the loser of a merge (HIL-1199) and deletes
-        // the row of an erased account (HIL-1200).
-        ChatDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        // TODO(HIL-1200): the framework deletes the person row after the project's own rows, and this claim goes.
+        ChatDbContext::users => [TruthSourceOperation::Remove],
         // TODO(HIL-626): borrowed claim - the chat agent owns the message rows. A merge
         // re-points the loser's messages onto the survivor; an erasure deletes the person's.
         ChatDbContext::eventMessages => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -127,108 +118,22 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     ];
 
     /**
-     * Refuses a merged account before the framework writes its admin flag.
-     *
-     * The framework's write refuses a missing account on its own; only a row that exists is
-     * asked here whether it was folded into another one, and the refusal comes before the
-     * parent because the parent writes.
-     *
-     * @param int $userId Target user id, already validated as positive
-     * @param bool $admin New admin flag
-     * @throws ValidationException When the account was merged into another one
-     * @throws ItemNotFoundForUpdateException When no user carries that id
-     * @throws HilosException On database failure while reading or writing the flag
-     */
-    protected function applyAdminGrant(int $userId, bool $admin): void
-    {
-        // TODO(HIL-1199): the merge table takes this refusal over, and this override goes.
-        if (Hilos::$db->users[$userId]?->mergedInto !== null) {
-            throw new ValidationException('This account was merged into another one');
-        }
-
-        parent::applyAdminGrant($userId, $admin);
-    }
-
-    /**
-     * Refuses a merged account before the framework writes its block flag.
-     *
-     * The same shape as {@see self::applyAdminGrant()}: a missing account is the parent's to
-     * refuse, a merged one is refused here before the parent writes.
-     *
-     * @param int $userId Target account id
-     * @param bool $block Requested block flag
-     * @throws ValidationException When the account was merged into another one
-     * @throws ItemNotFoundForUpdateException When the account does not exist
-     * @throws HilosException On database or truth-source failure
-     */
-    protected function applyAccountBlock(int $userId, bool $block): void
-    {
-        // TODO(HIL-1199): the merge table takes this refusal over, and this override goes.
-        if (Hilos::$db->users[$userId]?->mergedInto !== null) {
-            throw new ValidationException('This account was merged into another one');
-        }
-
-        parent::applyAccountBlock($userId, $block);
-    }
-
-    /**
-     * Vouches for both accounts of a merge - chat's first half of the pair.
-     *
-     * Both questions are chat's because the user rows are: whether an id names anybody at
-     * all, and whether that account has already been folded into a third. The order and the
-     * wording are the ones the guards ran in while the merge lived in {@see ChatAgent}, so no
-     * refusal an operator or an admin can see has changed.
-     *
-     * @param int $survivorUserId Survivor user id that would absorb the loser
-     * @param int $loserUserId Loser user id that would be folded in
-     * @throws ValidationException When either id names nobody, or either account is already merged
-     * @throws DatabaseException When reading the user collection fails
-     * @throws InvalidArgumentException When a loaded user object does not match the collection
-     * @throws LogicException When the user collection is not configured
-     */
-    protected function assertMergeable(int $survivorUserId, int $loserUserId): void
-    {
-        $survivor = Hilos::$db->users[$survivorUserId] ?? null;
-        if ($survivor === null) {
-            throw new ValidationException("No such user: {$survivorUserId}");
-        }
-        if ($survivor->mergedInto !== null) {
-            throw new ValidationException("Survivor {$survivorUserId} is itself a merged account");
-        }
-
-        $loser = Hilos::$db->users[$loserUserId] ?? null;
-        if ($loser === null) {
-            throw new ValidationException("No such user: {$loserUserId}");
-        }
-        if ($loser->mergedInto !== null) {
-            throw new ValidationException("Loser {$loserUserId} is already merged");
-        }
-    }
-
-    /**
-     * Moves what chat keeps for a person onto the survivor, and tombstones the loser.
+     * Moves what chat keeps for a person onto the survivor.
      *
      * Everything a chat holds for somebody is their messages, so the tally goes back under
-     * one family name. The tombstone is here rather than in the framework because
-     * `mergedInto` is a chat column: the framework knows an account was folded away, this
-     * demo knows where it says so.
+     * one family name. The tombstone is the framework's, written after this returns.
      *
-     * Runs inside the framework's merge transaction, so a failure of either write rolls back
-     * the identity re-point that came before it.
+     * Runs inside the framework's merge transaction, so a failure rolls back the identity
+     * re-point that came before it.
      *
      * @param int $survivorUserId Survivor user id that absorbs the loser
      * @param int $loserUserId Loser user id folded into the survivor
      * @return array<string, int> The messages that moved, under chat's own family name
-     * @throws ItemNotFoundForUpdateException When the loser row went missing between the guard and the write
      * @throws HilosException On database or truth-source failure while moving the rows
      */
     protected function applyAccountMerge(int $survivorUserId, int $loserUserId): array
     {
         $messagesMoved = Hilos::$db->eventMessages->actions->rePointAuthor($loserUserId, $survivorUserId);
-
-        $loser = Hilos::$db->users[$loserUserId]
-            ?? throw new ItemNotFoundForUpdateException("No such user: {$loserUserId}");
-        $loser->actions->tombstone($survivorUserId);
 
         return [ChatCommandConstants::ROWS_MOVED_MESSAGES => $messagesMoved];
     }

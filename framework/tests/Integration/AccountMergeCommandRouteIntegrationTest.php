@@ -13,6 +13,10 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -35,15 +39,16 @@ use Hilos\Users\DTO\AccountMergeSignalData;
  * in real identity rows moving inside a real transaction, and a case that faked the identities
  * would pin its own fake instead of the path an operator walks.
  *
- * What is pinned is everything the FRAMEWORK owns, which since HIL-729 is the whole operation
- * bar two questions. The guards that need no project - two ids that are the same, two accounts
- * that each hold a password and nobody saying which stays - the transaction, the identity
- * re-point, the password outcome read back off the account and the loser's forced sign-out all
- * live here. What a project answers is whether these two accounts may be merged at all and
- * what it keeps for a person, and what is pinned about those is the SHAPE of the seams rather
- * than any answer: both are reached, they are reached in the order that keeps the refusals
- * honest, the row move runs where a failure still rolls the merge back, and a project that
- * wired neither refuses instead of half-merging.
+ * What is pinned is everything the FRAMEWORK owns, which since HIL-1199 is the whole operation
+ * bar one question. The guards - two ids that are the same, an id that names nobody, an account
+ * already folded into another, two accounts that each hold a password and nobody saying which
+ * stays - the transaction, the identity re-point, the tombstone (a merge row and a closed
+ * sign-in), the password outcome read back off the account and the loser's forced sign-out all
+ * live here. What a project answers is what it keeps for a person, and what is pinned about
+ * that is the SHAPE of the seam rather than any answer: it is reached after the framework's
+ * refusals, it runs where a failure still rolls the merge back, and a project that never wired
+ * it refuses instead of half-merging. A project's own refusal is pinned by its shape too: it
+ * comes after the framework's.
  *
  * The browser half is the same core through another door, so it is driven here too: success,
  * refusal and password-choice branches answer the page's named handover frame rather than the
@@ -51,23 +56,38 @@ use Hilos\Users\DTO\AccountMergeSignalData;
  */
 final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
-    /** Survivor of every merge below; a framework table carries no FK to a project user. */
+    /** Survivor of every merge below. */
     private const int SURVIVOR_USER_ID = 11;
 
     /** Loser of every merge below. */
     private const int LOSER_USER_ID = 12;
 
+    /** A third person, the one an account folded before any case below was folded into. */
+    private const int THIRD_USER_ID = 13;
+
+    /** An id no person carries. */
+    private const int NOBODY_USER_ID = 99;
+
     /** Accept key standing in for the browser that submitted the admin-table action. */
     private const string ACCEPT_KEY = 'accept-1';
+
+    /**
+     * Id the library's own claims are registered under. A test process starts no library, and
+     * the tombstone writes the person and the merge table under the claim the library declares.
+     */
+    private const string LIBRARY_ID = 'test-agent:merge-library';
 
     /** Precomputed so a case seeding two passwords does not pay bcrypt twice. */
     private const string SEED_PASSWORD = 'merge-route-secret-42';
 
     /**
      * @var list<string> Framework tables this case needs. `hilos_setting` is the one framework
-     *     collection loaded eagerly, so mounting the context reaches for it.
+     *     collection loaded eagerly, so mounting the context reaches for it. The people and their
+     *     merges are asked whether two accounts may be merged at all, and the tombstone writes
+     *     both (HIL-1199); the merge table's keys hold the people, so it comes after them and is
+     *     dropped before them.
      */
-    private const array TABLES = ['hilos_identity', 'hilos_session', 'hilos_setting'];
+    private const array TABLES = ['hilos_user', 'hilos_user_merge', 'hilos_identity', 'hilos_session', 'hilos_setting'];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;
@@ -87,6 +107,10 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Survivor'), (?, 'Loser'), (?, 'Third')",
+            [self::SURVIVOR_USER_ID, self::LOSER_USER_ID, self::THIRD_USER_ID],
+        );
 
         $this->previousDb = Hilos::$db;
         $this->previousSignalRouter = Hilos::$sr;
@@ -95,6 +119,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         $db->configure();
         Hilos::$db = $db;
         Hilos::$sr = new SignalRouter();
+        OwnershipDeclaration::claimDb(AccountMergeRouteTestHost::class, self::LIBRARY_ID);
     }
 
     /**
@@ -102,6 +127,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     protected function tearDown(): void
     {
+        TruthSourceRegistry::unregisterAgent(self::LIBRARY_ID);
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::LIBRARY_ID));
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
 
@@ -124,11 +151,12 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
-     * A merge asks both seams and reports the framework's count beside the project's map.
+     * A merge asks the project and reports the framework's count beside the project's map, and
+     * leaves the loser tombstoned: a merge row into the survivor, and its sign-in closed.
      *
      * @throws HilosException When a seed, the merge, or a read-back fails
      */
-    public function testAMergeAsksBothSeamsAndReportsWhatEachMoved(): void
+    public function testAMergeAsksTheProjectReportsWhatMovedAndTombstonesTheLoser(): void
     {
         $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
         $agent = new AccountMergeRouteTestAgent();
@@ -152,6 +180,10 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
             self::SURVIVOR_USER_ID,
             $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail)?->userId,
         );
+        self::assertSame(self::SURVIVOR_USER_ID, self::survivorOf(self::LOSER_USER_ID));
+        self::assertTrue(self::isBlocked(self::LOSER_USER_ID));
+        self::assertFalse(self::isBlocked(self::SURVIVOR_USER_ID));
+        self::assertNull(self::survivorOf(self::SURVIVOR_USER_ID), 'The survivor is not folded');
     }
 
     /**
@@ -171,20 +203,47 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
-     * A project refusing the pair answers the operator once and moves nothing.
+     * An id that names nobody is refused as such, the survivor asked first, and the project is
+     * not asked anything.
+     *
+     * @throws HilosException When the merge fails
+     */
+    public function testAnIdThatNamesNobodyIsRefusedAsSuch(): void
+    {
+        $agent = new AccountMergeRouteTestAgent();
+
+        $this->sendCommand($agent, self::NOBODY_USER_ID, self::NOBODY_USER_ID + 1);
+        self::assertSame('No such user: ' . self::NOBODY_USER_ID, $this->refusal());
+
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::NOBODY_USER_ID);
+        self::assertSame('No such user: ' . self::NOBODY_USER_ID, $this->refusal());
+
+        self::assertNull($agent->vouchedFor, 'The project is asked only about two accounts that may be merged');
+        self::assertNull($agent->moved);
+    }
+
+    /**
+     * A survivor that was itself folded away is refused, and so is a loser folded already; the
+     * refusal writes nothing.
      *
      * @throws HilosException When a seed or the merge fails
      */
-    public function testASeamRefusalBecomesOneErrorReplyAndMovesNothing(): void
+    public function testAnAccountFoldedAlreadyIsRefusedOnEitherSide(): void
     {
         $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
         $agent = new AccountMergeRouteTestAgent();
-        $agent->refuseWith = new ValidationException('Loser 12 is already merged');
 
+        self::seedMerge(self::SURVIVOR_USER_ID, self::THIRD_USER_ID);
         $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        self::assertSame('Survivor ' . self::SURVIVOR_USER_ID . ' is itself a merged account', $this->refusal());
 
-        self::assertSame('Loser 12 is already merged', $this->refusal());
-        self::assertNull($agent->moved, 'A vouching refusal never reaches the row move');
+        self::seedMerge(self::LOSER_USER_ID, self::THIRD_USER_ID);
+        $this->sendCommand($agent, self::THIRD_USER_ID, self::LOSER_USER_ID);
+        self::assertSame('Loser ' . self::LOSER_USER_ID . ' is already merged', $this->refusal());
+
+        self::assertNull($agent->vouchedFor);
+        self::assertNull($agent->moved);
+        self::assertSame(self::THIRD_USER_ID, self::survivorOf(self::LOSER_USER_ID), 'The first merge stands');
         self::assertSame(
             self::LOSER_USER_ID,
             $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail)?->userId,
@@ -192,17 +251,25 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
-     * A project that wired neither seam refuses rather than half-merging.
+     * A project's own refusal comes after the framework's: it is asked only about two accounts
+     * the framework let through, answers the operator once, and nothing moves.
      *
      * @throws HilosException When a seed or the merge fails
      */
-    public function testAnUnwiredProjectRefusesEveryMerge(): void
+    public function testAProjectRefusalComesAfterTheFrameworksAndMovesNothing(): void
     {
         $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
+        $agent = new AccountMergeRouteTestAgent();
+        $agent->refuseWith = new ValidationException('This project keeps these two apart');
 
-        $this->sendCommand(new AccountMergeRouteTestUnwiredAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::NOBODY_USER_ID);
+        self::assertSame('No such user: ' . self::NOBODY_USER_ID, $this->refusal());
 
-        self::assertSame('Account merge is not wired in this project', $this->refusal());
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        self::assertSame('This project keeps these two apart', $this->refusal());
+
+        self::assertNull($agent->moved, 'A refusal never reaches the row move');
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
         self::assertSame(
             self::LOSER_USER_ID,
             $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail)?->userId,
@@ -210,21 +277,46 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
-     * The passwords are weighed only after the project has vouched for both accounts.
-     *
-     * The order is the whole point: an id that names nobody must be refused as such rather
-     * than as a password question, so the seam runs first and the framework guard second.
+     * A project that never wired the merge refuses rather than half-merging - after the
+     * framework's refusals, so an id that names nobody is still refused as such.
      *
      * @throws HilosException When a seed or the merge fails
      */
-    public function testTwoPasswordsAreWeighedOnlyAfterTheProjectHasVouched(): void
+    public function testAnUnwiredProjectRefusesEveryMergeAndWritesNothing(): void
+    {
+        $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
+        $agent = new AccountMergeRouteTestUnwiredAgent();
+
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::NOBODY_USER_ID);
+        self::assertSame('No such user: ' . self::NOBODY_USER_ID, $this->refusal());
+
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        self::assertSame('Account merge is not wired in this project', $this->refusal());
+
+        self::assertSame(self::LOSER_USER_ID, self::identityOwner($loserEmail));
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+        self::assertFalse(self::isBlocked(self::LOSER_USER_ID));
+    }
+
+    /**
+     * The passwords are weighed only after the framework and the project let both accounts
+     * through.
+     *
+     * The order is the whole point: an account that cannot be merged must be refused as such
+     * rather than as a password question.
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testTwoPasswordsAreWeighedOnlyAfterTheAccountsMayBeMerged(): void
     {
         $this->seedPassword(self::SURVIVOR_USER_ID);
         $this->seedPassword(self::LOSER_USER_ID);
         $agent = new AccountMergeRouteTestAgent();
 
-        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::NOBODY_USER_ID);
+        self::assertSame('No such user: ' . self::NOBODY_USER_ID, $this->refusal());
 
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
         self::assertStringContainsString('--password', $this->refusal());
         self::assertSame([self::SURVIVOR_USER_ID, self::LOSER_USER_ID], $agent->vouchedFor);
         self::assertNull($agent->moved, 'The row move is behind the password question, not before it');
@@ -260,7 +352,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
-     * The project's row move runs inside the transaction: its failure undoes the re-point.
+     * The project's row move runs inside the transaction: its failure undoes the re-point, and
+     * no tombstone is written.
      *
      * Read back through a query rather than the collection, whose object cache still holds the
      * mutated-then-rolled-back identity.
@@ -277,6 +370,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
 
         self::assertSame('The project could not move its rows', $this->refusal());
         self::assertSame(self::LOSER_USER_ID, self::identityOwner($loserEmail));
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+        self::assertFalse(self::isBlocked(self::LOSER_USER_ID));
     }
 
     /**
@@ -333,7 +428,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     public function testARefusedBrowserMergeHandsBackTheSentence(): void
     {
         $agent = new AccountMergeRouteTestAgent();
-        $agent->refuseWith = new ValidationException('No such user: 12');
+        self::seedMerge(self::LOSER_USER_ID, self::THIRD_USER_ID);
 
         $agent->onSignalAgent(
             new AgentSignalData($this->browserRequest()),
@@ -343,7 +438,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
 
         $result = $this->consumeMergeAnswer();
         self::assertSame(self::ACCEPT_KEY, $result->acceptKey);
-        self::assertSame('No such user: 12', $result->error);
+        self::assertSame('Loser 12 is already merged', $result->error);
         self::assertNull($result->successMessage);
     }
 
@@ -594,7 +689,55 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
+     * Folds one account into another past the library, the way an earlier merge left it.
+     *
+     * @param int $userId Folded account
+     * @param int $survivorUserId Account it was folded into
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedMerge(int $userId, int $survivorUserId): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
+            [$userId, $survivorUserId],
+        );
+    }
+
+    /**
+     * Reads which account one was folded into, straight from the database.
+     *
+     * @param int $userId Account to look up
+     * @return ?int Survivor it was folded into, or null when it was never folded
+     * @throws DatabaseException When the query fails
+     */
+    private static function survivorOf(int $userId): ?int
+    {
+        Database::sql('SELECT `survivor_user_id` FROM `hilos_user_merge` WHERE `user_id` = ?', [$userId]);
+        $row = Database::row();
+
+        return $row === null ? null : (int)$row['survivor_user_id'];
+    }
+
+    /**
+     * Reads a person's block flag straight from the database.
+     *
+     * @param int $userId Person to look up
+     * @return bool Whether the person's sign-in is closed
+     * @throws DatabaseException When the query fails
+     */
+    private static function isBlocked(int $userId): bool
+    {
+        Database::sql('SELECT `block` FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        $row = Database::row();
+        self::assertNotNull($row, "Person #{$userId} is seeded by every case");
+
+        return (bool)$row['block'];
+    }
+
+    /**
      * Runs one direction of the stub file of every table this case uses.
+     *
+     * The drop runs in reverse order: a table whose foreign key holds an earlier one goes first.
      *
      * @param bool $down Run the down (drop) stubs when true, the create stubs when false
      * @throws DatabaseException When a stub statement fails
@@ -603,7 +746,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }
@@ -621,15 +764,15 @@ final class AccountMergeRouteTestDbContext extends HilosDbContext
  * The framework half of the sessions library, standing in for a project's concrete subclass.
  *
  * A base rather than two copies because the case needs the SAME library twice - once with the
- * seams wired and once without - and the difference is exactly the seams.
+ * merge wired and once without - and the difference is exactly the seams.
  */
 abstract class AccountMergeRouteTestHost extends AbstractSessionsLibraryAgent
 {
 }
 
 /**
- * Sessions library with both merge seams wired, standing in for a project binding: it records
- * what each was asked instead of reading a project's own rows.
+ * Sessions library with the merge wired and a check of its own, standing in for a project
+ * binding: it records what it was asked instead of reading a project's own rows.
  */
 final class AccountMergeRouteTestAgent extends AccountMergeRouteTestHost
 {
@@ -639,27 +782,31 @@ final class AccountMergeRouteTestAgent extends AccountMergeRouteTestHost
     /** @var int Rows this fixture claims to have moved, under its own family name */
     public const int ROWS_MOVED = 3;
 
-    /** @var ?array{int, int} Ids the vouching seam was asked about, or null when it was not asked */
+    /** @var ?array{int, int} Ids the project's own check was asked about, or null when it was not asked */
     public ?array $vouchedFor = null;
 
     /** @var ?array{int, int} Ids the row-move seam was asked about, or null when it was not asked */
     public ?array $moved = null;
 
-    /** @var ?ValidationException Refusal the vouching seam raises instead of allowing the merge */
+    /** @var ?ValidationException Refusal the project's own check raises instead of allowing the merge */
     public ?ValidationException $refuseWith = null;
 
     /** @var bool Whether the row move fails, the way a project's write fails mid-transaction */
     public bool $failTheRowMove = false;
 
     /**
-     * Records the question, or refuses the way a project refuses an unknown account.
+     * Asks the framework first, then records the question or refuses the way a project with a
+     * refusal of its own does.
      *
      * @param int $survivorUserId Survivor user id that would absorb the loser
      * @param int $loserUserId Loser user id that would be folded in
-     * @throws ValidationException When the test asked this seam to refuse
+     * @throws ValidationException When the framework refuses, or the test asked this check to refuse
+     * @throws HilosException When the framework cannot read the two accounts
      */
     protected function assertMergeable(int $survivorUserId, int $loserUserId): void
     {
+        parent::assertMergeable($survivorUserId, $loserUserId);
+
         if ($this->refuseWith !== null) {
             throw $this->refuseWith;
         }
@@ -688,7 +835,7 @@ final class AccountMergeRouteTestAgent extends AccountMergeRouteTestHost
 }
 
 /**
- * Sessions library of a project that never wired the seams - the framework default, unchanged.
+ * Sessions library of a project that never wired the merge - the framework default, unchanged.
  */
 final class AccountMergeRouteTestUnwiredAgent extends AccountMergeRouteTestHost
 {

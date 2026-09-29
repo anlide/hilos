@@ -189,10 +189,11 @@ use Throwable;
  * project's registry. The operations over the person are the framework's over `hilos_user` in
  * every project (HIL-1197) - minting the first administrator ({@see ensureAdminUser()}), the
  * admin flag ({@see applyAdminGrant()}), the block ({@see applyAccountBlock()}) and whether one
- * person may take another over ({@see assertImpersonationAllowed()}). What a project adds is the
- * claims over its own way in - the sign-in waits and the registration holds, declared where a
- * sign-in surface exists - and its own rows in a merge ({@see assertMergeable()},
- * {@see applyAccountMerge()}) and an erasure ({@see applyAccountErasure()}).
+ * person may take another over ({@see assertImpersonationAllowed()}). So is whether two accounts
+ * may be merged and the tombstone of the loser (HIL-1199, {@see assertMergeable()}). What a
+ * project adds is the claims over its own way in - the sign-in waits and the registration holds,
+ * declared where a sign-in surface exists - and its own rows in a merge
+ * ({@see applyAccountMerge()}) and an erasure ({@see applyAccountErasure()}).
  *
  * A session is anonymous (user id null) until {@see authenticateSession()} binds a user;
  * {@see deauthenticateSession()} is the symmetric downgrade that keeps the row and moves it
@@ -210,6 +211,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Browser refusal when two passwords need a choice the action did not carry (HIL-411). */
     public const string ACCOUNT_MERGE_PASSWORD_FATE_REQUIRED_MESSAGE =
         'Both accounts have a password: choose which one stays';
+
+    /** Refusal of a write over an account folded into another one (HIL-1199). */
+    public const string MERGED_ACCOUNT_REFUSED_MESSAGE = 'This account was merged into another one';
 
     public const array READS_DB = [...parent::READS_DB, HilosDbContext::dataExports];
 
@@ -236,6 +240,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * waits for a borrowed claim; nothing here reads a person at start, which is what a co-owner
      * that may add owes (docs/agents/architecture/truth-source.md). Unconditional for the reason
      * the identity entry is: the writers are methods of this class, not a project seam.
+     *
+     * The merge table (HIL-1199) is this library's whole: the merge writes its row and the
+     * erasure of a folded account removes it, and both run here. Unconditional for the reason the
+     * identity entry is.
      *
      * The registration holds are NOT here. They are the users library's row and are claimed only
      * where a sign-in surface exists, which a class constant cannot ask - so the project subclass
@@ -285,6 +293,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // TODO(HIL-630): also credited by the sign-in the block refused (HIL-303); shared with the users library.
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure.
+        HilosDbContext::userMerges => TruthSourceOperation::ALL,
     ];
 
     /**
@@ -493,7 +502,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * framework's code over `hilos_user` in every one of them ({@see ensureAdminUser()},
      * {@see applyAdminGrant()}, {@see assertImpersonationAllowed()}, HIL-1197); only the merge
      * still answers a REFUSAL by default, in a project that never wired it
-     * ({@see assertMergeable()}), rather than nothing at all. That is the honest outcome for an
+     * ({@see applyAccountMerge()}), rather than nothing at all. That is the honest outcome for an
      * operator who typed it into the wrong installation: before the move the name was carried by
      * whichever agent chose to, so a project that did not left the command socket silent - which
      * reads as a hang, not as a no.
@@ -1876,20 +1885,25 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Telling the person's browsers is {@see self::announceAdminGrant()}; before HIL-729 it was
      * part of this write, and each of the three demos wrote its own version of the announcement.
-     * A project with a refusal of its own overrides this and refuses BEFORE calling the parent,
-     * because the parent writes - the chat refuses a merged account until the merge table takes
-     * that over (HIL-1199). Not final, for the reason {@see self::ensureAdminUser()} gives.
+     * An account folded into another one is refused, both ways, before the write (HIL-1199): its
+     * rights belong to the account it became. A project with a refusal of its own overrides this
+     * and refuses BEFORE calling the parent, because the parent writes. Not final, for the reason
+     * {@see self::ensureAdminUser()} gives.
      *
      * @param int $userId Target user id, already validated as positive
      * @param bool $admin New admin flag
      * @throws ItemNotFoundForUpdateException When no user carries that id
-     * @throws HilosException On database failure while writing the flag
+     * @throws ValidationException When the account was merged into another one
+     * @throws HilosException On database failure while reading or writing the flag
      */
     protected function applyAdminGrant(int $userId, bool $admin): void
     {
         $user = Hilos::$db->users[$userId] ?? null;
         if ($user === null) {
             throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+        if (Hilos::$db->userMerges[$userId] !== null) {
+            throw new ValidationException(self::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
 
         $user->actions->setAdmin($admin);
@@ -1898,19 +1912,25 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Writes the block flag of one user's `hilos_user` row; the library enforces it after the write.
      *
-     * The same shape as {@see self::applyAdminGrant()}: a project with a refusal of its own
-     * overrides this and refuses before calling the parent.
+     * The same shape as {@see self::applyAdminGrant()}: a folded account is refused, both ways,
+     * before the write - the merge closed its sign-in with the flag, and the flag is not an
+     * administrator's to reopen. A project with a refusal of its own overrides this and refuses
+     * before calling the parent.
      *
      * @param int $userId Target account id
      * @param bool $block Requested block flag
      * @throws ItemNotFoundForUpdateException When no user carries that id
-     * @throws HilosException On database or truth-source failure while writing the flag
+     * @throws ValidationException When the account was merged into another one
+     * @throws HilosException On database or truth-source failure while reading or writing the flag
      */
     protected function applyAccountBlock(int $userId, bool $block): void
     {
         $user = Hilos::$db->users[$userId] ?? null;
         if ($user === null) {
             throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+        if (Hilos::$db->userMerges[$userId] !== null) {
+            throw new ValidationException(self::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
 
         $user->actions->setBlock($block);
@@ -4461,23 +4481,24 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * (HIL-378).
      *
      * The survivor absorbs the loser's ways in and the rows the project keeps for it, then the
-     * loser is tombstoned and its live sessions are signed out. It runs here rather than in a
-     * project agent because of that last step: the sessions are this library's, and before
-     * HIL-729 the merge had to ASK for each sign-out over a frame.
+     * loser is tombstoned - a row of `hilos_user_merge` and a closed sign-in (HIL-1199) - and its
+     * live sessions are signed out. It runs here rather than in a project agent because of that
+     * last step: the sessions are this library's, and before HIL-729 the merge had to ASK for
+     * each sign-out over a frame.
      *
      * Guards, in order: the two ids must differ, which is the one refusal that needs nobody's
-     * help; then the project answers whether these two accounts may be merged at all
-     * ({@see self::assertMergeable()}), because existence and a tombstone are its columns;
-     * then the passwords are weighed, because the identities are the framework's. One guard
+     * help; then whether these two accounts may be merged at all ({@see self::assertMergeable()}):
+     * both exist and neither is folded already; then the passwords are weighed. One guard
      * is about the merge rather than the ids (HIL-692): an account holds at most one password,
      * so two accounts that each have one cannot both be right and this refuses until the
      * operator says which stays. While at most one of the two has a password, that one
      * survives and the command keeps the shape it always had.
      *
      * The transfer is one explicit transaction so a half-merged account can never survive a
-     * mid-way failure: the identity re-point and everything the project moves either all
-     * commit or all roll back. Ordering inside it is free - the loser is tombstoned, never
-     * deleted, so no foreign-key cascade can fire.
+     * mid-way failure: the identity re-point, everything the project moves and the tombstone
+     * either all commit or all roll back. The loser is tombstoned, never deleted, so no
+     * foreign-key cascade can fire; the one order that matters is inside the tombstone
+     * ({@see self::foldAccount()}).
      *
      * What comes back is the OUTCOME and not the request: the account is asked afterwards
      * which password it now carries, so a fate naming an account that had none reports the
@@ -4487,8 +4508,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param int $loserId Loser user id folded into the survivor
      * @param ?PasswordFate $passwordFate Whose password to keep, or null when nobody named one
      * @return AccountMergeSummary Counts of what moved, and whose password the account kept
-     * @throws ValidationException When a guard rejects the merge, the project's among them
-     * @throws NotImplementedException When the project has not wired the merge seams
+     * @throws ValidationException When a guard rejects the merge, a project's own among them
+     * @throws NotImplementedException When the project has not wired the merge seam
+     * @throws ItemNotFoundForUpdateException When the loser row went missing between the guard and the tombstone
      * @throws InvalidArgumentException When a sign-out frame cannot be named
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws HilosException On database or truth-source failure (transaction rolled back)
@@ -4511,6 +4533,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         try {
             $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId, $passwordFate);
             $rowsMoved = $this->applyAccountMerge($survivorId, $loserId);
+            $this->foldAccount($survivorId, $loserId);
             Database::transactionCommit();
         } catch (HilosException $e) {
             try {
@@ -4541,6 +4564,34 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->killUserSessions($loserId);
 
         return new AccountMergeSummary($identitiesMoved, $rowsMoved, $passwordKept);
+    }
+
+    /**
+     * Tombstones the loser of a merge: its row in the merge table, then its closed sign-in (HIL-1199).
+     *
+     * The ORDER is the point. The merge row goes first, the block flag second: a table of merge
+     * candidates hears of the merge by the change of the person's row, and reads "is this account
+     * merged" from the merge table at that moment - so the row has to be there already.
+     *
+     * The flag is written straight rather than through {@see self::applyAccountBlock()}, which
+     * refuses a folded account and would arm the "Access closed" card: a merged loser is not a
+     * punished person, and its tabs get the plain sign-in form ({@see self::killUserSessions()}).
+     * The flag stays because it is what every sign-in check reads, the ways in the merge left
+     * the loser among them.
+     *
+     * Runs inside the merge transaction, after the project moved its rows.
+     *
+     * @param int $survivorId Survivor user id that absorbs the loser
+     * @param int $loserId Loser user id folded into the survivor
+     * @throws ItemNotFoundForUpdateException When the loser row went missing between the guard and the write
+     * @throws HilosException On database or truth-source failure while writing the tombstone
+     */
+    private function foldAccount(int $survivorId, int $loserId): void
+    {
+        Hilos::$db->userMerges->actions->add($loserId, $survivorId);
+
+        $loser = Hilos::$db->users[$loserId] ?? throw new ItemNotFoundForUpdateException("No such user: {$loserId}");
+        $loser->actions->setBlock(true);
     }
 
     /**
@@ -4647,35 +4698,54 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Decides whether these two accounts may be merged at all - the project's first half of
-     * the merge pair.
+     * Decides whether these two accounts may be merged at all (HIL-1199).
      *
-     * A seam with a refusing default rather than an abstract method: the mount stands on this
-     * class, so an operator who typed the command into a project that wires nothing hears a
-     * refusal rather than silence.
+     * Both accounts are vouched for here, in the framework, because both questions are asked of
+     * its own tables: whether a user id names anybody, and whether that account has already been
+     * folded into a third ({@see HilosDbContext::userMerges}). The survivor is asked first, then
+     * the loser; the order and the wording are the ones the chat demo refused in before the merge
+     * table was the framework's, so no refusal an operator or an administrator can see has
+     * changed. It is asked before the passwords are weighed, so an id that names nobody is refused
+     * as such rather than as a password question.
      *
-     * BOTH accounts are the project's to vouch for: whether a user id names anybody is
-     * answered by its own collection, and so is whether that account has already been folded
-     * into a third. The framework asks before it weighs the passwords, so an id that names
-     * nobody is refused as such rather than as a password question.
+     * A project with a refusal of its own overrides this and calls the parent FIRST, so the
+     * framework's refusals keep their order and the project only adds to them.
      *
      * @param int $survivorUserId Survivor user id that would absorb the loser
      * @param int $loserUserId Loser user id that would be folded in
-     * @throws NotImplementedException When the project has not wired the merge seams
-     * @throws HilosException Whatever the project's implementation raises, an unknown user among it
+     * @throws ValidationException When either id names nobody, or either account is already merged
+     * @throws HilosException On database failure while reading the two accounts
      */
     protected function assertMergeable(int $survivorUserId, int $loserUserId): void
     {
-        throw new NotImplementedException('Account merge is not wired in this project');
+        if (Hilos::$db->users[$survivorUserId] === null) {
+            throw new ValidationException("No such user: {$survivorUserId}");
+        }
+        if (Hilos::$db->userMerges[$survivorUserId] !== null) {
+            throw new ValidationException("Survivor {$survivorUserId} is itself a merged account");
+        }
+
+        if (Hilos::$db->users[$loserUserId] === null) {
+            throw new ValidationException("No such user: {$loserUserId}");
+        }
+        if (Hilos::$db->userMerges[$loserUserId] !== null) {
+            throw new ValidationException("Loser {$loserUserId} is already merged");
+        }
     }
 
     /**
-     * Moves everything this project keeps for the loser onto the survivor - its second half.
+     * Moves everything this project keeps for the loser onto the survivor - the project's half
+     * of the merge.
      *
-     * Called INSIDE the merge transaction, between the identity re-point and the commit, so
-     * whatever it writes rolls back with the rest. The tombstone belongs here too: which row
-     * marks an account as folded away is the project's column, and the framework only needs
-     * the count of what travelled.
+     * A seam with a refusing default rather than an abstract method: the mount stands on this
+     * class, so an operator who typed the command into a project that wires nothing hears a
+     * refusal rather than silence - after the framework's own checks, so an id that names nobody
+     * is still refused as such.
+     *
+     * Called INSIDE the merge transaction, between the identity re-point and the tombstone, so
+     * whatever it writes rolls back with the rest - and so does the default's refusal. The
+     * tombstone is not the project's: the framework writes it after this returns
+     * ({@see self::foldAccount()}).
      *
      * The tally is a map rather than a number because the framework cannot know what a
      * project keeps for a person - in a chat, the messages. It goes back to the operator
@@ -4772,6 +4842,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * before their parents, then the project erases its own ({@see self::applyAccountErasure()}).
      * Any failure rolls all of it back, the request included.
      *
+     * An account folded into another one can still be erased - its deletion was asked for before
+     * the merge and came due - and its merge row goes with the framework's rows (HIL-1199). The
+     * accounts folded into the person being erased need nothing here: the database clears their
+     * survivor when the person's row goes, and they stay folded.
+     *
      * After the commit, outside the transaction because none of it can be rolled back: every
      * session the person stands in is signed out, the files the project's rows pointed at are
      * removed, and the notifications library is asked to forget the person - its tables are not
@@ -4807,6 +4882,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
             Hilos::$db->stepUps->actions->deleteForUser($userId);
             Hilos::$db->legalAcceptances->actions->deleteForUser($userId);
+            Hilos::$db->userMerges->actions->deleteForUser($userId);
             $erasure = $this->applyAccountErasure($userId);
             Database::transactionCommit();
         } catch (HilosException $e) {

@@ -15,6 +15,7 @@ use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\Database\View\Item\User;
 
 /**
  * EventMessage - Db item for message event details.

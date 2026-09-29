@@ -11,10 +11,8 @@ use Demo\Chat\Database\Actions\Collection\EventUserRegistrationsActions;
 use Demo\Chat\Database\Actions\Collection\EventUserRenamesActions;
 use Demo\Chat\Database\Actions\Collection\EventsActions;
 use Demo\Chat\Database\Actions\Collection\ModeratorPromptPiecesActions;
-use Demo\Chat\Database\Actions\Collection\UsersActions;
 use Demo\Chat\Database\Actions\Item\BotActions;
 use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
-use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\Object\Collection\EventAttachments as ObjectEventAttachments;
 use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
@@ -29,8 +27,6 @@ use Demo\Chat\Database\View\Collection\EventUserRegistrations;
 use Demo\Chat\Database\View\Collection\EventUserRenames;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
-use Demo\Chat\Database\View\Collection\Users;
-use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
@@ -42,7 +38,6 @@ use Hilos\Database\Object\Objects;
  * ChatDbContext - App-specific database context ($db layer).
  *
  * @extends HilosDbContext
- * @property-read Users $users
  * @property-read Events $events
  * @property-read EventMessages $eventMessages
  * @property-read EventUserRegistrations $eventUserRegistrations
@@ -101,18 +96,5 @@ final class ChatDbContext extends HilosDbContext
             ModeratorPromptPiecesActions::class,
             ModeratorPromptPieceActions::class,
         );
-    }
-
-    /**
-     * Chat's person chain keeps merged_into until the framework merge table takes it over (HIL-1199).
-     *
-     * @return array<string, FrameworkExtension> Framework keys served by project subclasses
-     */
-    protected function frameworkExtensions(): array
-    {
-        return [
-            ...parent::frameworkExtensions(),
-            self::users => new FrameworkExtension(Users::class, UsersActions::class, UserActions::class),
-        ];
     }
 }

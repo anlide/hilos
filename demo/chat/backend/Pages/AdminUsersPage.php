@@ -11,7 +11,7 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Database\Object\Item\User;
+use Hilos\Database\Object\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;

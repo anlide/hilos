@@ -10,6 +10,7 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Item\NotificationPreference as ObjectNotificationPreference;
 use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
+use Hilos\Database\View\Item\UserMerge;
 use Hilos\Hilos;
 use Hilos\HilosException;
 
@@ -39,6 +40,19 @@ final class FrameworkDataExportSections
             ];
         }
         $writer->section('renames', $renames);
+
+        // Both sides of a merge are the person's: their account folded away, and the accounts
+        // folded into theirs. Null where it is not known - a row carried over without its
+        // moment, a survivor erased since.
+        $merges = [];
+        $foldedAway = Hilos::$db->userMerges[$userId];
+        if ($foldedAway !== null) {
+            $merges[] = self::merge($foldedAway);
+        }
+        foreach (Hilos::$db->userMerges->foldedInto($userId) as $foldedIn) {
+            $merges[] = self::merge($foldedIn);
+        }
+        $writer->section('merges', $merges);
 
         $signInMethods = [];
         foreach ($identities as $identity) {
@@ -138,5 +152,18 @@ final class FrameworkDataExportSections
             'effectiveAt' => DataExportTime::iso($deletion->effectiveAt),
             'canceledAt' => DataExportTime::iso($deletion->canceledAt),
         ]);
+    }
+
+    /**
+     * @param UserMerge $merge One merge the person is a side of
+     * @return array{account: int, into: ?int, at: ?string} Which account was folded, into which, and when
+     */
+    private static function merge(UserMerge $merge): array
+    {
+        return [
+            'account' => $merge->userId,
+            'into' => $merge->survivorUserId,
+            'at' => DataExportTime::iso($merge->mergedAt),
+        ];
     }
 }

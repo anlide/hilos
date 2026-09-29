@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\AdminUser;
 
-use Demo\Chat\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 

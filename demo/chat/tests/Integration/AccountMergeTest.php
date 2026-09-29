@@ -7,10 +7,10 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Database\Actions\Collection\EventMessagesActions;
-use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
-use Demo\Chat\Database\Entity\Item\User as EntityUser;
+use Hilos\Database\Entity\Item\User as EntityUser;
+use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Demo\Chat\Hilos;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -34,7 +34,7 @@ use Hilos\Utils\Helpers\RandomHelper;
  * The merge absorbs a loser account into a survivor in ONE database transaction: the
  * framework identity re-point ({@see Identities::rePointToUser()}), the demo
  * message re-point ({@see EventMessagesActions::rePointAuthor()}),
- * and the loser tombstone ({@see UserActions::tombstone()}).
+ * and the loser tombstone - a row of the framework merge table and its block flag (HIL-1199).
  * Coverage: the happy path moves both content kinds and tombstones the loser; the
  * validation guards reject a self/unknown/already-merged merge before any write;
  * and a failure of a later transaction step rolls the whole merge back, so the
@@ -42,9 +42,8 @@ use Hilos\Utils\Helpers\RandomHelper;
  *
  * It is driven at the SESSIONS LIBRARY since HIL-729, over the operator command that is one
  * of its two ways in: the transaction and the forced sign-out are the framework's, and what
- * this demo still answers is the pair of seams on
- * {@see SessionsLibraryAgent::assertMergeable()} and
- * {@see SessionsLibraryAgent::applyAccountMerge()}. A refusal is therefore read off the
+ * this demo still answers is the seam {@see SessionsLibraryAgent::applyAccountMerge()} - whether
+ * two accounts may be merged is the framework's since HIL-1199. A refusal is therefore read off the
  * command reply rather than caught - the handler answers the parked operator instead of
  * letting the failure reach the worker loop - which pins the sentence the operator sees.
  *
@@ -82,7 +81,7 @@ final class AccountMergeTest extends IntegrationTestCase
 
     /**
      * A merge re-points the loser's identities and messages to the survivor and
-     * tombstones the loser (merged_into = survivor + blocked).
+     * tombstones the loser (a merge row into the survivor + blocked).
      *
      * @throws HilosException When setup or the merge fails
      */
@@ -115,16 +114,15 @@ final class AccountMergeTest extends IntegrationTestCase
         $this->assertCount(0, EntityEventMessage::get([EntityEventMessage::author_user_id => $loserId]));
         $this->assertCount(1, EntityEventMessage::get([EntityEventMessage::author_user_id => $survivorId]));
 
-        $loser = Hilos::$db->users[$loserId];
-        $this->assertSame($survivorId, $loser?->mergedInto);
-        $this->assertTrue($loser?->block);
+        $this->assertSame($survivorId, Hilos::$db->userMerges[$loserId]?->survivorUserId);
+        $this->assertTrue(Hilos::$db->users[$loserId]?->block);
     }
 
     /**
      * A merged administrator stays out of the administrators' circle once an administrator lifts
      * the block the merge left: the row still says admin, and the person it named is the
-     * survivor now. The chat narrows the framework's circle this way until the merge has a
-     * framework table of its own (HIL-1199).
+     * survivor now. The framework's circle leaves a merged account out by its merge table
+     * (HIL-1199).
      *
      * @throws HilosException When setup or the merge fails
      */
@@ -170,7 +168,7 @@ final class AccountMergeTest extends IntegrationTestCase
     }
 
     /**
-     * Merging an already-tombstoned loser is rejected before any write.
+     * Merging an already-merged loser is rejected before any write.
      *
      * @throws HilosException When setup or the first merge fails
      */
@@ -223,8 +221,8 @@ final class AccountMergeTest extends IntegrationTestCase
 
         $this->assertCount(1, EntityEventMessage::get([EntityEventMessage::author_user_id => $loserId]));
 
-        $loser = EntityUser::get([EntityUser::id => $loserId])->first();
-        $this->assertNull($loser?->merged_into);
+        $this->assertCount(0, EntityUserMerge::get([EntityUserMerge::user_id => $loserId]));
+        $this->assertFalse(EntityUser::get([EntityUser::id => $loserId])->first()?->block);
     }
 
     /**

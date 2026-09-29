@@ -431,6 +431,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             . "JSON files contain your account's records. Dates are ISO 8601 in UTC.\n"
             . "account: account number and the first sign-in method's creation date.\n"
             . "renames: each change of your name - from, to and when.\n"
+            . "merges: accounts folded into yours, or yours into another - which, into which and when.\n"
             . "sign_in_methods: sign-in methods without secrets. passkeys: device names and dates.\n"
             . "sessions: your sessions and devices. second_factor: status and remaining backup-code count.\n"
             . "notifications and notification_preferences: your messages and channel choices, when enabled.\n"

@@ -17,8 +17,9 @@ writing a verdict.
   and the rest of backup activation:
   `docs/agents/architecture/admin-feature-scaffold.md`
 - What a migration obliges: `docs/agents/orm/migrations.md`
-- The worked verdicts: `demo/chat/backend/Database/Entity/Item/User.php` and the
-  framework's own Entities; for tables with no Entity,
+- The worked verdicts: the framework's own Entities
+  (`framework/backend/Database/Entity/Item/User.php` among them) and a project's,
+  `demo/chat/backend/Database/Entity/Item/EventMessage.php`; for tables with no Entity,
   `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php`
 - The test every project with backup keeps:
   `demo/chat/tests/Integration/PiiRegistryCoverageTest.php`

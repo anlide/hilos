@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Collection;
 
 use Hilos\HilosException;
-use Demo\Chat\Database\View\Collection\Users as DbUsers;
+use Hilos\Database\View\Collection\Users as DbUsers;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;

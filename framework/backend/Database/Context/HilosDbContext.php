@@ -38,6 +38,7 @@ use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFacto
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
+use Hilos\Database\View\Collection\UserMerges as DbCollectionUserMerges;
 use Hilos\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Users\AdminAudience;
@@ -60,6 +61,7 @@ use Hilos\Database\Actions\Collection\SecondFactorTrustsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
+use Hilos\Database\Actions\Collection\UserMergesActions;
 use Hilos\Database\Actions\Collection\UserRenamesActions;
 use Hilos\Database\Actions\Collection\UsersActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
@@ -98,6 +100,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionSessions $sessions
  * @property-read DbCollectionUsers $users
  * @property-read DbCollectionUserRenames $userRenames
+ * @property-read DbCollectionUserMerges $userMerges
  * @property-read DbCollectionNotifications $notifications
  * @property-read DbCollectionNotificationDeliveries $notificationDeliveries
  * @property-read DbCollectionNotificationPreferences $notificationPreferences
@@ -135,6 +138,8 @@ abstract class HilosDbContext extends DbContext
     public const string user = 'user';
     public const string userRenames = 'userRenames';
     public const string userRename = 'userRename';
+    public const string userMerges = 'userMerges';
+    public const string userMerge = 'userMerge';
     public const string notifications = 'notifications';
     public const string notification = 'notification';
     public const string notificationDeliveries = 'notificationDeliveries';
@@ -239,7 +244,9 @@ abstract class HilosDbContext extends DbContext
      * People load by key when a session, page or library asks for a person. A question about
      * everyone uses DbCollectionUsers::listAll(); mounting users stays inert where nobody signs in.
      * Their rename journal (HIL-1195) loads by row id and by the renamed person, and stays inert
-     * where nobody is renamed, so a project without hilos_user_rename never reads it.
+     * where nobody is renamed, so a project without hilos_user_rename never reads it. Their
+     * merges (HIL-1199) load by the folded account, and "is this account merged" is asked
+     * wherever "who is an administrator" is - see processWideReadCollections().
      *
      * A project's own chain over a framework table is mounted here too, under the framework's
      * key: the declarations of {@see self::frameworkExtensions()} are read once, and each key is
@@ -415,6 +422,12 @@ abstract class HilosDbContext extends DbContext
             DbCollectionUserRenames::class,
             UserRenamesActions::class,
         );
+        $this->mountFramework(
+            self::userMerges,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionUserMerges::class,
+            UserMergesActions::class,
+        );
 
         $unknown = array_keys(array_diff_key($this->declaredExtensions, $this->frameworkChains));
         if ($unknown !== []) {
@@ -472,7 +485,7 @@ abstract class HilosDbContext extends DbContext
     /**
      * Names the framework collections read from any process at all.
      *
-     * Seven, and each for its own seam. Sessions and identities answer "whose session is this",
+     * Eight, and each for its own seam. Sessions and identities answer "whose session is this",
      * which {@see SessionCarrier} asks in every process a frame arrives in - outside any agent
      * and before any page subscription, so nothing else declares them. Settings is read by seams
      * everywhere and is the one eager collection of the three, so a worker holding it unaddressed
@@ -505,6 +518,9 @@ abstract class HilosDbContext extends DbContext
      * handshake's identity ({@see AbstractAgent::handshakeIdentity()}) is built in the agent that
      * holds the sockets; and the administrators' circle ({@see AdminAudience}) is asked by whatever
      * has to reach them. The collection loads by key, so the entry stays inert where nobody signs in.
+     * The merges of people (HIL-1199) are read beside them for the same reason: a folded account
+     * is refused rights and a block, and left out of the administrators' circle, wherever those
+     * are asked. They load by the folded account and stay inert where nobody was ever merged.
      *
      * Named rather than counted: what is here is what the framework is known to read that way,
      * and a seam this list forgets shows up as a refused read rather than as a stale row.
@@ -522,6 +538,7 @@ abstract class HilosDbContext extends DbContext
             self::oauthProviders,
             self::verifierCircle,
             self::users,
+            self::userMerges,
         ];
     }
 

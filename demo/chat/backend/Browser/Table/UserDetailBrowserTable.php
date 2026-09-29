@@ -7,7 +7,7 @@ namespace Demo\Chat\Browser\Table;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
-use Demo\Chat\Database\Object\Item\User;
+use Hilos\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Constants\HilosPageRouteParams;

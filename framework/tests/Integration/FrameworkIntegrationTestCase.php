@@ -54,6 +54,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         HilosDbContext::accountDeletions,
         HilosDbContext::legalAcceptances,
         HilosDbContext::dataExports,
+        HilosDbContext::userMerges,
     ];
 
     /**

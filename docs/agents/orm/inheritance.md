@@ -30,11 +30,10 @@ is the framework base and the project adds its hooks
 cannot be skipped*) — and the class swapped through a facade constant
 (`Hilos::ADMIN_AUDIENCE`, read through `static::appClass()`).
 
-The first live consumers: the chat demo's subclass of the framework's person
-table keeps `merged_into` on it (`demo/chat/backend/Database/Entity/Item/User.php`)
-until the merge tombstone table takes it over (HIL-1199); the chat demo's rename
-journal is a
-subclass of the framework's rename journal (not in the code yet — HIL-1196).
+The first live consumer: the chat demo's rename journal is a subclass of the
+framework's rename journal (not in the code yet — HIL-1196). The chat demo's
+subclass of the person table, which kept `merged_into` on it, left when the
+merge table took the fact over (HIL-1199).
 
 ## The Whole Chain
 

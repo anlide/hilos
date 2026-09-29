@@ -191,6 +191,51 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     }
 
     /**
+     * An account folded into another one is erased too - its deletion was asked for before the
+     * merge - and its merge row goes before the project deletes the person's row, which the row
+     * would otherwise hold (HIL-1199).
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testErasingAFoldedAccountTakesItsMergeRow(): void
+    {
+        self::seedPersonRows();
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        self::seedMerge(self::USER_ID, self::NEIGHBOUR_ID);
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+
+        $agent = $this->runSweep(deletesPerson: true);
+
+        self::assertSame([self::USER_ID], $agent->erased);
+        self::assertSame(0, self::rowsOf('hilos_user_merge', self::USER_ID));
+        self::assertFalse(self::personExists(self::USER_ID));
+        self::assertTrue(self::personExists(self::NEIGHBOUR_ID));
+    }
+
+    /**
+     * Erasing the account others were folded into leaves them folded, with nobody to point at.
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testErasingTheSurvivorLeavesTheFoldedAccountFolded(): void
+    {
+        self::seedPersonRows();
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        self::seedMerge(self::NEIGHBOUR_ID, self::USER_ID);
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+
+        $agent = $this->runSweep(deletesPerson: true);
+
+        self::assertSame([self::USER_ID], $agent->erased);
+        self::assertFalse(self::personExists(self::USER_ID));
+        self::assertSame(1, self::rowsOf('hilos_user_merge', self::NEIGHBOUR_ID), 'The folded account stays folded');
+        Database::sql('SELECT `survivor_user_id` FROM `hilos_user_merge` WHERE `user_id` = ?', [self::NEIGHBOUR_ID]);
+        $row = Database::row();
+        self::assertNotNull($row);
+        self::assertNull($row['survivor_user_id']);
+    }
+
+    /**
      * A failure of the project's seam rolls every row back, and the request stays due.
      *
      * @throws HilosException When seeding or the sweep fails
@@ -414,13 +459,15 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
      * Arms and runs the session holder's tick once.
      *
      * @param bool $failing Whether the project's seam refuses
+     * @param bool $deletesPerson Whether the project's seam deletes the person's row, the way a project does
      * @return AccountErasureTestAgent The holder that ran
      * @throws HilosException When the tick fails
      */
-    private function runSweep(bool $failing = false): AccountErasureTestAgent
+    private function runSweep(bool $failing = false, bool $deletesPerson = false): AccountErasureTestAgent
     {
         $agent = new AccountErasureTestAgent();
         $agent->failing = $failing;
+        $agent->deletesPerson = $deletesPerson;
         $agent->onStart();
         $agent->onTick();
 
@@ -522,6 +569,47 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         Database::sql("SELECT COUNT(*) AS `count` FROM `{$table}` WHERE `user_id` = ?", [$userId]);
 
         return (int)(Database::row()['count'] ?? 0);
+    }
+
+    /**
+     * Inserts the person's and the neighbour's rows of the person table, which only the merge
+     * table holds a key onto.
+     *
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedPersonRows(): void
+    {
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Person'), (?, 'Neighbour')",
+            [self::USER_ID, self::NEIGHBOUR_ID],
+        );
+    }
+
+    /**
+     * Folds one account into another past every action, the way an earlier merge left it.
+     *
+     * @param int $userId Folded account
+     * @param int $survivorUserId Account it was folded into
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedMerge(int $userId, int $survivorUserId): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+            [$userId, $survivorUserId, self::CREATED_AT],
+        );
+    }
+
+    /**
+     * @param int $userId Person
+     * @return bool Whether the person table still holds the person's row
+     * @throws DatabaseException When the query fails
+     */
+    private static function personExists(int $userId): bool
+    {
+        Database::sql('SELECT `id` FROM `hilos_user` WHERE `id` = ?', [$userId]);
+
+        return Database::row() !== null;
     }
 
     /**
@@ -639,6 +727,9 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
     /** Whether the seam refuses, to prove the rollback. */
     public bool $failing = false;
 
+    /** Whether the seam deletes the person's row, the way a project does after its own rows. */
+    public bool $deletesPerson = false;
+
     /** @var list<int> People whose project rows the seam was asked to delete */
     public array $erased = [];
 
@@ -650,6 +741,7 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
      * @param int $userId Person whose account is being erased
      * @return AccountErasure Nothing of a project, and no files
      * @throws ValidationException When the case asks the seam to refuse
+     * @throws DatabaseException When the person's row cannot be deleted
      */
     protected function applyAccountErasure(int $userId): AccountErasure
     {
@@ -657,6 +749,9 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
             throw new ValidationException('The project refused the erasure');
         }
         $this->erased[] = $userId;
+        if ($this->deletesPerson) {
+            Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        }
 
         return new AccountErasure(['projectRows' => 1], []);
     }

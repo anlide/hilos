@@ -8,6 +8,7 @@ use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Demo\Chat\Database\Entity\Collection\EventMessages as EntityEventMessages;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
+use Hilos\Database\Entity\Item\User;
 
 /**
  * EventMessage - Entity representing event_message table row.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -19,7 +20,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 
 /**
- * The person as the framework's users library creates, names and guards it (HIL-1194).
+ * The person as the framework's users library creates, names and guards it (HIL-1194, HIL-1199).
  *
  * The library under test is the base class with nothing overridden, so what answers is the
  * framework's own body over `hilos_user`, and no project stands between the two. Every write
@@ -121,6 +122,39 @@ final class UsersLibraryPersonIntegrationTest extends HilosSessionIntegrationTes
         $this->expectExceptionMessage('Remove the admin rights first');
 
         $this->library->assertMayDelete($adminId);
+    }
+
+    /**
+     * An account folded into another one is not scheduled for deletion by an administrator; an
+     * administrator that was folded is refused as an administrator first.
+     *
+     * @throws HilosException When a fixture row cannot be written or the check cannot read it
+     */
+    public function testRefusesToDeleteAMergedAccountAfterAnAdministrator(): void
+    {
+        $survivorId = self::seedPerson('Survivor', admin: false);
+        $foldedId = self::seedPerson('Folded', admin: false);
+        $foldedAdminId = self::seedPerson('Folded root', admin: true);
+        foreach ([$foldedId, $foldedAdminId] as $userId) {
+            Database::sqlRun(
+                'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
+                [$userId, $survivorId],
+            );
+        }
+
+        foreach ([
+            $foldedId => AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE,
+            $foldedAdminId => 'Remove the admin rights first',
+        ] as $userId => $refusal) {
+            try {
+                $this->library->assertMayDelete($userId);
+                self::fail('A merged account must not be scheduled for deletion');
+            } catch (ValidationException $e) {
+                self::assertSame($refusal, $e->getMessage());
+            }
+        }
+
+        $this->library->assertMayDelete($survivorId);
     }
 
     /**

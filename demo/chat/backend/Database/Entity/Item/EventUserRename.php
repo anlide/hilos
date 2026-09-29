@@ -8,6 +8,7 @@ use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Demo\Chat\Database\Entity\Collection\EventUserRenames as EntityEventUserRenames;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
+use Hilos\Database\Entity\Item\User;
 
 /**
  * EventUserRename - Entity representing event_user_rename table row.

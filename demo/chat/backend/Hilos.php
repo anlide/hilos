@@ -172,7 +172,6 @@ use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosMergeCandidatesTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
-use Demo\Chat\Users\ChatAdminAudience;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\AuthCodeAgentDaemon;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
@@ -283,8 +282,6 @@ final class Hilos extends HilosFacade
     protected const string STEP_UP_OPERATION_DIRECTORY = ChatStepUpOperationDirectory::class;
 
     protected const string OAUTH_PROVIDER_DIRECTORY = ChatOAuthProviderDirectory::class;
-
-    protected const string ADMIN_AUDIENCE = ChatAdminAudience::class;
 
     protected const array FEATURES = [
         HilosFeature::SETTINGS,

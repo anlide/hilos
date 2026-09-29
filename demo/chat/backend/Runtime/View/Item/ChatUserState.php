@@ -8,7 +8,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\DatabaseException;
 use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Database\View\Item\User;
+use Hilos\Database\View\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
 use Demo\Chat\Runtime\View\Actions\Item\ChatUserStateActions;

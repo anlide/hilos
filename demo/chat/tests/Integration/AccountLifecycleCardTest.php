@@ -128,7 +128,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
 
     public function testAMergedAccountCannotBeUnblockedOrGrantedRights(): void
     {
-        Hilos::$db->users[$this->userId]->actions->tombstone($this->adminId);
+        $this->fold($this->userId, $this->adminId);
         self::assertSame('This account was merged into another one', $this->block($this->userId, false)->error);
         self::assertSame('This account was merged into another one', $this->rights($this->userId, true)->error);
         self::assertTrue(Hilos::$db->users[$this->userId]->block);
@@ -140,7 +140,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         Hilos::$db->users[$this->userId]->actions->setAdmin(true);
         self::assertSame('Remove the admin rights first', $this->deletion($this->userId)->error);
         $mergedId = (int) Hilos::$db->users->actions->createWithName('Folded')->id;
-        Hilos::$db->users[$mergedId]->actions->tombstone($this->adminId);
+        $this->fold($mergedId, $this->adminId);
         self::assertSame('This account was merged into another one', $this->deletion($mergedId)->error);
         self::assertNull(Hilos::$db->accountDeletions->liveOf($this->userId));
         self::assertNull(Hilos::$db->accountDeletions->liveOf($mergedId));
@@ -273,6 +273,19 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         self::assertSame($request->action, $reply->action);
 
         return $reply;
+    }
+
+    /**
+     * Folds one account into another the way a merge leaves it: a merge row, then the sign-in closed.
+     *
+     * @param int $userId Folded account
+     * @param int $survivorUserId Account it is folded into
+     * @throws HilosException When either write fails
+     */
+    private function fold(int $userId, int $survivorUserId): void
+    {
+        Hilos::$db->userMerges->actions->add($userId, $survivorUserId);
+        Hilos::$db->users[$userId]->actions->setBlock(true);
     }
 }
 

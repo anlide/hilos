@@ -13,7 +13,8 @@ use Demo\Chat\Database\Entity\Item\EventAttachment as EntityEventAttachment;
 use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration as EntityEventUserRegistration;
 use Demo\Chat\Database\Entity\Item\EventUserRename as EntityEventUserRename;
-use Demo\Chat\Database\Entity\Item\User as EntityUser;
+use Hilos\Database\Entity\Item\User as EntityUser;
+use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Demo\Chat\Hilos;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -103,6 +104,61 @@ final class AccountErasureTest extends IntegrationTestCase
 
         Database::sql('SELECT `completed_at` FROM `hilos_account_deletion` WHERE `user_id` = ?', [$personId]);
         self::assertNotNull(Database::row()['completed_at'] ?? null, 'The request stays behind, carried out');
+    }
+
+    /**
+     * An account folded into another one is erased whole - its deletion was asked for before the
+     * merge - and the framework takes its merge row before the chat deletes the person's row,
+     * which the merge row would hold (HIL-1199).
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testErasingAFoldedAccountTakesItsMergeRow(): void
+    {
+        $foldedId = (int)Hilos::$db->users->actions->createWithName('Folded and leaving')->id;
+        $survivorId = (int)Hilos::$db->users->actions->createWithName('Survivor')->id;
+        Hilos::$db->userMerges->actions->add($foldedId, $survivorId);
+        Hilos::$db->users[$foldedId]->actions->setBlock(true);
+        $this->requestDueDeletion($foldedId);
+
+        $this->runErasure();
+
+        self::assertCount(0, EntityUser::get([EntityUser::id => $foldedId]), 'The folded account is gone');
+        self::assertCount(0, EntityUserMerge::get([EntityUserMerge::user_id => $foldedId]), 'Its merge row is gone');
+        self::assertCount(1, EntityUser::get([EntityUser::id => $survivorId]));
+    }
+
+    /**
+     * Erasing the account others were folded into leaves them folded, with nobody to point at.
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testErasingTheSurvivorLeavesTheFoldedAccountFolded(): void
+    {
+        $survivorId = (int)Hilos::$db->users->actions->createWithName('Survivor and leaving')->id;
+        $foldedId = (int)Hilos::$db->users->actions->createWithName('Folded')->id;
+        Hilos::$db->userMerges->actions->add($foldedId, $survivorId);
+        Hilos::$db->users[$foldedId]->actions->setBlock(true);
+        $this->requestDueDeletion($survivorId);
+
+        $this->runErasure();
+
+        self::assertCount(0, EntityUser::get([EntityUser::id => $survivorId]), 'The survivor is gone');
+        $merge = EntityUserMerge::get([EntityUserMerge::user_id => $foldedId])->first();
+        self::assertNotNull($merge, 'The folded account stays folded');
+        self::assertNull($merge->survivor_user_id);
+    }
+
+    /**
+     * @param int $userId Person whose deletion is due at once
+     * @throws HilosException When the request cannot be written
+     */
+    private function requestDueDeletion(int $userId): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_account_deletion` (`user_id`, `requested_at`, `effective_at`) VALUES (?, ?, ?)',
+            [$userId, self::PAST, self::PAST],
+        );
     }
 
     /**

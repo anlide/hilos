@@ -254,26 +254,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     }
 
     /**
-     * Refuses a merged account beside what the framework refuses.
-     *
-     * The framework's check runs first - a missing account, an administrator - and only a
-     * person who passed it is asked whether they were folded into another account.
-     *
-     * @param int $userId Account to schedule for deletion
-     * @throws ItemNotFoundForUpdateException When the account does not exist
-     * @throws ValidationException When the account is an administrator or was merged into another one
-     * @throws HilosException When the account cannot be read
-     */
-    protected function assertAdministratorMayDelete(int $userId): void
-    {
-        parent::assertAdministratorMayDelete($userId);
-        // TODO(HIL-1199): the merge table takes this refusal over, and this override goes.
-        if (Hilos::$db->users[$userId]->mergedInto !== null) {
-            throw new ValidationException('This account was merged into another one');
-        }
-    }
-
-    /**
      * Writes the rename and its log line, or says why neither happened.
      *
      * @param AdminRenameSignalData $rename Whom to rename, to what, and on whose word

@@ -16,9 +16,11 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
+use Hilos\Users\AdminAudience;
 
 /**
- * The person as the framework's sessions library mints, flags, blocks and judges it (HIL-1197).
+ * The person as the framework's sessions library mints, flags, blocks and judges it (HIL-1197),
+ * and an account folded into another one as it refuses it (HIL-1199).
  *
  * The library under test is the base class with nothing overridden, so what answers is the
  * framework's own body over `hilos_user`, and no project stands between the two. Every write
@@ -148,6 +150,76 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     }
 
     /**
+     * An account folded into another one gets no rights and loses none: both ways are refused
+     * before the write, and the flag stays as it was.
+     *
+     * @throws HilosException When a fixture row cannot be written or the flag cannot be read
+     */
+    public function testRefusesTheAdminFlagOfAMergedAccountBothWays(): void
+    {
+        $survivorId = self::seedPerson('Survivor', admin: false, block: false);
+        $plainId = self::seedPerson('Plain', admin: false, block: true);
+        $adminId = self::seedPerson('Admin', admin: true, block: true);
+        self::seedMerge($plainId, $survivorId);
+        self::seedMerge($adminId, $survivorId);
+
+        foreach ([[$plainId, true], [$adminId, false]] as [$userId, $admin]) {
+            try {
+                $this->inLibrary(fn () => $this->library->grant($userId, $admin));
+                self::fail('A merged account must not have its rights changed');
+            } catch (ValidationException $e) {
+                self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $e->getMessage());
+            }
+        }
+
+        self::assertSame(0, (int)self::personRow($plainId)['admin']);
+        self::assertSame(1, (int)self::personRow($adminId)['admin']);
+    }
+
+    /**
+     * An account folded into another one is neither blocked nor unblocked by an administrator:
+     * the merge closed its sign-in, and that is not a block to lift.
+     *
+     * @throws HilosException When a fixture row cannot be written or the flag cannot be read
+     */
+    public function testRefusesTheBlockOfAMergedAccountBothWays(): void
+    {
+        $survivorId = self::seedPerson('Survivor', admin: false, block: false);
+        $closedId = self::seedPerson('Closed', admin: false, block: true);
+        $reopenedId = self::seedPerson('Reopened', admin: false, block: false);
+        self::seedMerge($closedId, $survivorId);
+        self::seedMerge($reopenedId, $survivorId);
+
+        foreach ([[$closedId, false], [$reopenedId, true]] as [$userId, $block]) {
+            try {
+                $this->inLibrary(fn () => $this->library->block($userId, $block));
+                self::fail('A merged account must not have its block changed');
+            } catch (ValidationException $e) {
+                self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $e->getMessage());
+            }
+        }
+
+        self::assertSame(1, (int)self::personRow($closedId)['block']);
+        self::assertSame(0, (int)self::personRow($reopenedId)['block']);
+    }
+
+    /**
+     * A merged administrator is out of the administrators' circle even with its block lifted
+     * past the library - who administers the installation does not follow that flag alone.
+     *
+     * @throws HilosException When a fixture row cannot be written or the circle cannot be read
+     */
+    public function testLeavesAMergedAdministratorOutOfTheCircle(): void
+    {
+        $adminId = self::seedPerson('Root', admin: true, block: false);
+        $mergedId = self::seedPerson('Folded root', admin: true, block: false);
+        self::seedPerson('Blocked root', admin: true, block: true);
+        self::seedMerge($mergedId, $adminId);
+
+        self::assertSame([$adminId], AdminAudience::all());
+    }
+
+    /**
      * @throws HilosException When a fixture row cannot be written or the check cannot read it
      */
     public function testLetsAnAdministratorTakeAnExistingPersonOver(): void
@@ -247,6 +319,21 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
         self::assertNotNull($row);
 
         return $row;
+    }
+
+    /**
+     * Folds one account into another past every action, the way an earlier merge left it.
+     *
+     * @param int $userId Folded account
+     * @param int $survivorUserId Account it was folded into
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedMerge(int $userId, int $survivorUserId): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
+            [$userId, $survivorUserId],
+        );
     }
 
     /**

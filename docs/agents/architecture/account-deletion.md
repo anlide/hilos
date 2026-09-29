@@ -66,9 +66,15 @@ transaction:
 1. the request is marked carried out; lost to a cancel — rolled back, nothing
    touched;
 2. the framework's rows of the person go: device keys before ways in, codes,
-   the second factor whole, operation confirmations;
+   the second factor whole, operation confirmations, legal acceptances, and the
+   person's merge row when the account was folded into another one — its
+   deletion may have been asked for before the merge (HIL-1199);
 3. the project's seam `applyAccountErasure(int $userId): AccountErasure` deletes
    the project's rows.
+
+The accounts folded INTO the person need nothing here: their merge rows stay,
+the database clears the survivor when the person's row goes, and they stay
+folded ([people-table.md](people-table.md), *A Merged Account*).
 
 Any failure rolls all of it back; the request stays live and due, and the next
 minute tries again. Half an erased account never exists.
@@ -97,13 +103,13 @@ builder checks the retained completed-erasure row before publishing; see
 ## The Project's Seam
 
 `assertAdministratorMayDelete()` judges the admin card's target before
-scheduling. The framework's default refuses an account that does not exist and
-an administrator (`Remove the admin rights first`). A project with a refusal of
-its own overrides it and calls the parent first: the chat refuses a merged
-account, until the merge table takes that refusal over (HIL-1199).
+scheduling. The framework refuses, in this order, an account that does not
+exist, an administrator (`Remove the admin rights first`), and an account folded
+into another one (`This account was merged into another one`, HIL-1199). A
+project with a refusal of its own overrides it and calls the parent first.
 
 `applyAccountErasure()` refuses by default (`NotImplementedException`), like the
-merge's seams: a project that forgot to erase its rows hears it when the first
+merge's seam: a project that forgot to erase its rows hears it when the first
 account falls due. An implementation deletes EVERY row of its own that belongs
 to the person — the person's row last, since the others point at it — because
 that is what a published privacy text promises; where the person is only

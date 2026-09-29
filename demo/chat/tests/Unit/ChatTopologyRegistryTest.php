@@ -1290,8 +1290,9 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testFrameworkExtensionsAreWhole(): void
     {
         // The question the daemon asks first on its start, over this project's context and
-        // without a database: configure() reads nothing. No framework key is extended here yet;
-        // the first chain to be judged is this demo's own over the person table (HIL-1192).
+        // without a database: configure() reads nothing. No framework key is extended here now:
+        // the chain this demo kept over the person table left with its merge column (HIL-1199),
+        // and the next one to be judged is its rename journal (HIL-1196).
         $previous = Hilos::$db;
         try {
             Hilos::$db = new ChatDbContext();

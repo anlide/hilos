@@ -6,7 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\OAuthAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Demo\Chat\Database\Actions\Item\UserActions;
+use Hilos\Database\Actions\Item\UserActions;
 use Demo\Chat\Hilos;
 use Hilos\Auth\OAuth\OAuthUserInfo;
 use Hilos\Constants\HilosSignalConstants;

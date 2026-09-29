@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
-use Demo\Chat\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\AdminUserTableRow;

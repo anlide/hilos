@@ -22,10 +22,10 @@ use Hilos\HilosException;
  *
  * The base answers from the framework's person table: every `hilos_user` row that says admin
  * and is not blocked, by the same flag the page-level gate reads, so a person who can open
- * the admin surface and a person who hears from it are the same person. A process with no
- * database layer has nobody to name and answers with nobody. A project points
- * {@see Hilos::ADMIN_AUDIENCE} at a subclass of its own only when it has something to add -
- * the chat demo leaves out merged accounts until the merge has a table of its own (HIL-1199).
+ * the admin surface and a person who hears from it are the same person - and that was not
+ * folded into another account (HIL-1199). A process with no database layer has nobody to name
+ * and answers with nobody. A project points {@see Hilos::ADMIN_AUDIENCE} at a subclass of its
+ * own only when it has something to add; none of the demos has.
  *
  * Reading the answer means reading storage, so it may well fail; that is why both methods
  * here declare it. Swallowing it into an empty list is refused on purpose - a caller
@@ -36,10 +36,12 @@ use Hilos\HilosException;
 class AdminAudience
 {
     /**
-     * The administrators of this installation: admin, and not blocked.
+     * The administrators of this installation: admin, not blocked, and not merged.
      *
      * A blocked administrator keeps a row that still says admin, and is no reader who can act
-     * on what arrives.
+     * on what arrives. A merged one is asked about by name even though the merge blocked it: the
+     * flag can be lifted by a write past the library, and who administers the installation must
+     * not change with it. It is asked last, so the merge table is read only for administrators.
      *
      * @return list<int> Durable user ids of the unblocked administrators, empty without a database layer
      * @throws DatabaseException When the users cannot be loaded
@@ -54,7 +56,7 @@ class AdminAudience
 
         $userIds = [];
         foreach (Hilos::$db->users->listAll() as $user) {
-            if ($user->id !== null && $user->admin === true && $user->block !== true) {
+            if ($user->id !== null && $user->admin === true && $user->block !== true && Hilos::$db->userMerges[$user->id] === null) {
                 $userIds[] = $user->id;
             }
         }

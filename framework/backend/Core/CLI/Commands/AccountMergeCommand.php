@@ -62,7 +62,7 @@ Description:
   Merge one populated account (the loser) into another (the survivor). Sends the
   command over the daemon command channel; the daemon routes it to the agent that
   answers it, which re-points the loser's sign-in identities and the rows this
-  project keeps for a person, tombstones the loser (merged_into + login closed),
+  project keeps for a person, tombstones the loser (a row in hilos_user_merge + login closed),
   and forces the loser's live sessions to log out. The survivor keeps its own
   profile. The whole transfer runs in one transaction; on any failure nothing is
   written.

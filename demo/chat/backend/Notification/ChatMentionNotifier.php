@@ -98,8 +98,8 @@ final class ChatMentionNotifier
                 $user->id === null
                 || $user->id === $authorUserId
                 || $user->block
-                || $user->mergedInto !== null
                 || !self::isMentioned($message, $user->name)
+                || Hilos::$db->userMerges[$user->id] !== null
             ) {
                 continue;
             }

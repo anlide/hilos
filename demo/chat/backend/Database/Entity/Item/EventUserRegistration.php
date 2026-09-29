@@ -7,6 +7,7 @@ namespace Demo\Chat\Database\Entity\Item;
 use Demo\Chat\Database\Entity\Collection\EventUserRegistrations as EntityEventUserRegistrations;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
+use Hilos\Database\Entity\Item\User;
 
 /**
  * EventUserRegistration - Entity representing event_user_registration table row.

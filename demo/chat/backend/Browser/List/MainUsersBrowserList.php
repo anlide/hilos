@@ -6,7 +6,7 @@ namespace Demo\Chat\Browser\List;
 
 use Demo\Chat\Browser\ChatBrowserList;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Database\Object\Item\User;
+use Hilos\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Core\Browser\Config\BrowserListFieldKey;

@@ -8,7 +8,7 @@ use Demo\Chat\Browser\ChatBrowserData;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
-use Demo\Chat\Database\Object\Item\User;
+use Hilos\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\ChatUserState;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Core\Browser\Config\BrowserDataConfigKey;

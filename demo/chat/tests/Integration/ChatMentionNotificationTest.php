@@ -117,9 +117,10 @@ final class ChatMentionNotificationTest extends IntegrationTestCase
         $author = Hilos::$db->users->actions->createWithName(self::AUTHOR_NAME);
         $survivor = Hilos::$db->users->actions->createWithName('MentionSurvivor557');
         $closed = Hilos::$db->users->actions->createWithName(self::TARGET_NAME);
-        // Tombstoning is the one way an account is closed here: it blocks the row and
-        // points it at the survivor, so this covers both skips the notifier makes.
-        $closed->actions->tombstone((int)$survivor->id);
+        // Folding is the one way an account is closed here: a merge row and the block, the
+        // way the merge leaves it, so this covers both skips the notifier makes.
+        Hilos::$db->userMerges->actions->add((int)$closed->id, (int)$survivor->id);
+        $closed->actions->setBlock(true);
 
         Hilos::$db->events->actions->addMessage(
             'anyone seen @' . self::TARGET_NAME . '?',
