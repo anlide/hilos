@@ -25,6 +25,7 @@ import { type PageRouter } from '../routing/PageRouter.js'
 import {
   bindSessionScope,
   SIGNAL_HANDSHAKE_RESPONSE,
+  sessionAdminViewMode,
   sessionUserId,
   sessionUserIsAdmin,
   type SessionScopeOptions,
@@ -32,6 +33,7 @@ import {
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
 import { bindAccountBlocked } from '../session/accountBlocked.js'
 import { bindAccountStanding } from '../session/accountStanding.js'
+import { bindAdminAccess } from '../session/adminAccess.js'
 import { bindImpersonation } from '../session/impersonation.js'
 import { bindSignOut } from '../session/signOut.js'
 import {
@@ -150,6 +152,11 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // behavior, no option: a project without sign-in never has a person behind
   // its sessions.
   bindSignOut(config.scopes, config.actions, config.session)
+  // The admin gear (HIL-1253) is the shell's as well: what the admin section is
+  // to this browser - full, view or none - is derived from the admin flag and
+  // the node's admin view mode of the same session response. One behavior, no
+  // option: a node without the mode never tells a non-admin there is a way in.
+  bindAdminAccess(config.scopes, config.session)
   // One upload client follows the application connection for its whole life.
   // It uses the same action lifecycle as the shell: another lifecycle on the
   // same connection would mint the same request ids and mix up their replies.
@@ -196,11 +203,15 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // beside the handshake reaction below because both read the same answer.
   // Signing out moves the person on that same answer (HIL-652), which is the
   // second input: the marker falling says "no longer allowed", the identity
-  // going says "no longer anybody", and the two are drawn differently.
+  // going says "no longer anybody", and the two are drawn differently. The
+  // node's admin view mode from that answer is the third (HIL-1253): with it
+  // on, the server answers a lost marker with the view rather than a 403, so the
+  // tab waits for that answer instead of drawing the refusal ahead of it.
   bindAccessReaction(
     hilosRouter,
     sessionUserIsAdmin(config.scopes, config.session),
     sessionUserId(config.scopes, config.session),
+    sessionAdminViewMode(config.scopes),
   )
   // The page subscribe is held until the session answers: the connection's
   // identity is established by the handshake and reaches the other workers on

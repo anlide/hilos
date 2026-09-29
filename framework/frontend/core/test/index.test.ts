@@ -19,6 +19,10 @@ import {
   createHilosConnection,
   bindSessionScope,
   sessionUserName,
+  sessionAdminViewMode,
+  bindAdminAccess,
+  hilosAdminAccess,
+  type HilosAdminAccess,
   SESSION_SIGNAL_SCHEMAS,
   applyServerTime,
   offsetMs,
@@ -83,6 +87,10 @@ it('exports the @hilos/core public surface', () => {
   expect(createHilosConnection).toBeTypeOf('function')
   expect(bindSessionScope).toBeTypeOf('function')
   expect(sessionUserName).toBeTypeOf('function')
+  expect(sessionAdminViewMode).toBeTypeOf('function')
+  expect(bindAdminAccess).toBeTypeOf('function')
+  const access: HilosAdminAccess = hilosAdminAccess.get()
+  expect(access).toBe('none')
   expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
   expect(applyServerTime).toBeTypeOf('function')
   expect(offsetMs).toBeTypeOf('function')

@@ -19,7 +19,7 @@ import type { Component } from 'vue'
 
 import AuthSurface from './auth/AuthSurface.vue'
 import { connection } from './bootstrap/connection'
-import { currentUserIsAdmin, currentUserName } from './bootstrap/session'
+import { currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About.vue'
 import License from './views/License/License.vue'
@@ -53,14 +53,13 @@ const pageSkeletons: Record<string, Component> = {
 }
 
 const userName = useSignal(currentUserName)
-const isAdmin = useSignal(currentUserIsAdmin)
 // The standing mark by the avatar (HIL-945): a takeover, or the session's own
 // scheduled deletion, in the color of the strip that says it in words.
 const avatarMark = useSignal(hilosSessionAvatarMark)
 </script>
 
 <template>
-  <HilosLayout :connection="connection" :is-admin="isAdmin">
+  <HilosLayout :connection="connection">
     <template #brand>
       <i class="bi bi-currency-bitcoin" aria-hidden="true"></i>
       <!-- The name folds down to the icon on a narrow screen and stays the

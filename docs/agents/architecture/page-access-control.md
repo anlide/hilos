@@ -465,19 +465,23 @@ The marker states surface type; the closure is the page class's own
 [admin-features.md](admin-features.md#closing-a-projects-own-admin-page).
 
 **The frontend reacts ahead, the server's answer rules.** `bindAccessReaction`
-watches two facts the handshake response carries — the admin marker and the person
-— and splits on which of them moved:
+watches three facts the handshake response carries — the admin marker, the person,
+and the node's admin view mode — and splits on which of the first two moved:
 
 - **the marker falls, the identity stands:** draw the 403 and drop the page data at
   once, on an administrative route. Stale privileged rows must not survive one
-  frame while the server's verdict is on the wire.
+  frame while the server's verdict is on the wire. With the admin view mode on,
+  drop the page data and wait instead, drawing nothing: the server answers with the
+  view of the page, not a 403
+  ([admin-view-mode.md](admin-view-mode.md), *The Browser Side*).
 - **the identity goes** (HIL-652), on an administrative route: drop the page data
   and wait for the answer, drawing nothing. 403 says "not for you", while the true
   answer for somebody who just signed out is the 401 invitation the server is
   already sending — and drawing a verdict known to be wrong while the right one is
   in flight buys nothing.
 - **the marker is gained** while a 403 is displayed: return the page to its
-  just-navigated state.
+  just-navigated state. With the admin view mode on and no error displayed — the
+  person was looking at the view — drop the view and wait for the full page.
 - **anything else,** including every non-administrative route: no reaction at all.
   There is no "needs a signed-in visitor" marker, so /profile and a guarded project
   page are closed by the server's answer alone.

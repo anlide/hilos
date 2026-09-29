@@ -46,8 +46,12 @@ export async function signUpAdmin(page: Page): Promise<number> {
   // not the same as this browser knowing about it. The daemon re-sends the
   // handshake response to the granted user's live connections, and the shell
   // draws the admin entry from it — so the gear appearing is the proof that the
-  // grant reached this page, rather than merely the server.
-  await expect(page.getByTestId('nav-admin')).toBeVisible()
+  // grant reached this page, rather than merely the server. Under the admin view
+  // mode the gear is drawn before the grant too, so the proof is its full mark.
+  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+    'data-access',
+    'full',
+  )
 
   return userId
 }

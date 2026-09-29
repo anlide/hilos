@@ -246,7 +246,12 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   session (`hilosSignedIn`, bound by `bootHilos`) and runs it as a tracked
   `hilos_logout` answered behind the anonymous identity (HIL-1063). A project
   mounts nothing for it; its user region carries only its own controls (the
-  bell, the profile link, a guest's Sign in). The banner region carries the
+  bell, the profile link, a guest's Sign in). The admin gear is the SDK's the
+  same way: it is drawn from the session (`hilosAdminAccess`, bound by
+  `bootHilos`) for an admin and, in the admin view mode, for a viewer, and the
+  project passes nothing (HIL-1253) — in Vue; the React and Angular shells still
+  take an `isAdmin` prop from the project (not in the code yet — HIL-1271),
+  (not in the code yet — HIL-1272). The banner region carries the
   framework's own strips first: protected mode, then impersonation, which the
   SDK draws from the session (`hilosImpersonation`, bound by `bootHilos`) and
   whose Stop is a tracked action answered behind the restored identity

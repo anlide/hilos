@@ -100,6 +100,14 @@ const ACCOUNT_BLOCKED_KEY = 'accountBlocked'
 const ACCOUNT_STANDING_KEY = 'accountStanding'
 
 /**
+ * Plain session-scope key carrying the node's admin view mode (HIL-1253);
+ * written by every handshake, no live frame — the mode does not change under a
+ * living process, and the stand lever's flip reaches a tab on its next
+ * handshake.
+ */
+const ADMIN_VIEW_MODE_KEY = 'adminViewMode'
+
+/**
  * The settings library, and the OAuth provider page → every connection: the
  * installation's enabled sign-in methods with their readiness, and the passkey
  * policy beside them (HIL-1105), sent after a setting or provider write that
@@ -941,6 +949,25 @@ export function sessionPasskeyAllowsUnproven(
   scopes: ScopeManager,
 ): ReadonlySignal<boolean> {
   const slot = scopes.session.data.signal(PASSKEY_ALLOWS_UNPROVEN_KEY)
+
+  return computedSignal(() => slot.get() === true)
+}
+
+/**
+ * Whether the node this session talks to is in the admin view mode (HIL-1253).
+ *
+ * True only when the last handshake said true — absent before the handshake,
+ * null, missing or anything else reads as off, the same fail-closed default the
+ * admin flag takes: an unknown mode draws no way into the admin section. This
+ * is the node's mode, not "this session is a viewer": who is a viewer is
+ * derived from it and the admin flag together by `hilosAdminAccess`.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionAdminViewMode(
+  scopes: ScopeManager,
+): ReadonlySignal<boolean> {
+  const slot = scopes.session.data.signal(ADMIN_VIEW_MODE_KEY)
 
   return computedSignal(() => slot.get() === true)
 }

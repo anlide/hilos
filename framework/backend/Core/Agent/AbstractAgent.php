@@ -506,8 +506,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * offset against, the registration step the session left unfinished, whether this
      * installation can deliver a one-time code at all, the sign-in methods it offers and
      * whether a passkey may start an account on an unconfirmed address, the success ack
-     * the socket still owes, the "Access closed" card the session holds, and the standing of the
-     * person the session acts as (HIL-486, HIL-422, HIL-830, HIL-427, HIL-1105, HIL-289, HIL-945).
+     * the socket still owes, the "Access closed" card the session holds, the standing of the
+     * person the session acts as, and whether this node is in the admin view mode (HIL-486,
+     * HIL-422, HIL-830, HIL-427, HIL-1105, HIL-289, HIL-945, HIL-1253).
      *
      * It lives here, and every send path goes through it, so that no project can ship a
      * response without the stamp. That guarantee used to come from a final method on the
@@ -542,7 +543,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                 )
                 ->withPendingAck($state->pendingAck)
                 ->withAccountBlocked($state->accountBlocked)
-                ->withAccountStanding($state->accountStanding),
+                ->withAccountStanding($state->accountStanding)
+                ->withAdminViewMode(Hilos::$rt?->hilosAdminViewModeRuntime?->enabled === true),
         );
     }
 

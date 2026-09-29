@@ -5,6 +5,7 @@ import {
   applyServerTime,
   bindAccountBlocked,
   bindAccountStanding,
+  bindAdminAccess,
   formatCalendarDate,
   bindImpersonation,
   bindSessionScope,
@@ -147,6 +148,7 @@ function bindSession() {
   const unbindCard = bindAccountBlocked(scopes, actions, handshakes)
   const unbindStanding = bindAccountStanding(scopes, actions)
   const unbindSignOut = bindSignOut(scopes, actions)
+  const unbindAdminAccess = bindAdminAccess(scopes)
 
   return {
     source,
@@ -155,6 +157,7 @@ function bindSession() {
       unbindCard()
       unbindStanding()
       unbindSignOut()
+      unbindAdminAccess()
     },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
@@ -530,6 +533,112 @@ describe('HilosLayout account standing (HIL-945)', () => {
       expect(strip.find('strong').text()).toBe('Bob')
     },
   )
+})
+
+describe('HilosLayout admin gear', () => {
+  let unbind: (() => void) | undefined
+  let mounted: ReturnType<typeof mountShell> | undefined
+
+  /**
+   * One handshake: who is behind the session, if anybody, and the node's admin
+   * view mode, both as the backend stamps them (HIL-1253).
+   *
+   * @param user The person behind the session, or null for a guest.
+   * @param viewMode The node's admin view mode.
+   */
+  function greeting(
+    user: { id: number; admin: boolean } | null,
+    viewMode: boolean,
+  ): Record<string, unknown> {
+    return {
+      entities: {
+        currentUser: user === null ? null : { ...user, name: 'Olena' },
+      },
+      data: { adminViewMode: viewMode },
+    }
+  }
+
+  function gear(connection: HilosConnection = shellConnection()) {
+    mounted = mountShell(connection)
+
+    return mounted.find('[data-id="nav-admin"]')
+  }
+
+  afterEach(() => {
+    mounted?.unmount()
+    mounted = undefined
+    unbind?.()
+    unbind = undefined
+  })
+
+  it('draws no gear for a guest on a node without the view mode', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting(null, false))
+
+    expect(gear().exists()).toBe(false)
+  })
+
+  it('draws no gear for a signed-in non-admin on a node without the view mode', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting({ id: 7, admin: false }, false))
+
+    expect(gear().exists()).toBe(false)
+  })
+
+  it('draws the full gear for an admin, leading to the dashboard', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting({ id: 7, admin: true }, false))
+    const link = gear()
+
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('data-access')).toBe('full')
+    expect(link.attributes('href')).toBe('/hilos')
+    expect(link.attributes('aria-label')).toBe('Hilos dashboard')
+  })
+
+  it.each([
+    ['a guest', null],
+    ['a signed-in non-admin', { id: 7, admin: false }],
+  ])('draws the view gear for %s on a node in the view mode', (_who, user) => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting(user, true))
+    const link = gear()
+
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('data-access')).toBe('view')
+    expect(link.attributes('href')).toBe('/hilos')
+  })
+
+  it('turns the gear full on a grant and back to view on a revoke, live', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting({ id: 7, admin: false }, true))
+    gear()
+
+    session.handshake(greeting({ id: 7, admin: true }, true))
+    await flushPromises()
+    expect(
+      mounted?.find('[data-id="nav-admin"]').attributes('data-access'),
+    ).toBe('full')
+
+    session.handshake(greeting({ id: 7, admin: false }, true))
+    await flushPromises()
+    expect(
+      mounted?.find('[data-id="nav-admin"]').attributes('data-access'),
+    ).toBe('view')
+  })
+
+  it('draws no gear under the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting(null, true))
+
+    expect(gear(shellConnection(FROZEN)).exists()).toBe(false)
+  })
 })
 
 describe('HilosLayout sign-out', () => {

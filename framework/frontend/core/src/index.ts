@@ -261,6 +261,7 @@ export {
   sessionUserName,
   sessionUserId,
   sessionUserIsAdmin,
+  sessionAdminViewMode,
   sessionImpersonating,
   sessionImpersonatedByName,
   sessionPendingAck,
@@ -341,6 +342,11 @@ export {
   SIGN_OUT_ACTION,
   SIGN_OUT_COPY,
 } from './session/signOut.js'
+export {
+  bindAdminAccess,
+  hilosAdminAccess,
+  type HilosAdminAccess,
+} from './session/adminAccess.js'
 export {
   bindUploads,
   cancelUpload,

@@ -13,9 +13,16 @@
 // known to be wrong, drawn while the right one is in flight. So identity loss
 // waits for the answer instead of guessing at it, and only the rows go.
 //
-// The client never rules on access. It reads two facts it was told — the admin
-// marker and the person on the handshake response — and one thing it knows about
-// itself: the surface type of the route it is standing on.
+// The admin view mode changes the true answer once more (HIL-1253). On a node in
+// the mode a non-admin may look at the admin section, so the server answers a
+// lost marker with the view of the page rather than a 403, and a gained one with
+// the full page where the view was. Drawing a 403 ahead of that would again be a
+// verdict known to be wrong; the tab drops the rows and waits in both directions.
+//
+// The client never rules on access. It reads three facts it was told — the admin
+// marker, the person and the node's admin view mode, all on the handshake
+// response — and one thing it knows about itself: the surface type of the route
+// it is standing on.
 
 import { PAGE_ERROR_NOT_SERVED } from '../protocol/pageError.js'
 import { type HilosRouter } from '../routing/HilosRouter.js'
@@ -39,6 +46,13 @@ const FORBIDDEN = 403
  * sees nothing at all when their flag flips, and is closed by the server's answer
  * alone.
  *
+ * With the node's admin view mode on, the marker moving on an administrative
+ * route draws nothing either way: losing it drops the page data and waits for
+ * the view the server answers with, and gaining it while the page shows no error
+ * — the person was looking — drops the view and waits for the full page. The
+ * mode is read at the moment the marker moves; it lands from the same response,
+ * ahead of the marker, so the two are never read from different frames.
+ *
  * The surface test is the route's own `admin` marker (HIL-615), which states
  * surface TYPE rather than required rights, so it is deliberately not the only
  * defense: a page marked administrative but served at a softer level answers
@@ -52,28 +66,43 @@ const FORBIDDEN = 403
  * @param router The navigator, for the current route and the two page controls.
  * @param isAdmin Whether the session holds the admin privilege; one trigger.
  * @param userId The person behind the session, or `null` for a guest; the other.
+ * @param viewMode Whether the node is in the admin view mode; not a trigger, it
+ *   decides what the marker moving means.
  * @returns Stops the reaction.
  */
 export function bindAccessReaction(
   router: HilosRouter,
   isAdmin: ReadonlySignal<boolean>,
   userId: ReadonlySignal<number | null>,
+  viewMode: ReadonlySignal<boolean>,
 ): Unsubscribe {
   const stopAdmin = subscribeSignal(isAdmin, (admin) => {
-    if (router.pageError.get()?.errorCode === PAGE_ERROR_NOT_SERVED) {
+    const pageError = router.pageError.get()
+    if (pageError?.errorCode === PAGE_ERROR_NOT_SERVED) {
       return
     }
     if (!admin) {
       // Signing out drops both, and both listeners run off the one write. The
       // 403 belongs to the visitor who is still here and may no longer look;
       // for the one who has gone, the identity listener below has the answer.
-      if (userId.get() !== null && router.currentRoute.get().admin) {
+      if (userId.get() === null || !router.currentRoute.get().admin) {
+        return
+      }
+      if (viewMode.get()) {
+        router.awaitPageAnswer()
+      } else {
         router.denyCurrentPage()
       }
 
       return
     }
-    if (router.pageError.get()?.httpCode === FORBIDDEN) {
+    if (pageError?.httpCode === FORBIDDEN) {
+      router.awaitPageAnswer()
+    } else if (
+      viewMode.get() &&
+      router.currentRoute.get().admin &&
+      pageError === null
+    ) {
       router.awaitPageAnswer()
     }
   })

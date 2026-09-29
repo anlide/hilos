@@ -112,6 +112,13 @@ use Hilos\Users\AccountStandingResolver;
  * deletion strip, the impersonation strip's tone and the avatar ring from it, and the freeze
  * screen reads it; the framework stamps it ({@see withAccountStanding()}) for the same reason it
  * stamps the card.
+ *
+ * `adminViewMode` is the node's admin view mode (HIL-1253): whether a non-admin may open the admin
+ * section on this node to look. It is the node's fact, not the session's, and rides every response,
+ * the anonymous one included, because the browser derives what the admin section is to it from this
+ * and the admin flag together, from one frame. Null means the stamp never ran; the surface reads
+ * null, an absent key and anything but true as off - the same fail-closed default the admin flag
+ * takes. The framework stamps it ({@see withAdminViewMode()}) on every send path.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -143,6 +150,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string resetEffectiveAt = 'resetEffectiveAt';
     public const string accountBlocked = 'accountBlocked';
     public const string accountStanding = 'accountStanding';
+    public const string adminViewMode = 'adminViewMode';
 
     /**
      * Creates handshake response signal data.
@@ -180,6 +188,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
      *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
      *     Standing of the person the session acts as ({@see AccountStanding}), or null when it is anonymous
+     * @param ?bool $adminViewMode Whether this node is in the admin view mode, or null before the framework stamp
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -195,6 +204,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?bool $passkeyAllowsUnproven = null,
         public readonly ?array $accountBlocked = null,
         public readonly ?array $accountStanding = null,
+        public readonly ?bool $adminViewMode = null,
     ) {
     }
 
@@ -225,6 +235,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
             accountBlocked: $this->accountBlocked,
             accountStanding: $this->accountStanding,
+            adminViewMode: $this->adminViewMode,
         );
     }
 
@@ -255,6 +266,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
             accountBlocked: $accountBlocked,
             accountStanding: $this->accountStanding,
+            adminViewMode: $this->adminViewMode,
         );
     }
 
@@ -286,6 +298,37 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
             accountBlocked: $this->accountBlocked,
             accountStanding: $accountStanding,
+            adminViewMode: $this->adminViewMode,
+        );
+    }
+
+    /**
+     * Returns the same response carrying the node's admin view mode (HIL-1253).
+     *
+     * Another axis of the stamp: the mode is the node's fact, read from its runtime row, which the
+     * project does not read, so the framework stamps it on every send path - the anonymous response
+     * included, since a guest is the viewer it concerns most - and the project never builds it.
+     *
+     * @param bool $adminViewMode Whether this node is in the admin view mode
+     * @return self The same response carrying that mode
+     */
+    public function withAdminViewMode(bool $adminViewMode): self
+    {
+        return new self(
+            selfId: $this->selfId,
+            selfName: $this->selfName,
+            selfAdmin: $this->selfAdmin,
+            impersonatorId: $this->impersonatorId,
+            impersonatorName: $this->impersonatorName,
+            pendingAck: $this->pendingAck,
+            serverTimeMs: $this->serverTimeMs,
+            pendingAuthStep: $this->pendingAuthStep,
+            codeDelivery: $this->codeDelivery,
+            authMethods: $this->authMethods,
+            passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
+            accountBlocked: $this->accountBlocked,
+            accountStanding: $this->accountStanding,
+            adminViewMode: $adminViewMode,
         );
     }
 
@@ -330,6 +373,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             passkeyAllowsUnproven: $passkeyAllowsUnproven,
             accountBlocked: $this->accountBlocked,
             accountStanding: $this->accountStanding,
+            adminViewMode: $this->adminViewMode,
         );
     }
 
@@ -365,6 +409,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::passkeyAllowsUnproven => $this->passkeyAllowsUnproven,
                 self::accountBlocked => $this->accountBlocked,
                 self::accountStanding => $this->accountStanding,
+                self::adminViewMode => $this->adminViewMode,
             ],
         ];
     }
@@ -384,7 +429,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * make the round trip lossy for exactly the payload the logout path sends. The
      * session context is read on both for the stronger reason: the session halfway
      * through registration or password recovery is anonymous by definition, so the
-     * anonymous branch is the one that carries it.
+     * anonymous branch is the one that carries it. The node's admin view mode is read on both too, and
+     * the anonymous session needs it most: a guest is the viewer the mode opens the admin section to.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
@@ -404,6 +450,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $passkeyAllowsUnproven = self::optionalBool($section, self::passkeyAllowsUnproven);
         $accountBlocked = self::readAccountBlocked($section);
         $accountStanding = self::readAccountStanding($section);
+        $adminViewMode = self::optionalBool($section, self::adminViewMode);
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
@@ -414,6 +461,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 passkeyAllowsUnproven: $passkeyAllowsUnproven,
                 accountBlocked: $accountBlocked,
                 accountStanding: $accountStanding,
+                adminViewMode: $adminViewMode,
             );
         }
 
@@ -431,6 +479,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             passkeyAllowsUnproven: $passkeyAllowsUnproven,
             accountBlocked: $accountBlocked,
             accountStanding: $accountStanding,
+            adminViewMode: $adminViewMode,
         );
     }
 

@@ -64,7 +64,9 @@ rights changed and then not answering the page is half a move: the frontend
 clears the error it is showing and starts waiting for the answer, so a person
 told "something changed" and never answered waits forever. That is what
 `bindAccessReaction` does when the admin marker returns while a 403 is on
-screen — it drops the error and calls `awaitPageAnswer()`. The announcement and
+screen, and, with the admin view mode on, whenever the marker moves on an
+administrative route — it drops what the page showed and calls
+`awaitPageAnswer()`. The announcement and
 the answer are one operation, not two.
 
 ## Two Worked Examples

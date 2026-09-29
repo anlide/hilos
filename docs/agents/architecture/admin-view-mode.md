@@ -38,11 +38,13 @@ session without an account, one case of a viewer rather than another name for
 one. An admin is never a viewer, and the line between the two moves live:
 granting the rights turns a viewer's open pages into the full admin surface,
 and taking them away turns the pages back into the view,
-the browser following in the same movement
-(not in the code yet — HIL-1253) — by the same re-decision that re-sends an
-open page when rights change today
+the browser following in the same movement — by the same re-decision that
+re-sends an open page when rights change today
 ([page-access-control.md](page-access-control.md), *Re-deciding an OPEN page
-when rights change*).
+when rights change*). The browser follows because the session response carries
+the node's mode beside the admin flag, and with the mode on the client's own
+reaction to a moved flag waits for that answer instead of drawing a 403
+(*The Browser Side*).
 
 The mode touches `ADMIN` pages only. `PUBLIC` and `AUTHENTICATED` pages keep
 their own rules — the profile stays the person's own and nobody else's. Roles
@@ -333,13 +335,36 @@ nobody is asked*).
 
 ## The Browser Side
 
-- The browser learns from the server that it is in the mode; the carrier is
-  HIL-1253's (not in the code yet — HIL-1253). The admin gear in the header is
-  shown to a viewer, the admin routes do not refuse one on the client, and a
-  grant or a revoke moves the open tab between the full surface and the view
-  live (not in the code yet — HIL-1253). The client never decides access: what
-  it drew by mistake is overridden by the server's first answer
+- The browser learns the mode from the server. The carrier is the key
+  `adminViewMode` in the data section of the session response
+  (`HandshakeResponseSignalData::withAdminViewMode()`), stamped by
+  `AbstractAgent::sendHandshakeResponse()` on every response, the anonymous
+  one included: a guest is the viewer it concerns most. It is the NODE's mode,
+  not "this connection is a viewer" — the one place that question is asked
+  stays on the server (`BrowserContext::isAdminViewModeViewer()`). The core
+  reads it with `sessionAdminViewMode()`, true only when the server said true.
+- What the admin section is to the browser is derived once, in the core:
+  `hilosAdminAccess` is `'full'` for an admin, `'view'` for a non-admin with
+  the mode on, `'none'` otherwise, bound by `bootHilos` (`bindAdminAccess`)
+  from the admin flag and the mode of the same response. The admin gear, the
+  mode banner and the controls of the mode all read it. The Vue shell draws
+  the gear from it for `full` and `view`, marked `data-access`, and a project
+  passes nothing; in React (not in the code yet — HIL-1271) and Angular
+  (not in the code yet — HIL-1272) the gear is still drawn for an admin only.
+- The admin routes do not refuse a viewer on the client, and a grant or a
+  revoke moves the open tab between the full surface and the view live:
+  `bindAccessReaction` takes the mode as a third input, and with it on a
+  moved admin flag on an administrative route drops the page's rows and waits
+  for the server's answer — the view after a revoke, the full page after a
+  grant — rather than drawing a 403 ahead of it. The client never decides
+  access: what it drew by mistake is overridden by the server's first answer
   ([page-access-control.md](page-access-control.md), *Frontend*).
+- The stand lever's flip is not sent to open tabs: a tab learns the mode on its
+  next handshake. In production the mode does not change under a living
+  process — it is decided at the master's start, and a restart drops every
+  connection — and a broadcast of the flip without re-deciding the open pages
+  would be half a movement
+  ([../signals/screen-invalidation.md](../signals/screen-invalidation.md)).
 - The mode banner stands on every admin screen — framework and project,
   Dashboard included — in the shell's banner strip, beside the protected-mode
   and replacement banners (not in the code yet — HIL-1260).
@@ -405,7 +430,11 @@ framework (HIL-345, after HIL-1270).
 ## Tests
 
 A viewer's e2e runs with the mode on (the lever `test:admin-view-mode on`);
-the scenarios that expect a non-admin to be refused run with it off. How the viewer's e2e is
+the scenarios that expect a non-admin to be refused run with it off. In the chat
+e2e the lever is `setAdminViewMode()`
+(`demo/chat/tests/e2e/helpers/adminViewMode.ts`); it acts on the whole node, so a
+spec that turns it on turns it off in its `afterEach`, and a tab opened before the
+flip is opened again to learn it. How the viewer's e2e is
 laid out across the three frontends is HIL-1273's
 (not in the code yet — HIL-1273).
 

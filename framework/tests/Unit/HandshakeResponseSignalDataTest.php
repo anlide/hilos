@@ -114,6 +114,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
                     'accountStanding' => null,
+                    'adminViewMode' => null,
                 ],
             ],
             $data->toArray(),
@@ -150,6 +151,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
                     'accountStanding' => null,
+                    'adminViewMode' => null,
                 ],
             ],
             $data->toArray(),
@@ -197,6 +199,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'passkeyAllowsUnproven' => null,
                     'accountBlocked' => null,
                     'accountStanding' => null,
+                    'adminViewMode' => null,
                 ],
             ],
             $data->toArray(),
@@ -236,6 +239,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'passkeyAllowsUnproven' => null,
                 'accountBlocked' => null,
                 'accountStanding' => null,
+                'adminViewMode' => null,
             ],
             $data->toArray()['data'],
         );
@@ -306,6 +310,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'passkeyAllowsUnproven' => self::PASSKEY_ALLOWS_UNPROVEN,
                 'accountBlocked' => null,
                 'accountStanding' => null,
+                'adminViewMode' => null,
             ],
             $data->toArray()['data'],
         );
@@ -512,6 +517,80 @@ final class HandshakeResponseSignalDataTest extends TestCase
     {
         $payload = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false)->toArray();
         $payload['data']['accountStanding'] = ['shown' => 'frozen'];
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
+    }
+
+    public function testTheViewModeTravelsInTheDataSectionOfAnAnonymousResponseAndSurvivesTheRoundtrip(): void
+    {
+        // A guest is the viewer the mode opens the admin section to, so the anonymous branch has to keep it (HIL-1253).
+        $on = new HandshakeResponseSignalData()->withAdminViewMode(true);
+        $off = new HandshakeResponseSignalData()->withAdminViewMode(false);
+
+        $this->assertNull($on->toArray()['entities']['currentUser']);
+        $this->assertTrue($on->toArray()['data']['adminViewMode']);
+        $this->assertTrue(HandshakeResponseSignalData::fromArray($on->toArray())->adminViewMode);
+        $this->assertFalse(HandshakeResponseSignalData::fromArray($off->toArray())->adminViewMode);
+        $this->assertSame($on->toArray(), HandshakeResponseSignalData::fromArray($on->toArray())->toArray());
+    }
+
+    public function testTheViewModeSurvivesTheRoundtripOfASignedInResponse(): void
+    {
+        $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: true)->withAdminViewMode(true);
+
+        $restored = HandshakeResponseSignalData::fromArray($data->toArray());
+
+        $this->assertTrue($restored->selfAdmin);
+        $this->assertTrue($restored->adminViewMode);
+    }
+
+    public function testAResponseThatNeverPassedTheStampCarriesNoViewMode(): void
+    {
+        // The key is written as null rather than left out, and a payload without it reads back as null too.
+        $payload = new HandshakeResponseSignalData()->toArray();
+
+        $this->assertArrayHasKey('adminViewMode', $payload['data']);
+        $this->assertNull($payload['data']['adminViewMode']);
+        unset($payload['data']['adminViewMode']);
+        $this->assertNull(HandshakeResponseSignalData::fromArray($payload)->adminViewMode);
+    }
+
+    public function testTheViewModeSurvivesEveryOtherAxisOfTheStamp(): void
+    {
+        // Stamped last on the send path, and none of the other four axes may take it off again.
+        $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false)
+            ->withAdminViewMode(true)
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->withPendingAck(null)
+            ->withAccountBlocked(null)
+            ->withAccountStanding(self::STANDING);
+
+        $this->assertTrue($data->adminViewMode);
+    }
+
+    public function testTheViewModeStampKeepsEveryOtherAxis(): void
+    {
+        $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false)
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->withPendingAck(SessionAck::SIGNED_IN)
+            ->withAccountBlocked(['identifier' => 'maria@example.com', 'dataExport' => null])
+            ->withAccountStanding(self::STANDING)
+            ->withAdminViewMode(false);
+
+        $this->assertFalse($data->adminViewMode);
+        $this->assertSame(self::SERVER_TIME_MS, $data->serverTimeMs);
+        $this->assertSame(SessionAck::SIGNED_IN, $data->pendingAck);
+        $this->assertSame(['identifier' => 'maria@example.com', 'dataExport' => null], $data->accountBlocked);
+        $this->assertSame(self::STANDING, $data->accountStanding);
+    }
+
+    public function testRoundtripRejectsAViewModeThatIsNotABoolean(): void
+    {
+        // The surface reads anything but true as off; the parse boundary does not let a string pass for the flag.
+        $payload = new HandshakeResponseSignalData()->toArray();
+        $payload['data']['adminViewMode'] = 'true';
 
         $this->expectException(InvalidFormatException::class);
 

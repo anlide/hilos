@@ -7,6 +7,7 @@ import { HilosPages } from '../../src/routing/hilosPages.js'
 import { hilosAccountStanding } from '../../src/session/accountStanding.js'
 import { hilosImpersonation } from '../../src/session/impersonation.js'
 import { hilosSignedIn } from '../../src/session/signOut.js'
+import { hilosAdminAccess } from '../../src/session/adminAccess.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { hilosToasts } from '../../src/state/toasts.js'
 import {
@@ -296,6 +297,29 @@ describe('bootHilos', () => {
       entities: { currentUser: null },
     })
     expect(hilosSignedIn.get()).toBe(false)
+  })
+
+  it('binds the admin access so it follows the handshake (HIL-1253)', () => {
+    const connection = fakeConnection()
+    boot(connection)
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: null },
+      data: { adminViewMode: true },
+    })
+    expect(hilosAdminAccess.get()).toBe('view')
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
+      data: { adminViewMode: true },
+    })
+    expect(hilosAdminAccess.get()).toBe('full')
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: null },
+      data: { adminViewMode: false },
+    })
+    expect(hilosAdminAccess.get()).toBe('none')
   })
 
   it('binds the page scope so a page_response lands in the page scope', () => {

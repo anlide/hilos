@@ -5,6 +5,7 @@ import {
   sessionUserName,
   sessionUserIsAdmin,
   sessionUserId,
+  sessionAdminViewMode,
   sessionImpersonating,
   sessionImpersonatedByName,
   sessionPendingAck,
@@ -400,6 +401,59 @@ describe('sessionScope', () => {
       data: { passkeyAllowsUnproven: 'yes' },
     })
     expect(allowed.get()).toBe(false)
+  })
+
+  it("reads the node's admin view mode every handshake writes (HIL-1253)", () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const viewMode = sessionAdminViewMode(scopes)
+
+    // Nothing said yet: off, the fail-closed default of the admin flag.
+    expect(viewMode.get()).toBe(false)
+
+    // A handshake that carries no key says nothing about the mode: off.
+    connection.emitHandshakeResponse({ entities: { currentUser: null } })
+    expect(viewMode.get()).toBe(false)
+
+    connection.emitHandshakeResponse({
+      entities: { currentUser: null },
+      data: { adminViewMode: true },
+    })
+    expect(viewMode.get()).toBe(true)
+
+    // The next handshake rewrites it, and only a true is on.
+    connection.emitHandshakeResponse({ data: { adminViewMode: false } })
+    expect(viewMode.get()).toBe(false)
+
+    connection.emitHandshakeResponse({ data: { adminViewMode: true } })
+    connection.emitHandshakeResponse({ data: { adminViewMode: null } })
+    expect(viewMode.get()).toBe(false)
+
+    connection.emitHandshakeResponse({ data: { adminViewMode: 'true' } })
+    expect(viewMode.get()).toBe(false)
+  })
+
+  it('hands a listener of the admin flag the admin view mode of the same response (HIL-1253)', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const admin = sessionUserIsAdmin(scopes)
+    const viewMode = sessionAdminViewMode(scopes)
+    const seen: boolean[] = []
+    subscribeSignal(admin, () => seen.push(viewMode.get()))
+
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
+      data: { adminViewMode: true },
+    })
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada', admin: false } },
+      data: { adminViewMode: false },
+    })
+
+    // The data section lands ahead of the entities, so neither read is a frame late.
+    expect(seen).toEqual([true, false])
   })
 
   it('reads the "Access closed" card every handshake writes (HIL-289)', () => {

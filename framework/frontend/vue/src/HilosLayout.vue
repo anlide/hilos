@@ -1,7 +1,8 @@
 <!-- HilosLayout — the tier-1 application shell (sdk-packaging.md): a slot-first
 app frame a project fills rather than re-implements. It renders the top
 navigation bar carrying the project's brand, nav, and user slots, the framework admin
-entry (the gear linking to the Hilos dashboard), the live connection indicator
+entry (the gear linking to the Hilos dashboard, drawn for an admin and, in the
+admin view mode, for a viewer), the live connection indicator
 the SDK owns (core-and-connection.md), and, last, its tracked sign-out control
 while a person stands behind the session; a full-width banner region below the nav
 carrying, in this order, the framework's own protected-mode strip, its
@@ -42,6 +43,7 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   hilosAccountBlocked,
+  hilosAdminAccess,
   hilosDeletionStrip,
   hilosImpersonation,
   hilosSignedIn,
@@ -74,12 +76,6 @@ import { useTrackedAction } from './useTrackedAction.js'
 
 const props = defineProps<{
   connection: HilosConnection
-  /**
-   * Whether the signed-in user holds the admin privilege. The admin entry is
-   * drawn for an admin and for nobody else, so a project that answers no admin
-   * identity (the default) shows no way into a surface the gate would refuse.
-   */
-  isAdmin?: boolean
   /**
    * Which corner the toast stack sits in; the bottom end by default. A project
    * chooses it once here and never per notice: different corners in different
@@ -176,6 +172,12 @@ const onKeepAccount = (): void => {
 }
 
 const signedIn = useSignal(hilosSignedIn)
+
+// The admin gear (HIL-1253): drawn for an admin and, on a node in the admin view
+// mode, for a viewer who may look and not act; the core derives which from the
+// session's admin flag and the node's mode, so the project feeds it nothing. It
+// leads to the same dashboard either way - the server decides what each is shown.
+const adminAccess = useSignal(hilosAdminAccess)
 const { busy: signOutBusy, run: runSignOut } = useTrackedAction()
 const onSignOut = (): void => {
   if (signOutBusy.value) {
@@ -327,10 +329,11 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
           <template v-if="!underMaintenance">
             <slot name="user" />
             <HilosLink
-              v-if="props.isAdmin"
+              v-if="adminAccess !== 'none'"
               class="nav-link d-inline-flex align-items-center p-0 fs-5"
               :to="adminHref"
               data-id="nav-admin"
+              :data-access="adminAccess"
               aria-label="Hilos dashboard"
             >
               <i class="bi bi-gear-fill" aria-hidden="true"></i>
