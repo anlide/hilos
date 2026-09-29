@@ -18,6 +18,7 @@ function byId(id: string): HTMLElement {
   return found
 }
 function setup() {
+  const dispatched: Array<{ name: string; payload?: unknown }> = []
   const answers: Record<string, unknown> = {
     hilos_step_up_start: { required: false, purpose: 'change your password' },
     profile_change_password_open: {
@@ -27,19 +28,22 @@ function setup() {
   }
   const flow = createHilosProfilePasswordChangeFlow({
     actions: {
-      dispatch: (name: string) => ({
-        done:
-          typeof answers[name] === 'string'
-            ? Promise.reject(new ActionError(name, 'fail', answers[name]))
-            : Promise.resolve({ reply: answers[name] ?? [] }),
-      }),
+      dispatch: (name: string, payload?: unknown) => {
+        dispatched.push({ name, payload })
+        return {
+          done:
+            typeof answers[name] === 'string'
+              ? Promise.reject(new ActionError(name, 'fail', answers[name]))
+              : Promise.resolve({ reply: answers[name] ?? [] }),
+        }
+      },
     } as unknown as ActionLifecycle,
   })
   mount(HilosProfilePasswordChange, {
     props: { flow },
     attachTo: document.body,
   })
-  return { flow, answers }
+  return { flow, answers, dispatched }
 }
 describe('password change modal', () => {
   it.each([true, false])(
@@ -129,5 +133,37 @@ describe('password change modal', () => {
     byId('profile-password-cancel').click()
     await flushPromises()
     expect(flow.step.get()).toBe('closed')
+  })
+  it('confirms step-up via form submit when credential is typed, ignores empty submit, and binds confirm button to form', async () => {
+    const { flow, answers, dispatched } = setup()
+    answers.hilos_step_up_start = {
+      required: true,
+      purpose: 'change your password',
+      method: 'password',
+    }
+    await flow.open()
+    await flushPromises()
+
+    const form = byId('profile-password-step-up')
+    const confirm = byId('profile-password-step-up-confirm')
+    expect(confirm.getAttribute('type')).toBe('submit')
+    expect(confirm.getAttribute('form')).toBe(form.id)
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await flushPromises()
+    expect(
+      dispatched.some((item) => item.name === 'hilos_step_up_confirm'),
+    ).toBe(false)
+
+    flow.stepUp.password.set('current-secret')
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await flushPromises()
+    const call = dispatched.find(
+      (item) => item.name === 'hilos_step_up_confirm',
+    )
+    expect(call).toBeDefined()
+    expect(call?.payload).toMatchObject({
+      password: 'current-secret',
+    })
   })
 })

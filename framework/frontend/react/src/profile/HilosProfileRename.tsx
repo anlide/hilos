@@ -73,10 +73,11 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
             </button>
             {stepUpOpening !== null ? (
               <LoadingButton
+                type="submit"
+                form="hilos-profile-rename-step-up"
                 className="btn-primary"
                 loading={stepUpBusy}
                 data-id="profile-name-step-up-confirm"
-                onClick={() => void flow.confirmStepUp()}
               >
                 {HILOS_STEP_UP_COPY.confirm}
               </LoadingButton>
@@ -129,7 +130,16 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
       </div>
       <div ref={body}>
         {step !== 'form' ? (
-          <HilosStepUpStep controller={flow.stepUp} />
+          <form
+            id="hilos-profile-rename-step-up"
+            data-id="profile-name-step-up"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void flow.confirmStepUp()
+            }}
+          >
+            <HilosStepUpStep controller={flow.stepUp} />
+          </form>
         ) : (
           <form
             onSubmit={(event) => {

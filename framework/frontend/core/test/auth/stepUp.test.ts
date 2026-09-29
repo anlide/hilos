@@ -72,6 +72,64 @@ describe('createHilosStepUpStep', () => {
     })
   })
 
+  it('does not submit when the required credential is empty and preserves refusal', async () => {
+    const confirm = vi
+      .fn()
+      .mockImplementationOnce(() => ({
+        done: Promise.reject(
+          new ActionError(
+            'hilos_step_up_confirm',
+            'fail',
+            'Incorrect password',
+          ),
+        ),
+      }))
+      .mockImplementation(() => handle())
+
+    const step = createHilosStepUpStep({
+      start: (operation) =>
+        handle({
+          required: true,
+          purpose: 'confirm identity',
+          method:
+            operation === 'op_password'
+              ? 'password'
+              : operation === 'op_email'
+                ? 'email_code'
+                : 'second_factor',
+        }),
+      confirm: confirm as unknown as HilosStepUpActions['confirm'],
+    })
+
+    await step.open('op_password')
+    step.password.set('wrong')
+    expect(await step.confirm()).toBe(false)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(step.refusal.get()).toBe('Incorrect password')
+
+    step.password.set('')
+    expect(await step.confirm()).toBe(false)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(step.refusal.get()).toBe('Incorrect password')
+
+    await step.open('op_email')
+    expect(step.refusal.get()).toBeNull()
+    step.code.set('   ')
+    expect(await step.confirm()).toBe(false)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(step.refusal.get()).toBeNull()
+
+    await step.open('op_2fa')
+    step.code.set('')
+    expect(await step.confirm()).toBe(false)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(step.refusal.get()).toBeNull()
+
+    step.code.set('123456')
+    expect(await step.confirm()).toBe(true)
+    expect(confirm).toHaveBeenCalledTimes(2)
+  })
+
   it('does not submit when the browser passkey request is refused', async () => {
     const confirm = vi.fn(() => handle())
     const step = createHilosStepUpStep({

@@ -101,10 +101,14 @@ watch(step, () => {
           </div>
         </div>
         <div class="align-self-start">
-          <HilosStepUpStep
+          <form
             v-if="step === 'step-up'"
-            :controller="flow.stepUp"
-          />
+            :id="`${id}-step-up-form`"
+            data-id="profile-password-step-up"
+            @submit.prevent="flow.confirmStepUp()"
+          >
+            <HilosStepUpStep :controller="flow.stepUp" />
+          </form>
           <template v-else-if="step !== 'refused'">
             <ol
               v-if="step !== 'done'"
@@ -263,10 +267,11 @@ watch(step, () => {
         </button>
         <LoadingButton
           v-if="step === 'step-up'"
+          type="submit"
+          :form="`${id}-step-up-form`"
           class="btn-primary"
           :loading="busy"
           data-id="profile-password-step-up-confirm"
-          @click="flow.confirmStepUp()"
           >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
         >
         <LoadingButton

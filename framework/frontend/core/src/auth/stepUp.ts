@@ -158,6 +158,16 @@ export function createHilosStepUpStep(
         return false
       }
 
+      if (
+        (current.method === 'password' && password.get() === '') ||
+        ((current.method === 'second_factor' ||
+          current.method === 'email_code' ||
+          current.method === 'sms_code') &&
+          code.get().trim() === '')
+      ) {
+        return false
+      }
+
       busy.set(true)
       refusal.set(null)
       try {

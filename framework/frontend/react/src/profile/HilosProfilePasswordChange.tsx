@@ -85,10 +85,11 @@ export function HilosProfilePasswordChange({
             </button>
             {step === 'step-up' ? (
               <LoadingButton
+                type="submit"
+                form={`${id}-step-up-form`}
                 className="btn-primary"
                 loading={busy}
                 data-id="profile-password-step-up-confirm"
-                onClick={() => void flow.confirmStepUp()}
               >
                 {HILOS_STEP_UP_COPY.confirm}
               </LoadingButton>
@@ -162,7 +163,16 @@ export function HilosProfilePasswordChange({
           </div>
           <div className="align-self-start">
             {step === 'step-up' ? (
-              <HilosStepUpStep controller={flow.stepUp} />
+              <form
+                id={`${id}-step-up-form`}
+                data-id="profile-password-step-up"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void flow.confirmStepUp()
+                }}
+              >
+                <HilosStepUpStep controller={flow.stepUp} />
+              </form>
             ) : step !== 'refused' ? (
               <>
                 {step !== 'done' ? (

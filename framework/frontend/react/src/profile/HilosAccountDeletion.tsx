@@ -192,10 +192,11 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
               </button>
               {step === 'step-up' && stepUpOpening !== null ? (
                 <LoadingButton
+                  type="submit"
+                  form="hilos-account-deletion-step-up"
                   className="btn-primary"
                   loading={busy}
                   data-id="account-deletion-confirm"
-                  onClick={() => void flow.confirmStepUp()}
                 >
                   {HILOS_STEP_UP_COPY.confirm}
                 </LoadingButton>
@@ -233,7 +234,16 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
         </div>
         <div ref={body} data-id="account-deletion-modal">
           {step === 'step-up' ? (
-            <HilosStepUpStep controller={flow.stepUp} />
+            <form
+              id="hilos-account-deletion-step-up"
+              data-id="account-deletion-step-up"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void flow.confirmStepUp()
+              }}
+            >
+              <HilosStepUpStep controller={flow.stepUp} />
+            </form>
           ) : null}
           {step === 'in-progress' && deletion !== null ? (
             <div className="text-center py-2">

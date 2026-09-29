@@ -179,7 +179,14 @@ function fill(template: string): string {
         {{ voice }}
       </div>
       <div ref="body" data-id="account-deletion-modal">
-        <HilosStepUpStep v-if="step === 'step-up'" :controller="flow.stepUp" />
+        <form
+          v-if="step === 'step-up'"
+          id="hilos-account-deletion-step-up"
+          data-id="account-deletion-step-up"
+          @submit.prevent="flow.confirmStepUp()"
+        >
+          <HilosStepUpStep :controller="flow.stepUp" />
+        </form>
 
         <div
           v-else-if="step === 'in-progress' && deletion !== null"
@@ -298,10 +305,11 @@ function fill(template: string): string {
           </button>
           <LoadingButton
             v-if="step === 'step-up' && stepUpOpening !== null"
+            type="submit"
+            form="hilos-account-deletion-step-up"
             class="btn-primary"
             :loading="busy"
             data-id="account-deletion-confirm"
-            @click="flow.confirmStepUp()"
           >
             {{ HILOS_STEP_UP_COPY.confirm }}
           </LoadingButton>

@@ -40,6 +40,7 @@ function zoneWorld(answers: Record<string, unknown>) {
   const listeners: Array<(signal: ProjectSignal) => void> = []
   const sent: string[] = []
   const navigated: string[] = []
+  const dispatched: Array<{ action: string; payload?: unknown }> = []
   const connection = {
     on(event: string, listener: (payload: never) => void): () => void {
       if (event === 'projectSignal') {
@@ -50,8 +51,9 @@ function zoneWorld(answers: Record<string, unknown>) {
     },
   } as unknown as HilosConnection
   const actions = {
-    dispatch(action: string): ActionHandle {
+    dispatch(action: string, payload?: unknown): ActionHandle {
       sent.push(action)
+      dispatched.push({ action, payload })
       const answer = answers[action] ?? []
 
       return {
@@ -81,6 +83,7 @@ function zoneWorld(answers: Record<string, unknown>) {
   return {
     sent,
     navigated,
+    dispatched,
     state(data: unknown): void {
       for (const listener of listeners) {
         listener({
@@ -207,4 +210,45 @@ it('leaves the explanation for Your data without scheduling deletion', async () 
     'hilos_step_up_start',
     'hilos_account_deletion_open',
   ])
+})
+
+it('confirms step-up via form submit when credential is typed, ignores empty submit, and binds confirm button to form', async () => {
+  const world = zoneWorld({
+    hilos_step_up_start: {
+      required: true,
+      purpose: 'delete your account',
+      method: 'password',
+    },
+  })
+  world.state({ deletion: null })
+  await nextTick()
+
+  byId('account-deletion-open').click()
+  await flushPromises()
+
+  const form = byId('account-deletion-step-up')
+  const confirm = byId('account-deletion-confirm')
+
+  expect(confirm.getAttribute('type')).toBe('submit')
+  expect(confirm.getAttribute('form')).toBe(form.id)
+
+  form.dispatchEvent(new Event('submit', { cancelable: true }))
+  await flushPromises()
+  expect(
+    world.dispatched.some((item) => item.action === 'hilos_step_up_confirm'),
+  ).toBe(false)
+
+  const input = byId('step-up-password') as HTMLInputElement
+  input.value = 'secret'
+  input.dispatchEvent(new Event('input'))
+  form.dispatchEvent(new Event('submit', { cancelable: true }))
+  await flushPromises()
+
+  const call = world.dispatched.find(
+    (item) => item.action === 'hilos_step_up_confirm',
+  )
+  expect(call).toBeDefined()
+  expect(call?.payload).toMatchObject({
+    password: 'secret',
+  })
 })

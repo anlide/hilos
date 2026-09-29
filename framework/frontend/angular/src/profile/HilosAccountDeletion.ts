@@ -114,7 +114,13 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
         </div>
         <div #body data-id="account-deletion-modal">
           @if (step() === 'step-up') {
-            <hilos-step-up-step [controller]="flow().stepUp" />
+            <form
+              id="hilos-account-deletion-step-up"
+              data-id="account-deletion-step-up"
+              (submit)="$event.preventDefault(); flow().confirmStepUp()"
+            >
+              <hilos-step-up-step [controller]="flow().stepUp" />
+            </form>
           } @else if (step() === 'in-progress' && deletion()) {
             <div class="text-center py-2">
               <i
@@ -226,10 +232,11 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
             @if (step() === 'step-up' && stepUpOpening() !== null) {
               <button
                 hilosLoadingButton
+                type="submit"
+                form="hilos-account-deletion-step-up"
                 class="btn-primary"
                 [loading]="busy()"
                 data-id="account-deletion-confirm"
-                (click)="flow().confirmStepUp()"
               >
                 {{ stepUpCopy.confirm }}
               </button>

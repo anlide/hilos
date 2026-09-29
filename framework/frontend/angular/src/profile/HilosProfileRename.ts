@@ -84,7 +84,13 @@ function mirror<T>(
       </div>
       <div #body>
         @if (step() !== 'form') {
-          <hilos-step-up-step [controller]="flow().stepUp" />
+          <form
+            id="hilos-profile-rename-step-up"
+            data-id="profile-name-step-up"
+            (submit)="$event.preventDefault(); flow().confirmStepUp()"
+          >
+            <hilos-step-up-step [controller]="flow().stepUp" />
+          </form>
         } @else {
           <form (submit)="$event.preventDefault(); flow().save()">
             <label class="form-label" for="profile-name-field">{{
@@ -127,10 +133,11 @@ function mirror<T>(
           @if (stepUpOpening() !== null) {
             <button
               hilosLoadingButton
+              type="submit"
+              form="hilos-profile-rename-step-up"
               class="btn-primary"
               [loading]="stepUpBusy()"
               data-id="profile-name-step-up-confirm"
-              (click)="flow().confirmStepUp()"
             >
               {{ stepUpCopy.confirm }}
             </button>

@@ -33,22 +33,26 @@ function typeInto(id: string, value: string): void {
 
 /** A mounted window whose server answers each action from the table; a string refuses. */
 function setup(answers: Record<string, unknown> = {}) {
+  const dispatched: Array<{ action: string; payload?: unknown }> = []
   const table: Record<string, unknown> = {
     hilos_step_up_start: { required: false, purpose: 'change your email' },
     ...answers,
   }
   const flow = createHilosProfileEmailChangeFlow({
     actions: {
-      dispatch: (action: string) => ({
-        done:
-          typeof table[action] === 'string'
-            ? Promise.reject(new ActionError(action, 'fail', table[action]))
-            : Promise.resolve({ reply: table[action] ?? [] }),
-      }),
+      dispatch: (action: string, payload?: unknown) => {
+        dispatched.push({ action, payload })
+        return {
+          done:
+            typeof table[action] === 'string'
+              ? Promise.reject(new ActionError(action, 'fail', table[action]))
+              : Promise.resolve({ reply: table[action] ?? [] }),
+        }
+      },
     } as unknown as ActionLifecycle,
   })
   mount(HilosProfileEmailChange, { props: { flow }, attachTo: document.body })
-  return flow
+  return { flow, dispatched }
 }
 
 async function settle(): Promise<void> {
@@ -58,7 +62,7 @@ async function settle(): Promise<void> {
 
 describe('HilosProfileEmailChange', () => {
   it('walks the steps with the current one marked and names both addresses at the end', async () => {
-    const flow = setup()
+    const { flow } = setup()
     await flow.open('old@example.test')
     await settle()
     expect(
@@ -97,7 +101,7 @@ describe('HilosProfileEmailChange', () => {
   })
 
   it('keeps a refusal on its step with the typed code', async () => {
-    const flow = setup({
+    const { flow } = setup({
       profile_change_email_current_confirm: 'That code is not right',
     })
     await flow.open('old@example.test')
@@ -115,5 +119,38 @@ describe('HilosProfileEmailChange', () => {
     expect((byId('profile-email-code-current') as HTMLInputElement).value).toBe(
       '000000',
     )
+  })
+
+  it('confirms step-up via form submit when credential is typed, ignores empty submit, and binds confirm button to form', async () => {
+    const { flow, dispatched } = setup({
+      hilos_step_up_start: {
+        required: true,
+        purpose: 'change your email',
+        method: 'password',
+      },
+    })
+    await flow.open('old@example.test')
+    await settle()
+
+    const form = byId('profile-email-step-up')
+    const confirm = byId('profile-email-step-up-confirm')
+    expect(confirm.getAttribute('type')).toBe('submit')
+    expect(confirm.getAttribute('form')).toBe(form.id)
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await settle()
+    expect(dispatched.some((d) => d.action === 'hilos_step_up_confirm')).toBe(
+      false,
+    )
+
+    typeInto('step-up-password', 'secret')
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await settle()
+
+    const call = dispatched.find((d) => d.action === 'hilos_step_up_confirm')
+    expect(call).toBeDefined()
+    expect(call?.payload).toMatchObject({
+      password: 'secret',
+    })
   })
 })

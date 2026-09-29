@@ -38,6 +38,7 @@ function setup(stepUp: unknown = { required: false, purpose: 'rename' }) {
   const name = createSignal('Ann')
   const refusal = createSignal<string | null>(null)
   const sent: string[] = []
+  const dispatched: Array<{ action: string; payload?: unknown }> = []
   const rename: HilosProfileRename = {
     send(next) {
       sent.push(next)
@@ -52,21 +53,24 @@ function setup(stepUp: unknown = { required: false, purpose: 'rename' }) {
   const flow = createHilosProfileRenameFlow(
     {
       actions: {
-        dispatch: (action: string) => ({
-          done:
-            action === 'hilos_step_up_start'
-              ? Promise.resolve({ reply: stepUp })
-              : action === 'hilos_step_up_confirm'
-                ? Promise.resolve({ reply: [] })
-                : Promise.reject(new ActionError(action, 'fail', 'no')),
-        }),
+        dispatch: (action: string, payload?: unknown) => {
+          dispatched.push({ action, payload })
+          return {
+            done:
+              action === 'hilos_step_up_start'
+                ? Promise.resolve({ reply: stepUp })
+                : action === 'hilos_step_up_confirm'
+                  ? Promise.resolve({ reply: [] })
+                  : Promise.reject(new ActionError(action, 'fail', 'no')),
+          }
+        },
       } as unknown as ActionLifecycle,
     },
     name,
     rename,
   )
   mount(HilosProfileRenameModal, { props: { flow }, attachTo: document.body })
-  return { flow, name, refusal, sent }
+  return { flow, name, refusal, sent, dispatched }
 }
 
 describe('HilosProfileRename', () => {
@@ -87,7 +91,7 @@ describe('HilosProfileRename', () => {
   })
 
   it('asks the confirmation first and focuses the field once it gives way', async () => {
-    const { flow } = setup({
+    const { flow, dispatched } = setup({
       required: true,
       purpose: 'change your name',
       method: 'password',
@@ -99,10 +103,27 @@ describe('HilosProfileRename', () => {
     )
     expect(document.querySelector('[data-id="profile-name-input"]')).toBeNull()
 
-    byId('profile-name-step-up-confirm').click()
+    const form = byId('profile-name-step-up')
+    const confirm = byId('profile-name-step-up-confirm')
+    expect(confirm.getAttribute('type')).toBe('submit')
+    expect(confirm.getAttribute('form')).toBe(form.id)
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await flushPromises()
+    expect(dispatched.some((d) => d.action === 'hilos_step_up_confirm')).toBe(
+      false,
+    )
+
+    typeInto('step-up-password', 'secret')
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
     await flushPromises()
     await nextTick()
     expect(document.activeElement).toBe(byId('profile-name-input'))
+    const call = dispatched.find((d) => d.action === 'hilos_step_up_confirm')
+    expect(call).toBeDefined()
+    expect(call?.payload).toMatchObject({
+      password: 'secret',
+    })
   })
 
   it("shows the project's refusal in the form and says when the name moved elsewhere", async () => {

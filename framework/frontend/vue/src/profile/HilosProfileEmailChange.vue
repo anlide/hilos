@@ -92,7 +92,14 @@ watch(step, (next, previous) => {
     </div>
 
     <div ref="body">
-      <HilosStepUpStep v-if="step === 'step-up'" :controller="flow.stepUp" />
+      <form
+        v-if="step === 'step-up'"
+        id="hilos-profile-email-step-up"
+        data-id="profile-email-step-up"
+        @submit.prevent="flow.submit()"
+      >
+        <HilosStepUpStep :controller="flow.stepUp" />
+      </form>
       <ol
         v-if="step !== 'step-up' && step !== 'done'"
         class="list-unstyled d-flex flex-column gap-1 mb-3 small"
@@ -218,10 +225,11 @@ watch(step, (next, previous) => {
         </button>
         <LoadingButton
           v-if="stepUpOpening !== null"
+          type="submit"
+          form="hilos-profile-email-step-up"
           class="btn-primary"
           :loading="busy"
           data-id="profile-email-step-up-confirm"
-          @click="flow.submit()"
         >
           {{ HILOS_STEP_UP_COPY.confirm }}
         </LoadingButton>

@@ -78,7 +78,14 @@ watch(step, (next, previous) => {
     </div>
 
     <div ref="body">
-      <HilosStepUpStep v-if="step !== 'form'" :controller="flow.stepUp" />
+      <form
+        v-if="step !== 'form'"
+        id="hilos-profile-rename-step-up"
+        data-id="profile-name-step-up"
+        @submit.prevent="flow.confirmStepUp()"
+      >
+        <HilosStepUpStep :controller="flow.stepUp" />
+      </form>
       <form v-else @submit.prevent="flow.save()">
         <label class="form-label" for="profile-name-field">{{
           COPY.label
@@ -116,10 +123,11 @@ watch(step, (next, previous) => {
         </button>
         <LoadingButton
           v-if="stepUpOpening !== null"
+          type="submit"
+          form="hilos-profile-rename-step-up"
           class="btn-primary"
           :loading="stepUpBusy"
           data-id="profile-name-step-up-confirm"
-          @click="flow.confirmStepUp()"
         >
           {{ HILOS_STEP_UP_COPY.confirm }}
         </LoadingButton>

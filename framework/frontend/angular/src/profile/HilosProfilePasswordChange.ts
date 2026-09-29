@@ -69,7 +69,13 @@ let passwordChangeSequence = 0
           </div>
           <div class="align-self-start">
             @if (step() === 'step-up') {
-              <hilos-step-up-step [controller]="flow().stepUp" />
+              <form
+                [id]="id + '-step-up-form'"
+                data-id="profile-password-step-up"
+                (submit)="$event.preventDefault(); flow().confirmStepUp()"
+              >
+                <hilos-step-up-step [controller]="flow().stepUp" />
+              </form>
             } @else if (step() !== 'refused') {
               @if (step() !== 'done') {
                 <ol
@@ -224,10 +230,11 @@ let passwordChangeSequence = 0
           @if (step() === 'step-up') {
             <button
               hilosLoadingButton
+              type="submit"
+              [attr.form]="id + '-step-up-form'"
               class="btn-primary"
               [loading]="busy()"
               data-id="profile-password-step-up-confirm"
-              (click)="flow().confirmStepUp()"
             >
               {{ stepUpCopy.confirm }}
             </button>

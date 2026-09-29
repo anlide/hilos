@@ -95,10 +95,11 @@ export function HilosProfileEmailChange({
             </button>
             {stepUpOpening !== null ? (
               <LoadingButton
+                type="submit"
+                form="hilos-profile-email-step-up"
                 className="btn-primary"
                 loading={busy}
                 data-id="profile-email-step-up-confirm"
-                onClick={() => void flow.submit()}
               >
                 {HILOS_STEP_UP_COPY.confirm}
               </LoadingButton>
@@ -191,7 +192,13 @@ export function HilosProfileEmailChange({
       </div>
       <div ref={body}>
         {step === 'step-up' ? (
-          <HilosStepUpStep controller={flow.stepUp} />
+          <form
+            id="hilos-profile-email-step-up"
+            data-id="profile-email-step-up"
+            onSubmit={submit}
+          >
+            <HilosStepUpStep controller={flow.stepUp} />
+          </form>
         ) : null}
         {step !== 'step-up' && step !== 'done' ? (
           <ol
