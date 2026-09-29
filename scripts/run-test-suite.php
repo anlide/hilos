@@ -20,10 +20,14 @@ declare(strict_types=1);
  *
  * Options:
  *   --lanes=N      steps at a time; overrides HILOS_TEST_LANES and the adaptive
- *                  default. `--lanes=1` reproduces the old serial run exactly, and
- *                  is the lever the attribution rule needs: a step that goes red
- *                  under concurrency is not a verdict until it has been re-run
- *                  alone on the same HEAD.
+ *                  default, which is sized from the cores and the available memory
+ *                  of the machine (`scripts/lane-count.php`). `--lanes=1` is the
+ *                  lever the attribution rule needs: a step that goes red under
+ *                  concurrency is not a verdict until it has been re-run alone on
+ *                  the same HEAD. That re-run judges the step by the same rule as
+ *                  the concurrent run did: the lane count is not a timeout
+ *                  multiplier, and every suite reads its factor from the load and
+ *                  the memory of the host at the moment it starts.
  *   --log-dir=DIR  where the per-step logs land (default `var/test-suite`). A full run
  *                  also sweeps out of it the logs of steps the manifest no longer
  *                  lists; a re-run of one step sweeps nothing.
@@ -43,26 +47,11 @@ declare(strict_types=1);
 /** Poll interval while waiting for the running steps, in microseconds. */
 const POLL_INTERVAL_MICROSECONDS = 200_000;
 
-/** Cores a machine needs before the adaptive default risks a second lane. */
-const ADAPTIVE_LANES_MIN_CORES = 8;
-
-/** Memory, in GiB, a machine needs free before the adaptive default risks a second lane. */
-const ADAPTIVE_LANES_MIN_AVAILABLE_GIB = 4.0;
-
-/** Lanes to use on a machine too small, or too unfamiliar, to measure. */
-const SERIAL_LANES = 1;
-
-/** Lanes the adaptive default settles on for a machine that is big enough. */
-const PARALLEL_LANES = 2;
+/** The option overriding both the environment and the adaptive lane count. */
+const LANES_OPTION = '--lanes';
 
 /** Environment variable overriding the adaptive lane count. */
 const LANES_VAR = 'HILOS_TEST_LANES';
-
-/** Environment variable the Playwright suites read their timeout factor from. */
-const PLAYWRIGHT_SCALE_VAR = 'HILOS_E2E_TIMEOUT_SCALE';
-
-/** Environment variable the cluster suite reads its own timeout factor from. */
-const CLUSTER_SCALE_VAR = 'CLUSTER_E2E_TIMEOUT_SCALE';
 
 /** Permissions for a log directory the runner has to create. */
 const LOG_DIR_MODE = 0o755;
@@ -85,6 +74,7 @@ enum StepOutcome: string
 }
 
 $root = dirname(__DIR__);
+require_once $root . '/scripts/lane-count.php';
 require_once $root . '/scripts/unstable-line.php';
 require_once $root . '/scripts/step-artifacts.php';
 require_once $root . '/scripts/stand-registry.php';
@@ -93,11 +83,11 @@ require_once $root . '/scripts/evidence-sweep.php';
 $options = parseArguments(array_slice($argv, 1));
 $manifest = indexById(require $root . '/scripts/test-suite.php');
 $plan = planFor($manifest, $options['targets']);
-$lanes = resolveLanes($options['lanes']);
+['count' => $lanes, 'source' => $lanesSource] = resolveLanes($options['lanes']);
 $logDir = $options['logDir'] ?? $root . '/var/test-suite';
 
 if ($options['list']) {
-    printPlan($manifest, $plan, $lanes);
+    printPlan($manifest, $plan, $lanes, $lanesSource);
     exit(0);
 }
 
@@ -106,6 +96,7 @@ exit(runPlan(
     $manifest,
     $plan,
     $lanes,
+    $lanesSource,
     $logDir,
     $options['rcFile'] ?? $logDir . '/rc',
     $options['artifactDir'] ?? $logDir . '/artifacts',
@@ -137,8 +128,8 @@ function parseArguments(array $arguments): array
             exit(0);
         } elseif ($argument === '--list') {
             $parsed['list'] = true;
-        } elseif (str_starts_with($argument, '--lanes=')) {
-            $parsed['lanes'] = readLaneCount(substr($argument, strlen('--lanes=')), '--lanes');
+        } elseif (str_starts_with($argument, LANES_OPTION . '=')) {
+            $parsed['lanes'] = readLaneCount(substr($argument, strlen(LANES_OPTION . '=')), LANES_OPTION);
         } elseif (str_starts_with($argument, '--log-dir=')) {
             $parsed['logDir'] = rtrim(substr($argument, strlen('--log-dir=')), '/');
         } elseif (str_starts_with($argument, '--rc-file=')) {
@@ -258,16 +249,18 @@ function planFor(array $manifest, array $targets): array
 }
 
 /**
- * Report the plan without running it: what would run, after what, and at how many
- * lanes.
+ * Report the plan without running it: what would run, after what, at how many
+ * lanes, and what that lane count came from.
  *
  * @param array<string, array{deps: array<int, string>, group: string|null, seconds: int}> $manifest Steps by id.
  * @param array<int, string> $plan Step ids to run.
  * @param int $lanes Steps at a time.
+ * @param string $lanesSource What decided the lane count, as {@see resolveLanes()} worded it.
  */
-function printPlan(array $manifest, array $plan, int $lanes): void
+function printPlan(array $manifest, array $plan, int $lanes, string $lanesSource): void
 {
     fwrite(STDOUT, sprintf("plan: %d steps at %d lane(s)\n", count($plan), $lanes));
+    fwrite(STDOUT, lanesLine($lanes, $lanesSource));
     foreach (sortByDurationDescending($manifest, $plan) as $id) {
         $step = $manifest[$id];
         fwrite(STDOUT, sprintf(
@@ -283,36 +276,49 @@ function printPlan(array $manifest, array $plan, int $lanes): void
 // ---------------------------------------------------------------------- lanes
 
 /**
- * How many steps may run at once: the explicit option, then the environment, then
- * a default derived from the machine.
+ * How many steps may run at once, and what decided it: the explicit option, then
+ * the environment, then a default sized from the machine by
+ * {@see adaptiveLaneCount()}.
  *
- * The default is deliberately shy. A 2-core GitHub runner has to degrade to the
- * serial run rather than suffocate, and a box that cannot report its own size is
- * treated as small — being slow is recoverable, thrashing a runner is not.
+ * The source travels with the number so that the run can print both: a lane count
+ * the machine chose has to be explainable from the log, the same way a suite's
+ * timeout factor is.
  *
  * @param int|null $override The `--lanes=` value, when one was given.
- * @return int
+ * @return array{count: int, source: string} Steps at a time, and the words for what decided it.
  */
-function resolveLanes(?int $override): int
+function resolveLanes(?int $override): array
 {
     if ($override !== null) {
-        return $override;
+        return ['count' => $override, 'source' => LANES_OPTION];
     }
 
     $fromEnvironment = getenv(LANES_VAR);
     if (is_string($fromEnvironment) && trim($fromEnvironment) !== '') {
-        return readLaneCount(trim($fromEnvironment), LANES_VAR);
+        return ['count' => readLaneCount(trim($fromEnvironment), LANES_VAR), 'source' => LANES_VAR];
     }
 
+    $cores = countCores();
     $available = readAvailableGib();
-    if (countCores() < ADAPTIVE_LANES_MIN_CORES) {
-        return SERIAL_LANES;
-    }
-    if ($available === null || $available < ADAPTIVE_LANES_MIN_AVAILABLE_GIB) {
-        return SERIAL_LANES;
-    }
 
-    return PARALLEL_LANES;
+    return [
+        'count' => adaptiveLaneCount($cores, $available),
+        'source' => $cores === 0 || $available === null
+            ? 'adaptive: the machine did not report its size'
+            : sprintf('adaptive: %d cores, %.1f GiB available', $cores, $available),
+    ];
+}
+
+/**
+ * The line a run and a plan both print about their lane count.
+ *
+ * @param int $lanes Steps at a time.
+ * @param string $source What decided that number, as {@see resolveLanes()} worded it.
+ * @return string The line, newline included.
+ */
+function lanesLine(int $lanes, string $source): string
+{
+    return sprintf("lanes: %d (%s)\n", $lanes, $source);
 }
 
 /**
@@ -364,39 +370,6 @@ function readProcFile(string $path): ?string
 // -------------------------------------------------------------------- running
 
 /**
- * Tell every suite how far to stretch its timeouts, once for the whole run.
- *
- * The factor is the lane count, because that is the one number that actually says how much work
- * this box was asked to carry. Each suite used to infer it from a load average sampled at whatever
- * second its own config happened to be read — and in the three runs this was written for it read
- * `scale 1` every time, including the one that took 17m59s on two lanes (HIL-853). A suite is free
- * to go HIGHER than this from its own reading; what it no longer does is guess the whole number.
- *
- * A value already in the environment is left alone, up or down: it is either someone debugging a
- * step or CI pinning a factor, and both know something the lane count does not.
- *
- * Exported with `putenv` rather than handed to each step: {@see launch()} calls `proc_open` with no
- * explicit environment, so a step inherits the runner's own and one export covers the whole graph.
- *
- * @param int $lanes Steps the run keeps in flight at a time.
- */
-function exportTimeoutScale(int $lanes): void
-{
-    $announced = [];
-    foreach ([PLAYWRIGHT_SCALE_VAR, CLUSTER_SCALE_VAR] as $variable) {
-        $existing = getenv($variable);
-        if (is_string($existing) && $existing !== '') {
-            $announced[] = $variable . '=' . $existing . ' (kept from the environment)';
-            continue;
-        }
-        putenv($variable . '=' . $lanes);
-        $announced[] = sprintf('%s=%d (from %d lane(s))', $variable, $lanes, $lanes);
-    }
-
-    fwrite(STDOUT, 'timeout scale: ' . implode(', ', $announced) . "\n");
-}
-
-/**
  * Run the plan and report. Returns the process exit code: zero only when every
  * planned step ran and every one of them was green.
  *
@@ -409,6 +382,7 @@ function exportTimeoutScale(int $lanes): void
  *     group: string|null, seconds: int}> $manifest Steps by id.
  * @param array<int, string> $plan Step ids to run, in manifest order.
  * @param int $lanes Steps at a time.
+ * @param string $lanesSource What decided the lane count, as {@see resolveLanes()} worded it.
  * @param string $logDir Directory for the per-step logs.
  * @param string $rcFile Path of the `<id> rc=<n>` ledger.
  * @param string $artifactDir Directory the per-step snapshots of the stand go under.
@@ -424,6 +398,7 @@ function runPlan(
     array $manifest,
     array $plan,
     int $lanes,
+    string $lanesSource,
     string $logDir,
     string $rcFile,
     string $artifactDir,
@@ -445,7 +420,7 @@ function runPlan(
     }
     $rc = openLedger($rcFile);
     $startedAt = microtime(true);
-    exportTimeoutScale($lanes);
+    fwrite(STDOUT, lanesLine($lanes, $lanesSource));
     fwrite(STDOUT, sprintf("=== SUITE START %s — %d steps, %d lane(s) ===\n", now(), count($plan), $lanes));
 
     /** @var array<int, string> $pending Ids not started yet, longest first. */
@@ -527,10 +502,12 @@ function sweepStands(string $root): array
 /**
  * Drop the stand a step declared it takes down with it, if it declared one.
  *
- * Only the cluster step does. Its fleet is five PHP daemons, a database and a cli container, and
- * leaving it standing for the rest of the run cost 16m10s against 9m36s on chat-e2e plus fourteen
- * failures that were nothing but the neighbour (HIL-752). The demo stands cost nothing like that
- * and deliberately stay up: a red one gets climbed over by hand afterwards.
+ * A cluster step does. This is hygiene: its fleet is five PHP daemons, a database and a cli
+ * container with no reason to outlive the step, and a fleet that was forgotten for the rest of a
+ * run once cost chat-e2e 16m10s against 9m36s plus fourteen failures that were nothing but the
+ * leak (HIL-752). It is not what lets a fleet run beside an e2e step — they may overlap, as the
+ * head of `scripts/test-suite.php` says. The demo stands cost nothing like that and deliberately
+ * stay up: a red one gets climbed over by hand afterwards.
  *
  * The caller places this AFTER the step's snapshot was collected. Taking the stand down first
  * would leave the snapshot of a red step empty, which is the one case it exists for.
@@ -571,7 +548,8 @@ function dropStandAfterStep(string $root, array $step): void
  * Not by the work waiting behind a step: `fe-install` costs two seconds and holds up
  * the entire frontend chain, and it still sorts near the end. That was measured and
  * left alone deliberately — the head of `scripts/test-suite.php` says what a full run
- * is actually bound by, and why reordering buys at most 85 seconds of it (HIL-854).
+ * is actually bound by, and why neither the order nor the lanes are the lever (HIL-854,
+ * HIL-1227).
  *
  * @param array<string, array{seconds: int}> $manifest Steps by id.
  * @param array<int, string> $plan Step ids to run.

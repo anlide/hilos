@@ -49,7 +49,7 @@ use Hilos\Socket\Client\CommandClient;
  *
  * **These windows do NOT scale with the load of the run, and that is deliberate.** Playwright's
  * own ceilings do: framework/frontend/scripts/timeout-scale.mjs derives a factor of 1.0 to 4.0
- * from the number of lanes and the free memory, so a test on a loaded box is given more
+ * from the host's load and free memory, so a test on a loaded box is given more
  * patience. The waits here stay put, because the production chain must not take its sizing from
  * a test environment variable, and a test-only multiplier on one link of a shared chain is a
  * flag in the framework. The cost is accepted knowingly: it is why the numbers are this large

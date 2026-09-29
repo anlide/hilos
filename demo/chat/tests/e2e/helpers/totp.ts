@@ -6,6 +6,13 @@ import { createHmac } from 'node:crypto'
 /** Seconds one code lives. */
 const STEP_SECONDS = 30
 
+/**
+ * Steps either side of the server's clock a code is still accepted for —
+ * `Totp::WINDOW_STEPS` in `framework/backend/Auth/SecondFactor/Totp.php`. Node
+ * cannot read a PHP constant, so a change there is carried here by hand.
+ */
+const WINDOW_STEPS = 1
+
 /** Digits of a code. */
 const DIGITS = 6
 
@@ -60,9 +67,15 @@ export function totpCode(secret: string, step: number = totpStep()): string {
 }
 
 /**
- * The code of the first time step after one already spent. The server takes a
- * step of an app once, so a second code in the same thirty seconds is refused;
- * this waits the step out rather than guess.
+ * The code of the first time step after one already spent.
+ *
+ * The server takes a step of an app once (`acceptStep()` in
+ * `framework/backend/Database/Object/Item/SecondFactor.php`) and accepts a code
+ * `WINDOW_STEPS` steps either side of its own clock (`Totp::verify()`). So the
+ * step after the spent one is taken at once, even while the clock still stands
+ * in the spent one: it is the code of a phone whose clock runs fast. This waits
+ * only when the step wanted is further ahead than the server reaches — a code
+ * needed for the second time inside one window.
  *
  * @param secret The base32 secret.
  * @param spent The step last accepted.
@@ -72,10 +85,10 @@ export async function nextTotpCode(
   secret: string,
   spent: number,
 ): Promise<{ code: string; step: number }> {
-  while (totpStep() <= spent) {
+  const step = Math.max(spent + 1, totpStep())
+  while (step - totpStep() > WINDOW_STEPS) {
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
-  const step = totpStep()
 
   return { code: totpCode(secret, step), step }
 }

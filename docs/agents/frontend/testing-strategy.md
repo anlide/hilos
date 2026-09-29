@@ -470,34 +470,39 @@ comes before, waiting on the **subscription** reply the result itself depends on
 (e.g. the profile snapshot that fills the card): settle the action first, then
 assert the data.
 
-## Timeouts scale with the lanes the run uses
+## Timeouts come from the host, not from the lanes
 
 Every Playwright cap — the test timeout, the `expect` timeout, and the action and
 navigation timeouts — is the base value multiplied by a factor of 1.0–4.0 that
-`framework/frontend/scripts/timeout-scale.mjs` resolves. All three demo configs
-import the one module; none of them carries its own numbers. The factor and the
+`framework/frontend/scripts/timeout-scale.mjs` resolves. Every demo config
+imports the one module; none of them carries its own numbers. The factor and the
 readings behind it are printed as the run starts, so a slow step stays
 explainable from its log.
 
-The factor comes from **how many lanes the run uses**, not from what the box says
-about itself. `scripts/run-test-suite.php` exports `HILOS_E2E_TIMEOUT_SCALE` from
-the lane count it resolved — once per run, before the first step — and the three
-demo compose files forward it into the e2e runner. One lane is 1.0, two are 2.0.
+The factor comes from **what the box says about itself** at the moment the config
+is read. A load per CPU above 0.75 stretches the caps by the excess, and available
+memory sets a floor under that (2.0 under 2 GiB, 3.0 under 1 GiB), because a box
+about to swap costs far more than its load average admits. An unmeasurable host
+resolves to 1.0, and a runaway one is capped at 4.0 so a genuine hang ends. This
+is the one path there is: the heuristic runs the same inside the full run and
+under Playwright started by hand.
 
-That variable is a **floor**, not the finished factor: available memory may raise
-it further (2.0 under 2 GiB, 3.0 under 1 GiB), because a box about to swap costs
-far more than its load average admits. The load-per-CPU term does not run at all
-while the variable is set — in the three runs this rule was rewritten for it read
-`scale 1` every time, including a two-lane run that took 17m59s, because the
-pressure was disk and docker while that term measures CPU (HIL-853).
+`HILOS_E2E_TIMEOUT_SCALE` is a **pin made by hand** — someone debugging a step, a
+CI that knows its own box. Nothing in the repository sets it; the demo compose
+files only forward it into the e2e runner. A pinned value is a **floor**, not the
+finished factor: memory may still raise it, while the load-per-CPU term steps
+aside for as long as it is set (HIL-853). A value below 1 is raised to 1: the knob
+can lengthen a timeout and never shorten one.
 
-With no variable set the whole heuristic runs as it always did, load term
-included. That is Playwright started outside the runner, and its only remaining
-consumer. An unmeasurable host still resolves to 1.0, a runaway one is still
-capped at 4.0 so a genuine hang ends, and a value below 1 is raised to 1: the
-knob can lengthen a timeout and never shorten one.
+**The lane count is no part of this** (HIL-1227). `scripts/run-test-suite.php`
+used to export the variable from the number of lanes it resolved, and at seven
+lanes that put every cap at the ceiling of four. It was dropped on what the box of
+the line measured: `chat-e2e` alone at a factor of 1.0 passed 244 tests without
+one retry (run 0615), and the cluster suite at 1.0 passed 19 of 19 (run 0623) — a
+factor above 1 rescued no test, while a test that hangs costs 30 seconds an
+attempt at 1.0 against 120 at seven lanes.
 
-This exists because the full run puts **two demo lanes on the box at once**
+This exists because a full run puts several suites on the box at once
 (`../testing.md`): a starved host must make the suite slower, not red.
 
 The heuristic is a port of `resolve_timeout_scale()` in the shared cluster
@@ -506,9 +511,22 @@ harness (`framework/docker/cluster/scenarios.py`), and the port is
 on a convergence timeout and never one that violated an invariant. Playwright
 gives no cheap way to tell the two apart at retry time, so retrying on timeout
 only cannot be expressed — retries stay at 2 in CI, and only the caps move. The
-cluster scale now reads `CLUSTER_E2E_TIMEOUT_SCALE` under the same rule as this
-one: the runner exports it from the same lane count, memory may raise it above
-that, and the loadavg term steps aside whenever it is set.
+cluster scale reads `CLUSTER_E2E_TIMEOUT_SCALE` under the same rule as this one:
+nothing but a hand sets it, memory may raise it above the pin, and the loadavg
+term steps aside whenever it is set.
+
+### A test longer than the cap declares its own
+
+A test whose own work runs past the base cap — three letters in a row, a wait on
+a clock — says so itself: `test.slow()` when a flat triple fits, or a named factor
+over `test.info().timeout` when it does not (`SIGN_IN_LINK_TIMEOUT_FACTOR` in
+`demo/polls/tests/e2e/tests/auth.spec.ts` is the sample), with the measured
+duration and the reason in a comment.
+
+Do not lean on the host factor as a budget: it is 1.0 on an idle box, and a test
+that passes only because the box was loaded goes red on the day the box is quiet
+(P-379). Never raise a floor under the factor — in the runner or in a config — to
+cure one test.
 
 ## Source vs build
 

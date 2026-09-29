@@ -21,11 +21,11 @@ the grace-driven detection windows (keepalive-timeout + failover-grace, HIL-183)
 run longer than the fixed caps and the matrix flakes on pure "timed out after Ns"
 without the cluster logic being wrong. Two guards keep the run honest without
 falsely passing:
-  * the caps are multiplied by a TIMEOUT_SCALE (>= 1.0) — the runner exports
-    CLUSTER_E2E_TIMEOUT_SCALE from the lane count it resolved, and that value is
-    a FLOOR which little free memory may raise further; with the variable unset
-    the factor is derived from the host's load-per-cpu and free memory instead.
-    A provisioned host on one lane stays at 1.0.
+  * the caps are multiplied by a TIMEOUT_SCALE (>= 1.0) derived from the host's
+    load-per-cpu and free memory, the same inside the full run and outside it;
+    the runner no longer exports a factor from its lane count (HIL-1227).
+    CLUSTER_E2E_TIMEOUT_SCALE is a pin made by hand, and a FLOOR which little
+    free memory may raise further. A provisioned host stays at 1.0.
   * a scenario that fails PURELY on a convergence timeout is retried a bounded
     number of times (CLUSTER_E2E_RETRIES, default 1) after re-converging; a hard
     invariant assertion never retries and fails immediately.
@@ -188,13 +188,17 @@ def _free_gib():
 def resolve_timeout_scale():
     """Factor (>= 1.0) that stretches every convergence cap for a loaded/slow host.
 
-    CLUSTER_E2E_TIMEOUT_SCALE is a FLOOR rather than the finished factor: the
-    runner sets it from the lane count it resolved, and a box short enough on
-    memory to swap may still raise it further. What the override does silence is
-    the load term — the half of this heuristic that measured nothing in the runs
-    it was rewritten for (HIL-853). Capped at 4.0 so a runaway host still fails in
-    bounded time. A well-provisioned host with no override resolves to 1.0 (no
-    change).
+    Nothing in the repository sets CLUSTER_E2E_TIMEOUT_SCALE: it is a pin made by
+    hand — someone debugging a scenario, a CI that knows its own box. The runner
+    used to derive it from its lane count and no longer does (HIL-1227): on the
+    box of the line a factor above 1 rescued no scenario, and one that hung cost
+    four of its caps.
+
+    A pinned value is a FLOOR rather than the finished factor: a box short enough
+    on memory to swap may still raise it further. What it does silence is the load
+    term, which runs only when nothing is pinned (HIL-853). Capped at 4.0 so a
+    runaway host still fails in bounded time. A well-provisioned host with no
+    override resolves to 1.0 (no change).
     """
     scale = 1.0
     overridden = False

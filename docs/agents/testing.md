@@ -235,17 +235,23 @@ php scripts/run-test-suite.php --list         the plan, without running it
 
 A target is a step id or a tag, and whatever it selects pulls its dependencies in.
 Steps run **concurrently up to a global limit**, the longest expected step first —
-by its **own** duration, not by the chain waiting behind it. The
-limit defaults to 2 on a machine with at least 8 cores and about 4 GB available and
-to **1 everywhere else**, so a small CI runner degrades to the old serial run
-instead of thrashing; `HILOS_TEST_LANES` or `--lanes=N` overrides it.
+by its **own** duration, not by the chain waiting behind it. The limit is sized
+from the machine ([`scripts/lane-count.php`](../../scripts/lane-count.php)): a
+lane per two cores, less one lane left to the machine itself, never more than one
+lane per 2 GiB of available memory, and never fewer than one. The box of the line,
+at 16 cores, takes 7; eight cores take 3; four cores, or a machine that does not
+report its size, take **1**, so a small CI runner degrades to the serial run
+instead of thrashing. `HILOS_TEST_LANES` or `--lanes=N` overrides it. What decided
+the number is printed in a line of its own — `lanes: 7 (adaptive: 16 cores, 55.2
+GiB available)` — by the run before its first step and by `--list` under the head
+of the plan.
 
-That lane count leaves the runner as a **timeout multiplier** as well: before the
-first step it exports `HILOS_E2E_TIMEOUT_SCALE` and `CLUSTER_E2E_TIMEOUT_SCALE`,
-so a two-lane run gives every suite twice its usual patience instead of each
-suite guessing from a load average it sampled for itself. A value already in the
-environment is kept as it is. What each suite then does with the number — and why
-memory can still raise it — is in
+The lane count is **not a timeout multiplier** (HIL-1227). The runner sets no
+timeout variable at all: every suite — Playwright of each demo, the cluster
+harness — derives its factor from the host it runs on, load per CPU and available
+memory, the same way inside the full run and outside it. `HILOS_E2E_TIMEOUT_SCALE`
+and `CLUSTER_E2E_TIMEOUT_SCALE` remain a pin made by hand. What each suite does
+with its factor — and what a test longer than its cap owes — is in
 [frontend/testing-strategy.md](frontend/testing-strategy.md).
 
 The graph is where the safety lives, and two kinds of constraint carry it:
@@ -260,15 +266,19 @@ The graph is where the safety lives, and two kinds of constraint carry it:
   same time, but a red one does not skip the others: `<demo>-php` is backend-only
   and keeps its own verdict when `<demo>-check` fails.
 
-Reordering is not the lever it looks like. The three steps of the `chat` demo share
-a group, so 19 + 169 + 618 = 806s of them can never overlap: **13m26s is the floor of
-a full run at any lane count**, below even what two lanes could otherwise pack
-(772s). Against a current cost of about 14m30s, ordering by the critical path behind
-each step buys 22 seconds, and counting group load as well buys 85 — measured
-2026-09-05 (HIL-854). Both were declined: every faster order puts `chat-e2e` beside
-the live cluster fleet, which once cost it 16m10s against 9m36s (HIL-752). The
-numbers, and what re-measuring them can quietly break, are in the head of
+Neither the order nor the lane count is the lever it looks like. The three steps of
+the `chat` demo share a group — one stand — so 106 + 1227 + 6 = 1339s of them can
+never overlap: **22m19s is the floor of a full run at any lane count**, measured
+2026-09-29 on nova-de at seven lanes (HIL-1227, run 0659). That run took 22m20s,
+every other step was done by 7m08s, and seven lanes could otherwise pack the whole
+graph into 6m25s. The next lever is an instance of the stand as a parameter, so that
+`chat-e2e` can be cut across stands of its own. The numbers are in the head of
 [`scripts/test-suite.php`](../../scripts/test-suite.php).
+
+**Any cluster fleet may run beside any e2e step.** No edge keeps them apart and the
+order does not either; a fleet leaves with its own step (`downsStand`), which is
+hygiene rather than separation. A red step beside a fleet is read like any other —
+the neighbours in the step's `SNAPSHOT.txt`, then the re-run alone described below.
 
 There is **no fail-fast**. A red step skips what depends on it, unrelated branches
 finish, and the runner exits non-zero if anything was red. Each step writes its own
@@ -310,10 +320,10 @@ Re-run it **alone on the same HEAD** — `php scripts/run-test-suite.php <id>
 
 What must never happen is a red waved off as "probably the neighbour" without that
 re-run: it is exactly how a genuine regression reaches the base wearing the excuse
-of concurrency. The check is cheap — one demo block is 1–5 minutes, less than a
-single serial full run, and it only happens on red. The other half of the defense
-is that Playwright's caps stretch with host load rather than firing
-([frontend/testing-strategy.md](frontend/testing-strategy.md)).
+of concurrency. The check is cheap — one demo block is 1–3 minutes and `chat-e2e`,
+the longest step there is, about twenty — and it only happens on red. The other
+half of the defense is that Playwright's caps stretch with host load rather than
+firing ([frontend/testing-strategy.md](frontend/testing-strategy.md)).
 
 ## The cluster stands — three demos, three shapes
 
@@ -389,9 +399,9 @@ The Playwright suite of binance-btc-tracker drives the backup, logs and
 protected-mode specs against the multi-node binance stand, with the browser
 open on a node that does not hold the agent (not in the code yet — HIL-1232).
 
-The full run carries three fleets now instead of one. Whether an e2e step may
-stand beside them in the lane plan is decided by a re-measurement on the box
-that runs the full run (not in the code yet — HIL-1227).
+The full run carries three fleets now instead of one. An e2e step may stand
+beside any of them in the lane plan: nothing keeps them apart, and each fleet
+leaves with its own step (HIL-1227).
 
 The ports and the subnet of every stand are in the registry of
 [../new-project/README.md](../new-project/README.md); which demo carries the

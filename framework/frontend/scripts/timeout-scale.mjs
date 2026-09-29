@@ -99,11 +99,14 @@ function readAvailableGib() {
 /**
  * The factor every timeout is multiplied by, and the sentence explaining it.
  *
- * The override is a FLOOR, not the finished factor: the runner sets it from the
- * lane count it resolved, and a box short enough on memory to swap may still
- * raise it further. What the override does silence is the load term — that is
- * the half of the heuristic which measured nothing in the runs this rule was
- * rewritten for (HIL-853).
+ * Nothing in the repository sets the override: it is a pin made by hand — someone
+ * debugging a step, a CI that knows its own box. The runner used to derive it
+ * from its lane count and no longer does (HIL-1227): on the box of the line a
+ * factor above 1 rescued no test, and a test that hung cost four of its caps.
+ *
+ * A pinned override is a FLOOR, not the finished factor: a box short enough on
+ * memory to swap may still raise it further. What it does silence is the load
+ * term, which runs only when nothing is pinned (HIL-853).
  *
  * @param {object} pressure
  * @param {string | undefined} pressure.override Raw value of the override
@@ -139,8 +142,8 @@ export function deriveTimeoutScale({ override, loadPerCpu, availableGib }) {
   }
   // Memory is a floor rather than a term: a box this short on memory is about to
   // swap, and swapping costs far more than its load average admits at the moment
-  // the config is read. It outranks the override for the same reason — the lane
-  // count says how much work was asked for, not how much the box has left.
+  // the config is read. It outranks the override for the same reason — a factor
+  // pinned by hand says what its author expected, not how much the box has left.
   const memoryFloor = availableGib === null ? 1.0 : memoryFloorFor(availableGib)
   if (memoryFloor > factor) {
     reason = overridden

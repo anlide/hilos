@@ -94,10 +94,6 @@ test.describe('two-step verification', () => {
   test('asks the code on the next sign-in, and not again on a trusted browser', async ({
     page,
   }) => {
-    // The sign-in code has to wait out the step the enrolment spent, up to
-    // thirty seconds, which alone is the cap a test of DOM work is given.
-    test.slow()
-
     const user = await signUp(page)
     const app = await connectFirstApp(page)
 

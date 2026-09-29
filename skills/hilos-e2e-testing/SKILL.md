@@ -66,6 +66,10 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
 12. e2e runs the **built artifact** with a booted daemon — rebuild after a
     frontend change before the spec exercises it, and reset before re-running a
     data-mutating spec.
+13. A test whose own work outlives the base cap declares its own ceiling —
+    `test.slow()` or a named factor over `test.info().timeout` — with the reason
+    in a comment: `docs/agents/frontend/testing-strategy.md`, "A test longer than
+    the cap declares its own".
 
 ## Hard Rules
 
@@ -78,6 +82,8 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
   reload out instead, and steer afterwards if a different address is wanted.
 - Never measure a box in a spec — take a bookmark from the toolbox and ask it
   whether anything moved.
+- Never lean on the host timeout factor, and never add a floor under it to cure
+  one test.
 - A file in `framework/frontend/e2e/` imports from `@playwright/test` with
   `import type` and nothing else — a value import loads a second Playwright and
   the runner refuses the run.
