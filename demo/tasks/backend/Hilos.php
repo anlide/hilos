@@ -63,6 +63,7 @@ use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityPage;
+use Demo\Tasks\Pages\Hilos\ProfilePage;
 use Demo\Tasks\Pages\Hilos\ProfileSecurityPage;
 use Demo\Tasks\Pages\Hilos\ProfileDataPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityTwoFactorPage;
@@ -188,6 +189,7 @@ final class Hilos extends HilosFacade
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
+        ProfilePage::PAGE => ProfilePage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         ProfileDataPage::PAGE => ProfileDataPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,

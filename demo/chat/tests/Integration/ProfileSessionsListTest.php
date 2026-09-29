@@ -15,6 +15,8 @@ use Demo\Chat\Pages\Hilos\ProfileNotificationsPage;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\ProfileSessionsPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
+use Hilos\Auth\AccountDeletion\AccountDeletionStateProjector;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Constants\SignalTypeConstants;
@@ -28,7 +30,12 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\DataExport\DataExportGroup;
+use Hilos\DataExport\DataExportStateProjector;
 use Hilos\Database\Object\Item\Session;
+use Hilos\Legal\LegalAgreementsGroup;
+use Hilos\Legal\LegalAgreementsProjector;
+use Hilos\Legal\LegalStandingResolver;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Pages\AbstractHilosProfileNotificationsPage;
 use Hilos\Pages\AbstractHilosProfileSecurityPage;
@@ -219,6 +226,41 @@ final class ProfileSessionsListTest extends IntegrationTestCase
             SecondFactorGroup::forUser($userId),
             Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, SecondFactorGroup::forUser($userId)),
         );
+    }
+
+    public function testProfilePageCarriesTheDeletionAndDataSections(): void
+    {
+        [$userId] = $this->createUserWithTwoSessions();
+        Hilos::$sr = new SignalRouter();
+
+        ExecutionContext::run(
+            new ExecutionFrame(acceptKey: self::ACCEPT_KEY),
+            static function (): void {
+                new ProfilePage(new ChatAgent())->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+            },
+        );
+
+        $payload = $this->nextPagePayloadWithData(ProfilePage::PAGE, AccountDeletionStateProjector::SECTION);
+        self::assertSame(
+            AccountDeletionStateProjector::stateFor($userId)->toArray(),
+            $payload[PagePayload::data][AccountDeletionStateProjector::SECTION],
+        );
+        self::assertSame(
+            LegalAgreementsProjector::stateFor($userId, LegalStandingResolver::today())->toArray(),
+            $payload[PagePayload::data][LegalAgreementsProjector::SECTION],
+        );
+        self::assertArrayHasKey(DataExportStateProjector::SECTION, $payload[PagePayload::data]);
+        self::assertSame(
+            DataExportStateProjector::nodeFor(Hilos::$db->dataExports->ofUser($userId)),
+            $payload[PagePayload::data][DataExportStateProjector::SECTION],
+        );
+        foreach ([
+            AccountDeletionGroup::forUser($userId),
+            LegalAgreementsGroup::forUser($userId),
+            DataExportGroup::forUser($userId),
+        ] as $group) {
+            self::assertSame($group, Hilos::$sr->groupSubscriptionName(self::ACCEPT_KEY, $group));
+        }
     }
 
     /**

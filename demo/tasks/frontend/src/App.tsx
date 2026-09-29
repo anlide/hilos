@@ -7,6 +7,7 @@
 import {
   HilosAvatar,
   HilosLayout,
+  HilosLink,
   HilosMagicLinkPage,
   HilosSecondFactorCancelPage,
   HilosNotificationBell,
@@ -20,6 +21,7 @@ import {
   AUTH_MAGIC_LINK_PATH,
   AUTH_SECOND_FACTOR_CANCEL_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
+  HILOS_PAGE_ROUTES,
   HilosPages,
   hilosSessionAvatarMark,
   type AuthGate,
@@ -50,6 +52,7 @@ import HilosLegalDocument from "./views/Hilos/Legal/LegalDocument.js";
 import HilosLegalRevision from "./views/Hilos/Legal/LegalRevision.js";
 import HilosLegalAcceptances from "./views/Hilos/Legal/LegalAcceptances.js";
 import HilosLegalSettings from "./views/Hilos/Legal/LegalSettings.js";
+import Profile from "./views/Profile/Profile.js";
 import ProfileSecurity from "./views/Profile/ProfileSecurity";
 import ProfileData from "./views/Profile/ProfileData.js";
 import HilosUser from "./views/Hilos/Users/User";
@@ -114,6 +117,7 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.LEGAL_REVISION]: HilosLegalRevision,
   [HilosPages.LEGAL_ACCEPTANCES]: HilosLegalAcceptances,
   [HilosPages.LEGAL_SETTINGS]: HilosLegalSettings,
+  [HilosPages.PROFILE]: Profile,
   [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
   [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.ABOUT]: About,
@@ -136,6 +140,9 @@ export interface AppProps {
    */
   authGate: AuthGate;
 }
+
+/** The profile root the avatar leads to (HIL-1169). */
+const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE];
 
 export default function App({ authGate }: AppProps) {
   const isAdmin = useSignal(currentUserIsAdmin);
@@ -168,10 +175,15 @@ export default function App({ authGate }: AppProps) {
         userName ? (
           <>
             <HilosNotificationBell connection={connection} />
-            <span className="small" data-id="nav-profile-name" title={userName}>
+            <HilosLink
+              to={profileHref}
+              className="nav-link d-inline-flex align-items-center p-0"
+              data-id="nav-profile-name"
+              title={userName}
+            >
               <HilosAvatar name={userName} mark={avatarMark} />
               <span className="visually-hidden">{userName}</span>
-            </span>
+            </HilosLink>
           </>
         ) : (
           // A visitor gets neither bell nor gear — there is nothing to show — and

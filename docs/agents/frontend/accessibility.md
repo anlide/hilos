@@ -176,8 +176,9 @@ The rules to apply when building a view or an SDK component:
   references, all of them permanent nodes: the page-change announcement and the
   connection indicator (`framework/frontend/vue/src/HilosLayout.vue`), the toast
   stack (`framework/frontend/vue/src/HilosToastHost.vue`), the sign-in screen
-  (`framework/frontend/vue/src/auth/HilosAuthSurface.vue`), the profile page
-  (`demo/chat/frontend/src/views/Profile/Profile.vue`), the user-rename dialog
+  (`framework/frontend/vue/src/auth/HilosAuthSurface.vue`), the profile dialogs
+  (`framework/frontend/vue/src/profile/HilosProfileRename.vue`,
+  `HilosProfileEmailChange.vue`), the user-rename dialog
   (`framework/frontend/vue/src/admin/users/HilosUserPage.vue`) and the refusal
   of a tracked action (`framework/frontend/vue/src/HilosActionError.vue`),
   whose region is the slot the row stands in — the row itself carries no

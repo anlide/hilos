@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Pages;
 
-use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
-use Hilos\Auth\AccountDeletion\AccountDeletionStateProjector;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Constants\HilosPageConstants;
@@ -22,8 +20,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 
 /**
- * AbstractHilosProfileSecurityPage - the profile's security page: the second factor (HIL-494)
- * and the account deletion's danger zone (HIL-302).
+ * AbstractHilosProfileSecurityPage - the profile's security page: the second factor (HIL-494).
  *
  * The framework owns the page's identity - key, route `/profile/security`, subscription signal
  * - so every project that signs people in exposes the same section; the concrete subclass
@@ -37,10 +34,8 @@ use Hilos\HilosException;
  * connection joins the person's group ({@see SecondFactorGroup}), so a change made anywhere
  * reaches every tab showing the section.
  *
- * The danger zone rides along the same way: the person's deletion state under its own
- * section ({@see AccountDeletionStateProjector}), and its own group
- * ({@see AccountDeletionGroup}) for every start and cancel. A project whose profile has more
- * than one page draws the zone here, at the bottom of the security page.
+ * The account deletion's danger zone is not here: it sits at the bottom of the profile root,
+ * whose page answers with its state ({@see AbstractHilosProfilePage}, HIL-1169).
  */
 abstract class AbstractHilosProfileSecurityPage extends AbstractPage
 {
@@ -59,16 +54,14 @@ abstract class AbstractHilosProfileSecurityPage extends AbstractPage
     ];
 
     /**
-     * @var list<string> The four tables the section is read from, and the deletion requests the
-     *     danger zone is; all of them are the users library's, written by its commands and by
-     *     its removal sweep.
+     * @var list<string> The four tables the section is read from; all of them are the users
+     *     library's, written by its commands and by its removal sweep.
      */
     public const array READS_DB = [
         HilosDbContext::secondFactors,
         HilosDbContext::secondFactorBackupCodes,
         HilosDbContext::secondFactorResets,
         HilosDbContext::secondFactorSettings,
-        HilosDbContext::accountDeletions,
     ];
 
     /**
@@ -76,7 +69,7 @@ abstract class AbstractHilosProfileSecurityPage extends AbstractPage
      *
      * @param string $acceptKey WebSocket accept key of the subscribing connection
      * @param PageRouteParams $params Route params (unused; the page has none)
-     * @return ?PagePayload The section and the deletion state, or null outside a signed-in session
+     * @return ?PagePayload The section, or null outside a signed-in session
      * @throws HilosException When a lookup or a setting read fails
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
@@ -88,12 +81,11 @@ abstract class AbstractHilosProfileSecurityPage extends AbstractPage
 
         return new PagePayload(data: [
             self::SECOND_FACTOR_SECTION => SecondFactorStateProjector::stateFor($userId)->toArray(),
-            AccountDeletionStateProjector::SECTION => AccountDeletionStateProjector::stateFor($userId)->toArray(),
         ]);
     }
 
     /**
-     * Puts the connection on the person's two groups once the subscription is answered.
+     * Puts the connection on the person's second-factor group once the subscription is answered.
      *
      * The same two writes a group's own join makes: the membership in this worker's mirror, and
      * the word to the master, which keeps the fan-out list every process sends through.
@@ -110,6 +102,5 @@ abstract class AbstractHilosProfileSecurityPage extends AbstractPage
         }
 
         SecondFactorGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
-        AccountDeletionGroup::join($acceptKey, $userId, $this->getAgentSignalSource());
     }
 }

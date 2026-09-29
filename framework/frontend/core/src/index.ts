@@ -500,6 +500,23 @@ export {
   type HilosProfileSignInPasskeySource,
 } from './profile/profileSignInMethods.js'
 export {
+  createHilosProfileRootStore,
+  HILOS_PROFILE_ROOT_COPY,
+  hilosProfileSectionIcon,
+  hilosProfileSectionId,
+  type HilosProfileBinding,
+  type HilosProfilePageContext,
+  type HilosProfileRootStore,
+} from './profile/profileRoot.js'
+export {
+  createHilosProfileRenameFlow,
+  HILOS_PROFILE_RENAME_COPY,
+  type HilosProfileRename,
+  type HilosProfileRenameFields,
+  type HilosProfileRenameFlow,
+  type HilosProfileRenameStep,
+} from './profile/profileRename.js'
+export {
   ADD_SIGN_IN_METHOD_OPERATION,
   createHilosProfileAddSignInFlow,
   HILOS_PROFILE_SIGN_IN_COPY,
@@ -525,12 +542,18 @@ export {
 } from './profile/signInMethods.js'
 export {
   createHilosProfileEmailChangeActions,
+  createHilosProfileEmailChangeFlow,
+  EMAIL_CHANGE_OPERATION,
+  HILOS_PROFILE_EMAIL_CHANGE_COPY,
+  HILOS_PROFILE_EMAIL_CHANGE_STEPS,
   PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM_ACTION,
   PROFILE_CHANGE_EMAIL_CURRENT_REQUEST_ACTION,
   PROFILE_CHANGE_EMAIL_NEW_CONFIRM_ACTION,
   PROFILE_CHANGE_EMAIL_NEW_REQUEST_ACTION,
   type HilosProfileEmailChangeActionContext,
   type HilosProfileEmailChangeActions,
+  type HilosProfileEmailChangeFlow,
+  type HilosProfileEmailChangeStep,
 } from './profile/emailChange.js'
 export { qrMatrix } from './auth/qrMatrix.js'
 export {

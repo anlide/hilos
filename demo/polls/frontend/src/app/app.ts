@@ -10,6 +10,7 @@ import {
   HILOS_ROUTER,
   HilosAvatar,
   HilosLayout,
+  HilosLink,
   HilosMagicLinkPage,
   HilosSecondFactorCancelPage,
   HilosNotificationBell,
@@ -22,6 +23,7 @@ import {
   AUTH_MAGIC_LINK_PATH,
   AUTH_SECOND_FACTOR_CANCEL_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
+  HILOS_PAGE_ROUTES,
   HilosPages,
   hilosSessionAvatarMark,
 } from "@hilos/core";
@@ -52,6 +54,7 @@ import { LegalDocument } from "./views/hilos/legal/legal-document.js";
 import { LegalRevision } from "./views/hilos/legal/legal-revision.js";
 import { LegalAcceptances } from "./views/hilos/legal/legal-acceptances.js";
 import { LegalSettings } from "./views/hilos/legal/legal-settings.js";
+import { Profile } from "./views/profile/profile.js";
 import { ProfileSecurity } from "./views/profile/profile-security";
 import { ProfileData } from "./views/profile/profile-data.js";
 import { Settings } from "./views/hilos/settings/settings";
@@ -65,6 +68,7 @@ import { Users } from "./views/hilos/users/users";
   imports: [
     HilosAvatar,
     HilosLayout,
+    HilosLink,
     HilosMagicLinkPage,
     HilosSecondFactorCancelPage,
     HilosNotificationBell,
@@ -81,10 +85,15 @@ import { Users } from "./views/hilos/users/users";
     <ng-container ngProjectAs="[user]">
       @if (userName()) {
         <hilos-notification-bell [connection]="connection" />
-        <span class="small" data-id="nav-profile-name" [title]="userName()">
+        <a
+          [hilosLink]="profileHref"
+          class="nav-link d-inline-flex align-items-center p-0"
+          data-id="nav-profile-name"
+          [title]="userName()"
+        >
           <hilos-avatar [name]="userName()" [mark]="avatarMark()" />
           <span class="visually-hidden">{{ userName() }}</span>
-        </span>
+        </a>
       } @else {
         <!-- A visitor gets neither bell nor gear — there is nothing to show —
         and one button that opens the surface over the page they are standing on
@@ -121,6 +130,9 @@ export class App {
   protected readonly isAdmin = hilosSignal(currentUserIsAdmin);
 
   protected readonly userName = hilosSignal(currentUserName);
+
+  /** The profile root the avatar leads to (HIL-1169). */
+  protected readonly profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE];
 
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.
@@ -192,6 +204,7 @@ export class App {
     [HilosPages.LEGAL_REVISION]: LegalRevision,
     [HilosPages.LEGAL_ACCEPTANCES]: LegalAcceptances,
     [HilosPages.LEGAL_SETTINGS]: LegalSettings,
+    [HilosPages.PROFILE]: Profile,
     [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
     [HilosPages.PROFILE_DATA]: ProfileData,
     // The framework logs section, activated whole: the framework owns the six

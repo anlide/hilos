@@ -1,14 +1,12 @@
-// The profile page selectors: the current user's committed display name read
+// The profile page selector: the current user's committed display name read
 // from the live self-connection data the page subscription delivers (backend
 // ProfilePage binds SelfConnectionBrowserData, which carries the DB user name).
 // Reading the committed name reactively — rather than the one-shot session
-// current user — is what lets the edit modal detect a rename landing (success)
-// and a concurrent rename from another tab (conflict). The view reads these
-// signals and never touches a raw store.
+// current user — is what lets the framework's name window detect a rename
+// landing (success) and a concurrent rename from another tab (conflict).
 import { computedSignal, readString, type ReadonlySignal } from '@hilos/core'
 
 import { scopes } from '../../bootstrap/session.js'
-import { type ProfileDetail } from './types/ProfileDetail.js'
 
 // The single-row data slot carrying this connection's own state
 // (backend ChatBrowserTable::SELF_CONNECTION), including the DB user name.
@@ -33,11 +31,3 @@ export const committedName: ReadonlySignal<string> = computedSignal(() => {
 
   return fields ? readString(fields, NAME_FIELD) : ''
 })
-
-/** The read-only profile the view renders, or undefined until the name lands. */
-export const profileDetail: ReadonlySignal<ProfileDetail | undefined> =
-  computedSignal(() => {
-    const name = committedName.get()
-
-    return name === '' ? undefined : { name }
-  })

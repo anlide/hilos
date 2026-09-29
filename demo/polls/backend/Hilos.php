@@ -61,6 +61,7 @@ use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityPage;
+use Demo\Polls\Pages\Hilos\ProfilePage;
 use Demo\Polls\Pages\Hilos\ProfileSecurityPage;
 use Demo\Polls\Pages\Hilos\ProfileDataPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
@@ -181,6 +182,7 @@ final class Hilos extends HilosFacade
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
+        ProfilePage::PAGE => ProfilePage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         ProfileDataPage::PAGE => ProfileDataPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,

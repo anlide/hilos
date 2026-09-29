@@ -229,6 +229,18 @@ export { HilosAuthGateContext } from './auth/hilosAuthGateContext.js'
 export type { HilosTableColumn } from '@hilos/core'
 
 export { HilosPageHeading } from './HilosPageHeading.js'
+export {
+  HilosProfilePage,
+  type HilosProfilePageProps,
+} from './profile/HilosProfilePage.js'
+export {
+  HilosProfileRename,
+  type HilosProfileRenameProps,
+} from './profile/HilosProfileRename.js'
+export {
+  HilosProfileEmailChange,
+  type HilosProfileEmailChangeProps,
+} from './profile/HilosProfileEmailChange.js'
 export { HilosProfileSignInPage } from './profile/HilosProfileSignInPage.js'
 export { HilosProfileNotificationsPage } from './profile/HilosProfileNotificationsPage.js'
 export { HilosProfileDataPage } from './profile/HilosProfileDataPage.js'

@@ -145,8 +145,8 @@ The authenticated revision-history page supplies `legalAgreements` plus
 replies when a person opens a dialog. All three SDK layers use the same core
 schemas and reader; a closed or superseded dialog ignores a late reply.
 
-The chat profile root includes the same lightweight agreement state for its
-summary. Each personal surface joins the server-addressed group after its
+The profile root (`AbstractHilosProfilePage`) includes the same lightweight
+agreement state for its summary. Each personal surface joins the server-addressed group after its
 subscription answer; the state signal updates the person's open views. On the
 agreements page, a changed held or current revision asks for a fresh answer of
 that same page subscription. The previous state/text pair stays together until

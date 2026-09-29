@@ -1,4 +1,4 @@
-// A person's own account deletion (HIL-302) at the bottom of /profile/security:
+// A person's own account deletion (HIL-302) at the bottom of /profile:
 // the password first, since a password account has something stronger than its
 // address, then a code to the address, the warning with the date, and "Keep my
 // account" in one press. The code is read from the stand mailbox, never a
@@ -28,7 +28,7 @@ const SUBJECT = 'Confirm deleting your account'
  * @param email Address receiving the deletion code.
  */
 async function scheduleDeletion(page: Page, email: string): Promise<void> {
-  await gotoPage(page, '/profile/security')
+  await gotoPage(page, '/profile')
   await clickSubmit(page.getByTestId('account-deletion-open'))
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
   await clickSubmit(page.getByTestId('account-deletion-confirm'))

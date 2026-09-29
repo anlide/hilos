@@ -49,8 +49,8 @@ store and flow. Their owner starts the store and disposes both when it is done.
 with AUTHENTICATED access. Each demo binds the page to its own subscription
 agent. The `dataExport` section in its `page_response` carries the same archive
 node, or null when no copy exists; after answering, the connection joins the
-person's `DataExportGroup`. The chat profile root carries the same section and
-joins the same group for its live summary.
+person's `DataExportGroup`. The profile root (`AbstractHilosProfilePage`)
+carries the same section and joins the same group for its live summary.
 
 `HilosProfileDataPage` mounts the shared `HilosDataExport` block without its own
 heading or border (`titled=false`): the page's catalog heading names the
