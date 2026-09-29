@@ -212,8 +212,8 @@ Glance, Not The Record"; read it before adding a line to `docker logs` or taking
 
 The cluster harness guards this end to end: `cluster start <node>` reuses the
 existing container instead of recreating it, and scenario 9 of the shared
-harness (not in the code yet — HIL-1210), run on the ecommerce-shop stand
-(not in the code yet — HIL-1216), SIGKILLs the daemon inside a live container
+harness, run on the ecommerce-shop stand (not in the code yet — HIL-1216),
+SIGKILLs the daemon inside a live container
 and requires the node to rebind, rejoin the roster, and accept placements
 again — with the same container id.
 

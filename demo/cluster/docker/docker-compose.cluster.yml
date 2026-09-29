@@ -5,12 +5,19 @@
 # five daemon nodes that roll that schema out themselves as they start together,
 # under the rollout claim in the database (HIL-1228), on a dedicated bridge with
 # static IPs — three masters (the consensus/master-set) and two data-plane slaves
-# (the placement targets) — and a long-lived CLI container the harness
+# (the placement targets) — and a long-lived CLI container the shared cluster harness
 # `docker exec`s to run `test:cluster:inspect` against each node. Node role, identity, capabilities,
 # master set, and timeouts all come from CLUSTER_* env, so the same image is a
 # master or a data-plane node purely by configuration.
 
 name: hilos-cluster
+
+# What the shared cluster harness (framework/docker/cluster/cluster.py) reads besides the services
+# below; the nodes, their addresses, roles, room and log directories it takes from the services.
+x-hilos-cluster:
+  cli: cluster-cli
+  stranger: x1
+  scenarios: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 
 x-node-base: &node-base
   build: .
@@ -236,7 +243,7 @@ services:
   # authority the cluster does not trust. It passes its own start-up check - its trust file is
   # that other authority - and dials every node, and every link is refused on both ends:
   # scenario 17 asserts that nobody admits it. Profile `intruder`, so it never comes up with
-  # the cluster; `cluster intruder up|down` drives it. Not in CLUSTER_MASTER_SET.
+  # the cluster; the shared harness's `stranger up|down` drives it. Not in CLUSTER_MASTER_SET.
   cluster-x1:
     <<: *node-base
     container_name: cluster-x1
@@ -265,8 +272,8 @@ services:
   # and the one-shot runner for composer/phpunit (profile cli, so it never joins a
   # cluster bring-up implicitly). Deliberately WITHOUT HILOS_DAEMON_HOST: unlike a
   # demo's cli service, which faces one daemon, this one addresses five nodes in
-  # turn, so the caller names the node (`docker exec -e HILOS_DAEMON_HOST=<ip>`,
-  # see the cluster script).
+  # turn, so the caller names the node (`docker exec -e HILOS_DAEMON_HOST=<ip>`):
+  # the shared harness names the node per call.
   cluster-cli:
     build: .
     container_name: cluster-cli

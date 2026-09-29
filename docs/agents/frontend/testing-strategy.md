@@ -500,9 +500,9 @@ knob can lengthen a timeout and never shorten one.
 This exists because the full run puts **two demo lanes on the box at once**
 (`../testing.md`): a starved host must make the suite slower, not red.
 
-The heuristic is a port of `resolve_timeout_scale()` in the cluster harness,
-the one the three stands share (not in the code yet — HIL-1210), and the port
-is **deliberately half**: that suite also retries a scenario that failed purely
+The heuristic is a port of `resolve_timeout_scale()` in the shared cluster
+harness (`framework/docker/cluster/scenarios.py`), and the port is
+**deliberately half**: that suite also retries a scenario that failed purely
 on a convergence timeout and never one that violated an invariant. Playwright
 gives no cheap way to tell the two apart at retry time, so retrying on timeout
 only cannot be expressed — retries stay at 2 in CI, and only the caps move. The

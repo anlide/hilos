@@ -34,24 +34,41 @@ agents whose only job is to keep their workers busy.
   authority, and each node presents a certificate carrying its node id (HIL-1034).
   The files live in `docker/tls/` — see [TLS fixtures](#tls-fixtures). A sixth
   node, `x1` (`cluster-x1`, compose profile `intruder`), is certified by an
-  authority the cluster does not trust; `cluster intruder up|down` drives it, and
-  only scenario 17 uses it.
+  authority the cluster does not trust; the shared harness's `stranger up|down`
+  drives it, and only scenario 17 uses it.
 
 ## Running
 
+The stand is driven by the framework's shared cluster harness
+(`framework/docker/cluster/cluster.py`), which reads the nodes out of
+`docker/docker-compose.cluster.yml`; the composer scripts below call it with that
+file.
+
 ```bash
-composer -d demo/cluster run install-deps      # generate the lock (once)
-composer -d demo/cluster run test:unit         # topology + placement-contract unit tests
-demo/cluster/docker/cluster up                 # build + start mysql, 5 nodes, cli
-demo/cluster/docker/cluster status             # roster + leader + placements per node
-demo/cluster/docker/cluster scenarios          # the scenario matrix
-demo/cluster/docker/cluster down --volumes     # tear everything down
+composer -d demo/cluster run install-deps           # generate the lock (once)
+composer -d demo/cluster run test:unit              # topology + placement-contract unit tests
+composer -d demo/cluster run test:cluster:up        # build + start mysql, 5 nodes, cli
+composer -d demo/cluster run test:cluster:status    # roster + leader + placements per node
+composer -d demo/cluster run test:cluster:scenarios # the scenario matrix, on a fresh stand
+composer -d demo/cluster run test:cluster:down-volumes  # tear everything down, database too
+```
+
+`composer -d demo/cluster run test:cluster:scenarios -- 17 20` runs only the
+scenarios named, in the matrix's order. The harness's other commands — `kill`,
+`partition`, `crash-daemon`, `inspect` and the rest — are called on the module
+directly, from `demo/cluster`:
+
+```bash
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
 ```
 
 `composer -d demo/cluster run test:cluster:all` runs the unit suite then the
 scenario matrix. From the repo root: `composer run test:cluster:all`.
 
-## Scenario matrix (`docker/cluster_e2e.py`)
+## Scenario matrix (the shared harness, `framework/docker/cluster/scenarios.py`)
+
+The stand names the scenarios it carries in the `x-hilos-cluster` block of its
+compose file; this one carries all of them.
 
 1. master-slave mesh — exactly one leader, slaves follow
 2. master-master — one leader among masters, slaves never lead
@@ -93,8 +110,12 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
    node, the same write from another node is refused by the truth-source door, and
    a node cut off while a set was written gets the note after it is back, by the
    hand-over of that set (HIL-1116)
+21. schema rolled out once — the five nodes start together on an empty database:
+   one applies the migrations under the rollout claim, the rest find them applied
+   (HIL-1228). It runs first, because it reads the container logs of the stand the
+   matrix has just raised
 
-They run in the order the driver lists them, which is not the order they are
+They run in the order the harness lists them, which is not the order they are
 numbered: the RT scenarios and scenario 19 go right after placement, while the
 fleet the leader just placed is still spread over both slaves. Scenario 19
 therefore keeps members on workers of its victim that survive. That order was

@@ -341,11 +341,24 @@ the same step as its stand; the e2e specs move next; the MySQL topologies and
 the browser on a multi-node stand come last. The one-time schema rollout went
 ahead of all of them (HIL-1228): it is needed on one server too.
 
-A stand takes rather than holds. The harness is one and shared: it reads the
-nodes, their addresses, their room and the set of scenarios from the stand it
-is run against (not in the code yet — HIL-1210). The probe agents the scenarios
-drive are the framework's, and a stand switches on those its scenarios need
-(not in the code yet — HIL-1211).
+A stand takes rather than holds. The harness is one and shared,
+`framework/docker/cluster/`: it reads the nodes, their addresses, their room
+and the set of scenarios from the stand it is run against. The probe agents the
+scenarios drive are the framework's, and a stand switches on those its
+scenarios need (not in the code yet — HIL-1211).
+
+The stand's compose file is the one place its nodes are written, and there is
+no second copy: a node is a service with `CLUSTER_ENABLED=true` and a
+`CLUSTER_NODE_ID`, and its container, address, role, `ram` and log directory
+are read off that service — what the node itself reads. What compose cannot
+say stands in a top-level `x-hilos-cluster` block of the same file: `cli`, the
+service commands to the nodes go through; `stranger`, the node under a profile
+that a scenario raises on its own (optional); `scenarios`, the numbers the
+stand carries — never their order, which is the harness's. A demo's composer
+script calls `python3 ../../framework/docker/cluster/cluster.py <compose file>
+scenarios`. A scenario the stand names but cannot carry by its shape — too few
+masters or slaves, no stranger — is refused before the stand is raised, and so
+is a stand that leaves out what the harness reads.
 
 A new scenario is written on the stand whose shape it needs. When two shapes
 would do, the reasons above decide. A scenario that needs a shape none of the

@@ -42,14 +42,14 @@
         "test:db-wait": "docker compose -f docker/docker-compose.cluster.yml --profile cli run --rm cluster-cli php backend/Bootstrap/cli.php db:wait",
         "test:unit": "docker compose -f docker/docker-compose.cluster.yml --profile cli run --rm cluster-cli php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:phpunit": "docker compose -f docker/docker-compose.cluster.yml --profile cli run --rm cluster-cli php vendor/bin/phpunit -c tests/phpunit.xml",
-        "test:cluster:up": "docker/cluster up",
-        "test:cluster:down": "docker/cluster down",
-        "test:cluster:down-volumes": "docker/cluster down --volumes",
-        "test:cluster:status": "docker/cluster status",
-        "test:cluster:scenarios": "docker/cluster scenarios",
+        "test:cluster:up": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml up",
+        "test:cluster:down": "@php ../../scripts/down-stands.php cluster",
+        "test:cluster:down-volumes": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml down --volumes",
+        "test:cluster:status": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml status",
+        "test:cluster:scenarios": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml scenarios",
         "test:cluster:all": [
             "@test:unit",
-            "docker/cluster scenarios"
+            "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml scenarios"
         ]
     },
     "config": {

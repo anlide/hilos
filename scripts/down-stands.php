@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Take the test stands down — all of them, or the ones named.
  *
  * This is the command every other teardown now goes through: each demo's `test:down`, the
- * framework's `test:framework:down`, the cluster's `cluster down`, and `test:stands:down` for
+ * framework's `test:framework:down`, the cluster's `test:cluster:down`, and `test:stands:down` for
  * the whole box. Putting it in the repository rather than in `hilos-ops` is deliberate: the
  * same run has to work in GitHub Actions, where `hilos-ops` does not exist.
  *

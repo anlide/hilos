@@ -1,15 +1,19 @@
-#!/usr/bin/env python3
 """
-cluster_e2e.py - the assertion matrix for the daemon-cluster e2e
-harness (HIL-185).
+scenarios.py - the assertion matrix of the daemon-cluster e2e harness (HIL-185), one for
+every cluster stand.
 
-It assumes the stack is already up (via `cluster up`) and drives it: for each
-scenario it perturbs the cluster through the sibling `cluster` bash controller
-(docker kill -9 for node-down, docker network disconnect for partition, and a
-SIGKILL of the daemon or one worker inside a live container), polls each node's
-`test:cluster:inspect` reply until the topology converges (bounded by a hard cap),
-and asserts the expected invariants against the machine-readable reply. Destructive
-scenarios restore the cluster and re-converge before the next.
+It assumes the stand is already up (cluster.py raises it fresh before the matrix) and drives
+it: for each scenario it perturbs the cluster through the controller (control.py: docker kill
+-9 for node-down, docker network disconnect for partition, and a SIGKILL of the daemon or one
+worker inside a live container), polls each node's `test:cluster:inspect` reply until the
+topology converges (bounded by a hard cap), and asserts the expected invariants against the
+machine-readable reply. Destructive scenarios restore the cluster and re-converge before the
+next.
+
+The stand is not written down here. bind() takes it once, before the matrix, and the nodes a
+scenario perturbs are named by their role on it - the first master, the second slave - never
+by id. Each scenario says what shape it needs (Need), and a stand that names a scenario it
+cannot carry is refused before it is raised.
 
 Timing on a loaded host (HIL-367): the convergence caps below are sized for an
 adequately-provisioned stand (nova-lt / HIL-348). On a resource-constrained host
@@ -62,42 +66,50 @@ Plus scenarios beyond that matrix:
  21 schema rolled out once     five nodes starting together on an empty database: one applies,
                                the rest wait (HIL-1228)
 
-Exit code 0 when every scenario passes, 1 otherwise.
+run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
 
 import json
 import os
 import re
-import subprocess
-import sys
 import time
 from collections import namedtuple
-from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-CLUSTER = str(HERE / "cluster")
+import control
 
-MASTERS = ["m1", "m2", "m3"]
-SLAVES = ["s1", "s2"]
-ALL_NODES = MASTERS + SLAVES
+# The stand the matrix drives, bound once by bind() before it runs: one process, one stand. The
+# names below are read off it there - its nodes by role, its stranger, the room its slaves
+# declare and the grace a slave keeps its work for - and stay empty until then.
+STAND = None
+MASTERS = []
+SLAVES = []
+ALL_NODES = []
 
-# The stranger of scenario 17: cluster-x1, up only under the compose profile `intruder`, whose
-# certificate is signed by an authority the cluster does not trust (HIL-1034).
-STRANGER = "x1"
-STRANGER_IP = "10.185.0.16"
+# The stranger of scenario 17: the node the stand names in x-hilos-cluster.stranger, up only
+# under its compose profile, whose certificate is signed by an authority the cluster does not
+# trust (HIL-1034).
+STRANGER = None
+STRANGER_IP = None
 # What either end of a refused TLS handshake writes, through the containment of a failing client.
 TLS_REFUSAL_LINE = "Socket TLS handshake failed"
 
+# The constants below that say "mirrors" copy the code of the probe agents the scenarios drive,
+# and each names the file it copies; they move with those agents (HIL-1211).
+
+# Mirrors AgentType::WORKER (demo/cluster/backend/Constants/AgentType.php).
 WORKER_AGENT_TYPE = "worker"
-# Fleet size the leader keeps placed; mirrors ClusterDaemonManager::WORKER_FLEET_SIZE.
+# Fleet size the leader keeps placed; mirrors ClusterDaemonManager::WORKER_FLEET_SIZE
+# (demo/cluster/backend/Core/Daemon/ClusterDaemonManager.php).
 WORKER_FLEET_SIZE = 10
-# RT collection every fleet member owns one row of; mirrors ClusterRtContext::workerStatuses.
+# RT collection every fleet member owns one row of; mirrors ClusterRtContext::workerStatuses
+# (demo/cluster/backend/Runtime/View/Context/ClusterRtContext.php).
 WORKER_STATUSES = "workerStatuses"
-# Seconds a fleet member waits between reports; mirrors WorkerAgent::REPORT_INTERVAL_SEC.
+# Seconds a fleet member waits between reports; mirrors WorkerAgent::REPORT_INTERVAL_SEC
+# (demo/cluster/backend/Agents/WorkerAgent.php).
 WORKER_REPORT_INTERVAL_SEC = 5.0
-# Seconds a slave keeps its work after losing the leader it answers to; mirrors
-# CLUSTER_SLAVE_WORK_GRACE_MS in docker-compose.cluster.yml.
-SLAVE_WORK_GRACE_SEC = 4.0
+# Seconds a slave keeps its work after losing the leader it answers to: the stand's
+# CLUSTER_SLAVE_WORK_GRACE_MS, read by bind().
+SLAVE_WORK_GRACE_SEC = None
 AGENT_STARTED_ON_WORKER = re.compile(r"Agent '([^']+)' started on worker #(\d+)")
 WORKER_DIED_HOSTING = re.compile(r"Worker #(\d+) died hosting \d+ agent\(s\): (.*)")
 # How many lines of a victim's log a missing worker-death report prints (HIL-1162).
@@ -108,12 +120,14 @@ EVIDENCE_LINES = 40
 # about it.
 DB_PROBE_KEY = "cluster_probe_value"
 # What the read command prints in place of a value when the node holds no row for the key;
-# mirrors ClusterTestDbReadCommand::NO_ROW. Said in a word so that "no row" and "an empty row"
-# stay different answers.
+# mirrors ClusterTestDbReadCommand::NO_ROW (framework/backend/Core/CLI/Commands/
+# ClusterTestDbReadCommand.php). Said in a word so that "no row" and "an empty row" stay
+# different answers.
 DB_PROBE_NO_ROW = "(none)"
 
 # The RT collection the per-node set probe writes, cut into sets by the node a note belongs to;
-# mirrors ClusterRtContext::probeNotes. Each node's probe owns the set named by its own node id.
+# mirrors ClusterRtContext::probeNotes (demo/cluster/backend/Runtime/View/Context/
+# ClusterRtContext.php). Each node's probe owns the set named by its own node id.
 PROBE_NOTES = "probeNotes"
 # The notes scenario 20 writes. Prefixes, not ids: a retried attempt suffixes them afresh, because
 # the node the first attempt cut off is recreated holding every note written by then, and a note
@@ -124,23 +138,27 @@ NOTE_PEER = "set-note-peer"
 NOTE_LATE = "set-note-late"
 
 # The demo agent that claims the WHOLE of the collection the fleet owns row by row, so the
-# cluster-wide guard has two whole rights to judge; mirrors Demo\Cluster\Constants\AgentType.
+# cluster-wide guard has two whole rights to judge; mirrors AgentType::CLAIMER
+# (demo/cluster/backend/Constants/AgentType.php).
 CLAIMER_AGENT_TYPE = "claimer"
 CLAIMER_INDEX = "0"
 CLAIMER_AGENT_ID = f"{CLAIMER_AGENT_TYPE}:{CLAIMER_INDEX}"
 # Seconds the leader waits between attempts at a policy placement that has not taken; mirrors
-# DaemonManager::POLICY_PLACEMENT_RETRY_SEC. A refusal outliving it is what "terminal" means here.
+# DaemonManager::POLICY_PLACEMENT_RETRY_SEC (framework/backend/Core/Daemon/DaemonManager.php). A
+# refusal outliving it is what "terminal" means here.
 POLICY_PLACEMENT_RETRY_SEC = 5.0
 
-# The demo agent that does nothing but hold capacity (HIL-448); mirrors AgentType::BALLAST.
+# The demo agent that does nothing but hold capacity (HIL-448); mirrors AgentType::BALLAST
+# (demo/cluster/backend/Constants/AgentType.php).
 BALLAST_AGENT_TYPE = "ballast"
-# How many ballasts scenario 18 asks for: one more than the slaves have room for.
-BALLAST_ASKED = 8
-# Ram one ballast reserves; mirrors BallastAgentDaemon::RAM_COST.
+# Ram one ballast reserves; mirrors BallastAgentDaemon::RAM_COST
+# (demo/cluster/backend/Core/Agent/Daemon/BallastAgentDaemon.php).
 BALLAST_RAM_COST = 2
-# Ram each slave declares; mirrors CLUSTER_NODE_CAPABILITIES in docker-compose.cluster.yml. The
-# masters declare none, so by rule they take no placed work at all.
-SLAVE_RAM = {"s1": 10, "s2": 4}
+# Ram each slave declares in its CLUSTER_NODE_CAPABILITIES, read by bind(). The masters declare
+# none, so by rule they take no placed work at all.
+SLAVE_RAM = {}
+# How many ballasts scenario 18 asks for: one more than the slaves have room for, set by bind().
+BALLAST_ASKED = 0
 
 
 # ------------------------------------------------------- adaptive timing (HIL-367)
@@ -228,36 +246,34 @@ CRASH_RECOVERY_TIMEOUT = 90.0 * TIMEOUT_SCALE
 # --------------------------------------------------------------------------- io
 
 def ctl(*args):
-    """Run the sibling bash controller (kill/start/recreate/partition/heal)."""
-    subprocess.run([CLUSTER, *args], check=False,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Run a controller command (kill/start/recreate/partition/heal/stranger), its answer dropped."""
+    control.execute(STAND, *args)
 
 
 def ctl_out(*args):
     """Run the controller for a value: its stdout stripped, or '' when it failed."""
-    proc = subprocess.run([CLUSTER, *args], capture_output=True, text=True)
-    return proc.stdout.strip() if proc.returncode == 0 else ""
+    outcome = control.execute(STAND, *args)
+    return outcome.out.strip() if outcome.code == 0 else ""
 
 
 def client(node, *args):
     """Run a test-only client command on one node. True when the CLI reported success."""
-    proc = subprocess.run([CLUSTER, "client", node, *args], capture_output=True, text=True)
-    return proc.returncode == 0
+    return control.client(STAND, node, *args).code == 0
 
 
 def client_out(node, *args):
     """Run a test-only client command on one node for its OUTPUT: stdout stripped, or None
     when the CLI reported failure."""
-    proc = subprocess.run([CLUSTER, "client", node, *args], capture_output=True, text=True)
-    return proc.stdout.strip() if proc.returncode == 0 else None
+    outcome = control.client(STAND, node, *args)
+    return outcome.out.strip() if outcome.code == 0 else None
 
 
 def client_refusal(node, *args):
     """Run a test-only client command on one node for its REFUSAL: stderr stripped when the CLI
     reported failure, or None when it succeeded. A refusal is printed on stderr and a result on
     stdout (CommandChannelClientTrait::printRefusal()), so client_out() has nothing to show here."""
-    proc = subprocess.run([CLUSTER, "client", node, *args], capture_output=True, text=True)
-    return proc.stderr.strip() if proc.returncode != 0 else None
+    outcome = control.client(STAND, node, *args)
+    return outcome.err.strip() if outcome.code != 0 else None
 
 
 def db_read(node, key):
@@ -278,68 +294,26 @@ def db_read(node, key):
     return None
 
 
+# A node's daemon log, read from the host by node id (control.py says how and why).
+
 def node_log_path(node):
-    """Where a node's daemon log lands on the host: data/logs/<node> is bind-mounted out of the
-    container's /var/log/hilos (docker-compose.cluster.yml, one volume per node), and the daemon
-    writes daemon.log there because DAEMON_LOG_FILE in .env.example says so."""
-    return HERE.parent / "data" / "logs" / node / "daemon.log"
+    return control.node_log_path(STAND.node(node))
 
 
 def node_log(node, offset=0):
-    """The daemon log a node wrote from a byte offset on: its text, or '' when there is no
-    file. Read from the host - the files inside the mount are root-owned but world-readable,
-    so no sudo and no docker exec are needed. An offset names a byte of ONE file, so it holds
-    only while the node does not start between measuring and reading; a node that does is
-    read by node_log_mark() instead."""
-    try:
-        with open(node_log_path(node), "rb") as f:
-            f.seek(offset)
-            return f.read().decode("utf-8", errors="replace")
-    except FileNotFoundError:
-        return ""
+    return control.node_log(STAND.node(node), offset)
 
 
 def node_log_size(node):
-    """Byte length of a node's daemon log, or 0 when there is no file yet - an offset into that
-    one file, good while the node does not start before it is read; otherwise node_log_mark()."""
-    try:
-        return node_log_path(node).stat().st_size
-    except FileNotFoundError:
-        return 0
-
-
-LogMark = namedtuple("LogMark", "inode size")
+    return control.node_log_size(STAND.node(node))
 
 
 def node_log_mark(node):
-    """Which file a node's daemon log is right now and how long it is: the mark to read a node
-    that STARTS between measuring and reading. An offset cannot do that - starting a container
-    starts its watcher, and the watcher moves every *.log of the node to staging/<time>/
-    before the daemon writes its first line (DockerManager::rotateLogs()), so the daemon opens
-    a fresh file and an offset of the old one reads the new one past whatever it wrote first.
-    LogMark(None, 0) when there is no file yet."""
-    try:
-        st = node_log_path(node).stat()
-    except FileNotFoundError:
-        return LogMark(None, 0)
-    return LogMark(st.st_ino, st.st_size)
+    return control.node_log_mark(STAND.node(node))
 
 
 def node_log_since(node, mark):
-    """What a node's daemon log gained after its mark: the tail past the marked size while the
-    file is still the marked one, the whole file once it is another. Before the start rotates
-    the log that tail is empty, so a line a previous run left is never read as this run's.
-    The inode is compared off the OPEN descriptor, not a second stat of the path, so a
-    rotation between the two cannot compare one file and read the other. What it cannot see:
-    lines the node added to the OLD file between the mark and its restart stay in staging -
-    no scenario needs them. '' when there is no file."""
-    try:
-        with open(node_log_path(node), "rb") as f:
-            same_file = os.fstat(f.fileno()).st_ino == mark.inode
-            f.seek(mark.size if same_file else 0)
-            return f.read().decode("utf-8", errors="replace")
-    except FileNotFoundError:
-        return ""
+    return control.node_log_since(STAND.node(node), mark)
 
 
 def container_id(node):
@@ -353,8 +327,7 @@ def container_log(node):
 
 
 def _inspect(subcmd, node):
-    proc = subprocess.run([CLUSTER, subcmd, node], capture_output=True, text=True)
-    out = proc.stdout
+    out = control.execute(STAND, subcmd, node).out
     brace = out.find("{")
     if brace < 0:
         return None
@@ -375,8 +348,11 @@ def inspect_local(node):
     return _inspect("inspect-local", node)
 
 
-def inspect_all(nodes=ALL_NODES):
-    return {n: inspect(n) for n in nodes}
+# Every `nodes=None` below means the stand's ALL_NODES, looked up at the call: a default written
+# as `nodes=ALL_NODES` would be read when the function is defined, before bind() names a node.
+
+def inspect_all(nodes=None):
+    return {n: inspect(n) for n in (ALL_NODES if nodes is None else nodes)}
 
 
 # ------------------------------------------------------------------- verdicts
@@ -467,9 +443,9 @@ def rt_read_by(views, node, key=WORKER_STATUSES):
     return bool(rt_collection(views, node, key).get("read"))
 
 
-def reading_nodes(views, nodes=ALL_NODES, key=WORKER_STATUSES):
+def reading_nodes(views, nodes=None, key=WORKER_STATUSES):
     """The nodes that say a worker of theirs reads an RT collection."""
-    return [n for n in nodes if rt_read_by(views, n, key)]
+    return [n for n in (ALL_NODES if nodes is None else nodes) if rt_read_by(views, n, key)]
 
 
 def fleet_workers_on(node, members):
@@ -516,7 +492,7 @@ def assert_table_names_running_nodes(views):
              f"{WORKER_FLEET_SIZE} rows: the table is naming a node that runs nothing")
 
 
-def fleet_rows_where_read(views, nodes=ALL_NODES):
+def fleet_rows_where_read(views, nodes=None):
     """Predicate: the nodes reading the collection hold every fleet member's row, and the
     nodes reading none hold nothing (HIL-717).
 
@@ -529,6 +505,7 @@ def fleet_rows_where_read(views, nodes=ALL_NODES):
     Nobody reading it is not a pass. The fleet is what reads this collection, and a run
     where no node claims to read it is one where the fleet is not up.
     """
+    nodes = ALL_NODES if nodes is None else nodes
     readers = reading_nodes(views, nodes)
     if not readers:
         return False
@@ -601,13 +578,14 @@ class ScenarioTimeout(AssertionError):
     (transient, env-driven) while failing hard invariant assertions immediately."""
 
 
-def wait_until(predicate, timeout, desc, nodes=ALL_NODES, local=False):
+def wait_until(predicate, timeout, desc, nodes=None, local=False):
     """Poll inspect(nodes) until predicate(views) is truthy; return the final views.
 
     `local` asks each node from inside its own container instead of over the network, which is
     the only way to ask one that is partitioned off it - and a partitioned node is exactly where
     some answers only become true after a delay (a link takes a keepalive to be noticed dead).
     """
+    nodes = ALL_NODES if nodes is None else nodes
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
@@ -652,7 +630,8 @@ def converged(expected_nodes):
     return check
 
 
-def wait_converge(expected_nodes=ALL_NODES, timeout=CONVERGE_TIMEOUT):
+def wait_converge(expected_nodes=None, timeout=CONVERGE_TIMEOUT):
+    expected_nodes = ALL_NODES if expected_nodes is None else expected_nodes
     return wait_until(converged(expected_nodes), timeout,
                       f"single leader + online roster {sorted(expected_nodes)}")
 
@@ -702,6 +681,14 @@ def wait_fleet_rows():
         read = {node: rt_read_by(views, node) for node in ALL_NODES}
         raise ScenarioTimeout(f"{timeout}\nrows per node: {held}\nowns the collection: {owned}"
                               f"\nreads the collection: {read}") from timeout
+
+
+_NUMBER_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+
+
+def in_words(count):
+    """A small count as a word, the way a scenario's report names how many nodes it saw."""
+    return _NUMBER_WORDS[count] if 0 <= count < len(_NUMBER_WORDS) else str(count)
 
 
 # ------------------------------------------------------------------ scenarios
@@ -848,7 +835,7 @@ def assert_reelection_logged(new_leader, term, surviving_masters, offsets):
 
 def scenario_6_hot_join():
     wait_converge(ALL_NODES)
-    joiner = "s2"
+    joiner = SLAVES[1]
     print(f"    taking {joiner} down, then hot-joining it back")
     ctl("kill", joiner)
     wait_until(lambda v: not node_online(v, joiner),
@@ -862,20 +849,22 @@ def scenario_6_hot_join():
 
 def scenario_7_quorum_loss():
     wait_converge(ALL_NODES)
-    victims = ["m2", "m3"]  # leave m1 alone as the isolated minority (1 of 3 < quorum 2)
-    print(f"    killing masters {victims}; the lone survivor m1 must stop leading")
+    # Leave the first master alone as the isolated minority (1 of 3 < quorum 2).
+    lone = MASTERS[0]
+    victims = [MASTERS[1], MASTERS[2]]
+    print(f"    killing masters {victims}; the lone survivor {lone} must stop leading")
     for v in victims:
         ctl("kill", v)
     try:
         def minority_no_quorum(views):
-            m1 = views.get("m1")
-            if not m1 or m1.get("hasQuorum") is not False:
+            survivor = views.get(lone)
+            if not survivor or survivor.get("hasQuorum") is not False:
                 return False
             # No node anywhere may still claim leadership.
             return len(leaders(inspect_all(ALL_NODES))) == 0
         wait_until(lambda v: minority_no_quorum(v), QUORUM_TIMEOUT,
-                   "m1 without quorum and no leader cluster-wide", nodes=["m1", "s1", "s2"])
-        return "minority (m1) lost quorum and stopped leading; no new leader"
+                   f"{lone} without quorum and no leader cluster-wide", nodes=[lone, SLAVES[0], SLAVES[1]])
+        return f"minority ({lone}) lost quorum and stopped leading; no new leader"
     finally:
         for v in victims:
             ctl("start", v)
@@ -884,34 +873,36 @@ def scenario_7_quorum_loss():
 
 def scenario_8_split_brain():
     views = wait_converge(ALL_NODES)
-    print("    partitioning m3 off the network (1 | 2 split of the master set)")
-    ctl("partition", "m3")
+    isolated = MASTERS[2]
+    print(f"    partitioning {isolated} off the network (1 | 2 split of the master set)")
+    ctl("partition", isolated)
     try:
         def split_ok(v):
-            majority = {n: v.get(n) for n in ["m1", "m2"]}
+            majority = {n: v.get(n) for n in [MASTERS[0], MASTERS[1]]}
             maj_leaders = [n for n, view in majority.items() if is_leader(view)]
             if len(maj_leaders) != 1:
                 return False
             if v[maj_leaders[0]].get("hasQuorum") is not True:
                 return False
-            # m3 is off the network now, so inspect it from inside its own container.
-            m3 = inspect_local("m3")
-            if m3 is None:
+            # The isolated master is off the network now, so inspect it from inside its own
+            # container.
+            minority = inspect_local(isolated)
+            if minority is None:
                 return False
-            return m3.get("hasQuorum") is False and not is_leader(m3)
+            return minority.get("hasQuorum") is False and not is_leader(minority)
         wait_until(split_ok, CONVERGE_TIMEOUT,
-                   "majority {m1,m2} keeps one leader; minority m3 steps down",
-                   nodes=["m1", "m2", "s1", "s2"])
-        return "majority kept a single leader; isolated m3 has no quorum and does not lead"
+                   f"majority {{{MASTERS[0]},{MASTERS[1]}}} keeps one leader; minority {isolated} steps down",
+                   nodes=[MASTERS[0], MASTERS[1], SLAVES[0], SLAVES[1]])
+        return f"majority kept a single leader; isolated {isolated} has no quorum and does not lead"
     finally:
         # Rejoin the isolated node as a fresh container rather than a raw `docker network
         # connect`: reconnecting the interface leaves half-open TCP sockets on both sides
         # (no RST), which is not how a real partition heals — a recovering node comes back
-        # clean. A recreate gives m3 a fresh socket stack, and the survivors reset their
-        # stale links to it on the next write and re-dial, so the mesh reconverges.
+        # clean. A recreate gives the isolated master a fresh socket stack, and the survivors
+        # reset their stale links to it on the next write and re-dial, so the mesh reconverges.
         # This is the one place that asks for a pristine container, hence `recreate` and
         # not `start` — `start` deliberately reuses the container (see scenario 9).
-        ctl("recreate", "m3")
+        ctl("recreate", isolated)
         wait_converge(ALL_NODES)
 
 
@@ -924,7 +915,7 @@ def scenario_9_daemon_crash_selfheal():
     container is deliberately NOT replaced, so the only way back is the watchdog
     reaping its own children before the next daemon start.
     """
-    victim = "s1"
+    victim = SLAVES[0]
     wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the crash")
     before = container_id(victim)
     assert before, f"could not read the container id of {victim}"
@@ -985,7 +976,7 @@ def scenario_10_cross_node_browser():
     per-tick announcement, the index, the routing pass, the peer frame - is the production path.
     """
     key = "ak-cluster-e2e"
-    holder, sender = "s1", "m2"
+    holder, sender = SLAVES[0], MASTERS[1]
     wait_converge(ALL_NODES)
     assert client(holder, "test:cluster:client:attach", key), \
         f"could not attach a test browser on {holder}"
@@ -1115,7 +1106,7 @@ def scenario_13_rt_partition_converges():
     collection, so what it holds is a pure replica, which is exactly what the reader's side is
     about.
     """
-    victim = "m3"
+    victim = MASTERS[2]
     others = [n for n in ALL_NODES if n != victim]
     wait_converge(ALL_NODES)
     wait_fleet_rows()
@@ -1354,7 +1345,7 @@ def scenario_11_cross_node_db_fact():
     which is a loop rather than a sync, and no other scenario asks it - scenario 15 counts every
     node before its announcements but judges only the receivers.
     """
-    sender, watcher = "m1", "m2"
+    sender, watcher = MASTERS[0], MASTERS[1]
     wait_converge(ALL_NODES)
 
     sender_replicas_before = db_replicas(inspect_all([sender]), sender)
@@ -1420,7 +1411,7 @@ def scenario_15_db_interest_addressing():
     disturbed and the counters below move for the announcement alone.
     """
     read_key, unread_key = "settings", "verifications"
-    sender, row_id = "m1", "999999"
+    sender, row_id = MASTERS[0], "999999"
     receivers = [n for n in ALL_NODES if n != sender]
     wait_converge(ALL_NODES)
 
@@ -1531,30 +1522,31 @@ def scenario_17_foreign_certificate_refused():
     restart; it is marked the same way so both ends are read alike.
     """
     wait_converge(ALL_NODES)
-    marks = {n: node_log_mark(n) for n in ("m1", STRANGER)}
+    dialed = MASTERS[0]
+    marks = {n: node_log_mark(n) for n in (dialed, STRANGER)}
     print(f"    starting {STRANGER}, certified by an authority the cluster does not trust")
-    ctl("intruder", "up")
+    ctl("stranger", "up")
     try:
         def refused_on_both_ends(_views):
-            return (f"{TLS_REFUSAL_LINE}: {STRANGER_IP}" in node_log_since("m1", marks["m1"])
+            return (f"{TLS_REFUSAL_LINE}: {STRANGER_IP}" in node_log_since(dialed, marks[dialed])
                     and TLS_REFUSAL_LINE in node_log_since(STRANGER, marks[STRANGER]))
 
         views = wait_until(refused_on_both_ends, CONVERGE_TIMEOUT,
-                           f"a refused TLS handshake named in the logs of m1 and {STRANGER}")
+                           f"a refused TLS handshake named in the logs of {dialed} and {STRANGER}")
 
         for node in ALL_NODES:
             listed = [n for n in (views.get(node) or {}).get("nodes", []) if n.get("nodeId") == STRANGER]
             assert listed == [], f"{node} lists the stranger {STRANGER}: {listed}"
         assert not node_online(views, STRANGER), f"the leader lists {STRANGER} online"
         assert converged(ALL_NODES)(views), \
-            f"the five no longer form one cluster under one leader: {summarize(views)}"
+            f"the {in_words(len(ALL_NODES))} no longer form one cluster under one leader: {summarize(views)}"
     finally:
-        ctl("intruder", "down")
+        ctl("stranger", "down")
 
     previous = (f"over a previous log of {marks[STRANGER].size} bytes"
                 if marks[STRANGER].inode is not None else "with no previous log")
     return (f"{STRANGER} started {previous} and was refused on both ends of the link; nobody "
-            f"lists it; the five still converge")
+            f"lists it; the {in_words(len(ALL_NODES))} still converge")
 
 
 # Numbered by when they were written, ORDERED by what they need. The RT scenarios and
@@ -1756,44 +1748,48 @@ def scenario_20_rt_set_width_across_nodes():
         expected = {"noteId": note_id, "nodeId": node_id, "text": text}
         return lambda v: all(rt_rows(v, n, PROBE_NOTES).get(note_id) == expected for n in nodes)
 
+    # The two slaves write, each its own set: a set is named by the node id it belongs to.
+    writer, peer_writer = SLAVES[0], SLAVES[1]
+
     # (2)
-    refusal = client_refusal("s1", "test:cluster:rt:write", "s1", own, "v1")
-    assert refusal is None, f"s1 was refused a write into its own set: {refusal}"
-    wait_until(note_on(own, "s1", "v1"), CONVERGE_TIMEOUT, "the note s1 wrote into its set reaches every node")
+    refusal = client_refusal(writer, "test:cluster:rt:write", writer, own, "v1")
+    assert refusal is None, f"{writer} was refused a write into its own set: {refusal}"
+    wait_until(note_on(own, writer, "v1"), CONVERGE_TIMEOUT,
+               f"the note {writer} wrote into its set reaches every node")
 
     # (3)
-    for args, what in ((("s1", own, "v2"), "an edit of a note of set s1"),
-                       (("s1", foreign, "x"), "a note created in set s1")):
-        refusal = client_refusal("s2", "test:cluster:rt:write", *args)
-        assert refusal is not None, f"s2 was let make {what}"
-        assert "it holds set 's2'" in refusal and "[s1]" in refusal, \
-            f"s2 was refused {what}, but not in the words of the set door: {refusal}"
+    for args, what in (((writer, own, "v2"), f"an edit of a note of set {writer}"),
+                       ((writer, foreign, "x"), f"a note created in set {writer}")):
+        refusal = client_refusal(peer_writer, "test:cluster:rt:write", *args)
+        assert refusal is not None, f"{peer_writer} was let make {what}"
+        assert f"it holds set '{peer_writer}'" in refusal and f"[{writer}]" in refusal, \
+            f"{peer_writer} was refused {what}, but not in the words of the set door: {refusal}"
 
-    refusal = client_refusal("s2", "test:cluster:rt:write", "s2", peer, "p1")
-    assert refusal is None, f"s2 was refused a write into its own set: {refusal}"
-    views = wait_until(note_on(peer, "s2", "p1"), CONVERGE_TIMEOUT,
-                       "the note s2 wrote into its own set reaches every node")
+    refusal = client_refusal(peer_writer, "test:cluster:rt:write", peer_writer, peer, "p1")
+    assert refusal is None, f"{peer_writer} was refused a write into its own set: {refusal}"
+    views = wait_until(note_on(peer, peer_writer, "p1"), CONVERGE_TIMEOUT,
+                       f"the note {peer_writer} wrote into its own set reaches every node")
     for n in ALL_NODES:
         rows = rt_rows(views, n, PROBE_NOTES)
-        assert foreign not in rows, f"{n} holds the note s2 was refused to create in set s1"
+        assert foreign not in rows, f"{n} holds the note {peer_writer} was refused to create in set {writer}"
         assert rows.get(own, {}).get("text") == "v1", \
-            f"{n} holds the note of set s1 as {rows.get(own)}, after s2 was refused its edit"
+            f"{n} holds the note of set {writer} as {rows.get(own)}, after {peer_writer} was refused its edit"
 
     # (4)
     others = [n for n in ALL_NODES if n != victim]
-    print(f"    partitioning {victim} off the network while s1 writes its set")
+    print(f"    partitioning {victim} off the network while {writer} writes its set")
     ctl("partition", victim)
     try:
         # The mark is raised when the link closes, and a partitioned interface takes a keepalive
         # to notice - so the write below waits for the victim to say it is cut off.
         wait_until(lambda v: own in rt_stale_rows(v, victim, PROBE_NOTES), CONVERGE_TIMEOUT,
-                   f"{victim} marks the note of set s1 frozen once it can no longer reach s1",
+                   f"{victim} marks the note of set {writer} frozen once it can no longer reach {writer}",
                    nodes=[victim], local=True)
 
-        refusal = client_refusal("s1", "test:cluster:rt:write", "s1", late, "late")
-        assert refusal is None, f"s1 was refused a write into its own set: {refusal}"
-        wait_until(note_on(late, "s1", "late", others), CONVERGE_TIMEOUT,
-                   f"the note s1 wrote during the split reaches every node but {victim}", nodes=others)
+        refusal = client_refusal(writer, "test:cluster:rt:write", writer, late, "late")
+        assert refusal is None, f"{writer} was refused a write into its own set: {refusal}"
+        wait_until(note_on(late, writer, "late", others), CONVERGE_TIMEOUT,
+                   f"the note {writer} wrote during the split reaches every node but {victim}", nodes=others)
         cut_off = rt_rows({victim: inspect_local(victim)}, victim, PROBE_NOTES)
         assert late not in cut_off, f"{victim} got the note written while it was cut off, before the heal"
 
@@ -1804,9 +1800,9 @@ def scenario_20_rt_set_width_across_nodes():
         wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
 
         def caught_up(v):
-            return (note_on(late, "s1", "late", [victim])(v)
-                    and note_on(own, "s1", "v1", [victim])(v)
-                    and note_on(peer, "s2", "p1", [victim])(v)
+            return (note_on(late, writer, "late", [victim])(v)
+                    and note_on(own, writer, "v1", [victim])(v)
+                    and note_on(peer, peer_writer, "p1", [victim])(v)
                     and rt_stale_rows(v, victim, PROBE_NOTES) == {})
 
         wait_until(caught_up, CONVERGE_TIMEOUT,
@@ -1824,8 +1820,9 @@ def scenario_20_rt_set_width_across_nodes():
         assert rt_claim_conflicts(views, leader) == conflicts_before, \
             f"the leader {leader} named an RT ownership clash over the sets"
 
-        return (f"five nodes own their sets of '{PROBE_NOTES}'; s1 wrote its set, s2 was refused it "
-                f"in the door's words, and {victim}, cut off, got the new note by the hand-over of set s1")
+        return (f"{in_words(len(ALL_NODES))} nodes own their sets of '{PROBE_NOTES}'; {writer} wrote its "
+                f"set, {peer_writer} was refused it in the door's words, and {victim}, cut off, got the "
+                f"new note by the hand-over of set {writer}")
     finally:
         ctl("recreate", victim)
         wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
@@ -1861,33 +1858,54 @@ def scenario_21_schema_rolled_out_once():
         if waited:
             print(f"  {node} waited for the claim ({waited} line(s))")
     assert len(applied) == 1, f"expected exactly one node to apply the schema on startup, got {applied}"
-    return f"{applied[0]} applied the schema; the other four found it applied, all five in the cluster"
+    return (f"{applied[0]} applied the schema; the other {in_words(len(ALL_NODES) - 1)} found it applied, "
+            f"all {in_words(len(ALL_NODES))} in the cluster")
 
 
+class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes", defaults=(0, 0, False, False, 0))):
+    """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
+    slaves, a stranger, a slave that declares ram, and at least `nodes` members in all. What a
+    scenario names by role - the third master, the second slave - is what it needs."""
+
+
+class Scenario(namedtuple("Scenario", "name run need")):
+    """One scenario of the matrix: its name, number first, the function, and what it needs."""
+
+    @property
+    def number(self):
+        return int(self.name.split(" ", 1)[0])
+
+
+# The registry, in the order the matrix runs. A stand names which of these it carries
+# (x-hilos-cluster.scenarios) and never their order: the order is what the comments above and
+# below explain, and a stand carrying a subset runs it in this same order.
 SCENARIOS = [
     # First, because it reads the container logs of the stand `cluster scenarios` has just
     # raised: 9 and 16 kill and recreate nodes, and a recreated container starts a new log.
-    ("21 schema rolled out once", scenario_21_schema_rolled_out_once),
-    ("1 master-slave mesh", scenario_1_master_slave_mesh),
-    ("2 master-master", scenario_2_master_master),
-    ("3 placement", scenario_3_placement),
-    ("12 rt replication", scenario_12_rt_replication),
-    ("20 rt set width across nodes", scenario_20_rt_set_width_across_nodes),
-    ("14 rt claim refused", scenario_14_rt_claim_refused),
-    ("13 rt partition converges", scenario_13_rt_partition_converges),
-    ("19 worker death on a live node", scenario_19_worker_death_on_live_node),
-    ("4 slave-kill failover", scenario_4_slave_kill_failover),
-    ("5 leader-kill re-election", scenario_5_leader_kill_reelection),
-    ("6 hot-join", scenario_6_hot_join),
-    ("7 quorum-loss", scenario_7_quorum_loss),
-    ("8 split-brain prevention", scenario_8_split_brain),
-    ("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal),
-    ("10 cross-node browser", scenario_10_cross_node_browser),
-    ("11 cross-node db fact", scenario_11_cross_node_db_fact),
-    ("15 db interest addressing", scenario_15_db_interest_addressing),
-    ("16 recreated node leaves no phantom fleet", scenario_16_recreated_node_leaves_no_phantom_fleet),
-    ("17 foreign certificate refused", scenario_17_foreign_certificate_refused),
-    ("18 capacity is consumed", scenario_18_capacity_is_consumed),
+    Scenario("21 schema rolled out once", scenario_21_schema_rolled_out_once, Need(nodes=2)),
+    Scenario("1 master-slave mesh", scenario_1_master_slave_mesh, Need(masters=1, slaves=1)),
+    Scenario("2 master-master", scenario_2_master_master, Need(masters=1)),
+    Scenario("3 placement", scenario_3_placement, Need(slaves=1)),
+    Scenario("12 rt replication", scenario_12_rt_replication, Need(slaves=1)),
+    Scenario("20 rt set width across nodes", scenario_20_rt_set_width_across_nodes, Need(masters=2, slaves=2)),
+    Scenario("14 rt claim refused", scenario_14_rt_claim_refused, Need(slaves=1)),
+    Scenario("13 rt partition converges", scenario_13_rt_partition_converges, Need(masters=3)),
+    Scenario("19 worker death on a live node", scenario_19_worker_death_on_live_node, Need(slaves=1)),
+    Scenario("4 slave-kill failover", scenario_4_slave_kill_failover, Need(slaves=2)),
+    Scenario("5 leader-kill re-election", scenario_5_leader_kill_reelection, Need(masters=3, slaves=1)),
+    Scenario("6 hot-join", scenario_6_hot_join, Need(slaves=2)),
+    Scenario("7 quorum-loss", scenario_7_quorum_loss, Need(masters=3, slaves=2)),
+    Scenario("8 split-brain prevention", scenario_8_split_brain, Need(masters=3, slaves=2)),
+    Scenario("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal, Need(slaves=2)),
+    Scenario("10 cross-node browser", scenario_10_cross_node_browser, Need(masters=2, slaves=1)),
+    Scenario("11 cross-node db fact", scenario_11_cross_node_db_fact, Need(masters=2)),
+    Scenario("15 db interest addressing", scenario_15_db_interest_addressing, Need(masters=2)),
+    Scenario("16 recreated node leaves no phantom fleet", scenario_16_recreated_node_leaves_no_phantom_fleet,
+             Need(slaves=1)),
+    Scenario("17 foreign certificate refused", scenario_17_foreign_certificate_refused,
+             Need(masters=1, stranger=True)),
+    Scenario("18 capacity is consumed", scenario_18_capacity_is_consumed,
+             Need(masters=1, slaves=1, slave_ram=True)),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the
@@ -1969,10 +1987,45 @@ def run_scenario(name, fn):
             raise first_failure from e
 
 
-def main():
+def unmet_need(stand, scenario):
+    """What a stand lacks to carry a scenario, said the way the refusal says it, or None."""
+    need = scenario.need
+    for wanted, has, what in ((need.masters, len(stand.masters), "masters"),
+                              (need.slaves, len(stand.slaves), "slaves"),
+                              (need.nodes, len(stand.members), "nodes")):
+        if has < wanted:
+            return f"it needs {wanted} {what}, the stand has {has}"
+    if need.stranger and stand.stranger is None:
+        return "it needs a stranger, the stand has none"
+    if need.slave_ram and not any(stand.members[s].ram for s in stand.slaves):
+        return "it needs a slave that declares ram, the stand has none"
+    return None
+
+
+def bind(stand):
+    """Take the stand the matrix drives: its nodes by role, its stranger, its slaves' room."""
+    global STAND, MASTERS, SLAVES, ALL_NODES, STRANGER, STRANGER_IP
+    global SLAVE_RAM, SLAVE_WORK_GRACE_SEC, BALLAST_ASKED
+    STAND = stand
+    MASTERS = list(stand.masters)
+    SLAVES = list(stand.slaves)
+    ALL_NODES = MASTERS + SLAVES
+    STRANGER = stand.stranger.id if stand.stranger else None
+    STRANGER_IP = stand.stranger.ip if stand.stranger else None
+    SLAVE_RAM = {s: stand.members[s].ram for s in SLAVES if stand.members[s].ram}
+    SLAVE_WORK_GRACE_SEC = stand.slave_work_grace_sec
+    BALLAST_ASKED = sum(ram // BALLAST_RAM_COST for ram in SLAVE_RAM.values()) + 1
+
+
+def run_matrix(stand, numbers):
+    """Run the named scenarios on a stand that is up, in the registry's order: 0 when all pass."""
     def _fmt(x):
         return f"{x:.2f}" if isinstance(x, float) else "n/a"
 
+    bind(stand)
+    selected = [scenario for scenario in SCENARIOS if scenario.number in numbers]
+    print(f"cluster e2e: stand {stand.project}, {len(stand.members)} nodes ({len(stand.masters)} masters, "
+          f"{len(stand.slaves)} slaves), scenarios {', '.join(str(s.number) for s in selected)}")
     print(f"cluster e2e: timeout scale={TIMEOUT_SCALE:g} "
           f"(load/cpu={_fmt(_load_per_cpu())}, free={_fmt(_free_gib())} GiB), "
           f"retries={SCENARIO_RETRIES}")
@@ -1985,7 +2038,7 @@ def main():
 
     failures = []
     skipped = []
-    for name, fn in SCENARIOS:
+    for name, fn, _need in selected:
         print(f"\n== scenario {name} ==")
         if name in FLAKY_SKIP:
             print(f"  SKIP (fixme): {FLAKY_SKIP[name]}")
@@ -2001,7 +2054,7 @@ def main():
             print(f"  ERROR: {type(e).__name__}: {e}")
             failures.append(name)
 
-    ran = len(SCENARIOS) - len(skipped)
+    ran = len(selected) - len(skipped)
     print("\n=== summary ===")
     print(f"  {ran - len(failures)}/{ran} scenarios passed"
           + (f"; {len(skipped)} skipped ({', '.join(skipped)})" if skipped else ""))
@@ -2010,7 +2063,3 @@ def main():
         return 1
     print("  all cluster scenarios passed")
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

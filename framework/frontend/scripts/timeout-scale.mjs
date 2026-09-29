@@ -1,10 +1,10 @@
 // Stretch every Playwright timeout when the host is starved, so a loaded box makes
-// the run SLOWER instead of RED. Ported from demo/cluster/docker/cluster_e2e.py
+// the run SLOWER instead of RED. Ported from framework/docker/cluster/scenarios.py
 // (HIL-367), which has carried the same heuristic since the cluster suite started
 // sharing a box with everything else; HIL-527 needs it on the demo suites because
 // the full run now puts two of them on the machine at once.
 //
-// Deliberate divergence from cluster_e2e: its other half — retry ONLY on a
+// Deliberate divergence from the cluster harness: its other half — retry ONLY on a
 // convergence timeout, never on a violated invariant — is NOT ported. Playwright
 // cannot cheaply tell a timeout from a failed assertion when it decides to retry,
 // so retries stay at 2 in CI and only the caps move here.
@@ -27,7 +27,7 @@ const LOAD_HEADROOM = 0.75
 /** A runaway host must still fail in bounded time, so the factor is capped. */
 const MAX_SCALE = 4.0
 
-/** Environment override, mirroring cluster_e2e's CLUSTER_E2E_TIMEOUT_SCALE. */
+/** Environment override, mirroring the cluster harness's CLUSTER_E2E_TIMEOUT_SCALE. */
 const OVERRIDE_VAR = 'HILOS_E2E_TIMEOUT_SCALE'
 
 /**
@@ -167,7 +167,7 @@ function memoryFloorFor(availableGib) {
 }
 
 /**
- * Two decimals, the precision cluster_e2e reports its own factor with.
+ * Two decimals, the precision the cluster harness reports its own factor with.
  *
  * @param {number} value
  * @returns {number}
