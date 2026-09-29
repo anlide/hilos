@@ -4,7 +4,7 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 // speaks. The Playwright runner has no PHP, so the e2e sets the lag over the wire
 // directly; the master answers it itself and writes the node's lag row, which the
 // workers serving the tables read on every tick (HIL-1020).
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'chat-test'
+const COMMAND_HOST = process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // The master answers out of its own memory, without parking the request for an
@@ -23,8 +23,9 @@ const sendCommand = createCommandChannel({
  * Holds this node's table answers back by an artificial lag, until it is set again.
  *
  * Each call names the whole state: a lag left out is a lag turned off. The lag is
- * node-wide, which is safe only because the chat suite runs in a single worker;
- * a spec that sets one clears it in its `afterEach`, failed test or not.
+ * node-wide, which is safe only because the binance-btc-tracker suite runs in a
+ * single worker (CI=1 on the runner, playwright.config.ts); a spec that sets one
+ * clears it in its `afterEach`, failed test or not.
  *
  * @param lags How long to hold each answer, in milliseconds.
  * @param lags.windowMs How long a changed table window is held back.

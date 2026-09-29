@@ -6,7 +6,7 @@ import {
   shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-import { signUpAdmin } from '../helpers/adminGrant'
+import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage, PAGE_READY } from '../helpers/page'
 import { clearTableRefusal, refuseTableWindow } from '../helpers/tableRefusal'
 
@@ -21,10 +21,15 @@ import { clearTableRefusal, refuseTableWindow } from '../helpers/tableRefusal'
 // The 400 ms the table keeps its old rows before the skeleton (HIL-943) is not
 // measured here: on a starved stand the answer can take longer, and the threshold
 // is pinned by the unit tests of the controller. Only the outcome is.
+//
+// Both tests ride the settings list, a page with one table. The operations side
+// has no page carrying two, so "one table refused, its neighbour open" is not
+// walked here; that mixed answer is pinned by the core's unit test
+// (framework/frontend/core/test/subscription/bindTableViewport.test.ts).
 
 test.afterEach(clearTableRefusal)
 
-test('a table refused on the way in shows it is unavailable while its neighbour keeps its rows, and the page re-sent after a reconnect brings them back', async ({
+test('a table refused on the way in shows it is unavailable while its page stands, and the page re-sent after a reconnect brings its rows back', async ({
   page,
 }) => {
   await armSocketDrop(page)
@@ -33,24 +38,18 @@ test('a table refused on the way in shows it is unavailable while its neighbour 
     sockets += 1
   })
 
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
   // Before the page opens, so the refusal rides the page's own answer.
-  await refuseTableWindow('hilosSecurityStepUp')
-  await gotoPage(page, '/hilos/security/2fa', PAGE_READY)
+  await refuseTableWindow('settings')
+  await gotoPage(page, '/hilos/settings', PAGE_READY)
 
-  const operations = page.getByTestId('hilos-step-up-table')
-  await expect(shownByTestId(operations, 'hilos-table-unavailable')).toBeVisible()
-  await expect(
-    shownByTestId(operations, 'hilos-table-unavailable-title'),
-  ).toHaveText('List unavailable')
-  await expect(shownByTestId(operations, /^hilos-step-up-row-/)).toHaveCount(0)
-
-  // The neighbour came in the same answer with its rows, and the refusal is the
-  // one tile on the page rather than an error over the whole of it.
-  await expect(
-    shownByTestId(page, 'hilos-2fa-value-auth.second_factor.required'),
-  ).toBeVisible()
-  await expect(shownByTestId(page, 'hilos-table-unavailable')).toHaveCount(1)
+  // The refusal is a tile in the table's body rather than an error over the
+  // whole page.
+  await expect(shownByTestId(page, 'hilos-table-unavailable')).toBeVisible()
+  await expect(shownByTestId(page, 'hilos-table-unavailable-title')).toHaveText(
+    'List unavailable',
+  )
+  await expect(page.locator(ROWS)).toHaveCount(0)
   await expect(page.getByTestId('page-error')).toHaveCount(0)
 
   // A reconnect re-sends the page, and its answer brings the window into the
@@ -65,16 +64,14 @@ test('a table refused on the way in shows it is unavailable while its neighbour 
     timeout: 15_000,
   })
 
-  await expect(
-    shownByTestId(operations, 'hilos-step-up-row-change_name'),
-  ).toBeVisible()
+  await expect(page.locator(ROWS).first()).toBeVisible()
   await expect(shownByTestId(page, 'hilos-table-unavailable')).toHaveCount(0)
 })
 
 test('a window the server cannot build turns the rows into the unavailable tile, and the next window brings them back', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/settings', PAGE_READY)
   await expect(page.locator(ROWS).first()).toBeVisible()
 

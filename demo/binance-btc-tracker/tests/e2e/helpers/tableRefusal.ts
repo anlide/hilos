@@ -4,7 +4,7 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 // speaks. The Playwright runner has no PHP, so the e2e names the refused table over
 // the wire directly; the master answers it itself and writes the node's refusal
 // row, which the workers read every time they build a window (HIL-1131).
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'chat-test'
+const COMMAND_HOST = process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // The master answers out of its own memory, without parking the request for an
@@ -23,9 +23,10 @@ const sendCommand = createCommandChannel({
  * Refuses every window of one table on this node, as if the server could not build
  * it, until the refusal is cleared.
  *
- * The refusal is node-wide, which is safe only because the chat suite runs in a
- * single worker; a spec that sets one clears it in its `afterEach`, failed test or
- * not. A master that refuses the command rejects the returned promise.
+ * The refusal is node-wide, which is safe only because the binance-btc-tracker
+ * suite runs in a single worker (CI=1 on the runner, playwright.config.ts); a spec
+ * that sets one clears it in its `afterEach`, failed test or not. A master that
+ * refuses the command rejects the returned promise.
  *
  * @param tableKey The table's key on the wire, as a page names it.
  */

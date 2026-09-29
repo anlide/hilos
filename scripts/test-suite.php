@@ -74,10 +74,10 @@ declare(strict_types=1);
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
-    'chat' => ['check' => 6, 'php' => 106, 'e2e' => 1016],
+    'chat' => ['check' => 6, 'php' => 106, 'e2e' => 998],
     'tasks' => ['check' => 6, 'php' => 17, 'e2e' => 132],
     'polls' => ['check' => 13, 'php' => 17, 'e2e' => 166],
-    'binance-btc-tracker' => ['check' => 6, 'php' => 15, 'e2e' => 219],
+    'binance-btc-tracker' => ['check' => 6, 'php' => 15, 'e2e' => 225],
 ];
 
 $steps = [

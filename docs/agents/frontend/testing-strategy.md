@@ -137,7 +137,7 @@ the demo it leaves.
 | Backup | binance-btc-tracker: backup, backup-reopen | binance-btc-tracker | HIL-1220 |
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
-| Tables | chat: table-lag, table-refusal | binance-btc-tracker (not in the code yet — HIL-1223) | HIL-1223 |
+| Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
 | The operations half of tasks | tasks: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop (not in the code yet — HIL-1225) | HIL-1225 |
 | The operations half of polls | polls: users, settings, notifications, protected-mode, maintenance, logs | online-testing (not in the code yet — HIL-1226) | HIL-1226 |

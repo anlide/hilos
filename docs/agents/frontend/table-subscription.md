@@ -256,7 +256,8 @@ on a narrow screen is a fourth and has its own section below:
   refusal stands. A page that refuses altogether is none of these — that is
   `HilosRouter.pageError`, the page's own refusal, not a state of its table.
   On a test stand the state is called up by `test:table:refuse <tableKey>`, and
-  `demo/chat/tests/e2e/tests/table-refusal.spec.ts` walks both of its roads.
+  `demo/binance-btc-tracker/tests/e2e/tests/table-refusal.spec.ts` walks both of
+  its roads.
 
 ### The card a row projects to
 
