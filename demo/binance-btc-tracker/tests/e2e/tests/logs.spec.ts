@@ -5,7 +5,7 @@ import {
   watchTop,
   watchTopWithin,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
+import { grantAdminToSelf } from '../helpers/adminGrant'
 import {
   appendLogLines,
   FOLLOWED_STREAM,
@@ -46,7 +46,7 @@ test('follows a live log file: an appended line arrives on its own, and one appe
   // so the whole scenario does not fit the cap a test of DOM work is given.
   test.slow()
 
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
   await gotoPage(page, VIEWER_PATH, PAGE_READY)
 
   // Two gates before the first append, and they answer different questions.

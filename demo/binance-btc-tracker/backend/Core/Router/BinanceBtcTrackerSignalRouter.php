@@ -36,6 +36,7 @@ final class BinanceBtcTrackerSignalRouter extends SignalRouter
     {
         return [
             AgentType::BINANCE_BTC_TRACKER,
+            AgentType::HILOS_LOGS,
         ];
     }
 

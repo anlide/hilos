@@ -5,7 +5,7 @@ import {
   overlapSpot,
   setCustomSetting,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
+import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage, PAGE_READY } from '../helpers/page'
 
 // Rotation, carrying a batch off and cleaning it up, end to end (HIL-763): the
@@ -39,9 +39,10 @@ import { gotoPage, PAGE_READY } from '../helpers/page'
 // Nor the cluster half of any of it: this installation is single-node, and its
 // rows are keyed on a dash in place of a node name.
 //
-// The scenario shares the stand with every other chat spec, and rotation moves
-// live log files out from under all of them — which is safe only because the
-// suite is serial here (CI=1 on chat-e2e-runner, workers=1 in the config). It is
+// The scenario shares the stand with every other binance-btc-tracker spec, and
+// rotation moves live log files out from under all of them — which is safe only
+// because the suite is serial here (CI=1 on binance-btc-tracker-e2e-runner,
+// workers=1 in the config). It is
 // also why the four keys go back to their defaults in an afterEach: a threshold
 // left raised keeps rotating every five seconds for the rest of the run, and the
 // worker logs a red e2e is diagnosed from would walk into the archive.
@@ -92,7 +93,9 @@ let control: Page | null = null
  * @param key Catalog key to isolate.
  */
 async function isolate(tab: Page, key: string): Promise<void> {
-  await tab.getByTestId('hilos-table-search').fill(key)
+  const search = tab.getByTestId('hilos-table-search')
+  await search.fill('')
+  await search.pressSequentially(key, { delay: 10 })
   await expect(tab.getByTestId(`${ROW_ID_PREFIX}${key}`)).toBeVisible()
 }
 
@@ -214,7 +217,7 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   // walk; the default cap would expire in the middle of the first one.
   test.slow()
 
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
 
   // The observer opens first and never leaves: everything it is asked about
   // afterwards has to arrive by push, on a page that did not navigate.

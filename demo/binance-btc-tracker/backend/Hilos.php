@@ -7,6 +7,7 @@ namespace Demo\BinanceBtcTracker;
 use Demo\BinanceBtcTracker\Agents\BinanceBtcTrackerAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DataExportAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAgent;
+use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\SessionsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\UsersLibraryAgent;
 use Demo\BinanceBtcTracker\Auth\BinanceBtcTrackerAuthMethodDirectory;
@@ -14,9 +15,11 @@ use Demo\BinanceBtcTracker\Backup\BackupCatalog;
 use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserContext;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Database\BinanceBtcTrackerDbContext;
+use Demo\BinanceBtcTracker\Database\Settings\BinanceBtcTrackerSettingsCatalog;
 use Demo\BinanceBtcTracker\Environment\BinanceBtcTrackerEnvCatalog;
 use Demo\BinanceBtcTracker\Fs\BinanceBtcTrackerFsContext;
 use Demo\BinanceBtcTracker\Legal\BinanceBtcTrackerLegalCatalog;
@@ -24,8 +27,15 @@ use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsKeysPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsOverviewPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsSettingsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsViewPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
 use Demo\BinanceBtcTracker\Pages\MainPage;
 use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
@@ -43,23 +53,37 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Log\LogAggregatorAgent;
+use Hilos\Log\LogAggregatorAgentDaemon;
+use Hilos\Log\LogCarrierAgent;
+use Hilos\Log\LogCarrierAgentDaemon;
+use Hilos\Log\LogStoreAgent;
+use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
  * Hilos - Main app facade for data access.
  *
  * The smallest complete shape of a project: sign-in by password, an empty home, the admin
- * dashboard and the four public footer pages. Two admin sections are activated so far -
- * Maintenance, the verifier circle a freeze lets through, and Backup, the database archives - and
- * the others arrive one by one, each with the leaf that moves its e2e onto this demo.
+ * dashboard and the four public footer pages. Four admin sections are activated so far -
+ * Maintenance, the verifier circle a freeze lets through, Backup, the database archives,
+ * Settings, which carries only the keys the log section asks for, and Logs, the live tail and
+ * the rotated batches - and the others arrive one by one, each with the leaf that moves its e2e
+ * onto this demo.
  *
  * Usage:
  * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string()
@@ -83,10 +107,14 @@ final class Hilos extends HilosFacade
 
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
 
+    protected const string SETTINGS_CATALOG = BinanceBtcTrackerSettingsCatalog::class;
+
     protected const array FEATURES = [
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::BACKUP,
+        HilosFeature::SETTINGS,
+        HilosFeature::LOGS,
     ];
 
     public const array PAGES = [
@@ -94,6 +122,13 @@ final class Hilos extends HilosFacade
         DashboardPage::PAGE => DashboardPage::class,
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
+        SettingsPage::PAGE => SettingsPage::class,
+        LogsOverviewPage::PAGE => LogsOverviewPage::class,
+        LogsKeysPage::PAGE => LogsKeysPage::class,
+        LogsWorkersPage::PAGE => LogsWorkersPage::class,
+        LogsRotationsPage::PAGE => LogsRotationsPage::class,
+        LogsViewPage::PAGE => LogsViewPage::class,
+        LogsSettingsPage::PAGE => LogsSettingsPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -108,6 +143,10 @@ final class Hilos extends HilosFacade
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
+        ],
+        DemoHilosLogsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
         ],
         DataExportAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DataExportAgent::class,
@@ -124,6 +163,11 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => UsersLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
+        SettingsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         MailDeliveryChannelAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
@@ -138,6 +182,21 @@ final class Hilos extends HilosFacade
         BackupAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => BackupAgent::class,
             AgentRegistryKey::DAEMON => BackupAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        LogStoreAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogStoreAgent::class,
+            AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogCarrierAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogCarrierAgent::class,
+            AgentRegistryKey::DAEMON => LogCarrierAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogAggregatorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogAggregatorAgent::class,
+            AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
     ];
@@ -173,6 +232,10 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         BinanceBtcTrackerTableContext::hilosBackups => HilosBackupHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        BinanceBtcTrackerTableContext::settings => HilosSettingsTable::class,
+        BinanceBtcTrackerTableContext::hilosLogKeys => HilosLogKeysTable::class,
+        BinanceBtcTrackerTableContext::hilosLogRotations => HilosLogRotationsTable::class,
+        BinanceBtcTrackerTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
     ];
 
     public const array PAGE_TABLES = [
@@ -181,6 +244,18 @@ final class Hilos extends HilosFacade
         ],
         MaintenancePage::PAGE => [
             BinanceBtcTrackerTableContext::hilosVerifierCircle => [],
+        ],
+        SettingsPage::PAGE => [
+            BinanceBtcTrackerTableContext::settings => [],
+        ],
+        LogsKeysPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosLogKeys => [],
+        ],
+        LogsRotationsPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosLogRotations => [],
+        ],
+        LogsWorkersPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosLogWorkers => [],
         ],
     ];
 

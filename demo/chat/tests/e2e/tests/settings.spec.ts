@@ -672,7 +672,8 @@ test('a refusal too long for the line still moves nothing under it', async ({
   // not fit, and a plate that wrapped would grow and push the field down.
   //
   // Only the measurement is narrow. The journey to the dialog runs at the usual
-  // width, the way logs-rotation.spec.ts narrows an already-open modal: the
+  // width, the way demo/binance-btc-tracker/tests/e2e/tests/logs-rotation.spec.ts
+  // narrows an already-open modal: the
   // admin table is not what is under test here, and driving it on a phone would
   // put its own troubles into this verdict.
   //

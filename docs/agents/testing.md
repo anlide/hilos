@@ -187,11 +187,11 @@ A defect where **two processes see different state** — the master appends an
 agent's log and a worker asks for its size; the daemon and the CLI; two nodes of
 a cluster — is proved on the stand, where both processes are real rather than
 impersonated. That is the default, and it is already how the log tail is tested:
-`demo/chat/tests/e2e/helpers/logs.ts` asks the daemon to append lines over its
-own command channel, the log-store agent writes them, the master files them, and
-the front end reads them through a worker
-(`demo/chat/tests/e2e/tests/logs.spec.ts`). The helper's docblock
-(`demo/chat/tests/e2e/helpers/logs.ts:14`) says why it does not append to the
+`demo/binance-btc-tracker/tests/e2e/helpers/logs.ts` asks the daemon to append
+lines over its own command channel, the log-store agent writes them, the master
+files them, and the front end reads them through a worker
+(`demo/binance-btc-tracker/tests/e2e/tests/logs.spec.ts`). The helper's docblock
+(`demo/binance-btc-tracker/tests/e2e/helpers/logs.ts:14`) says why it does not append to the
 file itself: "Appending to the file from here instead would prove only that a
 file grew."
 

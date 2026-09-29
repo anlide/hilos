@@ -19,15 +19,20 @@ on Vue — the one to copy (`docs/new-project/README.md`):
 - **Admin dashboard** at `/hilos` with the **Maintenance** section — the
   verifier circle a protected-mode freeze lets through — and the **Backup**
   section: database archives created, deleted and, outside prod, restored,
-  kept as files in `data/backup`. The other admin sections arrive one by one.
+  kept as files in `data/backup`, the **Settings** section, carrying the keys
+  of the log section, and the **Logs** section: the live tail, the streams, the
+  workers, the rotated batches and the logging modes. The other admin sections
+  arrive one by one.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
 
 The backend is the base set: one app agent owning the connections and the
-home page, the Hilos index agent with the dashboard, the Maintenance and Backup
-sections and the footer pages, the framework backup agent, and the framework
-sign-in libraries. It keeps no table of its own — people, sessions, the tables
-of signing in and the verifier circle are the framework's, and the archives are
-files.
+home page, the Hilos index agent with the dashboard, the Maintenance, Backup and
+Settings sections and the footer pages, the logs agent serving the Logs section
+with the framework log store, carrier and aggregator behind it, the framework
+backup agent and settings library, and the framework sign-in libraries. It
+keeps no table of its own — people, sessions, the tables of signing in, the
+settings and the verifier circle are the framework's, and the archives and the
+logs are files.
 
 ### What it is going to show
 

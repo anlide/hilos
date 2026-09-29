@@ -29,6 +29,13 @@ import Privacy from './views/Privacy/Privacy.vue'
 import Terms from './views/Terms/Terms.vue'
 import HilosBackup from './views/Hilos/Backup/Backup.vue'
 import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
+import HilosSettings from './views/Hilos/Settings/Settings.vue'
+import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
+import HilosLogsKeys from './views/Hilos/Logs/Keys.vue'
+import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
+import HilosLogsRotations from './views/Hilos/Logs/Rotations.vue'
+import HilosLogsSettings from './views/Hilos/Logs/Settings.vue'
+import HilosLogsView from './views/Hilos/Logs/View.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -38,14 +45,22 @@ const props = defineProps<{ authGate: AuthGate }>()
 
 // The page-key → view map HilosView renders from: the home, the framework admin
 // defaults (hilosAdminViews, of which only the dashboard is registered on the
-// backend today), the Backup and Maintenance sections — mapped by the demo
-// itself, because those pages need the project's context and hilosAdminViews
-// leaves them out — and the four footer pages whose text is this demo's.
+// backend today), the Backup, Maintenance, Settings and Logs sections — mapped
+// by the demo itself, because those pages need the project's context and
+// hilosAdminViews leaves them out — and the four footer pages whose text is
+// this demo's.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   ...hilosAdminViews(),
   [HilosPages.BACKUP]: HilosBackup,
   [HilosPages.MAINTENANCE]: HilosMaintenance,
+  [HilosPages.SETTINGS]: HilosSettings,
+  [HilosPages.LOGS]: HilosLogsOverview,
+  [HilosPages.LOGS_KEYS]: HilosLogsKeys,
+  [HilosPages.LOGS_WORKERS]: HilosLogsWorkers,
+  [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
+  [HilosPages.LOGS_SETTINGS]: HilosLogsSettings,
+  [HilosPages.LOGS_VIEW]: HilosLogsView,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,

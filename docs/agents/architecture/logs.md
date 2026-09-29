@@ -896,9 +896,11 @@ Remember the outcome, speak on its change, clear on recovery.
   (`framework/frontend/core/test/admin/logs/`) and the preset screen's common
   half (`admin/settings/hilosSettingPresets.test.ts`).
 - `demo/polls` e2e `logs.spec.ts` — every screen of the section rendered
-  over the live socket. A follow driven end to end from a browser is
-  `(not in the code yet — HIL-395)`; rotation, takeout and pruning driven end to
-  end are `(not in the code yet — HIL-763)`.
+  over the live socket.
+- `demo/binance-btc-tracker` e2e `logs.spec.ts` — the tail driven from a
+  browser: a line the daemon writes arrives on its own (HIL-395);
+  `logs-rotation.spec.ts` — rotation, takeout, two refusals and the pruning of
+  exactly the carried-off batch (HIL-763, HIL-1097).
 - Where every stream lands, proven on a live stand by a run and not by reading
   — `composer run test:log-streams`, the `log-streams` step of the full run:
   `demo/tasks` stood up, each source provoked on purpose, and every line of
