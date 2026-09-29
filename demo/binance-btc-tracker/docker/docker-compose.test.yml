@@ -1,0 +1,263 @@
+# Docker Compose configuration for tests (unit, Playwright e2e)
+# Isolated from the local stack (different ports, volumes, network).
+#
+# e2e runs against the BUILT frontend artifact served by
+# binance-btc-tracker-nginx-test with a booted daemon behind it
+# (docs/agents/frontend/testing-strategy.md). The e2e stack (mysql + daemon +
+# nginx) starts via `composer run test:e2e-up`, then any number of
+# `composer run test:e2e` invocations drive it, then `test:e2e-down`.
+# Frontend services sit behind profiles so the PHP-only test commands never
+# start them.
+
+name: hilos-binance-btc-tracker-test
+
+services:
+  binance-btc-tracker-mysql-test:
+    image: mariadb:11.4
+    container_name: binance-btc-tracker-mysql-test
+    # How the runner's artifact collector finds this container: the demos spell
+    # their database service differently, so it is asked for by role rather than
+    # guessed at by name (HIL-841).
+    labels:
+      hilos.role: database
+    ports:
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST in docker/.env to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_TEST_HOST_PORT:-33068}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${MYSQL_TEST_DATABASE:-hilos-demo-binance-btc-tracker-test}
+      MYSQL_USER: ${MYSQL_USER:-hilos}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+      TZ: UTC
+    volumes:
+      - mysql-test-data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - hilos-binance-btc-tracker-test-network
+
+  # Mail interceptor for the e2e stand. Every code this demo sends - the address
+  # check of a registration and the code of a recovery - leaves by mail, and the
+  # e2e runner reads it here. No host ports: nothing outside the stack talks to it.
+  binance-btc-tracker-mailpit-test:
+    image: axllent/mailpit:v1.21
+    container_name: binance-btc-tracker-mailpit-test
+    environment:
+      # A test relay authenticates nobody and encrypts nothing; the daemon
+      # connects with MAIL_SMTP_SECURITY=none and no credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks:
+      - hilos-binance-btc-tracker-test-network
+
+  binance-btc-tracker-daemon-test:
+    build: .
+    env_file:
+      - path: ../tests/.env
+        required: false
+    container_name: binance-btc-tracker-daemon-test
+    # Found by role for the same reason the database is (HIL-841): the collector runs
+    # this demo's own db:migration:status inside a container that is ALREADY up, never
+    # starting one, because a stand it raised is no longer the stand that failed.
+    labels:
+      hilos.role: app
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
+    working_dir: /app
+    environment:
+      - APP_ENV=test
+      - DB_HOST=binance-btc-tracker-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-binance-btc-tracker-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      # Trust this stand's own nginx, by address, to name the visitor behind it
+      # (HIL-680). One address and not a pool: the websocket port below is published
+      # as well, and a connection that reaches it without passing through nginx
+      # arrives from the docker network's gateway - a peer that must never be
+      # trusted to name anyone.
+      - HILOS_TRUSTED_PROXIES=${DOCKER_TEST_NGINX_IP:-10.211.0.12}/32
+      # The CLI command channel, the socket admin:create / admin:grant /
+      # admin:revoke speak. Reached from inside the stack only - the cli
+      # container, or `docker exec` into this one - so no host port is published.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke) reaches the
+      # command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
+      # Mail: the transport is pinned to the stand's own interceptor rather than
+      # auto-selected, so a stand that loses the relay fails loudly instead of
+      # quietly writing .eml files into the work tree that nobody reads. A sender
+      # identity is mandatory — without it a message cannot be encoded at all.
+      - MAIL_TRANSPORT=smtp
+      - MAIL_SMTP_HOST=binance-btc-tracker-mailpit-test
+      - MAIL_SMTP_PORT=1025
+      - MAIL_SMTP_SECURITY=none
+      - MAIL_FROM_ADDRESS=notifications@binance-btc-tracker.test
+      - MAIL_FROM_NAME=BTC Tracker
+    command: ["php", "backend/Bootstrap/docker.php"]
+    depends_on:
+      binance-btc-tracker-mysql-test:
+        condition: service_healthy
+      binance-btc-tracker-mailpit-test:
+        condition: service_healthy
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8113}:8090"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_TEST_PORT:-8114}:8091"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_TEST_PORT:-8115}:8092"
+    networks:
+      - hilos-binance-btc-tracker-test-network
+
+  # On-demand Node toolchain for the binance-btc-tracker frontend (npm install /
+  # build / check). Mounts the whole repo at /hilos so the @hilos/vue `file:`
+  # dependency into framework/frontend resolves. Used by
+  # `composer run test:e2e-build` to produce the dist that
+  # binance-btc-tracker-nginx-test serves.
+  binance-btc-tracker-frontend-cli-test:
+    image: node:22-bookworm-slim
+    container_name: binance-btc-tracker-frontend-cli-test
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/binance-btc-tracker/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    profiles:
+      - cli
+
+  # Serves the built frontend artifact over the same nginx image and config
+  # template as prod (test what you ship) and proxies /ws to the daemon. The
+  # e2e runner reaches it in-network as https://binance-btc-tracker-nginx-test;
+  # host ports are only for manual inspection.
+  binance-btc-tracker-nginx-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: binance-btc-tracker-nginx-test
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - ../data/data_export:/data_export:ro
+      - nginx-ssl-test:/etc/nginx/ssl
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTP_PORT:-8117}:80"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTPS_PORT:-8118}:443"
+    environment:
+      - FRONTEND_HTML_UPSTREAM=binance-btc-tracker-daemon-test
+    depends_on:
+      - binance-btc-tracker-daemon-test
+    profiles:
+      - e2e
+    networks:
+      hilos-binance-btc-tracker-test-network:
+        ipv4_address: ${DOCKER_TEST_NGINX_IP:-10.211.0.12}
+
+  binance-btc-tracker-cli-test:
+    build: .
+    env_file:
+      - path: ../tests/.env
+        required: false
+    container_name: binance-btc-tracker-cli-test
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
+    working_dir: /app
+    environment:
+      - APP_ENV=test
+      # Where the daemon answers, so a command that writes state the daemon owns can ask
+      # whether one is running before it starts (HIL-728). The check is fail-closed: without
+      # this pair the CLI refuses such a command rather than risk a second writer, so
+      # test:db-prepare needs it even though it runs before the daemon exists.
+      - HILOS_DAEMON_HOST=binance-btc-tracker-daemon-test
+      - COMMAND_PORT=8094
+      - DB_HOST=binance-btc-tracker-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-binance-btc-tracker-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+    profiles:
+      - cli
+    depends_on:
+      binance-btc-tracker-mysql-test:
+        condition: service_healthy
+    networks:
+      - hilos-binance-btc-tracker-test-network
+
+  # Playwright e2e runner. The official image ships the browsers — its version
+  # tag MUST match `@playwright/test` in tests/e2e/package.json, otherwise
+  # Playwright cannot locate its browser executables. BASE_URL points at the
+  # in-network nginx, so the run never depends on host ports. No depends_on:
+  # the stack is started explicitly via `composer run test:e2e-up`, never as a
+  # side effect of running tests. node_modules installs onto the host
+  # bind-mount (docs/agents/frontend/build-and-docker.md).
+  binance-btc-tracker-e2e-runner:
+    image: mcr.microsoft.com/playwright:v1.60.0-noble
+    container_name: binance-btc-tracker-e2e-runner
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/binance-btc-tracker/tests/e2e
+    environment:
+      BASE_URL: https://binance-btc-tracker-nginx-test
+      CI: "1"
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # The mail interceptor's HTTP API. The shared stand mailbox module
+      # (framework/frontend/scripts/standMailbox.mjs) reads its address from here
+      # and has no default of its own.
+      MAILPIT_URL: http://binance-btc-tracker-mailpit-test:8025
+      # How far the run wants every Playwright cap stretched. Set by
+      # scripts/run-test-suite.php from the lane count it resolved; the default is
+      # deliberately EMPTY rather than "1", because empty means "no override" to
+      # the scale and leaves a hand-raised stand on the host heuristic (HIL-853).
+      HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
+    profiles:
+      - e2e
+    networks:
+      - hilos-binance-btc-tracker-test-network
+
+volumes:
+  mysql-test-data:
+    name: hilos-binance-btc-tracker-mysql-test-data
+  nginx-ssl-test:
+
+networks:
+  hilos-binance-btc-tracker-test-network:
+    driver: bridge
+    ipam:
+      config:
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 - Docker's default
+        # address pools. nginx needs a fixed address (the daemon trusts it by that
+        # address and nothing else), so this subnet is claimed, not assigned. Inside
+        # a default pool that claim loses a race: any other stack whose network came
+        # up first may already hold the range, and then the stand fails to start with
+        # "Pool overlaps with other one on this address space". 10.0.0.0/8 is never
+        # auto-assigned; the column of this demo is 10.2x1
+        # (docs/new-project/README.md).
+        - subnet: ${DOCKER_TEST_NETWORK_SUBNET:-10.211.0.0/16}

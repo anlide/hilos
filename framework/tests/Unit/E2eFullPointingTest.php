@@ -45,7 +45,7 @@ final class E2eFullPointingTest extends TestCase
     /**
      * The demos that declare the chain today; a glob that misses one of them is broken.
      */
-    private const array KNOWN_DEMOS = ['chat', 'tasks', 'polls'];
+    private const array KNOWN_DEMOS = ['chat', 'tasks', 'polls', 'binance-btc-tracker'];
 
     /**
      * @throws JsonException When a demo manifest is not valid JSON

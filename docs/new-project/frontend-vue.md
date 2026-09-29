@@ -1,8 +1,8 @@
 # New Hilos frontend: Vue
 
-Reference implementations: [demo/chat/frontend](../../demo/chat/frontend), the
-full one, and `demo/binance-btc-tracker/frontend`, the minimal one
-(not in the code yet — HIL-1212).
+Reference implementations: [demo/binance-btc-tracker/frontend](../../demo/binance-btc-tracker/frontend),
+the minimal one — copy it — and [demo/chat/frontend](../../demo/chat/frontend),
+the full one.
 Common ground (containers, connection, e2e, stable ids) is in
 [README.md](README.md); this part covers only what is Vue-specific.
 
@@ -10,23 +10,51 @@ Common ground (containers, connection, e2e, stable ids) is in
 
 - Vite + `@vitejs/plugin-vue`; type checks via `vue-tsc` (`npm run check`).
 - `package.json`: dep `vue@^3.5`; devDeps `vite@^7`, `@vitejs/plugin-vue@^6`,
-  `vue-tsc`; deps `@hilos/vue` + `@hilos/core` as local `file:` paths into
-  `framework/frontend/{vue,core}`.
-- `index.html` uses a RELATIVE script entry (`./src/main.ts`) — keeps the
+  `vue-tsc`, `typescript`, `sass-embedded`; deps `@hilos/vue` + `@hilos/core` as
+  local `file:` paths into `framework/frontend/{vue,core}`. The `prebuild` hook
+  builds the SDK when it is stale; `prebuild`, `precheck` and `predev` write the
+  license inventory the License page draws.
+- Start the lockfile from an existing Vue demo's `package-lock.json` and let
+  `npm install` prune it, rather than resolving from scratch: `vue` must be the
+  SAME version the SDK workspace (`framework/frontend`) resolved. Two different
+  versions are two different `Ref` brands to `vue-tsc`, and every template
+  binding of a signal fails the type check with "`Readonly<Ref<…>>` is not
+  assignable" — while the same versions are folded into one by TypeScript.
+- `index.html` uses a RELATIVE script entry (`./src/index.ts`) — keeps the
   markup self-contained for the IDE without Resource Root marks; the built
   artifact still emits absolute `/assets/*` URLs.
 - `vite.config.ts`: `server.host: true`, fixed in-container `port` with
-  `strictPort`; native HMR (the repo lives on the WSL2 filesystem — no
-  polling).
+  `strictPort`; native HMR (no polling); `server.fs.allow: ['../../..']`
+  (README.md, "Frontend (common ground)"); a build plugin that writes
+  `dist/build-timestamp.txt`, which the daemon ships in the handshake welcome.
 
 ## SDK wiring
 
-- `src/connection.ts`: one module-level `HilosConnection`; URL =
-  same-origin `/ws` (pass `import.meta.env.VITE_WS_URL` only for environments
-  with a separate WebSocket hostname); `buildMismatch` → `location.reload()`.
-- `main.ts`: `connection.connect()` before `createApp(App).mount('#app')`.
-- State in components via `useConnectionState(connection)` from `@hilos/vue`
-  (a `Readonly<Ref<ConnectionState>>`; unsubscribes on scope dispose).
+The src root stays thin and the boot wiring lives in `src/bootstrap/`
+([../agents/frontend/bootstrap-structure.md](../agents/frontend/bootstrap-structure.md)):
+
+- `src/index.ts`: one import, `./bootstrap/main`, and nothing else.
+- `src/bootstrap/connection.ts`: `createHilosConnection({ url:
+  import.meta.env.VITE_WS_URL })` from `@hilos/core` — one connection for the
+  app, the same-origin `/ws` by default, the framework schemas merged and the
+  stale-build reload wired by the call itself. It exports `connection`,
+  `actionErrors` and `actions`.
+- `src/bootstrap/session.ts`: the app's `ScopeManager` and the session
+  selectors over it (`sessionUserName`, `sessionUserId`, `sessionUserIsAdmin`,
+  `sessionPendingAuthStep`, `sessionPendingAck`).
+- `src/bootstrap/main.ts`: `bootHilos({ viewLayer: HILOS_VIEW_LAYER, connection,
+  actions, scopes, router, pageTitles, appName })` binds the scopes, builds the
+  navigator and OPENS THE SOCKET — never call `connection.connect()` by hand.
+  Then `createAuthGate(…)`, `createApp(App, { authGate })`,
+  `app.provide(hilosRouterKey, …)` and `app.provide(hilosAuthGateKey, …)`.
+- `src/pages/`: `keys.ts`, `routes.ts` (`createAppPageRouter`) and
+  `pageTitles.ts` ([../agents/frontend/page-registry.md](../agents/frontend/page-registry.md)).
+- `src/App.vue`: `HilosLayout` with the `#brand` and `#user` slots and a
+  `HilosView` over the page map, the page skeletons and the project's
+  `AuthSurface` (a wrapper closing the project's `HilosAuthContext` over the
+  framework `HilosAuthSurface`).
+- State in components via `useSignal(…)` and `useConnectionState(connection)`
+  from `@hilos/vue` (each a `Readonly<Ref<…>>`; unsubscribes on scope dispose).
 
 ## SDK primitives
 
@@ -59,10 +87,12 @@ server: {
 ```
 
 The proxy target uses the compose service name — the dev container and the
-daemon share the local network.
+daemon share the local network. `/_hilos/data-export` is proxied the same way
+to the daemon's `:8090`, so a personal data copy downloads in dev as well.
 
 ## Module duplication
 
-Not an issue on Vue: `@vitejs/plugin-vue` dedupes `vue` automatically, so the
-SDK's copy never splits the runtime. (Contrast with React and Angular — both
-need explicit measures; see their parts.)
+Not an issue at run time on Vue: `@vitejs/plugin-vue` dedupes `vue`
+automatically, so the SDK's copy never splits the runtime. (Contrast with React
+and Angular — both need explicit measures; see their parts.) The type check is
+the one place a second copy shows — see the lockfile note under Toolchain.

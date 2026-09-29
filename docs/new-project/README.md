@@ -7,11 +7,11 @@ minimal to full:
 
 | Project | Backend | Frontend | Role |
 |---|---|---|---|
-| [demo/tasks](../../demo/tasks) | minimal (1 agent, 1 page) | React | the smallest complete shape — copy this |
-| [demo/polls](../../demo/polls) | minimal (1 agent, 1 page) | Angular | same shape, Angular toolchain |
-| [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the minimal shape on Vue (not in the code yet — HIL-1212); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
-| [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | empty, like tasks (not in the code yet — HIL-1213); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
-| [demo/online-testing](../../demo/online-testing) | minimal | Angular | empty, like polls (not in the code yet — HIL-1214); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/tasks](../../demo/tasks) | one app agent, every admin section | React | every framework feature activated |
+| [demo/polls](../../demo/polls) | one app agent, every admin section | Angular | every framework feature activated, Angular toolchain |
+| [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | empty, like binance-btc-tracker (not in the code yet — HIL-1213); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/online-testing](../../demo/online-testing) | minimal | Angular | empty, like binance-btc-tracker (not in the code yet — HIL-1214); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
 
 The frontend specifics are split per view framework:
@@ -56,8 +56,10 @@ demo/<name>/
 
 ## Minimal backend file set
 
-Namespace `Demo\<Name>\`, autoload root `backend/`. The tasks backend is
-the canonical minimal set (~24 files); mirror it file by file:
+Namespace `Demo\<Name>\`, autoload root `backend/`. The binance-btc-tracker
+backend is the canonical minimal set — the base below plus sign-in by password,
+the empty admin dashboard and the four footer pages, 47 PHP files and one
+migration per framework table it needs; mirror it file by file:
 
 1. **Bootstrap** (`backend/Bootstrap/`): `docker.php` (container PID-1:
    env init → DB connect with retry → migrations → `Hilos::init()` → watchdog
@@ -159,8 +161,8 @@ registry of taken host ports:
 | tasks test | 33064 | 8101/8102/8103 | — | — | http 8087 / https 8447 | — | 10.187 |
 | polls local | 33065 | 8104/8105/8106 | 8082 | 8027 (dev 8030) | https 8445 | 5175 | 10.198 |
 | polls test | 33066 | 8107/8108/8109 | — | — | http 8088 / https 8448 | — | 10.188 |
-| binance-btc-tracker local (not in the code yet — HIL-1212) | 33067 | 8110/8111/8112 | 8119 | 8120 | https 8116 | 5176 | 10.201 |
-| binance-btc-tracker test (not in the code yet — HIL-1212) | 33068 | 8113/8114/8115 | — | — | http 8117 / https 8118 | — | 10.211 |
+| binance-btc-tracker local | 33067 | 8110/8111/8112 | 8119 | 8120 | https 8116 | 5176 | 10.201 |
+| binance-btc-tracker test | 33068 | 8113/8114/8115 | — | — | http 8117 / https 8118 | — | 10.211 |
 | binance-btc-tracker cluster (not in the code yet — HIL-1215) | — | — | — | — | — | — | 10.221 |
 | ecommerce-shop local (not in the code yet — HIL-1213) | 33069 | 8130/8131/8132 | 8139 | 8140 | https 8136 | 5177 | 10.202 |
 | ecommerce-shop test (not in the code yet — HIL-1213) | 33070 | 8133/8134/8135 | — | — | http 8137 / https 8138 | — | 10.212 |
@@ -245,7 +247,7 @@ paid by the pool growing, not by an env line the project has to remember.
 
 ## Composer script lifecycle
 
-Mirror the tasks demo's `composer.json` scripts: `setup-env` (copies BOTH
+Mirror the binance-btc-tracker demo's `composer.json` scripts: `setup-env` (copies BOTH
 `.env.example→.env` and `tests/.env.example→tests/.env`; runs in the node cli
 container to avoid the env_file chicken-and-egg), `install-deps`,
 `daemon-start[-build]/stop/restart/status`, `cli`, `db:migration:*`,
@@ -283,7 +285,8 @@ The frontend is an independent consumer of the Hilos SDK: it pulls
 - e2e runs against the BUILT artifact through the prod-parity nginx with a
   booted daemon: two-phase readiness in `global-setup.ts` (static HEAD, then a
   `/ws` upgrade-101 probe), then a `connected` assertion. Copy
-  `demo/tasks/tests/e2e/` wholesale.
+  `demo/binance-btc-tracker/tests/e2e/` wholesale — the package, the helpers
+  and the three specs of the smallest shape (smoke, connection, sign-in).
 - The e2e package pins `@playwright/test` to the exact runner image version.
 
 How the DEV page reaches the daemon differs per framework — see

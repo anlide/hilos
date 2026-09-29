@@ -68,6 +68,7 @@ $demos = [
     'chat' => ['check' => 19, 'php' => 169, 'e2e' => 618],
     'tasks' => ['check' => 14, 'php' => 15, 'e2e' => 104],
     'polls' => ['check' => 34, 'php' => 15, 'e2e' => 117],
+    'binance-btc-tracker' => ['check' => 11, 'php' => 11, 'e2e' => 61],
 ];
 
 $steps = [

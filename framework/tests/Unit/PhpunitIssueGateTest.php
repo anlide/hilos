@@ -25,10 +25,11 @@ final class PhpunitIssueGateTest extends TestCase
     public function testEveryPhpunitConfigFailsOnIssues(): void
     {
         // The list is spelled out rather than globbed: a demo added without its gate must fail
-        // here, and a glob would simply not see it. A sixth demo is added to THIS list.
+        // here, and a glob would simply not see it. A seventh demo is added to THIS list.
         $root = dirname(__DIR__, 3);
         $configs = [
             $root . '/framework/tests/phpunit.xml',
+            $root . '/demo/binance-btc-tracker/tests/phpunit.xml',
             $root . '/demo/chat/tests/phpunit.xml',
             $root . '/demo/cluster/tests/phpunit.xml',
             $root . '/demo/polls/tests/phpunit.xml',

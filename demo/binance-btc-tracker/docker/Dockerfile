@@ -62,4 +62,4 @@ RUN mkdir -p /var/log/hilos
 # Use PHP as PID1 to ensure signal propagation and graceful shutdown
 # Note: This runs docker.php from the demo project, which will run daemon.php
 # -----------------------------------------------------------
-CMD ["php", "src/Bootstrap/docker.php"]
+CMD ["php", "backend/Bootstrap/docker.php"]
