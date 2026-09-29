@@ -97,9 +97,8 @@ else here reads waits its round trip.
 The rule is sufficient and not complete, and says so rather than promise
 otherwise. A co-owner that may add rows as well holds no copy of the rows the
 other owner wrote either, and the absence of `Add` does not catch it. The tree
-has several — the `ClaimerAgent` of the cluster stands' probe fleet holds
-`workerStatuses` whole while every `WorkerAgent` holds its own row, with their
-type names and RT keys in the framework (not in the code yet — HIL-1211), and
+has several — the `ClaimerProbeAgent` of the cluster stands holds
+`hilosProbeFleetStatuses` whole while every `FleetProbeAgent` holds its own row, and
 the chat demo holds five collections whole under two or three owners at once
 (its `Hilos::SHARED_DB_OWNERS`) — and none of them reads another owner's rows
 in its start hook. No second form of borrowing exists for them until such a
@@ -491,8 +490,8 @@ Three kinds of claim cannot be written as a constant on the agent class alone.
 Each has its answer, and none of them is a second mechanism.
 
 **The keys are known only to the live instance.** The chat's `BotAgent` claims
-`botAgentStatuses` by its own bot id; the cluster's `WorkerAgent` claims
-`workerStatuses` by its own worker index. A claim by keys is ownership of those
+`botAgentStatuses` by its own bot id; the cluster probe fleet's `FleetProbeAgent`
+claims `hilosProbeFleetStatuses` by its own fleet index. A claim by keys is ownership of those
 entities and not of the collection around them — every node runs members of the
 same collection, each owning its own rows — and the class cannot know an id that
 exists only once the instance is built.

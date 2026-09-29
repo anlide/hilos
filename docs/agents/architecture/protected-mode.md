@@ -85,15 +85,15 @@ Five test-only commands, and the split between them is the whole design:
 
 `ProtectedModeTestDriverTrait` carries the agent half of the drive trio — enter,
 leave and open; the mint and the close are answered by `ProtectedModeOperatorTrait`
-under their second names (see the operator section below). A trait, because its two
-carriers share no ancestor but `AbstractAgent`, and putting the commands there
-would hand a test-drive of the freeze to every agent of every project. The
-carriers are `AbstractHilosIndexAgent` (so chat, tasks and polls get it by
-inheritance) and the `WorkerAgent` of the cluster stands' probe fleet (without
-it the clustered entry path — the leader's quiesce round and a follower's
-fail-closed refusal — has no live carrier). Whether it keeps the trait once the
-probe agents are the framework's and every stand has a Hilos index of its own
-is that leaf's to decide (not in the code yet — HIL-1211).
+under their second names (see the operator section below). A trait, because putting
+the commands on `AbstractAgent` would hand a test-drive of the freeze to every agent
+of every project. The carrier is one, `AbstractHilosIndexAgent`, so chat, tasks and
+polls get it by inheritance. The framework's cluster probe fleet
+(`FleetProbeAgent`) does not carry it: in a full demo the index agent declares the
+same commands, and a command declared by two agents refuses the start. The
+clustered entry path — the leader's quiesce round and a follower's fail-closed
+refusal — is carried on a multi-node stand by the index agents of the demos that
+own the cluster stands.
 
 Two properties are worth keeping when this code is touched:
 

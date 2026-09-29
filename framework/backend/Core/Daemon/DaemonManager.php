@@ -37,6 +37,7 @@ use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\Probe\ProbeFleetSupervisor;
 use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\DbSyncSink;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
@@ -449,6 +450,14 @@ abstract class DaemonManager extends BaseManager implements
     private ProtectedModeEntryGate $protectedModeEntryGate;
 
     /**
+     * @var ProbeFleetSupervisor Leader's keeper of the cluster probe fleet (HIL-1211).
+     *
+     * Built with the manager because the leadership hooks arm and disarm it, and those fire
+     * before any tick could have made one. It costs nothing where the fleet is not listed.
+     */
+    private ProbeFleetSupervisor $probeFleetSupervisor;
+
+    /**
      * @var DaemonStatus This daemon's own runtime status, sampled on demand by both status doors.
      *
      * Built with the manager rather than in {@see boot()}: its construction is what starts the
@@ -473,6 +482,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->daemonStatus = new DaemonStatus();
         $this->protectedModeWatchdog = new ProtectedModeWatchdog();
         $this->protectedModeEntryGate = new ProtectedModeEntryGate();
+        $this->probeFleetSupervisor = new ProbeFleetSupervisor();
         $this->rtClaimRegistry = new RtClusterClaimRegistry();
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
         // initiator's type start again under the freeze it left behind, so a later look at the
@@ -839,6 +849,11 @@ abstract class DaemonManager extends BaseManager implements
                 // picks them; unlike the line above this is a per-tick reconciliation, not
                 // an ensure-once, because a placement can find no capable node yet.
                 $this->ensurePolicyAgentsPlaced();
+
+                // And the cluster probe fleet, the one indexed pool the framework itself declares:
+                // the pass above leaves indexed pools to whoever knows their members, and this
+                // pool's size is the framework's. Empty where the fleet is not listed (HIL-1211).
+                $this->probeFleetSupervisor->tick();
 
                 // Open the WebSocket server once the required startup agents are ready
                 $this->tickReadiness();
@@ -6528,6 +6543,7 @@ abstract class DaemonManager extends BaseManager implements
      * loop, so it must stay non-blocking.
      *
      * @param int $term Election term in which leadership was won
+     * @throws EnvException When the heartbeat-interval env value cannot be read
      * @throws HilosException Whatever the project's own leadership duties raise
      */
     public function onBecameLeader(int $term): void
@@ -6544,6 +6560,9 @@ abstract class DaemonManager extends BaseManager implements
 
         // The new leader takes up the protected-mode freeze orchestration.
         Hilos::$cluster?->protectedModeLeadership()?->onBecameLeader();
+
+        // And arms the settle window before it places the cluster probe fleet itself.
+        $this->probeFleetSupervisor->onBecameLeader();
     }
 
     /**
@@ -6578,6 +6597,9 @@ abstract class DaemonManager extends BaseManager implements
         // And the cluster-wide map of RT ownership, which was this node's answer to a question it
         // no longer owns; the next leader rebuilds it from the mesh (HIL-696).
         $this->rtClaimRegistry->clear();
+
+        // A demoted node never drives the probe fleet's placement.
+        $this->probeFleetSupervisor->onLostLeadership();
     }
 
     /**

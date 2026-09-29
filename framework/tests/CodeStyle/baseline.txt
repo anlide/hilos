@@ -33,8 +33,6 @@ THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/GuardianAgentStatus
 THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/UserStates.php 5 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Tables/ModeratorPiece/DTO/ModeratorPieceDeleteActionDTO.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Tables/ModeratorPiece/DTO/ModeratorPieceUpdateActionDTO.php 3 # HIL-449
-THROWS-PROPAGATION demo/cluster/backend/Agents/WorkerAgent.php 1 # HIL-449
-THROWS-PROPAGATION demo/cluster/backend/Core/Daemon/ClusterDaemonManager.php 1 # HIL-449
 THROWS-PROPAGATION demo/polls/backend/Runtime/State/Collection/Connections.php 2 # HIL-449
 THROWS-PROPAGATION demo/polls/backend/Runtime/View/Collection/Connections.php 2 # HIL-449
 THROWS-PROPAGATION demo/tasks/backend/Runtime/State/Collection/Connections.php 2 # HIL-449

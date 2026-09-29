@@ -344,8 +344,20 @@ ahead of all of them (HIL-1228): it is needed on one server too.
 A stand takes rather than holds. The harness is one and shared,
 `framework/docker/cluster/`: it reads the nodes, their addresses, their room
 and the set of scenarios from the stand it is run against. The probe agents the
-scenarios drive are the framework's, and a stand switches on those its
-scenarios need (not in the code yet — HIL-1211).
+scenarios drive are the framework's (`framework/backend/Cluster/Probe/`): a demo
+lists in its `AGENTS` the ones its stand's scenarios need, one row each, keyed by
+the probe's type with the record taken from `ClusterProbe::AGENTS`:
+
+```php
+HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
+```
+
+A probe starts only on a node that is in a cluster and whose `APP_ENV` is not
+production-like, so the same demo on one node, on its own Playwright stand and
+in production carries the rows and runs none of them. Which demo takes which
+(not in the code yet — HIL-1215, HIL-1216, HIL-1217): binance the fleet and the
+runtime set probe, ecommerce the fleet, the claimer and the ballast,
+online-testing the fleet and the database probe.
 
 The stand's compose file is the one place its nodes are written, and there is
 no second copy: a node is a service with `CLUSTER_ENABLED=true` and a

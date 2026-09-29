@@ -13,6 +13,7 @@ use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\Cluster\Placement\ResourceProfile;
+use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
@@ -1062,6 +1063,20 @@ abstract class WorkerServer extends AbstractServer implements
         // record the way a later promotion or placement expects to find it.
         if ($this->protectedModeRefusesStart($agentType, $agentIndex)) {
             Logger::debug("Agent {$agentId} not started: protected mode holds the node");
+            return;
+        }
+
+        // Cluster probe gate: a probe is a test instrument of a cluster stand, and it starts
+        // only on a clustered node of a non-production environment (HIL-1211). Anywhere else a
+        // project listing it simply does not run it - on one node, on its own Playwright stand
+        // and in production alike - so it is passed over here quietly, above the temporary
+        // record and without a failure card. A per-node replica meets this gate too, since its
+        // start comes through here.
+        if (
+            ClusterProbe::isProbe(AgentRegistry::workerClass(Hilos::appClass()::AGENTS[$agentType] ?? null))
+            && !ClusterProbe::mayRunHere()
+        ) {
+            Logger::debug("Agent {$agentId} not started: a cluster probe starts only on a clustered node of a non-production environment");
             return;
         }
 

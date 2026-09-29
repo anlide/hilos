@@ -93,19 +93,20 @@ STRANGER_IP = None
 # What either end of a refused TLS handshake writes, through the containment of a failing client.
 TLS_REFUSAL_LINE = "Socket TLS handshake failed"
 
-# The constants below that say "mirrors" copy the code of the probe agents the scenarios drive,
-# and each names the file it copies; they move with those agents (HIL-1211).
+# The constants below that say "mirrors" copy the code of the framework's cluster probe agents
+# the scenarios drive (framework/backend/Cluster/Probe/, HIL-1211), and each names the file it
+# copies.
 
-# Mirrors AgentType::WORKER (demo/cluster/backend/Constants/AgentType.php).
-WORKER_AGENT_TYPE = "worker"
-# Fleet size the leader keeps placed; mirrors ClusterDaemonManager::WORKER_FLEET_SIZE
-# (demo/cluster/backend/Core/Daemon/ClusterDaemonManager.php).
+# Mirrors HilosAgentType::HILOS_PROBE_FLEET (framework/backend/Constants/HilosAgentType.php).
+WORKER_AGENT_TYPE = "hilos_probe_fleet"
+# Fleet size the leader keeps placed; mirrors ClusterProbe::FLEET_SIZE
+# (framework/backend/Cluster/Probe/ClusterProbe.php).
 WORKER_FLEET_SIZE = 10
-# RT collection every fleet member owns one row of; mirrors ClusterRtContext::workerStatuses
-# (demo/cluster/backend/Runtime/View/Context/ClusterRtContext.php).
-WORKER_STATUSES = "workerStatuses"
-# Seconds a fleet member waits between reports; mirrors WorkerAgent::REPORT_INTERVAL_SEC
-# (demo/cluster/backend/Agents/WorkerAgent.php).
+# RT collection every fleet member owns one row of; mirrors HilosProbeFleetStatus::RT_COLLECTION
+# (framework/backend/Runtime/State/Item/HilosProbeFleetStatus.php).
+WORKER_STATUSES = "hilosProbeFleetStatuses"
+# Seconds a fleet member waits between reports; mirrors FleetProbeAgent::REPORT_INTERVAL_SEC
+# (framework/backend/Cluster/Probe/FleetProbeAgent.php).
 WORKER_REPORT_INTERVAL_SEC = 5.0
 # Seconds a slave keeps its work after losing the leader it answers to: the stand's
 # CLUSTER_SLAVE_WORK_GRACE_MS, read by bind().
@@ -115,8 +116,8 @@ WORKER_DIED_HOSTING = re.compile(r"Worker #(\d+) died hosting \d+ agent\(s\): (.
 # How many lines of a victim's log a missing worker-death report prints (HIL-1162).
 EVIDENCE_LINES = 40
 
-# The settings row the per-node probe writes and reads. Non-catalog by construction - this demo
-# registers no settings catalog - so it is a true orphan row and nothing else in the stand is
+# The settings row the per-node probe writes and reads. Non-catalog by construction - no
+# settings catalog declares it - so it is a true orphan row and nothing else in the stand is
 # about it.
 DB_PROBE_KEY = "cluster_probe_value"
 # What the read command prints in place of a value when the node holds no row for the key;
@@ -126,9 +127,9 @@ DB_PROBE_KEY = "cluster_probe_value"
 DB_PROBE_NO_ROW = "(none)"
 
 # The RT collection the per-node set probe writes, cut into sets by the node a note belongs to;
-# mirrors ClusterRtContext::probeNotes (demo/cluster/backend/Runtime/View/Context/
-# ClusterRtContext.php). Each node's probe owns the set named by its own node id.
-PROBE_NOTES = "probeNotes"
+# mirrors HilosProbeNote::RT_COLLECTION (framework/backend/Runtime/State/Item/HilosProbeNote.php).
+# Each node's probe owns the set named by its own node id.
+PROBE_NOTES = "hilosProbeNotes"
 # The notes scenario 20 writes. Prefixes, not ids: a retried attempt suffixes them afresh, because
 # the node the first attempt cut off is recreated holding every note written by then, and a note
 # it already holds could not show what the hand-over brings.
@@ -137,10 +138,10 @@ NOTE_FOREIGN = "set-note-foreign"
 NOTE_PEER = "set-note-peer"
 NOTE_LATE = "set-note-late"
 
-# The demo agent that claims the WHOLE of the collection the fleet owns row by row, so the
-# cluster-wide guard has two whole rights to judge; mirrors AgentType::CLAIMER
-# (demo/cluster/backend/Constants/AgentType.php).
-CLAIMER_AGENT_TYPE = "claimer"
+# The probe that claims the WHOLE of the collection the fleet owns row by row, so the
+# cluster-wide guard has two whole rights to judge; mirrors HilosAgentType::HILOS_PROBE_CLAIMER
+# (framework/backend/Constants/HilosAgentType.php).
+CLAIMER_AGENT_TYPE = "hilos_probe_claimer"
 CLAIMER_INDEX = "0"
 CLAIMER_AGENT_ID = f"{CLAIMER_AGENT_TYPE}:{CLAIMER_INDEX}"
 # Seconds the leader waits between attempts at a policy placement that has not taken; mirrors
@@ -148,11 +149,11 @@ CLAIMER_AGENT_ID = f"{CLAIMER_AGENT_TYPE}:{CLAIMER_INDEX}"
 # refusal outliving it is what "terminal" means here.
 POLICY_PLACEMENT_RETRY_SEC = 5.0
 
-# The demo agent that does nothing but hold capacity (HIL-448); mirrors AgentType::BALLAST
-# (demo/cluster/backend/Constants/AgentType.php).
-BALLAST_AGENT_TYPE = "ballast"
-# Ram one ballast reserves; mirrors BallastAgentDaemon::RAM_COST
-# (demo/cluster/backend/Core/Agent/Daemon/BallastAgentDaemon.php).
+# The probe that does nothing but hold capacity (HIL-448); mirrors
+# HilosAgentType::HILOS_PROBE_BALLAST (framework/backend/Constants/HilosAgentType.php).
+BALLAST_AGENT_TYPE = "hilos_probe_ballast"
+# Ram one ballast reserves; mirrors BallastProbeAgentDaemon::RAM_COST
+# (framework/backend/Cluster/Probe/BallastProbeAgentDaemon.php).
 BALLAST_RAM_COST = 2
 # Ram each slave declares in its CLUSTER_NODE_CAPABILITIES, read by bind(). The masters declare
 # none, so by rule they take no placed work at all.
@@ -1022,9 +1023,9 @@ def scenario_10_cross_node_browser():
 def scenario_12_rt_replication():
     """A runtime row written on one node reaches every node that READS it, and its workers.
 
-    Every fleet member owns exactly ONE row of `workerStatuses`, by its own index, and the fleet
-    is spread over the data-plane nodes - so this collection has a truth source on several nodes
-    at once, each for its own rows. Before the row axis of ownership existed, a node holding any
+    Every fleet member owns exactly ONE row of `hilosProbeFleetStatuses`, by its own index, and
+    the fleet is spread over the data-plane nodes - so this collection has a truth source on
+    several nodes at once, each for its own rows. Before the row axis of ownership existed, a node holding any
     of it claimed the whole collection: every neighbour's frame read as "two truth sources" and
     was dropped, and the collection never converged anywhere (HIL-589).
 
@@ -1465,7 +1466,7 @@ def scenario_16_recreated_node_leaves_no_phantom_fleet():
     which node ends up with them is not this leaf's business and is not even the same answer
     twice. A recreate shuts the node down gracefully when it gets the chance, and then its
     agents report Stopped before the container goes: the leader forgets those records, and the
-    demo's own fleet supervisor places the members it no longer tracks onto the survivor while
+    framework's fleet supervisor places the members it no longer tracks onto the survivor while
     the victim is still down. When instead the node dies without a word, the records live on and
     the rejoin report is what clears them - and there the emptied node is the least loaded
     candidate, so its own share does come home. Both endings are healthy, and the one thing
@@ -1575,9 +1576,10 @@ def scenario_18_capacity_is_consumed():
       A head count would have put the eight on all five nodes, one or two apiece;
     - no master holds any: a ballast requires no tag, so the only thing keeping it off a master is
       the rule that a node declaring no capacity accepts no placed work;
-    - ballast:7 has no record, and still has none after the retry interval has passed twice and a
-      second ask: a node whose stock is spent is no candidate, and with both slaves full there is
-      nowhere left. What should become of such work is HIL-446, not this scenario.
+    - hilos_probe_ballast:7 has no record, and still has none after the retry interval has
+      passed twice and a second ask: a node whose stock is spent is no candidate, and with both
+      slaves full there is nowhere left. What should become of such work is HIL-446, not this
+      scenario.
 
     The order is deterministic - s1, s1, s2, s1, s1, then a tie at full load that the head count
     gives to s2, then s1 - so the 5/2 split does not depend on timing. Placed LAST because the

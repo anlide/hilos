@@ -4,40 +4,32 @@ declare(strict_types=1);
 
 namespace Demo\Cluster;
 
-use Demo\Cluster\Agents\BallastAgent;
-use Demo\Cluster\Agents\ClaimerAgent;
-use Demo\Cluster\Agents\DbProbeAgent;
-use Demo\Cluster\Agents\RtSetProbeAgent;
-use Demo\Cluster\Agents\WorkerAgent;
-use Demo\Cluster\Core\Agent\Daemon\BallastAgentDaemon;
-use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
-use Demo\Cluster\Core\Agent\Daemon\DbProbeAgentDaemon;
-use Demo\Cluster\Core\Agent\Daemon\RtSetProbeAgentDaemon;
-use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Database\ClusterDbContext;
 use Demo\Cluster\Environment\ClusterEnvCatalog;
 use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
-use Hilos\Core\Agent\Config\AgentPlacement;
-use Hilos\Core\Agent\Config\AgentRegistryKey;
-use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Cluster\Probe\ClaimerProbeAgent;
+use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Cluster\Probe\FleetProbeAgent;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
  * Hilos - Main app facade for the cluster demo.
  *
  * A deliberately minimal, headless project: no pages, no WebSocket, no browser
- * context — just the placeable no-op fleet the multi-node cluster harness (HIL-185)
- * observes, the claimer it stages a two-owner split with, and the per-node probe that
- * writes and reads a row of the one database the stand shares (HIL-712). Its runtime
- * state is the fleet's status collection and the probe notes cut into sets by node,
- * whose per-node owner shows the set width holding across nodes (HIL-1116), alongside
- * the framework-owned protected mode singleton, mounted per node so the daemon truth
- * source has a local writer seam; the database probe adds none, because the row it is
- * about is in the database.
+ * context — just the framework's cluster probes the multi-node cluster harness (HIL-185)
+ * drives, all five of them: the placeable no-op fleet it observes, the claimer it stages a
+ * two-owner split with, the ballast that holds capacity, the per-node probe that writes and
+ * reads a row of the one database the stand shares (HIL-712), and the per-node probe that owns
+ * its node's set of the probe notes (HIL-1116). The probes and their runtime collections are the
+ * framework's (HIL-1211); this facade only lists them. Its own runtime context holds nothing but
+ * the framework-owned protected mode singleton, mounted per node so the daemon truth source has
+ * a local writer seam.
  * The whole CLUSTER_* configuration is inherited from the framework env catalog, so
  * the facade only names the env catalog, the agent registry, the database context,
  * and this minimal runtime context.
@@ -53,63 +45,24 @@ final class Hilos extends HilosFacade
     public const array PAGES = [];
 
     public const array AGENTS = [
-        WorkerAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => WorkerAgent::class,
-            AgentRegistryKey::DAEMON => WorkerAgentDaemon::class,
-            // The leader places a fleet of these, so every instance carries its own index.
-            AgentRegistryKey::INDEXED => true,
-            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
-        ],
-        ClaimerAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => ClaimerAgent::class,
-            AgentRegistryKey::DAEMON => ClaimerAgentDaemon::class,
-            // Indexed for the same reason the fleet is, and for one more: the framework's
-            // policy-placement sweep skips indexed agents, and the demo's own supervisor places
-            // only the fleet. So nothing brings a claimer up until a scenario addresses one,
-            // which is what keeps the deliberate split out of every other run.
-            AgentRegistryKey::INDEXED => true,
-            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
-        ],
-        BallastAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => BallastAgent::class,
-            AgentRegistryKey::DAEMON => BallastAgentDaemon::class,
-            // Indexed like the claimer and for the same reason: the framework's policy-placement
-            // sweep skips indexed agents and the demo's supervisor places only the fleet, so a
-            // ballast holds capacity only while the scenario that asked for it runs.
-            AgentRegistryKey::INDEXED => true,
-            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
-        ],
-        DbProbeAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => DbProbeAgent::class,
-            AgentRegistryKey::DAEMON => DbProbeAgentDaemon::class,
-            // The only axis it declares, and the one the scenario is built on: a replica on
-            // every node, so "node A writes and node B reads" names two particular nodes
-            // rather than wherever a placement happened to land. Neither INDEXED nor
-            // PLACEMENT may stand beside it - a node replica has no index and no node to
-            // pick - and topology validation refuses both.
-            AgentRegistryKey::SCOPE => AgentScope::NODE,
-        ],
-        RtSetProbeAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => RtSetProbeAgent::class,
-            AgentRegistryKey::DAEMON => RtSetProbeAgentDaemon::class,
-            // A replica on every node for the reason the database probe is one: each owns the
-            // set of the probe notes named by its own node, so "s1 writes its set and s2 may
-            // not" names two particular nodes (HIL-1116).
-            AgentRegistryKey::SCOPE => AgentScope::NODE,
-        ],
+        HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
+        HilosAgentType::HILOS_PROBE_CLAIMER => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_CLAIMER],
+        HilosAgentType::HILOS_PROBE_BALLAST => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_BALLAST],
+        HilosAgentType::HILOS_PROBE_DB => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],
+        HilosAgentType::HILOS_PROBE_RT_SET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_RT_SET],
     ];
 
     /**
      * The one runtime collection this demo lets two owners hold - on purpose.
      *
      * A receipt, not a permission, and the only row here whose debt is not a leaf: the claimer
-     * holds the whole status collection while every worker holds its own row, and that is the
+     * holds the whole status collection while every fleet member holds its own row, and that is the
      * split the cluster scenarios exist to exercise. Startup would refuse the pair without this
      * row, exactly as it refuses one that nobody wrote down.
      */
     public const array SHARED_RT_OWNERS = [
-        ClusterRtContext::workerStatuses => [
-            SharedOwnersKey::OWNERS => [ClaimerAgent::class, WorkerAgent::class],
+        HilosProbeFleetStatus::RT_COLLECTION => [
+            SharedOwnersKey::OWNERS => [ClaimerProbeAgent::class, FleetProbeAgent::class],
             SharedOwnersKey::DEBT => 'intentional: this demo exists to exercise the runtime two-owner guard',
         ],
     ];

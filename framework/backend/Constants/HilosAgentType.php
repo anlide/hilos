@@ -81,4 +81,19 @@ final class HilosAgentType
 
     /** @var string Hilos log aggregator agent (cluster-wide owner of the merged log index across nodes) */
     public const string HILOS_LOG_AGGREGATOR = 'hilos_log_aggregator';
+
+    /** @var string Cluster probe: member of the placed fleet of synthetic workers, one row of the fleet statuses each */
+    public const string HILOS_PROBE_FLEET = 'hilos_probe_fleet';
+
+    /** @var string Cluster probe: deliberate second owner of the whole fleet status collection */
+    public const string HILOS_PROBE_CLAIMER = 'hilos_probe_claimer';
+
+    /** @var string Cluster probe: placed agent that does nothing but hold a slice of its node's declared ram */
+    public const string HILOS_PROBE_BALLAST = 'hilos_probe_ballast';
+
+    /** @var string Cluster probe: per-node replica that writes and reads a settings row of the shared database */
+    public const string HILOS_PROBE_DB = 'hilos_probe_db';
+
+    /** @var string Cluster probe: per-node replica that owns this node's set of the probe notes */
+    public const string HILOS_PROBE_RT_SET = 'hilos_probe_rt_set';
 }

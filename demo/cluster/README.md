@@ -14,20 +14,24 @@ agents whose only job is to keep their workers busy.
 - **Nodes:** 3 masters (`m1..m3`, the consensus master-set) + 2 data-plane slaves
   (`s1`, `s2`, advertising the `worker` capability). Role, identity, master set,
   and every timeout come from `CLUSTER_*` env in `docker/docker-compose.cluster.yml`.
-- **Workload:** a fleet of 10 `WorkerAgent` instances (`worker:0`…`worker:9`) — on
-  the node's regular workers, declared `AgentPlacement::POLICY` so the leader
-  places them rather than hosting them, gated to the `worker` capability. Each one
-  busies its worker with 50–250 ms jobs and reports its throughput, so a node's
-  share of the load is visible in its log.
+- **Workload:** the framework's cluster probes (`framework/backend/Cluster/Probe/`,
+  HIL-1211), all five listed in `backend/Hilos.php` with the records the framework
+  writes. The fleet is 10 `FleetProbeAgent` instances
+  (`hilos_probe_fleet:0`…`hilos_probe_fleet:9`) — on the node's regular workers,
+  declared `AgentPlacement::POLICY` so the leader places them rather than hosting
+  them, gated to the `worker` capability. Each one busies its worker with 50–250 ms
+  jobs and reports its throughput, so a node's share of the load is visible in its log.
   The leader spreads the fleet over the slaves via the framework's node-selection
-  policy (HIL-182) and re-places a lost node's share on failover (HIL-183).
-  `ClusterDaemonManager` supplies only the placement *trigger*.
-- **Second claimer:** one `ClaimerAgent` (`claimer:0`) declared the same way but
-  claiming the *whole* of `workerStatuses`, which the fleet owns row by row — the
-  two-owner split the cluster-wide guard exists to name (HIL-696). Nothing starts
-  it: indexed policy-placed agents are outside the framework's placement sweep and
-  the demo's own supervisor knows only the fleet, so it reaches the mesh only when
-  a scenario asks for it with `test:cluster:agent:place`. It writes nothing.
+  policy (HIL-182) and re-places a lost node's share on failover (HIL-183);
+  the framework's fleet supervisor (`ProbeFleetSupervisor`) supplies the placement
+  *trigger*. A probe starts only on a clustered node of a non-production environment.
+- **Second claimer:** one `ClaimerProbeAgent` (`hilos_probe_claimer:0`) declared the
+  same way but claiming the *whole* of `hilosProbeFleetStatuses`, which the fleet owns
+  row by row — the two-owner split the cluster-wide guard exists to name (HIL-696).
+  Nothing starts it: indexed policy-placed agents are outside the framework's
+  placement sweep and the framework's fleet supervisor knows only the fleet, so it
+  reaches the mesh only when a scenario asks for it with `test:cluster:agent:place`.
+  It writes nothing.
 - **Assertion surface:** the read-only `test:cluster:inspect` command (HIL-325),
   run per node from the `cluster-cli` container.
 - **Peer TLS:** every link between nodes is mutual TLS against the stand's own

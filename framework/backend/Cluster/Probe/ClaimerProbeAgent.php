@@ -1,0 +1,73 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Cluster\Probe;
+
+use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
+use Hilos\Utils\Logger;
+
+/**
+ * ClaimerProbeAgent - a deliberate second owner of the collection the fleet writes (HIL-696).
+ *
+ * The one thing the harness cannot stage with a {@see FleetProbeAgent}: a claim over the WHOLE
+ * of `hilosProbeFleetStatuses`, where every fleet member claims one row of it by its own index.
+ * Two whole rights over overlapping rows is the split the cluster-wide guard exists to name, and
+ * naming it needs an agent on a node that is not the one already holding those rows.
+ *
+ * It writes NOTHING, and that is the point rather than an omission: the claim is made by
+ * declaring the right, before a single row is written, which is precisely the window the guard
+ * was built to close. A second writer would also corrupt the fleet's rows on its way to being
+ * caught, and the harness asserts those rows survive.
+ *
+ * Nothing places it on its own — indexed agents are outside the framework's policy-placement
+ * sweep, and the framework's fleet supervisor ({@see ProbeFleetSupervisor}) places only the
+ * probe fleet — so it exists on the mesh for exactly as long as a scenario asks for it, and only
+ * ever on the node the leader picks.
+ */
+final class ClaimerProbeAgent extends AbstractAgent
+{
+    /**
+     * The whole fleet status collection, and stopping there is the point.
+     *
+     * No keys, so the claim is over every row: that is what makes it overlap whichever rows the
+     * fleet holds elsewhere, whatever indices the fleet happens to run under.
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_RT = [HilosProbeFleetStatus::RT_COLLECTION => TruthSourceOperation::BY_KIND];
+
+    public const string AGENT_TYPE = HilosAgentType::HILOS_PROBE_CLAIMER;
+
+    /**
+     * @param string $agentIndex Index this instance carries, so several may be staged at once
+     * @throws AgentIndexRequiredException When the index is empty
+     */
+    public function __construct(string $agentIndex)
+    {
+        if ($agentIndex === '') {
+            throw new AgentIndexRequiredException('ClaimerProbeAgent requires a non-empty agentIndex');
+        }
+
+        $this->agentIndex = $agentIndex;
+    }
+
+    /** Says out loud that the claim {@see self::OWNS_RT} makes has landed on this node. */
+    public function onStart(): void
+    {
+        Logger::info("Claimer {$this->getId()} started on this node: it claims all of "
+            . HilosProbeFleetStatus::RT_COLLECTION);
+    }
+
+    /**
+     * Logs that the claim left this node; the registry drops it with the agent.
+     */
+    public function onStop(): void
+    {
+        Logger::info("Claimer {$this->getId()} stopped on this node: its claim is gone with it");
+    }
+}

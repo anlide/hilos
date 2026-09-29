@@ -38,10 +38,11 @@ use Throwable;
  * project and that one belongs to the agent running real operations - while a freeze may only
  * be driven by the agent the row records as its initiator.
  *
- * A trait rather than a base class because the two carriers share no ancestor but
- * {@see AbstractAgent}, and putting the commands there would hand a test-drive of the freeze
- * to every agent of every project - the same reasoning that made
- * {@see CommandChannelClientTrait} a trait.
+ * A trait rather than a method set on {@see AbstractAgent}, because putting the commands there
+ * would hand a test-drive of the freeze to every agent of every project - the same reasoning
+ * that made {@see CommandChannelClientTrait} a trait. Its one carrier is the Hilos index agent;
+ * the cluster probe fleet does not carry it, since a command declared by two agents of one
+ * project refuses the start (HIL-1211).
  *
  * **The reply is a verdict, not an acknowledgement.** Every command answers once the mode has
  * really moved: enter from {@see onProtectedModeReady()}, leave when this node's row reads

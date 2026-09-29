@@ -238,7 +238,7 @@ final class CliCommands
      * Enter protected mode through the live initiator agent (test-only).
      *
      * Doubles as the command-channel wire name routed to the agents that declare it
-     * ({@see AbstractHilosIndexAgent} and the cluster demo's worker agent), the same
+     * ({@see AbstractHilosIndexAgent} and its subclasses), the same
      * one-string arrangement {@see self::NOTIFICATION_TEST_EMIT} uses. The freeze has
      * exactly one entry and this command does not add a second: it asks an agent to
      * call the same request every production initiator calls.

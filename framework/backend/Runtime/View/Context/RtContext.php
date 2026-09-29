@@ -23,6 +23,8 @@ use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\HilosClusterNodes as StateHilosClusterNodes;
 use Hilos\Runtime\State\Collection\HilosConnections;
+use Hilos\Runtime\State\Collection\HilosProbeFleetStatuses as StateHilosProbeFleetStatuses;
+use Hilos\Runtime\State\Collection\HilosProbeNotes as StateHilosProbeNotes;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Collection\HilosSessionRotations as StateHilosSessionRotations;
 use Hilos\Runtime\State\Collection\HilosSessionToastStacks as StateHilosSessionToastStacks;
@@ -30,6 +32,8 @@ use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime as StateAdminViewModeRuntime;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
+use Hilos\Runtime\State\Item\HilosProbeFleetStatus as StateHilosProbeFleetStatus;
+use Hilos\Runtime\State\Item\HilosProbeNote as StateHilosProbeNote;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -38,11 +42,15 @@ use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\State\Item\TableLagRuntime as StateTableLagRuntime;
 use Hilos\Runtime\State\Item\TableRefusalRuntime as StateTableRefusalRuntime;
 use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
+use Hilos\Runtime\View\Actions\Collection\HilosProbeFleetStatusesActions;
+use Hilos\Runtime\View\Actions\Collection\HilosProbeNotesActions;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionToastStacksActions;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Actions\Item\AdminViewModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
+use Hilos\Runtime\View\Actions\Item\HilosProbeFleetStatusActions;
+use Hilos\Runtime\View\Actions\Item\HilosProbeNoteActions;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
@@ -53,6 +61,8 @@ use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Collection\HilosClusterNodes;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Collection\HilosOAuthTrips;
+use Hilos\Runtime\View\Collection\HilosProbeFleetStatuses;
+use Hilos\Runtime\View\Collection\HilosProbeNotes;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
@@ -79,6 +89,8 @@ use OutOfBoundsException;
  *
  * @property-read BackupHistories $hilosBackupHistories Stored-backup index, mounted for a project that declares HilosFeature::BACKUP
  * @property-read HilosClusterNodes $hilosClusterNodes Cluster as this node's master sees it, mounted for every project
+ * @property-read HilosProbeFleetStatuses $hilosProbeFleetStatuses Cluster probe fleet statuses, one row per member, mounted for every project
+ * @property-read HilosProbeNotes $hilosProbeNotes Notes of the cluster set probe, cut into sets by node, mounted for every project
  * @property-read HilosSessionRotations $hilosSessionRotations Pending login token rotations, mounted for every project
  * @property-read HilosSessionToastStacks $hilosSessionToastStacks Toasts a browser session is being shown, mounted for every project
  * @property-read RegistrationWaiters $hilosRegistrationWaiters Browser sessions parked on a pending registration, mounted for every project
@@ -222,7 +234,7 @@ abstract class RtContext
      * declaration the only switch: a project cannot forget a row of a feature it declared, and
      * cannot quietly replace one either - the check names the key and the line to delete.
      *
-     * Seven of these are mounted unconditionally and before any feature, because none is an
+     * Nine of these are mounted unconditionally and before any feature, because none is an
      * opt-in surface. The protected mode singleton is there because a node freezing itself for
      * a destructive operation is a data-integrity guarantee: every project that can run such an
      * operation must be able to freeze. The session rotations are there because the login token
@@ -246,6 +258,12 @@ abstract class RtContext
      * The admin view mode (HIL-1249) is there because it is a mark of the node, not a feature a
      * project declares: only the master writes it - at its start and by the stand's lever - and
      * the workers read it. It is inert (false) while the mode is off.
+     * The probe fleet statuses and the probe notes (HIL-1211) are there for the reason the table
+     * lag is: they are the test levers of the framework's cluster probe agents, which any project
+     * may list for its cluster stand, and they are silent until a probe writes - and a probe
+     * starts only on a clustered node of a non-production environment. Unlike the rest they are
+     * mounted without the framework's reader interest ({@see self::mountClaimedCollection()}):
+     * nothing but a probe reads them.
      *
      * A project whose createRuntime() returns null has no context to mount into; declaring a
      * feature that brings runtime state there is refused by the facade instead, since there is
@@ -280,6 +298,20 @@ abstract class RtContext
             StateHilosClusterNode::RT_COLLECTION,
             HilosClusterNodes::class,
             HilosClusterNodesActions::class,
+        );
+        $this->mountClaimedCollection(StateHilosProbeFleetStatus::RT_COLLECTION, StateHilosProbeFleetStatuses::init());
+        $this->setRepresent(
+            StateHilosProbeFleetStatus::RT_COLLECTION,
+            HilosProbeFleetStatuses::class,
+            HilosProbeFleetStatusesActions::class,
+            HilosProbeFleetStatusActions::class,
+        );
+        $this->mountClaimedCollection(StateHilosProbeNote::RT_COLLECTION, StateHilosProbeNotes::init());
+        $this->setRepresent(
+            StateHilosProbeNote::RT_COLLECTION,
+            HilosProbeNotes::class,
+            HilosProbeNotesActions::class,
+            HilosProbeNoteActions::class,
         );
 
         foreach ($definitions as $definition) {
@@ -347,6 +379,27 @@ abstract class RtContext
             $name,
             SourceConsumer::feature($this->_mountingFeature?->value ?? $name),
         );
+    }
+
+    /**
+     * Mounts a framework-owned state collection whose only readers are the agents that claim it.
+     *
+     * The framework mounts it so no project has to, and guards it as it guards the rest
+     * ({@see self::assertFeatureRuntimeIntact()}), but it is not the framework's to read: unlike
+     * {@see self::mountFeatureCollection()}, the mount declares no reader interest. The cluster
+     * probe collections are the case (HIL-1211) - nothing but a probe reads them, and a probe's
+     * claim is its own reader interest (HIL-750). A mount that read them would put every process
+     * of every node on the address list of every fleet write: a hop per write, forever, on
+     * nodes that run no probe at all, which the cluster stand's replication scenario asserts
+     * against (HIL-717).
+     *
+     * @param string $name Collection name owned by the framework
+     * @param RtStates $collection State collection instance to mount
+     */
+    private function mountClaimedCollection(string $name, RtStates $collection): void
+    {
+        $this->_stateCollections[$name] = $collection;
+        $this->_featureCollections[$name] = ['feature' => null, 'state' => $collection];
     }
 
     /**

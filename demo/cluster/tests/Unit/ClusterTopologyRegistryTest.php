@@ -4,32 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\Cluster\Tests\Unit;
 
-use Demo\Cluster\Agents\BallastAgent;
-use Demo\Cluster\Agents\ClaimerAgent;
-use Demo\Cluster\Agents\DbProbeAgent;
-use Demo\Cluster\Agents\RtSetProbeAgent;
-use Demo\Cluster\Agents\WorkerAgent;
-use Demo\Cluster\Constants\AgentType;
-use Demo\Cluster\Constants\ClusterCapability;
-use Demo\Cluster\Constants\ClusterResource;
-use Demo\Cluster\Core\Agent\Daemon\BallastAgentDaemon;
-use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
-use Demo\Cluster\Core\Agent\Daemon\DbProbeAgentDaemon;
-use Demo\Cluster\Core\Agent\Daemon\RtSetProbeAgentDaemon;
-use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Core\Router\ClusterSignalRouter;
 use Demo\Cluster\Database\ClusterDbContext;
 use Demo\Cluster\Hilos;
-use Demo\Cluster\Runtime\State\Item\ProbeNote;
 use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
+use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\CliCommands;
-use Hilos\Core\Agent\AgentRegistry;
-use Hilos\Core\Agent\Config\AgentPlacement;
-use Hilos\Core\Agent\Config\AgentRegistryKey;
-use Hilos\Core\Agent\Config\AgentScope;
-use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\CLI\CliManager;
-use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use PHPUnit\Framework\TestCase;
@@ -51,7 +33,7 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertSame([], Hilos::getPageAgentIndexRoutes());
     }
 
-    public function testRoutingSurfaceIsEmptyApartFromTheProtectedModeDrive(): void
+    public function testRoutingSurfaceIsEmptyApartFromTheProbeCommands(): void
     {
         // Nothing routes: no page/agent actions, no server-driven signals.
         $this->assertSame([], Hilos::getPageActionRoutes());
@@ -60,144 +42,44 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertSame([], Hilos::getAgentSignalRoutes());
         $this->assertSame([], Hilos::getGroupRoutes());
 
-        // The exceptions are commands, and both sets are here for the same reason: this demo
-        // is headless, so an agent is the only thing that can carry work a scenario drives. The
-        // worker agent drives the clustered protected-mode entry path - the leader's quiesce
-        // round and a follower's fail-closed refusal - and the probe carries the database pair,
-        // which the master must not answer because a database read blocks. The set probe carries
-        // the runtime write, which has to pass the truth-source door of the node that owns a set.
+        // The exceptions are commands, and the framework's probes carry them: this demo is
+        // headless, so an agent is the only thing that can carry work a scenario drives. The
+        // database probe carries the database pair, which the master must not answer because a
+        // database read blocks; the set probe carries the runtime write, which has to pass the
+        // truth-source door of the node that owns a set. The probe fleet carries no command: the
+        // protected-mode drive is the index agent's, and this demo has none.
         $this->assertSame([
-            CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::WORKER,
-            CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::WORKER,
-            CliCommands::PROTECTED_MODE_TEST_OPEN => AgentType::WORKER,
-            CliCommands::CLUSTER_TEST_DB_WRITE => AgentType::DB_PROBE,
-            CliCommands::CLUSTER_TEST_DB_READ => AgentType::DB_PROBE,
-            CliCommands::CLUSTER_TEST_RT_WRITE => AgentType::RT_SET_PROBE,
+            CliCommands::CLUSTER_TEST_DB_WRITE => HilosAgentType::HILOS_PROBE_DB,
+            CliCommands::CLUSTER_TEST_DB_READ => HilosAgentType::HILOS_PROBE_DB,
+            CliCommands::CLUSTER_TEST_RT_WRITE => HilosAgentType::HILOS_PROBE_RT_SET,
         ], Hilos::getCommandAgentRoutes());
     }
 
-    public function testAgentRegistryHasThePlaceableWorkerAndTheClaimer(): void
+    public function testTheRegistryListsTheFiveFrameworkProbesAsTheFrameworkWroteThem(): void
     {
         $this->assertSame(
-            [AgentType::WORKER, AgentType::CLAIMER, AgentType::BALLAST, AgentType::DB_PROBE, AgentType::RT_SET_PROBE],
+            [
+                HilosAgentType::HILOS_PROBE_FLEET,
+                HilosAgentType::HILOS_PROBE_CLAIMER,
+                HilosAgentType::HILOS_PROBE_BALLAST,
+                HilosAgentType::HILOS_PROBE_DB,
+                HilosAgentType::HILOS_PROBE_RT_SET,
+            ],
             array_keys(Hilos::AGENTS),
         );
 
-        $entry = Hilos::AGENTS[AgentType::WORKER];
-        $this->assertSame(WorkerAgent::class, AgentRegistry::workerClass($entry));
-        $this->assertSame(WorkerAgentDaemon::class, AgentRegistry::daemonClass($entry));
-        // The leader places a fleet, so the registry must hand each instance its index.
-        $this->assertTrue(AgentRegistry::requiresIndex($entry));
-        // Both placement axes, so the declaration the harness depends on cannot change in
-        // silence: one instance per fleet index cluster-wide, on the node the policy picked.
-        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
-        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
-        $this->assertTrue(is_subclass_of(WorkerAgentDaemon::class, AbstractAgentDaemon::class));
-        $this->assertSame(AgentType::WORKER, WorkerAgent::AGENT_TYPE);
-    }
-
-    public function testTheClaimerIsDeclaredSoThatNothingStartsItByItself(): void
-    {
-        $entry = Hilos::AGENTS[AgentType::CLAIMER];
-        $this->assertSame(ClaimerAgent::class, AgentRegistry::workerClass($entry));
-        $this->assertSame(ClaimerAgentDaemon::class, AgentRegistry::daemonClass($entry));
-        $this->assertTrue(is_subclass_of(ClaimerAgentDaemon::class, AbstractAgentDaemon::class));
-        $this->assertSame(AgentType::CLAIMER, ClaimerAgent::AGENT_TYPE);
-
-        // The load-bearing pair, and the reason this agent can live in the registry at all: an
-        // agent that stages a two-owner split must reach the mesh only when a scenario asks for
-        // it. INDEXED keeps it out of the framework's policy-placement sweep, which places the
-        // unindexed ones by itself, and POLICY keeps it off the leader's own node - it has to
-        // land on the data plane, where the fleet writes, or it would clash with nobody.
-        $this->assertTrue(AgentRegistry::requiresIndex($entry));
-        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
-        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
-
-        // Gated to the data plane like a fleet member, because that is where the rows it means
-        // to claim are already written; a claimer the policy could only put on a coordination
-        // node would clash with nobody and the scenario would pass on nothing.
-        $daemon = new ClaimerAgentDaemon('0');
-        $this->assertSame([ClusterCapability::WORKER], $daemon->requiredCapabilities());
-        $this->assertFalse($daemon->requiresMonopolisticProcess());
-    }
-
-    public function testTheBallastCostsRamAndRequiresNoTag(): void
-    {
-        $entry = Hilos::AGENTS[AgentType::BALLAST];
-        $this->assertSame(BallastAgent::class, AgentRegistry::workerClass($entry));
-        $this->assertSame(BallastAgentDaemon::class, AgentRegistry::daemonClass($entry));
-        $this->assertTrue(is_subclass_of(BallastAgentDaemon::class, AbstractAgentDaemon::class));
-        $this->assertSame(AgentType::BALLAST, BallastAgent::AGENT_TYPE);
-
-        // Indexed and policy-placed like the claimer: only a scenario brings one up, and the
-        // leader chooses its node.
-        $this->assertTrue(AgentRegistry::requiresIndex($entry));
-        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
-        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
-
-        // No tag, so only the rule "no declared capacity, no placed work" keeps it off the
-        // masters - the rule the capacity scenario checks (HIL-448). The cost is what it is for.
-        $daemon = new BallastAgentDaemon('0');
-        $this->assertSame([], $daemon->requiredCapabilities());
-        $this->assertSame([ClusterResource::RAM => BallastAgentDaemon::RAM_COST], $daemon->placementProfile()->costs);
-        $this->assertSame(['ram' => 2.0], $daemon->placementProfile()->costs, 'The scenario mirrors ram=2');
-        $this->assertFalse($daemon->requiresMonopolisticProcess());
-    }
-
-    public function testTheProbeIsANodeReplicaAndNothingElse(): void
-    {
-        $entry = Hilos::AGENTS[AgentType::DB_PROBE];
-        $this->assertSame(DbProbeAgent::class, AgentRegistry::workerClass($entry));
-        $this->assertSame(DbProbeAgentDaemon::class, AgentRegistry::daemonClass($entry));
-        $this->assertTrue(is_subclass_of(DbProbeAgentDaemon::class, AbstractAgentDaemon::class));
-        $this->assertSame(AgentType::DB_PROBE, DbProbeAgent::AGENT_TYPE);
-
-        // The declaration scenario 11 stands on: one replica on every node, so the node that
-        // writes and the node that reads are two particular nodes rather than wherever a
-        // placement landed. Neither of the two axes a placed agent carries may stand beside it,
-        // and this pins that as much as the scope - a node replica has no index to hand out and
-        // no node to pick, and topology validation refuses either next to it.
-        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($entry));
-        $this->assertFalse(AgentRegistry::requiresIndex($entry));
-        $this->assertArrayNotHasKey(AgentRegistryKey::PLACEMENT, $entry);
-
-        // Placed on every node including the coordination ones, so it gates on no capability -
-        // unlike the fleet, which only a WORKER node may host.
-        $daemon = new DbProbeAgentDaemon();
-        $this->assertSame([], $daemon->requiredCapabilities());
-        $this->assertFalse($daemon->requiresMonopolisticProcess());
-    }
-
-    public function testTheSetProbeIsANodeReplicaThatClaimsItsNodesSet(): void
-    {
-        $entry = Hilos::AGENTS[AgentType::RT_SET_PROBE];
-        $this->assertSame(RtSetProbeAgent::class, AgentRegistry::workerClass($entry));
-        $this->assertSame(RtSetProbeAgentDaemon::class, AgentRegistry::daemonClass($entry));
-        $this->assertTrue(is_subclass_of(RtSetProbeAgentDaemon::class, AbstractAgentDaemon::class));
-        $this->assertSame(AgentType::RT_SET_PROBE, RtSetProbeAgent::AGENT_TYPE);
-
-        // A replica on every node, as the database probe is: scenario 20 names the node that
-        // writes its set and the node refused it, and both have to be particular nodes.
-        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($entry));
-        $this->assertFalse(AgentRegistry::requiresIndex($entry));
-        $this->assertArrayNotHasKey(AgentRegistryKey::PLACEMENT, $entry);
-        $daemon = new RtSetProbeAgentDaemon();
-        $this->assertSame([], $daemon->requiredCapabilities());
-        $this->assertFalse($daemon->requiresMonopolisticProcess());
-
-        // The claim the scenario stands on: the probe notes, by the set of this node, with every
-        // operation - and the set is cut by the node a note belongs to.
-        $this->assertSame([ClusterRtContext::probeNotes => TruthSourceOperation::BY_KIND], RtSetProbeAgent::OWNS_RT_SET);
-        $this->assertSame(ProbeNote::nodeId, ProbeNote::SET_VIA);
-        // Off a cluster there is no node and so no set: the empty key refuses the start.
-        $this->assertSame('', (new RtSetProbeAgent())->ownedRtSetKey(ClusterRtContext::probeNotes));
+        // The rows are the framework's records, not the demo's copy of them: the flags every
+        // scenario stands on are pinned once, in the framework's own registry test.
+        foreach (Hilos::AGENTS as $agentType => $entry) {
+            $this->assertSame(ClusterProbe::AGENTS[$agentType], $entry, "{$agentType} is listed as the framework wrote it");
+        }
     }
 
     public function testNoAgentIsStartedOnTheBootstrapSignal(): void
     {
-        // Nothing this demo registers is booted from the signal: the fleet and the claimer are
-        // leader-placed over the peer channel, and the probe comes up with its node's own
-        // workers, so the bootstrap list stays empty.
+        // Nothing this demo registers is booted from the signal: the fleet, the claimer and the
+        // ballast are leader-placed over the peer channel, and the node probes come up with their
+        // node's own workers, so the bootstrap list stays empty.
         $method = new ReflectionMethod(ClusterSignalRouter::class, 'getDefaultSystemBootstrapAgentTypes');
         $bootstrapAgents = $method->invoke(new ClusterSignalRouter());
 
