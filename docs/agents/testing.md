@@ -103,9 +103,9 @@ Removing one of the three attributes from a configuration is **not** a way out
 — it is undoing the gate, and it takes a person's decision.
 
 `PhpunitIssueGateTest` in the framework unit suite keeps the gate on: it reads
-all five configurations and requires the three attributes. A sixth demo is
-added to the list inside that test — a demo born without its gate fails there
-instead of running quiet.
+all seven configurations — the framework's and one per demo — and requires the
+three attributes. The next demo is added to the list inside that test — a demo
+born without its gate fails there instead of running quiet.
 
 *Why the gate exists.* The warning that a walk over a mutating collection was
 skipping a row was printed on every run and counted by nobody, and it stayed in
@@ -257,7 +257,7 @@ with its factor — and what a test longer than its cap owes — is in
 The graph is where the safety lives, and two kinds of constraint carry it:
 
 - **an edge** — the frontend steps of a demo (`<demo>-check`, `<demo>-e2e`) depend
-  on `fe-build`, because all three demo frontends prebuild the **same**
+  on `fe-build`, because every demo frontend prebuilds the **same**
   `framework/frontend` workspace. Concurrency is safe only because a current SDK
   makes those prebuilds skip. Do not delete that edge to free up a lane.
   `<demo>-php` is backend-only and waits for nothing.

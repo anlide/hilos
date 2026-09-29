@@ -22,9 +22,89 @@
         "php": ">=8.4",
         "anlide/hilos": "^2.0"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
     "autoload": {
         "psr-4": {
             "Demo\\EcommerceShop\\": "backend/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Demo\\EcommerceShop\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "hilos-frontend-reminder": "@php -r \"echo PHP_EOL . 'Hilos frontend: run npm install in the frontend container after composer changes, so the vendored SDK is not stale - see framework/frontend/README.md.' . PHP_EOL;\"",
+        "post-install-cmd": "@hilos-frontend-reminder",
+        "post-update-cmd": "@hilos-frontend-reminder",
+        "setup-env": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-frontend-cli-local sh -c \"cd /hilos/demo/ecommerce-shop && cp -n .env.example .env || true; cp -n tests/.env.example tests/.env || true; ls -l .env tests/.env\"",
+        "install-deps": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local composer install",
+        "daemon-start": "docker compose -f docker/docker-compose.local.yml up -d",
+        "daemon-start-build": "docker compose -f docker/docker-compose.local.yml --profile full up -d --build",
+        "daemon-stop": "docker compose -f docker/docker-compose.local.yml stop",
+        "daemon-restart": "docker compose -f docker/docker-compose.local.yml restart ecommerce-shop-daemon-local",
+        "daemon-status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php daemon:status",
+        "daemon-monitor": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php daemon:monitor",
+        "cli": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php",
+        "db:migration:up": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php db:migration:up",
+        "db:migration:down": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php db:migration:down",
+        "db:migration:status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php db:migration:status",
+        "db:migration:retry": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php db:migration:retry",
+        "db:seed:apply": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php db:seed:apply",
+        "db:schema:status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-cli-local php backend/Bootstrap/cli.php db:schema:status",
+        "pma": "docker compose -f docker/docker-compose.local.yml up -d ecommerce-shop-phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8139",
+        "pma-stop": "docker compose -f docker/docker-compose.local.yml stop ecommerce-shop-phpmyadmin-local",
+        "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-frontend-cli-local npm install",
+        "frontend:check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-frontend-cli-local npm run check",
+        "frontend:build": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm ecommerce-shop-frontend-cli-local npm run build",
+        "frontend:logs": "docker compose -f docker/docker-compose.local.yml logs -f ecommerce-shop-frontend-local",
+        "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-cli-test composer update phpunit/phpunit --no-interaction",
+        "test:up": [
+            "rm -f data/logs-test/protected-mode.state.json*",
+            "docker compose -f docker/docker-compose.test.yml up -d ecommerce-shop-mysql-test"
+        ],
+        "test:down": "@php ../../scripts/down-stands.php ecommerce-shop",
+        "test:down-volumes": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down -v",
+        "test:db-reset": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-cli-test php backend/Bootstrap/cli.php test:db:reset",
+        "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-cli-test php backend/Bootstrap/cli.php db:wait",
+        "test:db-prepare": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-cli-test sh -c \"php backend/Bootstrap/cli.php db:wait && php backend/Bootstrap/cli.php test:db:reset\"",
+        "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
+        "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
+        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
+        "test:check": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run check\"",
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm ecommerce-shop-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build\"",
+        "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm ecommerce-shop-e2e-runner node ../../../../framework/frontend/scripts/npm-install-if-stale.mjs",
+        "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm ecommerce-shop-e2e-runner npm run check",
+        "test:e2e-up": [
+            "@test:up",
+            "@test:db-prepare",
+            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build ecommerce-shop-daemon-test ecommerce-shop-nginx-test"
+        ],
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm ecommerce-shop-e2e-runner npx playwright test",
+        "test:e2e-down": "@test:down",
+        "test:e2e-full": [
+            "@test:down @no_additional_args",
+            "@test:up @no_additional_args",
+            "@test:e2e-build @no_additional_args",
+            "@test:e2e-install @no_additional_args",
+            "@test:e2e-check @no_additional_args",
+            "@test:e2e-up @no_additional_args",
+            "@test:e2e",
+            "@test:e2e-down @no_additional_args"
+        ],
+        "test:all": [
+            "@test:db-reset",
+            "@test:phpunit",
+            "@test:down",
+            "@test:e2e-full"
+        ]
+    },
+    "config": {
+        "process-timeout": 0,
+        "allow-plugins": {
+            "php-http/discovery": false
         }
     }
 }

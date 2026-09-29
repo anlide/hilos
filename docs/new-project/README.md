@@ -10,7 +10,7 @@ minimal to full:
 | [demo/tasks](../../demo/tasks) | one app agent, every admin section | React | every framework feature activated |
 | [demo/polls](../../demo/polls) | one app agent, every admin section | Angular | every framework feature activated, Angular toolchain |
 | [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
-| [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | empty, like binance-btc-tracker (not in the code yet — HIL-1213); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/online-testing](../../demo/online-testing) | minimal | Angular | empty, like binance-btc-tracker (not in the code yet — HIL-1214); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
 
@@ -164,8 +164,8 @@ registry of taken host ports:
 | binance-btc-tracker local | 33067 | 8110/8111/8112 | 8119 | 8120 | https 8116 | 5176 | 10.201 |
 | binance-btc-tracker test | 33068 | 8113/8114/8115 | — | — | http 8117 / https 8118 | — | 10.211 |
 | binance-btc-tracker cluster (not in the code yet — HIL-1215) | — | — | — | — | — | — | 10.221 |
-| ecommerce-shop local (not in the code yet — HIL-1213) | 33069 | 8130/8131/8132 | 8139 | 8140 | https 8136 | 5177 | 10.202 |
-| ecommerce-shop test (not in the code yet — HIL-1213) | 33070 | 8133/8134/8135 | — | — | http 8137 / https 8138 | — | 10.212 |
+| ecommerce-shop local | 33069 | 8130/8131/8132 | 8139 | 8140 | https 8136 | 5177 | 10.202 |
+| ecommerce-shop test | 33070 | 8133/8134/8135 | — | — | http 8137 / https 8138 | — | 10.212 |
 | ecommerce-shop cluster (not in the code yet — HIL-1216) | — | — | — | — | — | — | 10.222 |
 | online-testing local (not in the code yet — HIL-1214) | 33071 | 8150/8151/8152 | 8159 | 8160 | https 8156 | 5178 | 10.203 |
 | online-testing test (not in the code yet — HIL-1214) | 33072 | 8153/8154/8155 | — | — | http 8157 / https 8158 | — | 10.213 |

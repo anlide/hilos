@@ -1,0 +1,55 @@
+-- Migration: Create hilos_registration_reservation table
+-- Copied from framework/backend/Database/Migration/Stub/create_hilos_registration_reservation.sql.
+--
+-- Reserve-on-submit registration (HIL-415). Submitting the registration form no
+-- longer creates an account: it holds the identifier for a TTL and sends one
+-- confirmation code, and the account is created only when that code comes back.
+-- One row = one browser = one pending registration.
+--
+-- The hold is a table of its own rather than a column on hilos_user_verification
+-- because holding a registration needs a UNIQUE key, which a challenge table can
+-- never carry (consumed and expired challenges legitimately pile up per
+-- identifier). Uniqueness is on `session_token` (HIL-608): one browser leads one
+-- registration at a time, and a submit of another address evicts its own previous
+-- hold. `identifier` carries a plain index instead, because several browsers may
+-- legitimately be registering the same address at once - the first to SAVE A
+-- PASSWORD on it wins the account and the rest are told the address is taken
+-- (HIL-825). That key is also what makes the hold OWNED: a reservation is landed
+-- by the session that started it, so a letter answered in another browser can
+-- never finish somebody else's registration. The same question - "which
+-- registration is this browser running" - is answered the same way by the
+-- pending-registration columns of hilos_session.
+--
+-- No DB-level foreign key to the project `user` table: framework stubs never FK
+-- across the framework/project boundary, and here there is nothing to point at —
+-- the reservation exists precisely while the user does not. `session_token` is
+-- likewise unconstrained: a swept session leaves a hold that expires on its own.
+--
+-- `identifier` and `session_token` use utf8mb4_bin so both compare exactly; the
+-- writing leaf lowercases the identifier before insert.
+--
+-- `code_accepted_at` is the mark that the address was proved (HIL-825). The hold
+-- carries no credential at all: the password is asked for AFTER the code, and the
+-- account, its identity and its password are written together when that password
+-- is saved. What the hold remembers is only that the code came back, and it
+-- remembers it durably - a browser that proved an address keeps the right to
+-- finish it across a reload, a closed tab and a daemon restart. NULL while the
+-- hold is still waiting for its code.
+--
+-- `accepted_revisions` is the document-to-revision map accepted at consent. The
+-- account landing writes those exact acceptances in the transaction creating it.
+
+CREATE TABLE `hilos_registration_reservation` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `type` ENUM('password', 'magic_link', 'sms') NOT NULL,
+    `identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    `session_token` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    `code_accepted_at` TIMESTAMP NULL DEFAULT NULL,
+    `accepted_revisions` JSON DEFAULT NULL,
+    `expires_at` TIMESTAMP NOT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_reservation_session` (`session_token`),
+    KEY `idx_reservation_identifier` (`identifier`),
+    KEY `idx_reservation_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

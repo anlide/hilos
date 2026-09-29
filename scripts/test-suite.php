@@ -78,6 +78,7 @@ $demos = [
     'tasks' => ['check' => 6, 'php' => 17, 'e2e' => 132],
     'polls' => ['check' => 13, 'php' => 17, 'e2e' => 166],
     'binance-btc-tracker' => ['check' => 6, 'php' => 15, 'e2e' => 225],
+    'ecommerce-shop' => ['check' => 5, 'php' => 15, 'e2e' => 57],
 ];
 
 $steps = [

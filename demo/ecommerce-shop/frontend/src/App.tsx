@@ -1,0 +1,109 @@
+// Root view. The application shell is the SDK's HilosLayout; the demo fills its
+// brand prop and routes the content through HilosView, which renders the
+// component mapped to the navigator's current page. The brand and the shell's
+// gear move between the home page and the framework dashboard with no refresh.
+// The live connection state is the shell's own indicator (an extra status
+// surface allowed by docs/agents/frontend/core-and-connection.md).
+import {
+  HilosAvatar,
+  HilosLayout,
+  HilosView,
+  hilosAdminViews,
+  useSignal,
+} from '@hilos/react'
+import { HilosPages, hilosSessionAvatarMark, type AuthGate } from '@hilos/core'
+import type { ComponentType } from 'react'
+
+import AuthSurface from './auth/AuthSurface.js'
+import { connection } from './bootstrap/connection.js'
+import { currentUserIsAdmin, currentUserName } from './bootstrap/session.js'
+import { PAGE_MAIN } from './pages/keys.js'
+import About from './views/About/About.js'
+import License from './views/License/License.js'
+import Main from './views/Main/Main.js'
+import MainSkeleton from './views/Main/MainSkeleton.js'
+import Privacy from './views/Privacy/Privacy.js'
+import Terms from './views/Terms/Terms.js'
+
+// The page-key → view map HilosView renders from. A page with no mapped view
+// renders nothing; a page the backend does not register is refused by the
+// server, and the outlet draws that refusal instead.
+const pages: Record<string, ComponentType> = {
+  [PAGE_MAIN]: Main,
+  // The Hilos admin section. The framework ships a real default page for every
+  // admin key (hilosAdminViews), the dashboard included, and this demo registers
+  // the dashboard alone: no admin section is switched on here yet.
+  ...hilosAdminViews(),
+  [HilosPages.ABOUT]: About,
+  [HilosPages.TERMS]: Terms,
+  [HilosPages.PRIVACY]: Privacy,
+  [HilosPages.LICENSE]: License,
+}
+
+// The pages that draw a skeleton of their own shape while they wait for their
+// first answer (HIL-983); every other page gets the outlet's default skeleton.
+const pageSkeletons: Record<string, ComponentType> = {
+  [PAGE_MAIN]: MainSkeleton,
+}
+
+export interface AppProps {
+  /**
+   * The application's auth gate. Passed as well as provided: HilosView needs it
+   * to open the sign-in modal over a live page, and the shell's Sign in button
+   * calls it directly.
+   */
+  authGate: AuthGate
+}
+
+export default function App({ authGate }: AppProps) {
+  const isAdmin = useSignal(currentUserIsAdmin)
+  const userName = useSignal(currentUserName)
+  // The standing mark by the avatar (HIL-945): a takeover, or the session's own
+  // scheduled deletion, in the color of the strip that says it in words.
+  const avatarMark = useSignal(hilosSessionAvatarMark)
+
+  return (
+    <HilosLayout
+      connection={connection}
+      brand={
+        <>
+          <i className="bi bi-flower1" aria-hidden="true" />
+          {/* The name folds down to the icon on a narrow screen and stays the
+              link's accessible name there (mockups/framework/layout, "На узком экране"). */}
+          <span className="d-none d-md-inline ms-1">Hilos Flowers</span>
+          <span className="visually-hidden d-md-none">Hilos Flowers</span>
+        </>
+      }
+      isAdmin={isAdmin}
+      user={
+        userName ? (
+          // The avatar is not a link: the demo has no profile yet — it arrives
+          // with the shop's "My orders".
+          <span className="small" data-id="nav-profile-name" title={userName}>
+            <HilosAvatar name={userName} mark={avatarMark} />
+            <span className="visually-hidden">{userName}</span>
+          </span>
+        ) : (
+          // A visitor gets no gear — there is nothing to show — and one button
+          // that opens the surface over the page they are standing on
+          // (mockups/framework/layout, the "guest" tile).
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            data-id="nav-signin"
+            onClick={() => authGate.requireAuth()}
+          >
+            Sign in
+          </button>
+        )
+      }
+    >
+      <HilosView
+        pages={pages}
+        pageSkeletons={pageSkeletons}
+        authSurface={AuthSurface}
+        authGate={authGate}
+      />
+    </HilosLayout>
+  )
+}

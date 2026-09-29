@@ -1,0 +1,30 @@
+{
+  "name": "demo-ecommerce-shop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "E-commerce shop demo — an end project that consumes the Hilos frontend SDK (@hilos/react).",
+  "scripts": {
+    "predev": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
+    "dev": "vite",
+    "prebuild": "node ../../../framework/frontend/scripts/prebuild-sdk.mjs react && node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
+    "build": "vite build && vite build --ssr scripts/prerenderEntry.tsx --outDir dist-prerender && node dist-prerender/prerenderEntry.js",
+    "preview": "vite preview",
+    "precheck": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hilos/core": "file:../../../framework/frontend/core",
+    "@hilos/react": "file:../../../framework/frontend/react",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "sass-embedded": "^1.83.0",
+    "typescript": "^6.0.3",
+    "vite": "^7.0.0"
+  }
+}
