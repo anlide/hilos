@@ -134,8 +134,8 @@ the demo it leaves.
 | Area | Specs today | Lives in | Leaf |
 |---|---|---|---|
 | Settings, people and admin | chat: settings, users, admin, admin-gating, account-lifecycle | binance-btc-tracker (not in the code yet — HIL-1219) | HIL-1219 |
-| Backup | chat: backup | binance-btc-tracker (not in the code yet — HIL-1220) | HIL-1220 |
-| Protected mode and maintenance | chat: protected-mode | binance-btc-tracker (not in the code yet — HIL-1221) | HIL-1221 |
+| Backup | chat: backup, backup-reopen | binance-btc-tracker (not in the code yet — HIL-1220) | HIL-1220 |
+| Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | chat: logs, logs-rotation | binance-btc-tracker (not in the code yet — HIL-1222) | HIL-1222 |
 | Tables | chat: table-lag, table-refusal | binance-btc-tracker (not in the code yet — HIL-1223) | HIL-1223 |
 | Notifications and communications | chat: notifications, communications | binance-btc-tracker (not in the code yet — HIL-1224) | HIL-1224 |
@@ -307,8 +307,8 @@ drive the Maintenance section's dialogs and settle on their closing. They expect
 operator's page on `/hilos/maintenance`. `maintenanceCircleRow` and
 `maintenanceCircleOnline` locate the row and its presence mark; `CIRCLE_ONLINE` and
 `CIRCLE_OFFLINE` are that mark's words. Only an address somebody has confirmed can be
-named: a phone signed into by SMS code, or an email confirmed through the profile
-(registration leaves email unconfirmed). The database list outlives a scenario, so
+named: a phone signed into by SMS code, or an email proven by its registration code or
+confirmed through the profile (HIL-825). The database list outlives a scenario, so
 start every circle scenario with `clearMaintenanceCircle`. Assertions stay in the demo.
 
 ### Geometry — take a bookmark and ask whether it moved

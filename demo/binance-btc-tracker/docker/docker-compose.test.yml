@@ -226,6 +226,11 @@ services:
     working_dir: /hilos/demo/binance-btc-tracker/tests/e2e
     environment:
       BASE_URL: https://binance-btc-tracker-nginx-test
+      # The admin-gated /hilos specs take the grant, and the protected-mode spec
+      # drives the freeze, over the daemon command channel (helpers/adminGrant.ts,
+      # helpers/protectedMode.ts).
+      COMMAND_HOST: binance-btc-tracker-daemon-test
+      COMMAND_PORT: "8094"
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       # The mail interceptor's HTTP API. The shared stand mailbox module

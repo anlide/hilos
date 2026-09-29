@@ -13,10 +13,10 @@ import { signInByPhone } from '../helpers/session.js'
 
 // Taking a verifier out in Maintenance: the row leaves over the live table, and a
 // dialog open over a row removed in another tab says so before anybody presses Remove.
-// The other live circle seams run once in their own demos: chat's protected-mode.spec.ts
-// covers the freeze, the admitted circle and an absent member with the live presence
-// mark; tasks' maintenance.spec.ts covers naming and both refusals in the dialog
-// and in the corner.
+// The other live circle seams run once in their own demos: binance-btc-tracker's
+// protected-mode.spec.ts covers the freeze, the admitted circle and an absent member
+// with the live presence mark; tasks' maintenance.spec.ts covers naming and both
+// refusals in the dialog and in the corner.
 // The section's dialogs in all three SDKs remain covered by unit tests:
 // framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.test.ts,
 // framework/frontend/react/test/HilosMaintenancePage.test.tsx,

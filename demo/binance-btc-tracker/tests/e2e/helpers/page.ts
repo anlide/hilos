@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 // The one way a spec opens a page. `page.goto` on its own only waits for the
 // document; the page behind it is a live subscription, and its answer — the
@@ -92,5 +92,110 @@ export async function gotoPage(
   await expect(page.getByTestId(PAGE_STATE)).toHaveAttribute(
     'data-state',
     expected ?? SETTLED,
+  )
+}
+
+/**
+ * The maintenance surface the shell raises over every route while frozen.
+ */
+const MAINTENANCE = 'maintenance'
+
+/**
+ * Open a url while the node is under protected mode and wait for the stub.
+ *
+ * The freeze is the other navigation {@link gotoPage} cannot serve: the shell
+ * replaces the routed outlet with the maintenance surface, so the
+ * `hilos-page-state` marker that wrapper waits on is not in the DOM at all and
+ * the wait would time out on every call. What settles instead is the stub, which
+ * is painted from the welcome frame before any subscription — which is exactly
+ * what makes a cold load worth asserting on: the route, and so the surface type,
+ * is known before the socket answers.
+ *
+ * @param page The Playwright page.
+ * @param path Path to open, as the address bar would hold it.
+ */
+export async function gotoMaintenance(page: Page, path: string): Promise<void> {
+  await page.goto(path)
+  await expect(page.getByTestId(MAINTENANCE)).toBeVisible()
+}
+
+/** The live connection indicator the shell keeps at every state, freeze included. */
+const CONNECTION_STATE = 'conn-state'
+
+/**
+ * Open a url on a browser the freeze lets through, and wait for the socket to
+ * have answered.
+ *
+ * The third navigation neither wrapper above can serve. {@link gotoPage} waits
+ * for a page subscription, and under a freeze the agent that would answer one is
+ * stopped; {@link gotoMaintenance} waits for the stub, which is the very thing an
+ * admitted browser must not be shown. What settles for both is the connection
+ * indicator: it is painted from the welcome frame, and the welcome frame is where
+ * admission is decided (HIL-655), so a spec that has waited for it may ask what
+ * this browser was let into.
+ *
+ * It says nothing about which side of the freeze the browser is on — a locked-out
+ * one reports `connected` too. That verdict is the caller's assertion to make.
+ *
+ * @param page The Playwright page.
+ * @param path Path to open, as the address bar would hold it.
+ */
+export async function gotoAdmitted(page: Page, path: string): Promise<void> {
+  await page.goto(path)
+  await expect(page.getByTestId(CONNECTION_STATE)).toHaveText('connected')
+}
+
+/**
+ * The property a marked document carries on `window`, and the whole of the
+ * mechanism: it survives anything that leaves the document alone, and nothing
+ * survives the document being replaced.
+ */
+const DOCUMENT_MARK = '__hilosE2eDocumentMark'
+
+/**
+ * Mark the document the page is showing, so a later wait can tell it apart from
+ * the one that replaces it.
+ *
+ * Called BEFORE the action that makes the application reload itself — today the
+ * one case is the lift of protected mode, where the client reloads rather than
+ * live with rows from before a restore. The pair exists instead of
+ * `waitForEvent('load')` because a subscription has to be armed before the
+ * action and kept: arm it too late and the reload has already happened, and the
+ * wait then hangs until the test's own ceiling. A mark is indifferent to the
+ * order — it is equally true when the reload has already come and gone.
+ *
+ * @param page The Playwright page.
+ */
+export async function markDocument(page: Page): Promise<void> {
+  await page.evaluate((mark) => {
+    ;(window as unknown as Record<string, boolean>)[mark] = true
+  }, DOCUMENT_MARK)
+}
+
+/**
+ * Wait until the document {@link markDocument} marked has been replaced.
+ *
+ * That is all it waits for. A replaced document says the reload started and
+ * finished; it says nothing about the page behind it having answered, so a spec
+ * that goes on to assert what is on screen follows this with
+ * {@link expectPageReady} — the same answer {@link gotoPage} waits for, asked
+ * for separately because here nobody navigated.
+ *
+ * The cap is the run's own navigation budget rather than `waitForFunction`'s
+ * default, which is a flat 30s. Every other ceiling in this suite is stretched by
+ * how loaded the host is (`playwright.config.ts` through
+ * `framework/frontend/scripts/timeout-scale.mjs`, a factor of 1.0 to 4.0), and a
+ * fixed one inside the very helper written against a load-sensitive flake would
+ * be the same defect a layer down. It is read off the resolved project config
+ * rather than derived again, because deriving it a second time would reprint the
+ * factor line the config already writes at the top of the step's log.
+ *
+ * @param page The Playwright page.
+ */
+export async function expectSelfReload(page: Page): Promise<void> {
+  await page.waitForFunction(
+    (mark) => (window as unknown as Record<string, boolean>)[mark] !== true,
+    DOCUMENT_MARK,
+    { timeout: test.info().project.use.navigationTimeout },
   )
 }

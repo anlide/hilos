@@ -27,6 +27,7 @@ import Main from './views/Main/Main.vue'
 import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import Terms from './views/Terms/Terms.vue'
+import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -36,10 +37,13 @@ const props = defineProps<{ authGate: AuthGate }>()
 
 // The page-key → view map HilosView renders from: the home, the framework admin
 // defaults (hilosAdminViews, of which only the dashboard is registered on the
-// backend today), and the four footer pages whose text is this demo's.
+// backend today), the Maintenance section — mapped by the demo itself, because
+// that page needs the project's context and hilosAdminViews leaves it out — and
+// the four footer pages whose text is this demo's.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   ...hilosAdminViews(),
+  [HilosPages.MAINTENANCE]: HilosMaintenance,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,

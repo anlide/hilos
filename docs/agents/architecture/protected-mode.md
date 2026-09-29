@@ -761,7 +761,8 @@ Refuse loudly and before any trace of entry, as above.
   schema (`AnalyticsDatabaseSwapIntegrationTest`, under `activating` and `active`).
 - `demo/chat` integration `MailPoolFreezeIntegrationTest` — a mail delivery in
   flight when the freeze begins is cut and its row written no more.
-- `demo/chat` e2e `protected-mode.spec.ts` — drives the mode from a browser:
-  enter, the live window showing the stub with the operation the caller named,
-  leave, the window working again. It freezes the whole node, so its teardown
-  lifts unconditionally; the runner is serialized (`CI=1`).
+- `demo/binance-btc-tracker` e2e `protected-mode.spec.ts` — drives the mode from a
+  browser: enter, the live window showing the stub with the operation the caller
+  named, leave, the window working again, and the verifier circle walking in on
+  the tab it had open. It freezes the whole node, so its teardown lifts
+  unconditionally; the runner is serialized (`CI=1`).

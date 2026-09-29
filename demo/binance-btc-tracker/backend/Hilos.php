@@ -22,6 +22,7 @@ use Demo\BinanceBtcTracker\Legal\BinanceBtcTrackerLegalCatalog;
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
 use Demo\BinanceBtcTracker\Pages\MainPage;
@@ -45,13 +46,15 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 
 /**
  * Hilos - Main app facade for data access.
  *
- * The smallest complete shape of a project: sign-in by password, an empty home, the empty
- * admin dashboard and the four public footer pages. No admin section is activated yet - each
- * arrives with the leaf that moves its e2e onto this demo.
+ * The smallest complete shape of a project: sign-in by password, an empty home, the admin
+ * dashboard and the four public footer pages. One admin section is activated so far - Maintenance,
+ * the verifier circle a freeze lets through - and the others arrive one by one, each with the leaf
+ * that moves its e2e onto this demo.
  *
  * Usage:
  * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string()
@@ -81,6 +84,7 @@ final class Hilos extends HilosFacade
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        MaintenancePage::PAGE => MaintenancePage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -149,6 +153,16 @@ final class Hilos extends HilosFacade
         HilosDbContext::registrationReservations => [
             SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+    ];
+
+    public const array TABLES = [
+        BinanceBtcTrackerTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        MaintenancePage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosVerifierCircle => [],
         ],
     ];
 

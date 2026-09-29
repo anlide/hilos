@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
 import { readRegisterCode } from './mail'
+import { gotoPage } from './page'
 
 // Sign-in helpers for the binance-btc-tracker demo. A fresh browser context is a
 // guest: it reads the app anonymously, and has no account until it registers or
@@ -284,6 +285,30 @@ export async function login(
 export async function openSignIn(page: Page): Promise<void> {
   await page.getByTestId('nav-signin').click()
   await expect(page.getByTestId('auth-surface')).toBeVisible()
+}
+
+/**
+ * Make a fresh account on a guest browser the way a person does, and leave it
+ * signed in on the main page.
+ *
+ * The code the registration mails out also proves the address (HIL-825: the
+ * hold whose code was accepted lands as a verified identity, `land()` in
+ * framework/backend/Auth/Registration/RegistrationReservationService.php), so the
+ * account made here can be named anywhere a confirmed address is required — in
+ * the verifier circle too.
+ *
+ * @param page Playwright page, in a browser context that has not signed in.
+ * @returns The address the account was registered with.
+ */
+export async function signUp(page: Page): Promise<string> {
+  const email = uniqueEmail()
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await openSignIn(page)
+  await register(page, email)
+  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+
+  return email
 }
 
 /**

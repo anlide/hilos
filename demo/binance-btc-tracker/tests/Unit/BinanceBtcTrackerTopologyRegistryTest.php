@@ -20,12 +20,15 @@ use Demo\BinanceBtcTracker\Hilos;
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
 use Demo\BinanceBtcTracker\Pages\MainPage;
 use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
+use Demo\BinanceBtcTracker\Tables\BinanceBtcTrackerTableContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
@@ -37,15 +40,17 @@ use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\HilosException;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Guards the project-level binance-btc-tracker topology registry.
  *
  * The smallest complete shape: an app agent with its home page, the Hilos index agent with the
- * empty dashboard and the four footer pages, and sign-in activated on the framework libraries.
- * No admin section is registered, and the snapshots below say so, so the first leaf that moves
- * an admin section here turns them red on purpose and rewrites them with its own.
+ * dashboard, the four footer pages and the one admin section activated so far - Maintenance, its
+ * page and the verifier circle table (HIL-1221) - and sign-in activated on the framework
+ * libraries. The page registry below is a snapshot, so every leaf that moves another admin
+ * section here turns it red on purpose and rewrites it with its own.
  */
 final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
 {
@@ -67,11 +72,12 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         self::assertTrue((new DataExportAgentDaemon())->requiresMonopolisticProcess());
     }
 
-    public function testPageRegistryIsTheHomeTheDashboardAndTheFooter(): void
+    public function testPageRegistryIsTheHomeTheDashboardMaintenanceAndTheFooter(): void
     {
         $this->assertSame([
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
+            MaintenancePage::PAGE => MaintenancePage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -148,7 +154,15 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
 
     public function testHilosPagesAreOwnedByTheIndexAgent(): void
     {
-        foreach ([DashboardPage::class, AboutPage::class, TermsPage::class, PrivacyPage::class, LicensePage::class] as $page) {
+        $hilosPages = [
+            DashboardPage::class,
+            MaintenancePage::class,
+            AboutPage::class,
+            TermsPage::class,
+            PrivacyPage::class,
+            LicensePage::class,
+        ];
+        foreach ($hilosPages as $page) {
             $this->assertSame(AgentType::HILOS_INDEX, $page::SUBSCRIPTION_AGENT_TYPE);
         }
         $entry = Hilos::AGENTS[AgentType::HILOS_INDEX];
@@ -157,22 +171,44 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertFalse(AgentRegistry::requiresIndex($entry));
     }
 
+    /** Maintenance has no feature switch: page and table registration activate it (HIL-1221). */
+    public function testMaintenanceSectionIsActivated(): void
+    {
+        $this->assertSame(MaintenancePage::class, Hilos::PAGES[MaintenancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, MaintenancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosVerifierCircleTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosVerifierCircle],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
+        );
+    }
+
     public function testAppOwnSurfaceStaysTransportOnly(): void
     {
         // The application's OWN surface is transport-only: its main page and worker push no
-        // server-driven data, and the demo registers no group, table or browser table.
+        // server-driven data, and the demo registers no group or browser table of its own. The
+        // tables and page actions the admin sections bring are the framework's, and each section
+        // pins its own above.
         //
         // The one frame the worker is addressed by is not its surface but the seam the sessions
         // moved behind (HIL-710): the library says what a session became, and this agent updates
         // the connection rows that belong to the project. The sweep frame is not declared, so the
         // library does not send it.
         $this->assertSame([], Hilos::GROUPS);
-        $this->assertSame([], Hilos::TABLES);
         $this->assertSame([], Hilos::BROWSER_TABLES);
-        $this->assertSame([], Hilos::PAGE_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
-        $this->assertSame([], Hilos::getPageActionRoutes());
         $this->assertSame(
             [HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class],
             BinanceBtcTrackerAgent::AGENT_SIGNALS,

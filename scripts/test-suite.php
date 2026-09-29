@@ -30,7 +30,9 @@ declare(strict_types=1);
  *   downsStand  whether this step takes its stand down the moment it ends, at any
  *            outcome. Separate from `stand` because twelve steps drive one and
  *            deliberately leave it standing.
- *   seconds  the last measured duration (HIL-1227, 2026-09-29), read off a GREEN
+ *   seconds  the last measured duration (HIL-1227, 2026-09-29; the e2e of chat and
+ *            binance-btc-tracker re-measured by HIL-1221 the same day, after the
+ *            protected-mode spec moved between them), read off a GREEN
  *            run on nova-de, where a step beside its neighbours takes what it
  *            takes alone (chat-e2e 19m47s alone against 19m21s–21m30s beside two,
  *            28.09). A scheduling HINT only, and a narrow one: of the steps ready
@@ -71,10 +73,10 @@ declare(strict_types=1);
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
-    'chat' => ['check' => 6, 'php' => 106, 'e2e' => 1227],
+    'chat' => ['check' => 6, 'php' => 106, 'e2e' => 1152],
     'tasks' => ['check' => 6, 'php' => 17, 'e2e' => 132],
     'polls' => ['check' => 13, 'php' => 17, 'e2e' => 166],
-    'binance-btc-tracker' => ['check' => 6, 'php' => 15, 'e2e' => 72],
+    'binance-btc-tracker' => ['check' => 6, 'php' => 15, 'e2e' => 101],
 ];
 
 $steps = [

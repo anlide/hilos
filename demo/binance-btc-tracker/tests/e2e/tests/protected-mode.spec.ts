@@ -9,7 +9,7 @@ import {
   maintenanceCircleOnline,
   maintenanceCircleRow,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
+import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant'
 import {
   expectPageReady,
   expectSelfReload,
@@ -18,7 +18,7 @@ import {
   gotoPage,
   markDocument,
 } from '../helpers/page'
-import { signUpWithVerifiedEmail } from '../helpers/session'
+import { signUp } from '../helpers/session'
 import {
   closeProtectedMode,
   enterProtectedMode,
@@ -27,7 +27,6 @@ import {
   mintProtectedModePass,
   openProtectedMode,
   openProtectedModeIfAny,
-  sessionTokenOf,
 } from '../helpers/protectedMode'
 
 // Protected-mode e2e (HIL-344): the debt HIL-268 and HIL-522 were closed with —
@@ -59,9 +58,6 @@ const OPERATION = 'e2e-freeze'
 // declaration (HILOS_ROUTE_DECLARATIONS). Any admin url would do; this one needs
 // no route params.
 const ADMIN_URL = '/hilos'
-
-// The backup page still carries the verification-window block used above.
-const BACKUP_URL = '/hilos/backup'
 
 // The verifier circle is administered in the Maintenance section.
 const MAINTENANCE_URL = '/hilos/maintenance'
@@ -128,12 +124,11 @@ test('every tab of the browser that asked agrees, phase by phase', async ({
   // carries no accept key, so nothing in the page can name the socket it arrived on.
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  const sessionToken = await sessionTokenOf(context)
-  expect(sessionToken).not.toBe('')
+  const operatorSession = await sessionToken(page)
 
   // Entered for this BROWSER and for no particular socket: the accept key is left
   // empty on purpose, so whatever happens below happens to the session.
-  expect(await enterProtectedMode(OPERATION, '', sessionToken)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
 
   // The tab that was already open goes to the stub without being asked to reload:
   // the entry frame leaves nobody out any more.
@@ -342,14 +337,13 @@ test('the tabs the operator already had open are raised and lowered together', a
   // opens — by the frame, without an F5, which is what the old defect needed.
   await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  const sessionToken = await sessionTokenOf(context)
-  expect(sessionToken).not.toBe('')
+  const operatorSession = await sessionToken(page)
 
   const otherTab = await context.newPage()
   await gotoPage(otherTab, '/')
   await expect(otherTab.getByTestId('maintenance')).toBeHidden()
 
-  expect(await enterProtectedMode(OPERATION, '', sessionToken)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
 
   // Both tabs, on the stub, by the frame alone: neither was navigated, and the tab
   // that pressed nothing is the one the old defect left looking at a live-looking
@@ -623,54 +617,6 @@ test('a load into a frozen node never flashes the ordinary layout', async ({
   expect(watch?.brand).toBe(false)
 })
 
-test('the verification window offers the reopen block to the operator, and to nobody else', async ({
-  page,
-  browser,
-}) => {
-  // HIL-676 acceptance. The block is the one thing on the backup page that is answered
-  // PERSONALLY: two admins subscribe to the same page in the same window and only one of
-  // them is offered the lever. Nothing short of two real browsers can show that, because
-  // the whole decision lives on the session behind the connection.
-  //
-  // Both accounts are made BEFORE the freeze: under it there is no signing up.
-  await signUpAdmin(page)
-  await gotoPage(page, BACKUP_URL)
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  const operatorSession = await sessionTokenOf(page.context())
-  expect(operatorSession).not.toBe('')
-
-  const verifierContext = await browser.newContext()
-  const verifier = await verifierContext.newPage()
-  await signUpAdmin(verifier)
-  await gotoPage(verifier, BACKUP_URL)
-  await expect(verifier.getByTestId('hilos-viewport-table')).toBeVisible()
-
-  // Entered for the operator's BROWSER, exactly as a restore started from this page
-  // enters it, and then ended - which is what leaves the node in the window.
-  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
-  expect(await leaveProtectedMode()).toBe('verifying')
-
-  // The operator, back on the page. The block is there and it carries its button.
-  await gotoPage(page, BACKUP_URL)
-  await expect(page.getByTestId('hilos-backup-reopen-panel')).toBeVisible()
-  await expect(page.getByTestId('hilos-backup-reopen')).toBeVisible()
-
-  // The verifier, admitted by the code the operator read out. They get the product -
-  // that is what the window is for - and they do not get the lever: the pass names a
-  // session the node let in, not the session that asked for the operation.
-  const pass = await mintProtectedModePass()
-  await gotoMaintenance(verifier, BACKUP_URL)
-  await presentCode(verifier, pass)
-  await expect(verifier.getByTestId('maintenance')).toBeHidden()
-  await expect(verifier.getByTestId('hilos-viewport-table')).toBeVisible()
-  await expect(verifier.getByTestId('hilos-backup-reopen-panel')).toHaveCount(0)
-
-  // The click is not driven here and cannot be: the row of a test freeze names the test
-  // driver's carrier as its initiator, so BackupAgent would rightly refuse a reopen it
-  // did not start. What the button does is held by the framework tests instead.
-  await verifierContext.close()
-})
-
 test('the operator and the admitted verifier both see the verification banner, and nobody else does', async ({
   page,
   browser,
@@ -680,10 +626,9 @@ test('the operator and the admitted verifier both see the verification banner, a
   // that says so. What has to hold is that it survives everything the operator
   // does next - a reload, a second tab - because a state indicator built out of
   // anything but the connection would not.
-  await signUpAdmin(page)
-  await gotoPage(page, BACKUP_URL)
-  const operatorSession = await sessionTokenOf(page.context())
-  expect(operatorSession).not.toBe('')
+  await grantAdminToSelf(page)
+  await gotoPage(page, ADMIN_URL)
+  const operatorSession = await sessionToken(page)
 
   // Entered for the operator's browser and then ended, which is what leaves the
   // node in the verification window with them inside it.
@@ -698,7 +643,7 @@ test('the operator and the admitted verifier both see the verification banner, a
   )
 
   // The reload, which is where a banner living in a toast or a store would end.
-  await gotoAdmitted(page, BACKUP_URL)
+  await gotoAdmitted(page, ADMIN_URL)
   await expect(page.getByTestId('protected-mode-banner')).toContainText(
     BANNER_MESSAGE,
   )
@@ -763,19 +708,18 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // anybody reading a code out to them. Three real browsers, because the rule is about
   // WHICH browser - the named one, the unnamed one, and the operator's own.
   //
-  // The circle member is built with a PROVEN address: naming somebody resolves the
-  // address against the confirmed identities, and plain registration leaves it
-  // unverified, so an account made the short way could not be named at all.
-  await signUpAdmin(page)
+  // The circle member needs a PROVEN address: naming somebody resolves the address
+  // against the confirmed identities. Registering proves it - the code the
+  // registration mails out confirms the address it was sent to (HIL-825).
+  await grantAdminToSelf(page)
   await gotoPage(page, MAINTENANCE_URL)
   await expect(page.getByTestId('hilos-maintenance-circle-panel')).toBeVisible()
   await clearMaintenanceCircle(page)
-  const operatorSession = await sessionTokenOf(page.context())
-  expect(operatorSession).not.toBe('')
+  const operatorSession = await sessionToken(page)
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const { email: memberEmail } = await signUpWithVerifiedEmail(member)
+  const memberEmail = await signUp(member)
 
   // Named through the modal, which is the only way an operator has: no test backdoor
   // writes this row, so a broken action surface fails here rather than silently
@@ -838,14 +782,14 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // The stranger's field is asserted FIRST: it proves the announcement has been written,
   // so what is then asserted about the member is not a race won by being early. The
   // window stamp proves no reload; the attribute on the page node proves no remount - a
-  // tab that got active:true and then active:false would come back with a new header.
+  // tab that got active:true and then active:false would come back with a new node.
   await gotoMaintenance(stranger, ADMIN_URL)
   await expect(stranger.getByTestId('maintenance-pass-pending')).toBeVisible()
   await member.evaluate(() => {
     ;(window as Window & { hil1082Stamp?: boolean }).hil1082Stamp = true
   })
-  await member.getByTestId('events-header').evaluate((header) => {
-    header.setAttribute('data-hil1082', 'kept')
+  await member.getByTestId('self-user').evaluate((node) => {
+    node.setAttribute('data-hil1082', 'kept')
   })
 
   await mintProtectedModePass()
@@ -857,7 +801,7 @@ test('the named circle walks in with the tab it already had open, and nobody els
       () => (window as Window & { hil1082Stamp?: boolean }).hil1082Stamp === true,
     ),
   ).toBe(true)
-  await expect(member.getByTestId('events-header')).toHaveAttribute(
+  await expect(member.getByTestId('self-user')).toHaveAttribute(
     'data-hil1082',
     'kept',
   )
@@ -898,14 +842,14 @@ test('a circle member who was away when the node froze is named and still outsid
   // tab that was open, so being on the list is not by itself a way in. Without this the
   // leaf could quietly start letting anybody named through on a later connection, which
   // is a session resolved against a database the restore has already replaced.
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
   await gotoPage(page, MAINTENANCE_URL)
   await clearMaintenanceCircle(page)
-  const operatorSession = await sessionTokenOf(page.context())
+  const operatorSession = await sessionToken(page)
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const { email: memberEmail } = await signUpWithVerifiedEmail(member)
+  const memberEmail = await signUp(member)
   await addToMaintenanceCircle(page, memberEmail)
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await gotoPage(member, '/')
@@ -941,7 +885,8 @@ test('a circle member who was away when the node froze is named and still outsid
 })
 
 /**
- * Asserts a tab is inside the verification window on the chat main page, drawn.
+ * Asserts a tab is inside the verification window on the binance-btc-tracker main
+ * page, drawn.
  *
  * Three things and in this order: the stub is gone, the banner the window shows its
  * own people is up, and the page behind them settled on an answer with its own content
@@ -957,7 +902,9 @@ async function expectInsideMainPage(page: Page): Promise<void> {
     BANNER_MESSAGE,
   )
   await expectPageReady(page)
-  await expect(page.getByTestId('events-header')).toBeVisible()
+  await expect(
+    page.getByTestId('self-user').or(page.getByTestId('self-anonymous')),
+  ).toBeVisible()
 }
 
 /**

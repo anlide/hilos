@@ -12,10 +12,10 @@ import { signInByPhone, uniqueEmail } from '../helpers/session.js'
 
 // Naming a verifier in Maintenance: the server decides, the row arrives over the
 // live table, and a refusal is said twice - in the dialog and in the corner.
-// The other live circle seams run once in their own demos: chat's protected-mode.spec.ts
-// covers the freeze, the admitted circle and an absent member with the live presence
-// mark; polls' maintenance.spec.ts covers removal and a dialog over a row removed
-// in another tab.
+// The other live circle seams run once in their own demos: binance-btc-tracker's
+// protected-mode.spec.ts covers the freeze, the admitted circle and an absent member
+// with the live presence mark; polls' maintenance.spec.ts covers removal and a dialog
+// over a row removed in another tab.
 // The section's dialogs in all three SDKs remain covered by unit tests:
 // framework/frontend/vue/src/admin/maintenance/HilosMaintenancePage.test.ts,
 // framework/frontend/react/test/HilosMaintenancePage.test.tsx,
