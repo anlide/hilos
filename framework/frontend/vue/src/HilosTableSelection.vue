@@ -16,11 +16,16 @@ went with what the server sends would pass that lock around on nobody's behalf,
 and would take an open dialog off the screen with it. -->
 <script setup lang="ts" generic="R">
 import { computed, ref } from 'vue'
-import type { HilosTableBulkAction, TableViewportController } from '@hilos/core'
+import {
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  type HilosTableBulkAction,
+  type TableViewportController,
+} from '@hilos/core'
 
 import HilosActionError from './HilosActionError.vue'
 import HilosModal from './HilosModal.vue'
 import LoadingButton from './LoadingButton.vue'
+import { useAdminViewMode } from './hilosAdminViewMode.js'
 import { useSignal } from './useSignal.js'
 import { useTrackedAction } from './useTrackedAction.js'
 
@@ -41,6 +46,7 @@ const bulkActions = props.controller.frame.declaration?.bulkActions ?? []
 const target = useSignal(props.controller.selection.target)
 const count = useSignal(props.controller.selection.count)
 const bulkProgress = useSignal(props.controller.progress.bulk)
+const viewMode = useAdminViewMode()
 
 // The choice by condition says words and not a number: the size of a large set is
 // a ceiling rather than a count, so "12 480 marked" would be a lie, while what is
@@ -138,7 +144,10 @@ async function submitBulk(): Promise<void> {
       <!-- While a run is going the server refuses a second one on this table, and
       a button whose only outcome is a refusal is not a button. It is a courtesy
       and not a guarantee: a refusal that arrives anyway is still shown (Flow
-      F5). -->
+      F5). To a viewer of the admin view mode an operation is an action the
+      server refuses, so it stands disabled too (HIL-1261); marking rows,
+      "Select all matching the filter" and "Clear" stay live — they are this
+      window's own state. -->
       <button
         v-for="action in bulkActions"
         :key="action.key"
@@ -150,7 +159,8 @@ async function submitBulk(): Promise<void> {
             : 'btn-outline-secondary',
           { 'ms-auto': action.key === pinnedKey },
         ]"
-        :disabled="bulkProgress !== null"
+        :disabled="bulkProgress !== null || viewMode"
+        :aria-describedby="viewMode ? HILOS_VIEW_MODE_STRIP_TEXT_ID : undefined"
         :data-id="`hilos-table-bulk-${action.key}`"
         @click="openConfirm(action)"
       >

@@ -157,9 +157,12 @@ The rules to apply when building a view or an SDK component:
   button beside the dark action that opens the whole sentence, as on the backup
   page; where the reason is short and there is room under the controls, a visible
   line there, as under the sign-in screen's channel row, announced through the
-  surface's own live region. A `title` stays legal on such a control only as its
-  name repeated — the same text as its `aria-label`. Checked automatically:
-  `DISABLED-TITLE`.
+  surface's own live region. A reason common to the whole screen stands on it
+  once — the admin view mode's banner (not in the code yet — HIL-1260) — and
+  every control the mode disabled points at it with `aria-describedby`
+  ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)).
+  A `title` stays legal on such a control only as its name repeated — the same
+  text as its `aria-label`. Checked automatically: `DISABLED-TITLE`.
 - **Busy state** — a control performing an action sets `aria-busy` while in
   flight (`LoadingButton`).
 - **Live regions** — a live region is a **permanent** node that stands there

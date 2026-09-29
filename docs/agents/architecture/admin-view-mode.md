@@ -15,8 +15,9 @@ Its Code*). The leaves introduce their own names — the verdict, the wire form,
 the words on the screen; this page states each requirement and the key of the
 leaf, never the name. The names HIL-1249 introduced — the variable, the latch
 file and table, the node's runtime row and the lever — are in the code now and
-are named below, and so are those of HIL-1250 (the bridge) and HIL-1251 (the
-verdict, the refusal, the reading actions, the text of a failure).
+are named below, and so are those of HIL-1250 (the bridge), HIL-1251 (the
+verdict, the refusal, the reading actions, the text of a failure) and HIL-1261
+(the words of the mode, the refusal's sentence, the controls).
 
 ## Core Rule
 
@@ -161,7 +162,11 @@ change the body of that question, not the mode around it.
   reading (*Reading Actions* below): `ActionViewModeException`, code
   `view_mode`, HTTP 403, and the impersonal reason
   (`SignalConstants::ACTION_FAILED_REASON`) — never the exception's text; the
-  sentence on the screen is the frontend's (HIL-1261). The code is its own and
+  sentence on the screen is the frontend's (HIL-1261): the core reads the code
+  (`VIEW_MODE_ERROR_CODE`) and shows `HILOS_VIEW_MODE_COPY.refusal` in place of
+  the reason (`actionFailureReason`, called by `ActionLifecycle` and
+  `ActionErrorStore`), for the three frontends at once, and
+  `ActionError.errorCode` carries the code. The code is its own and
   not `forbidden`, so a viewer without an account is not answered with the
   sign-in modal. The refusal is a verdict, not a failure: one INFO line in the
   journal and no trace, because the overview of the logs collects ERROR lines
@@ -347,7 +352,14 @@ nobody is asked*).
   `hilosAdminAccess` is `'full'` for an admin, `'view'` for a non-admin with
   the mode on, `'none'` otherwise, bound by `bootHilos` (`bindAdminAccess`)
   from the admin flag and the mode of the same response. The admin gear, the
-  mode banner and the controls of the mode all read it. The Vue shell draws
+  mode banner and the controls of the mode all read it — the controls not
+  directly but through the admin page shell, which provides "a viewer stands
+  here" to what it holds (`useAdminViewMode`, provided by `HilosAdminPage`).
+  The access is global: a signed-in non-admin with the mode on is `'view'` on
+  every screen, and a control reading it directly would lock that viewer's own
+  profile and the shell's controls — the deletion strip's "Keep my account",
+  the impersonation strip's Stop, which under a takeover of a non-admin
+  carries that person's identity. The Vue shell draws
   the gear from it for `full` and `view`, marked `data-access`, and a project
   passes nothing; in React (not in the code yet — HIL-1271) and Angular
   (not in the code yet — HIL-1272) the gear is still drawn for an admin only.
@@ -369,17 +381,32 @@ nobody is asked*).
   Dashboard included — in the shell's banner strip, beside the protected-mode
   and replacement banners (not in the code yet — HIL-1260).
 - The hidden mark looks the same on every screen and in every cell — one
-  component (not in the code yet — HIL-1260). The English words of the banner
-  and of the mark, and the component's name, are HIL-1260's.
-- The controls of the mode (not in the code yet — HIL-1261): the action button
-  (`LoadingButton`), the switch (`HilosSwitch`) and a table's main and bulk
-  actions (`mainAction`, `bulkActions`) cannot be clicked and carry the mode's
-  mark; a form opens, Cancel stays, and the mark stands where Save was. The
-  mark is visible text, not a `title`: a disabled element shows no tooltip
-  ([../frontend/accessibility.md](../frontend/accessibility.md), rule
-  `DISABLED-TITLE`). The form primitive is HIL-1261's.
-- Each section moves its own raw mutation buttons onto the controls of the
-  mode: settings and log modes (not in the code yet — HIL-1262); people —
+  component (not in the code yet — HIL-1260). The words of the banner are the
+  core's — `HILOS_VIEW_MODE_COPY.mark` and `.explanation` (HIL-1261), one set
+  for the three frontends — and its text carries the id
+  `HILOS_VIEW_MODE_STRIP_TEXT_ID`; the words of the hidden mark and the
+  component's name are HIL-1260's.
+- The controls of the mode: inside an admin page a viewer finds the action
+  button (`LoadingButton`), the switch (`HilosSwitch`), the Save of an edit
+  form (`ConflictActions`, the default button and the slotted one alike) and a
+  table's bulk operations plainly disabled — their own color and size, paler,
+  and no words. The explanation stands on the screen once, in the mode banner
+  (not in the code yet — HIL-1260), and every control the mode disabled points
+  at its text with `aria-describedby` — beside the description it already had.
+  A disabled element shows no tooltip, so the reason is visible text and not a
+  `title` ([../frontend/accessibility.md](../frontend/accessibility.md), rule
+  `DISABLED-TITLE`). What stays live: Cancel and the fields of a form (a viewer
+  opens it and reads it, and has nothing to save with), the conflict choices
+  (they edit only the draft in the window), a button that only opens a form, a
+  table's main action (it opens the page's own modal, whose button is a control
+  of the mode), and marking rows. Outside the admin page shell nothing
+  changes. An action a viewer still reaches — a raw button not moved yet, Enter
+  in a form's field — is refused by the server and shown with the core's
+  sentence (above).
+- Each section moves its own raw one-click mutation buttons onto
+  `LoadingButton`, and the Save of its own form onto `ConflictActions` or
+  `LoadingButton`; a button that only opens a form stays as it is. The
+  sections: settings and log modes (not in the code yet — HIL-1262); people —
   impersonation, rights, block, deletion, merge, rename
   (not in the code yet — HIL-1263); backup (not in the code yet — HIL-1264);
   maintenance (not in the code yet — HIL-1265); communications
@@ -409,8 +436,7 @@ Five things — to be useful to a viewer:
    a static `wireFields()` on the DTO of a frame sent to its own subscriber
    set — and never declare a column holding a person's data not-personal for
    the viewer's sake.
-3. Build every mutation out of the controls of the mode
-   (not in the code yet — HIL-1261).
+3. Build every mutation out of the controls of the mode.
 4. Put no exception text into a frame by itself: a frame of its own carries
    `AbstractPage::failureText()`.
 5. Send its frames by the page's path, never past the bridge: a frame sent to
@@ -481,7 +507,7 @@ laid out across the three frontends is HIL-1273's
 - [command-server.md](command-server.md) — why the CLI has no viewer.
 - [protected-mode.md](protected-mode.md) — the freeze that closes a viewer
   like everyone.
-- [../frontend/accessibility.md](../frontend/accessibility.md) — why the mark
-  is visible text.
+- [../frontend/accessibility.md](../frontend/accessibility.md) — why the
+  reason is visible text — the banner.
 - [../frontend/multiframework-core.md](../frontend/multiframework-core.md) —
   the controls in all three frontends.

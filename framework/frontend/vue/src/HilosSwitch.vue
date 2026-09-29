@@ -1,11 +1,18 @@
 <!-- HilosSwitch — an authoritative-backend switch. A click reports the next
 value but never moves the checkbox itself; the checked input follows only the
 value its owner received from the backend. The shared LoadingButton controller
-delays the busy spinner so a fast reply does not flash it. -->
+delays the busy spinner so a fast reply does not flash it. Inside an admin page a
+viewer of the admin view mode finds it plainly disabled in the position the
+server sent, described by the mode's strip besides its own hint (HIL-1261). -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useId, watch } from 'vue'
-import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
+import {
+  DEFAULT_SPINNER_DELAY_MS,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  createLoadingButtonState,
+} from '@hilos/core'
 
+import { useAdminViewMode } from './hilosAdminViewMode.js'
 import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
@@ -49,7 +56,21 @@ watch(
 )
 onBeforeUnmount(spinner.dispose)
 
-const isDisabled = computed(() => props.disabled || props.busy)
+const viewMode = useAdminViewMode()
+
+const isDisabled = computed(
+  () => props.disabled || props.busy || viewMode.value,
+)
+
+const ariaDescribedBy = computed(() => {
+  if (!viewMode.value) {
+    return props.describedBy
+  }
+
+  return props.describedBy === undefined
+    ? HILOS_VIEW_MODE_STRIP_TEXT_ID
+    : `${props.describedBy} ${HILOS_VIEW_MODE_STRIP_TEXT_ID}`
+})
 
 function onClick(event: MouseEvent): void {
   event.preventDefault()
@@ -68,7 +89,7 @@ function onClick(event: MouseEvent): void {
       :disabled="isDisabled"
       :aria-busy="busy || undefined"
       :aria-label="ariaLabel"
-      :aria-describedby="describedBy"
+      :aria-describedby="ariaDescribedBy"
       :data-id="dataId"
       @click="onClick"
     />

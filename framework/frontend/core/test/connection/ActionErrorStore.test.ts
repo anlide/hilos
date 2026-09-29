@@ -1,22 +1,30 @@
 import { describe, expect, it } from 'vitest'
+import { HILOS_VIEW_MODE_COPY } from '../../src/admin/viewMode.js'
 import { ActionErrorStore } from '../../src/connection/ActionErrorStore.js'
+
+/** What the store hears from its source on one action failure. */
+interface ActionErrorEvent {
+  action: string
+  reason: string
+  errorCode?: string | undefined
+}
 
 /** A minimal actionError source: emit() drives the store like a connection would. */
 function createSource() {
-  const listeners: ((signal: { action: string; reason: string }) => void)[] = []
+  const listeners: ((signal: ActionErrorEvent) => void)[] = []
 
   return {
     on(
       _event: 'actionError',
-      listener: (signal: { action: string; reason: string }) => void,
+      listener: (signal: ActionErrorEvent) => void,
     ): () => void {
       listeners.push(listener)
 
       return () => {}
     },
-    emit(action: string, reason: string): void {
+    emit(action: string, reason: string, errorCode?: string): void {
       for (const listener of listeners) {
-        listener({ action, reason })
+        listener({ action, reason, errorCode })
       }
     },
   }
@@ -41,6 +49,16 @@ describe('ActionErrorStore', () => {
     expect(store.signal('message').get()).toBe(
       'Another message is already being moderated',
     )
+  })
+
+  it('keeps a view-mode refusal as the mode sentence', () => {
+    const source = createSource()
+    const store = new ActionErrorStore(source)
+
+    source.emit('rename', 'The action could not be completed.', 'view_mode')
+    source.emit('message', 'Not allowed.', 'forbidden')
+    expect(store.signal('rename').get()).toBe(HILOS_VIEW_MODE_COPY.refusal)
+    expect(store.signal('message').get()).toBe('Not allowed.')
   })
 
   it('clears one action without touching another', () => {

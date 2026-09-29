@@ -349,6 +349,12 @@ export {
   type HilosAdminAccess,
 } from './session/adminAccess.js'
 export {
+  actionFailureReason,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  VIEW_MODE_ERROR_CODE,
+} from './admin/viewMode.js'
+export {
   bindUploads,
   cancelUpload,
   hilosUploads,

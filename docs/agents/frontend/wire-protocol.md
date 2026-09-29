@@ -236,7 +236,9 @@ standing on an `ADMIN` page — the `action_error` frame carries two more option
 fields beside the generic reason: `errorType`, the failure's class name without
 its namespace, and `errorDetail`, its original message. A viewer of the admin
 view mode never gets them: its refusal is `errorCode` `view_mode` with the
-generic reason ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)),
+generic reason, and the frontend shows its own sentence for that code
+(`HILOS_VIEW_MODE_COPY.refusal`), not the reason
+([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)),
 and a non-admin whose action the gate refused gets its code alone. The SDK's `HilosActionError` draws the
 class name as text beside the icon of the row's details button, and the original
 message in the details panel under the caption "Exception", with Copy, so an

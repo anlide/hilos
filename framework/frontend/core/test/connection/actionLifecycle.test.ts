@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
+import { HILOS_VIEW_MODE_COPY } from '../../src/admin/viewMode.js'
 import {
   ActionError,
   ActionLifecycle,
@@ -226,6 +227,42 @@ describe('ActionLifecycle', () => {
       message: 'The action could not be completed.',
       errorType: 'DatabaseException',
       errorDetail: 'SQLSTATE[42S02]: Base table or view not found',
+    })
+  })
+
+  it('reads a view-mode refusal as the mode sentence and keeps its code', async () => {
+    const source = new FakeSource()
+    const lifecycle = new ActionLifecycle(source)
+
+    const handle = lifecycle.dispatch('a', {})
+    source.fail(
+      'a',
+      handle.requestId,
+      'The action could not be completed.',
+      'view_mode',
+    )
+
+    // The server's reason is the impersonal one; the screen shows the core's
+    // sentence of the admin view mode, and the code travels on the failure.
+    await expect(handle.done).rejects.toMatchObject({
+      outcome: 'fail',
+      message: HILOS_VIEW_MODE_COPY.refusal,
+      errorCode: 'view_mode',
+      errorType: undefined,
+    })
+  })
+
+  it('keeps the reason of a refusal with any other code', async () => {
+    const source = new FakeSource()
+    const lifecycle = new ActionLifecycle(source)
+
+    const handle = lifecycle.dispatch('a', {})
+    source.fail('a', handle.requestId, 'Not allowed.', 'forbidden')
+
+    await expect(handle.done).rejects.toMatchObject({
+      outcome: 'fail',
+      message: 'Not allowed.',
+      errorCode: 'forbidden',
     })
   })
 

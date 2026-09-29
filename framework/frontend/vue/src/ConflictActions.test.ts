@@ -1,7 +1,14 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { ref } from 'vue'
 
 import ConflictActions from './ConflictActions.vue'
+import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
+
+/** What a page in the admin view mode provides to what it holds. */
+const IN_VIEW_MODE = {
+  global: { provide: { [hilosAdminViewModeKey as symbol]: ref(true) } },
+}
 
 describe('ConflictActions', () => {
   it('shows only save without a conflict', () => {
@@ -59,5 +66,57 @@ describe('ConflictActions', () => {
       expect(btn.classes()).not.toContain('btn-sm')
       expect(btn.classes()).toContain('btn')
     }
+  })
+})
+
+describe('ConflictActions in the admin view mode', () => {
+  it('disables the default save and points it at the strip', async () => {
+    const wrapper = mount(ConflictActions, IN_VIEW_MODE)
+    const save = wrapper.find('[data-id="conflict-save"]')
+
+    expect(save.attributes('disabled')).toBeDefined()
+    expect(save.attributes('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+    await save.trigger('click')
+    expect(wrapper.emitted('save')).toBeUndefined()
+  })
+
+  it('hands the slotted save a disabled state', () => {
+    const seen: boolean[] = []
+    mount(ConflictActions, {
+      ...IN_VIEW_MODE,
+      slots: {
+        'save-button': (slot: { disabled: boolean }) => {
+          seen.push(slot.disabled)
+
+          return 'Save'
+        },
+      },
+    })
+
+    expect(seen).toEqual([true])
+  })
+
+  it('keeps the conflict choices, which edit only the draft', async () => {
+    const wrapper = mount(ConflictActions, {
+      ...IN_VIEW_MODE,
+      props: { conflict: true, mergeable: true },
+    })
+
+    for (const choice of ['accept-mine', 'accept-theirs', 'merge']) {
+      const button = wrapper.find(`[data-id="conflict-${choice}"]`)
+      expect(button.attributes('disabled')).toBeUndefined()
+      await button.trigger('click')
+      expect(wrapper.emitted(choice)).toHaveLength(1)
+    }
+  })
+
+  it('leaves the default save untouched outside the mode', () => {
+    const wrapper = mount(ConflictActions)
+    const save = wrapper.find('[data-id="conflict-save"]')
+
+    expect(save.attributes('disabled')).toBeUndefined()
+    expect(save.attributes('aria-describedby')).toBeUndefined()
   })
 })

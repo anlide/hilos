@@ -158,8 +158,7 @@ useful:
   the `notPersonal` key of a declarative row, `AbstractPage::dataFields()`, a
   frame DTO's static `wireFields()` — and never declare a column holding a
   person's data not-personal for the viewer's sake;
-- build every mutation out of the controls of the mode
-  (not in the code yet — HIL-1261);
+- build every mutation out of the controls of the mode;
 - put no exception text into a frame by itself — a frame of its own carries
   `AbstractPage::failureText()`;
 - send its frames by the page's path, never past the personal-data bridge: a

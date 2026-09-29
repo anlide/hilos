@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
+import { ref } from 'vue'
 import { ActionError, TableViewportController, createSignal } from '@hilos/core'
 import type {
   ActionHandle,
@@ -11,6 +12,7 @@ import type {
 } from '@hilos/core'
 
 import HilosTableSelection from './HilosTableSelection.vue'
+import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
 
 // The confirmation teleports to <body>, so assertions about it query the
 // document and not the wrapper.
@@ -95,12 +97,25 @@ function makeController(
   return controller
 }
 
+/**
+ * Mount the panel, optionally inside a page that says whether a viewer of the
+ * admin view mode stands there.
+ *
+ * @param controller The controller the panel reads and drives.
+ * @param shown Whether the panel stands in place of the bar's controls.
+ * @param viewMode The view mode the page provides; none when undefined.
+ */
 function mountPanel(
   controller: TableViewportController<unknown>,
   shown = true,
+  viewMode?: boolean,
 ) {
   return mount(HilosTableSelection, {
     props: { controller, shown },
+    global:
+      viewMode === undefined
+        ? {}
+        : { provide: { [hilosAdminViewModeKey as symbol]: ref(viewMode) } },
   })
 }
 
@@ -254,5 +269,47 @@ describe('HilosTableSelection', () => {
     const panel = wrapper.find('[data-id="hilos-table-selection"]')
     expect(panel.attributes('role')).toBe('group')
     expect(panel.attributes('aria-label')).toBe('Selection')
+  })
+})
+
+describe('HilosTableSelection in the admin view mode', () => {
+  it('disables the operations and keeps the marks live', async () => {
+    const asked: HilosTableSelectionTarget[] = []
+    const controller = makeController([deleteAction(asked)])
+    controller.selectRow('a', true)
+    const wrapper = mountPanel(controller, true, true)
+
+    const operation = wrapper.find('[data-id="hilos-table-bulk-delete"]')
+    expect(operation.attributes('disabled')).toBeDefined()
+    expect(operation.attributes('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+
+    const selectAll = wrapper.find(
+      '[data-id="hilos-table-select-all-filtered"]',
+    )
+    const clear = wrapper.find('[data-id="hilos-table-selection-clear"]')
+    expect(selectAll.attributes('disabled')).toBeUndefined()
+    expect(clear.attributes('disabled')).toBeUndefined()
+
+    await selectAll.trigger('click')
+    expect(controller.selection.target.get()?.kind).toBe('filter')
+    await clear.trigger('click')
+    expect(controller.selection.count.get()).toBe(0)
+    expect(asked).toEqual([])
+  })
+
+  it('leaves the operations untouched outside the mode', () => {
+    const controller = makeController([deleteAction([])])
+    controller.selectRow('a', true)
+
+    for (const wrapper of [
+      mountPanel(controller),
+      mountPanel(controller, true, false),
+    ]) {
+      const operation = wrapper.find('[data-id="hilos-table-bulk-delete"]')
+      expect(operation.attributes('disabled')).toBeUndefined()
+      expect(operation.attributes('aria-describedby')).toBeUndefined()
+    }
   })
 })

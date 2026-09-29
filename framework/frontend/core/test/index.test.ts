@@ -23,6 +23,10 @@ import {
   bindAdminAccess,
   hilosAdminAccess,
   type HilosAdminAccess,
+  actionFailureReason,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  VIEW_MODE_ERROR_CODE,
   SESSION_SIGNAL_SCHEMAS,
   applyServerTime,
   offsetMs,
@@ -91,6 +95,10 @@ it('exports the @hilos/core public surface', () => {
   expect(bindAdminAccess).toBeTypeOf('function')
   const access: HilosAdminAccess = hilosAdminAccess.get()
   expect(access).toBe('none')
+  expect(actionFailureReason).toBeTypeOf('function')
+  expect(HILOS_VIEW_MODE_COPY.refusal).toBeTypeOf('string')
+  expect(HILOS_VIEW_MODE_STRIP_TEXT_ID).toBeTypeOf('string')
+  expect(VIEW_MODE_ERROR_CODE).toBeTypeOf('string')
   expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
   expect(applyServerTime).toBeTypeOf('function')
   expect(offsetMs).toBeTypeOf('function')

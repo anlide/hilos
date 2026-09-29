@@ -12,6 +12,7 @@
 // authoritative-backend close depends on.
 
 import { type ZodType } from 'zod'
+import { actionFailureReason } from '../admin/viewMode.js'
 import {
   type ActionErrorSignal,
   type ActionSuccessSignal,
@@ -44,6 +45,9 @@ export type ActionFailureOutcome =
  * `message` stands for, and that failure's own text. Both are undefined on every
  * other surface, and on an admin surface too whenever the backend held nothing
  * back — so having them is exactly the sign that it did.
+ *
+ * `errorCode` is the machine-readable reason the server named (`'view_mode'`,
+ * `'forbidden'`, …); undefined when the failure carries no code.
  */
 export class ActionError extends Error {
   constructor(
@@ -52,6 +56,7 @@ export class ActionError extends Error {
     reason: string,
     readonly errorType?: string,
     readonly errorDetail?: string,
+    readonly errorCode?: string,
   ) {
     super(reason)
     this.name = 'ActionError'
@@ -195,6 +200,7 @@ export class ActionLifecycle {
         undefined,
         signal.errorType,
         signal.errorDetail,
+        signal.errorCode,
       ),
     )
     source.on('state', (state) => {
@@ -262,6 +268,7 @@ export class ActionLifecycle {
    * @param reply The domain reply on a success reply, or undefined; parsed against the pending action's schema when one was set.
    * @param errorType The failure's class name on an admin surface, or undefined.
    * @param errorDetail The failure's own message on an admin surface, or undefined.
+   * @param errorCode The failure's machine-readable code, or undefined.
    */
   private onReply(
     requestId: string | undefined,
@@ -271,6 +278,7 @@ export class ActionLifecycle {
     reply?: unknown,
     errorType?: string,
     errorDetail?: string,
+    errorCode?: string,
   ): void {
     if (requestId === undefined) {
       return
@@ -289,9 +297,10 @@ export class ActionLifecycle {
         new ActionError(
           action,
           'fail',
-          detail ?? 'The action failed.',
+          actionFailureReason(detail ?? 'The action failed.', errorCode),
           errorType,
           errorDetail,
+          errorCode,
         ),
       )
 

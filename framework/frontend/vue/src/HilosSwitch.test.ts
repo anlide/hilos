@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 
 import HilosSwitch from './HilosSwitch.vue'
+import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
 
 function input(wrapper: ReturnType<typeof mount>): HTMLInputElement {
   return wrapper.find('input').element as HTMLInputElement
@@ -80,5 +82,41 @@ describe('HilosSwitch', () => {
     expect(inputs[0]?.attributes('id')).not.toBe(inputs[1]?.attributes('id'))
     expect(labels[0]?.attributes('for')).toBe(inputs[0]?.attributes('id'))
     expect(labels[1]?.attributes('for')).toBe(inputs[1]?.attributes('id'))
+  })
+})
+
+describe('HilosSwitch in the admin view mode', () => {
+  it('stands disabled where the server put it, described by the strip too', () => {
+    const wrapper = mount(HilosSwitch, {
+      props: { checked: true, dataId: 'setting-toggle', describedBy: 'hint' },
+      global: { provide: { [hilosAdminViewModeKey as symbol]: ref(true) } },
+    })
+
+    expect(input(wrapper).disabled).toBe(true)
+    expect(input(wrapper).checked).toBe(true)
+    expect(wrapper.find('input').attributes('aria-describedby')).toBe(
+      'hint hilos-view-mode-strip-text',
+    )
+  })
+
+  it('points at the strip alone when it has no hint of its own', () => {
+    const wrapper = mount(HilosSwitch, {
+      props: { checked: false, dataId: 'setting-toggle' },
+      global: { provide: { [hilosAdminViewModeKey as symbol]: ref(true) } },
+    })
+
+    expect(wrapper.find('input').attributes('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+  })
+
+  it('is untouched outside the mode', () => {
+    const wrapper = mount(HilosSwitch, {
+      props: { checked: false, dataId: 'setting-toggle', describedBy: 'hint' },
+      global: { provide: { [hilosAdminViewModeKey as symbol]: ref(false) } },
+    })
+
+    expect(input(wrapper).disabled).toBe(false)
+    expect(wrapper.find('input').attributes('aria-describedby')).toBe('hint')
   })
 })

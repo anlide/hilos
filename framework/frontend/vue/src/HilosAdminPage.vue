@@ -22,13 +22,18 @@ exactly like "the name arrived empty".
 The heading carries an id the shell provides to what it holds: a table that
 declares no title of its own takes its accessible name from this heading, which
 already names it.
+
+The shell also tells what it holds whether a viewer of the admin view mode
+stands here (hilosAdminAccess is 'view', HIL-1253): the controls of the mode
+read that themselves and stand plainly disabled (HIL-1261).
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
+import { hilosAdminAccess, hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
 import { computed, inject, provide, useId } from 'vue'
 
 import HilosBreadcrumb from './HilosBreadcrumb.vue'
 import HilosLink from './HilosLink.vue'
+import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
 import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useSignal } from './useSignal.js'
@@ -44,6 +49,11 @@ if (!router) {
 
 const headingId = useId()
 provide(hilosPageHeadingIdKey, headingId)
+const adminAccess = useSignal(hilosAdminAccess)
+provide(
+  hilosAdminViewModeKey,
+  computed(() => adminAccess.value === 'view'),
+)
 
 const route = useSignal(router.currentRoute)
 const identity = useSignal(router.pageIdentity)

@@ -29,6 +29,10 @@ export { hilosRouterKey } from './hilosRouterKey.js'
 export { HILOS_VIEW_LAYER } from './hilosViewLayer.js'
 export { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 export {
+  hilosAdminViewModeKey,
+  useAdminViewMode,
+} from './hilosAdminViewMode.js'
+export {
   hilosTableSelectionEdgeKey,
   type HilosTableSelectionEdge,
 } from './hilosTableSelectionEdge.js'

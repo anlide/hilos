@@ -6,8 +6,15 @@ and, only while a conflict is unresolved, the three resolution choices: keep
 mine, take theirs, and merge where the surface asks for it. Save stays disabled
 until the conflict is resolved.
 Emits the choice; the parent form applies it against the core threeWayMerge
-result. Bootstrap classes only. -->
+result. Inside an admin page a viewer of the admin view mode finds Save disabled
+— the default one and the slotted one alike (HIL-1261); Cancel and the conflict
+choices, which edit only the draft in this window, stay as always. Bootstrap
+classes only. -->
 <script setup lang="ts">
+import { HILOS_VIEW_MODE_STRIP_TEXT_ID } from '@hilos/core'
+
+import { useAdminViewMode } from './hilosAdminViewMode.js'
+
 withDefaults(
   defineProps<{
     /** Whether an unresolved conflict blocks saving. */
@@ -34,6 +41,8 @@ const emit = defineEmits<{
   merge: []
 }>()
 
+const viewMode = useAdminViewMode()
+
 function onSave(): void {
   emit('save')
 }
@@ -43,13 +52,14 @@ function onSave(): void {
   <div class="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap">
     <slot
       name="save-button"
-      :disabled="disableSave || conflict"
+      :disabled="disableSave || conflict || viewMode"
       :on-save="onSave"
     >
       <button
         type="button"
         class="btn btn-primary"
-        :disabled="disableSave || conflict"
+        :disabled="disableSave || conflict || viewMode"
+        :aria-describedby="viewMode ? HILOS_VIEW_MODE_STRIP_TEXT_ID : undefined"
         data-id="conflict-save"
         @click="onSave"
       >
