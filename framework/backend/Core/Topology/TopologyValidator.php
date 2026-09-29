@@ -164,6 +164,7 @@ final class TopologyValidator
         $this->validatePageAgentIndexRoutes($pages, $agents, $errors);
         $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
+        $this->validatePageReadingActions($pages, $errors);
         $this->validateActionDtoRoutes($pages, $hilosClass::getActionDtoRoutes(), $errors);
         $this->validateAgentActionRoutes(
             $agents,
@@ -2050,6 +2051,48 @@ final class TopologyValidator
 
             if (!array_key_exists($page, $pages)) {
                 $errors[] = "Computed page action route {$action} references a page missing from PAGES";
+            }
+        }
+    }
+
+    /**
+     * Validates the list of reading actions a page declares over its own actions.
+     *
+     * READING_ACTIONS names actions a viewer of the admin view mode may run on an ADMIN
+     * page. A name the page does not own through ACTIONS opens nothing - the gate asks the
+     * list of the page that owns the action - and a list on a page that is not ADMIN is never
+     * read, since only an ADMIN page has viewers. Both are silent at run time: a typo quietly
+     * closes an action a viewer should have, or reads as opening one it never will. So they
+     * are refused at startup, the way an agent's guard lists are (HIL-622).
+     *
+     * @param array $pages Page registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageReadingActions(array $pages, array &$errors): void
+    {
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+            if ($pageClass::READING_ACTIONS === []) {
+                continue;
+            }
+
+            if ($pageClass::ACCESS_LEVEL !== PageAccessLevel::ADMIN) {
+                $errors[] = "PAGES[{$page}] class {$pageClass} READING_ACTIONS is declared on a page that is not ADMIN; "
+                    . 'only the admin view mode reads it';
+            }
+
+            foreach ($pageClass::READING_ACTIONS as $action) {
+                if (!is_string($action) || $action === '') {
+                    $errors[] = "PAGES[{$page}] class {$pageClass} READING_ACTIONS must list non-empty action names";
+                    continue;
+                }
+
+                if (!array_key_exists($action, $pageClass::ACTIONS)) {
+                    $errors[] = "PAGES[{$page}] class {$pageClass} READING_ACTIONS names {$action}, "
+                        . 'which it does not own through ACTIONS';
+                }
             }
         }
     }

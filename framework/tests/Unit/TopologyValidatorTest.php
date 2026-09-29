@@ -1184,6 +1184,42 @@ final class TopologyValidatorTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testReadingActionsThatAreEmptyOrNotOwnedByThePageAreRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyReadingActionsForeignHilos::validateTopology();
+            },
+            [
+                'PAGES[' . TopologyReadingActionsForeignPage::PAGE . '] class ' . TopologyReadingActionsForeignPage::class
+                    . ' READING_ACTIONS must list non-empty action names',
+                'PAGES[' . TopologyReadingActionsForeignPage::PAGE . '] class ' . TopologyReadingActionsForeignPage::class
+                    . ' READING_ACTIONS names ' . TopologyReadingActionsForeignPage::FOREIGN_ACTION
+                    . ', which it does not own through ACTIONS',
+            ],
+        );
+    }
+
+    public function testReadingActionsOnAPageThatIsNotAdminAreRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyReadingActionsNotAdminHilos::validateTopology();
+            },
+            [
+                'PAGES[' . TopologyReadingActionsNotAdminPage::PAGE . '] class ' . TopologyReadingActionsNotAdminPage::class
+                    . ' READING_ACTIONS is declared on a page that is not ADMIN; only the admin view mode reads it',
+            ],
+        );
+    }
+
+    public function testAnAdminPageMayDeclareItsOwnActionsReading(): void
+    {
+        TopologyReadingActionsHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testPageActionDtoThatDoesNotDeclareItsSecretFieldsIsRefused(): void
     {
         $this->assertTopologyErrors(
@@ -5938,6 +5974,141 @@ final class TopologyUndeclaredSecretsAgentHilos extends HilosFacade
         TopologyUndeclaredSecretsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyUndeclaredSecretsAgent::class,
             AgentRegistryKey::DAEMON => TopologyUndeclaredSecretsAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyReadingActionsPage extends AbstractPage
+{
+    public const string PAGE = 'reading_actions_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const string READ_ACTION = 'reading_actions_page_read';
+
+    public const string WRITE_ACTION = 'reading_actions_page_write';
+
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
+
+    public const array ACTIONS = [
+        self::READ_ACTION => TopologyTestActionPayloadDTO::class,
+        self::WRITE_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array READING_ACTIONS = [
+        self::READ_ACTION,
+    ];
+}
+
+final class TopologyReadingActionsForeignPage extends AbstractPage
+{
+    public const string PAGE = 'reading_actions_foreign_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const string OWN_ACTION = 'reading_actions_foreign_page_own';
+
+    public const string FOREIGN_ACTION = 'reading_actions_foreign_page_elsewhere';
+
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
+
+    public const array ACTIONS = [
+        self::OWN_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array READING_ACTIONS = [
+        '',
+        self::FOREIGN_ACTION,
+    ];
+}
+
+final class TopologyReadingActionsNotAdminPage extends AbstractPage
+{
+    public const string PAGE = 'reading_actions_not_admin_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const string READ_ACTION = 'reading_actions_not_admin_page_read';
+
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
+
+    public const array ACTIONS = [
+        self::READ_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array READING_ACTIONS = [
+        self::READ_ACTION,
+    ];
+}
+
+final class TopologyReadingActionsHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyReadingActionsPage::PAGE => TopologyReadingActionsPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyReadingActionsForeignHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyReadingActionsForeignPage::PAGE => TopologyReadingActionsForeignPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyReadingActionsNotAdminHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyReadingActionsNotAdminPage::PAGE => TopologyReadingActionsNotAdminPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
         ],
     ];
 

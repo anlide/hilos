@@ -8,7 +8,6 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
-use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
@@ -35,6 +34,7 @@ use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -91,6 +91,8 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
         // base creates no browser context, so this clears the browser in the same call - which is
         // also the connection carrying no user that the confirmation cases forward under.
         Hilos::initBrowser();
+        // A frame of an admin page leaves only for a connection that proves an admin (HIL-1251).
+        Hilos::$browser = new IdentityTestBrowser(userId: 1, admin: true);
         Hilos::$rt = new LogsRotationsPageTestRtContext();
         Hilos::$rt->mountFeatureRuntime([]);
         RtTruthSourceRegistry::registerDaemon(StateHilosClusterNode::RT_COLLECTION);
@@ -302,7 +304,7 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
      */
     public function testAVerdictThatMovedOnItsOwnReservesTheWindow(): void
     {
-        $browser = new LogsRotationsPageSubscribeTestBrowser();
+        $browser = new LogsRotationsPageSubscribeTestBrowser(userId: 1, admin: true);
         Hilos::$browser = $browser;
         new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent())
             ->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
@@ -333,6 +335,8 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
      */
     public function testAConfirmationForALiveNodeReachesItsOwnerWholeAndLeavesThePageOwingNothing(): void
     {
+        // The action is called on the page straight, past the gate, by a connection nobody signed in on.
+        Hilos::$browser = null;
         $this->publishNode(self::PEER, online: true);
         $page = $this->dispatchingPage();
 
@@ -739,7 +743,7 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
 /**
  * Browser context fixture recording the window deliveries the tick asked for.
  */
-final class LogsRotationsPageSubscribeTestBrowser extends BrowserContext
+final class LogsRotationsPageSubscribeTestBrowser extends IdentityTestBrowser
 {
     /** @var list<string> Table keys whose window delivery was reached */
     public array $windows = [];

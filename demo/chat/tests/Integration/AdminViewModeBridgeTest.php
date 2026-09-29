@@ -43,11 +43,12 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  *
  * The mode is the node's own: its runtime row is turned on here the way the lever turns it on, and the
  * one question - is this connection a viewer? - is answered by the demo's own browser context for a
- * person who is not an admin. Nothing is a double. The gate does not let a viewer in yet (HIL-1251), so
- * the pages are subscribed straight, the way the dispatcher would after it; what is on trial is what
- * leaves for the connection: the person's name is hidden by its `_pii` verdict, the last activity, the
- * admin flag and the block are shown by `_piiNotPersonal`, and everything nobody declared is hidden -
- * while the same pages sent to an admin carry no hidden mark at all.
+ * person who is not an admin. Nothing is a double. The pages are subscribed straight, the way the
+ * dispatcher does once the gate let the viewer look - the gate itself is on trial in
+ * AdminViewModeGateTest; what is on trial here is what leaves for the connection: the person's name
+ * is hidden by its `_pii` verdict, the last activity, the admin flag and the block are shown by
+ * `_piiNotPersonal`, and everything nobody declared is hidden - while the same pages sent to an admin
+ * carry no hidden mark at all.
  */
 final class AdminViewModeBridgeTest extends IntegrationTestCase
 {

@@ -13,7 +13,9 @@ use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -22,9 +24,14 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\DatabaseException;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Tests\Unit\Fixtures\AdminViewModeTestNode;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
+use Throwable;
 
 /**
  * Unit tests for the action reply payload on the central action dispatcher: a
@@ -32,22 +39,33 @@ use PHPUnit\Framework\TestCase;
  * returns null omits the reply field, an untracked action's reply is dropped,
  * a throwing action produces a fail ack with no reply, and the per-action
  * success-message slot is scoped to the action that set it.
+ *
+ * And whose text a failure on an ADMIN page carries (HIL-1251): the class and
+ * message only for a connection that proves an admin now - not for a viewer of
+ * the admin view mode, not for a non-admin the gate refused - and the same rule
+ * for the text a page puts into a frame of its own.
  */
 final class PageSignalRouterActionReplyTest extends TestCase
 {
     private ?SignalRouter $previousRouter = null;
+
+    private ?RtContext $previousRt = null;
 
     public function setUp(): void
     {
         parent::setUp();
 
         $this->previousRouter = HilosFacade::$sr;
+        $this->previousRt = HilosFacade::$rt;
         HilosFacade::$sr = new SignalRouter();
     }
 
     public function tearDown(): void
     {
+        AdminViewModeTestNode::unmount();
+        HilosFacade::$rt = $this->previousRt;
         HilosFacade::$sr = $this->previousRouter;
+        HilosFacade::resetBrowser();
 
         parent::tearDown();
     }
@@ -132,8 +150,76 @@ final class PageSignalRouterActionReplyTest extends TestCase
         $this->assertNull($ack->message);
     }
 
+    public function testATrackedFailureOnAnAdminPageTellsAnAdminItsClassAndText(): void
+    {
+        HilosFacade::$browser = new IdentityTestBrowser(userId: 7, admin: true);
+        $router = $this->makeRouter();
+
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO('ak-1', ActionReplyTestAdminPage::FAIL_ACTION, [], 'req-5'),
+            'websocket',
+        );
+
+        $error = $this->findByName($this->drainAll(), SignalConstants::ACTION_ERROR);
+        $this->assertInstanceOf(PageActionErrorSignalData::class, $error);
+        $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $error->reason);
+        $this->assertSame('DatabaseException', $error->errorType);
+        $this->assertSame(ActionReplyTestAdminPage::FAILURE, $error->errorDetail);
+    }
+
+    public function testATrackedFailureOnAnAdminPageTellsAViewerNothingOfIt(): void
+    {
+        AdminViewModeTestNode::mount(true);
+        HilosFacade::$browser = new IdentityTestBrowser(userId: 5, admin: false);
+        $router = $this->makeRouter();
+
+        // A reading action runs for the viewer and fails inside its handler.
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO('ak-1', ActionReplyTestAdminPage::FAIL_ACTION, [], 'req-6'),
+            'websocket',
+        );
+
+        $error = $this->findByName($this->drainAll(), SignalConstants::ACTION_ERROR);
+        $this->assertInstanceOf(PageActionErrorSignalData::class, $error);
+        $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $error->reason);
+        $this->assertNull($error->errorCode);
+        $this->assertNull($error->errorType);
+        $this->assertNull($error->errorDetail);
+    }
+
+    public function testANonAdminRefusedOnAnAdminPageIsNotToldTheTextOfTheRefusal(): void
+    {
+        AdminViewModeTestNode::mount(false);
+        HilosFacade::$browser = new IdentityTestBrowser(userId: 5, admin: false);
+        $router = $this->makeRouter();
+
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO('ak-1', ActionReplyTestAdminPage::FAIL_ACTION, [], 'req-7'),
+            'websocket',
+        );
+
+        $error = $this->findByName($this->drainAll(), SignalConstants::ACTION_ERROR);
+        $this->assertInstanceOf(PageActionErrorSignalData::class, $error);
+        $this->assertSame(ActionForbiddenException::ERROR_CODE, $error->errorCode);
+        $this->assertNull($error->errorType);
+        $this->assertNull($error->errorDetail);
+    }
+
+    public function testThePageBuiltTextOfAFailureIsTheMessageOnlyForAnAdmin(): void
+    {
+        $page = new ActionReplyTestAdminPage(new ActionReplyTestAgent());
+        $failure = new DatabaseException(ActionReplyTestAdminPage::FAILURE);
+
+        HilosFacade::$browser = new IdentityTestBrowser(userId: 7, admin: true);
+        $this->assertSame(ActionReplyTestAdminPage::FAILURE, $page->textFor('ak-1', $failure));
+
+        AdminViewModeTestNode::mount(true);
+        HilosFacade::$browser = new IdentityTestBrowser(userId: null, admin: false);
+        $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $page->textFor('ak-1', $failure));
+    }
+
     /**
-     * Builds a router routing every fixture action to the reply test page.
+     * Builds a router routing every fixture action to its reply test page.
      *
      * @return PageSignalRouter Router under test
      */
@@ -148,6 +234,7 @@ final class PageSignalRouterActionReplyTest extends TestCase
                 ActionReplyTestPage::PLAIN_ACTION => ActionReplyTestPage::PAGE,
                 ActionReplyTestPage::MESSAGE_ACTION => ActionReplyTestPage::PAGE,
                 ActionReplyTestPage::THROW_ACTION => ActionReplyTestPage::PAGE,
+                ActionReplyTestAdminPage::FAIL_ACTION => ActionReplyTestAdminPage::PAGE,
             ]),
         );
     }
@@ -269,7 +356,47 @@ final class ActionReplyTestPage extends AbstractPage
 }
 
 /**
- * Page factory fixture exposing the reply test page.
+ * Admin page whose one action - declared reading - fails where nobody wrote for the person.
+ */
+final class ActionReplyTestAdminPage extends AbstractPage
+{
+    public const string PAGE = 'reply_admin';
+    public const string FAIL_ACTION = 'reply_admin_fail_action';
+    public const string FAILURE = 'SQLSTATE[HY000]: General error';
+
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
+
+    public const array READING_ACTIONS = [self::FAIL_ACTION];
+
+    /**
+     * Fails the way a driver does.
+     *
+     * @param string $acceptKey WebSocket accept key (unused)
+     * @param string $action Action name (unused)
+     * @param ActionPayloadDTO $dto Action payload (unused)
+     * @return ?ActionReplyDTO Never returns
+     * @throws DatabaseException Always
+     */
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        throw new DatabaseException(self::FAILURE);
+    }
+
+    /**
+     * Opens the page's failure text to the test.
+     *
+     * @param string $acceptKey Connection the frame would go to
+     * @param Throwable $e Failure the frame would report
+     * @return string Text that connection may read
+     */
+    public function textFor(string $acceptKey, Throwable $e): string
+    {
+        return $this->failureText($acceptKey, $e);
+    }
+}
+
+/**
+ * Page factory fixture exposing the reply test pages.
  *
  * @extends AbstractPageFactory<ActionReplyTestAgent>
  */
@@ -284,22 +411,22 @@ final class ActionReplyTestPageFactory extends AbstractPageFactory
      */
     protected function createPage(string $pageName): AbstractPage
     {
-        if ($pageName === ActionReplyTestPage::PAGE) {
-            return new ActionReplyTestPage($this->agent);
-        }
-
-        throw new PageNotFoundException($pageName);
+        return match ($pageName) {
+            ActionReplyTestPage::PAGE => new ActionReplyTestPage($this->agent),
+            ActionReplyTestAdminPage::PAGE => new ActionReplyTestAdminPage($this->agent),
+            default => throw new PageNotFoundException($pageName),
+        };
     }
 
     /**
-     * Reports whether the reply test page is available.
+     * Reports whether a reply test page is available.
      *
      * @param string $pageName Page name
-     * @return bool True for the reply test page
+     * @return bool True for the reply test pages
      */
     public function hasPage(string $pageName): bool
     {
-        return $pageName === ActionReplyTestPage::PAGE;
+        return in_array($pageName, [ActionReplyTestPage::PAGE, ActionReplyTestAdminPage::PAGE], true);
     }
 }
 

@@ -179,10 +179,15 @@ abstract class AbstractHilosLogsWorkersPage extends AbstractHilosPage
     {
         $this->logAgentInfo("hilos_logs_workers onSubscribe acceptKey={$acceptKey}");
 
+        $frame = static::frameForViewer($acceptKey, self::buildHeader(), HilosLogsWorkersSignalData::wireFields());
+        if ($frame === null) {
+            return;
+        }
+
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_WORKERS,
             $acceptKey,
-            static::frameForViewer($acceptKey, self::buildHeader(), HilosLogsWorkersSignalData::wireFields()),
+            $frame,
         );
     }
 
@@ -347,12 +352,17 @@ abstract class AbstractHilosLogsWorkersPage extends AbstractHilosPage
         string $acceptKey,
         HilosLogsWorkersSignalData $header,
     ): void {
+        $frame = static::frameForViewer($acceptKey, $header, HilosLogsWorkersSignalData::wireFields());
+        if ($frame === null) {
+            return;
+        }
+
         Hilos::$sr?->queueSignal(
             signalSource: $agent->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_WORKERS),
             signalData: new WebSocketSignalData(
-                data: static::frameForViewer($acceptKey, $header, HilosLogsWorkersSignalData::wireFields()),
+                data: $frame,
                 targetAcceptKey: $acceptKey,
             ),
         );

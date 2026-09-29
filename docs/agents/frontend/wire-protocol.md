@@ -228,18 +228,22 @@ handler wrote *by hand* and passed to `sendActionFail()` does not pass the gate
 and does not need to: its author is already a person writing for a person. The
 gate stands on the conversion of an exception into a sentence, not on the field.
 
-**Admin surfaces are the exception, and only behind the admin guard.** When the
-owner of the action is an `AbstractPage` whose `ACCESS_LEVEL` is
-`PageAccessLevel::ADMIN` — which the router has already proved before the handler
-ran — the `action_error` frame carries two more optional fields beside the
-generic reason: `errorType`, the failure's class name without its namespace, and
-`errorDetail`, its original message. The SDK's `HilosActionError` draws the
+**Admin surfaces are the exception, and only for an actor who proved an admin.**
+When the owner of the action is an `AbstractPage` whose `ACCESS_LEVEL` is
+`PageAccessLevel::ADMIN`, and the connection the answer goes to proves an admin
+on it at the moment of the answer (`PageAccessGate::provesAdmin()`) — not anyone
+standing on an `ADMIN` page — the `action_error` frame carries two more optional
+fields beside the generic reason: `errorType`, the failure's class name without
+its namespace, and `errorDetail`, its original message. A viewer of the admin
+view mode never gets them: its refusal is `errorCode` `view_mode` with the
+generic reason ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)),
+and a non-admin whose action the gate refused gets its code alone. The SDK's `HilosActionError` draws the
 class name as text beside the icon of the row's details button, and the original
 message in the details panel under the caption "Exception", with Copy, so an
 operator can carry the real text into a ticket. Three limits are part of the rule:
 
-- they ride **only** on that admin frame; for any other caller the frame is byte
-  for byte what it was before they existed;
+- they ride **only** on that admin frame to that actor; for any other caller the
+  frame is byte for byte what it was before they existed;
 - they are **absent for a `ValidationException`**, whose message is already shown
   in full — so their presence means the framework held something back;
 - an action owned by an **agent** never carries them: the access-level guard

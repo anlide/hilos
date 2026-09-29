@@ -63,9 +63,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * Tests the bridge on the row of a typed table: what a viewer of the admin view mode is sent (HIL-1250).
  *
- * The gate does not let a viewer in before HIL-1251, so the viewer here is a double: an admin the gate
- * lets through, whom the one question "is this a viewer?" answers yes. The column verdicts are a
- * registry of the double's own - the person's name is personal, the last activity is not.
+ * The viewer here is a double: the one question "is this a viewer?" answers yes, and the gate lets such
+ * a connection look, with no project's identity behind it. The column verdicts are a registry of the
+ * double's own - the person's name is personal, the last activity is not.
  *
  * What is pinned: every frame a row rides - the window, the window section of the subscription answer,
  * the delta, the append, the author's own create, the body of a row held in focus - hides the row the
@@ -627,7 +627,7 @@ final class WireTestBrowser extends BrowserContext
     }
 
     /**
-     * Answers as the test was told, standing in for the gate HIL-1251 opens.
+     * Answers as the test was told; a yes is a connection the gate lets look as a viewer.
      *
      * @param string $pageClass Class of the page the frame belongs to
      * @param string $acceptKey Connection the frame goes to

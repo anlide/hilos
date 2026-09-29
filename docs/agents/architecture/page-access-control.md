@@ -17,7 +17,7 @@ This is the low-level mechanism. A future role/permission system (RBAC) sits on
 top of it; it does not replace these layers. The admin view mode relaxes the
 first layer for looking, not for acting: with the mode on, a non-admin on an
 `ADMIN` page is shown the page and refused its actions
-(not in the code yet — HIL-1251) — [admin-view-mode.md](admin-view-mode.md).
+(`PageAccessVerdict::VIEW`) — [admin-view-mode.md](admin-view-mode.md).
 
 ## Page access levels (the closed-by-default gate)
 
@@ -51,9 +51,12 @@ mandatory — silence would open the profile to guests.
   protected-mode lockdown and before the browser guards, which starves a denied
   kept-alive subscription of fan-out and table windows. This second point is
   load-bearing: most admin pages declare no browser guards at all.
-- **actions** — `PageSignalRouter::dispatchAction`, before `AUTH_ACTIONS`: a
-  guest gets 401 `ActionUnauthorizedException`, an authenticated non-admin 403
-  `ActionForbiddenException`. A page's actions are closed by its level; the
+- **actions** — `PageSignalRouter::dispatchAction`, before `AUTH_ACTIONS`, through
+  `PageAccessGate::assertAction()`: a guest gets 401 `ActionUnauthorizedException`,
+  an authenticated non-admin 403 `ActionForbiddenException`, and — with the admin
+  view mode on — a viewer of an `ADMIN` page 403 `view_mode`
+  (`ActionViewModeException`) for every action the page did not declare in
+  `READING_ACTIONS`. A page's actions are closed by its level; the
   per-action `AUTH_ACTIONS` list remains for project pages with the
   anonymous-read + authenticated-write model. The level closes the actions the
   *page* holds, and it does not travel with the name: an action name moved to an
@@ -73,17 +76,22 @@ resolves, the surface denies.
 
 With the admin view mode on, the gate answers an `ADMIN` page with a third
 verdict for a connection that did not prove an admin — *view*, beside allow and
-refuse (not in the code yet — HIL-1251). The subscription, its update and every
-delivery are let through, and each frame that leaves for such a viewer passes
-the personal-data bridge, asked per delivery by
-`BrowserContext::isAdminViewModeViewer()`. An action is refused
-with the view mode as the reason, except the ones the page declares reading
-(not in the code yet — HIL-1251); the error text of a failed action goes by the
-actor, not by the page's level (not in the code yet — HIL-1251). With the mode
-off, everything below in this document holds without a qualification. The mode
-whole — the switch and its production latch, who a viewer is, the bridge, the
-browser side, what a new admin section owes — is
-[admin-view-mode.md](admin-view-mode.md).
+refuse: `PageAccessGate::verdict()` returns `PageAccessVerdict::VIEW` where it
+returns `PageAccessVerdict::ALLOW` for an admin, and a refusal stays an
+exception. `PageAccessGate::assert()` — may the connection look — lets *view*
+through: the subscription, its update and every delivery go, and each frame that
+leaves for such a viewer passes the personal-data bridge, asked per delivery by
+`BrowserContext::isAdminViewModeViewer()`. `PageAccessGate::assertAction()` —
+may it act — refuses a viewer with `ActionViewModeException` (403 `view_mode`),
+except the actions the page declares in `READING_ACTIONS`. The error text of a
+failed action goes by the actor, not by the page's level: only a connection that
+proves an admin now (`PageAccessGate::provesAdmin()`) is told the exception's
+class and message, and a page's own frame carries `AbstractPage::failureText()`.
+With the mode off, everything below in this document holds without a
+qualification — except that the text rule holds there too: a non-admin whose
+action the gate refused is not told the text of the refusal. The mode whole —
+the switch and its production latch, who a viewer is, the bridge, the browser
+side, what a new admin section owes — is [admin-view-mode.md](admin-view-mode.md).
 
 ## Declaring a guard
 
@@ -91,17 +99,31 @@ Guards live under `BrowserConfigKey::GUARDS` in a page's `BROWSER` const — a l
 of maps, each keyed by `BrowserGuardKey`:
 
 ```php
+// demo/chat/backend/Pages/BotPage.php
 public const array BROWSER = [
-    BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
+    BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_BOT,
+    BrowserConfigKey::PARAMS => [
+        BotPageSubscribeParams::BOT_ID => [
+            BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+            BrowserParamKey::REQUIRED => true,
+        ],
+    ],
     BrowserConfigKey::GUARDS => [
         [
-            BrowserGuardKey::TYPE => BrowserGuardType::ACCESS,
-            BrowserGuardKey::SOURCE => ChatBrowserSource::DB_USERS,
-            BrowserGuardKey::FIELD => User::admin,
+            BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+            BrowserGuardKey::SOURCE => ChatBrowserSource::DB_BOTS,
+            BrowserGuardKey::KEY => ChatBrowserRef::BOT_ID,
+            BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
         ],
     ],
 ];
 ```
+
+No page declares an `ACCESS` guard today. An admin page is closed by the
+`ADMIN` level, not by a guard on the admin flag: the level is what the admin
+view mode opens for looking, while an `ACCESS` guard is judged after the level
+and keeps a viewer out ([admin-view-mode.md](admin-view-mode.md), *The View
+Verdict*).
 
 Guard types (`BrowserGuardType`):
 
@@ -212,6 +234,12 @@ internal-error sentence for a 500). The frontend picks what to show by the codes
   read as "this page has no browser data", the silence that used to make a typo
   indistinguishable from a plain page.
 
+An action the gate refuses is answered on `action_error`, not here, with the
+codes of the page — 401 `unauthorized`, 403 `forbidden` — and one of its own:
+403 `view_mode` (`ActionViewModeException`), the refusal of a viewer of the
+admin view mode, whose reason is the impersonal sentence and never the
+exception's text.
+
 ## Guards run on EVERY delivery path
 
 A guard checked only at subscribe leaks: reactive and viewport updates would
@@ -295,7 +323,10 @@ and queues one `page_access_reassess` frame per page that user has open there. E
 frame is routed exactly like the subscribe it re-judges — to the page's own agent, by
 the same page→agent resolution — and answered by the same code, so allow sends a full
 `page_response` and deny sends the `subscription_page_error` the same verdict would
-have produced at subscribe. One path, one shape on the wire.
+have produced at subscribe. One path, one shape on the wire. With the admin view mode
+on, a revoke on an `ADMIN` page is answered with the page as a viewer sees it rather
+than the 403, because the same gate answers *view* there
+([admin-view-mode.md](admin-view-mode.md)).
 
 **Announcing and sweeping are two steps because they live in two processes** (HIL-644).
 The pages of one person are spread across every worker of the node, while who is behind

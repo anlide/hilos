@@ -43,10 +43,15 @@ abstract class AbstractHilosLegalAcceptancesPage extends AbstractHilosPage
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
+        $frame = static::frameForViewer($acceptKey, LegalAdminAudience::filters(), HilosLegalAcceptanceFiltersSignalData::wireFields());
+        if ($frame === null) {
+            return;
+        }
+
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES,
             $acceptKey,
-            static::frameForViewer($acceptKey, LegalAdminAudience::filters(), HilosLegalAcceptanceFiltersSignalData::wireFields()),
+            $frame,
         );
     }
 

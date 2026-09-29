@@ -21,6 +21,7 @@ use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use Hilos\Pages\Logs\DTO\HilosLogsViewCatalogSignalData;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -55,6 +56,8 @@ final class HilosLogsViewPageCatalogTest extends TestCase
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
         // base creates no browser context, so this clears the browser in the same call.
         Hilos::initBrowser();
+        // A frame of an admin page leaves only for a connection that proves an admin (HIL-1251).
+        Hilos::$browser = new IdentityTestBrowser(userId: 1, admin: true);
 
         $this->emptyTheMirror();
         $this->growTheClusterPicture();

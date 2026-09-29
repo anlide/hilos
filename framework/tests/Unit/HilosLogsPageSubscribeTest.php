@@ -8,7 +8,6 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
-use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
@@ -30,6 +29,7 @@ use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -84,6 +84,8 @@ final class HilosLogsPageSubscribeTest extends TestCase
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
         // base creates no browser context, so this clears the browser in the same call.
         Hilos::initBrowser();
+        // A frame of an admin page leaves only for a connection that proves an admin (HIL-1251).
+        Hilos::$browser = new IdentityTestBrowser(userId: 1, admin: true);
 
         $this->emptyTheMirror();
         $this->growTheClusterPicture();
@@ -813,7 +815,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
      */
     public function testARefusedSubscriptionLeavesNoSubscriberBehind(): void
     {
-        Hilos::$browser = new LogsPageSubscribeTestRefusingBrowser();
+        Hilos::$browser = new LogsPageSubscribeTestRefusingBrowser(userId: 1, admin: true);
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
 
         try {
@@ -1101,7 +1103,7 @@ final class LogsPageSubscribeTestRouter extends SignalRouter
  * Browser refusing the snapshot the way a malformed page declaration does, so the subscription
  * fails between the overview and the frame.
  */
-final class LogsPageSubscribeTestRefusingBrowser extends BrowserContext
+final class LogsPageSubscribeTestRefusingBrowser extends IdentityTestBrowser
 {
     /**
      * @param string $page Page name from the subscription request

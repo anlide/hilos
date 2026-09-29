@@ -25,25 +25,35 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tests\Unit\Fixtures\AdminViewModeTestNode;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the gatekeeper side of the handover: the ask it forwards and the ack it sends once
  * the writer has answered (HIL-1001).
  *
- * The detail gate is asked of the page's own level, so the same refusal is told in full to an admin
- * gatekeeper and byte for byte as before to any other.
+ * The detail gate is asked of the connection the answer goes to, at the moment of the answer: the
+ * same refusal is told in full to an admin on an admin gatekeeper, and byte for byte as before to a
+ * viewer of the admin view mode, to a non-admin, and on a gatekeeper of any other level (HIL-1251).
  */
 final class HandoverGatekeeperTraitTest extends TestCase
 {
+    private ?RtContext $previousRt = null;
+
     protected function setUp(): void
     {
+        $this->previousRt = Hilos::$rt;
         Hilos::$sr = new SignalRouter();
     }
 
     protected function tearDown(): void
     {
+        AdminViewModeTestNode::unmount();
+        Hilos::$rt = $this->previousRt;
         Hilos::$sr = null;
+        Hilos::resetBrowser();
 
         parent::tearDown();
     }
@@ -101,6 +111,7 @@ final class HandoverGatekeeperTraitTest extends TestCase
 
     public function testATrackedRefusalOnAnAdminGatekeeperCarriesTheFailureBesideTheReason(): void
     {
+        Hilos::$browser = new IdentityTestBrowser(userId: 7, admin: true);
         $page = new HandoverGatekeeperTestAdminPage(new HandoverGatekeeperTestAgent());
 
         $page->answer($this->internalRefusal());
@@ -114,8 +125,38 @@ final class HandoverGatekeeperTraitTest extends TestCase
         $this->assertSame('SQLSTATE[23000]: Integrity constraint violation', $ack->errorDetail);
     }
 
+    public function testTheSameRefusalToAViewerOnAnAdminGatekeeperCarriesNoDetail(): void
+    {
+        AdminViewModeTestNode::mount(true);
+        Hilos::$browser = new IdentityTestBrowser(userId: 5, admin: false);
+        $page = new HandoverGatekeeperTestAdminPage(new HandoverGatekeeperTestAgent());
+
+        $page->answer($this->internalRefusal());
+
+        $ack = $this->nextAck(SignalConstants::ACTION_ERROR);
+        $this->assertInstanceOf(PageActionErrorSignalData::class, $ack);
+        $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $ack->reason);
+        $this->assertNull($ack->errorType);
+        $this->assertNull($ack->errorDetail);
+    }
+
+    public function testTheSameRefusalToANonAdminOnAnAdminGatekeeperCarriesNoDetail(): void
+    {
+        AdminViewModeTestNode::mount(false);
+        Hilos::$browser = new IdentityTestBrowser(userId: 5, admin: false);
+        $page = new HandoverGatekeeperTestAdminPage(new HandoverGatekeeperTestAgent());
+
+        $page->answer($this->internalRefusal());
+
+        $ack = $this->nextAck(SignalConstants::ACTION_ERROR);
+        $this->assertInstanceOf(PageActionErrorSignalData::class, $ack);
+        $this->assertNull($ack->errorType);
+        $this->assertNull($ack->errorDetail);
+    }
+
     public function testTheSameRefusalOnAGatekeeperOfAnotherLevelCarriesNoDetail(): void
     {
+        Hilos::$browser = new IdentityTestBrowser(userId: 7, admin: true);
         $page = new HandoverGatekeeperTestAuthenticatedPage(new HandoverGatekeeperTestAgent());
 
         $page->answer($this->internalRefusal());

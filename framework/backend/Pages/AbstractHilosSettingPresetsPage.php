@@ -144,12 +144,17 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
 
         $signalName = static::subscriptionSignalName();
         foreach (array_keys(self::$subscribers[$page]) as $acceptKey) {
+            $frame = static::frameForViewer($acceptKey, $data, HilosSettingPresetsSignalData::wireFields());
+            if ($frame === null) {
+                continue;
+            }
+
             Hilos::$sr->queueSignal(
                 signalSource: $agent->getAgentSignalSource(),
                 signalType: new SignalType(SignalTypeConstants::WS_USER),
                 signalName: new SignalName($signalName),
                 signalData: new WebSocketSignalData(
-                    data: static::frameForViewer($acceptKey, $data, HilosSettingPresetsSignalData::wireFields()),
+                    data: $frame,
                     targetAcceptKey: $acceptKey,
                 ),
             );
@@ -213,10 +218,15 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
+        $frame = static::frameForViewer($acceptKey, static::buildPresetsSignalData(), HilosSettingPresetsSignalData::wireFields());
+        if ($frame === null) {
+            return;
+        }
+
         $this->sendToUser(
             static::subscriptionSignalName(),
             $acceptKey,
-            static::frameForViewer($acceptKey, static::buildPresetsSignalData(), HilosSettingPresetsSignalData::wireFields()),
+            $frame,
         );
     }
 

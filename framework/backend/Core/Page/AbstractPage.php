@@ -7,6 +7,7 @@ namespace Hilos\Core\Page;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Action\ActionReply;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -18,6 +19,7 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
+use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -88,6 +90,17 @@ abstract class AbstractPage implements ActionHostInterface
      * ({@see BrowserContext::resolveActionUserId}).
      */
     public const array AUTH_ACTIONS = [];
+
+    /**
+     * @var list<string> Names of this page's actions that only read: they write nothing - no database,
+     *     no RT, no file - and send nothing to anyone. With the admin view mode on, a viewer runs these
+     *     and nothing else; every other action of an ADMIN page is refused to them with
+     *     {@see ActionViewModeException} ({@see PageAccessGate::assertAction()}). When in doubt, the
+     *     action writes. The start refuses a name the page does not own through ACTIONS and a list on a
+     *     page that is not ADMIN ({@see TopologyValidator}). See
+     *     docs/agents/architecture/admin-view-mode.md, "Reading Actions".
+     */
+    public const array READING_ACTIONS = [];
 
     /**
      * Access level every subscription and action on this page must clear.
@@ -701,6 +714,23 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
+     * Returns the text of a failure for a frame the page builds itself.
+     *
+     * A page that answers a failure with a frame of its own - not through the dispatcher's
+     * action_error - puts this into the frame, never getMessage(): the exception's own text goes
+     * only to a connection that proves an admin on this page now ({@see PageAccessGate::provesAdmin()}),
+     * everyone else gets what {@see ActionFailureReason::forClient()} lets through.
+     *
+     * @param string $acceptKey Connection the frame goes to
+     * @param Throwable $e Failure the frame reports
+     * @return string Text of the failure this connection may read
+     */
+    protected function failureText(string $acceptKey, Throwable $e): string
+    {
+        return PageAccessGate::provesAdmin(static::class, $acceptKey) ? $e->getMessage() : ActionFailureReason::forClient($e);
+    }
+
+    /**
      * Handles a routed binary frame signal.
      *
      * Default intentionally ignores the signal. Override when the page owns
@@ -964,12 +994,16 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
-     * Returns the frame one connection of this page's own subscriber set is sent (HIL-1250).
+     * Returns the frame one connection of this page's own subscriber set is sent, or null when it is sent nothing.
      *
-     * A page that keeps a subscriber set of its own sends its frames past the page answer, and this is the
-     * bridge on that road: a viewer of the admin view mode gets the frame with every field its declaration
-     * does not open replaced by the hidden mark, an admin gets it as it is. Asked for every connection on
-     * every send, never remembered, so a grant or a revoke is what the next frame goes by.
+     * A page that keeps a subscriber set of its own sends its frames past the page answer and past the
+     * delivery guards, so this is the gate and the bridge on that road at once: it asks the page gate
+     * ({@see PageAccessGate::verdict()}) what the connection may do, as every other delivery does. A
+     * connection the gate refuses is sent nothing, and stays in the set - it is promoted live the moment the
+     * gate lets it through, as a subscription is; a viewer of the admin view mode gets the frame with every
+     * field its declaration does not open replaced by the hidden mark (HIL-1250); an admin gets it as it is.
+     * Asked for every connection on every send, never remembered, so a grant or a revoke is what the next
+     * frame goes by - with the mode off too, so an admin whose rights were taken stops getting the frames.
      *
      * The viewer's frame is untyped. A typed frame is carried to the master, which holds the socket, and
      * rebuilt there by its own fromArray(), and a typed reader takes the mark for a malformed value - it
@@ -979,16 +1013,31 @@ abstract class AbstractPage implements ActionHostInterface
      * @param string $acceptKey Connection the frame goes to
      * @param SignalDataInterface $frame Frame as an admin receives it
      * @param array<string, WireField> $fields Where each field of the frame comes from
-     * @return SignalDataInterface The frame itself, or its untyped copy hidden for a viewer
+     * @return ?SignalDataInterface The frame itself, its untyped copy hidden for a viewer, or null when the
+     *     gate refuses this connection now and the caller sends nothing
      */
-    protected static function frameForViewer(string $acceptKey, SignalDataInterface $frame, array $fields): SignalDataInterface
+    protected static function frameForViewer(string $acceptKey, SignalDataInterface $frame, array $fields): ?SignalDataInterface
     {
-        $browser = Hilos::$browser;
-        if ($browser === null || !$browser->isAdminViewModeViewer(static::class, $acceptKey)) {
+        try {
+            $verdict = PageAccessGate::verdict(static::class, $acceptKey);
+        } catch (PageSubscriptionException) {
+            return null;
+        } catch (HilosException $e) {
+            Logger::error(
+                "Admin view mode: whether {$acceptKey} may receive a frame of " . static::class
+                . " could not be decided ({$e->getMessage()}), so the frame is not sent.",
+            );
+
+            return null;
+        }
+
+        if ($verdict === PageAccessVerdict::ALLOW) {
             return $frame;
         }
 
-        return new SignalData($browser->hideForViewer($frame->toArray(), $fields));
+        $hidden = Hilos::$browser?->hideForViewer($frame->toArray(), $fields);
+
+        return $hidden === null ? null : new SignalData($hidden);
     }
 
     /**

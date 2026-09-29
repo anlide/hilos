@@ -126,12 +126,17 @@ page and both make it re-decidable; they read identity from different places:
   [page-access-control.md](page-access-control.md). On an agent that merely
   mirrors users and connections it flickers to 403 on a stale read.
 
-The chat demo shows both: `AdminUsersPage` is served by the chat agent, which
-owns users and connections, so it declares an `ACCESS` guard on `User::admin`;
-`AdminBotsPage` and `AdminModeratorPage` are served by the library agent, which
-owns bots and prompt pieces and only mirrors the rest, so they declare the level.
-Needing "signed in" rather than "admin" is the same line with
-`PageAccessLevel::AUTHENTICATED`, and never a parallel `AUTHENTICATED` guard.
+An admin page is closed by the level, whichever agent serves it: the admin view
+mode ([admin-view-mode.md](admin-view-mode.md)) is given by the level alone — it
+opens an `ADMIN` page for looking — while an `ACCESS` guard is judged after the
+level and keeps a viewer out, so a page closed by a guard on the admin flag
+would be the one admin page a viewer cannot look at. The chat demo's
+`AdminUsersPage`, served by the chat agent, `AdminBotsPage` and
+`AdminModeratorPage`, served by the library agent, all declare the level and no
+guard; the user table had an `ACCESS` guard on `User::admin` and dropped it for
+the mode (HIL-1251). Needing "signed in" rather than "admin" is the same line
+with `PageAccessLevel::AUTHENTICATED`, and never a parallel `AUTHENTICATED`
+guard.
 
 Closing a page is a behavior change for its tests too: an e2e that used to walk
 onto the page anonymously must take the grant first (`signUpAdmin` in the chat
@@ -147,7 +152,7 @@ page is safe by default — its fields are hidden until declared, its actions
 refused until declared reading — and it owes the viewer five things to be
 useful:
 
-- declare its reading actions (not in the code yet — HIL-1251);
+- declare its reading actions in `AbstractPage::READING_ACTIONS`;
 - declare the not-personal fields of its rows and frames, by the verdict of the
   column or by a declaration on the field — `TableDefinition::wireFields()`,
   the `notPersonal` key of a declarative row, `AbstractPage::dataFields()`, a
@@ -155,8 +160,8 @@ useful:
   person's data not-personal for the viewer's sake;
 - build every mutation out of the controls of the mode
   (not in the code yet — HIL-1261);
-- put no exception text into a frame by itself
-  (not in the code yet — HIL-1251);
+- put no exception text into a frame by itself — a frame of its own carries
+  `AbstractPage::failureText()`;
 - send its frames by the page's path, never past the personal-data bridge: a
   frame to the page's own subscriber set goes through
   `AbstractPage::frameForViewer()`.

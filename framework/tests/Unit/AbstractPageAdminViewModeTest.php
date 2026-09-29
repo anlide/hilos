@@ -15,13 +15,18 @@ use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\SignalData;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Hilos;
 use Hilos\Pages\AbstractHilosDashboardPage;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -32,16 +37,29 @@ use PHPUnit\Framework\TestCase;
  * and for a viewer it wins over a key of the page's own with the same name. An admin gets the answer
  * exactly as before, the page's own key winning. The dashboard declares its sections, which are the
  * catalog too, so the landing of the admin section is not empty for a viewer.
+ *
+ * And the frame of a page's own subscriber set, which asks the page gate on every send (HIL-1251): a
+ * connection the gate refuses is sent nothing, a viewer the hidden copy, an admin the frame itself; a
+ * gate that cannot decide sends nothing and says so in the journal.
  */
 final class AbstractPageAdminViewModeTest extends TestCase
 {
+    /** Temporary main log file the journal lines are read back from */
+    private string $logFile = '';
+
     protected function setUp(): void
     {
         Hilos::$sr = new SignalRouter();
+        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-page-admin-view-mode');
+        Logger::setLogFile($this->logFile);
     }
 
     protected function tearDown(): void
     {
+        Logger::resetLogFile();
+        if (is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
         Hilos::$sr = null;
         Hilos::initBrowser();
         Hilos::resetBrowser();
@@ -101,6 +119,46 @@ final class AbstractPageAdminViewModeTest extends TestCase
         $this->assertEquals($adminData, $viewerData);
     }
 
+    public function testAFrameOfTheOwnSetGoesToAnAdminAsItIs(): void
+    {
+        Hilos::$browser = new IdentityTestBrowser(userId: 7, admin: true);
+        $frame = self::frame();
+
+        $this->assertSame($frame, PageViewerTestPage::frameFor('ak-1', $frame));
+    }
+
+    public function testAFrameOfTheOwnSetGoesToAViewerHidden(): void
+    {
+        Hilos::initBrowser(new PageViewerTestBrowser(viewer: true));
+
+        $sent = PageViewerTestPage::frameFor('ak-1', self::frame());
+
+        $this->assertInstanceOf(SignalData::class, $sent);
+        $this->assertSame(['declared' => 'shown', 'undeclared' => HiddenValue::mark()], $sent->toArray());
+    }
+
+    public function testAFrameOfTheOwnSetIsNotSentToAConnectionTheGateRefuses(): void
+    {
+        Hilos::$browser = new IdentityTestBrowser(userId: 5, admin: false);
+        $this->assertNull(PageViewerTestPage::frameFor('ak-1', self::frame()));
+
+        Hilos::$browser = new IdentityTestBrowser(userId: null, admin: false);
+        $this->assertNull(PageViewerTestPage::frameFor('ak-1', self::frame()));
+    }
+
+    public function testAFrameOfTheOwnSetIsNotSentWhenTheGateCannotDecide(): void
+    {
+        Hilos::$browser = new PageViewerTestFailingBrowser();
+
+        $this->assertNull(PageViewerTestPage::frameFor('ak-1', self::frame()));
+        $journal = (string)file_get_contents($this->logFile);
+        $this->assertStringContainsString(
+            'ERROR: Admin view mode: whether ak-1 may receive a frame of ' . PageViewerTestPage::class
+                . ' could not be decided (The person table could not be read), so the frame is not sent.',
+            $journal,
+        );
+    }
+
     /**
      * Subscribes the page and returns the payload of the answer it queued.
      *
@@ -118,6 +176,14 @@ final class AbstractPageAdminViewModeTest extends TestCase
         $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
 
         return $signal->data->data->toArray()[PageResponseSignalData::payload];
+    }
+
+    /**
+     * @return SignalData A frame of the page's own set, with a field it declares and one it does not
+     */
+    private static function frame(): SignalData
+    {
+        return new SignalData(['declared' => 'shown', 'undeclared' => 'secret']);
     }
 
     /**
@@ -171,6 +237,18 @@ final class PageViewerTestPage extends AbstractPage
     {
         return ['declared' => WireField::notPersonal()];
     }
+
+    /**
+     * Opens the frame of the page's own subscriber set to the test, with the page's declaration.
+     *
+     * @param string $acceptKey Connection the frame goes to
+     * @param SignalDataInterface $frame Frame as an admin receives it
+     * @return ?SignalDataInterface What the connection is sent, or null for nothing
+     */
+    public static function frameFor(string $acceptKey, SignalDataInterface $frame): ?SignalDataInterface
+    {
+        return static::frameForViewer($acceptKey, $frame, ['declared' => WireField::notPersonal()]);
+    }
 }
 
 final class PageViewerTestDashboardPage extends AbstractHilosDashboardPage
@@ -199,6 +277,27 @@ final class PageViewerTestBrowser extends BrowserContext
     public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
     {
         return $this->viewer;
+    }
+}
+
+/**
+ * A browser context whose connection is a signed-in person whose admin flag cannot be read.
+ */
+final class PageViewerTestFailingBrowser extends IdentityTestBrowser
+{
+    public function __construct()
+    {
+        parent::__construct(userId: 5, admin: true);
+    }
+
+    /**
+     * @param int $userId Authenticated durable user id (unused)
+     * @return bool Never returns
+     * @throws DatabaseException Always
+     */
+    public function isAdmin(int $userId): bool
+    {
+        throw new DatabaseException('The person table could not be read');
     }
 }
 

@@ -271,10 +271,15 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::refreshOverview();
         self::$lastOverviewFingerprint = self::overviewFingerprint();
 
+        $frame = static::frameForViewer($acceptKey, self::buildLogsOverviewSignalData(), HilosLogsOverviewSignalData::wireFields());
+        if ($frame === null) {
+            return;
+        }
+
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS,
             $acceptKey,
-            static::frameForViewer($acceptKey, self::buildLogsOverviewSignalData(), HilosLogsOverviewSignalData::wireFields()),
+            $frame,
         );
     }
 
@@ -835,12 +840,17 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         string $acceptKey,
         HilosLogsOverviewSignalData $data,
     ): void {
+        $frame = static::frameForViewer($acceptKey, $data, HilosLogsOverviewSignalData::wireFields());
+        if ($frame === null) {
+            return;
+        }
+
         Hilos::$sr->queueSignal(
             signalSource: $agent->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS),
             signalData: new WebSocketSignalData(
-                data: static::frameForViewer($acceptKey, $data, HilosLogsOverviewSignalData::wireFields()),
+                data: $frame,
                 targetAcceptKey: $acceptKey,
             ),
         );

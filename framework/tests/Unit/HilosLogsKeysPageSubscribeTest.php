@@ -6,7 +6,6 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
@@ -23,6 +22,7 @@ use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
 use Hilos\Pages\Logs\DTO\HilosLogsKeysSignalData;
 use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -60,6 +60,8 @@ final class HilosLogsKeysPageSubscribeTest extends TestCase
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
         // base creates no browser context, so this clears the browser in the same call.
         Hilos::initBrowser();
+        // A frame of an admin page leaves only for a connection that proves an admin (HIL-1251).
+        Hilos::$browser = new IdentityTestBrowser(userId: 1, admin: true);
 
         $this->emptyTheMirror();
         $this->growTheClusterPicture();
@@ -291,7 +293,7 @@ final class HilosLogsKeysPageSubscribeTest extends TestCase
      */
     private function mountBrowser(): LogsKeysPageSubscribeTestBrowser
     {
-        $browser = new LogsKeysPageSubscribeTestBrowser();
+        $browser = new LogsKeysPageSubscribeTestBrowser(userId: 1, admin: true);
         Hilos::$browser = $browser;
 
         return $browser;
@@ -377,7 +379,7 @@ final class LogsKeysPageSubscribeTestPage extends AbstractHilosLogsKeysPage
 /**
  * Browser context fixture recording the window deliveries the tick asked for.
  */
-final class LogsKeysPageSubscribeTestBrowser extends BrowserContext
+final class LogsKeysPageSubscribeTestBrowser extends IdentityTestBrowser
 {
     /** @var list<string> Table keys whose window delivery was reached */
     public array $windows = [];

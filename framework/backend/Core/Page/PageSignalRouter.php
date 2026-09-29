@@ -31,6 +31,7 @@ use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
+use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
@@ -64,6 +65,7 @@ use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -972,6 +974,7 @@ class PageSignalRouter
      * @param ?string $requestId Client-minted request id, or null for an untracked action
      * @throws ActionForbiddenException When the page's ADMIN level denies the acting user
      * @throws ActionUnauthorizedException When the page or the action requires a session the caller has not got
+     * @throws ActionViewModeException When a viewer of the admin view mode asks for an action the page did not declare reading
      * @throws FramePopOrderException When the handler leaves the execution frame stack imbalanced
      * @throws Throwable Whatever the action handler raises
      */
@@ -983,7 +986,7 @@ class PageSignalRouter
         ?string $requestId,
     ): void {
         if ($host instanceof AbstractPage) {
-            $this->assertPageAccessLevel($host, $acceptKey);
+            $this->assertPageAccessLevel($host, $acceptKey, $action);
         }
         $this->assertActionAuthorized($host, $action, $acceptKey);
         $host->beginActionDispatch($requestId);
@@ -1040,31 +1043,42 @@ class PageSignalRouter
         ?string $requestId,
         Throwable $e,
     ): void {
-        // The client is told an action failed, never why: the frontend shows a
-        // generic message and deliberately does not surface the backend reason.
-        // Without this log the failure exists nowhere on the server either, so
-        // a broken action is undiagnosable from the outside.
-        Logger::error(
-            "Action failed: host={$host->actionHostName()}, action={$action}, "
-                . 'exception=' . $e::class . ', message=' . $e->getMessage(),
-            [
-                ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
-                ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
-                ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
-            ],
-        );
+        if ($e instanceof ActionViewModeException) {
+            // A verdict, not a failure: nothing broke, a viewer pressed a button the mode
+            // closes. The overview of the logs collects ERROR lines - and a viewer is looking
+            // at exactly that page - so one line of INFO, with no trace to read.
+            Logger::info(
+                "Action refused in the admin view mode: host={$host->actionHostName()}, action={$action}, acceptKey={$acceptKey}",
+            );
+        } else {
+            // The client is told an action failed, never why: the frontend shows a
+            // generic message and deliberately does not surface the backend reason.
+            // Without this log the failure exists nowhere on the server either, so
+            // a broken action is undiagnosable from the outside.
+            Logger::error(
+                "Action failed: host={$host->actionHostName()}, action={$action}, "
+                    . 'exception=' . $e::class . ', message=' . $e->getMessage(),
+                [
+                    ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+                    ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+                    ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
+                ],
+            );
+        }
 
         if ($requestId !== null) {
-            // An admin page proved the acting user's privilege before the handler ran
-            // (assertPageAccessLevel above), so the failure's own text may go back to them
-            // and to nobody else. An agent host proves nothing of the kind: the level guard
-            // judges a subscription to a page, and an agent has no page to be asked about.
+            // The failure's own text goes back only to a connection that proves an admin on
+            // this page now, at the moment of the answer: not to anyone on an ADMIN page - a
+            // viewer of the admin view mode is on one, and so is a non-admin whose action the
+            // gate refused - and not by a verdict remembered from the start of the action, since
+            // a payload can fail before the gate ever ran. An agent host proves nothing of the
+            // kind: the gate judges a page, and an agent has no page to be asked about.
             $host->sendActionFailure(
                 $acceptKey,
                 $action,
                 $requestId,
                 $e,
-                $host instanceof AbstractPage && $host::ACCESS_LEVEL === PageAccessLevel::ADMIN,
+                $host instanceof AbstractPage && PageAccessGate::provesAdmin($host::class, $acceptKey),
             );
             return;
         }
@@ -2017,21 +2031,27 @@ class PageSignalRouter
     /**
      * Enforces the page's declared ACCESS_LEVEL before an action handler runs.
      *
-     * The same rule the subscription gate applies ({@see PageAccessGate}),
-     * converted to the action-dispatch exception family: a guest on an
-     * AUTHENTICATED/ADMIN page is denied 401 (the frontend opens the sign-in
-     * modal), an authenticated non-admin on an ADMIN page is denied 403 — a
-     * sign-in modal is useless to a user who is already signed in.
+     * The same rule the subscription gate applies ({@see PageAccessGate::assertAction}),
+     * converted to the action-dispatch exception family, with three ways to be refused: a
+     * guest on an AUTHENTICATED/ADMIN page is denied 401 (the frontend opens the sign-in
+     * modal), an authenticated non-admin on an ADMIN page is denied 403 — a sign-in modal
+     * is useless to a user who is already signed in — and, with the admin view mode on, a
+     * viewer of an ADMIN page is refused every action the page did not declare reading, with
+     * the view mode as the reason. The view-mode refusal leaves as the gate raised it: it is
+     * already of the action family.
      *
      * @param AbstractPage $page Resolved page handler
      * @param string $acceptKey Acting connection accept key
+     * @param string $action Name of the action about to run
      * @throws ActionUnauthorizedException When the level requires a user and the acting session is anonymous
      * @throws ActionForbiddenException When the level is ADMIN and the acting user lacks the admin privilege
+     * @throws ActionViewModeException When a viewer of the admin view mode asks for an action the page did not declare reading
+     * @throws HilosException When the administrator lookup fails with the admin view mode off
      */
-    private function assertPageAccessLevel(AbstractPage $page, string $acceptKey): void
+    private function assertPageAccessLevel(AbstractPage $page, string $acceptKey, string $action): void
     {
         try {
-            PageAccessGate::assert($page::class, $acceptKey);
+            PageAccessGate::assertAction($page::class, $acceptKey, $action);
         } catch (PageUnauthorizedException $e) {
             throw new ActionUnauthorizedException(previous: $e);
         } catch (PageForbiddenException $e) {

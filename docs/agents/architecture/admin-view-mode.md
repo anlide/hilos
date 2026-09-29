@@ -15,15 +15,15 @@ Its Code*). The leaves introduce their own names — the verdict, the wire form,
 the words on the screen; this page states each requirement and the key of the
 leaf, never the name. The names HIL-1249 introduced — the variable, the latch
 file and table, the node's runtime row and the lever — are in the code now and
-are named below.
+are named below, and so are those of HIL-1250 (the bridge) and HIL-1251 (the
+verdict, the refusal, the reading actions, the text of a failure).
 
 ## Core Rule
 
 The switch is the framework's, not a demo's: every project that mounts the
 admin section gets the mode, and a demo only turns it on. With the mode on,
 every viewer opens every `ADMIN` page — framework-owned and project-owned
-alike — sees everything that is not personal, and changes nothing
-(not in the code yet — HIL-1251). The
+alike — sees everything that is not personal, and changes nothing. The
 server decides and the screen only follows: a button that cannot be clicked
 is a courtesy, the server's refusal is the rule.
 
@@ -37,8 +37,8 @@ alike. The word is *viewer* and not *guest*, because a guest in Hilos is the
 session without an account, one case of a viewer rather than another name for
 one. An admin is never a viewer, and the line between the two moves live:
 granting the rights turns a viewer's open pages into the full admin surface,
-and taking them away turns the pages back into the view
-(not in the code yet — HIL-1251), the browser following in the same movement
+and taking them away turns the pages back into the view,
+the browser following in the same movement
 (not in the code yet — HIL-1253) — by the same re-decision that re-sends an
 open page when rights change today
 ([page-access-control.md](page-access-control.md), *Re-deciding an OPEN page
@@ -135,35 +135,60 @@ change the body of that question, not the mode around it.
 
 ## The View Verdict
 
-- `PageAccessGate` stays the single carrier of the rule and gains a third
-  answer beside *allow* and *refuse*: *view* (not in the code yet — HIL-1251).
-  The condition is three facts together: an `ADMIN` page, the mode on, a
-  connection that did not prove an admin. The verdict's API and value are
-  HIL-1251's.
-- The subscription and its update are let through; every delivery — the
-  reactive fan-out and the table windows — goes, and live updates reach a
-  viewer as they reach an admin (not in the code yet — HIL-1251). Everything
-  that leaves for a viewer passes the bridge (*Personal Fields On The Wire*
-  below).
+- `PageAccessGate` stays the single carrier of the rule and has three answers.
+  `PageAccessGate::verdict()` returns `PageAccessVerdict::ALLOW` — look and
+  act — or `PageAccessVerdict::VIEW` — look only; a refusal stays what it was,
+  `PageUnauthorizedException` (401) or `PageForbiddenException` (403). *View*
+  is three facts together: an `ADMIN` page, the mode on, a connection that did
+  not prove an admin — the one question `BrowserContext::isAdminViewModeViewer()`
+  asks. The order: a `PUBLIC` page allows; a viewer views; an anonymous
+  session is refused 401; a non-admin on an `ADMIN` page 403; anything else
+  allows. With the mode on a failed admin lookup views; with it off it throws
+  as it always has.
+- Two questions are asked of it. *May the connection look* —
+  `PageAccessGate::assert()`, where *view* passes: the subscription and its
+  update are let through, every delivery goes — the reactive fan-out and the
+  table windows — and live updates reach a viewer as they reach an admin.
+  Everything that leaves for a viewer passes the bridge (*Personal Fields On
+  The Wire* below). *May it act* — `PageAccessGate::assertAction()`, below.
 - A table's frames — the window (scroll, sort, search, page), the facets, the
   mark of rendered fields, the row focus under an open form — are looking, not
   acting: they change only the state of the connection's own window, and they
   travel as frames of their own, not as actions.
-- A page action is refused with the view mode as the reason, except the ones
-  declared as reading (not in the code yet — HIL-1251); the refusal's code and
-  reason are HIL-1251's.
+- A page action is refused to a viewer, except the ones the page declared
+  reading (*Reading Actions* below): `ActionViewModeException`, code
+  `view_mode`, HTTP 403, and the impersonal reason
+  (`SignalConstants::ACTION_FAILED_REASON`) — never the exception's text; the
+  sentence on the screen is the frontend's (HIL-1261). The code is its own and
+  not `forbidden`, so a viewer without an account is not answered with the
+  sign-in modal. The refusal is a verdict, not a failure: one INFO line in the
+  journal and no trace, because the overview of the logs collects ERROR lines
+  and a viewer is looking at exactly that page.
 - A refused action writes nothing — not to the database, not to RT: the page's
   refusal handler records no state. The case the rule is written from is the
   Guardian page of the chat demo.
-- The error's text — the exception's class and message — goes to whoever
-  proved an admin, not to anyone on an `ADMIN` page; today the page's level
-  decides it (not in the code yet — HIL-1251). A project page does not put
-  `getMessage()` into a frame by itself — its text follows the same rule
-  (not in the code yet — HIL-1251).
-- A project's admin page — closed by the `ADMIN` level or by an `ACCESS` guard
-  on the admin flag — gets the mode the way a framework page does
-  (not in the code yet — HIL-1251); how the guard lets a viewer through is
-  HIL-1251's.
+- The error's text — the exception's class and message — goes to a connection
+  that proves an admin on the page at the moment of the answer
+  (`PageAccessGate::provesAdmin()`: an `ADMIN` page whose verdict for this
+  connection is *allow*), not to anyone on an `ADMIN` page: not to a viewer,
+  and — with the mode off too — not to a non-admin whose action the gate
+  refused. The dispatcher's tracked answer and the answer to a write handed
+  over to the row's owner (`HandoverGatekeeperTrait`) ask it alike. A page
+  that answers a failure with a frame of its own puts
+  `AbstractPage::failureText()` into it — the message for the one who proves
+  an admin, the impersonal sentence for everyone else — never `getMessage()`.
+- The mode opens a page by its level: every `ADMIN` page — framework-owned and
+  project-owned alike — is in it. A page's `ACCESS` guard is judged after the
+  level, as always, and does not let a viewer through, so a page closed by a
+  guard alone stays closed to one. An admin page is therefore closed by the
+  `ADMIN` level, not by a guard on the admin flag: the chat demo's user table,
+  the one page that had such a guard, dropped it and keeps the level alone.
+- Taking the rights away or giving them back switches an open page by the
+  re-decision that already re-sends it
+  ([page-access-control.md](page-access-control.md), *Re-deciding an OPEN
+  page when rights change*): with the mode on, the page of a person whose
+  rights were taken is answered with the view instead of the 403, and the page
+  of a person given them with the full page.
 - The freeze ([protected-mode.md](protected-mode.md)) closes a viewer as it
   closes everyone; that does not change.
 
@@ -171,8 +196,12 @@ change the body of that question, not the mode around it.
 
 A reading action writes nothing and sends nothing to anyone — no database, no
 RT, no file, no message to the outside. The page that holds the action declares
-it reading; the form of the declaration is HIL-1251's
-(not in the code yet — HIL-1251). Today there are three: `LOGS_READ_LINES`
+it reading in `AbstractPage::READING_ACTIONS`, a list of its own action names:
+a viewer runs those (`PageAccessGate::assertAction()`) and is refused the rest.
+The start refuses a name the page does not own through `ACTIONS` and a list on
+a page that is not `ADMIN` (`TopologyValidator`), because either is silent at
+run time — a typo quietly closes an action, or reads as opening one that no
+viewer will ever reach. Today there are three: `LOGS_READ_LINES`
 (`logs_read_lines`), `LOGS_FOLLOW_START` (`logs_follow_start`) and
 `LOGS_FOLLOW_STOP` (`logs_follow_stop`); the logs leaf declares them together
 with hiding the text of the lines (not in the code yet — HIL-1257).
@@ -245,10 +274,15 @@ nobody is asked*).
     other sections (entities, lists, tables) are hidden whole.
   - The frames of pages with a subscriber set of their own (the logs pages,
     the setting presets, the Legal acceptances): `AbstractPage::frameForViewer()`
-    on every send, by the frame DTO's static `wireFields()`. A viewer's frame
-    goes out untyped (`SignalData`) under the same signal name: a typed frame
-    is rebuilt on the master by its own `fromArray()`, and a typed reader takes
-    the mark for a malformed value.
+    on every send, by the frame DTO's static `wireFields()`. Such a frame goes
+    past the delivery guards, so it asks the gate's verdict for the connection
+    itself, every time: a connection the gate refuses is sent nothing and stays
+    in the set — promoted live the moment the gate lets it through — and that
+    holds with the mode off too, so an admin whose rights were taken stops
+    receiving the frames; a viewer is sent the hidden frame, an admin the frame
+    as it is. A viewer's frame goes out untyped (`SignalData`) under the same
+    signal name: a typed frame is rebuilt on the master by its own
+    `fromArray()`, and a typed reader takes the mark for a malformed value.
 - The window of a viewer is not sorted or searched by a field hidden from
   them: the places a window reports carry the values of its sort fields, and
   a search over a hidden field says, row by row, whether the hidden value
@@ -342,7 +376,7 @@ declared reading.
 
 Five things — to be useful to a viewer:
 
-1. Declare its reading actions (not in the code yet — HIL-1251).
+1. Declare its reading actions (`AbstractPage::READING_ACTIONS`).
 2. Declare the not-personal fields of its rows and frames — by the verdict of
    the column or by a declaration on the field: `TableDefinition::wireFields()`
    for a typed table's row, the `notPersonal` key for a declarative row's RT
@@ -352,8 +386,8 @@ Five things — to be useful to a viewer:
    the viewer's sake.
 3. Build every mutation out of the controls of the mode
    (not in the code yet — HIL-1261).
-4. Put no exception text into a frame by itself
-   (not in the code yet — HIL-1251).
+4. Put no exception text into a frame by itself: a frame of its own carries
+   `AbstractPage::failureText()`.
 5. Send its frames by the page's path, never past the bridge: a frame sent to
    the page's own subscriber set goes through `AbstractPage::frameForViewer()`
    for every connection.
@@ -398,9 +432,9 @@ laid out across the three frontends is HIL-1273's
 - Sending a frame of an admin page through `sendToUser` past the bridge.
 - Asking whether the mode is on by reading the variable on the page.
 - Putting `getMessage()` into a frame.
-- Naming here what a neighbouring leaf introduces — the verdict's value, the
-  wire form of the hidden mark, the words on the screen. This page states the
-  rule; the leaf states the name.
+- Naming here what a neighbouring leaf has yet to introduce — the carrier of
+  the mode in the browser, the words on the screen. This page states the rule;
+  the leaf states the name.
 
 ## Related
 

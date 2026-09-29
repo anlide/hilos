@@ -75,8 +75,9 @@ trait HandoverGatekeeperTrait
      *
      * The sentence is set immediately before the success, because that is the slot the success
      * reads, and handling a signal is not an action dispatch that would have filled it. A refusal
-     * carries the class and text of a failure the reason stands in for only when this page is an
-     * admin one - the same gate a failure raised inside the page's own handler passes.
+     * carries the class and text of a failure the reason stands in for only when the connection it
+     * goes to proves an admin on this page at the moment of the answer - the same gate a failure
+     * raised inside the page's own handler passes.
      *
      * @param HandoverAnswerSignalData $done Whom to answer, on which action, and why it was refused
      * @throws InvalidArgumentException When the ack cannot be named
@@ -98,7 +99,7 @@ trait HandoverGatekeeperTrait
             return;
         }
 
-        $detailAllowed = $this->detailAllowed();
+        $detailAllowed = $this->detailAllowed($done->acceptKey);
         $this->sendActionFail(
             $done->acceptKey,
             $done->action,
@@ -110,15 +111,18 @@ trait HandoverGatekeeperTrait
     }
 
     /**
-     * Tells whether this gatekeeper proved its caller to be an administrator.
+     * Tells whether the connection the answer goes to proves an administrator on this page now.
      *
-     * Read off the page's own level rather than off a list of today's gatekeepers, so a page of
-     * any other level sends the refusal byte for byte as it did before the detail existed.
+     * Asked of the actor at the moment of the answer, not of the page's level: a viewer of the
+     * admin view mode stands on an ADMIN page too, and the rights may have changed while the writer
+     * worked. A page of any other level sends the refusal byte for byte as it did before the detail
+     * existed.
      *
+     * @param string $acceptKey Connection the answer goes to
      * @return bool Whether a refusal may carry the failure's class and text
      */
-    private function detailAllowed(): bool
+    private function detailAllowed(string $acceptKey): bool
     {
-        return static::ACCESS_LEVEL === PageAccessLevel::ADMIN;
+        return PageAccessGate::provesAdmin(static::class, $acceptKey);
     }
 }

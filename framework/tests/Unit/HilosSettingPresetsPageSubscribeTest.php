@@ -25,6 +25,7 @@ use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogSettingsPresets;
 use Hilos\Pages\DTO\HilosSettingPresetsSignalData;
 use Hilos\Pages\Logs\AbstractHilosLogsSettingsPage;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -62,6 +63,8 @@ final class HilosSettingPresetsPageSubscribeTest extends TestCase
 
         Hilos::$sr = new SignalRouter();
         Hilos::initBrowser();
+        // A frame of an admin page leaves only for a connection that proves an admin (HIL-1251).
+        Hilos::$browser = new IdentityTestBrowser(userId: 1, admin: true);
     }
 
     protected function tearDown(): void

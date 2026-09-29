@@ -184,7 +184,8 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * Sends a failed rename through the card's modal ack contract.
      *
      * A rename that failed on this page - its payload did not parse, or a guard refused it - is
-     * answered with the fail ack the card listens for; every other action with the default.
+     * answered with the fail ack the card listens for; every other action with the default. The
+     * ack carries the failure's own text only for a connection that proves an admin now.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name that failed
@@ -198,7 +199,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
             $this->sendToUser(
                 HilosSignalConstants::HILOS_USER_UPDATE_FAIL,
                 $acceptKey,
-                new HilosUserUpdateFailSignalData($e->getMessage()),
+                new HilosUserUpdateFailSignalData($this->failureText($acceptKey, $e)),
             );
 
             return;

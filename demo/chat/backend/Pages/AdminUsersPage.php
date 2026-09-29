@@ -7,11 +7,9 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
-use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Hilos\Database\Object\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;
@@ -19,8 +17,6 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserGuardKey;
-use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -58,12 +54,16 @@ final class AdminUsersPage extends AbstractPage
      * The page is an admin surface, and says so at the level rather than only at the door
      * it subscribes through (HIL-824).
      *
-     * The browser guard below reads the admin flag and closes the SUBSCRIPTION, which is
-     * everything a project page needed while its actions were nothing anyone could ask for
-     * out of turn. Action routing needs no subscription - the client sends the name and
+     * A browser guard on the admin flag once closed the SUBSCRIPTION, which is everything a
+     * project page needed while its actions were nothing anyone could ask for out of turn.
+     * Action routing needs no subscription - the client sends the name and
      * {@see PageSignalRouter::resolveActionHost()} reads a static map - so a project page
      * left at the inherited PUBLIC has its actions closed by nothing at all. The rename this
      * page owns was in exactly that state until the level was written here.
+     *
+     * The level is now the page's only lock: the guard went with HIL-1251, because the admin
+     * view mode opens a page by its level, and a guard - judged after the level - would keep a
+     * viewer out of a page every framework admin section lets them look at.
      */
     public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
 
@@ -89,13 +89,6 @@ final class AdminUsersPage extends AbstractPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
-        BrowserConfigKey::GUARDS => [
-            [
-                BrowserGuardKey::TYPE => BrowserGuardType::ACCESS,
-                BrowserGuardKey::SOURCE => ChatBrowserSource::DB_USERS,
-                BrowserGuardKey::FIELD => User::admin,
-            ],
-        ],
     ];
 
     /**
@@ -131,17 +124,21 @@ final class AdminUsersPage extends AbstractPage
     /**
      * Sends admin users table action failures to the initiating client.
      *
+     * The failure's own text only to a connection that proves an admin now; a viewer of the admin
+     * view mode and anyone else get the impersonal sentence.
+     *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name that failed
      * @param ActionPayloadDTO $dto Action payload
      * @param Throwable $e Action failure
+     * @throws InvalidArgumentException When the table-action error frame cannot be named
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
         $this->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
-            new TableActionErrorSignalData(ChatTableContext::adminUsers, $action, $e->getMessage()),
+            new TableActionErrorSignalData(ChatTableContext::adminUsers, $action, $this->failureText($acceptKey, $e)),
         );
     }
 

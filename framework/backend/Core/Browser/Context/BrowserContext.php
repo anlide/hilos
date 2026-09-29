@@ -5648,7 +5648,9 @@ abstract class BrowserContext
      * page's declared ACCESS_LEVEL comes second ({@see PageAccessGate}): checking it
      * here — not only at subscribe time — is what starves a kept-alive denied
      * subscription of fan-out and table-window data, because most framework admin
-     * pages declare no browser guards at all. The page's own browser guards run last.
+     * pages declare no browser guards at all. The level lets a viewer of the admin view
+     * mode through, and what leaves for them is hidden by the bridge, not refused here.
+     * The page's own browser guards run last.
      *
      * @param string $page Page name the config belongs to
      * @param BrowserPageConfig $pageConfig Browser page config
@@ -5987,8 +5989,8 @@ abstract class BrowserContext
      * pulled on a living node is what the very next frame goes by. A failed admin lookup answers yes -
      * the bridge closes rather than opens - and says so in the journal.
      *
-     * Not final for one reason: a test double answers yes to see the viewer's frames before the gate
-     * lets a viewer in (HIL-1251). Who is an admin is a project's to decide through isAdmin(), not here.
+     * Not final: a test double answers yes to see the viewer's frames without a project's identity.
+     * Who is an admin is a project's to decide through isAdmin(), not here.
      *
      * @param class-string<AbstractPage> $pageClass Class of the page the frame belongs to
      * @param string $acceptKey Connection the frame goes to

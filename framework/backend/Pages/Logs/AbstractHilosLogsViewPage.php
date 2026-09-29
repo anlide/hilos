@@ -245,10 +245,15 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
+        $frame = static::frameForViewer($acceptKey, self::buildCatalog(), HilosLogsViewCatalogSignalData::wireFields());
+        if ($frame === null) {
+            return;
+        }
+
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW,
             $acceptKey,
-            static::frameForViewer($acceptKey, self::buildCatalog(), HilosLogsViewCatalogSignalData::wireFields()),
+            $frame,
         );
     }
 
@@ -291,12 +296,17 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
         string $acceptKey,
         HilosLogsViewCatalogSignalData $catalog,
     ): void {
+        $frame = static::frameForViewer($acceptKey, $catalog, HilosLogsViewCatalogSignalData::wireFields());
+        if ($frame === null) {
+            return;
+        }
+
         Hilos::$sr?->queueSignal(
             signalSource: $agent->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW),
             signalData: new WebSocketSignalData(
-                data: static::frameForViewer($acceptKey, $catalog, HilosLogsViewCatalogSignalData::wireFields()),
+                data: $frame,
                 targetAcceptKey: $acceptKey,
             ),
         );
