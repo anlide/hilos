@@ -43,8 +43,9 @@ additions, not a copy of the table under a project name.
 
 No project extends the person today. The chat demo's subclass, the one that kept
 `merged_into` on it, left when the merge table took that fact over (HIL-1199); the
-first project chain over a people table is the chat demo's on the rename journal
-(not in the code yet — HIL-1196).
+first project chain over a people table is the chat demo's on the rename journal,
+`demo/chat/backend/Database/Entity/Item/UserRename.php` and its column `event_id`
+(HIL-1196).
 
 ## Who Owns The Row
 
@@ -115,7 +116,9 @@ project's. The journal is born with its foreign keys onto `hilos_user`.
 
 A project that needs something of its own on a rename row extends the journal by
 [../orm/inheritance.md](../orm/inheritance.md); the chat demo's link from a
-rename to the row of its feed is the first case (not in the code yet — HIL-1196).
+rename to the event of its feed is the first case: the column `event_id`, which
+its `afterUserRenamed()` writes through the journal row's item actions — empty in
+the framework and left for exactly this (HIL-1196).
 
 ## A Merged Account
 

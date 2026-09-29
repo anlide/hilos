@@ -49,8 +49,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 final class ChatAgent extends AbstractAgent
 {
     /**
-     * The room and everything written into it: the events, their messages, who joined, who was
-     * renamed, and what was attached.
+     * The room and everything written into it: the events, their messages, who joined, and what
+     * was attached - and the links of the rename journal to the room's events, which clearing
+     * the room's history takes off.
      *
      * The session set is not among them, nor are the two runtime lists of the browsers parked on
      * a confirmation code: they belong to {@see SessionsLibraryAgent}, which claims them in its
@@ -62,7 +63,9 @@ final class ChatAgent extends AbstractAgent
         ChatDbContext::events => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventMessages => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventUserRegistrations => TruthSourceOperation::BY_KIND,
-        ChatDbContext::eventUserRenames => TruthSourceOperation::BY_KIND,
+        // TODO(HIL-630): borrowed claim - the users library owns the rename journal; clearing the
+        // room's history takes the renames off the events it deletes (HIL-1196).
+        ChatDbContext::userRenames => [TruthSourceOperation::Update],
         ChatDbContext::eventAttachments => TruthSourceOperation::BY_KIND,
         ChatDbContext::users => TruthSourceOperation::BY_KIND,
     ];

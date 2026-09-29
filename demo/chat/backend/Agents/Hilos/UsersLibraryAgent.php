@@ -20,9 +20,6 @@ use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Constants\HilosAgentType;
-use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Action\ActionRefusal;
-use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -41,12 +38,11 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\DatabaseException;
+use Hilos\Database\Database;
+use Hilos\Database\View\Item\UserRename;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
-use Hilos\Users\DTO\AdminRenameSignalData;
-use Hilos\WiringRefusal;
 use Random\RandomException;
 
 /**
@@ -57,10 +53,11 @@ use Random\RandomException;
  * the handful of answers only this project can give: what else happens when an account is born,
  * which methods an identifier may be offered, and the provider wiring a social login runs on.
  *
- * Beside them it holds the one profile submit that is the chat's own - the rename and its whole
- * moderation round trip (HIL-771). It was an action of {@see ProfilePage} until a page turned out
- * to carry no claim: a page runs in whatever worker serves the connection, and the account tables
- * are owned here. The profile's ways in and the email change came here the same way and went on
+ * Beside them it holds the one profile submit that is the chat's own - the moderation round trip
+ * of a person's rename of themselves (HIL-771); the rename itself, an administrator's included,
+ * is the framework's, and chat only writes it into the room's feed (HIL-1196). It was an action of
+ * {@see ProfilePage} until a page turned out to carry no claim: a page runs in whatever worker
+ * serves the connection, and the account tables are owned here. The profile's ways in and the email change came here the same way and went on
  * to the framework's library (HIL-1137), which every project declaring the sign-in feature
  * inherits; what is left on the profile page is what does not write: reading the person, and
  * starting a provider link, which the framework's profile page hosts.
@@ -80,8 +77,9 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * that owns the room: a claim registered by the chat agent covers the chat agent's worker and
      * nothing else, so without this the "registered in chat" line would be refused as a write with
      * no truth source behind it. The same second claim the admin index agent makes on these
-     * tables, and for the same reason. The rename's log line lands in the same pair, so
-     * `eventUserRenames` joins them (HIL-771).
+     * tables, and for the same reason. The rename's feed line lands in the same table, written
+     * here by {@see afterUserRenamed()}; the journal row it links is the framework library's
+     * claim (HIL-1196).
      *
      * The two claims never reach the cluster's arbiter as a clash, because both agents are placed
      * the same way - neither names a placement, so both are the leader's, and a second claim from
@@ -92,7 +90,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     public const array OWNS_DB = [
         ChatDbContext::events => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventUserRegistrations => TruthSourceOperation::BY_KIND,
-        ChatDbContext::eventUserRenames => TruthSourceOperation::BY_KIND,
     ];
 
     /**
@@ -137,25 +134,19 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     ];
 
     /**
-     * The moderator's verdict on a requested display name, and the admin rename two pages forward.
+     * The moderator's verdict on a requested display name.
      *
      * The verdict is the far end of a person's own rename: this library asks, the moderator
      * answers here, and this library applies the name. The round trip is one agent's business
      * end to end (HIL-771) - splitting it left the ask on an agent and the answer on a page, and
      * the page could not write the row the answer decides.
      *
-     * The admin rename below arrives from the opposite direction, and it is a frame rather than
-     * an action for the opposite reason: an administrator renaming somebody else is closed by a
-     * page's ADMIN level, which an agent action has no equivalent of, so the submits STAYED on
-     * their pages and only the write came here. Two pages forward it - the admin users table and
-     * the Hilos user-detail page, each served by a different agent - under one name, and each
-     * names in the ask the answer addressed to its own page (HIL-1001), so this library holds no
-     * map of which page asked.
+     * The admin rename the two pages forward is the framework library's frame, and the framework
+     * handles it (HIL-1195); chat adds nothing to it but the feed line its hook writes (HIL-1196).
      */
     public const array AGENT_SIGNALS = [
         ...parent::AGENT_SIGNALS,
         ChatSignalConstants::RENAME_MODERATION_RESULT => RenameModerationResultSignalData::class,
-        HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
     ];
 
     /**
@@ -201,21 +192,12 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * @throws AgentUnknownSignalException When the name is not one this library declared
      * @throws LogicException When the verdict payload is not the one its name promises
      * @throws AgentException When the verdict does not match a rename this connection is running
-     * @throws ValidationException When a framework frame this library takes carries the wrong payload
+     * @throws ValidationException When the approved name is refused, or a framework frame carries the wrong payload
      * @throws InvalidArgumentException When a frame the handler sends cannot be named or queued
-     * @throws HilosException When the account read, the rename or the log line fails
+     * @throws HilosException When the account read or the rename fails
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name === HilosSignalConstants::HILOS_USER_ADMIN_RENAME) {
-            if (!$data->data instanceof AdminRenameSignalData) {
-                throw new LogicException($name . ' payload must be ' . AdminRenameSignalData::class);
-            }
-            $this->applyAdminRename($data->data);
-
-            return;
-        }
-
         if ($name !== ChatSignalConstants::RENAME_MODERATION_RESULT) {
             parent::onSignalAgent($data, $sender, $name);
 
@@ -233,74 +215,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     }
 
     /**
-     * Renames one account for an administrator and logs it in the room (HIL-771).
-     *
-     * The body of both admin renames, whole, from the two pages that used to run it: the
-     * account row, then the room's log line naming the administrator behind it. What changed is
-     * only WHERE it runs - here, where the account set is owned, instead of in whichever worker
-     * served the admin's socket. There is no moderation on this path and there never was: an
-     * administrator's word about somebody else's name is the decision.
-     *
-     * Both refusals keep the sentences the pages sent, because they are what an admin reads. A
-     * missing person and a name the row refuses are answers, not exceptions: the ask arrived as
-     * a frame, and a throw here would leave the modal waiting forever.
-     *
-     * @param AdminRenameSignalData $rename Whom to rename, to what, who is waiting and under which name
-     * @throws InvalidArgumentException When the answer cannot be named or queued
-     */
-    protected function applyAdminRename(AdminRenameSignalData $rename): void
-    {
-        $this->sendToAgent($rename->replySignal, HandoverAnswerSignalData::to($rename, $this->renameForAdmin($rename)));
-    }
-
-    /**
-     * Writes the rename and its log line, or says why neither happened.
-     *
-     * @param AdminRenameSignalData $rename Whom to rename, to what, and on whose word
-     * @return ?ActionRefusal Why the account was not renamed, or null when it was
-     */
-    private function renameForAdmin(AdminRenameSignalData $rename): ?ActionRefusal
-    {
-        try {
-            $user = Hilos::$db->users[$rename->userId];
-            if ($user === null) {
-                return ActionRefusal::said("User #{$rename->userId} not found");
-            }
-
-            $oldName = $user->name;
-            $user->actions->rename($rename->name);
-            Hilos::$db->events->actions->addUserRenamedByAdmin(
-                userId: $rename->userId,
-                oldName: $oldName,
-                newName: $user->name,
-                adminUserId: $rename->adminUserId,
-            );
-        } catch (ValidationException $e) {
-            return ActionRefusal::said('Failed to update user: ' . $e->getMessage());
-        } catch (DatabaseException $e) {
-            // The same refusal the dispatcher would have put on the wire had this been thrown on
-            // the page: the placeholder for the person, the failure beside it for an admin.
-            $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
-
-            return ActionRefusal::fromThrowable($e);
-        } catch (WiringRefusal $refusal) {
-            // Answered like the storage failure above rather than raised (HIL-575): the ask
-            // arrived as a frame with a modal waiting on it, so a throw would hang the admin.
-            // Its own words - the name of a collection nobody here reads - are not an answer
-            // about this rename, so they ride only as the detail an admin may quote.
-            $this->logAgentError("Admin rename refused for userId={$rename->userId}: {$refusal->getMessage()}");
-
-            return ActionRefusal::fromThrowable($refusal);
-        } catch (HilosException $e) {
-            $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
-
-            return ActionRefusal::fromThrowable($e);
-        }
-
-        return null;
-    }
-
-    /**
      * Announces a new member in the room the moment the account exists.
      *
      * @param int $userId User that was just created
@@ -311,6 +225,28 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     public function afterUserCreated(int $userId, string $identifier): void
     {
         Hilos::$db->events->actions->addUserRegistered($userId);
+    }
+
+    /**
+     * Writes a rename into the room's feed: the event, and the journal row linked to it (HIL-1196).
+     *
+     * One transaction, so the feed line is whole or absent. The rename committed before this
+     * runs, so the transaction is a top-level one; a failure rolls it back and goes out to the
+     * framework, which logs it - the rename stands.
+     *
+     * @param UserRename $rename Journal row of the rename just committed
+     * @throws HilosException When the event, the link or the transaction cannot be written
+     */
+    public function afterUserRenamed(UserRename $rename): void
+    {
+        Database::transactionStart();
+        try {
+            Hilos::$db->events->actions->addUserRenamed($rename);
+            Database::transactionCommit();
+        } catch (HilosException $e) {
+            Database::transactionRollback();
+            throw $e;
+        }
     }
 
     /**
@@ -358,7 +294,10 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     /**
      * Applies an approved rename moderation result or tells the asker it was refused.
      *
-     * Stale connection results fail the agent-signal contract and never rename a user.
+     * Stale connection results fail the agent-signal contract and never rename a user. An
+     * approved name is given by the framework, as the person's own rename: the name and its
+     * journal row, then the feed line {@see afterUserRenamed()} writes (HIL-1196). The name the
+     * person already carries writes nothing.
      *
      * The refusal is addressed to the connection that asked, as the action_error of the
      * `rename` action it submitted - the same frame, for the same action name, that the page
@@ -369,6 +308,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * @param RenameModerationResultSignalData $result Moderation result for a requested display name
      * @throws AgentException When result does not match an active connection rename request
      * @throws InvalidArgumentException When the refusal frame cannot be named or queued
+     * @throws ValidationException When the approved name is empty, too short or too long
      * @throws HilosException On database, runtime, truth-source, or signal failure
      */
     private function applyRenameModerationResult(RenameModerationResultSignalData $result): void
@@ -401,8 +341,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
             return;
         }
 
-        $user = Hilos::$db->users[$result->userId] ?? null;
-        if ($user === null) {
+        if (!isset(Hilos::$db->users[$result->userId])) {
             $connection->actions->failRenameModeration(
                 ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE,
                 'user_not_found',
@@ -412,15 +351,8 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
             return;
         }
 
-        $oldName = $user->name;
         $connection->actions->clearRenameModeration();
-        $user->actions->rename($result->newName);
-
-        Hilos::$db->events->actions->addUserRenamed(
-            userId: $result->userId,
-            oldName: $oldName,
-            newName: $result->newName,
-        );
+        $this->renameUser($result->userId, $result->newName, $result->userId);
     }
 
     /**

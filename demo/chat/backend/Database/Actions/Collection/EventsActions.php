@@ -16,6 +16,7 @@ use Demo\Chat\Notification\ChatMentionNotifier;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
+use Hilos\Database\View\Item\UserRename;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -91,55 +92,28 @@ final class EventsActions extends DbActions
     }
 
     /**
-     * Appends the event emitted when a user renames themselves.
+     * Appends the feed line of a rename and links the journal row to it (HIL-1196).
      *
-     * @param int $userId Renamed user id
-     * @param string $oldName Previous display name
-     * @param string $newName New display name
+     * The type follows from the row's author: a person who renamed themselves - an administrator
+     * renaming their own account included - is 'user_renamed', anybody else or nobody is
+     * 'user_renamed_by_admin'. The caller holds the transaction, so the line is written whole or
+     * not at all.
+     *
+     * @param UserRename $rename Journal row of the rename just committed
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws LogicException If event id is null after sync
+     * @throws LogicException If event id is null after sync, or the journal row is not there
      */
-    public function addUserRenamed(int $userId, string $oldName, string $newName): DbEvent
+    public function addUserRenamed(UserRename $rename): DbEvent
     {
-        $event = $this->add(ChatEventType::USER_RENAMED->value);
-        Hilos::$db->eventUserRenames->actions->create(
-            eventId: (int)$event->id,
-            targetUserId: $userId,
-            actorUserId: $userId,
-            oldName: $oldName,
-            newName: $newName,
+        $event = $this->add(
+            $rename->renamedByUserId === $rename->userId
+                ? ChatEventType::USER_RENAMED->value
+                : ChatEventType::USER_RENAMED_BY_ADMIN->value,
         );
-
-        return $event;
-    }
-
-    /**
-     * Appends the event emitted when an admin renames a user.
-     *
-     * @param int $userId Renamed user id
-     * @param string $oldName Previous display name
-     * @param string $newName New display name
-     * @param ?int $adminUserId Initiator user id, when known
-     * @return DbEvent Created event
-     * @throws HilosException On database or truth-source failure
-     * @throws LogicException If event id is null after sync
-     */
-    public function addUserRenamedByAdmin(
-        int $userId,
-        string $oldName,
-        string $newName,
-        ?int $adminUserId = null,
-    ): DbEvent
-    {
-        $event = $this->add(ChatEventType::USER_RENAMED_BY_ADMIN->value);
-        Hilos::$db->eventUserRenames->actions->create(
-            eventId: (int)$event->id,
-            targetUserId: $userId,
-            actorUserId: $adminUserId,
-            oldName: $oldName,
-            newName: $newName,
-        );
+        (Hilos::$db->userRenames[(int)$rename->id] ?? throw new LogicException(
+            "Rename #{$rename->id} is not in the journal",
+        ))->actions->linkEvent((int)$event->id);
 
         return $event;
     }
@@ -226,7 +200,8 @@ final class EventsActions extends DbActions
         Hilos::$db->eventAttachments->actions->deleteAll();
         Hilos::$db->eventMessages->actions->deleteAll();
         Hilos::$db->eventUserRegistrations->actions->deleteAll();
-        Hilos::$db->eventUserRenames->actions->deleteAll();
+        // The journal is the person's history, not the room's: its rows stay, off their events.
+        Hilos::$db->userRenames->actions->unlinkEvents();
 
         $this->deleteAllObjects();
     }

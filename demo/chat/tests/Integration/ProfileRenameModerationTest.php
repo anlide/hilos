@@ -216,9 +216,10 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         foreach (Hilos::$db->events as $event) {
             if (
                 $event->type === ChatEventType::USER_RENAMED->value
-                && $event->eventUserRename?->targetUserId === $userId
-                && $event->eventUserRename?->oldName === $oldName
-                && $event->eventUserRename?->newName === $newName
+                && $event->userRename?->userId === $userId
+                && $event->userRename->renamedByUserId === $userId
+                && $event->userRename->oldName === $oldName
+                && $event->userRename->newName === $newName
             ) {
                 return;
             }

@@ -74,7 +74,7 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(ChatDbContext::events, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(ChatDbContext::eventMessages, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(ChatDbContext::eventUserRegistrations, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(ChatDbContext::eventUserRenames, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::userRenames, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(ChatDbContext::eventAttachments, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(ChatDbContext::bots, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(ChatDbContext::moderatorPromptPieces, TruthSourceKeys::all(), self::TEST_AGENT_ID);

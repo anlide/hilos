@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Item;
 
+use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Collection\EventAttachments;
@@ -28,7 +29,7 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read string $timestamp
  * @property-read ?EventMessage $eventMessage Message detail for message events
  * @property-read ?EventUserRegistration $eventUserRegistration Registration detail for registration events
- * @property-read ?EventUserRename $eventUserRename Rename detail for rename events
+ * @property-read ?UserRename $userRename Journal row a rename event shows, null for other events
  * @property-read EventAttachments $attachments Published files attached to this event
  */
 final class Event extends DbItem
@@ -42,9 +43,11 @@ final class Event extends DbItem
      * @return mixed Property value, relation, or attachments collection
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
-     * @throws DatabaseException If attachment collection loading fails
+     * @throws DatabaseException If attachment collection or rename journal loading fails
      * @throws CollectionNotManualException If attachments collection cannot accept filtered items
-     * @throws ObjectGetIdStringNotImplementedException If an attachment id is not available
+     * @throws ObjectGetIdStringNotImplementedException If an attachment or journal row id is not available
+     * @throws LogicException When the rename journal's class constants are not configured
+     * @throws InvalidArgumentException When the rename journal cannot be searched by event
      */
     public function __get(string $name): mixed
     {
@@ -54,7 +57,12 @@ final class Event extends DbItem
             ObjectEvent::timestamp => $this->_object->timestamp,
             ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
             ChatDbContext::eventUserRegistration => Hilos::$db->eventUserRegistrations[$this->_object->id],
-            ChatDbContext::eventUserRename => Hilos::$db->eventUserRenames[$this->_object->id],
+            // Asked of every event the room holds, so only a rename event reaches the journal.
+            ChatDbContext::userRename => match (ChatEventType::tryFrom($this->_object->type)) {
+                ChatEventType::USER_RENAMED, ChatEventType::USER_RENAMED_BY_ADMIN
+                    => Hilos::$db->userRenames->ofEvent((int)$this->_object->id),
+                default => null,
+            },
             self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->id),
             default => parent::__get($name),
         };
@@ -91,7 +99,7 @@ final class Event extends DbItem
             $result[ChatDbContext::eventUserRegistration] = $this->eventUserRegistration?->toArray(
                 toFrontend: $toFrontend,
             );
-            $result[ChatDbContext::eventUserRename] = $this->eventUserRename?->toArray(
+            $result[ChatDbContext::userRename] = $this->userRename?->toArray(
                 toFrontend: $toFrontend,
             );
             $result[self::attachments] = $this->attachments->toArray(

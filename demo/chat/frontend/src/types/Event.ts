@@ -1,6 +1,8 @@
 // The chat event entity, its inline detail fragments, and its collections. An
-// event is an entity (it bears an id); its message/registration/rename details
-// ride the list item as inline slots (no id of their own), while a published
+// event is an entity (it bears an id); its message/registration details ride the
+// list item as inline slots (no id of their own), and so does its rename: the
+// rename is a row of the framework journal with an id of its own, but nothing on
+// the page addresses it by that id, so it stays an inline slot. A published
 // attachment is again an entity. The event stream selector reads these typed
 // projections instead of touching raw slots.
 import {
@@ -43,10 +45,13 @@ export interface EventUserRegistration {
   readonly targetUserId: number
 }
 
-/** The rename detail of a `user_renamed` / `user_renamed_by_admin` event. */
-export interface EventUserRename {
-  readonly targetUserId: number
-  readonly actorUserId: number | null
+/**
+ * The rename a `user_renamed` / `user_renamed_by_admin` event shows: the row of
+ * the framework rename journal linked to it, under the journal's own field names.
+ */
+export interface UserRename {
+  readonly userId: number
+  readonly renamedByUserId: number | null
   readonly oldName: string
   readonly newName: string
 }
@@ -117,20 +122,20 @@ export function eventRegistrationFrom(
 }
 
 /**
- * Project an inline rename slot into the typed detail, or null.
+ * Project an inline rename slot into the typed journal row, or null.
  *
- * @param slot The list item's `eventUserRenames` inline slot.
+ * @param slot The list item's `userRenames` inline slot.
  */
-export function eventRenameFrom(
+export function userRenameFrom(
   slot: Record<string, unknown> | undefined,
-): EventUserRename | null {
+): UserRename | null {
   if (!slot) {
     return null
   }
 
   return {
-    targetUserId: readNumber(slot, 'targetUserId'),
-    actorUserId: readNumberOrNull(slot, 'actorUserId'),
+    userId: readNumber(slot, 'userId'),
+    renamedByUserId: readNumberOrNull(slot, 'renamedByUserId'),
     oldName: readString(slot, 'oldName'),
     newName: readString(slot, 'newName'),
   }

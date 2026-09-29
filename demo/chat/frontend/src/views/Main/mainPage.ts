@@ -20,11 +20,11 @@ import {
   Users,
   eventMessageFrom,
   eventRegistrationFrom,
-  eventRenameFrom,
   toPresence,
+  userRenameFrom,
   type EventMessage,
   type EventUserRegistration,
-  type EventUserRename,
+  type UserRename,
 } from '../../types'
 import { toSelfConnection, type SelfConnection } from './types/SelfConnection'
 import { type AttachmentDraftItem } from './types/lists/AttachmentDraftItem'
@@ -52,7 +52,7 @@ const BOT_STATUS_SLOT = 'botAgentStatuses'
 const EVENT_SLOT = 'events'
 const MESSAGE_SLOT = 'eventMessages'
 const REGISTRATION_SLOT = 'eventUserRegistrations'
-const RENAME_SLOT = 'eventUserRenames'
+const RENAME_SLOT = 'userRenames'
 const ATTACHMENT_SLOT = 'eventAttachments'
 // The per-row field slot of a draft (backend source ChatRtContext::attachmentDrafts);
 // its value coincides with the list key, but a list item nests its fields under
@@ -133,12 +133,9 @@ const mainEventItems = scopes.pageListSignal(MAIN_EVENTS_LIST)
  * event taxonomy; empty for a `message_sent` event, whose body renders instead.
  *
  * @param type The event type value.
- * @param rename The typed rename detail, read for the old/new names.
+ * @param rename The journal row the rename event shows, read for the old/new names.
  */
-function serviceDescription(
-  type: string,
-  rename: EventUserRename | null,
-): string {
+function serviceDescription(type: string, rename: UserRename | null): string {
   switch (type) {
     case EVENT_USER_REGISTERED:
       return 'registered in chat'
@@ -164,16 +161,16 @@ function serviceDescription(
 
 /**
  * Resolve the acting party's name for an event: the message author (user or
- * bot), else the targeted user of a registration or rename notice.
+ * bot), else the registered user, or the renamed one of a rename notice.
  *
  * @param message The typed message detail, or null.
  * @param registration The typed registration detail, or null.
- * @param rename The typed rename detail, or null.
+ * @param rename The journal row the rename event shows, or null.
  */
 function eventAuthor(
   message: EventMessage | null,
   registration: EventUserRegistration | null,
-  rename: EventUserRename | null,
+  rename: UserRename | null,
 ): { name: string; isBot: boolean } {
   if (message?.authorBotId != null) {
     return {
@@ -187,7 +184,7 @@ function eventAuthor(
       isBot: false,
     }
   }
-  const targetUserId = registration?.targetUserId ?? rename?.targetUserId
+  const targetUserId = registration?.targetUserId ?? rename?.userId
   if (targetUserId != null) {
     return { name: Users.signal(targetUserId).get()?.name ?? '', isBot: false }
   }
@@ -206,7 +203,7 @@ export const mainEvents: ReadonlySignal<readonly EventItem[]> = computedSignal(
       const registration = eventRegistrationFrom(
         recordSlot(item.slots[REGISTRATION_SLOT]),
       )
-      const rename = eventRenameFrom(recordSlot(item.slots[RENAME_SLOT]))
+      const rename = userRenameFrom(recordSlot(item.slots[RENAME_SLOT]))
       const author = eventAuthor(message, registration, rename)
       const attachmentRefs = item.slots[ATTACHMENT_SLOT]
       const attachments: EventAttachmentItem[] = Array.isArray(attachmentRefs)

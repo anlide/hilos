@@ -8,6 +8,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Actions\Item\UserRenameActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -139,6 +140,22 @@ final class UserRenamesActionsIntegrationTest extends HilosSessionIntegrationTes
         $left = EntityUserRename::get([EntityUserRename::user_id => $other]);
         $this->assertCount(1, $left);
         $this->assertSame($authored->id, $left->first()?->id);
+    }
+
+    /**
+     * A journal row carries the framework's item actions: empty, and the door a project that
+     * extended the journal with a column of its own writes that column through (HIL-1196).
+     *
+     * @throws HilosException On database error
+     */
+    public function testARowCarriesTheItemActionsAProjectExtends(): void
+    {
+        $person = self::seedPerson('Person');
+        self::ownTheJournal();
+
+        $rename = Hilos::$db->userRenames->actions->add($person, $person, 'Old name', 'New name');
+
+        $this->assertInstanceOf(UserRenameActions::class, $rename->actions);
     }
 
     /**

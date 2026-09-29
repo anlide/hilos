@@ -8,25 +8,26 @@ use Demo\Chat\Database\Actions\Collection\BotsActions;
 use Demo\Chat\Database\Actions\Collection\EventAttachmentsActions;
 use Demo\Chat\Database\Actions\Collection\EventMessagesActions;
 use Demo\Chat\Database\Actions\Collection\EventUserRegistrationsActions;
-use Demo\Chat\Database\Actions\Collection\EventUserRenamesActions;
 use Demo\Chat\Database\Actions\Collection\EventsActions;
 use Demo\Chat\Database\Actions\Collection\ModeratorPromptPiecesActions;
+use Demo\Chat\Database\Actions\Collection\UserRenamesActions;
 use Demo\Chat\Database\Actions\Item\BotActions;
 use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
+use Demo\Chat\Database\Actions\Item\UserRenameActions;
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\Object\Collection\EventAttachments as ObjectEventAttachments;
 use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
 use Demo\Chat\Database\Object\Collection\EventUserRegistrations as ObjectEventUserRegistrations;
-use Demo\Chat\Database\Object\Collection\EventUserRenames as ObjectEventUserRenames;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Database\View\Collection\EventAttachments;
 use Demo\Chat\Database\View\Collection\EventMessages;
 use Demo\Chat\Database\View\Collection\EventUserRegistrations;
-use Demo\Chat\Database\View\Collection\EventUserRenames;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
+use Demo\Chat\Database\View\Collection\UserRenames;
+use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
@@ -41,17 +42,16 @@ use Hilos\Database\Object\Objects;
  * @property-read Events $events
  * @property-read EventMessages $eventMessages
  * @property-read EventUserRegistrations $eventUserRegistrations
- * @property-read EventUserRenames $eventUserRenames
  * @property-read EventAttachments $eventAttachments
  * @property-read Bots $bots
  * @property-read ModeratorPromptPieces $moderatorPromptPieces
+ * @property-read UserRenames $userRenames
  */
 final class ChatDbContext extends HilosDbContext
 {
     public const string events = 'events';
     public const string eventMessages = 'eventMessages';
     public const string eventUserRegistrations = 'eventUserRegistrations';
-    public const string eventUserRenames = 'eventUserRenames';
     public const string eventAttachments = 'eventAttachments';
     public const string bots = 'bots';
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
@@ -59,7 +59,6 @@ final class ChatDbContext extends HilosDbContext
     public const string event = 'event';
     public const string eventMessage = 'eventMessage';
     public const string eventUserRegistration = 'eventUserRegistration';
-    public const string eventUserRename = 'eventUserRename';
     public const string eventAttachment = 'eventAttachment';
     public const string bot = 'bot';
     public const string moderatorPromptPiece = 'moderatorPromptPiece';
@@ -79,7 +78,6 @@ final class ChatDbContext extends HilosDbContext
         $this->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
         $this->_objectCollections[self::eventMessages] = ObjectEventMessages::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::eventUserRegistrations] = ObjectEventUserRegistrations::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->_objectCollections[self::eventUserRenames] = ObjectEventUserRenames::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::eventAttachments] = ObjectEventAttachments::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_NONE);
         $this->_objectCollections[self::moderatorPromptPieces] = ObjectModeratorPromptPieces::initDB(Objects::LAZY_STRATEGY_NONE);
@@ -87,7 +85,6 @@ final class ChatDbContext extends HilosDbContext
         $this->setRepresent(self::events, Events::class, EventsActions::class);
         $this->setRepresent(self::eventMessages, EventMessages::class, EventMessagesActions::class);
         $this->setRepresent(self::eventUserRegistrations, EventUserRegistrations::class, EventUserRegistrationsActions::class);
-        $this->setRepresent(self::eventUserRenames, EventUserRenames::class, EventUserRenamesActions::class);
         $this->setRepresent(self::eventAttachments, EventAttachments::class, EventAttachmentsActions::class);
         $this->setRepresent(self::bots, Bots::class, BotsActions::class, BotActions::class);
         $this->setRepresent(
@@ -96,5 +93,22 @@ final class ChatDbContext extends HilosDbContext
             ModeratorPromptPiecesActions::class,
             ModeratorPromptPieceActions::class,
         );
+    }
+
+    /**
+     * Chat's rename journal carries the event of the room's feed that shows each rename (HIL-1196).
+     *
+     * @return array<string, FrameworkExtension> Framework keys served by project subclasses
+     */
+    protected function frameworkExtensions(): array
+    {
+        return [
+            ...parent::frameworkExtensions(),
+            self::userRenames => new FrameworkExtension(
+                UserRenames::class,
+                UserRenamesActions::class,
+                UserRenameActions::class,
+            ),
+        ];
     }
 }

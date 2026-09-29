@@ -132,12 +132,12 @@ final class Connections extends HilosSessionConnections
             if ($eventUserRegistration?->targetUserId !== null) {
                 $userIds[$eventUserRegistration->targetUserId] = true;
             }
-            $eventUserRename = $event->eventUserRename;
-            if ($eventUserRename?->targetUserId !== null) {
-                $userIds[$eventUserRename->targetUserId] = true;
+            $userRename = $event->userRename;
+            if ($userRename?->userId !== null) {
+                $userIds[$userRename->userId] = true;
             }
-            if ($eventUserRename?->actorUserId !== null) {
-                $userIds[$eventUserRename->actorUserId] = true;
+            if ($userRename?->renamedByUserId !== null) {
+                $userIds[$userRename->renamedByUserId] = true;
             }
         }
 

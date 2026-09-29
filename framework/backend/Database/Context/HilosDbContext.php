@@ -78,6 +78,7 @@ use Hilos\Database\Actions\Item\SecondFactorResetActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\Actions\Item\UserActions;
+use Hilos\Database\Actions\Item\UserRenameActions;
 use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
 
 /**
@@ -422,6 +423,7 @@ abstract class HilosDbContext extends DbContext
             Objects::LAZY_STRATEGY_KEY,
             DbCollectionUserRenames::class,
             UserRenamesActions::class,
+            UserRenameActions::class,
         );
         $this->mountFramework(
             self::userMerges,

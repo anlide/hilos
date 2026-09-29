@@ -39,9 +39,9 @@ final class ChatBrowserSource
         BrowserSourceKey::KEY => ChatDbContext::eventUserRegistrations,
     ];
 
-    public const array DB_EVENT_USER_RENAMES = [
+    public const array DB_USER_RENAMES = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
-        BrowserSourceKey::KEY => ChatDbContext::eventUserRenames,
+        BrowserSourceKey::KEY => ChatDbContext::userRenames,
     ];
 
     public const array DB_EVENT_ATTACHMENTS = [

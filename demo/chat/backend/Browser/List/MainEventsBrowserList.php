@@ -10,7 +10,7 @@ use Demo\Chat\Database\Object\Item\Event;
 use Demo\Chat\Database\Object\Item\EventAttachment;
 use Demo\Chat\Database\Object\Item\EventMessage;
 use Demo\Chat\Database\Object\Item\EventUserRegistration;
-use Demo\Chat\Database\Object\Item\EventUserRename;
+use Demo\Chat\Database\Object\Item\UserRename;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Core\Browser\Config\BrowserListFieldKey;
 
@@ -26,7 +26,7 @@ final class MainEventsBrowserList
             ChatBrowserSource::DB_EVENTS,
             ChatBrowserSource::DB_EVENT_MESSAGES,
             ChatBrowserSource::DB_EVENT_USER_REGISTRATIONS,
-            ChatBrowserSource::DB_EVENT_USER_RENAMES,
+            ChatBrowserSource::DB_USER_RENAMES,
             ChatBrowserSource::DB_EVENT_ATTACHMENTS,
         ],
         BrowserListConfigKey::ITEMS => [
@@ -58,14 +58,14 @@ final class MainEventsBrowserList
                 ],
             ],
             [
-                BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_USER_RENAMES,
-                BrowserListFieldKey::ITEM_KEY => EventUserRename::eventId,
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_USER_RENAMES,
+                BrowserListFieldKey::ITEM_KEY => UserRename::eventId,
                 BrowserListFieldKey::FIELDS => [
-                    EventUserRename::eventId,
-                    EventUserRename::targetUserId,
-                    EventUserRename::actorUserId,
-                    EventUserRename::oldName,
-                    EventUserRename::newName,
+                    UserRename::eventId,
+                    UserRename::userId,
+                    UserRename::renamedByUserId,
+                    UserRename::oldName,
+                    UserRename::newName,
                 ],
             ],
             [

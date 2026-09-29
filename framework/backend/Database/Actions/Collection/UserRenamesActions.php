@@ -15,8 +15,9 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * UserRenamesActions - write operations for the framework rename journal.
  *
- * A journal row is written once and never edited, so there are no item actions: the rows are
- * added one per rename and removed with the renamed person.
+ * A journal row is written once and never edited by the framework: the rows are added one per
+ * rename and removed with the renamed person. The item actions are empty, left for a project
+ * that extends the journal with a column of its own (HIL-1196).
  *
  * @extends DbActions<UserRename, ObjectUserRenames>
  * @property-read DbCollectionUserRenames $collection

@@ -31,9 +31,11 @@ cannot be skipped*) — and the class swapped through a facade constant
 (`Hilos::ADMIN_AUDIENCE`, read through `static::appClass()`).
 
 The first live consumer: the chat demo's rename journal is a subclass of the
-framework's rename journal (not in the code yet — HIL-1196). The chat demo's
-subclass of the person table, which kept `merged_into` on it, left when the
-merge table took the fact over (HIL-1199).
+framework's rename journal — `demo/chat/backend/Database/Entity/Item/UserRename.php`
+and the rest of its chain, with one column of chat's own, `event_id`, the event of
+the room's feed that shows the rename (HIL-1196). The chat demo's subclass of the
+person table, which kept `merged_into` on it, left when the merge table took the
+fact over (HIL-1199).
 
 ## The Whole Chain
 

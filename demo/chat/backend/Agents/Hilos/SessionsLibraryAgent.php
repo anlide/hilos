@@ -86,9 +86,10 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         // TODO(HIL-630): borrowed claim - the users library writes the registration events; an
         // erasure deletes the person's (HIL-302).
         ChatDbContext::eventUserRegistrations => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library writes the rename events; an erasure
-        // deletes the person's and takes them off the renames of others they made (HIL-302).
-        ChatDbContext::eventUserRenames => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        // TODO(HIL-1200): the framework erases the rename journal and this claim goes. Borrowed until
+        // then - the users library writes the journal; an erasure deletes the person's rows before
+        // their user row (HIL-302).
+        HilosDbContext::userRenames => [TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns the reservation table. The hold
         // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
         // sessions library's row; the sweep itself belongs with the table.
@@ -141,11 +142,13 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     /**
      * Deletes everything a chat keeps of a person whose account is being erased (HIL-302).
      *
-     * Children before their parents, because the registration and rename events restrict the
-     * delete of the user row: the attachments of the person's messages, the messages, the
-     * registration and rename events about the person, then those events themselves. Where the
-     * person only renamed somebody else, the rename stays and loses its actor. The person's row
-     * goes last. The attachment files are named for the framework to remove after the commit.
+     * Children before their parents, because the registration events and the rename journal
+     * restrict the delete of the user row: the attachments of the person's messages, the
+     * messages, the registration events and the journal rows of the person's renames - their
+     * feed events read off them first - then those events themselves. Where the person only
+     * renamed somebody else, the rename and its feed line stay, and the database takes the
+     * person off as the author (HIL-1195). The person's row goes last. The attachment files are
+     * named for the framework to remove after the commit.
      *
      * Runs inside the framework's erasure transaction, so a failure of any write rolls back
      * every one before it and the ways in that went first.
@@ -161,9 +164,9 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         $files = Hilos::$db->eventAttachments->actions->deleteForMessages($messageIds);
         $messages = Hilos::$db->eventMessages->actions->deleteByAuthor($userId);
         $registrationIds = Hilos::$db->eventUserRegistrations->actions->deleteByTarget($userId);
-        $renameIds = Hilos::$db->eventUserRenames->actions->deleteByTarget($userId);
-        Hilos::$db->eventUserRenames->actions->clearActor($userId);
-        $events = Hilos::$db->events->actions->deleteByIds([...$messageIds, ...$registrationIds, ...$renameIds]);
+        $renameEventIds = Hilos::$db->userRenames->eventIdsByUser($userId);
+        Hilos::$db->userRenames->actions->deleteByUser($userId);
+        $events = Hilos::$db->events->actions->deleteByIds([...$messageIds, ...$registrationIds, ...$renameEventIds]);
         Hilos::$db->users[$userId]?->actions->delete();
 
         return new AccountErasure(

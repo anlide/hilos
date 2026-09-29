@@ -12,7 +12,7 @@ use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Demo\Chat\Database\Entity\Item\EventAttachment as EntityEventAttachment;
 use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration as EntityEventUserRegistration;
-use Demo\Chat\Database\Entity\Item\EventUserRename as EntityEventUserRename;
+use Demo\Chat\Database\Entity\Item\UserRename as EntityUserRename;
 use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Demo\Chat\Hilos;
@@ -27,9 +27,10 @@ use Hilos\Utils\Helpers\RandomHelper;
  * The chat's half of an account erasure (HIL-302), run by the session holder's sweep.
  *
  * What a chat keeps of a person goes: the messages they wrote with the attachments, the events
- * of those messages, the registration and rename events about them, and their row. A rename
- * they made of somebody else stays and loses only its actor. The attachment files are removed
- * after the commit. Another person's rows are the proof that the erasure cut by the person.
+ * of those messages, the registration events and the rename journal rows about them with their
+ * feed events, and their row. A rename they made of somebody else stays with its feed line and
+ * loses only its author. The attachment files are removed after the commit. Another person's
+ * rows are the proof that the erasure cut by the person.
  *
  * Driven inside the library's own execution frame, as {@see AccountMergeTest} drives the
  * merge: every write runs as the agent that owns the sessions, so the borrowed claims the
@@ -64,8 +65,12 @@ final class AccountErasureTest extends IntegrationTestCase
 
         $personRegistration = (int)Hilos::$db->events->actions->addUserRegistered($personId)->id;
         $otherRegistration = (int)Hilos::$db->events->actions->addUserRegistered($otherId)->id;
-        $personRename = (int)Hilos::$db->events->actions->addUserRenamed($personId, 'Arriving', 'Leaving')->id;
-        $renameOfOther = (int)Hilos::$db->events->actions->addUserRenamedByAdmin($otherId, 'Old', 'Staying', $personId)->id;
+        $personRename = (int)Hilos::$db->events->actions->addUserRenamed(
+            Hilos::$db->userRenames->actions->add($personId, $personId, 'Arriving', 'Leaving'),
+        )->id;
+        $renameOfOther = (int)Hilos::$db->events->actions->addUserRenamed(
+            Hilos::$db->userRenames->actions->add($otherId, $personId, 'Old', 'Staying'),
+        )->id;
         $storedName = 'erasure-' . RandomHelper::hex(8) . '.txt';
         $fs = Hilos::$fs;
         self::assertNotNull($fs);
@@ -89,17 +94,17 @@ final class AccountErasureTest extends IntegrationTestCase
         self::assertCount(0, EntityEventMessage::get([EntityEventMessage::author_user_id => $personId]));
         self::assertCount(0, EntityEventAttachment::get([EntityEventAttachment::event_id => $personMessage]));
         self::assertCount(0, EntityEventUserRegistration::get([EntityEventUserRegistration::target_user_id => $personId]));
-        self::assertCount(0, EntityEventUserRename::get([EntityEventUserRename::target_user_id => $personId]));
+        self::assertCount(0, EntityUserRename::get([EntityUserRename::user_id => $personId]));
         foreach ([$personRegistration, $personRename, $personMessage] as $eventId) {
             self::assertCount(0, EntityEvent::get([EntityEvent::id => $eventId]), "Event {$eventId} about the person is gone");
         }
         foreach ([$otherRegistration, $renameOfOther, $otherMessage] as $eventId) {
             self::assertCount(1, EntityEvent::get([EntityEvent::id => $eventId]), "Event {$eventId} of the other person stays");
         }
-        $renameLeft = EntityEventUserRename::get([EntityEventUserRename::event_id => $renameOfOther])->first();
+        $renameLeft = EntityUserRename::get([EntityUserRename::event_id => $renameOfOther])->first();
         self::assertNotNull($renameLeft);
-        self::assertSame($otherId, $renameLeft->target_user_id);
-        self::assertNull($renameLeft->actor_user_id, 'The rename of the other person lost its actor');
+        self::assertSame($otherId, $renameLeft->user_id);
+        self::assertNull($renameLeft->renamed_by_user_id, 'The rename of the other person lost its author');
         self::assertFalse($fs->files[$storedName]->exists(), 'The attachment file is removed after the commit');
 
         Database::sql('SELECT `completed_at` FROM `hilos_account_deletion` WHERE `user_id` = ?', [$personId]);

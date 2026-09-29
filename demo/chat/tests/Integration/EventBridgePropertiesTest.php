@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Hilos;
 
 /**
@@ -60,13 +61,13 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
             $this->assertSame($event->id, $registration->event?->id);
             $this->assertSame($user->id, $registration->targetUser?->id);
             $this->assertNull($event->eventMessage);
-            $this->assertNull($event->eventUserRename);
+            $this->assertNull($event->userRename);
         } finally {
             Hilos::$db->events->actions->deleteAll();
         }
     }
 
-    public function testRenameEventExposesDetailTargetAndActorBridges(): void
+    public function testRenameEventExposesTheJournalRowItShows(): void
     {
         Hilos::$db->events->actions->deleteAll();
 
@@ -75,18 +76,17 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
             $actorUser = Hilos::$db->users->actions->createWithName('User');
             $this->assertNotNull($targetUser->id);
             $this->assertNotNull($actorUser->id);
-            $event = Hilos::$db->events->actions->addUserRenamedByAdmin(
-                $targetUser->id,
-                'Old Name',
-                'New Name',
-                $actorUser->id,
-            );
+            $row = Hilos::$db->userRenames->actions->add($targetUser->id, $actorUser->id, 'Old Name', 'New Name');
+            $event = Hilos::$db->events->actions->addUserRenamed($row);
 
-            $rename = $event->eventUserRename;
+            $this->assertSame(ChatEventType::USER_RENAMED_BY_ADMIN->value, $event->type);
+            $rename = $event->userRename;
             $this->assertNotNull($rename);
+            $this->assertSame($row->id, $rename->id);
+            $this->assertSame($event->id, $rename->eventId);
             $this->assertSame($event->id, $rename->event?->id);
-            $this->assertSame($targetUser->id, $rename->targetUser?->id);
-            $this->assertSame($actorUser->id, $rename->actorUser?->id);
+            $this->assertSame($targetUser->id, $rename->userId);
+            $this->assertSame($actorUser->id, $rename->renamedByUserId);
             $this->assertNull($event->eventMessage);
             $this->assertNull($event->eventUserRegistration);
         } finally {

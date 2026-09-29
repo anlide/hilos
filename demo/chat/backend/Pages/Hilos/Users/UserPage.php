@@ -23,8 +23,8 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
  * Handles the chat demo implementation of the Hilos user-detail page.
  *
  * Subscription snapshots are browser-config driven. The rename submitted on the card is
- * forwarded by {@see AbstractHilosUserPage} (HIL-1195); this demo's {@see UsersLibraryAgent}
- * still takes it before the framework's handler and writes the room's log line (HIL-1196).
+ * forwarded by {@see AbstractHilosUserPage} to the framework's handler (HIL-1195); this demo's
+ * {@see UsersLibraryAgent} only writes the room's feed line after it (HIL-1196).
  */
 final class UserPage extends AbstractHilosUserPage
 {

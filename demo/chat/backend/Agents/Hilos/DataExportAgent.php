@@ -21,7 +21,6 @@ final class DataExportAgent extends AbstractDataExportAgent
         ChatDbContext::eventAttachments,
         ChatDbContext::events,
         ChatDbContext::eventUserRegistrations,
-        ChatDbContext::eventUserRenames,
     ];
 
     /**
@@ -53,19 +52,10 @@ final class DataExportAgent extends AbstractDataExportAgent
                 $registeredAt = $timestamp;
             }
         }
-        $renames = [];
-        foreach (Hilos::$db->eventUserRenames->byTarget($userId) as $rename) {
-            $renames[] = [
-                'from' => $rename->oldName,
-                'to' => $rename->newName,
-                'at' => DataExportTime::iso($rename->event?->timestamp),
-            ];
-        }
         $writer->section('chat', [
             'profile' => ['name' => Hilos::$db->users[$userId]?->name],
             'messages' => $messages,
             'registeredAt' => DataExportTime::iso($registeredAt),
-            'renames' => $renames,
         ]);
     }
 }

@@ -62,8 +62,12 @@ final class DataExportTest extends IntegrationTestCase
         $personId = (int)Hilos::$db->users->actions->createWithName('Exporting')->id;
         $otherId = (int)Hilos::$db->users->actions->createWithName('Other')->id;
         Hilos::$db->events->actions->addUserRegistered($personId);
-        Hilos::$db->events->actions->addUserRenamed($personId, 'Before', 'Exporting');
-        Hilos::$db->events->actions->addUserRenamedByAdmin($otherId, 'Other before', 'Other', $personId);
+        Hilos::$db->events->actions->addUserRenamed(
+            Hilos::$db->userRenames->actions->add($personId, $personId, 'Before', 'Exporting'),
+        );
+        Hilos::$db->events->actions->addUserRenamed(
+            Hilos::$db->userRenames->actions->add($otherId, $personId, 'Other before', 'Other'),
+        );
         Hilos::$fs->files->create('mine.txt')->append("my attachment\n");
         Hilos::$db->events->actions->addMessage(
             'my message',
@@ -89,9 +93,11 @@ final class DataExportTest extends IntegrationTestCase
         self::assertSame([['filename' => 'note.txt', 'file' => 'files/mine.txt']], $chat['messages'][0]['attachments']);
         self::assertSame("my attachment\n", $archive['files/mine.txt']->getContent());
         self::assertNotNull($chat['registeredAt']);
-        self::assertCount(1, $chat['renames']);
-        self::assertSame('Before', $chat['renames'][0]['from']);
-        self::assertSame('Exporting', $chat['renames'][0]['to']);
+        self::assertArrayNotHasKey('renames', $chat, 'The renames are the framework\'s section');
+        $renames = json_decode($archive['renames.json']->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertCount(1, $renames);
+        self::assertSame('Before', $renames[0]['from']);
+        self::assertSame('Exporting', $renames[0]['to']);
         self::assertStringNotContainsString('Other', $archive['chat.json']->getContent());
         self::assertStringNotContainsString('foreign', $archive['chat.json']->getContent());
     }

@@ -30,7 +30,7 @@ Use bridge properties for direct relations:
 | Relation | Shape | Example |
 |---|---|---|
 | Many-to-one FK | nullable item | `$eventMessage->event`, `$eventMessage->authorUser` |
-| One-to-one detail row | nullable item | `$event->eventMessage`, `$event->eventUserRename` |
+| One-to-one detail row | nullable item | `$event->eventMessage`, `$event->userRename` |
 | One-to-many children | collection | `$event->attachments`, `$eventMessage->attachments` |
 | Runtime overlay for one DB item | nullable RT item or collection | `$user->chatUserState`, `$user->connections` |
 
@@ -42,7 +42,7 @@ scalar field name has one: `authorUserId` becomes `authorUser`,
 `user` or `bot`.
 
 For one-to-one detail rows, name the parent bridge after the detail model:
-`eventMessage`, `eventUserRegistration`, `eventUserRename`. For direct
+`eventMessage`, `eventUserRegistration`, `userRename`. For direct
 overlay, status, or sidecar rows whose model name starts with the parent model
 name, name the parent bridge after the remaining semantic suffix in
 `lowerCamelCase`; do not repeat the parent name. For example, `Bot` to
