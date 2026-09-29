@@ -9,9 +9,11 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
 use Hilos\Database\View\Item\PasskeyCredential;
 use Hilos\Hilos;
@@ -156,6 +158,27 @@ class PasskeyCredentials extends DbCollection
     public function deleteForUser(int $userId): void
     {
         $this->objectCollection->deleteForUser($userId);
+    }
+
+    /**
+     * Re-points every device key of a merged loser to the survivor (HIL-1132).
+     *
+     * Bridged to the object collection, as this collection's other writes are; the object
+     * carries each row out with its update announcement.
+     *
+     * @param int $fromUserId Loser user id whose device keys are absorbed
+     * @param int $toUserId Survivor user id that receives the device keys
+     * @return int Number of device keys re-pointed to the survivor
+     * @throws DatabaseException When the lookup or a move fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws ObjectGetIdStringNotImplementedException When the row's id cannot be named for the write
+     */
+    public function rePointToUser(int $fromUserId, int $toUserId): int
+    {
+        return $this->objectCollection->rePointToUser($fromUserId, $toUserId);
     }
 
     /**

@@ -90,11 +90,12 @@ class PasskeyCredential extends Entity
         'idx_passkey_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
 
-    // The owner is identity_id: it hangs on hilos_identity by a foreign key, and the right walks
-    // up through it. user_id beside it is a short path to the same owner, left undeclared until
-    // an account merge keeps it true (HIL-1132).
+    // The owner is identity_id: it hangs on hilos_identity by a foreign key. user_id beside it
+    // carries the same owner directly, and the account merge moves it with the anchor (HIL-1132),
+    // so the right reads it off the row.
     public const string _setVia = self::identity_id;
     public const bool _setRoot = false;
+    public const string _setShortPath = self::user_id;
 
     // A credential is a public key bound to one person's authenticator; masking it
     // would leave a usable-looking credential nobody can authenticate with.

@@ -280,8 +280,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns it; carried out with the account here (HIL-302).
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update],
-        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
-        HilosDbContext::passkeyCredentials => [TruthSourceOperation::Remove],
+        // TODO(HIL-630): borrowed claim - the users library owns it; moved to the survivor at a
+        // merge (HIL-1132) and erased with the account here (HIL-302).
+        HilosDbContext::passkeyCredentials => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
         HilosDbContext::verifications => [TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
@@ -4561,10 +4562,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Folds one account into another and reports what moved - the core behind both ways in
      * (HIL-378).
      *
-     * The survivor absorbs the loser's ways in and the rows the project keeps for it, then the
-     * loser is tombstoned - a row of `hilos_user_merge` and a closed sign-in (HIL-1199) - and its
-     * live sessions are signed out. It runs here rather than in a project agent because of that
-     * last step: the sessions are this library's, and before HIL-729 the merge had to ASK for
+     * The survivor absorbs the loser's ways in, with the device keys that hang on them (HIL-1132),
+     * and the rows the project keeps for it, then the loser is tombstoned - a row of
+     * `hilos_user_merge` and a closed sign-in (HIL-1199) - and its live sessions are signed out.
+     * It runs here rather than in a project agent because of that last step: the sessions are this
+     * library's, and before HIL-729 the merge had to ASK for
      * each sign-out over a frame.
      *
      * Guards, in order: the two ids must differ, which is the one refusal that needs nobody's
@@ -4576,10 +4578,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * survives and the command keeps the shape it always had.
      *
      * The transfer is one explicit transaction so a half-merged account can never survive a
-     * mid-way failure: the identity re-point, everything the project moves and the tombstone
-     * either all commit or all roll back. The loser is tombstoned, never deleted, so no
-     * foreign-key cascade can fire; the one order that matters is inside the tombstone
-     * ({@see self::foldAccount()}).
+     * mid-way failure: the identity re-point, the loser's device keys, everything the project
+     * moves and the tombstone either all commit or all roll back. The loser is tombstoned,
+     * never deleted, so no foreign-key cascade can fire; the one order that matters is inside
+     * the tombstone ({@see self::foldAccount()}).
      *
      * What comes back is the OUTCOME and not the request: the account is asked afterwards
      * which password it now carries, so a fate naming an account that had none reports the
@@ -4613,6 +4615,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         Database::transactionStart();
         try {
             $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId, $passwordFate);
+            Hilos::$db->passkeyCredentials->rePointToUser($loserId, $survivorId);
             $rowsMoved = $this->applyAccountMerge($survivorId, $loserId);
             $this->foldAccount($survivorId, $loserId);
             Database::transactionCommit();
@@ -4823,9 +4826,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * refusal rather than silence - after the framework's own checks, so an id that names nobody
      * is still refused as such.
      *
-     * Called INSIDE the merge transaction, between the identity re-point and the tombstone, so
-     * whatever it writes rolls back with the rest - and so does the default's refusal. The
-     * tombstone is not the project's: the framework writes it after this returns
+     * Called INSIDE the merge transaction, between the ways in (with their device keys) and the
+     * tombstone, so whatever it writes rolls back with the rest - and so does the default's
+     * refusal. The tombstone is not the project's: the framework writes it after this returns
      * ({@see self::foldAccount()}).
      *
      * The tally is a map rather than a number because the framework cannot know what a

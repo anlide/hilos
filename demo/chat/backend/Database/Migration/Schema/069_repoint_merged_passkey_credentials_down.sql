@@ -1,0 +1,5 @@
+-- Migration Rollback: Hand an earlier merge's device keys to the survivor (HIL-1132)
+-- Created: 2026-09-29
+-- Index: 069
+--
+-- Irreversible data repair: the loser ids the keys carried are not restored.

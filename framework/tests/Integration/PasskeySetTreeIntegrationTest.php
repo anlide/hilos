@@ -18,15 +18,16 @@ use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Tests\Unit\Database\Schema\SetTreeTest;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * A passkey hangs on its identity anchor, and the anchor on its person (HIL-1111).
  *
- * The credential sits in the set of its identity anchor and the anchor in the set of its person:
- * two floors. The foreign key between the credential and the anchor is what names the credential's
- * parent, so only a real database can say that the key is there and that it holds - and that a
- * claim laid by the person's id reaches the credential through the anchor row as it is stored.
+ * A claim laid by the person now reaches the key by the short path `user_id` (HIL-1132): the
+ * account merge keeps that column true, so the right reads it off the row. The walk up through
+ * the anchor is what {@see SetTreeTest} pins. The foreign key between the credential and the
+ * anchor is what a real database can say is there and that it holds.
  */
 final class PasskeySetTreeIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -76,7 +77,7 @@ final class PasskeySetTreeIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
-     * A claim laid by the person's id writes their passkey, and not a stranger's, through the anchor.
+     * A claim laid by the person's id writes their passkey, and not a stranger's, by the short path.
      *
      * @throws HilosException When an identity or credential query or write fails
      */

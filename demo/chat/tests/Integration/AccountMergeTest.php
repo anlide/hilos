@@ -17,7 +17,10 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
+use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
+use Hilos\Database\Exception\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities;
@@ -58,6 +61,10 @@ use Hilos\Utils\Helpers\RandomHelper;
  * addresses. That is the sentence the leaf exists for, and until the merge could be told
  * whose password to keep there was no way to write it down.
  *
+ * A merge from before the framework moved device keys with their anchors left the key
+ * recorded for the loser. The repair migration writes the anchor's person onto that key,
+ * leaves a key that already agrees alone, and a second run changes nothing (HIL-1132).
+ *
  * Requires the test DB reset before run (composer run test:db-reset).
  */
 final class AccountMergeTest extends IntegrationTestCase
@@ -65,6 +72,12 @@ final class AccountMergeTest extends IntegrationTestCase
     private const string SURVIVOR_PASSWORD = 'the passphrase that stays';
 
     private const string LOSER_PASSWORD = 'the passphrase that gives way';
+
+    /** Repair played by hand, the way the migration runner would split the file. */
+    private const string MIGRATION_FILE = '/backend/Database/Migration/Schema/069_repoint_merged_passkey_credentials.sql';
+
+    /** Public key a seeded device key carries; the repair never verifies it. */
+    private const string PUBLIC_KEY_PEM = "-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n";
 
     /**
      * Gives the case a signal router, which the command reply is queued on.
@@ -366,6 +379,36 @@ final class AccountMergeTest extends IntegrationTestCase
     }
 
     /**
+     * The repair hands an earlier merge's device key to the survivor and leaves a sound key alone.
+     *
+     * The broken row is the state from before HIL-1132: the anchor already names the survivor and
+     * the key still names the loser. Read back through SQL, past the collection cache the insert
+     * left behind.
+     *
+     * @throws HilosException When a seed or the repair fails
+     */
+    public function testTheRepairHandsAnEarlierMergesPasskeysToTheSurvivor(): void
+    {
+        $survivorId = (int) Hilos::$db->users->actions->createWithName('Survivor')->id;
+        $loserId = (int) Hilos::$db->users->actions->createWithName('Loser')->id;
+        $thirdId = (int) Hilos::$db->users->actions->createWithName('Third')->id;
+        $brokenId = $this->seedPasskey($survivorId, $loserId);
+        $soundId = $this->seedPasskey($thirdId, $thirdId);
+
+        $this->runMigration();
+
+        $repaired = $this->passkeyUserId($brokenId);
+        $untouched = $this->passkeyUserId($soundId);
+        $this->assertSame($survivorId, $repaired);
+        $this->assertSame($thirdId, $untouched);
+
+        $this->runMigration();
+
+        $this->assertSame($repaired, $this->passkeyUserId($brokenId));
+        $this->assertSame($untouched, $this->passkeyUserId($soundId));
+    }
+
+    /**
      * Runs one merge the way an operator does, and hands back what the socket was told.
      *
      * The command is the sessions library's since HIL-729 - guards, transaction, forced
@@ -509,5 +552,75 @@ final class AccountMergeTest extends IntegrationTestCase
     private function uniqueMergeEmail(): string
     {
         return 'merge-' . RandomHelper::hex(6) . '@example.test';
+    }
+
+    /**
+     * Stores a device key whose anchor names one person and whose row names another.
+     *
+     * @param int $anchorUserId Person the sign-in anchor belongs to
+     * @param int $keyUserId Person the key row is recorded for
+     * @return string Credential id
+     * @throws HilosException When the anchor or the key cannot be stored
+     */
+    private function seedPasskey(int $anchorUserId, int $keyUserId): string
+    {
+        $credentialId = RandomHelper::hex(16);
+        $anchorId = Hilos::$db->identities->createPasskeyIdentity($anchorUserId, $credentialId)->id;
+        $this->assertNotNull($anchorId);
+        Hilos::$db->passkeyCredentials->createFromRegistration(
+            $anchorId,
+            $keyUserId,
+            $credentialId,
+            self::PUBLIC_KEY_PEM,
+            PasskeyAlgorithm::Es256,
+            0,
+            null,
+            null,
+            RandomHelper::hex(16),
+            null,
+        );
+
+        return $credentialId;
+    }
+
+    /**
+     * Reads which account a device key belongs to, past the collection cache.
+     *
+     * @param string $credentialId Credential id to resolve
+     * @return int Owning user id
+     * @throws DatabaseException When the query fails
+     */
+    private function passkeyUserId(string $credentialId): int
+    {
+        Database::sql(
+            'SELECT `user_id` FROM `hilos_passkey_credential` WHERE `credential_id` = ?',
+            [$credentialId],
+        );
+        $row = Database::row();
+        $this->assertNotNull($row);
+
+        return (int)$row['user_id'];
+    }
+
+    /**
+     * Runs the repair migration file statement by statement, as the migration runner splits it.
+     *
+     * @throws DatabaseException When a statement fails
+     */
+    private function runMigration(): void
+    {
+        $statement = '';
+        foreach (explode("\n", (string)file_get_contents(dirname(__DIR__, 2) . self::MIGRATION_FILE)) as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '--')) {
+                continue;
+            }
+
+            $statement .= $line . "\n";
+            if (str_ends_with($line, ';')) {
+                Database::sql(rtrim(trim($statement), ';'));
+                $statement = '';
+            }
+        }
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -30,6 +31,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * The agent side of the account:merge route and of the browser frame beside it (HIL-378, HIL-729).
@@ -42,9 +44,10 @@ use Hilos\Users\DTO\AccountMergeSignalData;
  * What is pinned is everything the FRAMEWORK owns, which since HIL-1199 is the whole operation
  * bar one question. The guards - two ids that are the same, an id that names nobody, an account
  * already folded into another, two accounts that each hold a password and nobody saying which
- * stays - the transaction, the identity re-point, the tombstone (a merge row and a closed
- * sign-in), the password outcome read back off the account and the loser's forced sign-out all
- * live here. What a project answers is what it keeps for a person, and what is pinned about
+ * stays - the transaction, the identity re-point, the device keys that hang on those ways in
+ * (HIL-1132), the tombstone (a merge row and a closed sign-in), the password outcome read back
+ * off the account and the loser's forced sign-out all live here. What a project answers is what
+ * it keeps for a person, and what is pinned about
  * that is the SHAPE of the seam rather than any answer: it is reached after the framework's
  * refusals, it runs where a failure still rolls the merge back, and a project that never wired
  * it refuses instead of half-merging. A project's own refusal is pinned by its shape too: it
@@ -80,14 +83,26 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     /** Precomputed so a case seeding two passwords does not pay bcrypt twice. */
     private const string SEED_PASSWORD = 'merge-route-secret-42';
 
+    /** Public key a seeded device key carries; the ceremony never verifies it here. */
+    private const string PUBLIC_KEY_PEM = "-----BEGIN PUBLIC KEY-----\nstub\n-----END PUBLIC KEY-----\n";
+
     /**
      * @var list<string> Framework tables this case needs. `hilos_setting` is the one framework
      *     collection loaded eagerly, so mounting the context reaches for it. The people and their
      *     merges are asked whether two accounts may be merged at all, and the tombstone writes
      *     both (HIL-1199); the merge table's keys hold the people, so it comes after them and is
-     *     dropped before them.
+     *     dropped before them. A device key hangs on its anchor by a foreign key, so
+     *     `hilos_passkey_credential` comes right after `hilos_identity` and is dropped before it
+     *     (HIL-1132).
      */
-    private const array TABLES = ['hilos_user', 'hilos_user_merge', 'hilos_identity', 'hilos_session', 'hilos_setting'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_user_merge',
+        'hilos_identity',
+        'hilos_passkey_credential',
+        'hilos_session',
+        'hilos_setting',
+    ];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;
@@ -184,6 +199,34 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::assertTrue(self::isBlocked(self::LOSER_USER_ID));
         self::assertFalse(self::isBlocked(self::SURVIVOR_USER_ID));
         self::assertNull(self::survivorOf(self::SURVIVOR_USER_ID), 'The survivor is not folded');
+    }
+
+    /**
+     * A merge hands the loser's device key to the survivor: the row, the handle lookup, the
+     * profile list and the short path all name the survivor, and the anchor is counted with the
+     * ways in.
+     *
+     * @throws HilosException When a seed, the merge, or a read-back fails
+     */
+    public function testAMergeHandsTheLosersPasskeysToTheSurvivor(): void
+    {
+        [$credentialId, $userHandle] = $this->seedPasskey(self::LOSER_USER_ID);
+
+        $this->sendCommand(new AccountMergeRouteTestAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+
+        $reply = $this->consumeReply();
+        self::assertTrue($reply->isOk(), 'A wired merge answers ok');
+        self::assertSame(1, $reply->payload[AccountMergeCommandConstants::FIELD_IDENTITIES_MOVED]);
+        self::assertSame(self::SURVIVOR_USER_ID, self::passkeyOwner($credentialId));
+        self::assertSame(
+            self::SURVIVOR_USER_ID,
+            Hilos::$db->passkeyCredentials->findUserByUserHandle($userHandle),
+        );
+        $survivorKeys = Hilos::$db->passkeyCredentials->listByUser(self::SURVIVOR_USER_ID);
+        self::assertCount(1, $survivorKeys);
+        self::assertSame($credentialId, $survivorKeys[0]->credentialId);
+        self::assertSame((string)self::SURVIVOR_USER_ID, $survivorKeys[0]->storedSetTop());
+        self::assertSame([], Hilos::$db->passkeyCredentials->listByUser(self::LOSER_USER_ID));
     }
 
     /**
@@ -372,6 +415,24 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::assertSame(self::LOSER_USER_ID, self::identityOwner($loserEmail));
         self::assertNull(self::survivorOf(self::LOSER_USER_ID));
         self::assertFalse(self::isBlocked(self::LOSER_USER_ID));
+    }
+
+    /**
+     * A project's row move that fails rolls the device key back with the ways in: the database
+     * still names the loser. Read past the collection, whose object cache can keep the survivor.
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testAFailingRowMoveLeavesThePasskeysWithTheLoser(): void
+    {
+        [$credentialId] = $this->seedPasskey(self::LOSER_USER_ID);
+        $agent = new AccountMergeRouteTestAgent();
+        $agent->failTheRowMove = true;
+
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+
+        self::assertSame('The project could not move its rows', $this->refusal());
+        self::assertSame(self::LOSER_USER_ID, self::passkeyOwner($credentialId));
     }
 
     /**
@@ -626,6 +687,36 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
+     * Registers a device key the way the ceremony does, and hands back its id and handle.
+     *
+     * @param int $userId Person the key is stored for
+     * @return array{string, string} Credential id and the user handle stored on the row
+     * @throws HilosException When the anchor or the key cannot be stored
+     */
+    private function seedPasskey(int $userId): array
+    {
+        $credentialId = RandomHelper::hex(16);
+        $userHandle = RandomHelper::hex(16);
+        $identityId = $this->identities()->createPasskeyIdentity($userId, $credentialId)->id;
+        self::assertNotNull($identityId);
+
+        Hilos::$db->passkeyCredentials->createFromRegistration(
+            $identityId,
+            $userId,
+            $credentialId,
+            self::PUBLIC_KEY_PEM,
+            PasskeyAlgorithm::Es256,
+            0,
+            null,
+            null,
+            $userHandle,
+            null,
+        );
+
+        return [$credentialId, $userHandle];
+    }
+
+    /**
      * @return Identities The framework identity collection under the fixture context
      */
     private function identities(): Identities
@@ -653,6 +744,24 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     private static function identityOwner(string $email): ?int
     {
         Database::sql('SELECT `user_id` FROM `hilos_identity` WHERE `identifier` = ?', [$email]);
+        $row = Database::row();
+
+        return $row === null ? null : (int)$row['user_id'];
+    }
+
+    /**
+     * Reads which account a device key belongs to, past every in-memory collection.
+     *
+     * @param string $credentialId Credential id to resolve
+     * @return ?int Owning user id, or null when no row carries the id
+     * @throws DatabaseException When the query fails
+     */
+    private static function passkeyOwner(string $credentialId): ?int
+    {
+        Database::sql(
+            'SELECT `user_id` FROM `hilos_passkey_credential` WHERE `credential_id` = ?',
+            [$credentialId],
+        );
         $row = Database::row();
 
         return $row === null ? null : (int)$row['user_id'];

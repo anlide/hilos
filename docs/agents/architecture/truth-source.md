@@ -338,9 +338,9 @@ pointer through the guarded entrance, so a set claimant has to read every table
 of the walk, and `validateSetClaims()` refuses its start otherwise; a row whose
 parent is gone is in nobody's set. An Entity may declare `_setShortPath`, a
 column that carries the top directly, and its rows answer without the walk — the
-preferred form wherever such a column is kept true. `PasskeyCredential` walks
-through its foreign key to the identity: its `user_id` stays undeclared until an
-account merge keeps it true (HIL-1132). Owner's decision, 2026-09-19: declaring
+preferred form wherever such a column is kept true. `PasskeyCredential` declares
+its `user_id`: the account merge moves it with the anchor (HIL-1132), so its rows
+answer without reading the identity. Owner's decision, 2026-09-19: declaring
 the path is better and walking is allowed by default; forbidding the walk for a
 direct column to the root was weighed and not chosen.
 

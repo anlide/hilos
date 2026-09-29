@@ -9,11 +9,13 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredentials;
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
 use Hilos\Database\Object\Objects;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -275,5 +277,45 @@ class PasskeyCredentials extends Objects
             $this->objects[$id]->delete();
             unset($this[$id]);
         }
+    }
+
+    /**
+     * Re-points every device key of a merged loser to the survivor (HIL-1132).
+     *
+     * The pair of {@see Identities::rePointToUser()}: the anchor moves there and its crypto row
+     * moves here. There is no duplicate branch, because `credential_id` is unique in the table
+     * (`uk_passkey_credential_id`). The user handle is left alone — it lives on the authenticator.
+     * A person with none is not an error. This method does not refuse a move onto the same person:
+     * the merge core refuses that earlier.
+     *
+     * Each row leaves through its object so an update announcement reaches every reader.
+     *
+     * @param int $fromUserId Loser user id whose device keys are absorbed
+     * @param int $toUserId Survivor user id that receives the device keys
+     * @return int Number of device keys re-pointed to the survivor
+     * @throws DatabaseException When the lookup or a move fails
+     * @throws InvalidArgumentException When the entity query or the queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws ObjectGetIdStringNotImplementedException When the row's id cannot be named for the write
+     */
+    public function rePointToUser(int $fromUserId, int $toUserId): int
+    {
+        $moved = 0;
+        foreach (static::entityClass()::get([EntityPasskeyCredential::user_id => $fromUserId]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
+            }
+            $this->objects[$id]->userId = $toUserId;
+            $this->objects[$id]->sync();
+            $moved++;
+        }
+
+        return $moved;
     }
 }
