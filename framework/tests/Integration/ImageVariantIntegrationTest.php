@@ -42,6 +42,7 @@ use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Storage\FilesStorageInterface;
 use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Hilos;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
@@ -619,8 +620,8 @@ final class ImageVariantFs extends FsContext
     /** Registers the real storage directory and the temporary-file seam. */
     public function configure(): void
     {
-        $this->registerDirectory(self::FILES, $this->directory . '/files');
-        $this->setTmpPath($this->directory . '/tmp');
+        $this->registerDirectory(self::FILES, $this->directory . '/files', DirectoryScope::CLUSTER);
+        $this->setTmpPath($this->directory . '/tmp', DirectoryScope::NODE);
     }
 }
 

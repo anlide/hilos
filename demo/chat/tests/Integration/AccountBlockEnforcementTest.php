@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\DataExport\DataExportState;
 use Hilos\DataExport\DataExportGroup;
@@ -457,7 +458,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
             /** @param string $path Private archive directory */
             public function __construct(private readonly string $path) { }
             /** Registers only the directory this order test needs. */
-            public function configure(): void { $this->registerDirectory(self::DATA_EXPORT, $this->path); }
+            public function configure(): void { $this->registerDirectory(self::DATA_EXPORT, $this->path, DirectoryScope::CLUSTER); }
         };
         Hilos::$fs->configure();
         $agent = new DataExportAgent();

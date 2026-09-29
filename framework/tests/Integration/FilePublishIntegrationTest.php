@@ -46,6 +46,7 @@ use Hilos\Files\Upload\UploadCheckInterface;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosConnections;
@@ -885,8 +886,8 @@ final class FilePublishTestFsContext extends FsContext
      */
     public function configure(): void
     {
-        $this->setTmpPath($this->tmpPath);
-        $this->registerDirectory(FsContext::FILES, $this->filesPath);
+        $this->setTmpPath($this->tmpPath, DirectoryScope::NODE);
+        $this->registerDirectory(FsContext::FILES, $this->filesPath, DirectoryScope::CLUSTER);
     }
 }
 

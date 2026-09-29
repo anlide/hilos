@@ -13,6 +13,7 @@ use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
@@ -303,7 +304,7 @@ final class FeatureUploadsTestFsContext extends FsContext
     public function __construct(bool $withTmp)
     {
         if ($withTmp) {
-            $this->setTmpPath(sys_get_temp_dir());
+            $this->setTmpPath(sys_get_temp_dir(), DirectoryScope::NODE);
         }
     }
 
@@ -355,7 +356,7 @@ final class FeatureFilesTestFsContext extends FsContext
     public function __construct(bool $withFiles)
     {
         if ($withFiles) {
-            $this->registerDirectory(FsContext::FILES, sys_get_temp_dir());
+            $this->registerDirectory(FsContext::FILES, sys_get_temp_dir(), DirectoryScope::CLUSTER);
         }
     }
 

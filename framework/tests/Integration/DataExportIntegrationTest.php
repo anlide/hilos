@@ -25,6 +25,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -352,7 +353,7 @@ final class DataExportTestFs extends FsContext
     /** Registers a fresh directory for each test. */
     public function configure(): void
     {
-        $this->registerDirectory(self::DATA_EXPORT, $this->path);
+        $this->registerDirectory(self::DATA_EXPORT, $this->path, DirectoryScope::CLUSTER);
     }
 }
 

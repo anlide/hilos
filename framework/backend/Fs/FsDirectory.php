@@ -25,11 +25,13 @@ final readonly class FsDirectory implements ArrayAccess
      * @param FsContext $context Owning FS context for cross-directory file operations
      * @param string $name Logical directory name as registered in the context
      * @param string $path Absolute filesystem path
+     * @param DirectoryScope $scope Whose the directory is: its node's or the cluster's
      */
     public function __construct(
         private FsContext $context,
         private string $name,
         private string $path,
+        private DirectoryScope $scope,
     ) {
     }
 
@@ -157,6 +159,14 @@ final readonly class FsDirectory implements ArrayAccess
     public function getPath(): string
     {
         return $this->path;
+    }
+
+    /**
+     * @return DirectoryScope Whose the directory is: its node's or the cluster's
+     */
+    public function getScope(): DirectoryScope
+    {
+        return $this->scope;
     }
 
     // ── ArrayAccess ──────────────────────────────────────────────

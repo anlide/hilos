@@ -8,6 +8,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\DataExport\DataExportDownloadResponse;
 use Hilos\Files\Download\FileDownloadResponse;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\FsFile;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use PHPUnit\Framework\TestCase;
@@ -26,7 +27,7 @@ final class DataExportDownloadResponseTest extends TestCase
             /** @param string $path Test directory */
             public function __construct(private readonly string $path) { }
             /** Registers test storage. */
-            public function configure(): void { $this->registerDirectory(self::DATA_EXPORT, $this->path); }
+            public function configure(): void { $this->registerDirectory(self::DATA_EXPORT, $this->path, DirectoryScope::CLUSTER); }
         };
         $fs->configure();
         $this->file = $fs->getDirectory(FsContext::DATA_EXPORT)['copy.zip'];

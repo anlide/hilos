@@ -22,6 +22,12 @@ use Hilos\Fs\FsException;
  *
  * A kept file is known by its stored name alone: the registry row carries the name, and where
  * the bytes lie under it is the storage's own affair.
+ *
+ * TODO(HIL-1203): the registry's files are kept on a disk only — one machine or a volume every
+ * node mounts. Not built: S3-compatible storages (Amazon S3, Cloudflare R2, Backblaze, Hetzner,
+ * self-hosted Garage, SeaweedFS, MinIO) and Azure Blob; serving such a file — nginx proxies a
+ * short-lived signed link under our own address; moving the files already kept when the storage
+ * changes. A driver stands in at this seam, through Hilos::createFilesStorage().
  */
 interface FilesStorageInterface
 {

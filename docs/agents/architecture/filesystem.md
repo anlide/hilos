@@ -10,45 +10,52 @@ shared volume and the nginx of a multi-node installation. The machinery is
 ## Core Rule
 
 Every `$fs` directory is either its node's or the cluster's, and it says which
-when it is registered, the way an agent says its `AgentScope` — `CLUSTER` or
-`NODE` in `framework/backend/Core/Agent/Config/AgentScope.php`
-(not in the code yet — HIL-1240). A directory whose file a process of another
-node opens is the cluster's. Between processes travel names only — the logical
-name of the directory and the name of the file — never a path.
+when it is registered: a `DirectoryScope` — `CLUSTER` or `NODE` in
+`framework/backend/Fs/DirectoryScope.php` — the way an agent says its
+`AgentScope`. A directory whose file a process of another node opens is the
+cluster's. Between processes travel names only — the logical name of the
+directory and the name of the file — never a path.
 
 ## The Context
 
 A project subclasses `FsContext` (`framework/backend/Fs/Context/FsContext.php`)
 and in `configure()`, which `Hilos::init()` calls, registers its directories
-with `registerDirectory($name, $path)` and the temporary one with
-`setTmpPath($path)`. Code reaches a directory as `Hilos::$fs->files` or
-`Hilos::$fs->tmp` (the magic `__get`), a file by its name through the
-directory's ArrayAccess (`framework/backend/Fs/FsDirectory.php`), and a
-temporary file by the 32-hex index that `create()` returns
-(`framework/backend/Fs/FsTmpDirectory.php`).
+with `registerDirectory($name, $path, $scope)` and the temporary one with
+`setTmpPath($path, $scope)`. The owner has no default: a registration that
+forgets it does not pass the call. The declaration is read back with
+`getScope()` on a directory and on the temporary one, and the context lists
+its directories by name with `getDirectories()`. Code reaches a directory as
+`Hilos::$fs->files` or `Hilos::$fs->tmp` (the magic `__get`), a file by its
+name through the directory's ArrayAccess
+(`framework/backend/Fs/FsDirectory.php`), and a temporary file by the 32-hex
+index that `create()` returns (`framework/backend/Fs/FsTmpDirectory.php`).
 
 The framework reserves three names: `tmp` (`FsContext::TMP`), `files`
 (`FsContext::FILES`, HIL-336) and `data_export` (`FsContext::DATA_EXPORT`,
 HIL-303). The start refuses `UPLOADS` without tmp, `FILES` without `files` and
 `AUTH` without `data_export` (`refuseUploadsWithoutTmp()`,
 `refuseFilesWithoutDirectory()` and `refuseDataExportWithoutDirectory()` in
-`framework/backend/Hilos.php`).
+`framework/backend/Hilos.php`). A fourth refusal,
+`refuseMisdeclaredDirectories()`, throws `InvalidTopologyException` when
+`files` or `data_export` is declared `NODE`, or when one path is declared by
+two owners; the rules live in `FsContext::declarationErrors()`, which a
+project's unit test can call on its own context.
 
 ## Node Or Cluster
 
 Two owners, as the two cases of `AgentScope`: a **node directory** is one per
 node, and only the processes of that node read it; a **cluster directory** is
-one per cluster, and any node reads it. The registration names the owner
-(not in the code yet — HIL-1240).
+one per cluster, and any node reads it. The registration names the owner.
 
 The test is one question: will a process of another node open a file from
 this directory? An agent placed by POLICY moves between nodes, so its
 directory answers yes.
 
-`files` and `data_export` are declared cluster directories
-(not in the code yet — HIL-1240). `files`, because the library is one per
-cluster and puts a file in from its own node, while the bytes are sent by
-X-Accel from the nginx of the node that holds the browser's connection
+`files` and `data_export` are declared cluster directories, whatever features
+the project declares; either declared `NODE` fails the start. `files`, because
+the library is one per cluster and puts a file in from its own node, while the
+bytes are sent by X-Accel from the nginx of the node that holds the browser's
+connection
 ([files-registry.md](files-registry.md), "Serving A File"). `data_export`,
 because the export agent is placed by POLICY and on start removes every ready
 row whose archive it cannot see (`AbstractDataExportAgent::onStart()`,
@@ -66,7 +73,12 @@ directory (not in the code yet — HIL-1241).
 
 One path, one answer: names registered on one path are one directory with one
 owner. The chat registers `published` and `files` on one path
-(`demo/chat/backend/Fs/ChatFsContext.php`).
+(`demo/chat/backend/Fs/ChatFsContext.php`). Two owners on one path — the
+temporary directory counted too, under `tmp` — fail the start, naming the
+names, the path and the owners. Paths are compared as written, less trailing
+separators: a directory is created on first use and may not exist at start;
+whether two paths are physically one directory is the question of "The Guard"
+below.
 
 What stays with the node and lives outside `$fs`: the log directory — one
 daemon per directory, the owner on its own node ([logs.md](logs.md), "One
@@ -141,12 +153,12 @@ self-hosted Garage, SeaweedFS, MinIO) and Azure Blob; serving such a file —
 nginx proxies a short-lived signed link under our own address, so the browser
 never sees the storage, the cookie is still checked by the agent, and the
 storage may sit in a closed network (chosen on the epic HIL-1203); moving the
-files already kept when the storage changes. The list waits as a TODO at two
-seams — `FsContext` and the registry's `FilesStorageInterface` /
-`LocalFilesStorage` (not in the code yet — HIL-1240). The registry's storage
-seam already exists (`Hilos::createFilesStorage()` in
-`framework/backend/Hilos.php`; [files-registry.md](files-registry.md),
-"Storage"); `data_export` and every X-Accel alias still assume a disk.
+files already kept when the storage changes. The list waits as
+`TODO(HIL-1203)` at two seams — `FsContext` and the registry's
+`FilesStorageInterface`. The registry's storage seam already exists
+(`Hilos::createFilesStorage()` in `framework/backend/Hilos.php`;
+[files-registry.md](files-registry.md), "Storage"); `data_export` and every
+X-Accel alias still assume a disk.
 
 ## What Is Not Here
 

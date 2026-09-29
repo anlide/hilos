@@ -19,9 +19,11 @@ final readonly class FsTmpDirectory implements ArrayAccess
 {
     /**
      * @param string $path Absolute filesystem path
+     * @param DirectoryScope $scope Whose the directory is: its node's or the cluster's
      */
     public function __construct(
         private string $path,
+        private DirectoryScope $scope,
     ) {
     }
 
@@ -60,6 +62,14 @@ final readonly class FsTmpDirectory implements ArrayAccess
     public function getPath(): string
     {
         return $this->path;
+    }
+
+    /**
+     * @return DirectoryScope Whose the directory is: its node's or the cluster's
+     */
+    public function getScope(): DirectoryScope
+    {
+        return $this->scope;
     }
 
     // ── ArrayAccess ──────────────────────────────────────────────

@@ -10,6 +10,7 @@ use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\DataExport;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
@@ -45,7 +46,7 @@ final class DataExportActivationTest extends TestCase
             /** Registers an intentionally uncreated path. */
             public function configure(): void
             {
-                $this->registerDirectory(self::DATA_EXPORT, '/uncreated/data-export');
+                $this->registerDirectory(self::DATA_EXPORT, '/uncreated/data-export', DirectoryScope::CLUSTER);
             }
         };
         Hilos::$fs->configure();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Fs\Context;
 
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsTmpDirectory;
@@ -12,6 +13,15 @@ use Hilos\Hilos;
 
 /**
  * Base filesystem context — project subclasses register named directories.
+ *
+ * The registration names the owner of every directory, tmp included: its node or the whole
+ * cluster (DirectoryScope, docs/agents/architecture/filesystem.md).
+ *
+ * TODO(HIL-1203): a cluster directory is kept on a disk only — one machine or a volume every node
+ * mounts. Not built: S3-compatible storages (Amazon S3, Cloudflare R2, Backblaze, Hetzner,
+ * self-hosted Garage, SeaweedFS, MinIO) and Azure Blob; serving such a file — nginx proxies a
+ * short-lived signed link under our own address; moving the files already kept when the storage
+ * changes.
  *
  * @property-read FsTmpDirectory $tmp Built-in temporary directory
  * @property-read FsDirectory $files Published files of the files registry, where the project registers it
@@ -25,12 +35,20 @@ abstract class FsContext
      * Reserved logical name for the published files of the files registry (HIL-336).
      *
      * A project declaring {@see HilosFeature::FILES} registers it in configure(); startup refuses
-     * the project that declares the feature and registers no such directory.
+     * the project that declares the feature and registers no such directory. A cluster directory:
+     * registered as DirectoryScope::CLUSTER, the start refuses it declared NODE.
      */
     public const string FILES = 'files';
 
-    /** Ready data-export archives; only the export agent writes this shared directory (HIL-303). */
+    /**
+     * Ready data-export archives; only the export agent writes this shared directory (HIL-303).
+     *
+     * A cluster directory: registered as DirectoryScope::CLUSTER, the start refuses it declared NODE.
+     */
     public const string DATA_EXPORT = 'data_export';
+
+    /** Trailing characters a path is compared without: "/x" and "/x/" name one directory. */
+    private const string PATH_SEPARATORS = '/\\';
 
     /** @var FsTmpDirectory|null */
     protected ?FsTmpDirectory $_tmp = null;
@@ -46,19 +64,21 @@ abstract class FsContext
 
     /**
      * @param string $path Absolute filesystem path for tmp storage
+     * @param DirectoryScope $scope Whose the tmp directory is: its node's or the cluster's
      */
-    protected function setTmpPath(string $path): void
+    protected function setTmpPath(string $path, DirectoryScope $scope): void
     {
-        $this->_tmp = new FsTmpDirectory($path);
+        $this->_tmp = new FsTmpDirectory($path, $scope);
     }
 
     /**
      * @param string $name Logical directory name
      * @param string $path Absolute filesystem path
+     * @param DirectoryScope $scope Whose the directory is: its node's or the cluster's
      */
-    protected function registerDirectory(string $name, string $path): void
+    protected function registerDirectory(string $name, string $path, DirectoryScope $scope): void
     {
-        $this->_directories[$name] = new FsDirectory($this, $name, $path);
+        $this->_directories[$name] = new FsDirectory($this, $name, $path, $scope);
     }
 
     /**
@@ -68,6 +88,14 @@ abstract class FsContext
     public function hasDirectory(string $name): bool
     {
         return isset($this->_directories[$name]);
+    }
+
+    /**
+     * @return array<string, FsDirectory> Registered directories keyed by name, in registration order
+     */
+    public function getDirectories(): array
+    {
+        return $this->_directories;
     }
 
     /**
@@ -105,6 +133,51 @@ abstract class FsContext
         }
 
         return $this->_tmp;
+    }
+
+    /**
+     * What the registrations declare wrong; every fault is collected, none stops the walk.
+     *
+     * Two rules. The reserved files and data_export are the cluster's whatever features the
+     * project declares, so either declared NODE is a fault. One path is one directory with one
+     * owner, so names registered on one path with different owners are a fault, tmp counted under
+     * its reserved name. Paths are compared as written, less trailing separators: a directory is
+     * created on first use and may not exist at start, so there is nothing to resolve yet.
+     *
+     * @return list<string> Fault messages, reserved directories first; empty when the declaration holds
+     */
+    public function declarationErrors(): array
+    {
+        $errors = [];
+        foreach ([self::FILES, self::DATA_EXPORT] as $reserved) {
+            if ($this->hasDirectory($reserved) && $this->_directories[$reserved]->getScope() === DirectoryScope::NODE) {
+                $errors[] = "FS directory [{$reserved}] is the cluster's: register it with DirectoryScope::CLUSTER";
+            }
+        }
+
+        /** @var array<string, array<string, DirectoryScope>> $scopesByPath */
+        $scopesByPath = [];
+        if ($this->_tmp !== null) {
+            $scopesByPath[rtrim($this->_tmp->getPath(), self::PATH_SEPARATORS)][self::TMP] = $this->_tmp->getScope();
+        }
+        foreach ($this->_directories as $name => $directory) {
+            $scopesByPath[rtrim($directory->getPath(), self::PATH_SEPARATORS)][$name] = $directory->getScope();
+        }
+
+        foreach ($scopesByPath as $path => $scopes) {
+            $owners = array_map(static fn(DirectoryScope $scope): string => $scope->name, $scopes);
+            if (count(array_unique($owners)) === 1) {
+                continue;
+            }
+            $declared = [];
+            foreach ($owners as $name => $owner) {
+                $declared[] = "{$name} {$owner}";
+            }
+            $errors[] = 'FS directories [' . implode(', ', array_keys($owners)) . "] share the path {$path}"
+                . ' but declare different owners: ' . implode(', ', $declared);
+        }
+
+        return $errors;
     }
 
     /**

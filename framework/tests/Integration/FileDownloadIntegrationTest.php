@@ -27,6 +27,7 @@ use Hilos\Files\HilosFiles;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
@@ -408,6 +409,6 @@ final class FileDownloadTestFsContext extends FsContext
      */
     public function configure(): void
     {
-        $this->registerDirectory(FsContext::FILES, $this->filesPath);
+        $this->registerDirectory(FsContext::FILES, $this->filesPath, DirectoryScope::CLUSTER);
     }
 }

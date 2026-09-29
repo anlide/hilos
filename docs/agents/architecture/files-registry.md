@@ -49,7 +49,7 @@ has no project half. The project also copies the migration stubs
 the files directory in its FS context:
 
 ```php
-$this->registerDirectory(FsContext::FILES, $path);
+$this->registerDirectory(FsContext::FILES, $path, DirectoryScope::CLUSTER);
 ```
 
 `FsContext::FILES` is a name the framework reserves, as it reserves `tmp`. The
@@ -137,8 +137,7 @@ rename cannot cross to the volume the files directory sits on, it copies and
 deletes. A project keeps its files elsewhere by overriding the facade's
 `createFilesStorage()`. It is the only storage of this version; S3-compatible
 storages and Azure Blob wait as a TODO at this seam —
-[filesystem.md](filesystem.md), "Other Storages Later"
-(not in the code yet — HIL-1240).
+[filesystem.md](filesystem.md), "Other Storages Later".
 
 ## The Content Fingerprint
 

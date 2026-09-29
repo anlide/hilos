@@ -1036,7 +1036,7 @@ abstract class Hilos implements TruthSourceOwner
      * order the subscribers are called: the view is repaired before the outgoing sync collects
      * its payload, so nothing reads a collection that still holds a row it lost.
      *
-     * @throws InvalidTopologyException When project topology constants are inconsistent
+     * @throws InvalidTopologyException When project topology constants are inconsistent or the FS context misdeclares an owner
      * @throws IncompleteFeatureActivationException When a declared feature is not fully activated
      * @throws FeatureRuntimeOverwrittenException When the project re-mounts runtime state a feature owns
      * @throws StateCollectionNotFoundException When a feature represents a collection it did not mount
@@ -1108,6 +1108,7 @@ abstract class Hilos implements TruthSourceOwner
             static::refuseUploadsWithoutTmp();
             static::refuseFilesWithoutDirectory();
             static::refuseDataExportWithoutDirectory();
+            static::refuseMisdeclaredDirectories();
         }
 
         SourceChangeBus::reset();
@@ -1251,6 +1252,29 @@ abstract class Hilos implements TruthSourceOwner
             static::class,
             ['HilosFeature::AUTH keeps data-export archives in the data_export directory, but the FS context registers none'],
         );
+    }
+
+    /**
+     * Refuses an FS context that declares the owner of a directory wrong (HIL-1240).
+     *
+     * Checked here rather than by the activation validator for the reason the three refusals
+     * above are: the owners are known only once createFs() has been asked and the context
+     * configured. Unlike them it is no declared feature left half-activated but a fault of the
+     * project's composition, so it throws InvalidTopologyException - of the topology branch, which
+     * every process spin already counts as a failed start.
+     * The rules live with the context, in declarationErrors(), so a project's unit test reads its
+     * own declaration without the facade.
+     *
+     * @throws InvalidTopologyException When a reserved directory is declared NODE or one path is declared by two owners
+     */
+    protected static function refuseMisdeclaredDirectories(): void
+    {
+        $errors = static::$fs?->declarationErrors() ?? [];
+        if ($errors === []) {
+            return;
+        }
+
+        throw InvalidTopologyException::forErrors(static::class, $errors);
     }
 
     /**

@@ -14,6 +14,7 @@ use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\DataExport\DataExportState;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\HilosException;
 use PharData;
 
@@ -104,8 +105,8 @@ final class ChatExportTestFs extends FsContext
     /** Registers the existing attachment names and the export directory. */
     public function configure(): void
     {
-        $this->registerDirectory(self::FILES, $this->directory . '/published');
-        $this->registerDirectory('published', $this->directory . '/published');
-        $this->registerDirectory(self::DATA_EXPORT, $this->directory . '/exports');
+        $this->registerDirectory(self::FILES, $this->directory . '/published', DirectoryScope::CLUSTER);
+        $this->registerDirectory('published', $this->directory . '/published', DirectoryScope::CLUSTER);
+        $this->registerDirectory(self::DATA_EXPORT, $this->directory . '/exports', DirectoryScope::CLUSTER);
     }
 }

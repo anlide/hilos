@@ -7,11 +7,15 @@ namespace Demo\Chat\Fs;
 use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Hilos;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsTmpDirectory;
 
 /**
  * Chat-project filesystem context: quarantine, published, files, and tmp directories.
+ *
+ * Tmp is the node's - only the connection's process touches it; the other four are the cluster's,
+ * quarantine among them because ChatAgent, one per cluster and on any node, empties it.
  *
  * @property-read FsTmpDirectory $tmp
  * @property-read FsDirectory $quarantine
@@ -40,19 +44,24 @@ final class ChatFsContext extends FsContext
         $quarantinePath = Hilos::$env[ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR]->string();
         $publishedPath = Hilos::$env[ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR]->string();
 
-        $this->setTmpPath($base . DIRECTORY_SEPARATOR . self::TMP);
+        $this->setTmpPath($base . DIRECTORY_SEPARATOR . self::TMP, DirectoryScope::NODE);
 
         $this->registerDirectory(
             self::quarantine,
             $quarantinePath !== '' ? $quarantinePath : $base . DIRECTORY_SEPARATOR . self::quarantine,
+            DirectoryScope::CLUSTER,
         );
 
         // The files registry keeps its files where attachments are published today (HIL-336):
         // moving attachments onto the registry (HIL-144) then moves no file, and the web server
         // already serves from there. CHAT_FILES_PUBLISHED_DIR moves both names at once.
         $publishedDirectory = $publishedPath !== '' ? $publishedPath : $base . DIRECTORY_SEPARATOR . self::published;
-        $this->registerDirectory(self::published, $publishedDirectory);
-        $this->registerDirectory(FsContext::FILES, $publishedDirectory);
-        $this->registerDirectory(FsContext::DATA_EXPORT, dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/data_export');
+        $this->registerDirectory(self::published, $publishedDirectory, DirectoryScope::CLUSTER);
+        $this->registerDirectory(FsContext::FILES, $publishedDirectory, DirectoryScope::CLUSTER);
+        $this->registerDirectory(
+            FsContext::DATA_EXPORT,
+            dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/data_export',
+            DirectoryScope::CLUSTER,
+        );
     }
 }

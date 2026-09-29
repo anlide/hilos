@@ -6,6 +6,8 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Fs\ChatFsContext;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
+use Hilos\Fs\FsDirectory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -25,5 +27,26 @@ final class ChatFsContextTest extends TestCase
 
         self::assertTrue($context->hasDirectory(FsContext::FILES));
         self::assertSame($context->published->getPath(), $context->files->getPath());
+    }
+
+    /**
+     * Tmp is the node's, the other four the cluster's (HIL-1240), and the start accepts that.
+     */
+    public function testEveryDirectoryDeclaresItsOwner(): void
+    {
+        $context = new ChatFsContext();
+        $context->configure();
+
+        self::assertSame(DirectoryScope::NODE, $context->tmp->getScope());
+        self::assertSame(
+            [
+                ChatFsContext::quarantine => DirectoryScope::CLUSTER,
+                ChatFsContext::published => DirectoryScope::CLUSTER,
+                FsContext::FILES => DirectoryScope::CLUSTER,
+                FsContext::DATA_EXPORT => DirectoryScope::CLUSTER,
+            ],
+            array_map(static fn(FsDirectory $directory): DirectoryScope => $directory->getScope(), $context->getDirectories()),
+        );
+        self::assertSame([], $context->declarationErrors());
     }
 }

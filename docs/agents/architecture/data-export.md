@@ -14,9 +14,10 @@ row and file.
 
 `AbstractDataExportAgent` owns the queue outright. Every AUTH project registers
 its subclass with `DataExportAgentDaemon` and policy placement, activates the
-table, and registers the reserved `FsContext::DATA_EXPORT` directory. Activation
-refuses missing obligations. The daemon proxy requires a monopolistic worker:
-one whole archive is built per tick, with blocking I/O confined to that worker.
+table, and registers the reserved `FsContext::DATA_EXPORT` directory as a
+cluster one (`DirectoryScope::CLUSTER`). Activation refuses missing
+obligations. The daemon proxy requires a monopolistic worker: one whole archive
+is built per tick, with blocking I/O confined to that worker.
 
 ## Confirmation And The Blocked Card
 

@@ -29,6 +29,7 @@ use Hilos\Files\Upload\UploadFailureCode;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
@@ -682,7 +683,7 @@ final class UploadsTestFsContext extends FsContext
      */
     public function configure(): void
     {
-        $this->setTmpPath($this->tmpPath);
+        $this->setTmpPath($this->tmpPath, DirectoryScope::NODE);
     }
 }
 
