@@ -13,8 +13,9 @@
 // optimistically, and a refusal surfaces with the backend's domain phrase. The
 // modal holds the address row in focus and merges against it through the shared
 // row-edit helper (rowEdit.ts, conflict-resolution.md), saying what happened
-// elsewhere on one line of room held in advance (HilosEditNotice). Bootstrap
-// classes only (styling-rules.md).
+// elsewhere on one line of room held in advance (HilosEditNotice). The ↺ resets
+// the address to env only through a confirm dialog built like the settings orphan
+// delete, holding the same row in focus. Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
   HILOS_TABLE_ACTIONS_KEY,
@@ -31,6 +32,7 @@ import {
 } from '@hilos/core'
 import type {
   HilosOAuthProviderRow,
+  HilosOAuthRedirectRow,
   HilosSecurityOauthContext,
   RowEditBaseline,
   RowEditNoticeKind,
@@ -128,12 +130,6 @@ export function HilosSecurityOauthPage({
   // The one return-address row, once its window has arrived.
   const redirectRow = redirectRows[0]?.row ?? null
 
-  const reset = useTrackedAction()
-
-  function resetRedirect(): void {
-    void reset.run(actions.sendRedirectReset())
-  }
-
   // Edit dialog: the return address.
   const [editOpen, setEditOpen] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -153,6 +149,14 @@ export function HilosSecurityOauthPage({
   const editNotice = live.notice?.kind ?? null
   const editNoticeText = noticeText(editNotice, liveRow?.value)
   const editSaveLabel = live.gone ? 'Deleted' : 'Save'
+
+  // Reset dialog: the address back to env, only on confirm. It reads the same live
+  // row the edit dialog does — one dialog is open at a time, and the focus is one.
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetRow, setResetRow] = useState<HilosOAuthRedirectRow | null>(null)
+  const reset = useTrackedAction()
+  const resetShown = liveRow ?? resetRow
+  const resetGone = liveRow === undefined || liveRow.source !== 'db'
 
   // Put a step of the helper into the dialog: the snapshot moves, and a value
   // the step takes lands in the input.
@@ -216,6 +220,35 @@ export function HilosSecurityOauthPage({
     }
   }
 
+  function openReset(): void {
+    if (!redirectRow) {
+      return
+    }
+    // Flush pending and take the row into focus; a row that is gone declines to
+    // open.
+    const fresh = redirect.controller.focusRow(redirectRow.key)
+    if (!fresh) {
+      return
+    }
+    reset.clearError()
+    setResetRow(fresh)
+    setResetOpen(true)
+  }
+
+  function closeReset(): void {
+    setResetOpen(false)
+    redirect.controller.releaseFocus()
+  }
+
+  async function submitReset(): Promise<void> {
+    if (!resetRow || reset.busy || resetGone) {
+      return
+    }
+    if (await reset.run(actions.sendRedirectReset())) {
+      closeReset()
+    }
+  }
+
   return (
     <HilosAdminPage page={HilosPages.SECURITY_OAUTH}>
       <section
@@ -266,9 +299,9 @@ export function HilosSecurityOauthPage({
                 className="btn btn-sm btn-outline-secondary"
                 title="Reset return address to env"
                 aria-label="Reset return address to env"
-                disabled={redirectRow?.source !== 'db' || reset.busy}
+                disabled={redirectRow?.source !== 'db'}
                 data-id="hilos-oauth-redirect-reset"
-                onClick={resetRedirect}
+                onClick={openReset}
               >
                 <i
                   className="bi bi-arrow-counterclockwise"
@@ -396,6 +429,64 @@ export function HilosSecurityOauthPage({
             dataId="hilos-oauth-redirect-edit-notice"
           />
         </form>
+      </HilosModal>
+
+      <HilosModal
+        open={resetOpen}
+        title="Reset · Return address"
+        closeOnBackdrop={!reset.busy}
+        closeOnEsc={!reset.busy}
+        initialFocus="dialog"
+        onClose={closeReset}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={reset.busy}
+              onClick={requestClose}
+            >
+              Cancel
+            </button>
+            <LoadingButton
+              className="btn-danger"
+              loading={reset.loading}
+              disabled={reset.busy || resetGone}
+              data-id="hilos-oauth-redirect-reset-confirm"
+              onClick={() => void submitReset()}
+            >
+              Reset
+            </LoadingButton>
+          </>
+        )}
+      >
+        <HilosActionError
+          action={reset}
+          detailsTitle="Couldn't reset the return address"
+        />
+        {resetShown ? (
+          <dl className="row mb-0">
+            <dt className="col-4">Now</dt>
+            <dd
+              className="col-8 text-break"
+              data-id="hilos-oauth-redirect-reset-now"
+            >
+              {resetShown.setState ? resetShown.value : 'Not set'}
+            </dd>
+            <dt className="col-4">Back to</dt>
+            <dd className="col-8" data-id="hilos-oauth-redirect-reset-default">
+              the env value — empty when env has none
+            </dd>
+          </dl>
+        ) : null}
+        {resetGone ? (
+          <p
+            className="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-oauth-redirect-reset-gone"
+          >
+            Already reset elsewhere.
+          </p>
+        ) : null}
       </HilosModal>
     </HilosAdminPage>
   )

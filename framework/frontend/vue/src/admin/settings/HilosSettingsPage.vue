@@ -3,7 +3,8 @@ the cataloged settings table inside the admin shell. Every row is a catalog key
 merged with its persisted override, so the key set is fixed — there is no free
 "add a setting" (data-model.md, "Cataloged tables"). A row's own actions are the
 only mutations: set a custom value on an on-default key (add-by-key), edit or
-reset an override, or delete an orphan. The table, the row view-model, and the
+reset an override, or delete an orphan. The ↺ beside the pencil resets through a
+confirm dialog built like the orphan delete — never in one click. The table, the row view-model, and the
 add/update/delete round-trips are the core headless's (createHilosSettingsTable /
 createHilosSettingsActions), and so is what the table declares about its frame —
 columns, search, empty state; this view owns only the markup, so a project
@@ -161,6 +162,22 @@ const {
 } = deleteAction
 const deleteGone = computed(() => liveRow.value === undefined)
 
+// Reset dialog: back to the catalog default, only on confirm. It reads the live
+// row it holds in focus, so what it shows follows the other tabs.
+const resetOpen = ref(false)
+const resetRow = ref<HilosSettingRow | null>(null)
+const resetAction = useTrackedAction()
+const {
+  loading: resetLoading,
+  busy: resetBusy,
+  run: runResetAction,
+  clearError: clearResetError,
+} = resetAction
+const resetShown = computed(() => liveRow.value ?? resetRow.value)
+const resetGone = computed(
+  () => liveRow.value === undefined || !hasCustomValue(liveRow.value),
+)
+
 function openEdit(row: HilosSettingRow): void {
   // Flush pending and take the row into focus, so the dialog edits the latest
   // committed row and follows it from here; a row removed by someone else (now a
@@ -277,6 +294,33 @@ async function submitDelete(): Promise<void> {
     closeDelete()
   }
 }
+
+function openReset(row: HilosSettingRow): void {
+  // Flush pending and take the row into focus; a row already removed by someone
+  // else does not open a reset.
+  const fresh = settings.controller.focusRow(row.key)
+  if (!fresh) {
+    return
+  }
+  clearResetError()
+  resetRow.value = fresh
+  resetOpen.value = true
+}
+
+function closeReset(): void {
+  resetOpen.value = false
+  settings.controller.releaseFocus()
+}
+
+async function submitReset(): Promise<void> {
+  const row = resetRow.value
+  if (!row || resetBusy.value || resetGone.value) {
+    return
+  }
+  if (await runResetAction(sendSettingReset(row.key))) {
+    closeReset()
+  }
+}
 </script>
 
 <template>
@@ -320,6 +364,18 @@ async function submitDelete(): Promise<void> {
             "
             aria-hidden="true"
           ></i>
+        </button>
+        <button
+          v-if="!isOrphanSetting(row)"
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          title="Reset to default"
+          aria-label="Reset to default"
+          :disabled="!hasCustomValue(row)"
+          :data-id="`hilos-settings-reset-${row.key}`"
+          @click="openReset(row)"
+        >
+          <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
         </button>
         <button
           v-if="isOrphanSetting(row)"
@@ -480,6 +536,68 @@ async function submitDelete(): Promise<void> {
           @click="submitDelete"
         >
           Delete
+        </LoadingButton>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="resetOpen"
+      :title="resetRow ? `Reset · ${resetRow.key}` : 'Reset setting'"
+      :close-on-backdrop="!resetBusy"
+      :close-on-esc="!resetBusy"
+      initial-focus="dialog"
+      @cancel="closeReset"
+    >
+      <HilosActionError
+        :action="resetAction"
+        details-title="Couldn't reset the setting"
+      />
+      <dl v-if="resetShown" class="row mb-0">
+        <dt class="col-4">Now</dt>
+        <dd class="col-8" data-id="hilos-settings-reset-now">
+          <HilosSettingValueCell
+            :value="resetShown.value"
+            :type="resetShown.type"
+            :value-source="resetShown.valueSource"
+            :default-reference-key="resetShown.defaultReferenceKey"
+          />
+        </dd>
+        <dt class="col-4">Back to</dt>
+        <dd class="col-8" data-id="hilos-settings-reset-default">
+          <HilosSettingValueCell
+            :value="resetShown.defaultValue"
+            :type="resetShown.type"
+            :value-source="
+              resetShown.defaultReferenceKey !== null ? 'reference' : 'default'
+            "
+            :default-reference-key="resetShown.defaultReferenceKey"
+          />
+        </dd>
+      </dl>
+      <p
+        v-if="resetGone"
+        class="mb-0 mt-2 text-body-secondary"
+        data-id="hilos-settings-reset-gone"
+      >
+        Already reset elsewhere.
+      </p>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="resetBusy"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-danger"
+          :loading="resetLoading"
+          :disabled="resetBusy || resetGone"
+          data-id="hilos-settings-reset-confirm"
+          @click="submitReset"
+        >
+          Reset
         </LoadingButton>
       </template>
     </HilosModal>

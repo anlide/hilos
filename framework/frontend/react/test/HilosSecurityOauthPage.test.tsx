@@ -3,7 +3,8 @@
 // holds the address row in focus, reloads a pristine modal when the address
 // changes elsewhere and says so, shows the conflict chrome without Merge on a
 // changed one and answers Keep mine / Take theirs, locks save as "Deleted" when
-// the row goes, and asks before discarding a changed draft.
+// the row goes, and asks before discarding a changed draft. The ↺ resets the
+// address only through a confirm dialog (HIL-1147).
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
@@ -48,20 +49,25 @@ function router(): HilosRouter {
   }
 }
 
-/** The return-address row's slot, with the given value. */
-function redirectSlot(value: string): Record<string, unknown> {
+/** The return-address row's slot, with the given value and, unless named, its usual source. */
+function redirectSlot(value: string, source?: string): Record<string, unknown> {
   return {
     value,
-    source: value === '' ? 'default' : 'db',
+    source: source ?? (value === '' ? 'default' : 'db'),
     setState: value !== '',
   }
 }
 
 function seededContext(initial: string): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: string) => void
+  pushUpdate: (value: string, source?: string) => void
   pushRemove: () => void
-  sent: Array<{ action: string; payload: Record<string, unknown> }>
+  answer: (outcome: 'success' | 'fail') => void
+  sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }>
   focus: string[]
 } {
   let rows = [redirectSlot(initial)]
@@ -143,19 +149,37 @@ function seededContext(initial: string): {
       return () => {}
     },
   }
-  const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
+  const sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }> = []
+  const replyListeners = new Map<
+    string,
+    Set<(signal: Record<string, unknown>) => void>
+  >()
   const source = {
-    sendAction: (action: string, payload: Record<string, unknown>) => {
-      sent.push({ action, payload })
+    sendAction: (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ) => {
+      sent.push({ action, payload, requestId })
 
       return true
     },
-    on: (event: string, listener: (state: string) => void) => {
+    on: (event: string, listener: (signal: never) => void) => {
       if (event === 'state') {
-        drops.push(() => listener('disconnected'))
-      }
+        drops.push(() => (listener as (state: string) => void)('disconnected'))
 
-      return () => {}
+        return () => {}
+      }
+      const listeners = replyListeners.get(event) ?? new Set()
+      const reply = listener as (signal: Record<string, unknown>) => void
+      listeners.add(reply)
+      replyListeners.set(event, listeners)
+
+      return () => listeners.delete(reply)
     },
   }
   const actions = new ActionLifecycle(
@@ -169,8 +193,8 @@ function seededContext(initial: string): {
       scopes,
       actions,
     },
-    pushUpdate(value: string): void {
-      rows = [redirectSlot(value)]
+    pushUpdate(value: string, source?: string): void {
+      rows = [redirectSlot(value, source)]
       pushDelta({
         kind: 'row_updated',
         rowKey: ROW_KEY,
@@ -180,6 +204,19 @@ function seededContext(initial: string): {
     pushRemove(): void {
       rows = []
       pushDelta({ kind: 'row_removed', rowKey: ROW_KEY, reason: 'deleted' })
+    },
+    // Answer the last action sent, the way the server replies to it.
+    answer(outcome: 'success' | 'fail'): void {
+      const last = sent[sent.length - 1]
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of replyListeners.get(event) ?? []) {
+        listener({
+          kind: event,
+          action: last?.action,
+          requestId: last?.requestId,
+          reason: 'The address refused the reset.',
+        })
+      }
     },
     sent,
     focus,
@@ -344,5 +381,132 @@ describe('HilosSecurityOauthPage return-address modal', () => {
 
     expect(sent).toHaveLength(0)
     expect(byId('modal')).toBeNull()
+  })
+})
+
+describe('HilosSecurityOauthPage return-address reset dialog', () => {
+  function renderPage(context: HilosSecurityOauthContext): void {
+    render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosSecurityOauthPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+  }
+
+  function resetButton(): HTMLButtonElement {
+    return byId('hilos-oauth-redirect-reset') as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return byId('hilos-oauth-redirect-reset-confirm') as HTMLButtonElement
+  }
+
+  function cancelButton(): HTMLButtonElement {
+    return Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+  }
+
+  function openReset(context: HilosSecurityOauthContext): void {
+    renderPage(context)
+    fireEvent.click(resetButton())
+  }
+
+  async function reply(
+    answer: (outcome: 'success' | 'fail') => void,
+    outcome: 'success' | 'fail',
+  ): Promise<void> {
+    await act(async () => {
+      answer(outcome)
+      await Promise.resolve()
+    })
+  }
+
+  it('opens on ↺ with the row in focus and sends nothing', () => {
+    const { context, sent, focus } = seededContext('https://a.example/cb')
+    openReset(context)
+
+    expect(byId('modal')?.textContent).toContain('Reset · Return address')
+    expect(focus).toEqual([ROW_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('shows the address now and where it goes back to', () => {
+    const { context } = seededContext('https://a.example/cb')
+    openReset(context)
+
+    expect(byId('hilos-oauth-redirect-reset-now')?.textContent?.trim()).toBe(
+      'https://a.example/cb',
+    )
+    expect(
+      byId('hilos-oauth-redirect-reset-default')?.textContent?.trim(),
+    ).toBe('the env value — empty when env has none')
+  })
+
+  it('Reset sends the reset and closes on success, letting the row go', async () => {
+    const { context, sent, focus, answer } = seededContext(
+      'https://a.example/cb',
+    )
+    openReset(context)
+
+    fireEvent.click(confirmButton())
+    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+      { action: 'security_oauth_redirect_reset', payload: {} },
+    ])
+
+    await reply(answer, 'success')
+    expect(byId('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('Cancel sends nothing and lets the row go', () => {
+    const { context, sent, focus } = seededContext('https://a.example/cb')
+    openReset(context)
+
+    fireEvent.click(cancelButton())
+
+    expect(byId('modal')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('keeps the dialog open with the refusal on a failed reset', async () => {
+    const { context, answer } = seededContext('https://a.example/cb')
+    openReset(context)
+
+    fireEvent.click(confirmButton())
+    await reply(answer, 'fail')
+
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-action-error')?.textContent).toContain(
+      'The address refused the reset.',
+    )
+  })
+
+  it('says a reset elsewhere and locks Reset', () => {
+    const { context, pushUpdate } = seededContext('https://a.example/cb')
+    openReset(context)
+    expect(byId('hilos-oauth-redirect-reset-gone')).toBeNull()
+
+    act(() => {
+      pushUpdate('https://env.example/cb', 'env')
+    })
+
+    expect(byId('hilos-oauth-redirect-reset-gone')?.textContent?.trim()).toBe(
+      'Already reset elsewhere.',
+    )
+    expect(byId('hilos-oauth-redirect-reset-now')?.textContent?.trim()).toBe(
+      'https://env.example/cb',
+    )
+    expect(confirmButton().disabled).toBe(true)
+  })
+
+  it('locks ↺ while the address is not set in admin', () => {
+    const { context } = seededContext('')
+    renderPage(context)
+
+    expect(resetButton().disabled).toBe(true)
   })
 })

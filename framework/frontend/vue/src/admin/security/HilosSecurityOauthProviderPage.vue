@@ -6,7 +6,8 @@ route and the server narrows both windows to it (createHilosOAuthProviderFields 
 createHilosOAuthProviderSummary). A provider the project does not declare narrows
 them to nothing, and the page says "provider not found". Each field shows its
 effective value and where it comes from and can be edited or reset to env / the
-recipe; the client secret is write-only — shown as set / not set, never read back,
+recipe — the ↺ asks first, in a confirm dialog built like the settings orphan
+delete; the client secret is write-only — shown as set / not set, never read back,
 and its dialog always opens empty: it replaces, it does not show. The provider's
 recipe is shown as reference, without actions. Writes are tracked actions
 (createHilosSecurityOauthActions): the value redraws from the reactive table after
@@ -127,12 +128,6 @@ function noticeText(
   }
 }
 
-const resetAction = useTrackedAction()
-
-function resetField(row: HilosOAuthFieldRow): void {
-  void resetAction.run(sendProviderReset(row.providerKey, row.field))
-}
-
 // Edit dialog: one field of the provider. The secret's dialog always opens empty.
 const editOpen = ref(false)
 const editRow = ref<HilosOAuthFieldRow | null>(null)
@@ -169,6 +164,39 @@ const editTitle = computed(() =>
     ? `${editRow.value.secret ? 'Replace' : 'Edit'} · ${editRow.value.label}`
     : 'Edit field',
 )
+
+// Reset dialog: one field back to env / the recipe, only on confirm. It reads the
+// same live row the edit dialog does — one dialog is open at a time, and the
+// focus is one.
+const resetOpen = ref(false)
+const resetRow = ref<HilosOAuthFieldRow | null>(null)
+const resetAction = useTrackedAction()
+const {
+  loading: resetLoading,
+  busy: resetBusy,
+  run: runResetAction,
+  clearError: clearResetError,
+} = resetAction
+const resetShown = computed(() => liveRow.value ?? resetRow.value)
+const resetGone = computed(
+  () => liveRow.value === undefined || liveRow.value.source !== 'db',
+)
+// A provider without both its client id and its secret is not offered at sign-in,
+// so resetting either of them may take the provider off the sign-in page.
+const resetStopsSignIn = computed(
+  () =>
+    resetRow.value?.field === 'client_id' ||
+    resetRow.value?.field === 'client_secret',
+)
+
+/** What the reset dialog shows as the value now; the secret never reads back. */
+function resetNowText(row: HilosOAuthFieldRow): string {
+  if (row.secret) {
+    return row.setState ? 'Set' : 'Not set'
+  }
+
+  return displayValue(row)
+}
 
 function openEdit(row: HilosOAuthFieldRow): void {
   // Flush pending and take the row into focus, so the dialog edits the latest
@@ -240,6 +268,33 @@ async function submitEdit(): Promise<void> {
     closeEdit()
   }
 }
+
+function openReset(row: HilosOAuthFieldRow): void {
+  // Flush pending and take the row into focus; a row that is gone declines to
+  // open.
+  const fresh = fields.controller.focusRow(row.key)
+  if (!fresh) {
+    return
+  }
+  clearResetError()
+  resetRow.value = fresh
+  resetOpen.value = true
+}
+
+function closeReset(): void {
+  resetOpen.value = false
+  fields.controller.releaseFocus()
+}
+
+async function submitReset(): Promise<void> {
+  const row = resetRow.value
+  if (!row || resetBusy.value || resetGone.value) {
+    return
+  }
+  if (await runResetAction(sendProviderReset(row.providerKey, row.field))) {
+    closeReset()
+  }
+}
 </script>
 
 <template>
@@ -301,9 +356,9 @@ async function submitEdit(): Promise<void> {
             class="btn btn-sm btn-outline-secondary"
             :title="`Reset ${row.label} to env/default`"
             :aria-label="`Reset ${row.label} to env/default`"
-            :disabled="row.source !== 'db' || resetAction.busy.value"
+            :disabled="row.source !== 'db'"
             :data-id="`hilos-oauth-field-reset-${row.field}`"
-            @click="resetField(row)"
+            @click="openReset(row)"
           >
             <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
           </button>
@@ -416,6 +471,63 @@ async function submitEdit(): Promise<void> {
             </LoadingButton>
           </template>
         </ConflictActions>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="resetOpen"
+      :title="resetRow ? `Reset · ${resetRow.label}` : 'Reset field'"
+      :close-on-backdrop="!resetBusy"
+      :close-on-esc="!resetBusy"
+      initial-focus="dialog"
+      @cancel="closeReset"
+    >
+      <HilosActionError
+        :action="resetAction"
+        details-title="Couldn't reset the field"
+      />
+      <dl v-if="resetShown" class="row mb-0">
+        <dt class="col-4">Now</dt>
+        <dd class="col-8 text-break" data-id="hilos-oauth-field-reset-now">
+          {{ resetNowText(resetShown) }}
+        </dd>
+        <dt class="col-4">Back to</dt>
+        <dd class="col-8" data-id="hilos-oauth-field-reset-default">
+          the env value, or the default when env has none
+        </dd>
+      </dl>
+      <p
+        v-if="resetStopsSignIn && provider"
+        class="mb-0 mt-2 text-body-secondary"
+        data-id="hilos-oauth-field-reset-signin"
+      >
+        If env has none, sign-in with {{ provider.label }} stops being offered.
+      </p>
+      <p
+        v-if="resetGone"
+        class="mb-0 mt-2 text-body-secondary"
+        data-id="hilos-oauth-field-reset-gone"
+      >
+        Already reset elsewhere.
+      </p>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="resetBusy"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-danger"
+          :loading="resetLoading"
+          :disabled="resetBusy || resetGone"
+          data-id="hilos-oauth-field-reset-confirm"
+          @click="submitReset"
+        >
+          Reset
+        </LoadingButton>
       </template>
     </HilosModal>
   </HilosAdminPage>

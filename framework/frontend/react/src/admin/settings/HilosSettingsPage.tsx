@@ -3,7 +3,8 @@
 // merged with its persisted override, so the key set is fixed — there is no free
 // "add a setting" (data-model.md, "Cataloged tables"). A row's own actions are the
 // only mutations: set a custom value on an on-default key (add-by-key), edit or
-// reset an override, or delete an orphan. The table, the frame it declares (its
+// reset an override, or delete an orphan. The ↺ beside the pencil resets
+// through a confirm dialog built like the orphan delete — never in one click. The table, the frame it declares (its
 // columns, search, and empty words), the row view-model, and the add/update/delete
 // round-trips are the core headless's (createHilosSettingsTable /
 // createHilosSettingsActions); this view owns only the markup, so a project mounts
@@ -126,6 +127,12 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   const [deleteRow, setDeleteRow] = useState<HilosSettingRow | null>(null)
   const del = useTrackedAction()
 
+  // Reset dialog: back to the catalog default, only on confirm. It reads the live
+  // row it holds in focus, so what it shows follows the other tabs.
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetRow, setResetRow] = useState<HilosSettingRow | null>(null)
+  const reset = useTrackedAction()
+
   const editInputType = inputType(editRow?.type)
   const editStep = inputStep(editRow?.type)
   // The custom value the dialog would persist, normalized to a string: a number
@@ -141,6 +148,8 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     { overrideValue: editOverride },
   )
   const deleteGone = liveRow === undefined
+  const resetShown = liveRow ?? resetRow
+  const resetGone = liveRow === undefined || !hasCustomValue(liveRow)
   const editDirty = live.dirty
   const editTitle = editRow ? `Edit · ${editRow.key}` : 'Edit setting'
   const editSaveLabel = live.gone ? 'Deleted' : 'Save'
@@ -251,6 +260,32 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     }
   }
 
+  function openReset(row: HilosSettingRow): void {
+    // Flush pending and take the row into focus; a row already removed by someone
+    // else does not open a reset.
+    const fresh = settings.controller.focusRow(row.key)
+    if (!fresh) {
+      return
+    }
+    reset.clearError()
+    setResetRow(fresh)
+    setResetOpen(true)
+  }
+
+  function closeReset(): void {
+    setResetOpen(false)
+    settings.controller.releaseFocus()
+  }
+
+  async function submitReset(): Promise<void> {
+    if (!resetRow || reset.busy || resetGone) {
+      return
+    }
+    if (await reset.run(actions.sendSettingReset(resetRow.key))) {
+      closeReset()
+    }
+  }
+
   function acceptMine(): void {
     setEditBaseline(keepMineRowEdit(live, editBaseline))
   }
@@ -306,6 +341,22 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                   aria-hidden="true"
                 />
               </button>
+              {!isOrphanSetting(row) ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  title="Reset to default"
+                  aria-label="Reset to default"
+                  disabled={!hasCustomValue(row)}
+                  data-id={`hilos-settings-reset-${row.key}`}
+                  onClick={() => openReset(row)}
+                >
+                  <i
+                    className="bi bi-arrow-counterclockwise"
+                    aria-hidden="true"
+                  />
+                </button>
+              ) : null}
               {isOrphanSetting(row) ? (
                 <button
                   type="button"
@@ -499,6 +550,75 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             data-id="hilos-settings-delete-gone"
           >
             This setting was already deleted elsewhere.
+          </p>
+        ) : null}
+      </HilosModal>
+
+      <HilosModal
+        open={resetOpen}
+        title={resetRow ? `Reset · ${resetRow.key}` : 'Reset setting'}
+        closeOnBackdrop={!reset.busy}
+        closeOnEsc={!reset.busy}
+        initialFocus="dialog"
+        onClose={closeReset}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={reset.busy}
+              onClick={requestClose}
+            >
+              Cancel
+            </button>
+            <LoadingButton
+              className="btn-danger"
+              loading={reset.loading}
+              disabled={reset.busy || resetGone}
+              data-id="hilos-settings-reset-confirm"
+              onClick={() => void submitReset()}
+            >
+              Reset
+            </LoadingButton>
+          </>
+        )}
+      >
+        <HilosActionError
+          action={reset}
+          detailsTitle="Couldn't reset the setting"
+        />
+        {resetShown ? (
+          <dl className="row mb-0">
+            <dt className="col-4">Now</dt>
+            <dd className="col-8" data-id="hilos-settings-reset-now">
+              <HilosSettingValueCell
+                value={resetShown.value}
+                type={resetShown.type}
+                valueSource={resetShown.valueSource}
+                defaultReferenceKey={resetShown.defaultReferenceKey}
+              />
+            </dd>
+            <dt className="col-4">Back to</dt>
+            <dd className="col-8" data-id="hilos-settings-reset-default">
+              <HilosSettingValueCell
+                value={resetShown.defaultValue}
+                type={resetShown.type}
+                valueSource={
+                  resetShown.defaultReferenceKey !== null
+                    ? 'reference'
+                    : 'default'
+                }
+                defaultReferenceKey={resetShown.defaultReferenceKey}
+              />
+            </dd>
+          </dl>
+        ) : null}
+        {resetGone ? (
+          <p
+            className="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-settings-reset-gone"
+          >
+            Already reset elsewhere.
           </p>
         ) : null}
       </HilosModal>

@@ -1,6 +1,7 @@
 // The Angular peer of vue/src/admin/communications/HilosCommunicationsChannelPage.test.ts
 // and react/test/HilosCommunicationsChannelPage.test.tsx (HIL-1050), under the
-// same case names: the channel field's edit modal on the shared row-edit helper.
+// same case names: the channel field's edit modal on the shared row-edit helper,
+// and the ↺ that resets only through a confirm dialog (HIL-1147).
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
@@ -106,7 +107,12 @@ function seededContext(initial: FieldSlot[]): {
   pushUpdate: (next: FieldSlot) => void
   pushRemove: () => void
   pushLeave: (next: FieldSlot) => void
-  sent: Array<{ action: string; payload: Record<string, unknown> }>
+  answer: (outcome: 'success' | 'fail') => void
+  sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }>
   focus: string[]
 } {
   let rows = initial.slice()
@@ -169,15 +175,36 @@ function seededContext(initial: FieldSlot[]): {
       return () => {}
     },
   }
-  const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
+  const sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }> = []
+  const replyListeners = new Map<
+    string,
+    Set<(signal: Record<string, unknown>) => void>
+  >()
   const actions = new ActionLifecycle({
-    sendAction: (action: string, payload: Record<string, unknown>) => {
-      sent.push({ action, payload })
+    sendAction: (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ) => {
+      sent.push({ action, payload, requestId })
 
       return true
     },
-    on: () => () => {},
-  })
+    on: (
+      event: string,
+      listener: (signal: Record<string, unknown>) => void,
+    ) => {
+      const listeners = replyListeners.get(event) ?? new Set()
+      listeners.add(listener)
+      replyListeners.set(event, listeners)
+
+      return () => listeners.delete(listener)
+    },
+  } as unknown as ConstructorParameters<typeof ActionLifecycle>[0])
 
   return {
     context: {
@@ -228,6 +255,19 @@ function seededContext(initial: FieldSlot[]): {
             reason: 'left_set',
             row: { rowKey: ROW_KEY, slots: { field: next } },
           },
+        })
+      }
+    },
+    // Answer the last action sent, the way the server replies to it.
+    answer(outcome: 'success' | 'fail'): void {
+      const last = sent[sent.length - 1]
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of replyListeners.get(event) ?? []) {
+        listener({
+          kind: event,
+          action: last?.action,
+          requestId: last?.requestId,
+          reason: 'The channel refused the reset.',
         })
       }
     },
@@ -458,5 +498,152 @@ describe('HilosCommunicationsChannelPage door', () => {
     expect(
       card.compareDocumentPosition(test) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+})
+
+describe('HilosCommunicationsChannelPage reset dialog', () => {
+  function mountPage(
+    context: HilosCommunicationsContext,
+  ): ComponentFixture<HilosCommunicationsChannelPage> {
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosCommunicationsChannelPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function resetButton(fixture: ComponentFixture<unknown>): HTMLButtonElement {
+    return (fixture.nativeElement as HTMLElement).querySelector(
+      'table [data-id="hilos-channel-field-reset-from"]',
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(
+    fixture: ComponentFixture<unknown>,
+  ): HTMLButtonElement {
+    return el(fixture, 'hilos-channel-reset-confirm') as HTMLButtonElement
+  }
+
+  function openReset(
+    context: HilosCommunicationsContext,
+  ): ComponentFixture<HilosCommunicationsChannelPage> {
+    const fixture = mountPage(context)
+    resetButton(fixture).click()
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function cancelButton(root: HTMLElement): HTMLButtonElement {
+    return Array.from(
+      root.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+  }
+
+  /** Answer the action and let the page take the reply. */
+  async function reply(
+    fixture: ComponentFixture<unknown>,
+    answer: (outcome: 'success' | 'fail') => void,
+    outcome: 'success' | 'fail',
+  ): Promise<void> {
+    answer(outcome)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+  }
+
+  it('opens on ↺ with the row in focus and sends nothing', () => {
+    const { context, sent, focus } = seededContext([fromField('+1000')])
+    const fixture = openReset(context)
+
+    expect(el(fixture, 'modal')?.textContent).toContain(
+      'Reset · From (sender id)',
+    )
+    expect(focus).toEqual([ROW_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('shows the value now and where it goes back to', () => {
+    const { context } = seededContext([fromField('+1000')])
+    const fixture = openReset(context)
+
+    expect(el(fixture, 'hilos-channel-reset-now')?.textContent?.trim()).toBe(
+      '+1000',
+    )
+    expect(
+      el(fixture, 'hilos-channel-reset-default')?.textContent?.trim(),
+    ).toBe('the env value, or the default when env has none')
+  })
+
+  it('Reset sends the reset and closes on success, letting the row go', async () => {
+    const { context, sent, focus, answer } = seededContext([fromField('+1000')])
+    const fixture = openReset(context)
+
+    confirmButton(fixture).click()
+    fixture.detectChanges()
+    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+      {
+        action: 'communications_channel_reset',
+        payload: { channel: 'sms', field: 'from' },
+      },
+    ])
+
+    await reply(fixture, answer, 'success')
+    expect(el(fixture, 'modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('Cancel sends nothing and lets the row go', () => {
+    const { context, sent, focus } = seededContext([fromField('+1000')])
+    const fixture = openReset(context)
+
+    cancelButton(fixture.nativeElement as HTMLElement).click()
+    fixture.detectChanges()
+
+    expect(el(fixture, 'modal')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('keeps the dialog open with the refusal on a failed reset', async () => {
+    const { context, answer } = seededContext([fromField('+1000')])
+    const fixture = openReset(context)
+
+    confirmButton(fixture).click()
+    fixture.detectChanges()
+    await reply(fixture, answer, 'fail')
+
+    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(el(fixture, 'hilos-action-error')?.textContent).toContain(
+      'The channel refused the reset.',
+    )
+  })
+
+  it('says a reset elsewhere and locks Reset', () => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    const fixture = openReset(context)
+    expect(el(fixture, 'hilos-channel-reset-gone')).toBeNull()
+
+    pushUpdate(fromField('+env', 'env'))
+    fixture.detectChanges()
+
+    expect(el(fixture, 'hilos-channel-reset-gone')?.textContent?.trim()).toBe(
+      'Already reset elsewhere.',
+    )
+    expect(el(fixture, 'hilos-channel-reset-now')?.textContent?.trim()).toBe(
+      '+env',
+    )
+    expect(confirmButton(fixture).disabled).toBe(true)
+  })
+
+  it('locks ↺ while the value is not the admin one', () => {
+    const { context } = seededContext([fromField('+env', 'env')])
+    const fixture = mountPage(context)
+
+    expect(resetButton(fixture).disabled).toBe(true)
   })
 })

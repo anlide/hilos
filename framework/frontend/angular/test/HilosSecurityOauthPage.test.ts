@@ -3,7 +3,8 @@
 // holds the address row in focus, reloads a pristine modal when the address
 // changes elsewhere and says so, shows the conflict chrome without Merge on a
 // changed one and answers Keep mine / Take theirs, locks save as "Deleted" when
-// the row goes, and asks before discarding a changed draft.
+// the row goes, and asks before discarding a changed draft. The ↺ resets the
+// address only through a confirm dialog (HIL-1147).
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
@@ -49,20 +50,25 @@ function router(): HilosRouter {
   }
 }
 
-/** The return-address row's slot, with the given value. */
-function redirectSlot(value: string): Record<string, unknown> {
+/** The return-address row's slot, with the given value and, unless named, its usual source. */
+function redirectSlot(value: string, source?: string): Record<string, unknown> {
   return {
     value,
-    source: value === '' ? 'default' : 'db',
+    source: source ?? (value === '' ? 'default' : 'db'),
     setState: value !== '',
   }
 }
 
 function seededContext(initial: string): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: string) => void
+  pushUpdate: (value: string, source?: string) => void
   pushRemove: () => void
-  sent: Array<{ action: string; payload: Record<string, unknown> }>
+  answer: (outcome: 'success' | 'fail') => void
+  sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }>
   focus: string[]
 } {
   let rows = [redirectSlot(initial)]
@@ -144,15 +150,36 @@ function seededContext(initial: string): {
       return () => {}
     },
   }
-  const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
+  const sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }> = []
+  const replyListeners = new Map<
+    string,
+    Set<(signal: Record<string, unknown>) => void>
+  >()
   const actions = new ActionLifecycle({
-    sendAction: (action: string, payload: Record<string, unknown>) => {
-      sent.push({ action, payload })
+    sendAction: (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ) => {
+      sent.push({ action, payload, requestId })
 
       return true
     },
-    on: () => () => {},
-  })
+    on: (
+      event: string,
+      listener: (signal: Record<string, unknown>) => void,
+    ) => {
+      const listeners = replyListeners.get(event) ?? new Set()
+      listeners.add(listener)
+      replyListeners.set(event, listeners)
+
+      return () => listeners.delete(listener)
+    },
+  } as unknown as ConstructorParameters<typeof ActionLifecycle>[0])
 
   return {
     context: {
@@ -161,8 +188,8 @@ function seededContext(initial: string): {
       scopes,
       actions,
     },
-    pushUpdate(value: string): void {
-      rows = [redirectSlot(value)]
+    pushUpdate(value: string, source?: string): void {
+      rows = [redirectSlot(value, source)]
       pushDelta({
         kind: 'row_updated',
         rowKey: ROW_KEY,
@@ -172,6 +199,19 @@ function seededContext(initial: string): {
     pushRemove(): void {
       rows = []
       pushDelta({ kind: 'row_removed', rowKey: ROW_KEY, reason: 'deleted' })
+    },
+    // Answer the last action sent, the way the server replies to it.
+    answer(outcome: 'success' | 'fail'): void {
+      const last = sent[sent.length - 1]
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of replyListeners.get(event) ?? []) {
+        listener({
+          kind: event,
+          action: last?.action,
+          requestId: last?.requestId,
+          reason: 'The address refused the reset.',
+        })
+      }
     },
     sent,
     focus,
@@ -342,5 +382,150 @@ describe('HilosSecurityOauthPage return-address modal', () => {
 
     expect(sent).toHaveLength(0)
     expect(el(fixture, 'modal')).toBeNull()
+  })
+})
+
+describe('HilosSecurityOauthPage return-address reset dialog', () => {
+  function mountPage(
+    context: HilosSecurityOauthContext,
+  ): ComponentFixture<HilosSecurityOauthPage> {
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosSecurityOauthPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function openReset(
+    context: HilosSecurityOauthContext,
+  ): ComponentFixture<HilosSecurityOauthPage> {
+    const fixture = mountPage(context)
+    el(fixture, 'hilos-oauth-redirect-reset')?.click()
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function confirmButton(
+    fixture: ComponentFixture<unknown>,
+  ): HTMLButtonElement {
+    return el(
+      fixture,
+      'hilos-oauth-redirect-reset-confirm',
+    ) as HTMLButtonElement
+  }
+
+  function cancelButton(root: HTMLElement): HTMLButtonElement {
+    return Array.from(
+      root.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+  }
+
+  /** Answer the action and let the page take the reply. */
+  async function reply(
+    fixture: ComponentFixture<unknown>,
+    answer: (outcome: 'success' | 'fail') => void,
+    outcome: 'success' | 'fail',
+  ): Promise<void> {
+    answer(outcome)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+  }
+
+  it('opens on ↺ with the row in focus and sends nothing', () => {
+    const { context, sent, focus } = seededContext('https://a.example/cb')
+    const fixture = openReset(context)
+
+    expect(el(fixture, 'modal')?.textContent).toContain(
+      'Reset · Return address',
+    )
+    expect(focus).toEqual([ROW_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('shows the address now and where it goes back to', () => {
+    const { context } = seededContext('https://a.example/cb')
+    const fixture = openReset(context)
+
+    expect(
+      el(fixture, 'hilos-oauth-redirect-reset-now')?.textContent?.trim(),
+    ).toBe('https://a.example/cb')
+    expect(
+      el(fixture, 'hilos-oauth-redirect-reset-default')?.textContent?.trim(),
+    ).toBe('the env value — empty when env has none')
+  })
+
+  it('Reset sends the reset and closes on success, letting the row go', async () => {
+    const { context, sent, focus, answer } = seededContext(
+      'https://a.example/cb',
+    )
+    const fixture = openReset(context)
+
+    confirmButton(fixture).click()
+    fixture.detectChanges()
+    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+      { action: 'security_oauth_redirect_reset', payload: {} },
+    ])
+
+    await reply(fixture, answer, 'success')
+    expect(el(fixture, 'modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('Cancel sends nothing and lets the row go', () => {
+    const { context, sent, focus } = seededContext('https://a.example/cb')
+    const fixture = openReset(context)
+
+    cancelButton(fixture.nativeElement as HTMLElement).click()
+    fixture.detectChanges()
+
+    expect(el(fixture, 'modal')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('keeps the dialog open with the refusal on a failed reset', async () => {
+    const { context, answer } = seededContext('https://a.example/cb')
+    const fixture = openReset(context)
+
+    confirmButton(fixture).click()
+    fixture.detectChanges()
+    await reply(fixture, answer, 'fail')
+
+    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(el(fixture, 'hilos-action-error')?.textContent).toContain(
+      'The address refused the reset.',
+    )
+  })
+
+  it('says a reset elsewhere and locks Reset', () => {
+    const { context, pushUpdate } = seededContext('https://a.example/cb')
+    const fixture = openReset(context)
+    expect(el(fixture, 'hilos-oauth-redirect-reset-gone')).toBeNull()
+
+    pushUpdate('https://env.example/cb', 'env')
+    fixture.detectChanges()
+
+    expect(
+      el(fixture, 'hilos-oauth-redirect-reset-gone')?.textContent?.trim(),
+    ).toBe('Already reset elsewhere.')
+    expect(
+      el(fixture, 'hilos-oauth-redirect-reset-now')?.textContent?.trim(),
+    ).toBe('https://env.example/cb')
+    expect(confirmButton(fixture).disabled).toBe(true)
+  })
+
+  it('locks ↺ while the address is not set in admin', () => {
+    const { context } = seededContext('')
+    const fixture = mountPage(context)
+
+    expect(
+      (el(fixture, 'hilos-oauth-redirect-reset') as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 })

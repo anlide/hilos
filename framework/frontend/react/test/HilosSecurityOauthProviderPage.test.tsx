@@ -404,22 +404,31 @@ describe('HilosSecurityOauthProviderPage', () => {
 
 const CLIENT_ID_KEY = `${PROVIDER}/client_id`
 const SECRET_KEY = `${PROVIDER}/client_secret`
+const SCOPE_KEY = `${PROVIDER}/scope`
 
-/** A field row's slot: the client id with the given value, or the secret. */
+/** The label each field row carries. */
+const FIELD_LABEL: Record<string, string> = {
+  client_id: 'Client ID',
+  client_secret: 'Client secret',
+  scope: 'Scope',
+}
+
+/** A field row's slot: the client id or the scope with the given value, or the secret. */
 function fieldSlot(
-  field: 'client_id' | 'client_secret',
+  field: 'client_id' | 'client_secret' | 'scope',
   value: string | null = null,
+  source = 'db',
 ): Record<string, unknown> {
   const secret = field === 'client_secret'
 
   return {
     providerKey: PROVIDER,
     field,
-    label: secret ? 'Client secret' : 'Client ID',
+    label: FIELD_LABEL[field],
     type: 'string',
     secret,
     value: secret ? null : value,
-    source: 'db',
+    source,
     setState: true,
   }
 }
@@ -437,14 +446,20 @@ const PROVIDER_SLOT: Record<string, unknown> = {
 
 function seededContext(clientId: string | null): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: string | null) => void
+  pushUpdate: (value: string | null, source?: string) => void
   pushRemove: (rowKey: string) => void
-  sent: Array<{ action: string; payload: Record<string, unknown> }>
+  answer: (outcome: 'success' | 'fail') => void
+  sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }>
   focus: string[]
 } {
   let fields = new Map<string, Record<string, unknown>>([
     [CLIENT_ID_KEY, fieldSlot('client_id', clientId)],
     [SECRET_KEY, fieldSlot('client_secret')],
+    [SCOPE_KEY, fieldSlot('scope', 'read:user')],
   ])
   const focus: string[] = []
   const scopes = new ScopeManager()
@@ -524,19 +539,37 @@ function seededContext(clientId: string | null): {
       return () => {}
     },
   }
-  const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
+  const sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }> = []
+  const replyListeners = new Map<
+    string,
+    Set<(signal: Record<string, unknown>) => void>
+  >()
   const source = {
-    sendAction: (action: string, payload: Record<string, unknown>) => {
-      sent.push({ action, payload })
+    sendAction: (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ) => {
+      sent.push({ action, payload, requestId })
 
       return true
     },
-    on: (event: string, listener: (state: string) => void) => {
+    on: (event: string, listener: (signal: never) => void) => {
       if (event === 'state') {
-        drops.push(() => listener('disconnected'))
-      }
+        drops.push(() => (listener as (state: string) => void)('disconnected'))
 
-      return () => {}
+        return () => {}
+      }
+      const listeners = replyListeners.get(event) ?? new Set()
+      const reply = listener as (signal: Record<string, unknown>) => void
+      listeners.add(reply)
+      replyListeners.set(event, listeners)
+
+      return () => listeners.delete(reply)
     },
   }
   const actions = new ActionLifecycle(
@@ -550,8 +583,8 @@ function seededContext(clientId: string | null): {
       scopes,
       actions,
     },
-    pushUpdate(value: string | null): void {
-      const field = fieldSlot('client_id', value)
+    pushUpdate(value: string | null, source = 'db'): void {
+      const field = fieldSlot('client_id', value, source)
       fields = new Map(fields).set(CLIENT_ID_KEY, field)
       pushDelta({
         kind: 'row_updated',
@@ -563,6 +596,19 @@ function seededContext(clientId: string | null): {
       fields = new Map(fields)
       fields.delete(rowKey)
       pushDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
+    },
+    // Answer the last action sent, the way the server replies to it.
+    answer(outcome: 'success' | 'fail'): void {
+      const last = sent[sent.length - 1]
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of replyListeners.get(event) ?? []) {
+        listener({
+          kind: event,
+          action: last?.action,
+          requestId: last?.requestId,
+          reason: 'The provider refused the reset.',
+        })
+      }
     },
     sent,
     focus,
@@ -762,5 +808,162 @@ describe('HilosSecurityOauthProviderPage secret modal', () => {
     expect(saveButton().textContent?.trim()).toBe('Deleted')
     expect(saveButton().disabled).toBe(true)
     expect(byId('conflict-badge')).toBeNull()
+  })
+})
+
+describe('HilosSecurityOauthProviderPage reset dialog', () => {
+  function renderPage(context: HilosSecurityOauthContext): void {
+    render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosSecurityOauthProviderPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+  }
+
+  function resetButton(field: string): HTMLButtonElement {
+    return document.querySelector(
+      `table [data-id="hilos-oauth-field-reset-${field}"]`,
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return byId('hilos-oauth-field-reset-confirm') as HTMLButtonElement
+  }
+
+  function cancelButton(): HTMLButtonElement {
+    return Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement
+  }
+
+  function openReset(
+    context: HilosSecurityOauthContext,
+    field: 'client_id' | 'client_secret' | 'scope',
+  ): void {
+    renderPage(context)
+    fireEvent.click(resetButton(field))
+  }
+
+  async function reply(
+    answer: (outcome: 'success' | 'fail') => void,
+    outcome: 'success' | 'fail',
+  ): Promise<void> {
+    await act(async () => {
+      answer(outcome)
+      await Promise.resolve()
+    })
+  }
+
+  it('opens on ↺ with the row in focus and sends nothing', () => {
+    const { context, sent, focus } = seededContext('Iv1.a')
+    openReset(context, 'client_id')
+
+    expect(byId('modal')?.textContent).toContain('Reset · Client ID')
+    expect(focus).toEqual([CLIENT_ID_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('shows the value now, where it goes back to, and what it costs sign-in', () => {
+    const { context } = seededContext('Iv1.a')
+    openReset(context, 'client_id')
+
+    expect(byId('hilos-oauth-field-reset-now')?.textContent?.trim()).toBe(
+      'Iv1.a',
+    )
+    expect(byId('hilos-oauth-field-reset-default')?.textContent?.trim()).toBe(
+      'the env value, or the default when env has none',
+    )
+    expect(byId('hilos-oauth-field-reset-signin')?.textContent?.trim()).toBe(
+      'If env has none, sign-in with GitHub stops being offered.',
+    )
+  })
+
+  it('shows the secret as set, never its value', () => {
+    const { context } = seededContext('Iv1.a')
+    openReset(context, 'client_secret')
+
+    expect(byId('hilos-oauth-field-reset-now')?.textContent?.trim()).toBe('Set')
+    expect(byId('hilos-oauth-field-reset-signin')).not.toBeNull()
+  })
+
+  it('says nothing of sign-in when resetting the scope', () => {
+    const { context } = seededContext('Iv1.a')
+    openReset(context, 'scope')
+
+    expect(byId('modal')?.textContent).toContain('Reset · Scope')
+    expect(byId('hilos-oauth-field-reset-signin')).toBeNull()
+  })
+
+  it('Reset sends the reset and closes on success, letting the row go', async () => {
+    const { context, sent, focus, answer } = seededContext('Iv1.a')
+    openReset(context, 'client_id')
+
+    fireEvent.click(confirmButton())
+    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+      {
+        action: 'security_oauth_provider_reset',
+        payload: { providerKey: PROVIDER, field: 'client_id' },
+      },
+    ])
+
+    await reply(answer, 'success')
+    expect(byId('modal')).toBeNull()
+    expect(focus).toEqual([CLIENT_ID_KEY, ''])
+  })
+
+  it('Cancel sends nothing and lets the row go', () => {
+    const { context, sent, focus } = seededContext('Iv1.a')
+    openReset(context, 'client_id')
+
+    fireEvent.click(cancelButton())
+
+    expect(byId('modal')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([CLIENT_ID_KEY, ''])
+  })
+
+  it('keeps the dialog open with the refusal on a failed reset', async () => {
+    const { context, answer } = seededContext('Iv1.a')
+    openReset(context, 'client_id')
+
+    fireEvent.click(confirmButton())
+    await reply(answer, 'fail')
+
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-action-error')?.textContent).toContain(
+      'The provider refused the reset.',
+    )
+  })
+
+  it('says a reset elsewhere and locks Reset', () => {
+    const { context, pushUpdate } = seededContext('Iv1.a')
+    openReset(context, 'client_id')
+    expect(byId('hilos-oauth-field-reset-gone')).toBeNull()
+
+    act(() => {
+      pushUpdate('Iv1.env', 'env')
+    })
+
+    expect(byId('hilos-oauth-field-reset-gone')?.textContent?.trim()).toBe(
+      'Already reset elsewhere.',
+    )
+    expect(byId('hilos-oauth-field-reset-now')?.textContent?.trim()).toBe(
+      'Iv1.env',
+    )
+    expect(confirmButton().disabled).toBe(true)
+  })
+
+  it('locks ↺ while the value is not set in admin', () => {
+    const { context, pushUpdate } = seededContext('Iv1.a')
+    renderPage(context)
+    expect(resetButton('client_id').disabled).toBe(false)
+
+    act(() => {
+      pushUpdate('Iv1.env', 'env')
+    })
+
+    expect(resetButton('client_id').disabled).toBe(true)
   })
 })

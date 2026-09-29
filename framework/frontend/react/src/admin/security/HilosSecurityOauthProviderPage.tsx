@@ -6,7 +6,8 @@
 // createHilosOAuthProviderSummary). A provider the project does not declare narrows
 // them to nothing, and the page says "provider not found". Each field shows its
 // effective value and where it comes from and can be edited or reset to env / the
-// recipe; the client secret is write-only — shown as set / not set, never read back,
+// recipe — the ↺ asks first, in a confirm dialog built like the settings orphan
+// delete; the client secret is write-only — shown as set / not set, never read back,
 // and its dialog always opens empty: it replaces, it does not show. The provider's
 // recipe is shown as reference, without actions. Writes are tracked actions
 // (createHilosSecurityOauthActions): the value redraws from the reactive table after
@@ -67,6 +68,15 @@ const SOURCE_LABEL: Record<string, string> = {
 /** Human-readable effective value of a field that is not the secret. */
 function displayValue(row: HilosOAuthFieldRow): string {
   return row.value === null || row.value === '' ? '—' : row.value
+}
+
+/** What the reset dialog shows as the value now; the secret never reads back. */
+function resetNowText(row: HilosOAuthFieldRow): string {
+  if (row.secret) {
+    return row.setState ? 'Set' : 'Not set'
+  }
+
+  return displayValue(row)
 }
 
 /** The one field the dialog edits; the secret reads as empty. */
@@ -150,12 +160,6 @@ export function HilosSecurityOauthProviderPage({
   // A provider the project does not declare: the window came back empty.
   const notFound = summaryLoaded && summaryRows.length === 0
 
-  const reset = useTrackedAction()
-
-  function resetField(row: HilosOAuthFieldRow): void {
-    void reset.run(actions.sendProviderReset(row.providerKey, row.field))
-  }
-
   // Edit dialog: one field of the provider. The secret's dialog always opens empty.
   const [editOpen, setEditOpen] = useState(false)
   const [editRow, setEditRow] = useState<HilosOAuthFieldRow | null>(null)
@@ -180,6 +184,19 @@ export function HilosSecurityOauthProviderPage({
   const editTitle = editRow
     ? `${editRow.secret ? 'Replace' : 'Edit'} · ${editRow.label}`
     : 'Edit field'
+
+  // Reset dialog: one field back to env / the recipe, only on confirm. It reads
+  // the same live row the edit dialog does — one dialog is open at a time, and the
+  // focus is one.
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetRow, setResetRow] = useState<HilosOAuthFieldRow | null>(null)
+  const reset = useTrackedAction()
+  const resetShown = liveRow ?? resetRow
+  const resetGone = liveRow === undefined || liveRow.source !== 'db'
+  // A provider without both its client id and its secret is not offered at
+  // sign-in, so resetting either of them may take the provider off the sign-in page.
+  const resetStopsSignIn =
+    resetRow?.field === 'client_id' || resetRow?.field === 'client_secret'
 
   // Put a step of the helper into the dialog: the snapshot moves, and a value
   // the step takes lands in the input.
@@ -250,6 +267,36 @@ export function HilosSecurityOauthProviderPage({
     }
   }
 
+  function openReset(row: HilosOAuthFieldRow): void {
+    // Flush pending and take the row into focus; a row that is gone declines to
+    // open.
+    const fresh = fields.controller.focusRow(row.key)
+    if (!fresh) {
+      return
+    }
+    reset.clearError()
+    setResetRow(fresh)
+    setResetOpen(true)
+  }
+
+  function closeReset(): void {
+    setResetOpen(false)
+    fields.controller.releaseFocus()
+  }
+
+  async function submitReset(): Promise<void> {
+    if (!resetRow || reset.busy || resetGone) {
+      return
+    }
+    if (
+      await reset.run(
+        actions.sendProviderReset(resetRow.providerKey, resetRow.field),
+      )
+    ) {
+      closeReset()
+    }
+  }
+
   return (
     <HilosAdminPage page={HilosPages.SECURITY_OAUTH_PROVIDER}>
       {notFound ? (
@@ -315,9 +362,9 @@ export function HilosSecurityOauthProviderPage({
                     className="btn btn-sm btn-outline-secondary"
                     title={`Reset ${row.label} to env/default`}
                     aria-label={`Reset ${row.label} to env/default`}
-                    disabled={row.source !== 'db' || reset.busy}
+                    disabled={row.source !== 'db'}
                     data-id={`hilos-oauth-field-reset-${row.field}`}
-                    onClick={() => resetField(row)}
+                    onClick={() => openReset(row)}
                   >
                     <i
                       className="bi bi-arrow-counterclockwise"
@@ -446,6 +493,72 @@ export function HilosSecurityOauthProviderPage({
               dataId="hilos-oauth-field-edit-notice"
             />
           </form>
+        ) : null}
+      </HilosModal>
+
+      <HilosModal
+        open={resetOpen}
+        title={resetRow ? `Reset · ${resetRow.label}` : 'Reset field'}
+        closeOnBackdrop={!reset.busy}
+        closeOnEsc={!reset.busy}
+        initialFocus="dialog"
+        onClose={closeReset}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={reset.busy}
+              onClick={requestClose}
+            >
+              Cancel
+            </button>
+            <LoadingButton
+              className="btn-danger"
+              loading={reset.loading}
+              disabled={reset.busy || resetGone}
+              data-id="hilos-oauth-field-reset-confirm"
+              onClick={() => void submitReset()}
+            >
+              Reset
+            </LoadingButton>
+          </>
+        )}
+      >
+        <HilosActionError
+          action={reset}
+          detailsTitle="Couldn't reset the field"
+        />
+        {resetShown ? (
+          <dl className="row mb-0">
+            <dt className="col-4">Now</dt>
+            <dd
+              className="col-8 text-break"
+              data-id="hilos-oauth-field-reset-now"
+            >
+              {resetNowText(resetShown)}
+            </dd>
+            <dt className="col-4">Back to</dt>
+            <dd className="col-8" data-id="hilos-oauth-field-reset-default">
+              the env value, or the default when env has none
+            </dd>
+          </dl>
+        ) : null}
+        {resetStopsSignIn && provider ? (
+          <p
+            className="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-oauth-field-reset-signin"
+          >
+            If env has none, sign-in with {provider.label} stops being offered.
+          </p>
+        ) : null}
+        {resetGone ? (
+          <p
+            className="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-oauth-field-reset-gone"
+          >
+            Already reset elsewhere.
+          </p>
         ) : null}
       </HilosModal>
     </HilosAdminPage>

@@ -7,7 +7,8 @@
 // shared server-windowed one, drawn from what it declares about its frame (its
 // columns and empty words); this view owns only the cells of a row. Each editable
 // field shows its effective value and source and can be overridden (edit, in a
-// modal) or reset to its env/default; a secret is shown as set/not-set and never
+// modal) or reset to its env/default — the ↺ asks first, in a confirm dialog
+// built like the settings orphan delete; a secret is shown as set/not-set and never
 // editable. A "Send test notification" button above the table exercises the real
 // delivery path (HIL-201). Writes are tracked actions (createHilosCommunicationsActions):
 // the value redraws from the reactive table's snapshot signal after the backend
@@ -194,9 +195,9 @@ function noticeText(
               class="btn btn-sm btn-outline-secondary"
               title="Reset to env/default"
               aria-label="Reset to env/default"
-              [disabled]="row.valueSource !== 'settings' || reset.busy()"
+              [disabled]="row.valueSource !== 'settings'"
               [attr.data-id]="'hilos-channel-field-reset-' + row.field"
-              (click)="resetField(row)"
+              (click)="openReset(row)"
             >
               <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
             </button>
@@ -293,6 +294,60 @@ function noticeText(
           </div>
         </ng-template>
       </hilos-modal>
+
+      <hilos-modal
+        [open]="resetOpen()"
+        (openChange)="$event ? resetOpen.set(true) : closeReset()"
+        [title]="resetTitle()"
+        [closeOnBackdrop]="!reset.busy()"
+        [closeOnEsc]="!reset.busy()"
+        initialFocus="dialog"
+      >
+        <hilos-action-error
+          [action]="reset"
+          detailsTitle="Couldn't reset the field"
+        />
+        @if (resetShown(); as row) {
+          <dl class="row mb-0">
+            <dt class="col-4">Now</dt>
+            <dd class="col-8" data-id="hilos-channel-reset-now">
+              {{ displayValue(row) }}
+            </dd>
+            <dt class="col-4">Back to</dt>
+            <dd class="col-8" data-id="hilos-channel-reset-default">
+              the env value, or the default when env has none
+            </dd>
+          </dl>
+        }
+        @if (resetGone()) {
+          <p
+            class="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-channel-reset-gone"
+          >
+            Already reset elsewhere.
+          </p>
+        }
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="reset.busy()"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-danger"
+            [loading]="reset.loading()"
+            [disabled]="reset.busy() || resetGone()"
+            data-id="hilos-channel-reset-confirm"
+            (click)="submitReset()"
+          >
+            Reset
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -331,7 +386,6 @@ export class HilosCommunicationsChannelPage {
   // Showing the backend's own phrase on a rejected write is the driver's default
   // since HIL-779; this page used to be the one screen that asked for it.
   protected readonly test = createHilosTrackedAction()
-  protected readonly reset = createHilosTrackedAction()
   protected readonly edit = createHilosTrackedAction()
 
   // Edit dialog: one field's override value.
@@ -378,6 +432,25 @@ export class HilosCommunicationsChannelPage {
     this.live().gone ? 'Deleted' : 'Save',
   )
 
+  // Reset dialog: back to env/default, only on confirm. It reads the same live
+  // row the edit dialog does — one dialog is open at a time, and the focus is one.
+  protected readonly resetOpen = signal(false)
+  protected readonly resetRow = signal<HilosChannelFieldRow | null>(null)
+  protected readonly reset = createHilosTrackedAction()
+  protected readonly resetShown = computed(
+    () => this.liveRow() ?? this.resetRow(),
+  )
+  protected readonly resetGone = computed(() => {
+    const row = this.liveRow()
+
+    return row === undefined || row.valueSource !== 'settings'
+  })
+  protected readonly resetTitle = computed(() => {
+    const row = this.resetRow()
+
+    return row ? `Reset · ${row.label}` : 'Reset field'
+  })
+
   constructor() {
     // Bind the fields table to the connection and request its window once the
     // context input is bound; unbind on destroy / swap. Mirror the row in focus
@@ -411,10 +484,6 @@ export class HilosCommunicationsChannelPage {
 
   protected sendTest(): void {
     void this.test.run(this.actions().sendChannelTest(this.channel()))
-  }
-
-  protected resetField(row: HilosChannelFieldRow): void {
-    void this.reset.run(this.actions().sendChannelReset(row.channel, row.field))
   }
 
   protected openEdit(row: HilosChannelFieldRow): void {
@@ -482,6 +551,37 @@ export class HilosCommunicationsChannelPage {
       )
     ) {
       this.closeEdit()
+    }
+  }
+
+  protected openReset(row: HilosChannelFieldRow): void {
+    // Flush pending and take the row into focus; a row already removed by someone
+    // else does not open a reset.
+    const fresh = this.fields().controller.focusRow(row.key)
+    if (!fresh) {
+      return
+    }
+    this.reset.clearError()
+    this.resetRow.set(fresh)
+    this.resetOpen.set(true)
+  }
+
+  protected closeReset(): void {
+    this.resetOpen.set(false)
+    this.fields().controller.releaseFocus()
+  }
+
+  protected async submitReset(): Promise<void> {
+    const row = this.resetRow()
+    if (!row || this.reset.busy() || this.resetGone()) {
+      return
+    }
+    if (
+      await this.reset.run(
+        this.actions().sendChannelReset(row.channel, row.field),
+      )
+    ) {
+      this.closeReset()
     }
   }
 

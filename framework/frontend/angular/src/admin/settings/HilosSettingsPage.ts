@@ -3,7 +3,8 @@
 // merged with its persisted override, so the key set is fixed — there is no free
 // "add a setting" (data-model.md, "Cataloged tables"). A row's own actions are the
 // only mutations: set a custom value on an on-default key (add-by-key), edit or
-// reset an override, or delete an orphan. The table, the frame it declares (its
+// reset an override, or delete an orphan. The ↺ beside the pencil resets
+// through a confirm dialog built like the orphan delete — never in one click. The table, the frame it declares (its
 // columns, search, and empty words), the row view-model, and the add/update/delete
 // round-trips are the core headless's (createHilosSettingsTable /
 // createHilosSettingsActions); this view owns only the markup, so a project mounts
@@ -93,7 +94,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
   }
 }
 
-/** The framework settings admin page: the cataloged table with edit / delete dialogs. */
+/** The framework settings admin page: the cataloged table with edit / reset / delete dialogs. */
 @Component({
   selector: 'hilos-settings-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -147,6 +148,19 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
               aria-hidden="true"
             ></i>
           </button>
+          @if (!isOrphan(row)) {
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              title="Reset to default"
+              aria-label="Reset to default"
+              [disabled]="!hasCustom(row)"
+              [attr.data-id]="'hilos-settings-reset-' + row.key"
+              (click)="openReset(row)"
+            >
+              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+            </button>
+          }
           @if (isOrphan(row)) {
             <button
               type="button"
@@ -336,6 +350,72 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
           </button>
         </ng-template>
       </hilos-modal>
+
+      <hilos-modal
+        [open]="resetOpen()"
+        (openChange)="$event ? resetOpen.set(true) : closeReset()"
+        [title]="resetTitle()"
+        [closeOnBackdrop]="!reset.busy()"
+        [closeOnEsc]="!reset.busy()"
+        initialFocus="dialog"
+      >
+        <hilos-action-error
+          [action]="reset"
+          detailsTitle="Couldn't reset the setting"
+        />
+        @if (resetShown(); as row) {
+          <dl class="row mb-0">
+            <dt class="col-4">Now</dt>
+            <dd class="col-8" data-id="hilos-settings-reset-now">
+              <hilos-setting-value-cell
+                [value]="row.value"
+                [type]="row.type"
+                [valueSource]="row.valueSource"
+                [defaultReferenceKey]="row.defaultReferenceKey"
+              />
+            </dd>
+            <dt class="col-4">Back to</dt>
+            <dd class="col-8" data-id="hilos-settings-reset-default">
+              <hilos-setting-value-cell
+                [value]="row.defaultValue"
+                [type]="row.type"
+                [valueSource]="
+                  row.defaultReferenceKey !== null ? 'reference' : 'default'
+                "
+                [defaultReferenceKey]="row.defaultReferenceKey"
+              />
+            </dd>
+          </dl>
+        }
+        @if (resetGone()) {
+          <p
+            class="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-settings-reset-gone"
+          >
+            Already reset elsewhere.
+          </p>
+        }
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="reset.busy()"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-danger"
+            [loading]="reset.loading()"
+            [disabled]="reset.busy() || resetGone()"
+            data-id="hilos-settings-reset-confirm"
+            (click)="submitReset()"
+          >
+            Reset
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -373,6 +453,12 @@ export class HilosSettingsPage {
   protected readonly deleteRow = signal<HilosSettingRow | null>(null)
   protected readonly del = createHilosTrackedAction()
 
+  // Reset dialog: back to the catalog default, only on confirm. It reads the live
+  // row it holds in focus, so what it shows follows the other tabs.
+  protected readonly resetOpen = signal(false)
+  protected readonly resetRow = signal<HilosSettingRow | null>(null)
+  protected readonly reset = createHilosTrackedAction()
+
   protected readonly editInputType = computed(() =>
     inputType(this.editRow()?.type),
   )
@@ -393,6 +479,14 @@ export class HilosSettingsPage {
     )
   })
   protected readonly deleteGone = computed(() => this.liveRow() === undefined)
+  protected readonly resetShown = computed(
+    () => this.liveRow() ?? this.resetRow(),
+  )
+  protected readonly resetGone = computed(() => {
+    const row = this.liveRow()
+
+    return row === undefined || !hasCustomValue(row)
+  })
   protected readonly editDirty = computed(() => this.live().dirty)
   protected readonly editSaveLabel = computed(() =>
     this.live().gone ? 'Deleted' : 'Save',
@@ -410,6 +504,11 @@ export class HilosSettingsPage {
     const row = this.deleteRow()
 
     return row ? `Delete · ${row.key}` : 'Delete setting'
+  })
+  protected readonly resetTitle = computed(() => {
+    const row = this.resetRow()
+
+    return row ? `Reset · ${row.key}` : 'Reset setting'
   })
 
   constructor() {
@@ -549,6 +648,33 @@ export class HilosSettingsPage {
     }
     if (await this.del.run(this.actions().sendSettingDelete(row.key))) {
       this.closeDelete()
+    }
+  }
+
+  protected openReset(row: HilosSettingRow): void {
+    // Flush pending and take the row into focus; a row already removed by someone
+    // else does not open a reset.
+    const fresh = this.settings().controller.focusRow(row.key)
+    if (!fresh) {
+      return
+    }
+    this.reset.clearError()
+    this.resetRow.set(fresh)
+    this.resetOpen.set(true)
+  }
+
+  protected closeReset(): void {
+    this.resetOpen.set(false)
+    this.settings().controller.releaseFocus()
+  }
+
+  protected async submitReset(): Promise<void> {
+    const row = this.resetRow()
+    if (!row || this.reset.busy() || this.resetGone()) {
+      return
+    }
+    if (await this.reset.run(this.actions().sendSettingReset(row.key))) {
+      this.closeReset()
     }
   }
 

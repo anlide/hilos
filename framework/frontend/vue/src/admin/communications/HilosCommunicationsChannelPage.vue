@@ -5,7 +5,8 @@ global (one row per field of every channel), so the core headless presets its
 channel filter from the route and the server narrows the window to this channel
 (createHilosChannelFields) — the frame around the rows, empty state included, is
 what that table declares. Each editable field shows its effective value and source
-and can be overridden (edit, in a modal) or reset to its env/default; a secret is
+and can be overridden (edit, in a modal) or reset to its env/default — the ↺
+asks first, in a confirm dialog built like the settings orphan delete; a secret is
 shown as set/not-set and never editable. A "Send test notification" button
 exercises the real delivery path (HIL-201). Writes are tracked actions
 (createHilosCommunicationsActions): the value redraws from the reactive table's
@@ -76,14 +77,9 @@ onUnmounted(() => fields.dispose())
 // Showing the backend's own phrase on a rejected write is the driver's default
 // since HIL-779; this page used to be the one screen that asked for it.
 const testAction = useTrackedAction()
-const resetAction = useTrackedAction()
 
 function sendTest(): void {
   void testAction.run(sendChannelTest(channel.value))
-}
-
-function resetField(row: HilosChannelFieldRow): void {
-  void resetAction.run(sendChannelReset(row.channel, row.field))
 }
 
 /** Map a field type to the value input it edits with. */
@@ -207,6 +203,22 @@ const editNoticeText = computed(() =>
 )
 const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 
+// Reset dialog: back to env/default, only on confirm. It reads the same live row
+// the edit dialog does — one dialog is open at a time, and the focus is one.
+const resetOpen = ref(false)
+const resetRow = ref<HilosChannelFieldRow | null>(null)
+const resetAction = useTrackedAction()
+const {
+  loading: resetLoading,
+  busy: resetBusy,
+  run: runResetAction,
+  clearError: clearResetError,
+} = resetAction
+const resetShown = computed(() => liveRow.value ?? resetRow.value)
+const resetGone = computed(
+  () => liveRow.value === undefined || liveRow.value.valueSource !== 'settings',
+)
+
 function openEdit(row: HilosChannelFieldRow): void {
   // Flush pending and take the row into focus, so the dialog edits the latest
   // committed row and follows it from here; a row removed by someone else (now a
@@ -278,6 +290,33 @@ async function submitEdit(): Promise<void> {
     closeEdit()
   }
 }
+
+function openReset(row: HilosChannelFieldRow): void {
+  // Flush pending and take the row into focus; a row already removed by someone
+  // else does not open a reset.
+  const fresh = fields.controller.focusRow(row.key)
+  if (!fresh) {
+    return
+  }
+  clearResetError()
+  resetRow.value = fresh
+  resetOpen.value = true
+}
+
+function closeReset(): void {
+  resetOpen.value = false
+  fields.controller.releaseFocus()
+}
+
+async function submitReset(): Promise<void> {
+  const row = resetRow.value
+  if (!row || resetBusy.value || resetGone.value) {
+    return
+  }
+  if (await runResetAction(sendChannelReset(row.channel, row.field))) {
+    closeReset()
+  }
+}
 </script>
 
 <template>
@@ -330,9 +369,9 @@ async function submitEdit(): Promise<void> {
             class="btn btn-sm btn-outline-secondary"
             title="Reset to env/default"
             aria-label="Reset to env/default"
-            :disabled="row.valueSource !== 'settings' || resetAction.busy.value"
+            :disabled="row.valueSource !== 'settings'"
             :data-id="`hilos-channel-field-reset-${row.field}`"
-            @click="resetField(row)"
+            @click="openReset(row)"
           >
             <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
           </button>
@@ -413,6 +452,56 @@ async function submitEdit(): Promise<void> {
             </LoadingButton>
           </template>
         </ConflictActions>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="resetOpen"
+      :title="resetRow ? `Reset · ${resetRow.label}` : 'Reset field'"
+      :close-on-backdrop="!resetBusy"
+      :close-on-esc="!resetBusy"
+      initial-focus="dialog"
+      @cancel="closeReset"
+    >
+      <HilosActionError
+        :action="resetAction"
+        details-title="Couldn't reset the field"
+      />
+      <dl v-if="resetShown" class="row mb-0">
+        <dt class="col-4">Now</dt>
+        <dd class="col-8" data-id="hilos-channel-reset-now">
+          {{ displayValue(resetShown) }}
+        </dd>
+        <dt class="col-4">Back to</dt>
+        <dd class="col-8" data-id="hilos-channel-reset-default">
+          the env value, or the default when env has none
+        </dd>
+      </dl>
+      <p
+        v-if="resetGone"
+        class="mb-0 mt-2 text-body-secondary"
+        data-id="hilos-channel-reset-gone"
+      >
+        Already reset elsewhere.
+      </p>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="resetBusy"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-danger"
+          :loading="resetLoading"
+          :disabled="resetBusy || resetGone"
+          data-id="hilos-channel-reset-confirm"
+          @click="submitReset"
+        >
+          Reset
+        </LoadingButton>
       </template>
     </HilosModal>
   </HilosAdminPage>

@@ -199,6 +199,12 @@ test('a narrow window draws the settings as cards and never scrolls sideways', a
   await cancel.click()
   await expect(cancel).toBeHidden()
 
+  // The ↺ stands in the same row as the pencil — locked on the default, but drawn.
+  await shareOneRow(
+    card.getByTestId(`hilos-settings-edit-${key}`),
+    card.getByTestId(`hilos-settings-reset-${key}`),
+  )
+
   // Back on a wide screen it is the table again, and the cards are gone from sight:
   // both branches were drawn from the same window, so the row is there to show.
   await page.setViewportSize(desktop)
@@ -564,6 +570,38 @@ test('deletes an orphan setting through the confirm modal', async ({
   await expect(
     page.getByTestId(`hilos-settings-delete-${orphanKey}`),
   ).toHaveCount(0)
+})
+
+test('resets a custom setting to its catalog default through the confirm modal', async ({
+  page,
+}) => {
+  // HIL-1147: ↺ never resets in one click — it opens a dialog that says what the
+  // value is now and what it goes back to, and resets on its Reset only. The key
+  // is read by the delivery-log pruner alone, so no other test leans on it; the
+  // test ends on the catalog default, which is its own cleanup.
+  const key = 'notifications.delivery_log.retention_days'
+
+  await signUpAdmin(page)
+  await openSettings(page)
+  await isolate(page, key)
+  await setCustomSetting(page, key, '30')
+
+  const row = page.getByTestId(`hilos-table-row-${key}`)
+  const reset = shownByTestId(page, `hilos-settings-reset-${key}`)
+  await expect(row).toContainText('custom')
+  await expect(reset).toBeEnabled()
+
+  await reset.click()
+  await expect(page.getByTestId('hilos-settings-reset-now')).toContainText('30')
+  await expect(page.getByTestId('hilos-settings-reset-default')).toContainText(
+    '90',
+  )
+  await page.getByTestId('hilos-settings-reset-confirm').click()
+  await expect(page.getByTestId('hilos-settings-reset-confirm')).toHaveCount(0)
+
+  await expect(row).not.toContainText('custom')
+  await expect(row).toContainText('90')
+  await expect(reset).toBeDisabled()
 })
 
 test('refuses a bad value in the words of the rule that refused it', async ({

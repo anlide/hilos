@@ -3,6 +3,7 @@
 // conflict chrome without Merge and answers Keep mine / Take theirs, a row gone
 // under the modal locks save as "Deleted", and the modal asks before discarding
 // a changed draft. The merge itself is the core helper's; this covers the view.
+// The ↺ resets only through a confirm dialog (HIL-1147).
 import { mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -110,7 +111,12 @@ function seededContext(initial: FieldSlot[]): {
   pushUpdate: (next: FieldSlot) => void
   pushRemove: () => void
   pushLeave: (next: FieldSlot) => void
-  sent: Array<{ action: string; payload: Record<string, unknown> }>
+  answer: (outcome: 'success' | 'fail') => void
+  sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }>
   focus: string[]
 } {
   let rows = initial.slice()
@@ -173,15 +179,36 @@ function seededContext(initial: FieldSlot[]): {
       return () => {}
     },
   }
-  const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
+  const sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }> = []
+  const replyListeners = new Map<
+    string,
+    Set<(signal: Record<string, unknown>) => void>
+  >()
   const actions = new ActionLifecycle({
-    sendAction: (action: string, payload: Record<string, unknown>) => {
-      sent.push({ action, payload })
+    sendAction: (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ) => {
+      sent.push({ action, payload, requestId })
 
       return true
     },
-    on: () => () => {},
-  })
+    on: (
+      event: string,
+      listener: (signal: Record<string, unknown>) => void,
+    ) => {
+      const listeners = replyListeners.get(event) ?? new Set()
+      listeners.add(listener)
+      replyListeners.set(event, listeners)
+
+      return () => listeners.delete(listener)
+    },
+  } as unknown as ConstructorParameters<typeof ActionLifecycle>[0])
 
   return {
     context: {
@@ -232,6 +259,19 @@ function seededContext(initial: FieldSlot[]): {
             reason: 'left_set',
             row: { rowKey: ROW_KEY, slots: { field: next } },
           },
+        })
+      }
+    },
+    // Answer the last action sent, the way the server replies to it.
+    answer(outcome: 'success' | 'fail'): void {
+      const last = sent[sent.length - 1]
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of replyListeners.get(event) ?? []) {
+        listener({
+          kind: event,
+          action: last?.action,
+          requestId: last?.requestId,
+          reason: 'The channel refused the reset.',
         })
       }
     },
@@ -465,5 +505,121 @@ describe('HilosCommunicationsChannelPage door', () => {
       (card as Element).compareDocumentPosition(test as Element) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+})
+
+describe('HilosCommunicationsChannelPage reset dialog', () => {
+  function resetButton(): HTMLButtonElement {
+    return document.querySelector(
+      'table [data-id="hilos-channel-field-reset-from"]',
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return modalEl('hilos-channel-reset-confirm') as HTMLButtonElement
+  }
+
+  async function settle(): Promise<void> {
+    await nextTick()
+    await nextTick()
+    await nextTick()
+  }
+
+  async function openReset(context: HilosCommunicationsContext): Promise<void> {
+    await mountPage(context)
+    resetButton().click()
+    await nextTick()
+  }
+
+  it('opens on ↺ with the row in focus and sends nothing', async () => {
+    const { context, sent, focus } = seededContext([fromField('+1000')])
+    await openReset(context)
+
+    expect(modalEl('modal')?.textContent).toContain('Reset · From (sender id)')
+    expect(focus).toEqual([ROW_KEY])
+    expect(sent).toEqual([])
+  })
+
+  it('shows the value now and where it goes back to', async () => {
+    const { context } = seededContext([fromField('+1000')])
+    await openReset(context)
+
+    expect(modalEl('hilos-channel-reset-now')?.textContent?.trim()).toBe(
+      '+1000',
+    )
+    expect(modalEl('hilos-channel-reset-default')?.textContent?.trim()).toBe(
+      'the env value, or the default when env has none',
+    )
+  })
+
+  it('Reset sends the reset and closes on success, letting the row go', async () => {
+    const { context, sent, focus, answer } = seededContext([fromField('+1000')])
+    await openReset(context)
+
+    confirmButton().click()
+    await nextTick()
+    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+      {
+        action: 'communications_channel_reset',
+        payload: { channel: 'sms', field: 'from' },
+      },
+    ])
+
+    answer('success')
+    await settle()
+    expect(modalEl('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('Cancel sends nothing and lets the row go', async () => {
+    const { context, sent, focus } = seededContext([fromField('+1000')])
+    await openReset(context)
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    cancel?.click()
+    await nextTick()
+
+    expect(modalEl('modal')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('keeps the dialog open with the refusal on a failed reset', async () => {
+    const { context, answer } = seededContext([fromField('+1000')])
+    await openReset(context)
+
+    confirmButton().click()
+    await nextTick()
+    answer('fail')
+    await settle()
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-action-error')?.textContent).toContain(
+      'The channel refused the reset.',
+    )
+  })
+
+  it('says a reset elsewhere and locks Reset', async () => {
+    const { context, pushUpdate } = seededContext([fromField('+1000')])
+    await openReset(context)
+    expect(modalEl('hilos-channel-reset-gone')).toBeNull()
+
+    pushUpdate(fromField('+env', 'env'))
+    await nextTick()
+
+    expect(modalEl('hilos-channel-reset-gone')?.textContent?.trim()).toBe(
+      'Already reset elsewhere.',
+    )
+    expect(modalEl('hilos-channel-reset-now')?.textContent?.trim()).toBe('+env')
+    expect(confirmButton().disabled).toBe(true)
+  })
+
+  it('locks ↺ while the value is not the admin one', async () => {
+    const { context } = seededContext([fromField('+env', 'env')])
+    await mountPage(context)
+
+    expect(resetButton().disabled).toBe(true)
   })
 })

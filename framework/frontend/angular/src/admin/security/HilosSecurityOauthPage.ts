@@ -15,8 +15,9 @@
 // optimistically, and a refusal surfaces with the backend's domain phrase. The
 // modal holds the address row in focus and merges against it through the shared
 // row-edit helper (rowEdit.ts, conflict-resolution.md), saying what happened
-// elsewhere on one line of room held in advance (HilosEditNotice). Bootstrap
-// classes only (styling-rules.md).
+// elsewhere on one line of room held in advance (HilosEditNotice). The ↺ resets
+// the address to env only through a confirm dialog built like the settings orphan
+// delete, holding the same row in focus. Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -157,9 +158,9 @@ function noticeText(
                 class="btn btn-sm btn-outline-secondary"
                 title="Reset return address to env"
                 aria-label="Reset return address to env"
-                [disabled]="redirectRow()?.source !== 'db' || reset.busy()"
+                [disabled]="redirectRow()?.source !== 'db'"
                 data-id="hilos-oauth-redirect-reset"
-                (click)="resetRedirect()"
+                (click)="openReset()"
               >
                 <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
               </button>
@@ -280,6 +281,63 @@ function noticeText(
           </div>
         </ng-template>
       </hilos-modal>
+
+      <hilos-modal
+        [open]="resetOpen()"
+        (openChange)="$event ? resetOpen.set(true) : closeReset()"
+        title="Reset · Return address"
+        [closeOnBackdrop]="!reset.busy()"
+        [closeOnEsc]="!reset.busy()"
+        initialFocus="dialog"
+      >
+        <hilos-action-error
+          [action]="reset"
+          detailsTitle="Couldn't reset the return address"
+        />
+        @if (resetShown(); as row) {
+          <dl class="row mb-0">
+            <dt class="col-4">Now</dt>
+            <dd
+              class="col-8 text-break"
+              data-id="hilos-oauth-redirect-reset-now"
+            >
+              {{ row.setState ? row.value : 'Not set' }}
+            </dd>
+            <dt class="col-4">Back to</dt>
+            <dd class="col-8" data-id="hilos-oauth-redirect-reset-default">
+              the env value — empty when env has none
+            </dd>
+          </dl>
+        }
+        @if (resetGone()) {
+          <p
+            class="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-oauth-redirect-reset-gone"
+          >
+            Already reset elsewhere.
+          </p>
+        }
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="reset.busy()"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-danger"
+            [loading]="reset.loading()"
+            [disabled]="reset.busy() || resetGone()"
+            data-id="hilos-oauth-redirect-reset-confirm"
+            (click)="submitReset()"
+          >
+            Reset
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -308,8 +366,6 @@ export class HilosSecurityOauthPage {
   protected readonly redirectRow = computed(
     () => this.redirectRows()[0]?.row ?? null,
   )
-
-  protected readonly reset = createHilosTrackedAction()
 
   // Edit dialog: the return address.
   protected readonly editOpen = signal(false)
@@ -342,6 +398,20 @@ export class HilosSecurityOauthPage {
   protected readonly editSaveLabel = computed(() =>
     this.live().gone ? 'Deleted' : 'Save',
   )
+
+  // Reset dialog: the address back to env, only on confirm. It reads the same live
+  // row the edit dialog does — one dialog is open at a time, and the focus is one.
+  protected readonly resetOpen = signal(false)
+  protected readonly resetRow = signal<HilosOAuthRedirectRow | null>(null)
+  protected readonly reset = createHilosTrackedAction()
+  protected readonly resetShown = computed(
+    () => this.liveRow() ?? this.resetRow(),
+  )
+  protected readonly resetGone = computed(() => {
+    const row = this.liveRow()
+
+    return row === undefined || row.source !== 'db'
+  })
 
   constructor() {
     // Bind both server-windowed tables to the connection and request their first
@@ -400,10 +470,6 @@ export class HilosSecurityOauthPage {
     })
   }
 
-  protected resetRedirect(): void {
-    void this.reset.run(this.actions().sendRedirectReset())
-  }
-
   protected openEdit(): void {
     const row = this.redirectRow()
     if (!row) {
@@ -457,6 +523,36 @@ export class HilosSecurityOauthPage {
     }
     if (await this.edit.run(this.actions().sendRedirectSet(this.editValue()))) {
       this.closeEdit()
+    }
+  }
+
+  protected openReset(): void {
+    const row = this.redirectRow()
+    if (!row) {
+      return
+    }
+    // Flush pending and take the row into focus; a row that is gone declines to
+    // open.
+    const fresh = this.redirect().controller.focusRow(row.key)
+    if (!fresh) {
+      return
+    }
+    this.reset.clearError()
+    this.resetRow.set(fresh)
+    this.resetOpen.set(true)
+  }
+
+  protected closeReset(): void {
+    this.resetOpen.set(false)
+    this.redirect().controller.releaseFocus()
+  }
+
+  protected async submitReset(): Promise<void> {
+    if (!this.resetRow() || this.reset.busy() || this.resetGone()) {
+      return
+    }
+    if (await this.reset.run(this.actions().sendRedirectReset())) {
+      this.closeReset()
     }
   }
 

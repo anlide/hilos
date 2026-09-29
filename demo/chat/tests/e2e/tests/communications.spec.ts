@@ -23,7 +23,8 @@ test('draws no pager under a single-page declared table', async ({ page }) => {
 // spec reads (the sms helper catches a code by its recipient): a pristine open
 // modal follows the other tab's save and says so, a typed one conflicts and
 // locks Save, Keep mine sends the typed value to both tabs. The override is
-// reset at the end so the field goes back to its env/default.
+// reset at the end so the field goes back to its env/default — through the
+// reset's confirm dialog, the one way ↺ resets (HIL-1147).
 test('an open channel-field edit follows the other tab, then conflicts and keeps mine', async ({
   page,
 }) => {
@@ -43,6 +44,7 @@ test('an open channel-field edit follows the other tab, then conflicts and keeps
   const reset = shownByTestId(page, 'hilos-channel-field-reset-from')
   if (await reset.isEnabled()) {
     await reset.click()
+    await page.getByTestId('hilos-channel-reset-confirm').click()
     await expect(reset).toBeDisabled()
   }
 
@@ -84,6 +86,7 @@ test('an open channel-field edit follows the other tab, then conflicts and keeps
   // Back to the env/default, the same way.
   await expect(reset).toBeEnabled()
   await reset.click()
+  await page.getByTestId('hilos-channel-reset-confirm').click()
   await expect(reset).toBeDisabled()
   await tabB.close()
 })

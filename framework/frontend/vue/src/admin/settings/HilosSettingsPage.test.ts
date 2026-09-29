@@ -68,6 +68,12 @@ function seededContext(initial: SettingSlot[]): {
   pushUpdate: (next: SettingSlot) => void
   pushRemove: (key: string) => void
   pushLeave: (next: SettingSlot) => void
+  answer: (outcome: 'success' | 'fail') => void
+  sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }>
   focus: string[]
 } {
   let rows = initial.slice()
@@ -133,10 +139,36 @@ function seededContext(initial: SettingSlot[]): {
       return () => {}
     },
   }
+  const sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }> = []
+  const replyListeners = new Map<
+    string,
+    Set<(signal: Record<string, unknown>) => void>
+  >()
   const actions = new ActionLifecycle({
-    sendAction: () => false,
-    on: () => () => {},
-  })
+    sendAction: (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ) => {
+      sent.push({ action, payload, requestId })
+
+      return true
+    },
+    on: (
+      event: string,
+      listener: (signal: Record<string, unknown>) => void,
+    ) => {
+      const listeners = replyListeners.get(event) ?? new Set()
+      listeners.add(listener)
+      replyListeners.set(event, listeners)
+
+      return () => listeners.delete(listener)
+    },
+  } as unknown as ConstructorParameters<typeof ActionLifecycle>[0])
 
   return {
     context: {
@@ -189,6 +221,20 @@ function seededContext(initial: SettingSlot[]): {
         })
       }
     },
+    // Answer the last action sent, the way the server replies to it.
+    answer(outcome: 'success' | 'fail'): void {
+      const last = sent[sent.length - 1]
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of replyListeners.get(event) ?? []) {
+        listener({
+          kind: event,
+          action: last?.action,
+          requestId: last?.requestId,
+          reason: 'The setting refused the reset.',
+        })
+      }
+    },
+    sent,
     focus,
   }
 }
@@ -533,5 +579,153 @@ describe('HilosSettingsPage', () => {
     modalEl('modal-close')?.click()
     await nextTick()
     expect(focus).toEqual(['site_name', ''])
+  })
+})
+
+describe('HilosSettingsPage reset dialog', () => {
+  const CUSTOM = slot({
+    key: 'site_name',
+    valueSource: 'override',
+    value: 'Mine',
+    overrideValue: 'Mine',
+    defaultValue: 'Hilos',
+  })
+
+  function resetButton(key: string): HTMLButtonElement | null {
+    return document.querySelector(
+      `table [data-id="hilos-settings-reset-${key}"]`,
+    )
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return modalEl('hilos-settings-reset-confirm') as HTMLButtonElement
+  }
+
+  async function settle(): Promise<void> {
+    await nextTick()
+    await nextTick()
+    await nextTick()
+  }
+
+  async function openReset(context: HilosSettingsContext): Promise<void> {
+    await mountPage(context)
+    resetButton('site_name')?.click()
+    await nextTick()
+  }
+
+  it('offers ↺ on a catalog row, locked on its default, and none on an orphan', async () => {
+    const { context } = seededContext([
+      CUSTOM,
+      slot({ key: 'on_default', valueSource: 'default' }),
+      slot({
+        key: 'orphan',
+        valueSource: 'orphan',
+        overrideValue: 'x',
+        defaultValue: null,
+      }),
+    ])
+    await mountPage(context)
+
+    expect(resetButton('site_name')?.disabled).toBe(false)
+    expect(resetButton('on_default')?.disabled).toBe(true)
+    expect(resetButton('orphan')).toBeNull()
+    expect(
+      document.querySelector('table [data-id="hilos-settings-delete-orphan"]'),
+    ).not.toBeNull()
+  })
+
+  it('opens on ↺ with the row in focus and sends nothing', async () => {
+    const { context, sent, focus } = seededContext([CUSTOM])
+    await openReset(context)
+
+    expect(modalEl('modal')?.textContent).toContain('Reset · site_name')
+    expect(focus).toEqual(['site_name'])
+    expect(sent).toEqual([])
+  })
+
+  it('shows the own value now and the catalog default it goes back to', async () => {
+    const { context } = seededContext([CUSTOM])
+    await openReset(context)
+
+    expect(modalEl('hilos-settings-reset-now')?.textContent).toContain('Mine')
+    const back = modalEl('hilos-settings-reset-default')
+    expect(back?.textContent).toContain('Hilos')
+    expect(back?.textContent).not.toContain('custom')
+  })
+
+  it('names the referenced key when the default is a reference', async () => {
+    const { context } = seededContext([
+      { ...CUSTOM, defaultReferenceKey: 'app.title' },
+    ])
+    await openReset(context)
+
+    expect(modalEl('hilos-settings-reset-default')?.textContent).toContain(
+      'app.title',
+    )
+  })
+
+  it('Reset sends the reset and closes on success, letting the row go', async () => {
+    const { context, sent, focus, answer } = seededContext([CUSTOM])
+    await openReset(context)
+
+    confirmButton().click()
+    await nextTick()
+    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+      { action: 'setting_reset', payload: { key: 'site_name' } },
+    ])
+
+    answer('success')
+    await settle()
+    expect(modalEl('modal')).toBeNull()
+    expect(focus).toEqual(['site_name', ''])
+  })
+
+  it('Cancel sends nothing and lets the row go', async () => {
+    const { context, sent, focus } = seededContext([CUSTOM])
+    await openReset(context)
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    cancel?.click()
+    await nextTick()
+
+    expect(modalEl('modal')).toBeNull()
+    expect(sent).toEqual([])
+    expect(focus).toEqual(['site_name', ''])
+  })
+
+  it('keeps the dialog open with the refusal on a failed reset', async () => {
+    const { context, answer } = seededContext([CUSTOM])
+    await openReset(context)
+
+    confirmButton().click()
+    await nextTick()
+    answer('fail')
+    await settle()
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-action-error')?.textContent).toContain(
+      'The setting refused the reset.',
+    )
+  })
+
+  it('says a reset elsewhere and locks Reset', async () => {
+    const { context, pushUpdate } = seededContext([CUSTOM])
+    await openReset(context)
+    expect(modalEl('hilos-settings-reset-gone')).toBeNull()
+
+    pushUpdate({
+      ...CUSTOM,
+      valueSource: 'default',
+      value: 'Hilos',
+      overrideValue: null,
+    })
+    await nextTick()
+
+    expect(modalEl('hilos-settings-reset-gone')?.textContent?.trim()).toBe(
+      'Already reset elsewhere.',
+    )
+    expect(confirmButton().disabled).toBe(true)
   })
 })
