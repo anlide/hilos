@@ -532,8 +532,9 @@ base used to ask for the collection's name at run time through a seam,
 `usersCollection()`, and that seam went with the claim it registered (HIL-897).
 The operations are spelled out rather than left to the kind: the library's
 default is adding and removing, and renaming somebody is an operation of the
-framework's people library, not a row edit by a project (not in the code yet —
-HIL-1195; [people-table.md](people-table.md)).
+framework's people library, not a row edit by a project (HIL-1195;
+[people-table.md](people-table.md)): the same library claims the rename journal
+whole, and writes it in one transaction with the name it records.
 
 **The claimant is not an agent at all.** A test-fixture CLI command such as
 `UserTestSeedCommand` mutates a table from a process that has no agent, and the

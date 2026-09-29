@@ -62,7 +62,7 @@ where it is today — a hook the project implements.
 | What | Leaf |
 |---|---|
 | Creating a person, the name shown for one, "an administrator is not deleted" (`assertAdministratorMayDelete()`) | HIL-1194 |
-| Renaming a person — the write, the journal row, the notification | (not in the code yet — HIL-1195) |
+| Renaming a person — the write, the journal row, the notification (`renameUser()`, `afterUserRenamed()`) | HIL-1195 |
 | Creating the first administrator (`ensureAdminUser()`), granting and removing rights (`applyAdminGrant()`), blocking (`applyAccountBlock()`), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197 |
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
 | The tombstone of a merged account and "is this account already folded" | (not in the code yet — HIL-1199) |
@@ -82,23 +82,38 @@ page does not name it.
 
 ## Renaming A Person
 
-A rename is a framework operation of the people library (not in the code yet —
-HIL-1195). One action writes `hilos_user.name` and one row of the framework's
-rename journal: who was renamed, by whom — empty when the person renamed
-themselves — the old name, the new name, when. A person renamed by somebody else
-receives a framework notification. After the write runs the project's hook.
+A rename is a framework operation of the people library
+(`AbstractUsersLibraryAgent::renameUser()`, HIL-1195). One transaction writes
+`hilos_user.name` and one row of the framework's rename journal
+`hilos_user_rename`: whom (`user_id`), by whom (`renamed_by_user_id`), the old
+name (`old_name`), the new name (`new_name`), when (`renamed_at`). A name the
+person already carries writes nothing.
+
+Who renamed is the owner's frame (2026-09-28, the HIL-1195 interview), in the
+owner's words rendered in English: *put the id of the user who renamed into
+`renamed_by_user_id`, or null if it was not a user; never mind the old rows.* So
+the column holds the person who did the rename — the renamed person's own id
+when they renamed themselves — and is empty only when the author is not a person
+(the system, a console). The rows the demos carried over from their own journals
+never recorded the author and are empty there. When an author's account is
+erased, the database clears the reference and the row stays: it is the renamed
+person's history.
+
+After the commit, a person renamed by somebody else — an empty author included —
+receives the framework notification `user.renamed`
+(`UserNotificationType::RENAMED`), not a mandatory one; then the project's hook
+`afterUserRenamed()` runs with the journal row. What the hook writes is news: its
+failure is logged and does not undo the rename.
 
 The handler of `hilos_user_admin_rename`
-(`HilosSignalConstants::HILOS_USER_ADMIN_RENAME`) is the framework's; the
-project's check BEFORE the rename — the chat demo's moderation of a name — stays
-the project's. The journal is born with a foreign key onto `hilos_user`.
+(`HilosSignalConstants::HILOS_USER_ADMIN_RENAME`) is the framework's, and so is
+the forwarding from the person's card (`AbstractHilosUserPage`); the project's
+check BEFORE the rename — the chat demo's moderation of a name — stays the
+project's. The journal is born with its foreign keys onto `hilos_user`.
 
 A project that needs something of its own on a rename row extends the journal by
 [../orm/inheritance.md](../orm/inheritance.md); the chat demo's link from a
 rename to the row of its feed is the first case (not in the code yet — HIL-1196).
-
-The journal's name, its columns, the hook's form and the notification type are
-HIL-1195's to introduce; this page does not name them.
 
 ## A Merged Account
 

@@ -34,10 +34,14 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *     join because the holder is the one that erases an account when its request falls due
      *     (HIL-302). The people join because the framework asks who the administrators are
      *     from its own table (HIL-1198), and a restore announces its outcome to them beside
-     *     the person who asked for it; the table has to be there to be empty.
+     *     the person who asked for it; the table has to be there to be empty. Their rename
+     *     journal joins because the export writes a person's renames and the users library
+     *     writes the journal with the name (HIL-1195); its keys hold hilos_user, so it comes
+     *     after it and is dropped before it.
      */
     private const array TABLES = [
         'hilos_user',
+        'hilos_user_rename',
         'hilos_session',
         'hilos_identity',
         'hilos_setting',
@@ -146,6 +150,8 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
     /**
      * Runs one direction of the stub file of every table these cases use.
      *
+     * The drop runs in reverse order: a table whose foreign key holds an earlier one goes first.
+     *
      * @param bool $down Run the down (drop) stubs when true, the create stubs when false
      * @throws DatabaseException When a stub statement fails
      */
@@ -153,7 +159,7 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

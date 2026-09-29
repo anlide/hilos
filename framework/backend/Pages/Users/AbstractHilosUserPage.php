@@ -28,6 +28,7 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
@@ -35,9 +36,14 @@ use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeActionDTO;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\HilosUserAdminSetActionDTO;
 use Hilos\Users\DTO\HilosUserBlockSetActionDTO;
 use Hilos\Users\DTO\HilosUserDeletionSetActionDTO;
+use Hilos\Users\DTO\HilosUserUpdateActionDTO;
+use Hilos\Users\DTO\HilosUserUpdateFailSignalData;
+use Hilos\Users\DTO\HilosUserUpdateSuccessSignalData;
+use Throwable;
 
 /**
  * Base class for the framework Hilos single-user page.
@@ -45,13 +51,17 @@ use Hilos\Users\DTO\HilosUserDeletionSetActionDTO;
  * The default subscription path answers the client, parses the `userId` route param, and then
  * calls {@see self::onHilosUserSubscribe()}.
  *
- * Its ADMIN gate closes account merging, rights, blocking and scheduled deletion. The sessions
- * or users library judges and writes each change, then returns its outcome here to complete
- * the tracked submit on the surface that accepted it.
+ * Its ADMIN gate closes renaming, account merging, rights, blocking and scheduled deletion. The
+ * sessions or users library judges and writes each change, then returns its outcome here to
+ * complete the tracked submit on the surface that accepted it. A rename is forwarded here since
+ * HIL-1195, when the users library took it over from the projects' own copies of this page.
  */
 abstract class AbstractHilosUserPage extends AbstractHilosPage
 {
-    use HandoverGatekeeperTrait;
+    // The rename answers an untracked submit on the card's own acks, every other action as the trait does.
+    use HandoverGatekeeperTrait {
+        answerUntracked as private answerUntrackedByDefault;
+    }
 
     public const string PAGE = HilosPageConstants::HILOS_USER;
 
@@ -60,6 +70,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
+        HilosSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
         HilosSignalConstants::HILOS_USER_MERGE => AccountMergeActionDTO::class,
         HilosSignalConstants::HILOS_USER_ADMIN_SET => HilosUserAdminSetActionDTO::class,
         HilosSignalConstants::HILOS_USER_BLOCK_SET => HilosUserBlockSetActionDTO::class,
@@ -68,6 +79,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
 
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => HandoverAnswerSignalData::class,
@@ -90,6 +102,14 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
+            case HilosSignalConstants::HILOS_USER_UPDATE:
+                if (!$dto instanceof HilosUserUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosUserUpdateActionDTO::class, $dto);
+                }
+                $this->handleRename($acceptKey, $dto);
+
+                break;
+
             case HilosSignalConstants::HILOS_USER_MERGE:
                 if (!$dto instanceof AccountMergeActionDTO) {
                     throw new InvalidActionPayloadException($action, AccountMergeActionDTO::class, $dto);
@@ -142,6 +162,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE:
@@ -157,6 +178,59 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Sends a failed rename through the card's modal ack contract.
+     *
+     * A rename that failed on this page - its payload did not parse, or a guard refused it - is
+     * answered with the fail ack the card listens for; every other action with the default.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Action payload
+     * @param Throwable $e Action failure
+     * @throws InvalidArgumentException When the ack or the fallback action-error frame cannot be named
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        if ($action === HilosSignalConstants::HILOS_USER_UPDATE) {
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_USER_UPDATE_FAIL,
+                $acceptKey,
+                new HilosUserUpdateFailSignalData($e->getMessage()),
+            );
+
+            return;
+        }
+
+        parent::onActionException($acceptKey, $action, $dto, $e);
+    }
+
+    /**
+     * Sends an untracked rename's outcome as the two named acks the card has always listened
+     * for, the refusal and the success both - a tracked one is answered on its request id instead.
+     *
+     * @param string $acceptKey Accept key of the admin who asked
+     * @param string $action Browser action name the outcome belongs to
+     * @param ?string $error Why the write was refused, or null when it went through
+     * @throws InvalidArgumentException When the ack cannot be named
+     */
+    protected function answerUntracked(string $acceptKey, string $action, ?string $error): void
+    {
+        if ($action !== HilosSignalConstants::HILOS_USER_UPDATE) {
+            $this->answerUntrackedByDefault($acceptKey, $action, $error);
+
+            return;
+        }
+
+        if ($error !== null) {
+            $this->sendToUser(HilosSignalConstants::HILOS_USER_UPDATE_FAIL, $acceptKey, new HilosUserUpdateFailSignalData($error));
+
+            return;
+        }
+
+        $this->sendToUser(HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS, $acceptKey, new HilosUserUpdateSuccessSignalData());
     }
 
     /**
@@ -203,6 +277,34 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      */
     protected function onHilosUserSubscribe(string $acceptKey, HilosUserPageSubscribeParams $params): void
     {
+    }
+
+    /**
+     * Hands one rename to the users library, which owns the person's row and its journal.
+     *
+     * Nothing is judged on the way out, not even that the person exists: the answer would be
+     * read in this worker and acted on in another. Who is asking IS resolved here, because this
+     * worker is the one holding the admin's socket.
+     *
+     * @param string $acceptKey WebSocket accept key of the requesting admin
+     * @param HilosUserUpdateActionDTO $dto Person and the name typed for them
+     * @throws InvalidArgumentException When the rename frame cannot be named or queued
+     */
+    private function handleRename(string $acceptKey, HilosUserUpdateActionDTO $dto): void
+    {
+        $this->forward(
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME,
+            new AdminRenameSignalData(
+                userId: $dto->id,
+                name: $dto->name,
+                replySignal: HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::HILOS_USER_UPDATE,
+                successMessage: null,
+                adminUserId: Hilos::$browser?->resolveActionUserId($acceptKey),
+            ),
+        );
     }
 
     /**

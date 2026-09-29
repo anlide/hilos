@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Demo\Tasks\Tests\Integration;
 
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
-use Demo\Tasks\Constants\TasksNotificationType;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
-use Demo\Tasks\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceKeys;
@@ -22,12 +20,15 @@ use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\DTO\HilosUserUpdateActionDTO;
+use Hilos\Users\UserNotificationType;
 
 /**
- * Proves this demo raises the account-level notification it has (HIL-557).
+ * Proves an administrator's rename reaches the renamed person (HIL-557).
  *
  * There is no domain content here yet, so the one event worth telling somebody
  * about is the one the demo really produces: an administrator renames an account.
+ * The notice is the framework's since HIL-1195 - the users library renames and tells.
  * The visitor-registered notification went with the visitor's user row (HIL-610) -
  * a notification is addressed to a user id, and a guest has none. It goes through
  * the durable notifier, so this case reads the row back rather than watch a signal.
@@ -74,7 +75,7 @@ final class UserNotificationTest extends IntegrationTestCase
 
         $notification = $this->onlyNotificationFor($userId);
 
-        self::assertSame(TasksNotificationType::USER_RENAMED, $notification->type);
+        self::assertSame(UserNotificationType::RENAMED, $notification->type);
         self::assertSame(NotificationSeverity::INFO, $notification->severity);
         self::assertSame('An administrator renamed your account', $notification->title);
         self::assertSame('Your name is now Renamed by admin', $notification->body);
@@ -114,13 +115,13 @@ final class UserNotificationTest extends IntegrationTestCase
     }
 
     /**
-     * Drops every notification this demo raises, so each case starts from a known count.
+     * Drops every rename notice, so each case starts from a known count.
      */
     private function deleteDemoNotifications(): void
     {
         Database::sql(
-            'DELETE FROM `' . EntityNotification::_table . '`'
-            . ' WHERE `' . EntityNotification::type . '` LIKE \'tasks.%\'',
+            'DELETE FROM `' . EntityNotification::_table . '` WHERE `' . EntityNotification::type . '` = ?',
+            [UserNotificationType::RENAMED],
         );
     }
 }

@@ -37,7 +37,7 @@ use Hilos\Users\AccountErasure;
  */
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
-    /** Row family this demo reports in an account erasure: the person's rename audit rows (HIL-302). */
+    /** Row family this demo reports in an account erasure: the person's rename journal rows (HIL-302). */
     private const string ROWS_ERASED_RENAMES = 'renames';
 
     /**
@@ -59,9 +59,10 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     public const array OWNS_DB = [
         // TODO(HIL-1200): the framework deletes the person row after the project's own rows, and this claim goes.
         TasksDbContext::users => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library writes the rename audit; an erasure
-        // deletes the person's rows before their user row (HIL-302).
-        TasksDbContext::userRenames => [TruthSourceOperation::Remove],
+        // TODO(HIL-1200): the framework erases the rename journal and this claim goes. Borrowed until
+        // then - the users library writes the journal; an erasure deletes the person's rows before
+        // their user row (HIL-302).
+        HilosDbContext::userRenames => [TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns the reservation table. The hold
         // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
         // sessions library's row; the sweep itself belongs with the table.
@@ -93,18 +94,19 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     /**
      * Deletes everything this demo keeps of a person whose account is being erased (HIL-302).
      *
-     * The rename audit rows first, because they restrict the delete of the user row, then the
-     * row itself. Nothing here points at a file. Runs inside the framework's erasure
+     * The person's rows of the framework's rename journal first, because they restrict the delete
+     * of the user row, then the row itself; where the person only renamed somebody else, the
+     * database clears the author when the row goes. Nothing here points at a file. Runs inside the framework's erasure
      * transaction, so a failure rolls back the ways in that went before it.
      *
      * @param int $userId Person whose account is being erased
-     * @return AccountErasure The audit rows deleted, and no files
+     * @return AccountErasure The journal rows deleted, and no files
      * @throws ItemNotFoundForUpdateException When the user row cannot be deleted (id is null)
      * @throws HilosException On database or truth-source failure while deleting the rows
      */
     protected function applyAccountErasure(int $userId): AccountErasure
     {
-        $renames = Hilos::$db->userRenames->actions->deleteByTarget($userId);
+        $renames = Hilos::$db->userRenames->actions->deleteByUser($userId);
         Hilos::$db->users[$userId]?->actions->delete();
 
         return new AccountErasure([self::ROWS_ERASED_RENAMES => $renames], []);

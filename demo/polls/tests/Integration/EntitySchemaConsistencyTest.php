@@ -33,8 +33,11 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
     /** PSR-4 namespace of the demo's own Entity directory. */
     private const string OWN_ENTITY_NAMESPACE = 'Demo\\Polls\\Database\\Entity\\Item\\';
 
-    /** Lower bound so an empty discovery cannot masquerade as "no drift". */
-    private const int MIN_OWN_ENTITY_COUNT = 2;
+    /**
+     * Lower bound so an empty discovery cannot masquerade as "no drift". One: the guest is the
+     * demo's own table left; the rename journal is the framework's since HIL-1195.
+     */
+    private const int MIN_OWN_ENTITY_COUNT = 1;
 
     /** Lower bound so an unmigrated database cannot masquerade as "no drift" either. */
     private const int MIN_TABLE_COUNT = 6;

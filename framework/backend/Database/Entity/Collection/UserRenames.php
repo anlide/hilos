@@ -1,20 +1,21 @@
 <?php
 
-namespace Demo\Tasks\Database\Entity\Collection;
+declare(strict_types=1);
+
+namespace Hilos\Database\Entity\Collection;
 
 use ArrayAccess;
-use Demo\Tasks\Database\Entity\Item\UserRename as EntityUserRename;
-use Hilos\Database\Entity\Collection\EntityCollection;
+use Hilos\Database\Entity\Item\UserRename as EntityUserRename;
 use IteratorAggregate;
 
 /**
- * UserRenames - Entity collection for user-rename audit rows.
+ * UserRenames - Entity collection for the framework rename journal.
  *
  * @extends EntityCollection<EntityUserRename>
  * @implements IteratorAggregate<int|string, EntityUserRename>
  * @implements ArrayAccess<int|string, EntityUserRename>
  */
-final class UserRenames extends EntityCollection
+class UserRenames extends EntityCollection
 {
     public const string ENTITY_CLASS = EntityUserRename::class;
 }

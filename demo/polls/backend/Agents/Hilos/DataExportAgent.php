@@ -7,7 +7,6 @@ namespace Demo\Polls\Agents\Hilos;
 use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Hilos;
 use Hilos\DataExport\AbstractDataExportAgent;
-use Hilos\DataExport\DataExportTime;
 use Hilos\DataExport\DataExportWriter;
 use Hilos\HilosException;
 
@@ -17,7 +16,6 @@ final class DataExportAgent extends AbstractDataExportAgent
     public const array READS_DB = [
         ...parent::READS_DB,
         PollsDbContext::users,
-        PollsDbContext::userRenames,
     ];
 
     /**
@@ -27,17 +25,8 @@ final class DataExportAgent extends AbstractDataExportAgent
      */
     protected function applyAccountExport(int $userId, DataExportWriter $writer): void
     {
-        $renames = [];
-        foreach (Hilos::$db->userRenames->byTarget($userId) as $rename) {
-            $renames[] = [
-                'from' => $rename->oldName,
-                'to' => $rename->newName,
-                'at' => DataExportTime::iso($rename->timestamp),
-            ];
-        }
         $writer->section('polls', [
             'profile' => ['name' => Hilos::$db->users[$userId]?->name],
-            'renames' => $renames,
         ]);
     }
 }

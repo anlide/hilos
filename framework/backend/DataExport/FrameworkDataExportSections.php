@@ -28,6 +28,18 @@ final class FrameworkDataExportSections
             'id' => $userId,
             'since' => DataExportTime::iso($identities[0]->createdAt ?? null),
         ]);
+
+        // Who did a rename is somebody else's data, so the author stays out of the copy.
+        $renames = [];
+        foreach (Hilos::$db->userRenames->byUser($userId) as $rename) {
+            $renames[] = [
+                'from' => $rename->oldName,
+                'to' => $rename->newName,
+                'at' => DataExportTime::iso($rename->renamedAt),
+            ];
+        }
+        $writer->section('renames', $renames);
+
         $signInMethods = [];
         foreach ($identities as $identity) {
             $signInMethods[] = [

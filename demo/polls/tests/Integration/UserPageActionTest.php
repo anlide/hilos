@@ -6,11 +6,9 @@ namespace Demo\Polls\Tests\Integration;
 
 use Demo\Polls\Agents\Hilos\DemoHilosAgent;
 use Demo\Polls\Browser\PollsBrowserContext;
-use Demo\Polls\Database\Entity\Item\UserRename as EntityUserRename;
 use Demo\Polls\Hilos;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Runtime\View\Context\PollsRtContext;
-use Demo\Polls\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\SignalRouter;
@@ -24,6 +22,8 @@ use Demo\Polls\Agents\Hilos\UsersLibraryAgent;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Database\Entity\Item\UserRename as EntityUserRename;
+use Hilos\Users\DTO\HilosUserUpdateActionDTO;
 
 /**
  * Integration tests for the Hilos user-detail page rename action.
@@ -55,7 +55,9 @@ final class UserPageActionTest extends IntegrationTestCase
     }
 
     /**
-     * The update action renames the target user through the users table action.
+     * The card's rename reaches the framework's users library, which writes the name and a row
+     * of the framework's rename journal (HIL-1195). Nobody signed in stands behind this accept
+     * key, so the row names no author.
      *
      * @throws HilosException On database or runtime error
      */
@@ -74,10 +76,12 @@ final class UserPageActionTest extends IntegrationTestCase
 
         $this->assertSame('Renamed', Hilos::$db->users[$userId]?->name);
 
-        $audit = EntityUserRename::get([EntityUserRename::target_user_id => $userId])->first();
-        $this->assertNotNull($audit);
-        $this->assertSame($originalName, $audit->old_name);
-        $this->assertSame('Renamed', $audit->new_name);
+        $journal = EntityUserRename::get([EntityUserRename::user_id => $userId])->first();
+        $this->assertNotNull($journal);
+        $this->assertSame($userId, $journal->user_id);
+        $this->assertNull($journal->renamed_by_user_id);
+        $this->assertSame($originalName, $journal->old_name);
+        $this->assertSame('Renamed', $journal->new_name);
     }
 
     /**

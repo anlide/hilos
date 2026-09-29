@@ -22,6 +22,7 @@ use Hilos\Database\Entity\Item\SecondFactorReset;
 use Hilos\Database\Entity\Item\SecondFactorSetting;
 use Hilos\Database\Entity\Item\SecondFactorTrust;
 use Hilos\Database\Entity\Item\StepUp;
+use Hilos\Database\Entity\Item\UserRename;
 use Hilos\Database\Entity\Item\UserVerification;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
@@ -104,6 +105,7 @@ final class AuthFeature extends FeatureDefinition
                 AccountDeletion::_table,
                 LegalAcceptance::_table,
                 DataExport::_table,
+                UserRename::_table,
             ],
         );
     }

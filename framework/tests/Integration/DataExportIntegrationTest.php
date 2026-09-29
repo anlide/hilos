@@ -113,6 +113,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun("INSERT INTO hilos_notification (user_id, type, severity, title, body) VALUES "
             . "(7, 'notice', 'info', 'My notification', 'My body'), (8, 'notice', 'info', 'Foreign notification', 'Foreign body')");
         Database::sqlRun("INSERT INTO hilos_notification_preference (user_id, channel, enabled) VALUES (7, 'email', 0), (8, 'sms', 0)");
+        Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (7, 'Person'), (8, 'Stranger')");
+        Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "
+            . "(7, 8, 'Old me', 'New me', '2026-01-03 00:00:00'), (8, 7, 'Foreign old', 'Foreign new', '2026-01-03 00:00:00')");
         $first = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
         Hilos::$db->dataExports->actions->order(8, '2026-01-02 00:00:00');
         $agent = new DataExportTestAgent();
@@ -124,6 +127,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame(7 * 86400, strtotime($first->expiresAt) - strtotime($first->finishedAt));
         $archive = new PharData($this->directory . '/' . $first->storedName);
         self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00Z'], self::section($archive, 'account'));
+        self::assertSame([['from' => 'Old me', 'to' => 'New me', 'at' => '2026-01-03T00:00:00Z']], self::section($archive, 'renames'));
         self::assertCount(2, self::section($archive, 'sign_in_methods'));
         self::assertNull(self::section($archive, 'sign_in_methods')[0]['identifier']);
         self::assertCount(1, self::section($archive, 'sessions'));
@@ -140,7 +144,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             foreach (['SECRET', 'BACKUP_CODE', 'SESSION_TOKEN', 'RAW_USER_AGENT', 'Foreign', 'foreign@'] as $forbidden) {
                 self::assertStringNotContainsString($forbidden, $text);
             }
-            foreach (['secret', 'code', 'code_hash', 'endpoint', 'auth', 'user_agent', 'token', 'p256dh'] as $key) {
+            foreach (['secret', 'code', 'code_hash', 'endpoint', 'auth', 'user_agent', 'token', 'p256dh', 'renamedByUserId'] as $key) {
                 self::assertStringNotContainsString('"' . $key . '"', $text);
             }
         }

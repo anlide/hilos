@@ -27,6 +27,7 @@ use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\Library\Command\StepUpCommands;
+use Hilos\Auth\Library\Command\UserRenameCommands;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -132,6 +133,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\View\Item\UserRename;
 use Hilos\Database\Schema\EntitySchemaAxis;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
@@ -142,6 +144,7 @@ use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
+use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
@@ -166,10 +169,12 @@ use Throwable;
  * It is ABSTRACT by convention alone, like {@see AbstractNotificationsLibraryAgent}: every
  * Hilos agent is mounted through a concrete class in the project's registry. The person is
  * the framework's (HIL-1194) - created in `hilos_user` ({@see createUser()}), named from it
- * ({@see displayNameOf()}), and refused deletion while an administrator
+ * ({@see displayNameOf()}), renamed with a row of its rename journal ({@see renameUser()},
+ * HIL-1195), and refused deletion while an administrator
  * ({@see assertAdministratorMayDelete()}). What a project adds is its providers
  * ({@see buildOAuthService()}), whatever it does when an account is born
- * ({@see afterUserCreated()}) and the claims over its own tables; the methods it offers for an
+ * ({@see afterUserCreated()}) or renamed ({@see afterUserRenamed()}) and the claims over its
+ * own tables; the methods it offers for an
  * identifier are its method directory narrowed by the admin ({@see EnabledAuthMethods}).
  * Everything else - the commands, their guards, their answers - stays here and is the same for
  * every project that declares {@see HilosFeature::AUTH}.
@@ -194,6 +199,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * project to name the collection. Every operation, and not the create-only right it began as
      * (HIL-771): a page carries no claim, so the writers that used to rename somebody from a
      * profile submit come here instead, and renaming is editing the row.
+     *
+     * The rename journal is written by this library alone (HIL-1195), in one transaction with
+     * the name it records ({@see renameUser()}): a rename and its row stand or fall together, so
+     * they have one writer. Every operation, because an erased person's rows leave with them.
      *
      * The second factor is a proof of the account too (HIL-494), so four of its tables are here
      * the same way: the authenticators, the backup codes, the delayed removals and each person's
@@ -224,6 +233,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => TruthSourceOperation::ALL,
         HilosDbContext::legalAcceptances => TruthSourceOperation::ALL,
+        HilosDbContext::userRenames => TruthSourceOperation::ALL,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
@@ -234,12 +244,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * this is the agent whose dispatcher parks the throttled sign-in commands and waits for
      * it. Declaring it elsewhere takes the answer away from the pool that is waiting (HIL-420).
      * The admin card also hands deletion requests here, because this library owns their rows
-     * and publishes the account's state after scheduling or canceling them (HIL-304).
+     * and publishes the account's state after scheduling or canceling them (HIL-304). It hands
+     * a rename here for the same reason (HIL-771): the name and its journal row are this
+     * library's to write (HIL-1195).
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
+        HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
     ];
 
     /**
@@ -487,6 +500,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** A person's own account deletion, built on first use. */
     private ?AccountDeletionCommands $accountDeletionCommands = null;
 
+    /** Renaming a person with its journal row, built on first use. */
+    private ?UserRenameCommands $userRenameCommands = null;
+
     /** Schedule of the second-factor removal sweep, armed on start (HIL-494). */
     private ?CronRule $secondFactorResetSweepRule = null;
 
@@ -586,6 +602,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * this login, and an exception that went to the log alone left it waiting for good. It
      * learns the login failed through the session holder, like every other ending of a trip.
      *
+     * The person's card hands an administrator's rename here (HIL-1195), and it is answered on
+     * the frame it names, a refusal included: a modal is waiting on it.
+     *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
@@ -602,6 +621,19 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
             case HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET:
                 $this->handleDeletionSetRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ADMIN_RENAME:
+                if (!$data->data instanceof AdminRenameSignalData) {
+                    throw new ValidationException(
+                        HilosSignalConstants::HILOS_USER_ADMIN_RENAME . ' payload must be ' . AdminRenameSignalData::class,
+                    );
+                }
+                $this->sendToAgent(
+                    $data->data->replySignal,
+                    HandoverAnswerSignalData::to($data->data, $this->handleAdminRename($data->data)),
+                );
 
                 return;
 
@@ -1137,6 +1169,46 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $name = Hilos::$db->users[$userId]?->name;
 
         return $name === null || $name === '' ? null : $name;
+    }
+
+    /**
+     * Renames one person and records the rename in the framework's journal (HIL-1195).
+     *
+     * The name and the journal row are one transaction; after it commits the person is told
+     * when somebody else renamed them, and {@see afterUserRenamed()} runs. A name that is
+     * already the person's writes nothing and answers null. Called for an administrator's
+     * rename from the person's card, and by a project that renames a person on its own terms -
+     * the chat demo's moderated rename of oneself (HIL-1196).
+     *
+     * Not final, for the reason {@see createUser()} gives.
+     *
+     * @param int $userId Person to rename
+     * @param string $newName Name to give; trimmed and held to the frame of the person's name
+     * @param ?int $renamedByUserId Person who did the rename - the renamed person's own id when they renamed
+     *     themselves - or null when the author is not a person
+     * @return ?UserRename Journal row of this rename, or null when the name was already the person's
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the name is empty, too short or too long
+     * @throws HilosException When the name, the journal row or the transaction cannot be written
+     */
+    public function renameUser(int $userId, string $newName, ?int $renamedByUserId): ?UserRename
+    {
+        return $this->userRenameCommands()->rename($userId, $newName, $renamedByUserId);
+    }
+
+    /**
+     * Runs whatever else the project does when a person is renamed.
+     *
+     * Called after the rename committed, with its journal row. Default does nothing: the chat
+     * demo writes the rename into its feed here (HIL-1196), and a project without a feed has
+     * nothing to write. What a project writes ABOUT a rename is news - its failure is logged and
+     * does not undo the rename, which the administrator is then told succeeded.
+     *
+     * @param UserRename $rename Journal row of the rename just committed
+     * @throws HilosException When the project's own bookkeeping fails
+     */
+    public function afterUserRenamed(UserRename $rename): void
+    {
     }
 
     /**
@@ -1816,6 +1888,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
+     * @return UserRenameCommands Renaming a person with its journal row, built once per process
+     */
+    private function userRenameCommands(): UserRenameCommands
+    {
+        return $this->userRenameCommands ??= new UserRenameCommands($this);
+    }
+
+    /**
      * @return DetectionCommands The identifier lookup, built once per process
      */
     private function detectionCommands(): DetectionCommands
@@ -1937,5 +2017,47 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             errorType: null,
             errorDetail: null,
         ));
+    }
+
+    /**
+     * Renames a person for an administrator, or says why the person was not renamed.
+     *
+     * The refusals keep the sentences the demos' own handler sent, because they are what an
+     * administrator reads. A missing person and a name the row refuses are answers, not
+     * exceptions: the ask arrived as a frame, and a throw here would leave the modal waiting
+     * forever.
+     *
+     * @param AdminRenameSignalData $rename Whom to rename, to what, and on whose word
+     * @return ?ActionRefusal Why the person was not renamed, or null when they were or already carried the name
+     */
+    private function handleAdminRename(AdminRenameSignalData $rename): ?ActionRefusal
+    {
+        try {
+            $this->renameUser($rename->userId, $rename->name, $rename->adminUserId);
+        } catch (ItemNotFoundForUpdateException) {
+            return ActionRefusal::said("User #{$rename->userId} not found");
+        } catch (ValidationException $e) {
+            return ActionRefusal::said('Failed to update user: ' . $e->getMessage());
+        } catch (DatabaseException $e) {
+            // The same refusal the dispatcher would have put on the wire had this been thrown on
+            // the page: the placeholder for the person, the failure beside it for an admin.
+            $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
+
+            return ActionRefusal::fromThrowable($e);
+        } catch (WiringRefusal $refusal) {
+            // Answered like the storage failure above rather than raised (HIL-575): the ask
+            // arrived as a frame with a modal waiting on it, so a throw would hang the admin.
+            // Its own words - the name of a collection nobody here reads - are not an answer
+            // about this rename, so they ride only as the detail an admin may quote.
+            $this->logAgentError("Admin rename refused for userId={$rename->userId}: {$refusal->getMessage()}");
+
+            return ActionRefusal::fromThrowable($refusal);
+        } catch (HilosException $e) {
+            $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
+
+            return ActionRefusal::fromThrowable($e);
+        }
+
+        return null;
     }
 }

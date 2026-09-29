@@ -38,6 +38,7 @@ use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFacto
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
+use Hilos\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Users\AdminAudience;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
@@ -59,6 +60,7 @@ use Hilos\Database\Actions\Collection\SecondFactorTrustsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
+use Hilos\Database\Actions\Collection\UserRenamesActions;
 use Hilos\Database\Actions\Collection\UsersActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
@@ -95,6 +97,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionPasskeyCredentials $passkeyCredentials
  * @property-read DbCollectionSessions $sessions
  * @property-read DbCollectionUsers $users
+ * @property-read DbCollectionUserRenames $userRenames
  * @property-read DbCollectionNotifications $notifications
  * @property-read DbCollectionNotificationDeliveries $notificationDeliveries
  * @property-read DbCollectionNotificationPreferences $notificationPreferences
@@ -130,6 +133,8 @@ abstract class HilosDbContext extends DbContext
     public const string session = 'session';
     public const string users = 'users';
     public const string user = 'user';
+    public const string userRenames = 'userRenames';
+    public const string userRename = 'userRename';
     public const string notifications = 'notifications';
     public const string notification = 'notification';
     public const string notificationDeliveries = 'notificationDeliveries';
@@ -196,7 +201,7 @@ abstract class HilosDbContext extends DbContext
      * passkey credentials, sessions, notifications, notification deliveries,
      * notification preferences, push subscriptions, the verifier circle, auth blocks,
      * OAuth providers, the five tables of the second factor, operation confirmations, account
-     * deletion requests, legal acceptances, the files registry, and people).
+     * deletion requests, legal acceptances, the files registry, people, and their renames).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
      * notification deliveries, notification preferences, push subscriptions and auth
@@ -233,6 +238,8 @@ abstract class HilosDbContext extends DbContext
      *
      * People load by key when a session, page or library asks for a person. A question about
      * everyone uses DbCollectionUsers::listAll(); mounting users stays inert where nobody signs in.
+     * Their rename journal (HIL-1195) loads by row id and by the renamed person, and stays inert
+     * where nobody is renamed, so a project without hilos_user_rename never reads it.
      *
      * A project's own chain over a framework table is mounted here too, under the framework's
      * key: the declarations of {@see self::frameworkExtensions()} are read once, and each key is
@@ -401,6 +408,12 @@ abstract class HilosDbContext extends DbContext
             DbCollectionUsers::class,
             UsersActions::class,
             UserActions::class,
+        );
+        $this->mountFramework(
+            self::userRenames,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionUserRenames::class,
+            UserRenamesActions::class,
         );
 
         $unknown = array_keys(array_diff_key($this->declaredExtensions, $this->frameworkChains));

@@ -2,34 +2,39 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tables\HilosUser\DTO;
+namespace Hilos\Users\DTO;
 
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
-use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Database\Object\Item\User as ObjectUser;
 
-/**
- * DTO for the Hilos users rename action payload.
- */
-final class HilosUserUpdateActionDTO extends ChatActionPayloadDTO
+/** Hilos user card request to rename the person (HIL-1195). */
+final class HilosUserUpdateActionDTO extends ActionPayloadDTO
 {
     public const array SECRET_FIELDS = [];
 
+    /**
+     * @param int $id Person to rename
+     * @param string $name Name the administrator typed, trimmed
+     */
     public function __construct(
         public readonly int $id,
         public readonly string $name,
     ) {
     }
 
+    /**
+     * @return string The framework Hilos user update action name
+     */
     public function getAction(): string
     {
         return HilosSignalConstants::HILOS_USER_UPDATE;
     }
 
     /**
-     * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
+     * @param array<string, mixed> $data Raw payload (may contain a FIELD_DATA wrapper)
      * @return static Instance
      * @throws InvalidFormatException When a field the action names the row by is absent or of another type
      */
@@ -53,7 +58,7 @@ final class HilosUserUpdateActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, mixed> Wire payload (id + name)
      */
     public function toArray(): array
     {

@@ -5,196 +5,32 @@ declare(strict_types=1);
 namespace Demo\Tasks\Agents\Hilos;
 
 use Demo\Tasks\Auth\TasksOAuthConfig;
-use Demo\Tasks\Constants\TasksNotificationType;
-use Demo\Tasks\Database\TasksDbContext;
-use Demo\Tasks\Hilos;
-use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Constants\HilosAgentType;
-use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Action\ActionRefusal;
-use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
-use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
-use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\SignalSource;
-use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
-use Hilos\Notification\NotificationDraft;
-use Hilos\Notification\NotificationSeverity;
-use Hilos\Users\DTO\AdminRenameSignalData;
-use Hilos\WiringRefusal;
 
 /**
  * The tasks demo's users library - the project half of the framework sign-in feature (HIL-623).
  *
  * Every sign-in command lives in {@see AbstractUsersLibraryAgent}, and so does the person -
  * created, named and guarded against deletion on the framework's table. What is here is the
- * handful of answers only this project can give: which methods an identifier may be offered,
- * the provider wiring a social login runs on, and (until HIL-1195) the rename an
- * administrator asks for. Everything the surface actually does with those answers is the
- * framework's.
+ * handful of answers only this project can give: which methods an identifier may be offered
+ * and the provider wiring a social login runs on. Renaming a person, its journal row and the
+ * notice to the renamed are the framework's too (HIL-1195). Everything the surface actually
+ * does with those answers is the framework's.
  *
  * Registered under {@see HilosAgentType::HILOS_USERS_LIBRARY} by this demo's own topology,
  * and reached because the demo declares {@see HilosFeature::AUTH}: the feature is what
  * turns the library's command names into this project's door.
  *
- * {@see afterUserCreated()} is deliberately not overridden: this demo keeps no event log, so
- * a new account is news to nobody here and the empty framework default is the whole truth.
+ * {@see afterUserCreated()} and {@see afterUserRenamed()} are deliberately not overridden: this
+ * demo keeps no event log, so a new account or a new name is news to nobody here and the empty
+ * framework default is the whole truth.
  */
 final class UsersLibraryAgent extends AbstractUsersLibraryAgent
 {
-    /**
-     * The rename journal, written from this library's OWN process.
-     *
-     * The registry is per process, and the audit row is written HERE rather than in the agent
-     * that catalogs it: a claim registered by the admin index agent covers that agent's worker and
-     * nothing else, so without this the rename's log line would be refused as a write with no
-     * truth source behind it. The account row the rename edits is claimed by the framework's
-     * library itself (HIL-1194).
-     *
-     * @var array<string, list<TruthSourceOperation>>
-     */
-    public const array OWNS_DB = [
-        TasksDbContext::userRenames => TruthSourceOperation::BY_KIND,
-    ];
-
-    /**
-     * The write half of the admin rename, addressed here because the account row is this
-     * library's (HIL-771).
-     *
-     * The submit itself stayed on {@see UserPage}: what closes it is that page's admin guard,
-     * and an agent action carries no level to inherit. So the page checks who is asking and
-     * this frame carries the work.
-     */
-    public const array AGENT_SIGNALS = [
-        ...parent::AGENT_SIGNALS,
-        HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
-    ];
-
-    /**
-     * Renames one account for an administrator, logs it, and tells the person it happened.
-     *
-     * The body of {@see UserPage}'s update handler, whole and in the same order: the account
-     * row, the standalone audit row, then the best-effort notice. What changed is only WHERE it
-     * runs - here, where the account set is owned, instead of in whichever worker served the
-     * admin's socket.
-     *
-     * Both refusals keep the sentences the page sent, because they are what an admin reads. A
-     * missing person and a name the row refuses are answers, not exceptions: the ask arrived as
-     * a frame, and a throw here would leave the modal waiting forever.
-     *
-     * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
-     * @param string $name Routed agent-signal name
-     * @throws AgentUnknownSignalException When the name is not one this library declares
-     * @throws LogicException When the payload is not the one its name promises
-     * @throws HilosException Whatever the framework library's own handler raises
-     * @throws InvalidArgumentException When the answer cannot be named or queued
-     */
-    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
-    {
-        if ($name !== HilosSignalConstants::HILOS_USER_ADMIN_RENAME) {
-            parent::onSignalAgent($data, $sender, $name);
-
-            return;
-        }
-
-        if (!$data->data instanceof AdminRenameSignalData) {
-            throw new LogicException($name . ' payload must be ' . AdminRenameSignalData::class);
-        }
-
-        $this->sendToAgent(
-            $data->data->replySignal,
-            HandoverAnswerSignalData::to($data->data, $this->renameForAdmin($data->data)),
-        );
-    }
-
-    /**
-     * Writes the rename, its audit row and its notice, or says why none of them happened.
-     *
-     * @param AdminRenameSignalData $rename Whom to rename, to what, and on whose word
-     * @return ?ActionRefusal Why the account was not renamed, or null when it was
-     */
-    private function renameForAdmin(AdminRenameSignalData $rename): ?ActionRefusal
-    {
-        try {
-            $user = Hilos::$db->users[$rename->userId];
-            if ($user === null) {
-                return ActionRefusal::said("User #{$rename->userId} not found");
-            }
-
-            $oldName = $user->name;
-            $user->actions->rename($rename->name);
-            Hilos::$db->userRenames->actions->add($rename->userId, $oldName, $user->name);
-            $this->notifyRenamedUser($rename->userId, $oldName, $user->name, $rename->adminUserId);
-        } catch (ValidationException $e) {
-            return ActionRefusal::said('Failed to update user: ' . $e->getMessage());
-        } catch (DatabaseException $e) {
-            // The same refusal the dispatcher would have put on the wire had this been thrown on
-            // the page: the placeholder for the person, the failure beside it for an admin.
-            $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
-
-            return ActionRefusal::fromThrowable($e);
-        } catch (WiringRefusal $refusal) {
-            // Answered like the storage failure above rather than raised (HIL-575): the ask
-            // arrived as a frame with a modal waiting on it, so a throw would hang the admin.
-            // Its own words - the name of a collection nobody here reads - are not an answer
-            // about this rename, so they ride only as the detail an admin may quote.
-            $this->logAgentError("Admin rename refused for userId={$rename->userId}: {$refusal->getMessage()}");
-
-            return ActionRefusal::fromThrowable($refusal);
-        } catch (HilosException $e) {
-            $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
-
-            return ActionRefusal::fromThrowable($e);
-        }
-
-        return null;
-    }
-
-    /**
-     * Tells the renamed user that an administrator changed their account name.
-     *
-     * The administrator sees the result in the table, so only the person whose account was
-     * touched is notified - and only when the name really changed, or when an administrator
-     * renamed somebody other than themselves. The emit is best-effort: the rename and its audit
-     * row stand whatever happens to it.
-     *
-     * @param int $userId Renamed user id
-     * @param string $oldName Name the account carried before
-     * @param string $newName Name the account carries now
-     * @param ?int $actorUserId The administrator behind the rename, as their own worker read them
-     */
-    private function notifyRenamedUser(int $userId, string $oldName, string $newName, ?int $actorUserId): void
-    {
-        if ($oldName === $newName || $actorUserId === $userId) {
-            return;
-        }
-
-        try {
-            Hilos::$notify?->emit(new NotificationDraft(
-                userId: $userId,
-                type: TasksNotificationType::USER_RENAMED,
-                title: 'An administrator renamed your account',
-                severity: NotificationSeverity::INFO,
-                body: 'Your name is now ' . $newName,
-                data: [
-                    'oldName' => $oldName,
-                    'newName' => $newName,
-                    'actorUserId' => $actorUserId,
-                ],
-            ));
-        } catch (HilosException $e) {
-            $this->logAgentError("Rename notification failed for userId={$userId}: {$e->getMessage()}");
-        }
-    }
-
     /**
      * Builds the OAuth service this demo's providers are configured on.
      *
