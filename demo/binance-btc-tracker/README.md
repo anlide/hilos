@@ -19,20 +19,26 @@ on Vue — the one to copy (`docs/new-project/README.md`):
 - **Admin dashboard** at `/hilos` with the **Maintenance** section — the
   verifier circle a protected-mode freeze lets through — and the **Backup**
   section: database archives created, deleted and, outside prod, restored,
-  kept as files in `data/backup`, the **Settings** section, carrying the keys
-  of the log section, and the **Logs** section: the live tail, the streams, the
-  workers, the rotated batches and the logging modes. The other admin sections
+  kept as files in `data/backup`, the **Settings** section, carrying the
+  example keys and the keys of the log and delivery sections, the **Logs**
+  section: the live tail, the streams, the workers, the rotated batches and the
+  logging modes, and the **Communications** section: the email and SMS channels,
+  a channel's settings and its delivery journal. The other admin sections
   arrive one by one.
+- **Notifications**: the bell in the header for a signed-in person, and their
+  own channel switches at `/profile/notifications` — the one profile page here.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
 
 The backend is the base set: one app agent owning the connections and the
-home page, the Hilos index agent with the dashboard, the Maintenance, Backup and
-Settings sections and the footer pages, the logs agent serving the Logs section
+home page and the notification settings, the Hilos index agent with the
+dashboard, the Maintenance, Backup, Settings and Communications sections and
+the footer pages, the logs agent serving the Logs section
 with the framework log store, carrier and aggregator behind it, the framework
-backup agent and settings library, and the framework sign-in libraries. It
+backup agent, settings and notifications libraries, the email and SMS
+delivery agents, and the framework sign-in libraries. It
 keeps no table of its own — people, sessions, the tables of signing in, the
-settings and the verifier circle are the framework's, and the archives and the
-logs are files.
+settings, the verifier circle and the notifications with their deliveries are
+the framework's, and the archives and the logs are files.
 
 ### What it is going to show
 

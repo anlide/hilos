@@ -2,13 +2,15 @@
 its brand and user slots and routes the content slot through HilosView, which
 renders the component mapped to the navigator's current page. The live connection
 state, the language/theme switch and the MCP mark are the shell's own. The demo
-has no navigation of its own yet and no profile page, so the signed-in region is
-the avatar alone — not a link — and a visitor gets one button that opens the
+has no navigation of its own yet and no profile root — its one profile page is
+the notification settings — so the signed-in region is the notification bell and
+the avatar, which is not a link, and a visitor gets one button that opens the
 sign-in surface over the page they are standing on (mockups/framework/layout). -->
 <script setup lang="ts">
 import {
   HilosAvatar,
   HilosLayout,
+  HilosNotificationBell,
   HilosView,
   hilosAdminViews,
   useSignal,
@@ -26,8 +28,12 @@ import License from './views/License/License.vue'
 import Main from './views/Main/Main.vue'
 import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
+import ProfileNotifications from './views/ProfileNotifications/ProfileNotifications.vue'
 import Terms from './views/Terms/Terms.vue'
 import HilosBackup from './views/Hilos/Backup/Backup.vue'
+import HilosCommunications from './views/Hilos/Communications/Communications.vue'
+import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue'
+import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
 import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
@@ -45,10 +51,11 @@ const props = defineProps<{ authGate: AuthGate }>()
 
 // The page-key → view map HilosView renders from: the home, the framework admin
 // defaults (hilosAdminViews, of which only the dashboard is registered on the
-// backend today), the Backup, Maintenance, Settings and Logs sections — mapped
-// by the demo itself, because those pages need the project's context and
-// hilosAdminViews leaves them out — and the four footer pages whose text is
-// this demo's.
+// backend today), the Backup, Maintenance, Settings, Logs and Communications
+// sections — mapped by the demo itself, because those pages need the project's
+// context and hilosAdminViews leaves them out — the one profile page, the
+// person's notification settings, and the four footer pages whose text is this
+// demo's.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   ...hilosAdminViews(),
@@ -61,6 +68,10 @@ const pages: Record<string, Component> = {
   [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
   [HilosPages.LOGS_SETTINGS]: HilosLogsSettings,
   [HilosPages.LOGS_VIEW]: HilosLogsView,
+  [HilosPages.COMMUNICATIONS]: HilosCommunications,
+  [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
+  [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,
+  [HilosPages.PROFILE_NOTIFICATIONS]: ProfileNotifications,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
@@ -89,6 +100,7 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
       <span class="visually-hidden d-md-none">BTC Tracker</span>
     </template>
     <template #user>
+      <HilosNotificationBell v-if="userName" :connection="connection" />
       <span
         v-if="userName"
         class="d-inline-flex align-items-center"

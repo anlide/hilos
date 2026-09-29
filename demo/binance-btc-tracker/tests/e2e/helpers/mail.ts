@@ -41,7 +41,7 @@ const PASSWORD_RESET_SUBJECT = 'Reset your password'
 export interface InterceptedMail {
   /** Subject line, which is how a wait picked this message out. */
   subject: string
-  /** Plain-text body — where a verification code sits. */
+  /** Plain-text body — where a verification code or a notification body sits. */
   text: string
 }
 

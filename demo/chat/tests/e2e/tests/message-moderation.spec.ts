@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test'
 
+import { openBell, unreadBadge } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { openBell, signUpJoined, unreadBadge } from '../helpers/notifications'
+import { signUpJoined } from '../helpers/notifications'
 import { clickSubmit, signUp, typeInto } from '../helpers/session'
 
 // Message moderation on a real call to the stand's model (HIL-927): a refusal, and

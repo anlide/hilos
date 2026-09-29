@@ -5,12 +5,12 @@ import {
   shownByTestId,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { signUpAdmin } from '../helpers/adminGrant'
+import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
 
 test('draws no pager under a single-page declared table', async ({ page }) => {
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/communications')
 
   await expect(page.getByTestId('hilos-table-count')).toBeVisible()
@@ -28,7 +28,7 @@ test('draws no pager under a single-page declared table', async ({ page }) => {
 test('an open channel-field edit follows the other tab, then conflicts and keeps mine', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
   const tabB = await page.context().newPage()
   await gotoPage(page, '/hilos/communications/sms')
   await gotoPage(tabB, '/hilos/communications/sms')
@@ -94,7 +94,7 @@ test('an open channel-field edit follows the other tab, then conflicts and keeps
 test('a narrow window draws channel field actions in one row and never scrolls sideways', async ({
   page,
 }) => {
-  await signUpAdmin(page)
+  await grantAdminToSelf(page)
   const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
   await page.setViewportSize({ width: 375, height: desktop.height })
   await gotoPage(page, '/hilos/communications/sms')

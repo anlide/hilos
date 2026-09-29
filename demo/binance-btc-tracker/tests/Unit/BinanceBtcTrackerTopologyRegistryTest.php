@@ -8,6 +8,7 @@ use Demo\BinanceBtcTracker\Agents\BinanceBtcTrackerAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DataExportAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\BinanceBtcTracker\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\SessionsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\UsersLibraryAgent;
 use Demo\BinanceBtcTracker\Constants\AgentType;
@@ -15,13 +16,19 @@ use Demo\BinanceBtcTracker\Constants\PageConstants;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Database\BinanceBtcTrackerDbContext;
 use Demo\BinanceBtcTracker\Database\Settings\BinanceBtcTrackerSettingsCatalog;
+use Demo\BinanceBtcTracker\Groups\Hilos\NotificationsGroup;
 use Demo\BinanceBtcTracker\Hilos;
+use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry;
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsKeysPage;
@@ -32,6 +39,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsViewPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
 use Demo\BinanceBtcTracker\Pages\MainPage;
@@ -49,14 +57,25 @@ use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\HilosException;
 use Hilos\Log\LogSettingsCatalog;
+use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
+use Hilos\Notification\NotificationAction;
+use Hilos\Notification\NotificationPreferenceAction;
+use Hilos\Push\PushSubscriptionAction;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
@@ -70,9 +89,12 @@ use PHPUnit\Framework\TestCase;
  * The smallest complete shape: an app agent with its home page, the Hilos index agent with the
  * dashboard, the four footer pages and the four admin sections activated so far - Backup, its page,
  * the archive table and the backup agent (HIL-1220), Maintenance, its page and the verifier
- * circle table (HIL-1221), Settings, its page, table and library, and Logs, the six section pages,
- * the section agent and the three per-node and cluster agents behind it (HIL-1222) - and sign-in
- * activated on the framework libraries. The page registry
+ * circle table (HIL-1221), Settings, its page, table and library, Logs, the six section pages,
+ * the section agent and the three per-node and cluster agents behind it (HIL-1222), and
+ * Communications, its three pages and tables (HIL-1224) - sign-in activated on the framework
+ * libraries, and notifications with delivery by email and SMS: the notifications library, its
+ * group, the SMS channel agent and the one profile page, the person's channel switches
+ * (HIL-1224). The page registry
  * below is a snapshot, so every leaf that moves another admin section here turns it red on
  * purpose and rewrites it with its own.
  */
@@ -110,6 +132,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             LogsRotationsPage::PAGE => LogsRotationsPage::class,
             LogsViewPage::PAGE => LogsViewPage::class,
             LogsSettingsPage::PAGE => LogsSettingsPage::class,
+            CommunicationsPage::PAGE => CommunicationsPage::class,
+            CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+            CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
+            ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -159,8 +185,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_USERS_LIBRARY,
+            AgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_MAIL,
+            HilosAgentType::HILOS_SMS,
             HilosAgentType::HILOS_AUTH_THROTTLE,
             HilosAgentType::HILOS_BACKUP,
             HilosAgentType::HILOS_LOG_STORE,
@@ -188,6 +216,9 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(BinanceBtcTrackerAgentDaemon::class, AgentRegistry::daemonClass($entry));
         $this->assertFalse(AgentRegistry::requiresIndex($entry));
         $this->assertTrue((new BinanceBtcTrackerAgentDaemon())->requiresMonopolisticProcess());
+        // The person's own channel switches are a profile page, and a profile page is the app
+        // agent's, as in chat - not the index agent's, which serves the admin sections.
+        $this->assertSame(AgentType::BINANCE_BTC_TRACKER, ProfileNotificationsPage::SUBSCRIPTION_AGENT_TYPE);
     }
 
     public function testHilosPagesAreOwnedByTheIndexAgent(): void
@@ -197,6 +228,9 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             BackupPage::class,
             MaintenancePage::class,
             SettingsPage::class,
+            CommunicationsPage::class,
+            CommunicationsChannelPage::class,
+            CommunicationsDeliveriesPage::class,
             AboutPage::class,
             TermsPage::class,
             PrivacyPage::class,
@@ -263,7 +297,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         );
     }
 
-    /** Settings is configure-only; its catalog carries exactly the fragment the logs section requires (HIL-1222). */
+    /** Settings is configure-only; its catalog carries the example keys and the fragments activated features require. */
     public function testSettingsAdminFeatureIsActivated(): void
     {
         $this->assertSame(SettingsPage::class, Hilos::PAGES[SettingsPage::PAGE]);
@@ -287,7 +321,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         );
         // The rotation spec writes its thresholds through the settings screen, and a key the
         // project catalog does not know is written and then treated as an orphan (HIL-857).
-        $this->assertSame(LogSettingsCatalog::getCatalog(), BinanceBtcTrackerSettingsCatalog::getCatalog());
+        $catalog = BinanceBtcTrackerSettingsCatalog::getCatalog();
+        $this->assertSame(LogSettingsCatalog::getCatalog(), array_intersect_key($catalog, LogSettingsCatalog::getCatalog()));
+        // The toast spec writes an example key through the same screen (HIL-1224).
+        $this->assertArrayHasKey(SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN, $catalog);
     }
 
     public function testLogsAdminFeatureIsActivated(): void
@@ -334,18 +371,84 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(HilosLogWorkersTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosLogWorkers]);
     }
 
+    public function testNotificationsAndDeliveryAreActivated(): void
+    {
+        // Notifications and their delivery are an activation, not a build (HIL-1224): the demo
+        // declares the two features, registers the library and its group, the channel agents
+        // and the communications section, and every row and command behind them is the
+        // framework's. The channels are exactly the two this demo's specs drive.
+        $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
+        $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+
+        $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
+        $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));
+        $this->assertSame(NotificationsLibraryAgentDaemon::class, AgentRegistry::daemonClass($library));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($library));
+        $sms = Hilos::AGENTS[HilosAgentType::HILOS_SMS];
+        $this->assertSame(SmsDeliveryChannelAgent::class, AgentRegistry::workerClass($sms));
+        $this->assertSame(SmsDeliveryChannelAgentDaemon::class, AgentRegistry::daemonClass($sms));
+
+        $channels = BinanceBtcTrackerDeliveryChannelRegistry::all();
+        $this->assertSame(['email', 'sms'], array_keys($channels));
+        $catalog = BinanceBtcTrackerSettingsCatalog::getCatalog();
+        foreach ($channels as $channel => $descriptor) {
+            // A notification queued from a worker has to find a live agent by the name the
+            // channel descriptor gives its delivery frame.
+            $this->assertArrayHasKey(
+                $descriptor->deliverSignalName(),
+                Hilos::getAgentSignalRoutes(),
+                "Channel {$channel} lost its delivery route",
+            );
+            $this->assertArrayHasKey($descriptor->enabledSettingKey(), $catalog);
+        }
+        $this->assertSame([], array_diff_key(DeliveryLogSettingsCatalog::getCatalog(), $catalog));
+
+        $this->assertSame(
+            HilosCommunicationsChannelsTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosCommunicationsChannels],
+        );
+        $this->assertSame(
+            HilosCommunicationsChannelFieldsTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosCommunicationsChannelFields],
+        );
+        $this->assertSame(
+            HilosNotificationDeliveriesTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosNotificationDeliveries],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosCommunicationsChannels => []],
+            Hilos::PAGE_TABLES[CommunicationsPage::PAGE],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosCommunicationsChannelFields => []],
+            Hilos::PAGE_TABLES[CommunicationsChannelPage::PAGE],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosNotificationDeliveries => []],
+            Hilos::PAGE_TABLES[CommunicationsDeliveriesPage::PAGE],
+        );
+
+        // The stand seeds twenty-five people with no agent behind the write (test:user:seed),
+        // and that command lays down the claim this constant declares.
+        $this->assertSame(
+            [BinanceBtcTrackerDbContext::users => TruthSourceOperation::BY_KIND],
+            Hilos::OWNS_DB,
+        );
+    }
+
     public function testAppOwnSurfaceStaysTransportOnly(): void
     {
         // The application's OWN surface is transport-only: its main page and worker push no
-        // server-driven data, and the demo registers no group or browser table of its own. The
-        // tables and page actions the admin sections bring are the framework's, and each section
-        // pins its own above.
+        // server-driven data, and the demo registers no browser table of its own. The one group
+        // is the framework's notification group, and the tables and page actions the admin
+        // sections bring are the framework's too; each pins its own above.
         //
         // The one frame the worker is addressed by is not its surface but the seam the sessions
         // moved behind (HIL-710): the library says what a session became, and this agent updates
         // the connection rows that belong to the project. The sweep frame is not declared, so the
         // library does not send it.
-        $this->assertSame([], Hilos::GROUPS);
+        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
         $this->assertSame([], Hilos::BROWSER_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
@@ -401,6 +504,15 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
+                // The notifications library's own frames (HIL-1224 activates the feature here,
+                // with the notification e2e): an emit from any worker, the retry of a delivery,
+                // the hand-over of a person's rows and their erasure. The push frame is mounted
+                // with the library whether or not the push channel is registered.
+                HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
                 // Every settings write goes through the library that owns the rows (HIL-1222).
                 HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
@@ -408,6 +520,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
+                HilosSignalConstants::HILOS_SMS_DELIVER => HilosAgentType::HILOS_SMS,
+                HilosSignalConstants::HILOS_SMS_SEND => HilosAgentType::HILOS_SMS,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => HilosAgentType::HILOS_AUTH_THROTTLE,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => HilosAgentType::HILOS_AUTH_THROTTLE,
                 // The backup section's own frames: the page hands every operation to the
@@ -439,7 +553,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         // framework's. The snapshot is the whole action map on purpose - a command that silently
         // stopped being routed here would otherwise look like a working surface until somebody
         // submitted the form it belongs to. The other features are backup (HIL-1220), settings
-        // and logs (HIL-1222), whose actions are their pages' and so stay out of this map.
+        // and logs (HIL-1222), whose actions are their pages' and so stay out of this map, and
+        // notifications with their delivery (HIL-1224), whose actions close the map.
         $this->assertSame(
             [
                 HilosFeature::AUTH,
@@ -447,6 +562,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosFeature::BACKUP,
                 HilosFeature::SETTINGS,
                 HilosFeature::LOGS,
+                HilosFeature::NOTIFICATIONS,
+                HilosFeature::NOTIFICATION_DELIVERY,
             ],
             Hilos::features(),
         );
@@ -543,6 +660,15 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
+            // The bell and the person's channel switches write the rows the notifications
+            // library owns (HIL-1224); the push actions come with the library, as in every
+            // demo that switches notifications on.
+            NotificationAction::MARK_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            NotificationAction::MARK_ALL_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            NotificationPreferenceAction::CHANNEL_SET => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::SUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::UNSUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::REMOVE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
         ], Hilos::getAgentActionRoutes());
     }
 

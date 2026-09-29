@@ -138,7 +138,7 @@ the demo it leaves.
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
 | Tables | chat: table-lag, table-refusal | binance-btc-tracker (not in the code yet — HIL-1223) | HIL-1223 |
-| Notifications and communications | chat: notifications, communications | binance-btc-tracker (not in the code yet — HIL-1224) | HIL-1224 |
+| Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
 | The operations half of tasks | tasks: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop (not in the code yet — HIL-1225) | HIL-1225 |
 | The operations half of polls | polls: users, settings, notifications, protected-mode, maintenance, logs | online-testing (not in the code yet — HIL-1226) | HIL-1226 |
 
@@ -153,8 +153,10 @@ on what it tests, plus sign-in.
 `signUp` enters through `message-signin`
 (`demo/chat/tests/e2e/helpers/session.ts`), moderation runs before a rename,
 `message-input` sits inside the notifications specs, and the seeds of
-`test:db-prepare` (`demo/chat/composer.json`: `test:user:seed` for 25 people,
-`test:notification:seed`) shape the data. What is shared comes from the
+`test:db-prepare` (`demo/chat/composer.json`: `test:user:seed` for 25 people)
+shape the data. A new demo seeds what its moved specs read in its own
+`test:db-prepare` — binance-btc-tracker carries the 25 people and the
+`test:notification:seed` rows the notification center reads. What is shared comes from the
 toolbox — `framework/frontend/e2e/` and `framework/frontend/scripts/`, "The
 shared toolbox" below — and is not copied across.
 
@@ -310,6 +312,17 @@ operator's page on `/hilos/maintenance`. `maintenanceCircleRow` and
 named: a phone signed into by SMS code, or an email proven by its registration code or
 confirmed through the profile (HIL-825). The database list outlives a scenario, so
 start every circle scenario with `clearMaintenanceCircle`. Assertions stay in the demo.
+
+### The bell and the channel switch — `openBell`, `unreadBadge`, `enableEmailChannel`
+
+`openBell` opens the bell a demo mounts in its header slot (`HilosNotificationBell`)
+and settles on its dropdown; `unreadBadge` is the unread count, matched at the front
+of its text because its label carries a visually-hidden suffix. `enableEmailChannel`
+turns the email channel on from the communications hub and expects the operator's
+page already on `/hilos/communications` — navigation is the demo's. It is
+idempotent: the channel's switch is a setting of the whole stand, so a channel
+another test switched on is left alone. The emit that makes a notification exist
+and the sign-in that makes its recipient are the demo's; so are the assertions.
 
 ### Geometry — take a bookmark and ask whether it moved
 

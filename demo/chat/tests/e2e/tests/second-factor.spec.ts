@@ -6,10 +6,9 @@
 // computed here from the secret the enrolment screen prints, as any app would.
 import { test, expect, type Browser, type Page } from '@playwright/test'
 
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
+import { enableEmailChannel, shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
-import { enableEmailChannel } from '../helpers/notifications'
 import { expectPageReady, gotoAuthReturn, gotoPage } from '../helpers/page'
 import { connectFirstApp } from '../helpers/secondFactor'
 import {
@@ -140,6 +139,7 @@ test.describe('two-step verification', () => {
     // switched on, to an address the person has proven there.
     const admin = await freshPage(browser)
     await signUpAdmin(admin)
+    await gotoPage(admin, '/hilos/communications')
     await enableEmailChannel(admin)
     const user = await signUpWithVerifiedEmail(page)
     await connectFirstApp(page)

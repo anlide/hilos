@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { openBell, unreadBadge } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { openBell, unreadBadge } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
 import { PASSWORD, clickSubmit, signUp, typeInto } from '../helpers/session'
 

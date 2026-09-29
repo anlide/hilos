@@ -49,6 +49,7 @@ export {
   maintenanceCircleOnline,
   maintenanceCircleRow,
 } from './maintenance.js'
+export { enableEmailChannel, openBell, unreadBadge } from './notifications.js'
 export {
   clearCustomSetting,
   draftCustomSetting,
