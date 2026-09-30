@@ -135,7 +135,7 @@ final class PeerLinkKeepaliveTest extends TestCase
             transport: new NamedPeerTestTransport($near, 'node-b'),
         );
 
-        $welcome = new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-b', NodeRole::Master, []);
+        $welcome = new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-b', NodeRole::Master, [], PeerTestMarkers::onWire());
         socket_write($far, $welcome->toJson() . "\n");
         $link->read();
 
@@ -164,7 +164,7 @@ final class PeerLinkKeepaliveTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread());
+        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread(), PeerTestMarkers::shared());
     }
 
     /**

@@ -26,6 +26,7 @@ use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Tests\Unit\Cluster\Peer\PeerTestMarkers;
 use Hilos\Tests\Unit\Cluster\Peer\PeerTestTls;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
@@ -307,6 +308,7 @@ final class DaemonManagerSignalFacadeTestManager extends DaemonManager
             NodeIdentity::of('node-a', NodeRole::Master, []),
             [],
             PeerTestTls::unread(),
+            PeerTestMarkers::shared(),
         ));
     }
 

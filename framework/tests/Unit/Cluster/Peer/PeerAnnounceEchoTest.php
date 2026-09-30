@@ -165,7 +165,7 @@ final class PeerAnnounceEchoTest extends TestCase
         $clients = new ReflectionProperty($server, 'clients');
         $clients->setValue($server, [...$clients->getValue($server), $link]);
 
-        socket_write($far, new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [])->toJson() . "\n");
+        socket_write($far, new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire())->toJson() . "\n");
         $link->read();
 
         $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId, 'The welcome must complete the handshake');
@@ -204,7 +204,7 @@ final class PeerAnnounceEchoTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread());
+        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread(), PeerTestMarkers::shared());
     }
 
     /**

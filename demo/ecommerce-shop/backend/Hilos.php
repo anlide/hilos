@@ -36,6 +36,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseGuarantee;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
@@ -73,6 +74,11 @@ final class Hilos extends HilosFacade
     protected const array FEATURES = [
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
+    ];
+
+    protected const array DATABASE_GUARANTEES = [
+        DatabaseGuarantee::ONE_LOGICAL_DATABASE,
+        DatabaseGuarantee::READ_AFTER_WRITE,
     ];
 
     public const array PAGES = [

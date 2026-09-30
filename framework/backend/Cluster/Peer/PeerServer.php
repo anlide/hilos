@@ -163,6 +163,9 @@ final class PeerServer extends AbstractTlsServer implements
     /** @var ClusterTlsConfig This node's certificate and the authorities it trusts, for both sides of a link */
     private ClusterTlsConfig $tls;
 
+    /** @var PeerMarkers What this node reads that every node must share, named on every handshake */
+    private PeerMarkers $localMarkers;
+
     /** @var ConnectionPolicy Decides which known peers to dial a direct link to */
     private ConnectionPolicy $connectionPolicy;
 
@@ -218,6 +221,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param NodeIdentity $localIdentity Local node identity to announce to peers
      * @param list<PeerAddress> $seeds Seed peers to dial on join (empty for a bootstrap node)
      * @param ClusterTlsConfig $tls This node's certificate and the authorities a peer certificate must be signed by
+     * @param PeerMarkers $localMarkers This node's markers, named on every handshake and judged against the peer's
      * @param ?ConnectionPolicy $connectionPolicy Policy choosing which known peers to dial; full mesh when null
      */
     public function __construct(
@@ -226,6 +230,7 @@ final class PeerServer extends AbstractTlsServer implements
         NodeIdentity $localIdentity,
         array $seeds,
         ClusterTlsConfig $tls,
+        PeerMarkers $localMarkers,
         ?ConnectionPolicy $connectionPolicy = null,
     ) {
         parent::__construct($host, $port, $tls->certificateFile, $tls->trustFile);
@@ -233,6 +238,7 @@ final class PeerServer extends AbstractTlsServer implements
         $this->localIdentity = $localIdentity;
         $this->seeds = $seeds;
         $this->tls = $tls;
+        $this->localMarkers = $localMarkers;
         $this->connectionPolicy = $connectionPolicy ?? new FullMeshConnectionPolicy();
         $this->nodeReaderMap = new SourceReaderMap();
     }
@@ -343,6 +349,16 @@ final class PeerServer extends AbstractTlsServer implements
     public function getServerName(): string
     {
         return 'Peer Server';
+    }
+
+    /**
+     * Names this node's markers to the links it owns, which send them and judge the peer's by them.
+     *
+     * @return PeerMarkers Markers read once at the start of the daemon
+     */
+    public function localMarkers(): PeerMarkers
+    {
+        return $this->localMarkers;
     }
 
     /**

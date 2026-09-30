@@ -208,7 +208,7 @@ final class PeerDbReHydrateBarrierTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread());
+        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread(), PeerTestMarkers::shared());
     }
 
     /**
@@ -232,7 +232,7 @@ final class PeerDbReHydrateBarrierTest extends TestCase
             dialer: true,
             transport: new NamedPeerTestTransport($pair[0], $nodeId),
         );
-        socket_write($pair[1], new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [])->toJson() . "\n");
+        socket_write($pair[1], new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire())->toJson() . "\n");
         $link->read();
 
         $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId, 'The welcome must complete the handshake');

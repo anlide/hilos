@@ -13,6 +13,7 @@ use Hilos\Cluster\Probe\FleetProbeAgent;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseGuarantee;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
@@ -41,6 +42,11 @@ use Hilos\Runtime\View\Context\RtContext;
 final class Hilos extends HilosFacade
 {
     protected const string ENV_CATALOG = ClusterEnvCatalog::class;
+
+    protected const array DATABASE_GUARANTEES = [
+        DatabaseGuarantee::ONE_LOGICAL_DATABASE,
+        DatabaseGuarantee::READ_AFTER_WRITE,
+    ];
 
     public const array PAGES = [];
 

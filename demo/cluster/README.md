@@ -118,6 +118,12 @@ compose file; this one carries all of them.
    one applies the migrations under the rollout claim, the rest find them applied
    (HIL-1228). It runs first, because it reads the container logs of the stand the
    matrix has just raised
+22. other database refused — a slave is stopped, the database marker is replaced
+   under it, and it starts reading another name for the database: it is refused on
+   both ends of every link, named in the log of both, and nobody lists it online,
+   while the rest converge; with the marker back it rejoins (HIL-1206). The first
+   convergence of the matrix already proves the first write: five nodes starting
+   together on an empty database converge only if they all read one marker
 
 They run in the order the harness lists them, which is not the order they are
 numbered: the RT scenarios and scenario 19 go right after placement, while the

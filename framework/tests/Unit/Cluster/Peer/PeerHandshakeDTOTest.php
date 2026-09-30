@@ -15,13 +15,14 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for peer handshake frame serialization and wire parsing (HIL-178).
+ * Unit tests for peer handshake frame serialization and wire parsing (HIL-178), the markers
+ * included (HIL-1206).
  */
 final class PeerHandshakeDTOTest extends TestCase
 {
     public function testHelloRoundTripsThroughTheWire(): void
     {
-        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, ['gpu-local', 'ssd']);
+        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, ['gpu-local', 'ssd'], PeerTestMarkers::onWire());
 
         $parsed = PeerDTO::fromWire($hello->toJson());
 
@@ -31,11 +32,13 @@ final class PeerHandshakeDTOTest extends TestCase
         $this->assertSame('node-a', $parsed->nodeId);
         $this->assertSame(NodeRole::Master, $parsed->role);
         $this->assertSame(['gpu-local', 'ssd'], $parsed->capabilities);
+        $this->assertSame(PeerTestMarkers::onWire(), $parsed->markers);
     }
 
     public function testWelcomeRoundTripsThroughTheWire(): void
     {
-        $welcome = new PeerWelcomeDTO(1, 'node-b', NodeRole::Slave, []);
+        // A node that carries no marker says so with an empty set, and the empty set survives the wire.
+        $welcome = new PeerWelcomeDTO(1, 'node-b', NodeRole::Slave, [], []);
 
         $parsed = PeerDTO::fromWire($welcome->toJson());
 
@@ -44,6 +47,7 @@ final class PeerHandshakeDTOTest extends TestCase
         $this->assertSame('node-b', $parsed->nodeId);
         $this->assertSame(NodeRole::Slave, $parsed->role);
         $this->assertSame([], $parsed->capabilities);
+        $this->assertSame([], $parsed->markers);
     }
 
     public function testFromWireRejectsUnknownType(): void
@@ -134,6 +138,7 @@ final class PeerHandshakeDTOTest extends TestCase
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
             PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
             PeerHandshakeDTO::FIELD_ADDRESS => null,
+            PeerHandshakeDTO::FIELD_MARKERS => PeerTestMarkers::onWire(),
         ]);
 
         $this->assertNull($hello->address);
@@ -167,9 +172,56 @@ final class PeerHandshakeDTOTest extends TestCase
         ]);
     }
 
+    /**
+     * The markers are required: a handshake of the previous protocol, which had no such field, is
+     * a broken payload here rather than a node that carries no marker.
+     */
+    public function testFromArrayRejectsAHandshakeWithoutItsMarkers(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerHelloDTO::fromArray([
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
+            PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
+        ]);
+    }
+
+    /**
+     * @param array<mixed> $markers Marker set no producer of this frame writes
+     */
+    #[DataProvider('malformedMarkers')]
+    public function testFromArrayRejectsAMalformedMarker(array $markers): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer handshake carries a malformed marker');
+
+        PeerHelloDTO::fromArray([
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
+            PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
+            PeerHandshakeDTO::FIELD_MARKERS => $markers,
+        ]);
+    }
+
+    /**
+     * @return array<string, array{array<mixed>}> Marker sets whose kind or value is not a non-empty string
+     */
+    public static function malformedMarkers(): array
+    {
+        return [
+            'value not a string' => [['database' => 42]],
+            'empty value' => [['database' => '']],
+            'kind not a string' => [['0123456789abcdef0123456789abcdef']],
+            'empty kind' => [['' => '0123456789abcdef0123456789abcdef']],
+        ];
+    }
+
     public function testHandshakeCarriesTheAdvertisedAddress(): void
     {
-        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, [], PeerAddress::fromString('10.0.0.1:8095'));
+        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, [], PeerTestMarkers::onWire(), PeerAddress::fromString('10.0.0.1:8095'));
 
         $parsed = PeerDTO::fromWire($hello->toJson());
 
@@ -180,7 +232,7 @@ final class PeerHandshakeDTOTest extends TestCase
 
     public function testHandshakeWithoutAddressRoundTripsNull(): void
     {
-        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, []);
+        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, [], PeerTestMarkers::onWire());
 
         $parsed = PeerDTO::fromWire($hello->toJson());
 
@@ -194,6 +246,7 @@ final class PeerHandshakeDTOTest extends TestCase
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
             PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => ['gpu-local', '', 123, 'ssd'],
+            PeerHandshakeDTO::FIELD_MARKERS => PeerTestMarkers::onWire(),
         ]);
 
         $this->assertSame(['gpu-local', 'ssd'], $hello->capabilities);

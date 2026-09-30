@@ -107,6 +107,9 @@ table contexts when they can read the project registry.
   table bindings in `BROWSER[BrowserConfigKey::TABLES]`.
 - `Hilos::UPLOAD_TARGETS` names the upload targets of a project that declares
   `HilosFeature::UPLOADS` ([architecture/uploads.md](architecture/uploads.md)).
+- `Hilos::DATABASE_GUARANTEES` states what the project's database promises every
+  node — both `DatabaseGuarantee` cases, on every project; a daemon refuses to
+  start without them. See *Database Guarantees* below.
 
 `Hilos::validateTopology()` runs before layer initialization and checks the
 registry for missing classes, mismatched keys, duplicate signal ownership,
@@ -173,6 +176,74 @@ remembered:
 Runtime state that belongs to a feature is mounted by the framework from the
 declaration; a project must not mount it in `configure()`. See
 [runtime/rt-context.md](runtime/rt-context.md).
+
+## Database Guarantees (HIL-1206)
+
+Two mechanisms stand on how the nodes of a project share its database: a node
+that announces a fact leaves its neighbours to read the row back from the shared
+database instead of carrying a copy over the wire (HIL-670), and an entity is read
+by processes other than its owner (HIL-631). Both are correct only if every node
+reads the same database and a read returns what was written. Hilos sees one
+database address and leaves the topology behind it to the project, so the project
+states that its topology keeps both:
+
+```php
+protected const array DATABASE_GUARANTEES = [
+    DatabaseGuarantee::ONE_LOGICAL_DATABASE,
+    DatabaseGuarantee::READ_AFTER_WRITE,
+];
+```
+
+| Promise | Obligation |
+|---|---|
+| `ONE_LOGICAL_DATABASE` | every node and every process of an installation reads and writes one logical database |
+| `READ_AFTER_WRITE` | a read sees every write committed before it, whichever node committed it |
+
+Both are owed by **every** project, cluster or not. The facade describes the
+project, not one installation of it, and the second promise is needed on a
+single node too: the processes of one node read back what the others wrote. The
+base facade declares none, and `DatabaseGuaranteeStartupGuard` in
+`DaemonApplication::run()` refuses to start a daemon whose facade leaves either
+out, naming every missing promise with its obligation. The check reads the
+constant alone — no query — so it stands among the constant-only startup guards.
+
+What Hilos checks and what it believes:
+
+- **`ONE_LOGICAL_DATABASE` is checked in a cluster.** The first node to start
+  writes a random name for the database into `hilos_database_marker`; every node
+  reads it at the start of its daemon and names it to its peers on the handshake,
+  and a node reading another marker is admitted by nobody. The mechanism is in
+  [architecture/daemon-lifecycle.md](architecture/daemon-lifecycle.md), *The
+  database both ends read*. A single-node installation writes no marker — there
+  is nobody to compare it with.
+- **`READ_AFTER_WRITE` is only declared.** A lagging replica cannot be caught by
+  a probe: one that caught up by the time of the probe passes it. A check of the
+  server's own setting would refuse a correct configuration — Galera behind a
+  proxy that sends everything to one server keeps the promise with the setting
+  off.
+
+What keeps each promise on each topology:
+
+| Topology | `ONE_LOGICAL_DATABASE` | `READ_AFTER_WRITE` |
+|---|---|---|
+| one server | kept | kept |
+| primary + replica behind one address that always leads to the primary | kept | kept |
+| multi-primary, nodes on different servers | kept | only with `wsrep_sync_wait` ≥ 1 (Galera) or `group_replication_consistency` `BEFORE` or stronger (MySQL) |
+| a proxy that hands reads to replicas, or reads from an asynchronous replica | kept | **not kept — not supported** |
+
+Two operator moves split a cluster through the marker, and both are the
+operator's to avoid:
+
+- **A hand-made copy of the database carries the marker.** Nodes pointed at the
+  copy name the same database as the nodes still on the original. Move all nodes
+  at once, or delete the copy's marker row before its first node starts — that
+  node then writes a new one.
+- **Deleting the marker row by hand** lets the next node to start write a new
+  one, and every node that read the old one refuses it: the cluster splits over
+  the restarts that follow.
+
+A restore does not bring the marker: the target keeps its own, and a target
+without one stays without one ([orm/migrations.md](orm/migrations.md)).
 
 ## Workflow
 

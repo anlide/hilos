@@ -237,7 +237,7 @@ final class PeerBroadcastEncodingTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [], PeerTestTls::unread());
+        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [], PeerTestTls::unread(), PeerTestMarkers::shared());
     }
 
     /**
@@ -274,7 +274,7 @@ final class PeerBroadcastEncodingTest extends TestCase
             transport: new NamedPeerTestTransport($near, $nodeId),
         );
         $this->attach($server, $link);
-        socket_write($far, (new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, $role, [], null))->toJson() . "\n");
+        socket_write($far, (new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, $role, [], PeerTestMarkers::onWire(), null))->toJson() . "\n");
         $link->read();
 
         return [$link, $far];

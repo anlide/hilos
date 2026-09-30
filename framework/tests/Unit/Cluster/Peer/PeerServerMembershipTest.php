@@ -288,7 +288,7 @@ final class PeerServerMembershipTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [], PeerTestTls::unread());
+        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [], PeerTestTls::unread(), PeerTestMarkers::shared());
     }
 
     /**
@@ -320,7 +320,7 @@ final class PeerServerMembershipTest extends TestCase
             transport: new NamedPeerTestTransport($near, $nodeId),
         );
         $this->attach($server, $link);
-        $this->feed($link, $far, new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], null));
+        $this->feed($link, $far, new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire(), null));
         $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId, 'The hello must complete the handshake');
 
         return [$link, $far];

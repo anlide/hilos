@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
+use Hilos\Database\DatabaseGuaranteeStartupGuard;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
@@ -29,7 +30,8 @@ use Throwable;
  * that has no answer, claims the log directory so another daemon cannot share it, points the
  * logger at the daemon log, refuses a framework entity a project extended by halves, refuses a
  * table that does not declare
- * whose set it is part of, refuses a browser connections roster without its session stage, lets
+ * whose set it is part of, refuses a browser connections roster without its session stage, refuses
+ * a project that does not state what its database guarantees, lets
  * a node carrying backup refuse a schema it could not anonymize, constructs the manager, hands it
  * a {@see DaemonContext} to
  * compose its servers/routes/modules through {@see DaemonManager::boot()}, and enters the main
@@ -109,6 +111,12 @@ final class DaemonApplication
             // makes the master and worker disagree about protected-mode admission. Ahead of the
             // anonymization gate because it reads the in-memory runtime collection map alone.
             SessionStageStartupGuard::assertRosterCarriesSessions();
+
+            // Before anything composes: every node relies on one logical database that reads back
+            // what was written, and a project that does not state both promises is refused here
+            // rather than served wrong rows later. The facade's constant alone, ahead of the first
+            // guard that asks the live schema.
+            DatabaseGuaranteeStartupGuard::assertDeclared($hilosClass);
 
             // Before anything composes: a node that promises anonymized copies of its database
             // refuses to come up over a schema it could not anonymize. Silent for a project that

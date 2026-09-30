@@ -3,7 +3,8 @@ control.py - the host-side controller of a cluster stand (HIL-185), for any stan
 reads (stand.py). Preview-style: a thin orchestrator over `docker compose` plus the four fault
 switches the scenarios need - `docker kill -9` (node-down / failover), `docker network
 disconnect` (partition / split-brain), and a SIGKILL of the daemon or one worker inside a live
-container (crash recovery / partial failure). Assertions live in the scenario matrix
+container (crash recovery / partial failure) - and one lever on the stand's database, `db-sql`
+(a node reading another database marker, HIL-1206). Assertions live in the scenario matrix
 (scenarios.py), which reads each node's `test:cluster:inspect` reply and compares it against
 the expected invariants.
 
@@ -369,6 +370,20 @@ def stranger(stand, action=None):
     raise StandRefused("usage: cluster stranger {up|down}")
 
 
+def db_sql(stand, statement=None):
+    """Run one SQL statement in the stand's database as its application user, for what it prints:
+    tab-separated rows without a header (scenario 22 reads and replaces the database marker,
+    HIL-1206). The database is a fact of the stand rather than of a node, so the lever lives
+    here, beside the other switches, and not in a command of the framework."""
+    if stand.database is None:
+        raise StandRefused(f"{stand.project} labels no service as its database (hilos.role: database)")
+    if not statement:
+        raise StandRefused("usage: cluster db-sql <statement>")
+    database = stand.database
+    return _run(["docker", "exec", database.container, "mariadb", f"-u{database.user}",
+                 f"-p{database.password}", "-N", "-B", database.name, "-e", statement])
+
+
 # The node commands, as cluster.py and the scenarios name them: each answers with an Outcome.
 NODE_COMMANDS = {
     "inspect": inspect,
@@ -390,6 +405,8 @@ def execute(stand, command, *args):
     """Run one of the commands that answer with an Outcome, by the name cluster.py gives it."""
     if command == "stranger":
         return stranger(stand, *args[:1])
+    if command == "db-sql":
+        return db_sql(stand, *args[:1])
     if not args:
         raise StandRefused(f"unknown node '' (expected one of: {' '.join(stand.members)})")
     return NODE_COMMANDS[command](stand, *args)

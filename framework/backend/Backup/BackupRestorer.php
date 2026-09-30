@@ -14,7 +14,10 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Core\Process;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseMarker;
+use Hilos\Database\DatabaseMarkerRow;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Environment\Exception\EnvException;
@@ -50,6 +53,12 @@ use Throwable;
  * sidecar and the migration files, both of which this process has, and the engine is the
  * last thing standing before the data is overwritten - the same argument that makes it
  * re-check the digest.
+ *
+ * The database marker ({@see DatabaseMarker}) does not travel with the archive: it is the name of
+ * the database, not its content, and a production archive restored on staging would otherwise
+ * hand the staging database the production name, and its nodes would be refused by one another on
+ * the first restart. The target keeps the marker it had, and a target that had none is left
+ * without one.
  */
 final class BackupRestorer
 {
@@ -166,6 +175,11 @@ final class BackupRestorer
                 $anonymizer->validateArchive($this->readArchiveSchemas($connections, $workDir));
             }
 
+            // Read before the import replaces the table it lives in; put back after the migrations,
+            // which create the table on an archive that did not carry it.
+            $restoresPrimary = $this->carriesPrimary($connections);
+            $keptMarker = $restoresPrimary ? $this->readKeptMarker() : null;
+
             // The destructive window opens here and does not close: from the first import on, a
             // failure leaves the database partially replaced, and everything raised inside says so
             // (HIL-436). Wrapped as a region rather than tagged step by step, because the boundary
@@ -187,6 +201,9 @@ final class BackupRestorer
                 }
                 foreach ($connections as $connection) {
                     $this->migrateConnection($connection, $levels[$connection->index] ?? null);
+                }
+                if ($restoresPrimary) {
+                    $this->keepMarker($keptMarker);
                 }
 
                 if ($anonymizer !== null) {
@@ -455,6 +472,65 @@ final class BackupRestorer
             throw new RestoreFailedException(
                 "Failed to migrate connection {$connection->index} after the import: "
                 . $failure->getMessage(),
+                0,
+                $failure,
+            );
+        }
+    }
+
+    /**
+     * Says whether the archive imports into the primary connection, the only one that carries a marker.
+     *
+     * @param list<BackupConnectionMeta> $connections Connections the archive carries
+     * @return bool True when one of them is the primary connection
+     */
+    private function carriesPrimary(array $connections): bool
+    {
+        foreach ($connections as $connection) {
+            if ($connection->index === DatabaseConnectionDefaults::PRIMARY_INDEX) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Reads the marker the target holds before the archive replaces it.
+     *
+     * @return ?DatabaseMarkerRow The target's marker, or null when it has none
+     * @throws RestoreFailedException When the primary connection or the marker table cannot be read
+     */
+    private function readKeptMarker(): ?DatabaseMarkerRow
+    {
+        try {
+            return DatabaseMarker::current();
+        } catch (DatabaseException $failure) {
+            throw new RestoreFailedException(
+                'Failed to read the database marker of the target before the import: ' . $failure->getMessage(),
+                0,
+                $failure,
+            );
+        }
+    }
+
+    /**
+     * Leaves the target with the marker it had before the import, or with none when it had none.
+     *
+     * @param ?DatabaseMarkerRow $keptMarker Marker the target held before the import
+     * @throws RestoreFailedException When the marker table cannot be written
+     */
+    private function keepMarker(?DatabaseMarkerRow $keptMarker): void
+    {
+        try {
+            if ($keptMarker === null) {
+                DatabaseMarker::clear();
+            } else {
+                DatabaseMarker::put($keptMarker);
+            }
+        } catch (DatabaseException $failure) {
+            throw new RestoreFailedException(
+                'Failed to keep the database marker of the target after the import: ' . $failure->getMessage(),
                 0,
                 $failure,
             );

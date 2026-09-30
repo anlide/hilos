@@ -32,6 +32,8 @@ directory; a demo calls this from its composer scripts)
   logs <node>          follow a node's container logs
   stranger up|down     start / remove the stand's stranger, a node certified by an authority
                        the cluster does not trust (HIL-1034, scenario 17)
+  db-sql <statement>   run one SQL statement in the stand's database and print its rows
+                       (scenario 22 reads and replaces the database marker, HIL-1206)
   scenarios [n ...]    run the scenario matrix on a fresh stand: the stand's scenarios, or
                        the ones named, which must be the stand's
 
@@ -51,7 +53,7 @@ REFUSED = 2
 
 COMMANDS = ("up", "down", "restart", "status", "status-json", "inspect", "inspect-local", "client",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
-            "partition", "heal", "logs", "stranger", "scenarios")
+            "partition", "heal", "logs", "stranger", "db-sql", "scenarios")
 
 
 def check_registry(stand, shown):

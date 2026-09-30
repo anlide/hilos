@@ -47,13 +47,18 @@
    the CLI is where a chain is repaired ([../orm/inheritance.md](../orm/inheritance.md)).
 4. `SetOwnershipGuard::assertMountedSetsDeclared()` refuses the start of a node whose
    mounted tables do not declare whose set their rows belong to. It reads class constants
-   only and stands right after the framework-extension guard and before the two others,
+   only and stands right after the framework-extension guard and before the three others,
    so the cheap wiring questions are answered first.
 5. `SessionStageStartupGuard::assertRosterCarriesSessions()` refuses the start of a node
    whose browser connections roster stands on the presence stage instead of carrying
    session tokens. It reads only the in-memory map of mounted runtime collections and
    stands between the constant-only set-ownership guard and the live-schema query.
-6. `AnonymizationStartupGuard::assertLiveSchemaClassified()` refuses the start of a node
+6. `DatabaseGuaranteeStartupGuard::assertDeclared()` refuses the start of a node whose
+   project facade does not state both `DatabaseGuarantee` cases in `DATABASE_GUARANTEES`
+   (HIL-1206), naming every missing one with what it obliges. It reads the facade's
+   constant only — no query — and stands ahead of the first guard that asks the live
+   schema ([../app-topology.md](../app-topology.md), *Database Guarantees*).
+7. `AnonymizationStartupGuard::assertLiveSchemaClassified()` refuses the start of a node
    whose live schema is not classified for anonymization. Only a project declaring
    `HilosFeature::BACKUP` is asked at all — such a node keeps copies of a database it
    promises to be able to anonymize, and the promise is only as good as the verdict on the
@@ -64,9 +69,11 @@
    seen by no peer; and after `Logger::setLogFile()`, so the refusal lands in the daemon
    log where that author will look for it. In a container it therefore speaks on the very
    start whose migrations opened the gap — `docker.php` applies them before this runs.
-7. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
-8. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
-9. The end of `DaemonManager::boot()` decides the admin view mode of the node
+8. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
+9. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`);
+   in cluster mode `PeerModule` reads the database marker before the peer port opens
+   (*The database both ends read* below)
+10. The end of `DaemonManager::boot()` decides the admin view mode of the node
    (`AdminViewModeStartup`, HIL-1249) and writes it into the node-local runtime row
    `hilosAdminViewModeRuntime` — before the first socket is bound and the first worker
    started, so the snapshot every worker is handed when it comes up already carries the
@@ -75,8 +82,8 @@
    the database: a one-time bootstrap read, which the master is allowed before its loop.
    It never refuses the start: a latch it cannot read keeps the mode off with an ERROR
    ([admin-view-mode.md](admin-view-mode.md), *The Switch And Its Prod Latch*).
-10. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
-11. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
+11. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
+12. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
 
 ## Container watchdog and crash recovery (HIL-450)
 
@@ -519,6 +526,72 @@ everything, as it does for the role and the seeds.
 binance-btc-tracker carries its own fixtures and a node of a foreign authority,
 `x1`, which scenario 17 shows refused on both ends and listed by nobody
 (not in the code yet — HIL-1215).
+
+## The database both ends read (HIL-1206)
+
+Every node of a cluster reads and writes one logical database — the project promises it
+(`DatabaseGuarantee::ONE_LOGICAL_DATABASE`, [../app-topology.md](../app-topology.md),
+*Database Guarantees*) — and the peer handshake checks it. A node pointed at another
+database is not a member: the rows its neighbours read back after a sync (HIL-670) and
+the entities read by processes other than their owner (HIL-631) would be other rows.
+
+**The marker.** One row of the framework table `hilos_database_marker` (`id` = 1) names
+the database: 32 hex characters, the node that wrote it and when. `Migration::initialize()`
+creates the table beside `migration` ([../orm/migrations.md](../orm/migrations.md)).
+Neither the server's `@@server_uuid` nor its host would do: on an honest multi-primary
+setup each server has its own while the database is logically one, and such a check would
+raise the alarm on exactly the right configuration.
+
+**First write.** `PeerModule` reads the marker once, after the TLS files are checked and
+before the peer server is built — a one-time bootstrap read of the master, allowed before
+its loop like the anonymization gate's and the admin view mode latch's
+([../antipatterns/heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md),
+*Exceptions*). `DatabaseMarker::ensure()` reads the row; there is none — it inserts one.
+The insert is the only arbiter, as with the schema rollout claim: a duplicate key on one
+server, a certification conflict on Galera. A loser reads again; on Galera the winner's
+row may not be readable there yet, so it waits a second and reads again, with no deadline,
+writing `Waiting for the database marker another node is writing to become readable here`
+on the first poll and every 30th after it. Then one INFO line:
+`Database marker <marker> written by <node> at <time>, read from database '<name>' on <host>:<port>`.
+The marker lives in the master's memory from here on; the handshake touches no database.
+
+**On the handshake.** A hello and a welcome carry the field `markers` — the sender's
+markers by kind; there is one kind today, `database`. The field is required, and
+`PeerProtocol::VERSION` is `9` for it: a node of the previous protocol and a node of this
+one do not link, with the line about the version. The accepting side on a hello and the
+dialing side on a welcome check, in order: the protocol version, the certificate name,
+the markers. The rule (`PeerMarkers::refusalFor()`): a kind named by either side is named
+by the other with the same value. A breach drops the link through the existing branch —
+`Peer link dropped: …` at WARNING — before the link remembers the peer or tells the
+server; the accepting side sends no welcome, and the dialing side writes its own line
+about a link closed before the welcome. The refusals, literally:
+
+- `Peer handshake from node '<id>' names database marker '<theirs>', but this node reads '<ours>' from <place>: the two nodes do not read one database`
+- `Peer handshake from node '<id>' names no database marker, but this node reads '<ours>' from <place>`
+- `Peer handshake from node '<id>' names <kind> marker '<value>', which this node does not carry`
+
+Both ends judge, not a leader alone: a leader judging by itself would find the stranger
+already linked to every other node and exchanging syncs with them, and before the first
+election there is no leader at all. In a full mesh every node dials every other, so every
+node is the accepting side of some link and the refusal is named in the log of both.
+
+**The refused node** is alive and alone. It dials its neighbours every 5 s and is refused
+every time; the repeated lines are not thinned, as with a refused version or certificate.
+Quorum is a majority of the declared `CLUSTER_MASTER_SET`, not of the live registry, so it
+never becomes leader and stays in `MasterNoQuorum` (a slave simply has no leader to serve);
+nobody lists it. Point it at the right database and restart it — it joins.
+
+**What does not carry a marker.** A single-node installation writes and checks none: there
+is nobody to compare with. A restore does not bring one — the target keeps its marker, and
+a target without one stays without one, so a production archive restored on staging does not
+hand staging the production name. Only the primary connection carries a marker; the others
+wait for the per-connection ownership mode (decision of 06.09.2026, R3).
+
+**Proof on the stand.** The cluster matrix starts five nodes at once on an empty database
+(HIL-1228), and the first convergence passes only if all five read one marker — the race of
+the first write, proven for free. Scenario 22 points a living node at another marker and
+shows it refused on both ends and listed by nobody, while the rest converge
+([../testing.md](../testing.md)).
 
 ## Consensus coordinator (HIL-339)
 

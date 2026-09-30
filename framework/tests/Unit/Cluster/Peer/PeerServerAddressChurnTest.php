@@ -70,7 +70,7 @@ final class PeerServerAddressChurnTest extends TestCase
     public function testReconcileRepointsDialWhenPeerReAdvertisesAChangedAddress(): void
     {
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $registry = Hilos::$cluster->registry();
         $now = microtime(true);
 

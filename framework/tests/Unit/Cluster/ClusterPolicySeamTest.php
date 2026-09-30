@@ -12,6 +12,7 @@ use Hilos\Cluster\Peer\ConnectionPolicy;
 use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Peer\PeerAddress;
 use Hilos\Cluster\Peer\PeerDial;
+use Hilos\Cluster\Peer\PeerMarkers;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\BestFitPlacementPolicy;
 use Hilos\Cluster\Placement\PlacementExecutor;
@@ -29,6 +30,7 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\ServerInterface;
+use Hilos\Tests\Unit\Cluster\Peer\PeerTestMarkers;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -198,7 +200,8 @@ final class ClusterPolicySeamTest extends TestCase
         }
 
         $daemon = new PolicySeamTestManager();
-        new PeerModule()->register($daemon, $this->context());
+        // The markers are handed in: the module would read them from a database this suite has not.
+        new PeerModule(static fn (): PeerMarkers => PeerTestMarkers::shared())->register($daemon, $this->context());
 
         $server = $daemon->captured;
         $this->assertInstanceOf(PeerServer::class, $server);

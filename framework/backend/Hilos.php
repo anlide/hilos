@@ -48,6 +48,8 @@ use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseGuarantee;
+use Hilos\Database\DatabaseGuaranteeStartupGuard;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Pages\PageCatalogStub;
@@ -285,6 +287,21 @@ abstract class Hilos implements TruthSourceOwner
      * @var list<HilosFeature>
      */
     protected const array FEATURES = [];
+
+    /**
+     * What this project promises about its database, so that every node may rely on it (HIL-1206).
+     *
+     * A statement about the project, not about one installation of it: both promises are owed by
+     * every project, a single node included. The first holds a cluster together - its nodes share
+     * rows through the database rather than over the wire - and the second is needed even on one
+     * node, whose processes read back what the others wrote. The default is empty on purpose, and
+     * a daemon refuses to start until both are listed ({@see DatabaseGuaranteeStartupGuard}): the
+     * framework cannot tell a topology that keeps them from one that does not, so the project
+     * says so. What keeps each promise on each topology is in docs/agents/app-topology.md.
+     *
+     * @var list<DatabaseGuarantee>
+     */
+    protected const array DATABASE_GUARANTEES = [];
 
     /** Page classes keyed by page name. */
     public const array PAGES = [];
@@ -666,6 +683,21 @@ abstract class Hilos implements TruthSourceOwner
     public static function featuresOf(string $hilosClass): array
     {
         return $hilosClass::FEATURES;
+    }
+
+    /**
+     * Reads the database promises of a facade class that is not the running one.
+     *
+     * The startup guard needs exactly this, for the reason {@see featuresOf()} exists: it judges
+     * the facade class it is handed, and the declaration is a protected constant - a statement the
+     * project makes to the framework, not API for callers.
+     *
+     * @param class-string<Hilos> $hilosClass Facade class to read the declaration off
+     * @return list<DatabaseGuarantee> Declared promises, empty when the project states none
+     */
+    public static function databaseGuaranteesOf(string $hilosClass): array
+    {
+        return $hilosClass::DATABASE_GUARANTEES;
     }
 
     /**

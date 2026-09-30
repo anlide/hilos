@@ -312,7 +312,10 @@ answering a different question: the four DB sync facts a worker raises after a w
 travel the mesh (`peer_db_sync`) so that every node's own in-memory copies stop being
 stale. It carries no library semantics and replaces nothing above — a holder learns
 that its SET changed from the signal, and learns that a ROW it holds changed from the
-sync. The mechanism is precondition 3 below.
+sync. The mechanism is precondition 3 below. It stands on what the project declares its
+database keeps — one logical database that reads back what was written
+([../app-topology.md](../app-topology.md), *Database Guarantees*, HIL-1206): the sync
+carries the fact that a row changed, and every node reads the row itself.
 
 **Both paths run from anywhere, not only from the leader.** `applyPlacement()` asks
 `ClusterPlacement::locate()`, which answers from the placement view the leader

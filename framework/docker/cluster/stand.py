@@ -12,6 +12,10 @@ of the same file:
     stranger: <CLUSTER_NODE_ID of the node under a profile a scenario raises; optional>
     scenarios: [<numbers of the scenarios this stand carries>]
 
+The database the nodes share is found the way the tooling finds it on every stand: the service
+labelled `hilos.role: database`, with the credentials its image is started with (MYSQL_USER,
+MYSQL_PASSWORD, MYSQL_DATABASE). A scenario sends SQL there through `db-sql` (control.py).
+
 The file is read whole through `docker compose config` as JSON rather than parsed as YAML:
 the host has no YAML parser, and compose resolves the anchors, the relative paths and the
 defaults on its way out, so what is read here is what compose itself would run.
@@ -31,6 +35,12 @@ BLOCK = "x-hilos-cluster"
 # DAEMON_LOG_FILE in the demo's .env.example says so.
 LOG_TARGET = "/var/log/hilos"
 DAEMON_LOG = "daemon.log"
+# The label a stand puts on the service of its database, and the value that says so; the same
+# label every demo stand carries for the tooling that asks a stand for its database.
+DATABASE_LABEL = "hilos.role"
+DATABASE_ROLE = "database"
+# What the database image of a stand is started with, and what db-sql signs in with.
+DATABASE_ENV = ("MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE")
 ROLE_MASTER = "master"
 ROLE_SLAVE = "slave"
 # The grace a slave keeps its work for when no node of the stand sets CLUSTER_SLAVE_WORK_GRACE_MS;
@@ -63,6 +73,16 @@ class Node:
 
 
 @dataclass(frozen=True)
+class Database:
+    """The database service of the stand, as its compose service says it."""
+    service: str
+    container: str
+    user: str
+    password: str
+    name: str
+
+
+@dataclass(frozen=True)
 class Stand:
     """A cluster stand: its compose project, the nodes it starts, and what it carries."""
     compose: Path
@@ -79,6 +99,8 @@ class Stand:
     stranger: Node | None
     scenarios: list
     slave_work_grace_sec: float
+    # The service labelled as the stand's database, or None when the stand labels none.
+    database: Database | None
 
     @property
     def demo_dir(self):
@@ -166,6 +188,7 @@ def stand_from_config(shown, compose, config):
         stranger=stranger,
         scenarios=_scenarios(shown, block.get("scenarios")),
         slave_work_grace_sec=_slave_work_grace_sec(shown, services, members),
+        database=_database(shown, project, services),
     )
 
 
@@ -202,6 +225,30 @@ def _node(shown, service, spec, node_id):
         log_dir=Path(log_dir),
         profile=profiles[0] if profiles else None,
     ), key
+
+
+def _database(shown, project, services):
+    """The service the stand labels as its database, or None when it labels none."""
+    labelled = [service for service, spec in services.items()
+                if (spec.get("labels") or {}).get(DATABASE_LABEL) == DATABASE_ROLE]
+    if not labelled:
+        return None
+    if len(labelled) > 1:
+        raise StandRefused(f"{shown}: services {', '.join(labelled)} are all labelled "
+                           f"{DATABASE_LABEL}: {DATABASE_ROLE}")
+    service = labelled[0]
+    spec = services[service]
+    env = spec.get("environment") or {}
+    missing = [key for key in DATABASE_ENV if not env.get(key)]
+    if missing:
+        raise StandRefused(f"{shown}: database service {service} has no {', '.join(missing)}")
+    return Database(
+        service=service,
+        container=spec.get("container_name") or f"{project}-{service}-1",
+        user=env["MYSQL_USER"],
+        password=env["MYSQL_PASSWORD"],
+        name=env["MYSQL_DATABASE"],
+    )
 
 
 def _lacks(shown, service, what):

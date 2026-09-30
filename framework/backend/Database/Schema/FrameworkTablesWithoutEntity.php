@@ -7,6 +7,7 @@ namespace Hilos\Database\Schema;
 use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\AdminViewMode\AdminViewModeStartup;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
+use Hilos\Database\DatabaseMarker;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 
@@ -26,6 +27,8 @@ use Hilos\Database\MigrationClaim;
  *   itself, before any migration has run and therefore before any Entity's table exists.
  *   **`hilos_admin_view_mode_latch`** is created there too, and is written by the start of
  *   a daemon ({@see AdminViewModeStartup}), before any agent exists.
+ *   **`hilos_database_marker`** is created there as well, and is written by the start of a
+ *   daemon in a cluster ({@see DatabaseMarker}), before the peer port opens.
  * - **The change-log tables** record what changed in the other tables; a row of theirs
  *   is written by the log, not loaded as a domain object.
  * - **The analytics tables** are append-only facts and their dictionaries, written in
@@ -62,10 +65,10 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
      * Returns the personal-data verdict of the framework's tables outside the ORM.
      *
      * Kept in step with the DDL the framework ships:
-     * {@see Migration::initialize()} for `migration`, `hilos_migration_claim` and
-     * `hilos_admin_view_mode_latch`, and the `create_hilos_analytics.sql` /
-     * `create_hilos_change_log.sql` stubs for the rest.
-     * Applied on every database in the registry because those three are created on every
+     * {@see Migration::initialize()} for `migration`, `hilos_migration_claim`,
+     * `hilos_admin_view_mode_latch` and `hilos_database_marker`, and the
+     * `create_hilos_analytics.sql` / `create_hilos_change_log.sql` stubs for the rest.
+     * Applied on every database in the registry because those four are created on every
      * migrated database; a table a project does not create on a given database is simply
      * never seen by the gates, so the framework may classify everything it ships.
      *
@@ -87,6 +90,8 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             MigrationClaim::TABLE => [],
             // The admin view mode latch holds an environment, a node and a time: nothing personal.
             AdminViewModeLatchTable::TABLE => [],
+            // The database marker holds a random name, a node and a time: nothing personal.
+            DatabaseMarker::TABLE => [],
 
             'hilos_change_log' => [
                 'old_value' => AnonymizationStrategy::MASK,
@@ -168,6 +173,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             // The holder is a node id or a host name with a process id: a machine, not a person.
             MigrationClaim::TABLE => ['id', 'holder', 'claimed_at'],
             AdminViewModeLatchTable::TABLE => ['id', 'environment', 'node', 'closed_at'],
+            DatabaseMarker::TABLE => ['id', 'marker', 'written_by', 'written_at'],
 
             'hilos_change_log' => [
                 'id',

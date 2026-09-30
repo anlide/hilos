@@ -103,7 +103,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $socket = $this->makeSocket();
         $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
@@ -122,7 +122,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $socket = $this->makeSocket();
         $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
@@ -143,7 +143,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
 
@@ -163,7 +163,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
 
@@ -183,7 +183,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -207,7 +207,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -237,7 +237,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
 
@@ -261,7 +261,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
         $server->onLinkClosed($link);
@@ -281,7 +281,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $socket = $this->makeSocket();
         $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
@@ -299,7 +299,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $socket = $this->makeSocket();
         $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
         $remote = NodeIdentity::of('node-b', NodeRole::Master, []);
@@ -327,7 +327,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -361,7 +361,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -391,7 +391,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -422,7 +422,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -450,7 +450,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -476,7 +476,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $socket = $this->makeSocket();
         $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
@@ -496,7 +496,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $socket = $this->makeSocket();
         $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
@@ -521,7 +521,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $server->announceSourceInterest(['unitRows'], []);
 
         [$link, $far] = $this->makeLinkedPair($server, $local);
@@ -567,6 +567,7 @@ final class PeerServerRtHandOverTest extends TestCase
             'node-b',
             NodeRole::Master,
             [],
+            PeerTestMarkers::onWire(),
             null,
         );
         socket_write($far, $hello->toJson() . "\n");

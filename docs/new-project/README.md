@@ -68,7 +68,12 @@ migration per framework table it needs; mirror it file by file:
    rename the namespace.
 2. **Facade** `backend/Hilos.php` extends `\Hilos\Hilos`: `PAGES`, `AGENTS`
    registries, `createDb()` (the only abstract member), optional
-   `ENV_CATALOG`. `GROUPS`/`TABLES`/`BROWSER_TABLES`/`PAGE_TABLES` default to
+   `ENV_CATALOG`, and `DATABASE_GUARANTEES` naming both
+   `DatabaseGuarantee::ONE_LOGICAL_DATABASE` and
+   `DatabaseGuarantee::READ_AFTER_WRITE` — required: without both the daemon
+   does not start (see *Database Guarantees* in
+   [app-topology.md](../agents/app-topology.md)).
+   `GROUPS`/`TABLES`/`BROWSER_TABLES`/`PAGE_TABLES` default to
    empty — omit until needed. `createBrowser()` defaults to `null`, valid only
    for the pure transport-only start; a real project activates settings (the
    first admin feature) early, which needs a browser, so it ships a project

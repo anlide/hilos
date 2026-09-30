@@ -337,7 +337,7 @@ scenario on a single shape retires (not in the code yet — HIL-1218).
 |---|---|---|---|---|
 | binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (not in the code yet — HIL-1215) |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4` | a primary and a replica behind one address (not in the code yet — HIL-1229) | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet, 18 capacity is consumed, 19 worker death on a live node (not in the code yet — HIL-1216) |
-| online-testing | Angular | three equal masters that host work themselves | a three-node multi-primary (not in the code yet — HIL-1230) | 11 cross-node db fact, 15 db interest addressing (not in the code yet — HIL-1217); a database node that dies and the nodes that reconnect (not in the code yet — HIL-1231); the schema rolled out once by nodes that start together (scenario 21 on the demo/cluster stand today — moves with HIL-1217) |
+| online-testing | Angular | three equal masters that host work themselves | a three-node multi-primary (not in the code yet — HIL-1230) | 11 cross-node db fact, 15 db interest addressing (not in the code yet — HIL-1217); a database node that dies and the nodes that reconnect (not in the code yet — HIL-1231); the schema rolled out once by nodes that start together (scenario 21 on the demo/cluster stand today — moves with HIL-1217); a node reading another database refused on both ends (scenario 22 on the demo/cluster stand today — moves with HIL-1217) |
 
 Why the scenarios fall this way (the owner's word, 2026-09-27): quorum, a
 network partition and TLS are proved on the simplest database, so that two
@@ -349,7 +349,10 @@ The move goes **cluster → e2e → MySQL**. The scenarios move first, every
 stand still on one database server — a scenario never changes its database in
 the same step as its stand; the e2e specs move next; the MySQL topologies and
 the browser on a multi-node stand come last. The one-time schema rollout went
-ahead of all of them (HIL-1228): it is needed on one server too.
+ahead of all of them (HIL-1228): it is needed on one server too. Nodes that
+start together also read one marker of their database — the first write is
+decided by the insert, like the rollout claim — and a node naming another
+marker is refused by every other (HIL-1206).
 
 A stand takes rather than holds. The harness is one and shared,
 `framework/docker/cluster/`: it reads the nodes, their addresses, their room

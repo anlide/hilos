@@ -30,6 +30,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseMarker;
+use Hilos\Database\DatabaseMarkerRow;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
@@ -98,6 +100,12 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 
     /** Holder of the rollout claim a fixture archive was taken under; a process of the backup's time. */
     private const string ARCHIVED_CLAIM_HOLDER = 'backup-time-node:4242';
+
+    /** Marker of the database a fixture archive was taken from; a restore must not bring it. */
+    private const string ARCHIVED_MARKER = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    /** Marker the target database carries before a restore. */
+    private const string TARGET_MARKER = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
     /** Administrator of the restored database, as its audience names them. */
     public const int ADMIN_USER_ID = 41;
@@ -309,6 +317,50 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
         $this->assertNull(MigrationClaim::current(), 'The claim table must be left empty');
+    }
+
+    /**
+     * The database marker names the database, not its content (HIL-1206): an archive taken from
+     * another database carries that database's name, and the target keeps its own.
+     *
+     * @throws DatabaseException When the marker row cannot be written, read or removed
+     */
+    public function testTheTargetKeepsItsOwnDatabaseMarkerOverTheArchivedOne(): void
+    {
+        Migration::initialize();
+        DatabaseMarker::put(new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', '2026-09-01 10:00:00'));
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]) . $this->markerDumpSql(self::ARCHIVED_MARKER));
+
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+            $kept = DatabaseMarker::current();
+            $this->assertSame(self::TARGET_MARKER, $kept?->marker);
+            $this->assertSame('target-node', $kept?->writtenBy);
+        } finally {
+            DatabaseMarker::clear();
+        }
+    }
+
+    /**
+     * A target without a marker stays without one: its first node writes its own, rather than
+     * taking the name of the database the archive came from.
+     *
+     * @throws DatabaseException When the marker row cannot be read or removed
+     */
+    public function testATargetWithoutADatabaseMarkerIsLeftWithoutOne(): void
+    {
+        Migration::initialize();
+        DatabaseMarker::clear();
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]) . $this->markerDumpSql(self::ARCHIVED_MARKER));
+
+        try {
+            new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+            $this->assertNull(DatabaseMarker::current(), 'The archived marker must not be left behind');
+        } finally {
+            DatabaseMarker::clear();
+        }
     }
 
     public function testASchemaArchiveIsLeftAtTheLevelItsMarkerDeclares(): void
@@ -804,6 +856,21 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             . " `holder` varchar(255) NOT NULL, `claimed_at` datetime NOT NULL, PRIMARY KEY (`id`));\n"
             . 'INSERT INTO `' . MigrationClaim::TABLE . '` VALUES (' . MigrationClaim::CLAIM_ID
             . ", '{$holder}', '2026-08-08 11:59:59');\n";
+    }
+
+    /**
+     * The database marker table as a FULL dump of another database carries it.
+     *
+     * @param string $marker Marker of the database the dump was taken from
+     * @return string Dump SQL recreating the marker table with that row
+     */
+    private function markerDumpSql(string $marker): string
+    {
+        return 'DROP TABLE IF EXISTS `' . DatabaseMarker::TABLE . "`;\n"
+            . 'CREATE TABLE `' . DatabaseMarker::TABLE . '` (`id` tinyint(3) UNSIGNED NOT NULL, `marker` char(32) NOT NULL,'
+            . " `written_by` varchar(255) NOT NULL, `written_at` datetime NOT NULL, PRIMARY KEY (`id`));\n"
+            . 'INSERT INTO `' . DatabaseMarker::TABLE . '` VALUES (' . DatabaseMarker::ROW_ID
+            . ", '{$marker}', 'archive-node', '2026-08-08 11:59:59');\n";
     }
 
     /**

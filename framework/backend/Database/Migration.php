@@ -61,16 +61,18 @@ class Migration
     }
 
     /**
-     * Ensures the three framework tables every migrated database carries: `migration`, the
-     * rollout claim's and the admin view mode latch's.
+     * Ensures the four framework tables every migrated database carries: `migration`, the
+     * rollout claim's, the admin view mode latch's and the database marker's.
      *
      * The first two are what the migration track runs on. The latch is read by the start of a
-     * daemon ({@see AdminViewModeStartup}), and it lives here because a project's own migrations
-     * know nothing about it: a table the framework needs on every database is created by the
-     * framework, the way the claim's is.
+     * daemon ({@see AdminViewModeStartup}), and so is the marker, by the start of a daemon in a
+     * cluster ({@see DatabaseMarker}; docs/agents/architecture/daemon-lifecycle.md). Both live
+     * here because a project's own migrations know nothing about them: a table the framework needs
+     * on every database is created by the framework, the way the claim's is.
      *
-     * Each is probed on its own: an installation migrated before the claim or the latch existed
-     * already has `migration`, and stopping at it would leave the later tables uncreated there.
+     * Each is probed on its own: an installation migrated before the claim, the latch or the
+     * marker existed already has `migration`, and stopping at it would leave the later tables
+     * uncreated there.
      *
      * @throws DatabaseException When connection fails or a migration table cannot be created
      */
@@ -105,6 +107,16 @@ class Migration
                 `environment` varchar(32) NOT NULL,
                 `node` varchar(255) NOT NULL,
                 `closed_at` int(10) UNSIGNED NOT NULL,
+                PRIMARY KEY (`id`)
+            ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
+        );
+        self::ensureTable(
+            DatabaseMarker::TABLE,
+            'CREATE TABLE IF NOT EXISTS `' . DatabaseMarker::TABLE . '` (
+                `id` tinyint(3) UNSIGNED NOT NULL,
+                `marker` char(32) NOT NULL,
+                `written_by` varchar(255) NOT NULL,
+                `written_at` datetime NOT NULL,
                 PRIMARY KEY (`id`)
             ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );

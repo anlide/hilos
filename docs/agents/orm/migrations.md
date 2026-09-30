@@ -42,7 +42,11 @@ of the framework table `hilos_migration_claim`, which `Migration::initialize()` 
 certification conflict on Galera. `Migration::initialize()` creates one more framework table
 there, `hilos_admin_view_mode_latch`, the row half of the admin view mode latch the start of a
 daemon reads ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)); unlike
-the claim's, a restore does not empty it.
+the claim's, a restore does not empty it. And one more, `hilos_database_marker`, the name of the
+database that the start of a daemon in a cluster reads and names to its peers
+([../architecture/daemon-lifecycle.md](../architecture/daemon-lifecycle.md), *The database both
+ends read*, HIL-1206). A restore does not bring it either: the target keeps the marker it had, and
+a target that had none is left without one — the marker is the database's name, not its content.
 
 - **A row, not `GET_LOCK`.** The server's named lock would be released by the server when its
   holder dies, but MariaDB Galera refuses `GET_LOCK` outright (since 10.6.13 / 10.11.3), and a

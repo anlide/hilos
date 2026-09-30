@@ -65,6 +65,8 @@ Plus scenarios beyond that matrix:
                                written gets the row by the hand-over of that set (HIL-1116)
  21 schema rolled out once     five nodes starting together on an empty database: one applies,
                                the rest wait (HIL-1228)
+ 22 other database refused    a node reading another database marker is admitted by nobody
+                               (HIL-1206)
 
 run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
@@ -319,6 +321,11 @@ def node_log_mark(node):
 
 def node_log_since(node, mark):
     return control.node_log_since(STAND.node(node), mark)
+
+
+def db_sql(statement):
+    """Run one SQL statement in the stand's database: its rows as printed, or '' when it failed."""
+    return ctl_out("db-sql", statement)
 
 
 def container_id(node):
@@ -1868,6 +1875,75 @@ def scenario_21_schema_rolled_out_once():
             f"all {in_words(len(ALL_NODES))} in the cluster")
 
 
+# The row that names the database every node of the stand reads (HIL-1206); a marker is 32 hex.
+DATABASE_MARKER_SQL = "SELECT marker FROM hilos_database_marker WHERE id = 1"
+DATABASE_MARKER = re.compile(r"^[0-9a-f]{32}$")
+
+
+def scenario_22_other_database_refused():
+    """A node that reads another database marker is admitted by nobody (HIL-1206).
+
+    Every node reads the marker of its database once, at the start of its daemon, and names it on
+    every handshake; both ends of a link refuse a peer that names another. A second database is
+    not raised for this: to a node, "another database" and "a database under another name" are
+    the same thing - the marker IS the name - so a living node is stopped, the marker in the one
+    database is replaced, and the node is started again. It reads the foreign name while every
+    other node still holds the original in memory.
+
+    What is asserted is the fact, not a timer: the refusal is named in the log on BOTH ends - by
+    a node that stayed, about the foreign marker the victim names, and by the victim, about the
+    original its neighbours name. Then nobody lists the victim online, and the rest converge
+    under one leader without it. The marker goes back and the victim rejoins.
+
+    The victim is the first slave, or, on a stand without slaves, a master that does not lead:
+    either way the masters left behind keep their quorum. Both logs are read by a file mark
+    (node_log_mark): the victim restarts inside the scenario, and its start moves the old log
+    to staging (see scenario 17).
+    """
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    victim = SLAVES[0] if SLAVES else next(n for n in MASTERS if n != leader)
+    observer = next(n for n in MASTERS if n != victim)
+    rest = [n for n in ALL_NODES if n != victim]
+
+    original = db_sql(DATABASE_MARKER_SQL)
+    assert DATABASE_MARKER.match(original), f"the stand's database carries no marker: {original!r}"
+    foreign = "f" * 32 if original != "f" * 32 else "e" * 32
+
+    ctl("kill", victim)
+    try:
+        db_sql(f"UPDATE hilos_database_marker SET marker = '{foreign}' WHERE id = 1")
+        assert db_sql(DATABASE_MARKER_SQL) == foreign, "the marker in the database was not replaced"
+        marks = {n: node_log_mark(n) for n in (observer, victim)}
+        print(f"    starting {victim} over the marker {foreign[:8]}… instead of {original[:8]}…")
+        ctl("start", victim)
+
+        def refused_on_both_ends(_views):
+            return (f"names database marker '{foreign}'" in node_log_since(observer, marks[observer])
+                    and f"names database marker '{original}'" in node_log_since(victim, marks[victim]))
+
+        wait_until(refused_on_both_ends, CONVERGE_TIMEOUT,
+                   f"the refused handshake named in the logs of {observer} and {victim}", nodes=rest)
+
+        def left_out(views):
+            return not node_online(views, victim) and converged(rest)(views)
+
+        views = wait_until(left_out, CONVERGE_TIMEOUT,
+                           f"{victim} offline to the leader, the rest under one leader", nodes=rest)
+        for node in rest:
+            listed = [n for n in (views.get(node) or {}).get("nodes", [])
+                      if n.get("nodeId") == victim and n.get("online")]
+            assert listed == [], f"{node} lists {victim} online: {listed}"
+    finally:
+        ctl("kill", victim)
+        db_sql(f"UPDATE hilos_database_marker SET marker = '{original}' WHERE id = 1")
+        ctl("start", victim)
+        wait_converge(ALL_NODES)
+
+    return (f"{victim} read marker {foreign[:8]}… instead of {original[:8]}…, was refused on both ends; "
+            f"the rest converged; with the marker back it rejoined")
+
+
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes", defaults=(0, 0, False, False, 0))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, and at least `nodes` members in all. What a
@@ -1910,6 +1986,10 @@ SCENARIOS = [
              Need(slaves=1)),
     Scenario("17 foreign certificate refused", scenario_17_foreign_certificate_refused,
              Need(masters=1, stranger=True)),
+    # A slave, or a master that does not lead when there is none: three nodes guarantee one or the
+    # other with a quorum left behind. Of the shapes that could carry it, this refuses only a lone
+    # master with a lone slave.
+    Scenario("22 other database refused", scenario_22_other_database_refused, Need(nodes=3)),
     Scenario("18 capacity is consumed", scenario_18_capacity_is_consumed,
              Need(masters=1, slaves=1, slave_ram=True)),
 ]

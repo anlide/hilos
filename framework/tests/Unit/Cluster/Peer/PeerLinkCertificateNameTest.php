@@ -125,7 +125,7 @@ final class PeerLinkCertificateNameTest extends TestCase
         [$near, $far] = $this->makeSocketPair();
         $link = $this->link($near, dialer: true, transport: new NamedPeerTestTransport($near, self::REMOTE_NODE));
 
-        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-m', NodeRole::Master, []));
+        $this->deliver($far, new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-m', NodeRole::Master, [], PeerTestMarkers::onWire()));
         $link->read();
 
         $this->assertTrue($link->shouldClose(), 'a welcome naming another node than its certificate must drop the link');
@@ -159,7 +159,7 @@ final class PeerLinkCertificateNameTest extends TestCase
 
         [$welcomedNear, $welcomedFar] = $this->makeSocketPair();
         $welcomed = $this->link($welcomedNear, dialer: true, transport: new NamedPeerTestTransport($welcomedNear, self::REMOTE_NODE));
-        $this->deliver($welcomedFar, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, []));
+        $this->deliver($welcomedFar, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], PeerTestMarkers::onWire()));
         $welcomed->read();
         $this->assertNotNull($welcomed->remoteIdentity());
         $welcomed->discardAsDuplicate();
@@ -261,7 +261,7 @@ final class PeerLinkCertificateNameTest extends TestCase
      */
     private function server(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread());
+        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread(), PeerTestMarkers::shared());
     }
 
     /**
@@ -278,7 +278,7 @@ final class PeerLinkCertificateNameTest extends TestCase
      */
     private function hello(string $nodeId): PeerHelloDTO
     {
-        return new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], null);
+        return new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire(), null);
     }
 
     /**

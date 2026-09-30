@@ -83,6 +83,10 @@ use Hilos\Utils\Logger;
  * otherwise the handshake is refused before the link remembers the peer or tells the server
  * about it. What the frames carry after the handshake is not checked against it - a holder of a
  * valid node certificate is a member of the cluster.
+ *
+ * The markers a hello or a welcome carries are checked at the same place, right after the name
+ * (HIL-1206): a peer that reads another database than this node is refused the same way, on both
+ * ends of the link, by the rule {@see PeerMarkers::refusalFor()} states.
  */
 final class PeerLink extends AbstractClient
 {
@@ -166,6 +170,7 @@ final class PeerLink extends AbstractClient
             $this->localIdentity->nodeId,
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
+            $this->server->localMarkers()->values,
             $this->localIdentity->address,
         ));
     }
@@ -400,7 +405,8 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerHelloDTO $hello Incoming hello frame
      * @throws PeerTransportException When a hello arrives on the dialing side, the version is incompatible,
-     *                                or the node id is not the name the peer's certificate carries
+     *                                the node id is not the name the peer's certificate carries, or the
+     *                                peer's markers differ from this node's
      */
     private function onHello(PeerHelloDTO $hello): void
     {
@@ -410,6 +416,7 @@ final class PeerLink extends AbstractClient
 
         $this->requireCompatible($hello);
         $this->requireCertifiedAs($hello->nodeId);
+        $this->requireSameMarkers($hello);
 
         $remote = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities, $hello->address);
         $this->remoteIdentity = $remote;
@@ -418,6 +425,7 @@ final class PeerLink extends AbstractClient
             $this->localIdentity->nodeId,
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
+            $this->server->localMarkers()->values,
             $this->localIdentity->address,
         ));
         Logger::info("Peer joined: {$remote->nodeId} role={$remote->role->value}");
@@ -429,7 +437,8 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerWelcomeDTO $welcome Incoming welcome frame
      * @throws PeerTransportException When a welcome arrives on the accepting side, the version is incompatible,
-     *                                or the node id is not the name the peer's certificate carries
+     *                                the node id is not the name the peer's certificate carries, or the
+     *                                peer's markers differ from this node's
      */
     private function onWelcome(PeerWelcomeDTO $welcome): void
     {
@@ -439,6 +448,7 @@ final class PeerLink extends AbstractClient
 
         $this->requireCompatible($welcome);
         $this->requireCertifiedAs($welcome->nodeId);
+        $this->requireSameMarkers($welcome);
         // Set before the server hears of it: the duplicate collapse there may discard this very link.
         $this->welcomed = true;
 
@@ -1016,6 +1026,23 @@ final class PeerLink extends AbstractClient
             throw new PeerTransportException(
                 "Peer handshake names node '{$nodeId}' but its certificate names '{$certificateName}'",
             );
+        }
+    }
+
+    /**
+     * Rejects a handshake frame whose markers differ from this node's.
+     *
+     * Judged after the certificate name, so the refusal names a node the transport vouched for.
+     * The rule and the words of the refusal are {@see PeerMarkers::refusalFor()}'s.
+     *
+     * @param PeerHandshakeDTO $frame Handshake frame to check
+     * @throws PeerTransportException When a kind either side names is missing on the other or carries another value
+     */
+    private function requireSameMarkers(PeerHandshakeDTO $frame): void
+    {
+        $refusal = $this->server->localMarkers()->refusalFor($frame->nodeId, $frame->markers);
+        if ($refusal !== null) {
+            throw new PeerTransportException($refusal);
         }
     }
 

@@ -86,6 +86,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseGuarantee;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -156,6 +157,11 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::CODE_CHANNELS,
+    ];
+
+    protected const array DATABASE_GUARANTEES = [
+        DatabaseGuarantee::ONE_LOGICAL_DATABASE,
+        DatabaseGuarantee::READ_AFTER_WRITE,
     ];
 
     public const array PAGES = [
