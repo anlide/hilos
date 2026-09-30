@@ -1,0 +1,42 @@
+{
+  "name": "demo-online-testing",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Online-testing demo — an end project that consumes the Hilos frontend SDK (@hilos/angular); the smallest complete shape on Angular.",
+  "scripts": {
+    "ng": "ng",
+    "predev": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
+    "dev": "ng serve --host 0.0.0.0 --port 5173",
+    "prebuild": "node ../../../framework/frontend/scripts/prebuild-sdk.mjs angular && node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
+    "build": "ng build",
+    "postbuild": "node -e \"require('fs').writeFileSync('dist/build-timestamp.txt', new Date().toISOString())\"",
+    "precheck": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
+    "check": "npm run check:types && npm run check:templates",
+    "check:types": "tsc --noEmit -p tsconfig.dev.json",
+    "check:templates": "ng build --configuration development"
+  },
+  "dependencies": {
+    "@angular/common": "22.0.1",
+    "@angular/compiler": "22.0.1",
+    "@angular/core": "22.0.1",
+    "@angular/platform-browser": "22.0.1",
+    "@hilos/angular": "file:../../../framework/frontend/angular",
+    "@hilos/core": "file:../../../framework/frontend/core",
+    "@vue/reactivity": "^3.5.35",
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.13.1",
+    "qrcode-generator": "^2.0.4",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "22.0.1",
+    "@angular/cli": "22.0.1",
+    "@angular/compiler-cli": "22.0.1",
+    "@angular/platform-server": "22.0.1",
+    "@angular/router": "22.0.1",
+    "@angular/ssr": "22.0.1",
+    "@types/node": "^22.0.0",
+    "typescript": "~6.0.3"
+  }
+}

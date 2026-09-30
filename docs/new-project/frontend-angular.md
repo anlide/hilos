@@ -1,7 +1,9 @@
 # New Hilos frontend: Angular
 
-Reference implementation:
-[demo/polls/frontend](../../demo/polls/frontend).
+Reference implementations:
+[demo/online-testing/frontend](../../demo/online-testing/frontend), the minimal
+one — copy it — and [demo/polls/frontend](../../demo/polls/frontend), the one
+with every framework feature switched on.
 Common ground (containers, connection, e2e, stable ids) is in
 [README.md](README.md); this part covers only what is Angular-specific.
 
@@ -53,23 +55,48 @@ Common ground (containers, connection, e2e, stable ids) is in
   and must never be open in two containers at once: containers have
   overlapping PID namespaces, which corrupts lmdb's reader lock table and
   crashes `ng build` (`TypeError ... refCount` from lmdb, or a secondary
-  esbuild panic). The repo bind-mount shares the cache between the long-lived
-  dev server and every on-demand npm container, so the dev server OWNS the
-  cache and all cli/build containers set `CI: "true"` (the default
-  `cache.environment: "local"` disables the disk cache under CI) — see the
-  `*-frontend-cli-*` services in both compose files. This is Angular-only:
-  the Vite demos keep no lmdb-backed cache.
+  esbuild panic). The repo bind-mount would share the cache between the
+  long-lived dev server and every on-demand npm container, so the dev server
+  OWNS the repo copy and each `*-frontend-cli-*` service mounts a private named
+  volume over `frontend/.angular` (`ng-cache-cli-local`, `ng-cache-cli-test`).
+  Kept apart this way the cli containers keep the cache ENABLED, which is worth
+  about a third of `ng build`. This is Angular-only: the Vite demos keep no
+  lmdb-backed cache.
 
 ## SDK wiring
 
-- `src/app/connection.ts`: one module-level `HilosConnection`; URL =
-  same-origin `/ws` ONLY (Angular has no `import.meta.env` mechanism — see
-  dev-mode below); `buildMismatch` → `location.reload()`.
-- `main.ts`: `connection.connect()` before `bootstrapApplication(...)`.
-- State via `connectionStateSignal(connection)` from `@hilos/angular` — call
-  it in an injection context (e.g. a component field initializer) or pass
-  `{ injector }`; mirrors `toSignal` semantics, unsubscribes on the
-  injector's `DestroyRef`.
+The src root stays thin and the boot wiring lives in `src/app/bootstrap/`
+([../agents/frontend/bootstrap-structure.md](../agents/frontend/bootstrap-structure.md)):
+
+- `src/index.ts`: one import, `./app/bootstrap/main`, and nothing else.
+- `src/app/bootstrap/connection.ts`: `createHilosConnection()` from
+  `@hilos/core` — one connection for the app, on the same-origin `/ws` ONLY
+  (Angular has no `import.meta.env` mechanism — see dev-mode below), the
+  framework schemas merged and the stale-build reload wired by the call itself.
+  It exports `connection` and `actions`.
+- `src/app/bootstrap/session.ts`: the app's `ScopeManager` and the session
+  selectors over it (`sessionUserName`, `sessionUserId`, `sessionUserIsAdmin`,
+  `sessionPendingAuthStep`, `sessionPendingAck`).
+- `src/app/bootstrap/main.ts`: `bootHilos({ viewLayer: HILOS_VIEW_LAYER,
+  connection, actions, scopes, router, pageTitles, appName })` binds the scopes,
+  builds the navigator and OPENS THE SOCKET — never call `connection.connect()`
+  by hand. Then `createAuthGate(…)` and `bootstrapApplication(App, …)` with the
+  navigator provided as `HILOS_ROUTER` and the gate as `HILOS_AUTH_GATE`.
+- `src/app/pages/`: `keys.ts`, `routes.ts` (`createAppPageRouter`) and
+  `pageTitles.ts` ([../agents/frontend/page-registry.md](../agents/frontend/page-registry.md)).
+- `src/app/app.ts`: `hilos-layout` with the `[brand]` and `[user]` slots (the
+  user region projected as ONE node through `ngProjectAs`) and a `hilos-view`
+  over the page map, the page skeletons and the project's `AuthSurface` (a
+  wrapper closing the project's `HilosAuthContext` over the framework
+  `HilosAuthSurface`).
+- State in components via `hilosSignal(…)` and `connectionStateSignal(connection)`
+  from `@hilos/angular` — call them in an injection context (e.g. a component
+  field initializer) or pass `{ injector }`; they mirror `toSignal` semantics
+  and unsubscribe on the injector's `DestroyRef`.
+- The public footer pages are prerendered by Angular's native prerenderer:
+  production `outputMode: "static"` with the `src/prerender/main.server.ts`
+  server entry, which declares only those pages; every other path cold-loads
+  the SPA shell `index.csr.html`, which the nginx template falls back to.
 
 ## SDK primitives
 

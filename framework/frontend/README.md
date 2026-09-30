@@ -4,8 +4,8 @@ The framework frontend SDK as an npm workspace: the framework-agnostic core
 (`@hilos/core`) and the view layers — `@hilos/vue` (the canonical product
 layer), `@hilos/react` (the React adapter), and `@hilos/angular` (the Angular
 adapter). Consumer projects — the chat and binance-btc-tracker Vue demos,
-the tasks and ecommerce-shop React demos, and the polls Angular demo — are
-not members of this workspace; they vendor the SDK. The normative spec lives under `docs/agents/frontend/`
+the tasks and ecommerce-shop React demos, and the polls and online-testing
+Angular demos — are not members of this workspace; they vendor the SDK. The normative spec lives under `docs/agents/frontend/`
 (`sdk-packaging.md`, `build-and-docker.md`, `multiframework-core.md`).
 
 ## Tooling runs in Docker, never on the host
@@ -25,7 +25,8 @@ For example, append `npm install` or `npm run build` as `<command>`.
 ## Angular versions
 
 Every npm root in the tree that carries Angular — today this workspace, through
-`angular/package.json`, and `demo/polls/frontend` — declares every `@angular/*`
+`angular/package.json`, `demo/polls/frontend` and `demo/online-testing/frontend`
+— declares every `@angular/*`
 in `dependencies` / `devDependencies` as an exact version, and all of them
 declare the same one. Three kinds of entry beside them are ranges on purpose:
 the `^22` `peerDependencies` of `@hilos/angular` (a peer range is what a

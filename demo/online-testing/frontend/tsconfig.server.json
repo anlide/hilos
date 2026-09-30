@@ -1,0 +1,14 @@
+/* Build config for the production (static prerender) build. It differs from
+   tsconfig.app.json (the plain browser build) only in keeping src/prerender in
+   the program: the native prerenderer's `server` bootstrap (main.server.ts) and
+   its @angular/router + @angular/ssr route tables live there, which
+   tsconfig.app.json excludes. The SDK still resolves to its dist, the same as
+   the browser build. */
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/server"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts"]
+}

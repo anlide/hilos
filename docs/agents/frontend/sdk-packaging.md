@@ -73,19 +73,20 @@ same version.** An npm root is a directory with its own `package-lock.json`; it
 carries Angular when its manifest, or the manifest of a member of its
 workspace, names an `@angular/*` package in those two fields — every
 `package.json` outside `node_modules` that names `@angular/` points at one.
-Today there are two: the SDK workspace `framework/frontend` — its Angular
+Today there are three: the SDK workspace `framework/frontend` — its Angular
 entries live in the manifest of the `@hilos/angular` view layer,
-`framework/frontend/angular/package.json` — and `demo/polls/frontend`, that
-layer's consumer and the Angular conformance demo. In those two fields the SDK
+`framework/frontend/angular/package.json` — and the two consumers of that layer,
+`demo/polls/frontend`, the Angular conformance demo, and
+`demo/online-testing/frontend`. In those two fields the SDK
 manifest declares `@angular/compiler`, `@angular/compiler-cli` and
-`@angular/platform-browser`; the demo declares `@angular/common`,
+`@angular/platform-browser`; each demo declares `@angular/common`,
 `@angular/compiler`, `@angular/core` and `@angular/platform-browser`, plus
 `@angular/build`, `@angular/cli`, `@angular/compiler-cli`,
 `@angular/platform-server`, `@angular/router` and `@angular/ssr`. Every one of
 them reads `22.0.1`, with no caret and no tilde. The frontend of a new project
 ([docs/new-project/README.md](../../new-project/README.md), *Project layout*)
 joins them with the first `@angular/*` its manifest names, and the rule binds
-it from its first install. `22.0.1` and the two roots are today's facts, not a
+it from its first install. `22.0.1` and the three roots are today's facts, not a
 list to keep: what the rule fixes is that the entries are exact and equal
 across every root that carries Angular, whatever the number is and however
 many roots there are. The reason sits inside Angular. Its packages hold each
@@ -104,8 +105,9 @@ major it is compatible with, not the version a project must install.
 `@angular/compiler-cli` is a range (`^22.0.0 || ^22.1.0-next.0`), so it does not
 drag Angular by itself — but it belongs to the same set when Angular is lifted.
 The `typescript` entry stays a tilde (`"~6.0.3"` today) in every root that
-carries Angular — today `demo/polls/frontend/package.json` and the workspace
-root `framework/frontend/package.json` — because `@angular/compiler-cli`
+carries Angular — today `demo/polls/frontend/package.json`,
+`demo/online-testing/frontend/package.json` and the workspace root
+`framework/frontend/package.json` — because `@angular/compiler-cli`
 requires `typescript >=6.0 <6.1`. This section rules on the Angular set and on
 that tilde; it says nothing about any other range in any of these roots.
 

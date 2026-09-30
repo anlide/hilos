@@ -103,7 +103,7 @@ Removing one of the three attributes from a configuration is **not** a way out
 — it is undoing the gate, and it takes a person's decision.
 
 `PhpunitIssueGateTest` in the framework unit suite keeps the gate on: it reads
-all seven configurations — the framework's and one per demo — and requires the
+all eight configurations — the framework's and one per demo — and requires the
 three attributes. The next demo is added to the list inside that test — a demo
 born without its gate fails there instead of running quiet.
 

@@ -11,7 +11,7 @@ minimal to full:
 | [demo/polls](../../demo/polls) | one app agent, every admin section | Angular | every framework feature activated, Angular toolchain |
 | [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
-| [demo/online-testing](../../demo/online-testing) | minimal | Angular | empty, like binance-btc-tracker (not in the code yet — HIL-1214); its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/online-testing](../../demo/online-testing) | minimal | Angular | the smallest complete shape on Angular: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
 
 The frontend specifics are split per view framework:
@@ -167,8 +167,8 @@ registry of taken host ports:
 | ecommerce-shop local | 33069 | 8130/8131/8132 | 8139 | 8140 | https 8136 | 5177 | 10.202 |
 | ecommerce-shop test | 33070 | 8133/8134/8135 | — | — | http 8137 / https 8138 | — | 10.212 |
 | ecommerce-shop cluster (not in the code yet — HIL-1216) | — | — | — | — | — | — | 10.222 |
-| online-testing local (not in the code yet — HIL-1214) | 33071 | 8150/8151/8152 | 8159 | 8160 | https 8156 | 5178 | 10.203 |
-| online-testing test (not in the code yet — HIL-1214) | 33072 | 8153/8154/8155 | — | — | http 8157 / https 8158 | — | 10.213 |
+| online-testing local | 33071 | 8150/8151/8152 | 8159 | 8160 | https 8156 | 5178 | 10.203 |
+| online-testing test | 33072 | 8153/8154/8155 | — | — | http 8157 / https 8158 | — | 10.213 |
 | online-testing cluster (not in the code yet — HIL-1217) | — | — | — | — | — | — | 10.223 |
 | demo/cluster — retires, and 10.185 stays unassigned (not in the code yet — HIL-1218) | — | — | — | — | — | — | 10.185 |
 

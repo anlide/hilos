@@ -1,0 +1,106 @@
+-- Migration: Create hilos_session table
+-- Copied from framework/backend/Database/Migration/Stub/create_hilos_session.sql.
+--
+-- Framework-standardized session table (HIL-361). Separates the session
+-- (transient, cookie-token keyed, may be anonymous) from the durable, project-
+-- owned `user`. A session is anonymous (`user_id` NULL) or authenticated
+-- (`user_id` bound after login/register); no visitor is auto-promoted to a user.
+--
+-- No DB-level foreign key to the project `user` table: framework stubs never FK
+-- across the framework/project boundary. Session→user integrity is enforced in
+-- application code (the bind action), matching the identity-layer convention and
+-- keeping the anonymous-vs-authenticated split independent of the user row.
+--
+-- `token` uses utf8mb4_bin so the cookie-token lookup is exact / case-sensitive.
+--
+-- `impersonator_user_id` (HIL-166) remembers the real admin behind an active
+-- impersonation: NULL means the session acts as its own bound user; a set value
+-- means the current `user_id` is a target the admin is acting as, and the marker
+-- holds the admin to restore on stop.
+--
+-- The `pending_registration_*` pair (HIL-612) is the durable memory of a
+-- registration this browser started and has not finished: the address whose code
+-- it is waiting on, and the moment that wait was last written. It is what lets a
+-- reloaded tab, a second tab or another device come back to the code screen
+-- instead of the empty identifier field — the step is served from the server on
+-- the handshake, so it survives a closed tab and a restarted daemon.
+--
+-- It is a column here rather than a table of its own because it is memory ABOUT
+-- this session and dies with it; a project with no registration at all then pays
+-- an empty column instead of a table it must still create. Several sessions may
+-- wait on ONE address — a desktop and a phone on the same code screen — so the
+-- column carries its own index for the reverse lookup, and no uniqueness.
+--
+-- `pending_registration_identifier` uses utf8mb4_bin so the address compares
+-- exactly, matching the reservation it shadows; the writing leaf lowercases it
+-- before the write. `pending_registration_since` is restamped by every send,
+-- first or repeat, and is what the cron sweep of abandoned registrations reads.
+--
+-- `pending_ack` (HIL-875) is the success sentence a finished auth flow still owes
+-- this browser and nobody has read yet - the account is ready, the password
+-- changed. It is memory ABOUT this session by the same argument as the pair above,
+-- and it is a column here rather than a mark on the socket that earned it because
+-- a mark owned by a connection outlived the session it belonged to: a logout
+-- restated it and a rotation carried it onto the socket that replaced the marked
+-- one. It carries no index - nothing looks a session up by it, it is read off a
+-- session already in hand - and holds one of a closed set of values written by the
+-- framework, so the default collation is enough.
+--
+-- The sessions library sweeps rows no browser can present any more every 15
+-- minutes. `expires_at` finds rows whose cookie lifetime ended; (`user_id`,
+-- `last_seen_at`) finds anonymous rows whose only handshake was over seven days
+-- ago without scanning the hot session table.
+--
+-- The `pending_second_factor_*` group (HIL-494) is the sign-in this browser proved and
+-- has not been let through yet, because the person has a second factor to show first:
+-- whose sign-in it is, which of the three screens it waits on ('verify' - the code
+-- step; 'setup' - an administrator requires a second factor the person never enrolled;
+-- 'setup_done' - enrolled on the way in, backup codes still on screen), until when, how
+-- many wrong codes it took, and the success sentence to show once through (the
+-- password changed on the way). Memory ABOUT this session by the same argument as the
+-- pair above: a reload, a second tab and a restarted daemon all come back to the step.
+-- The person's column carries an index for the reverse lookup - switching the second
+-- factor off lets every browser waiting on it go.
+--
+-- `device_name` is the browser and platform label derived from the User-Agent at
+-- handshake time. It is display-only and may be NULL when the header is absent or
+-- unrecognized. The table is purged as a whole by the framework anonymization verdict,
+-- so the new personal label needs no per-column strategy of its own.
+--
+-- `blocked_user_id` (HIL-289) is the account this browser lost, or was refused, because
+-- that account is blocked. It is memory ABOUT this session by the same argument as the
+-- groups above: the "Access closed" card is served from it on every handshake, so it
+-- survives a dropped connection, a reload, a new tab and a restarted daemon. It is
+-- lowered by the card's Sign out button, by a sign-in and by an unblock. The column
+-- carries an index for the reverse lookup an unblock makes; `impersonator_user_id`
+-- gets one beside it for the impersonations a blocked administrator loses. Purged with
+-- the table like the rest, so the column needs no anonymization strategy of its own.
+
+CREATE TABLE `hilos_session` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `token` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    `user_id` INT UNSIGNED DEFAULT NULL,
+    `impersonator_user_id` INT UNSIGNED DEFAULT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `last_seen_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `expires_at` TIMESTAMP NULL DEFAULT NULL,
+    `pending_registration_identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+    `pending_registration_since` TIMESTAMP NULL DEFAULT NULL,
+    `pending_ack` VARCHAR(64) DEFAULT NULL,
+    `pending_second_factor_user_id` INT UNSIGNED DEFAULT NULL,
+    `pending_second_factor_mode` VARCHAR(16) DEFAULT NULL,
+    `pending_second_factor_until` TIMESTAMP NULL DEFAULT NULL,
+    `pending_second_factor_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    `pending_second_factor_ack` VARCHAR(64) DEFAULT NULL,
+    `device_name` VARCHAR(64) DEFAULT NULL,
+    `blocked_user_id` INT UNSIGNED DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_session_token` (`token`),
+    KEY `idx_session_user` (`user_id`),
+    KEY `idx_session_pending_registration` (`pending_registration_identifier`),
+    KEY `idx_session_expires` (`expires_at`),
+    KEY `idx_session_anonymous_seen` (`user_id`, `last_seen_at`),
+    KEY `idx_session_pending_second_factor` (`pending_second_factor_user_id`),
+    KEY `idx_session_blocked_user` (`blocked_user_id`),
+    KEY `idx_session_impersonator` (`impersonator_user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

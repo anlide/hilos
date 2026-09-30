@@ -1,0 +1,20 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\OnlineTesting\Agents\Hilos;
+
+use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
+
+/**
+ * DemoHilosAgent - Concrete Hilos index agent for the online-testing demo.
+ *
+ * Owns the framework Hilos pages this demo registers: the empty admin dashboard and the four
+ * public footer pages.
+ *
+ * The admin grant is not answered here: the command belongs to the sessions library
+ * (HIL-729), because what it writes ends in a person's open tabs being told.
+ */
+final class DemoHilosAgent extends AbstractHilosIndexAgent
+{
+}

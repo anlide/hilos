@@ -2,9 +2,9 @@
 
 A green run proves what automation can reach. This page is the single list of
 what it cannot. HIL-658 is the case behind it: Windows stopped offering "this
-computer" in its passkey window while every suite stayed green. All three demo
-Playwright configs (`demo/{chat,polls,tasks}/tests/e2e/playwright.config.ts`) run
-only Chromium; Safari and Firefox are checked by hand.
+computer" in its passkey window while every suite stayed green. Every demo's
+Playwright config (`demo/*/tests/e2e/playwright.config.ts`) runs only Chromium;
+Safari and Firefox are checked by hand.
 
 ## A change that touches a listed surface
 
