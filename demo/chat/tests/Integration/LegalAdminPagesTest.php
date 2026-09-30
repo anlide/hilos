@@ -12,6 +12,7 @@ use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -48,6 +49,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         Hilos::initBrowser();
         LegalAdminAudience::reset();
         Database::sqlRun('DELETE FROM hilos_legal_acceptance');
+        Database::sqlRun('DELETE FROM hilos_session');
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT);
         Hilos::$rt->connections->actions->clear();
         $user = Hilos::$db->users->actions->createWithName('Legal administrator');
@@ -64,6 +66,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         Hilos::initBrowser();
         LegalAdminAudience::reset();
         Database::sqlRun('DELETE FROM hilos_legal_acceptance');
+        Database::sqlRun('DELETE FROM hilos_session');
         Hilos::$rt->connections->actions->clear();
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT);
         Hilos::$sr = null;
@@ -159,7 +162,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
     public function testCatalogRefusalReachesEachDeclarationPageWhileRecordsRemainReadable(): void
     {
         $this->record($this->userId, 'removed');
-        BrokenLegalAdminHilos::initBrowser();
+        BrokenLegalAdminHilos::initBrowser(Hilos::$browser);
         foreach ([LegalPage::class, LegalDocumentPage::class, LegalRevisionPage::class] as $page) {
             $payload = new ReflectionMethod($page, 'buildPagePayload')->invoke(
                 new $page(new DemoHilosLegalAgent()), self::ACCEPT_KEY,
@@ -169,6 +172,17 @@ final class LegalAdminPagesTest extends IntegrationTestCase
             self::assertSame('Broken admin catalog', $payload->data['legalCatalogRefusal']);
         }
         self::assertNull(Hilos::$table->hilosLegalAcceptances->getPage(new TableQueryDTO(limit: 25))->rows[0]->declared);
+
+        $guestKey = 'legal-admin-guest';
+        Hilos::$rt->connections->actions->register($guestKey, null);
+        foreach ([LegalPage::class, LegalDocumentPage::class, LegalRevisionPage::class] as $page) {
+            $payload = new ReflectionMethod($page, 'buildPagePayload')->invoke(
+                new $page(new DemoHilosLegalAgent()), $guestKey,
+                new PageRouteParams(['documentKey' => 'terms', 'revisionId' => 'removed']),
+            );
+            self::assertInstanceOf(PagePayload::class, $payload);
+            self::assertSame(SignalConstants::ACTION_FAILED_REASON, $payload->data['legalCatalogRefusal']);
+        }
     }
 
     /**

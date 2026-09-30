@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Legal;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -15,7 +16,9 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Item\LegalAcceptance as ObjectLegalAcceptance;
 use Hilos\Legal\Exception\LegalException;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Legal\LegalWire;
@@ -56,6 +59,29 @@ final class HilosLegalDocumentsTable extends TableDefinition implements Viewport
         return [
             BrowserPageSignalData::rowKey => $row->requireRowKey(),
             BrowserPageSignalData::sources => [self::ROW_SLOT => $row->toArray()],
+        ];
+    }
+
+    /**
+     * Declares where each field of the row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The row projects code catalog definitions and acceptance counters with no personal data;
+     * the document key may also originate from recorded acceptances, so it is declared as a column.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosLegalDocumentTableRow::rowKey => WireField::column(
+                HilosDbContext::legalAcceptances,
+                ObjectLegalAcceptance::document,
+            ),
+            HilosLegalDocumentTableRow::declared => WireField::notPersonal(),
+            HilosLegalDocumentTableRow::revision => WireField::notPersonal(),
+            HilosLegalDocumentTableRow::covered => WireField::notPersonal(),
+            HilosLegalDocumentTableRow::window => WireField::notPersonal(),
+            HilosLegalDocumentTableRow::lapsed => WireField::notPersonal(),
         ];
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Legal;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -54,6 +55,23 @@ final class HilosLegalChecksTable extends TableDefinition implements ViewportTab
         return [
             BrowserPageSignalData::rowKey => $row->requireRowKey(),
             BrowserPageSignalData::sources => [self::ROW_SLOT => $row->toArray()],
+        ];
+    }
+
+    /**
+     * Declares where each field of the row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The check items are the diagnostic verdict of {@see LegalChecks::run()}: document keys, revision ids,
+     * set versions and counts, none of which contain personal data.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosLegalCheckTableRow::rowKey => WireField::notPersonal(),
+            HilosLegalCheckTableRow::ok => WireField::notPersonal(),
+            HilosLegalCheckTableRow::items => WireField::notPersonal(),
         ];
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Legal;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -31,7 +32,7 @@ abstract class AbstractHilosLegalPage extends AbstractHilosPage
     public const string CATALOG_REFUSAL = 'legalCatalogRefusal';
 
     /**
-     * @param string $acceptKey Subscribing connection, unused
+     * @param string $acceptKey Subscribing connection; only an admin is sent the text of a catalog refusal
      * @param PageRouteParams $params Route parameters, unused
      * @return ?PagePayload Catalog availability; rows come from the page's tables
      * @throws HilosException When a derived legal page cannot read its requested declaration
@@ -41,10 +42,22 @@ abstract class AbstractHilosLegalPage extends AbstractHilosPage
         try {
             LegalCatalogResolver::documents();
         } catch (LegalException $e) {
-            return new PagePayload(data: [self::CATALOG_REFUSAL => $e->getMessage()]);
+            return new PagePayload(data: [self::CATALOG_REFUSAL => $this->failureText($acceptKey, $e)]);
         }
 
         return new PagePayload(data: [self::CATALOG_REFUSAL => null]);
+    }
+
+    /**
+     * Declares where each field of the page payload comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The catalog refusal is a diagnostic phrase resolved by {@see failureText()} and contains no personal data.
+     *
+     * @return array<string, WireField>
+     */
+    protected function dataFields(): array
+    {
+        return [self::CATALOG_REFUSAL => WireField::notPersonal()];
     }
 
     /**

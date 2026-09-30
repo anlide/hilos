@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Legal;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -53,7 +54,7 @@ abstract class AbstractHilosLegalDocumentPage extends AbstractHilosLegalPage
     }
 
     /**
-     * @param string $acceptKey Subscribing connection, unused
+     * @param string $acceptKey Subscribing connection; only an admin is sent the text of a catalog refusal
      * @param PageRouteParams $params Raw route parameters
      * @return ?PagePayload Declaration or catalog refusal
      * @throws HilosException When route keys are absent or unknown, or acceptance reads fail
@@ -89,7 +90,22 @@ abstract class AbstractHilosLegalDocumentPage extends AbstractHilosLegalPage
                 ],
             ]);
         } catch (LegalException $e) {
-            return new PagePayload(data: [self::CATALOG_REFUSAL => $e->getMessage(), self::SECTION => null]);
+            return new PagePayload(data: [self::CATALOG_REFUSAL => $this->failureText($acceptKey, $e), self::SECTION => null]);
         }
+    }
+
+    /**
+     * Declares where each field of the page payload comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The section carries code catalog declarations (sets, deviations, changes) and the route parameter echo.
+     *
+     * @return array<string, WireField>
+     */
+    protected function dataFields(): array
+    {
+        return [
+            ...parent::dataFields(),
+            self::SECTION => WireField::notPersonal(),
+        ];
     }
 }

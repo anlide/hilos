@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Legal;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
@@ -33,6 +34,9 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Entity\Item\LegalAcceptance as EntityLegalAcceptance;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Item\LegalAcceptance as ObjectLegalAcceptance;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\SqlSortDirection;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -117,6 +121,51 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
         return [
             BrowserPageSignalData::rowKey => $row->requireRowKey(),
             BrowserPageSignalData::sources => [self::ROW_SLOT => $row->toArray()],
+        ];
+    }
+
+    /**
+     * Declares where each field of the row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Acceptance columns are non-personal; name and email are declared as columns and hidden by their column
+     * verdicts (FAKE_NAME on user name and FAKE_EMAIL on identity identifier) rather than omission in the map;
+     * all three demos resolve names from users.name, while a project with a different source overrides the map;
+     * declared is computed from the code catalog.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosLegalAcceptanceTableRow::rowKey => WireField::column(
+                HilosDbContext::legalAcceptances,
+                ObjectLegalAcceptance::id,
+            ),
+            HilosLegalAcceptanceTableRow::userId => WireField::column(
+                HilosDbContext::legalAcceptances,
+                ObjectLegalAcceptance::userId,
+            ),
+            HilosLegalAcceptanceTableRow::document => WireField::column(
+                HilosDbContext::legalAcceptances,
+                ObjectLegalAcceptance::document,
+            ),
+            HilosLegalAcceptanceTableRow::revisionId => WireField::column(
+                HilosDbContext::legalAcceptances,
+                ObjectLegalAcceptance::revisionId,
+            ),
+            HilosLegalAcceptanceTableRow::acceptedAt => WireField::column(
+                HilosDbContext::legalAcceptances,
+                ObjectLegalAcceptance::acceptedAt,
+            ),
+            HilosLegalAcceptanceTableRow::name => WireField::column(
+                HilosDbContext::users,
+                ObjectUser::name,
+            ),
+            HilosLegalAcceptanceTableRow::email => WireField::column(
+                HilosDbContext::identities,
+                ObjectIdentity::identifier,
+            ),
+            HilosLegalAcceptanceTableRow::declared => WireField::notPersonal(),
         ];
     }
 

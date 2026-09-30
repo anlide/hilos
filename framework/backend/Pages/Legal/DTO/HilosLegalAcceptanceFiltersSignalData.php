@@ -9,6 +9,8 @@ use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Item\LegalAcceptance as ObjectLegalAcceptance;
 
 /** Complete filter vocabulary, independent of the acceptance window and catalog validity. */
 final class HilosLegalAcceptanceFiltersSignalData extends BaseDTO implements SignalDataInterface
@@ -36,14 +38,31 @@ final class HilosLegalAcceptanceFiltersSignalData extends BaseDTO implements Sig
      * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
      *
      * A viewer is sent the frame untyped, every field this map does not open replaced by the hidden mark
-     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. The map is empty until the
-     * leaf that classifies the legal acceptance filters opens it (HIL-1258), so a viewer sees none of it yet.
+     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is.
+     * The vocabulary lists document keys from the catalog and acceptance records, and revision ids carried by
+     * acceptance records; they are declared as legalAcceptances columns whose verdicts are non-personal,
+     * while the declared flags are computed.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
     public static function wireFields(): array
     {
-        return [];
+        return [
+            self::documents => WireField::each([
+                self::document => WireField::column(
+                    HilosDbContext::legalAcceptances,
+                    ObjectLegalAcceptance::document,
+                ),
+                self::declared => WireField::notPersonal(),
+                self::revisions => WireField::each([
+                    self::revisionId => WireField::column(
+                        HilosDbContext::legalAcceptances,
+                        ObjectLegalAcceptance::revisionId,
+                    ),
+                    self::declared => WireField::notPersonal(),
+                ]),
+            ]),
+        ];
     }
 
     /**

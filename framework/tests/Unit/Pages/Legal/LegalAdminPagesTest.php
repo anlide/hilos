@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Pages\Legal;
 
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageAccessLevel;
@@ -95,7 +96,11 @@ final class LegalAdminPagesTest extends LegalAdminTestCase
         LegalBrokenCatalogHilos::initBrowser();
         foreach ([LegalRootPageFixture::class, LegalDocumentPageFixture::class, LegalRevisionPageFixture::class] as $page) {
             $payload = $this->payload($page, ['documentKey' => 'terms', 'revisionId' => 'first']);
-            self::assertSame('Broken catalog fixture', $payload->data['legalCatalogRefusal']);
+            self::assertSame(
+                SignalConstants::ACTION_FAILED_REASON,
+                $payload->data['legalCatalogRefusal'],
+                'A non-admin viewer receives the fallback failure text; an admin receives the raw exception in chat integration test',
+            );
         }
         foreach ([new HilosLegalDocumentsTable(), new HilosLegalChecksTable(), new HilosLegalRevisionsTable()] as $table) {
             self::assertSame(0, $table->getFullSnapshot()->totalCount);

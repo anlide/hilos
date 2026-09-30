@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Legal;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Legal\LegalSettings;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -84,6 +85,26 @@ class HilosLegalSettingsTable extends TableDefinition implements SelfSnapshotTab
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of the row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The row key comes from the settings catalog ({@see LegalSettings::KEYS}); value is declared as a column
+     * and hidden by its column verdict (MASK); defaultValue from the catalog is omitted from the map and therefore
+     * hidden, as defaults are also setting values and all setting values are hidden from viewers (HIL-1258).
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosLegalSettingsTableRow::rowKey => WireField::notPersonal(),
+            HilosLegalSettingsTableRow::value => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
         ];
     }
 
