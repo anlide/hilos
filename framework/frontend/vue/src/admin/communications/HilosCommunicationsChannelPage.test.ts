@@ -9,15 +9,21 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
   HilosCommunicationsContext,
+  HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosCommunicationsChannelPage from './HilosCommunicationsChannelPage.vue'
@@ -111,7 +117,7 @@ function seededContext(initial: FieldSlot[]): {
   pushUpdate: (next: FieldSlot) => void
   pushRemove: () => void
   pushLeave: (next: FieldSlot) => void
-  answer: (outcome: 'success' | 'fail') => void
+  answer: (outcome: 'success' | 'fail', errorCode?: string) => void
   sent: Array<{
     action: string
     payload: Record<string, unknown>
@@ -263,7 +269,7 @@ function seededContext(initial: FieldSlot[]): {
       }
     },
     // Answer the last action sent, the way the server replies to it.
-    answer(outcome: 'success' | 'fail'): void {
+    answer(outcome: 'success' | 'fail', errorCode?: string): void {
       const last = sent[sent.length - 1]
       const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
       for (const listener of replyListeners.get(event) ?? []) {
@@ -272,6 +278,7 @@ function seededContext(initial: FieldSlot[]): {
           action: last?.action,
           requestId: last?.requestId,
           reason: 'The channel refused the reset.',
+          ...(errorCode !== undefined ? { errorCode } : {}),
         })
       }
     },
@@ -621,5 +628,215 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
     await mountPage(context)
 
     expect(resetButton().disabled).toBe(true)
+  })
+})
+
+describe('HilosCommunicationsChannelPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  /**
+   * Bind the session scope and the admin access the way bootHilos does, over
+   * handshakes this harness emits.
+   */
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      /**
+       * One handshake: who is behind the session, if anybody, and the node's
+       * admin view mode, both as the backend stamps them (HIL-1253).
+       *
+       * @param user The person behind the session, or null for a guest.
+       * @param viewMode The node's admin view mode.
+       */
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  function resetButton(): HTMLButtonElement {
+    return document.querySelector(
+      'table [data-id="hilos-channel-field-reset-from"]',
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return modalEl('hilos-channel-reset-confirm') as HTMLButtonElement
+  }
+
+  async function settle(): Promise<void> {
+    await nextTick()
+    await nextTick()
+    await nextTick()
+  }
+
+  it('a viewer finds the test send standing in view mode', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { context, sent } = seededContext([fromField('+1000')])
+    await mountPage(context)
+
+    const testButton = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-channel-test"]',
+    )
+    expect(testButton?.disabled).toBe(true)
+    expect(testButton?.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    testButton?.click()
+    await nextTick()
+    expect(sent).toEqual([])
+  })
+
+  it('a viewer opens a field edit, may type, and has nothing to save it with', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { context, sent, focus } = seededContext([fromField('+1000')])
+    await mountPage(context)
+
+    expect((editButton() as HTMLButtonElement).disabled).toBe(false)
+    editButton().click()
+    await nextTick()
+
+    expect(valueInput().disabled).toBe(false)
+    await typeDraft('+mine')
+    expect(valueInput().value).toBe('+mine')
+
+    expect(saveButton().disabled).toBe(true)
+    expect(saveButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    saveButton().click()
+    await nextTick()
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    await nextTick()
+
+    const discard = modalEl('modal-confirm-discard')
+    expect(discard).not.toBeNull()
+    discard?.click()
+    await nextTick()
+
+    expect(modalEl('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('Enter in a field edit is refused in the words of the view mode', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { context, sent, answer } = seededContext([fromField('+1000')])
+    await openModal(context)
+    await typeDraft('+mine')
+
+    const form = document.querySelector('[data-id="modal"] form')
+    expect(form).not.toBeNull()
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+
+    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+      {
+        action: 'communications_channel_set',
+        payload: { channel: 'sms', field: 'from', value: '+mine' },
+      },
+    ])
+
+    answer('fail', 'view_mode')
+    await settle()
+
+    expect(modalEl('hilos-action-error')?.textContent).toContain(
+      HILOS_VIEW_MODE_COPY.refusal,
+    )
+    expect(modalEl('modal')).not.toBeNull()
+    expect(valueInput().value).toBe('+mine')
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('a viewer opens the reset of an overridden field and has nothing to reset with', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { context, sent, focus } = seededContext([fromField('+1000')])
+    await mountPage(context)
+
+    expect(resetButton().disabled).toBe(false)
+    resetButton().click()
+    await nextTick()
+
+    expect(focus).toEqual([ROW_KEY])
+    expect(confirmButton().disabled).toBe(true)
+    expect(confirmButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirmButton().click()
+    await nextTick()
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    await nextTick()
+
+    expect(modalEl('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('an admin on a node in the mode sends a test as today', async () => {
+    const { handshake } = bindSession()
+    handshake({ id: 1, admin: true }, true)
+    const { context, sent } = seededContext([fromField('+1000')])
+    await mountPage(context)
+
+    const testButton = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-channel-test"]',
+    )
+    expect(testButton?.disabled).toBe(false)
+    expect(testButton?.getAttribute('aria-describedby')).toBeNull()
+    testButton?.click()
+    await nextTick()
+
+    expect(sent[0]?.action).toBe('communications_channel_test')
+    expect(sent[0]?.payload).toEqual({ channel: 'sms' })
   })
 })

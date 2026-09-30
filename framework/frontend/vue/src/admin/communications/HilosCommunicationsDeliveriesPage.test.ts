@@ -6,14 +6,19 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosDeliveriesContext,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosCommunicationsDeliveriesPage from './HilosCommunicationsDeliveriesPage.vue'
@@ -216,5 +221,93 @@ describe('HilosCommunicationsDeliveriesPage retry', () => {
     // The button is free again, so the answer was taken - and it asked for nothing.
     expect((retryButton() as HTMLButtonElement).disabled).toBe(false)
     expect(viewportRequests()).toBe(requestsBeforeRetry)
+  })
+})
+
+describe('HilosCommunicationsDeliveriesPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  /**
+   * Bind the session scope and the admin access the way bootHilos does, over
+   * handshakes this harness emits.
+   */
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      /**
+       * One handshake: who is behind the session, if anybody, and the node's
+       * admin view mode, both as the backend stamps them (HIL-1253).
+       *
+       * @param user The person behind the session, or null for a guest.
+       * @param viewMode The node's admin view mode.
+       */
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it("a viewer finds a failed delivery's Retry standing in view mode", async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { context, sent } = seededContext()
+    await mountPage(context)
+
+    const button = retryButton() as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    button.click()
+    await nextTick()
+    expect(sent).toEqual([])
+  })
+
+  it('an admin on a node in the mode retries as today', async () => {
+    const { handshake } = bindSession()
+    handshake({ id: 1, admin: true }, true)
+    const { context, sent } = seededContext()
+    await mountPage(context)
+
+    const button = retryButton() as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    expect(button.getAttribute('aria-describedby')).toBeNull()
+    button.click()
+    await nextTick()
+    expect(sent[0]?.action).toBe('communications_delivery_retry')
+    expect(sent[0]?.payload).toEqual({ deliveryId: 57 })
   })
 })

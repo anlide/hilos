@@ -408,21 +408,26 @@ nobody is asked*).
   `LoadingButton`; a button that only opens a form stays as it is. The
   sections: people — impersonation, rights, block, deletion, merge, rename
   (not in the code yet — HIL-1263); backup (not in the code yet — HIL-1264);
-  communications (not in the code yet — HIL-1266); security — OAuth, sign-in
-  methods, two-factor, step-up (not in the code yet — HIL-1267); the chat
-  demo's own admin (not in the code yet — HIL-1270). Maintenance has nothing
-  to move: the confirm buttons of its two dialogs — naming a verifier and
-  taking one out — are `LoadingButton`s, and its two raw buttons only open
-  those dialogs (HIL-1265). Log takeouts have nothing to move: the confirm
-  buttons of their two dialogs — confirming a takeout and withdrawing it —
-  are `LoadingButton`s, and their raw buttons only open or close a dialog or
+  security — OAuth, sign-in methods, two-factor, step-up
+  (not in the code yet — HIL-1267); the chat demo's own admin
+  (not in the code yet — HIL-1270). Maintenance has nothing to move: the
+  confirm buttons of its two dialogs — naming a verifier and taking one out —
+  are `LoadingButton`s, and its two raw buttons only open those dialogs
+  (HIL-1265). Log takeouts have nothing to move: the confirm buttons of
+  their two dialogs — confirming a takeout and withdrawing it — are
+  `LoadingButton`s, and their raw buttons only open or close a dialog or
   filter the list (HIL-1268). Legal has nothing to move: its one mutation,
   the Save of its settings form, stands on `ConflictActions` and
   `LoadingButton` since it was built (HIL-941), and its other buttons only
-  open a form, a preview or a page (HIL-1269). The settings have nothing to
-  move: the Save of their edit form stands on `ConflictActions`, the confirm
-  buttons of a reset and of an orphan's deletion are `LoadingButton`s, and the
-  three raw buttons of a row only open those dialogs. The log modes move
+  open a form, a preview or a page (HIL-1269). Communications has nothing to
+  move: its three one-click writes — a channel's switch on the hub, the test
+  send and a failed delivery's retry — are a `HilosSwitch` and
+  `LoadingButton`s, the Save of a field's form stands on `ConflictActions` and
+  `LoadingButton`, the confirm of a field's reset is a `LoadingButton`, and a
+  field's pencil and ↺ only open those dialogs (HIL-1266). The settings have
+  nothing to move: the Save of their edit form stands on `ConflictActions`, the
+  confirm buttons of a reset and of an orphan's deletion are `LoadingButton`s,
+  and the three raw buttons of a row only open those dialogs. The log modes move
   their cards onto `LoadingButton`: a card applies its mode at once, so a
   viewer finds every card disabled, and the question a card asks before it
   overwrites hand-made edits never opens for a viewer — it holds no field to
@@ -486,6 +491,16 @@ The log takeouts carry their viewer case as a unit of the rotations page
 as an e2e: a batch awaiting takeout exists on a stand only after a forced
 rotation, and only the rotation scenario of binance-btc-tracker pays for one
 (HIL-1268).
+
+The communications section carries the viewer cases of its two field dialogs and
+of a delivery's retry as units of the channel and the deliveries pages
+(`framework/frontend/vue/src/admin/communications/HilosCommunicationsChannelPage.test.ts`,
+`framework/frontend/vue/src/admin/communications/HilosCommunicationsDeliveriesPage.test.ts`);
+its e2e (`demo/binance-btc-tracker/tests/e2e/tests/communications.spec.ts`) walks
+the hub's switch and the test send. The buttons that open those dialogs and the
+retry stand on row fields — whether a field is editable, where its value comes
+from, a delivery's status — and what a viewer is shown of those rows is
+HIL-1255's and HIL-1256's (HIL-1266).
 
 The settings carry their viewer case in chat's
 `demo/chat/tests/e2e/tests/settings.spec.ts`, where their area lives until it

@@ -6,7 +6,8 @@ import {
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
+import { setAdminViewMode } from '../helpers/adminViewMode'
+import { gotoPage, PAGE_READY } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
 
 test('draws no pager under a single-page declared table', async ({ page }) => {
@@ -128,3 +129,35 @@ async function saveChannelField(tab: Page, value: string): Promise<void> {
   await clickSubmit(tab.getByTestId('hilos-channel-edit-save'))
   await expect(tab.getByTestId('hilos-channel-edit-value')).toHaveCount(0)
 }
+
+test.describe('the communications section in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test('a guest finds the channel switch and the test send standing in view mode', async ({
+    page,
+  }) => {
+    await setAdminViewMode(true)
+    await gotoPage(page, '/hilos/communications', PAGE_READY)
+    await expect(page.getByTestId('page-error')).toHaveCount(0)
+
+    const toggle = shownByTestId(page, 'hilos-channel-enabled-sms')
+    await expect(toggle).toBeDisabled()
+    await expect(toggle).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+
+    await shownByTestId(page, 'hilos-channel-configure-sms').click()
+    await expect(page.getByTestId('hilos-admin-title')).toHaveText('Channel')
+    expect(new URL(page.url()).pathname).toBe('/hilos/communications/sms')
+
+    const send = page.getByTestId('hilos-channel-test')
+    await expect(send).toBeDisabled()
+    await expect(send).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+    await expect(page.getByTestId('page-error')).toHaveCount(0)
+  })
+})
+
