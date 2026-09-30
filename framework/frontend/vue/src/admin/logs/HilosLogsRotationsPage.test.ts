@@ -3,7 +3,10 @@ import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   HilosPages,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
   ROTATIONS_HEADER_SIGNAL,
   SIGNAL_TYPE_PAGE_RESPONSE,
@@ -16,6 +19,7 @@ import type {
   HilosLogRotationsHeader,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
   TableViewportDescriptor,
 } from '@hilos/core'
 
@@ -248,10 +252,14 @@ function makeScopes(): ScopeManager {
 // The takeout dialog is teleported to the document body, so a wrapper left mounted
 // would leave its modal there for the next case to find.
 const mounted: ReturnType<typeof mount>[] = []
+const releases: (() => void)[] = []
 
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) {
     wrapper.unmount()
+  }
+  for (const release of releases.splice(0)) {
+    release()
   }
 })
 
@@ -274,6 +282,55 @@ async function settled(): Promise<void> {
   await nextTick()
   await nextTick()
   await nextTick()
+}
+
+/**
+ * Bind the session scope and the admin access the way bootHilos does, over
+ * handshakes this harness emits.
+ */
+function bindSession() {
+  const listeners: ((signal: ProjectSignal) => void)[] = []
+  const connection = {
+    on(event: string, listener: (payload: never) => void): () => void {
+      if (event === 'projectSignal') {
+        listeners.push(listener as (signal: ProjectSignal) => void)
+      }
+
+      return () => {}
+    },
+  } as unknown as HilosConnection
+  const scopes = new ScopeManager()
+  bindSessionScope(connection, scopes)
+  releases.push(bindAdminAccess(scopes))
+
+  return {
+    /**
+     * One handshake: who is behind the session, if anybody, and the node's
+     * admin view mode, both as the backend stamps them (HIL-1253).
+     *
+     * @param user The person behind the session, or null for a guest.
+     * @param viewMode The node's admin view mode.
+     */
+    handshake(
+      user: { id: number; admin: boolean } | null,
+      viewMode: boolean,
+    ): void {
+      const signal = {
+        kind: 'project',
+        type: 'handshake_response',
+        data: {
+          entities: {
+            currentUser: user === null ? null : { ...user, name: 'Olena' },
+          },
+          data: { adminViewMode: viewMode },
+        },
+        envelope: {},
+      } as unknown as ProjectSignal
+      for (const listener of listeners) {
+        listener(signal)
+      }
+    },
+  }
 }
 
 describe('HilosLogsRotationsPage', () => {
@@ -717,5 +774,148 @@ describe('HilosLogsRotationsPage', () => {
         .find('[data-id="hilos-rotation-state-all"]')
         .attributes('aria-pressed'),
     ).toBe('true')
+  })
+
+  it('a viewer opens the takeout dialog and has nothing to confirm it with', async () => {
+    bindSession().handshake(null, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const wrapper = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    await nextTick()
+
+    const takeout = wrapper.find<HTMLButtonElement>(
+      '[data-id="hilos-rotation-takeout"]',
+    )
+    expect(takeout.element.disabled).toBe(false)
+    await takeout.trigger('click')
+
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-takeout-confirm"]',
+    )
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(true)
+    expect(confirm?.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirm?.click()
+    await settled()
+    expect(dispatched).toHaveLength(0)
+
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-takeout-close"]',
+    )
+    expect(close).not.toBeNull()
+    expect(close?.disabled).toBe(false)
+    close?.click()
+    await settled()
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-confirm"]'),
+    ).toBeNull()
+  })
+
+  it('a viewer opens the withdrawal dialog and has nothing to withdraw with', async () => {
+    bindSession().handshake(null, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const wrapper = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    await nextTick()
+
+    const undo = wrapper.find<HTMLButtonElement>(
+      '[data-id="hilos-rotation-undo"]',
+    )
+    expect(undo.element.disabled).toBe(false)
+    await undo.trigger('click')
+
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-undo-confirm"]',
+    )
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(true)
+    expect(confirm?.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirm?.click()
+    await settled()
+    expect(dispatched).toHaveLength(0)
+
+    const cancel = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-undo-cancel"]',
+    )
+    expect(cancel).not.toBeNull()
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    await settled()
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-undo-confirm"]'),
+    ).toBeNull()
+  })
+
+  it('a viewer filters the batches and reads the legend as an admin does', async () => {
+    bindSession().handshake(null, true)
+    const { connection } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    const dueSwitch = wrapper.find<HTMLButtonElement>(
+      '[data-id="hilos-rotation-state-due"]',
+    )
+    expect(dueSwitch.element.disabled).toBe(false)
+    await dueSwitch.trigger('click')
+    await nextTick()
+    expect(dueSwitch.attributes('aria-pressed')).toBe('true')
+
+    const legend = wrapper.find<HTMLButtonElement>(
+      '[data-id="hilos-rotation-legend"]',
+    )
+    expect(legend.element.disabled).toBe(false)
+    await legend.trigger('click')
+    expect(document.body.textContent).toContain('What is in a batch')
+
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-legend-close"]',
+    )
+    expect(close).not.toBeNull()
+    expect(close?.disabled).toBe(false)
+    close?.click()
+    await nextTick()
+    expect(document.body.textContent).not.toContain('What is in a batch')
+  })
+
+  it('an admin on a node in the mode confirms a takeout as today', async () => {
+    bindSession().handshake({ id: 1, admin: true }, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const wrapper = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    await nextTick()
+
+    await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-takeout-confirm"]',
+    )
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(false)
+    expect(confirm?.getAttribute('aria-describedby')).toBeNull()
+
+    confirm?.click()
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      {
+        action: 'logs_takeout_confirm',
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+      },
+    ])
   })
 })

@@ -410,12 +410,14 @@ nobody is asked*).
   impersonation, rights, block, deletion, merge, rename
   (not in the code yet — HIL-1263); backup (not in the code yet — HIL-1264);
   communications (not in the code yet — HIL-1266); security — OAuth, sign-in
-  methods, two-factor, step-up (not in the code yet — HIL-1267); log takeouts
-  (not in the code yet — HIL-1268); Legal (not in the code yet — HIL-1269);
-  the chat demo's own admin (not in the code yet — HIL-1270). Maintenance has
-  nothing to move: the confirm buttons of its two dialogs — naming a verifier
-  and taking one out — are `LoadingButton`s, and its two raw buttons only open
-  those dialogs (HIL-1265).
+  methods, two-factor, step-up (not in the code yet — HIL-1267); Legal
+  (not in the code yet — HIL-1269); the chat demo's own admin
+  (not in the code yet — HIL-1270). Maintenance has nothing to move: the confirm
+  buttons of its two dialogs — naming a verifier and taking one out — are
+  `LoadingButton`s, and its two raw buttons only open those dialogs (HIL-1265).
+  Log takeouts have nothing to move: the confirm buttons of their two dialogs —
+  confirming a takeout and withdrawing it — are `LoadingButton`s, and their raw
+  buttons only open or close a dialog or filter the list (HIL-1268).
 - The controls exist in all three frontends with full parity, as every
   primitive does
   ([../frontend/multiframework-core.md](../frontend/multiframework-core.md));
@@ -469,6 +471,12 @@ where the lever is the same `setAdminViewMode()` of
 `demo/binance-btc-tracker/tests/e2e/helpers/adminViewMode.ts`. How the viewer's
 e2e is laid out across the three frontends is HIL-1273's
 (not in the code yet — HIL-1273).
+
+The log takeouts carry their viewer case as a unit of the rotations page
+(`framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.test.ts`) and not
+as an e2e: a batch awaiting takeout exists on a stand only after a forced
+rotation, and only the rotation scenario of binance-btc-tracker pays for one
+(HIL-1268).
 
 ## What The View Mode Does Not Do
 

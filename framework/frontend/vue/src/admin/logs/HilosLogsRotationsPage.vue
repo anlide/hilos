@@ -547,6 +547,7 @@ const legendOpen = ref(false)
           type="button"
           class="btn btn-secondary"
           :disabled="takeoutBusy"
+          data-id="hilos-rotation-takeout-close"
           @click="requestClose"
         >
           Close
@@ -594,6 +595,7 @@ const legendOpen = ref(false)
           type="button"
           class="btn btn-secondary"
           :disabled="undoBusy"
+          data-id="hilos-rotation-undo-cancel"
           @click="requestClose"
         >
           Leave it as it is
