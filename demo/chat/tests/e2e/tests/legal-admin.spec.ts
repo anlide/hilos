@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { signUpAdmin } from "../helpers/adminGrant.js";
-import { expectPageReady, gotoPage, PAGE_REFUSED } from "../helpers/page.js";
+import { setAdminViewMode } from "../helpers/adminViewMode.js";
+import {
+  expectPageReady,
+  gotoPage,
+  PAGE_READY,
+  PAGE_REFUSED,
+} from "../helpers/page.js";
 import { clickSubmit } from "../helpers/session.js";
 import {
   shownByTestId,
@@ -173,3 +179,31 @@ test("unknown legal documents and revisions are not-found subscription refusals"
     );
   }
 });
+
+test.describe("in the admin view mode", () => {
+  test.afterEach(() => setAdminViewMode(false));
+
+  test("a guest opens a legal setting and has nothing to save it with", async ({
+    page,
+  }) => {
+    await setAdminViewMode(true);
+    await gotoPage(page, "/hilos/legal/settings", PAGE_READY);
+    await clickSubmit(
+      shownByTestId(page, "legal-setting-edit-legal.consent_form"),
+    );
+    const input = page.getByTestId("legal-setting-input");
+    await expect(input).toBeEnabled();
+    const nextOption =
+      (await input.inputValue()) === "line" ? "checkbox" : "line";
+    await input.selectOption(nextOption);
+    const save = page.getByTestId("legal-setting-save");
+    await expect(save).toBeDisabled();
+    await expect(save).toHaveAttribute(
+      "aria-describedby",
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    );
+    await clickSubmit(page.getByTestId("legal-setting-cancel"));
+    await expect(input).toBeHidden();
+  });
+});
+

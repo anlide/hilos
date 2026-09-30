@@ -1,15 +1,20 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import HilosLegalSettingsPage from './HilosLegalSettingsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import {
   ActionError,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
   HilosPages,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   ScopeManager,
+  type HilosConnection,
   type HilosLegalContext,
   type HilosRouter,
+  type ProjectSignal,
 } from '@hilos/core'
 
 /** The live window is real; only its transport and the rejected action are replaced. */
@@ -136,6 +141,126 @@ describe('legal setting Vue modal', () => {
       expect(
         document.querySelector('[data-id="hilos-action-error"]')?.textContent,
       ).toContain('Server refused this choice')
+    } finally {
+      view.unmount()
+    }
+  })
+})
+
+describe('legal setting Vue modal in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it('a viewer opens a setting, may pick a value and has nothing to save it with', async () => {
+    const session = bindSession()
+    session.handshake(null, true)
+    const h = harness()
+    const view = mount(HilosLegalSettingsPage, {
+      attachTo: document.body,
+      props: { context: h.context },
+      global: { provide: { [hilosRouterKey as symbol]: h.router } },
+    })
+    try {
+      h.push('checkbox')
+      await nextTick()
+      const editButton = view.find<HTMLButtonElement>(
+        '[data-id="legal-setting-edit-legal.consent_form"]',
+      )
+      expect(editButton.element.disabled).toBe(false)
+      await editButton.trigger('click')
+
+      expect(input().disabled).toBe(false)
+      input().value = 'line'
+      input().dispatchEvent(new Event('change', { bubbles: true }))
+      await nextTick()
+
+      expect(save().disabled).toBe(true)
+      expect(save().getAttribute('aria-describedby')).toContain(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+      save().click()
+      await flushPromises()
+      await nextTick()
+      expect(h.calls).toEqual([])
+
+      const cancelButton = document.querySelector<HTMLButtonElement>(
+        '[data-id="legal-setting-cancel"]',
+      )!
+      expect(cancelButton.disabled).toBe(false)
+      cancelButton.click()
+      await nextTick()
+      expect(input()).toBeNull()
+    } finally {
+      view.unmount()
+    }
+  })
+
+  it('an admin on a node in the mode edits as today', async () => {
+    const session = bindSession()
+    session.handshake({ id: 1, admin: true }, true)
+    const h = harness()
+    const view = mount(HilosLegalSettingsPage, {
+      attachTo: document.body,
+      props: { context: h.context },
+      global: { provide: { [hilosRouterKey as symbol]: h.router } },
+    })
+    try {
+      h.push('checkbox')
+      await nextTick()
+      const editButton = view.find<HTMLButtonElement>(
+        '[data-id="legal-setting-edit-legal.consent_form"]',
+      )
+      expect(editButton.element.disabled).toBe(false)
+      await editButton.trigger('click')
+
+      expect(input().disabled).toBe(false)
+      input().value = 'line'
+      input().dispatchEvent(new Event('change', { bubbles: true }))
+      await nextTick()
+
+      expect(save().disabled).toBe(false)
+      expect(save().getAttribute('aria-describedby')).toBeNull()
     } finally {
       view.unmount()
     }

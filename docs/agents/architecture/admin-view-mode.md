@@ -410,14 +410,17 @@ nobody is asked*).
   impersonation, rights, block, deletion, merge, rename
   (not in the code yet — HIL-1263); backup (not in the code yet — HIL-1264);
   communications (not in the code yet — HIL-1266); security — OAuth, sign-in
-  methods, two-factor, step-up (not in the code yet — HIL-1267); Legal
-  (not in the code yet — HIL-1269); the chat demo's own admin
-  (not in the code yet — HIL-1270). Maintenance has nothing to move: the confirm
-  buttons of its two dialogs — naming a verifier and taking one out — are
-  `LoadingButton`s, and its two raw buttons only open those dialogs (HIL-1265).
-  Log takeouts have nothing to move: the confirm buttons of their two dialogs —
-  confirming a takeout and withdrawing it — are `LoadingButton`s, and their raw
-  buttons only open or close a dialog or filter the list (HIL-1268).
+  methods, two-factor, step-up (not in the code yet — HIL-1267); the chat
+  demo's own admin (not in the code yet — HIL-1270). Maintenance has nothing
+  to move: the confirm buttons of its two dialogs — naming a verifier and
+  taking one out — are `LoadingButton`s, and its two raw buttons only open
+  those dialogs (HIL-1265). Log takeouts have nothing to move: the confirm
+  buttons of their two dialogs — confirming a takeout and withdrawing it —
+  are `LoadingButton`s, and their raw buttons only open or close a dialog or
+  filter the list (HIL-1268). Legal has nothing to move: its one mutation,
+  the Save of its settings form, stands on `ConflictActions` and
+  `LoadingButton` since it was built (HIL-941), and its other buttons only
+  open a form, a preview or a page (HIL-1269).
 - The controls exist in all three frontends with full parity, as every
   primitive does
   ([../frontend/multiframework-core.md](../frontend/multiframework-core.md));
