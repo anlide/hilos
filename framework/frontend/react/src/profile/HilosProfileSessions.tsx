@@ -24,6 +24,7 @@ export function HilosProfileSessions({
 }: HilosProfileSessionsProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
   const [endingSessionId, setEndingSessionId] = useState<number | null>(null)
+  const [endOthersOpen, setEndOthersOpen] = useState(false)
   const endAction = useTrackedAction()
   const endOthersAction = useTrackedAction()
   const selectedSession = sessions.find(
@@ -34,6 +35,10 @@ export function HilosProfileSessions({
       ? 'This session has already ended'
       : endAction.error
   const endableCount = endableProfileSessionCount(sessions)
+  const endOthersError =
+    endableCount === 0
+      ? 'Your other sessions have already ended'
+      : endOthersAction.error
 
   function toggleTabs(sessionId: number): void {
     const next = new Set(expanded)
@@ -45,6 +50,11 @@ export function HilosProfileSessions({
     setExpanded(next)
   }
 
+  function openEndOthers(): void {
+    endOthersAction.clearError()
+    setEndOthersOpen(true)
+  }
+
   async function confirmEnd(): Promise<void> {
     if (selectedSession === undefined) {
       return
@@ -54,9 +64,12 @@ export function HilosProfileSessions({
     }
   }
 
-  async function endOthers(): Promise<void> {
-    if (endableCount > 0) {
-      await endOthersAction.run(actions.endOtherSessions())
+  async function confirmEndOthers(): Promise<void> {
+    if (endableCount === 0) {
+      return
+    }
+    if (await endOthersAction.run(actions.endOtherSessions())) {
+      setEndOthersOpen(false)
     }
   }
 
@@ -173,15 +186,15 @@ export function HilosProfileSessions({
           ))}
         </div>
       )}
-      <LoadingButton
-        className="btn-outline-danger mt-3"
-        loading={endOthersAction.loading}
-        disabled={endableCount === 0 || endOthersAction.busy}
+      <button
+        type="button"
+        className="btn btn-outline-danger mt-3"
+        disabled={endableCount === 0}
         data-id="profile-sessions-end-others"
-        onClick={() => void endOthers()}
+        onClick={openEndOthers}
       >
         Sign out everywhere else
-      </LoadingButton>
+      </button>
 
       <HilosModal
         open={endingSessionId !== null}
@@ -216,6 +229,51 @@ export function HilosProfileSessions({
         </p>
         <p>Your other sessions are not touched.</p>
         <HilosFormError message={endError} dataId="profile-session-end-error" />
+      </HilosModal>
+
+      <HilosModal
+        open={endOthersOpen}
+        title="Sign out everywhere else"
+        initialFocus="dialog"
+        onClose={() => setEndOthersOpen(false)}
+        actions={(args) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={endOthersAction.busy}
+              onClick={args.requestClose}
+            >
+              Cancel
+            </button>
+            <LoadingButton
+              className="btn-danger"
+              loading={endOthersAction.loading}
+              disabled={endableCount === 0 || endOthersAction.busy}
+              data-id="profile-sessions-end-others-confirm"
+              onClick={() => void confirmEndOthers()}
+            >
+              Sign out
+            </LoadingButton>
+          </>
+        )}
+      >
+        <p>
+          Other sessions that will end:{' '}
+          <strong data-id="profile-sessions-end-others-count">
+            {endableCount}
+          </strong>
+          .
+        </p>
+        <p>
+          Their tabs lose the account at once: where an account is needed, the
+          sign-in form takes the place of the content.
+        </p>
+        <p>This session stays signed in.</p>
+        <HilosFormError
+          message={endOthersError}
+          dataId="profile-sessions-end-others-error"
+        />
       </HilosModal>
     </section>
   )

@@ -410,7 +410,22 @@ test('signs out every other browser session at once', async ({ browser }) => {
 
     await gotoPage(pageA, '/profile/sessions')
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
-    await clickSubmit(pageA.getByTestId('profile-sessions-end-others'))
+
+    await pageA.getByTestId('profile-sessions-end-others').click()
+    const modal = pageA.getByTestId('modal')
+    await expect(modal).toBeVisible()
+    await expect(
+      pageA.getByTestId('profile-sessions-end-others-count'),
+    ).toHaveText('1')
+    await modal.getByRole('button', { name: 'Cancel' }).click()
+    await expect(modal).toBeHidden()
+    await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
+    await expect(pageB.getByTestId('auth-surface')).toBeHidden()
+
+    await pageA.getByTestId('profile-sessions-end-others').click()
+    await expect(modal).toBeVisible()
+    await clickSubmit(pageA.getByTestId('profile-sessions-end-others-confirm'))
+    await expect(modal).toBeHidden()
 
     await expect(pageA.getByTestId('profile-session-row')).toHaveCount(1)
     await expect(pageB.getByTestId('auth-surface')).toBeVisible()

@@ -21,6 +21,7 @@ const props = defineProps<{
 
 const expanded = ref<ReadonlySet<number>>(new Set())
 const endingSessionId = ref<number | null>(null)
+const endOthersOpen = ref(false)
 const endAction = useTrackedAction()
 const endOthersAction = useTrackedAction()
 const selectedSession = computed(() =>
@@ -36,6 +37,11 @@ const endBusy = computed(() => endAction.busy.value)
 const endOthersLoading = computed(() => endOthersAction.loading.value)
 const endOthersBusy = computed(() => endOthersAction.busy.value)
 const endableCount = computed(() => endableProfileSessionCount(props.sessions))
+const endOthersError = computed(() =>
+  endableCount.value === 0
+    ? 'Your other sessions have already ended'
+    : endOthersAction.error.value,
+)
 
 function toggleTabs(sessionId: number): void {
   const next = new Set(expanded.value)
@@ -62,11 +68,18 @@ async function confirmEnd(): Promise<void> {
   }
 }
 
-async function endOthers(): Promise<void> {
+function openEndOthers(): void {
+  endOthersAction.clearError()
+  endOthersOpen.value = true
+}
+
+async function confirmEndOthers(): Promise<void> {
   if (endableCount.value === 0) {
     return
   }
-  await endOthersAction.run(props.actions.endOtherSessions())
+  if (await endOthersAction.run(props.actions.endOtherSessions())) {
+    endOthersOpen.value = false
+  }
 }
 </script>
 
@@ -173,15 +186,15 @@ async function endOthers(): Promise<void> {
       </article>
     </div>
 
-    <LoadingButton
-      class="btn-outline-danger mt-3"
-      :loading="endOthersLoading"
-      :disabled="endableCount === 0 || endOthersBusy"
+    <button
+      type="button"
+      class="btn btn-outline-danger mt-3"
+      :disabled="endableCount === 0"
       data-id="profile-sessions-end-others"
-      @click="endOthers"
+      @click="openEndOthers"
     >
       Sign out everywhere else
-    </LoadingButton>
+    </button>
 
     <HilosModal
       :model-value="endingSessionId !== null"
@@ -212,6 +225,49 @@ async function endOthers(): Promise<void> {
           @click="confirmEnd"
         >
           End
+        </LoadingButton>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      :model-value="endOthersOpen"
+      title="Sign out everywhere else"
+      initial-focus="dialog"
+      @update:model-value="endOthersOpen = $event"
+    >
+      <p>
+        Other sessions that will end:
+        <strong data-id="profile-sessions-end-others-count">{{
+          endableCount
+        }}</strong
+        >.
+      </p>
+      <p>
+        Their tabs lose the account at once: where an account is needed, the
+        sign-in form takes the place of the content.
+      </p>
+      <p>This session stays signed in.</p>
+      <HilosFormError
+        :message="endOthersError"
+        data-id="profile-sessions-end-others-error"
+      />
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="endOthersBusy"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-danger"
+          :loading="endOthersLoading"
+          :disabled="endableCount === 0 || endOthersBusy"
+          data-id="profile-sessions-end-others-confirm"
+          @click="confirmEndOthers"
+        >
+          Sign out
         </LoadingButton>
       </template>
     </HilosModal>

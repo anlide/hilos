@@ -126,12 +126,11 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
         </div>
       }
       <button
-        hilosLoadingButton
-        class="btn-outline-danger mt-3"
-        [loading]="endOthersAction.loading()"
-        [disabled]="endableCount() === 0 || endOthersAction.busy()"
+        type="button"
+        class="btn btn-outline-danger mt-3"
+        [disabled]="endableCount() === 0"
         data-id="profile-sessions-end-others"
-        (click)="endOthers()"
+        (click)="openEndOthers()"
       >
         Sign out everywhere else
       </button>
@@ -172,6 +171,50 @@ import { createHilosTrackedAction } from '../hilosTrackedAction.js'
           </button>
         </ng-template>
       </hilos-modal>
+
+      <hilos-modal
+        [open]="endOthersOpen()"
+        (openChange)="$event ? null : endOthersOpen.set(false)"
+        title="Sign out everywhere else"
+        initialFocus="dialog"
+      >
+        <p>
+          Other sessions that will end:
+          <strong data-id="profile-sessions-end-others-count">{{
+            endableCount()
+          }}</strong
+          >.
+        </p>
+        <p>
+          Their tabs lose the account at once: where an account is needed, the
+          sign-in form takes the place of the content.
+        </p>
+        <p>This session stays signed in.</p>
+        <hilos-form-error
+          [message]="endOthersError()"
+          dataId="profile-sessions-end-others-error"
+        />
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="endOthersAction.busy()"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-danger"
+            [loading]="endOthersAction.loading()"
+            [disabled]="endableCount() === 0 || endOthersAction.busy()"
+            data-id="profile-sessions-end-others-confirm"
+            (click)="confirmEndOthers()"
+          >
+            Sign out
+          </button>
+        </ng-template>
+      </hilos-modal>
     </section>
   `,
 })
@@ -181,6 +224,7 @@ export class HilosProfileSessions {
 
   protected readonly expanded = signal<ReadonlySet<number>>(new Set())
   protected readonly endingSessionId = signal<number | null>(null)
+  protected readonly endOthersOpen = signal(false)
   protected readonly endAction = createHilosTrackedAction()
   protected readonly endOthersAction = createHilosTrackedAction()
   protected readonly selectedSession = computed(() =>
@@ -193,6 +237,11 @@ export class HilosProfileSessions {
     this.selectedSession() === undefined
       ? 'This session has already ended'
       : this.endAction.error(),
+  )
+  protected readonly endOthersError = computed(() =>
+    this.endableCount() === 0
+      ? 'Your other sessions have already ended'
+      : this.endOthersAction.error(),
   )
   protected readonly endTitle = computed(
     () => `End session #${this.endingSessionId() ?? ''}`,
@@ -234,9 +283,17 @@ export class HilosProfileSessions {
     }
   }
 
-  protected async endOthers(): Promise<void> {
-    if (this.endableCount() > 0) {
-      await this.endOthersAction.run(this.actions().endOtherSessions())
+  protected openEndOthers(): void {
+    this.endOthersAction.clearError()
+    this.endOthersOpen.set(true)
+  }
+
+  protected async confirmEndOthers(): Promise<void> {
+    if (this.endableCount() === 0) {
+      return
+    }
+    if (await this.endOthersAction.run(this.actions().endOtherSessions())) {
+      this.endOthersOpen.set(false)
     }
   }
 }
