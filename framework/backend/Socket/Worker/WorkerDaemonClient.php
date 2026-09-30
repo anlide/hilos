@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -212,6 +213,45 @@ class WorkerDaemonClient extends AbstractSocket
         }
 
         $this->writeBuffer = substr($this->writeBuffer, $written);
+    }
+
+    /**
+     * Check whether bytes handed to send() are still waiting for the socket.
+     *
+     * @return bool True while the write buffer is not empty
+     */
+    public function hasPendingWrite(): bool
+    {
+        return $this->writeBuffer !== '';
+    }
+
+    /**
+     * Wait until the socket takes more bytes, no longer than the given time.
+     *
+     * Returns either way - ready or out of time - and writes nothing: the caller
+     * writes. Does nothing unless connected. An interrupted wait returns like one
+     * that ran out, because select() leaves its error on the process and not on
+     * the socket.
+     *
+     * @param float $timeoutSeconds Longest wait, in seconds
+     * @throws SocketException When the select fails and the socket carries an error of its own
+     */
+    public function awaitWritable(float $timeoutSeconds): void
+    {
+        if (!$this->isConnected()) {
+            return;
+        }
+
+        $read = [];
+        $write = [$this->socket];
+        $except = [];
+        $seconds = (int)floor($timeoutSeconds);
+        $microseconds = (int)(($timeoutSeconds - floor($timeoutSeconds)) * TimeConstants::US_PER_SECOND);
+
+        // warning-suppressed: a false return goes to handleSocketError(), which reads the socket's error code
+        if (@socket_select($read, $write, $except, $seconds, $microseconds) === false) {
+            $this->handleSocketError(SocketOperation::SELECT);
+        }
     }
 
     /**

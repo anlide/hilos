@@ -157,6 +157,7 @@ use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
 use Hilos\Utils\WorkerTickFailureLog;
+use ErrorException;
 use Throwable;
 
 /**
@@ -2972,10 +2973,15 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Stops local agents, closes daemon transport, and shuts down analytics.
+     * Stops local agents, sends what their stop hooks queued, closes daemon transport, and shuts down analytics.
      *
      * A failing agent stop hook is contained per agent, so the remaining agents,
      * the daemon transport, and analytics are always released.
+     *
+     * Sending is an attempt: the wait for the write ends on facts only - the buffer
+     * is empty, the socket broke, the master killed the worker, or the worker is an
+     * orphan. A failed send is contained like the tick's, and a master that went
+     * first costs one warning line.
      */
     protected function cleanup(): void
     {
@@ -2995,6 +3001,28 @@ abstract class WorkerManager extends BaseManager
         // Clear all agents
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             $this->agentManager->removeAgent($agentId);
+        }
+
+        // What the stop hooks queued goes out before the transport does (HIL-1136): an attempt,
+        // not a guarantee - worker-lifecycle.md, "Graceful shutdown".
+        if ($this->daemonClient !== null) {
+            $this->setCurrentAgentId(null);
+            try {
+                $this->dispatchSignals();
+            } catch (Throwable $failure) {
+                $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, 'dispatchSignals', $failure);
+            }
+            try {
+                $this->flushDaemonClient();
+            } catch (SocketException|ErrorException $e) {
+                // In a running worker a broken socket arrives as the ErrorException that
+                // BaseManager::errorHandler() makes of socket_write()'s warning, already logged;
+                // without that handler, as the SocketException of handleSocketError().
+                Logger::warning(
+                    "Worker #{$this->workerIndex}: the daemon went before the stop hooks' frames were written: "
+                    . get_class($e) . ' ' . $e->getMessage()
+                );
+            }
         }
 
         // Close daemon connection
@@ -3030,6 +3058,28 @@ abstract class WorkerManager extends BaseManager
             RtTruthSourceRegistry::unregisterAgent($agent->getId());
             $this->releaseSourceInterest(SourceConsumer::agent($agent->getId()));
             $this->notifyRtSourcesReleased($agent->getId());
+        }
+    }
+
+    /**
+     * Writes the daemon client's buffer out on the way out of the worker.
+     *
+     * Keeps no clock of its own: the wait slice is how often the orphan fact is
+     * polled, not a deadline. A master that died without EOF (HIL-520) would
+     * otherwise hold the worker forever on a full buffer, with nobody left to
+     * kill it; an orphan writes nothing and leaves.
+     *
+     * @throws SocketException When the socket fails while the buffer is written
+     */
+    private function flushDaemonClient(): void
+    {
+        while ($this->daemonClient !== null && $this->daemonClient->isConnected() && $this->daemonClient->hasPendingWrite()) {
+            if ($this->daemonPid !== null && $this->currentParentPid() !== $this->daemonPid) {
+                Logger::info("Worker #{$this->workerIndex}: daemon parent gone, the stop hooks' frames are dropped");
+                return;
+            }
+            $this->daemonClient->awaitWritable(self::PARENT_CHECK_INTERVAL_SECONDS);
+            $this->daemonClient->write();
         }
     }
 

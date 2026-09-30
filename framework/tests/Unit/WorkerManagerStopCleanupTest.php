@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Daemon\BaseManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -14,6 +15,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalRouter;
@@ -21,26 +23,46 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use ErrorException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Socket;
 
 /**
  * Unit tests for worker-side agent stop cleanup.
  */
 final class WorkerManagerStopCleanupTest extends TestCase
 {
+    /** @var array<int, Socket> Daemon ends of the socket pairs opened by a test */
+    private array $daemonEnds = [];
+
+    /** Error reporting level to restore with the error handler a test installed, or null while none is. */
+    private ?int $reportingBeforeHandler = null;
+
     public function tearDown(): void
     {
         foreach (['', ':1', ':2'] as $indexSuffix) {
             TruthSourceRegistry::unregisterAgent(WorkerManagerStopCleanupTestAgent::AGENT_TYPE . $indexSuffix);
             RtTruthSourceRegistry::unregisterAgent(WorkerManagerStopCleanupTestAgent::AGENT_TYPE . $indexSuffix);
+        }
+        foreach ($this->daemonEnds as $daemonEnd) {
+            socket_close($daemonEnd);
+        }
+        $this->daemonEnds = [];
+        if ($this->reportingBeforeHandler !== null) {
+            restore_error_handler();
+            error_reporting($this->reportingBeforeHandler);
+            $this->reportingBeforeHandler = null;
         }
 
         parent::tearDown();
@@ -92,6 +114,81 @@ final class WorkerManagerStopCleanupTest extends TestCase
         $this->assertFalse($manager->hostsAgent($failing->getId()));
         $this->assertFalse($manager->hostsAgent($surviving->getId()));
         $this->assertSame(1, $client->closeCount);
+    }
+
+    /**
+     * A worker leaving the node sends the master what its agents' stop hooks queued, and the
+     * release of their RT sources with it, before the connection closes (HIL-1136).
+     */
+    public function testCleanupSendsWhatTheStopHooksQueuedBeforeItClosesTheTransport(): void
+    {
+        $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
+        $agent->goodbyeAcceptKey = 'unit-stop-ak';
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+        $manager->attachClient($this->connectedClient($daemonEnd));
+        $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+
+        $manager->runCleanup();
+
+        $frames = $this->framesAt($daemonEnd);
+        $released = array_values(array_filter(
+            $frames,
+            static fn(array $frame): bool => $frame[WorkerDTO::TYPE] === WorkerRtSourceReleasedDTO::MESSAGE_TYPE
+                && $frame[AgentConstants::FIELD_AGENT_ID] === WorkerManagerStopCleanupTestAgent::AGENT_TYPE,
+        ));
+        $this->assertCount(1, $released);
+        $goodbyes = array_values(array_filter(
+            $frames,
+            static fn(array $frame): bool => $frame[WorkerDTO::TYPE] === WorkerAgentMessageDTO::MESSAGE_TYPE,
+        ));
+        $this->assertCount(1, $goodbyes);
+        $goodbye = WorkerDTO::factoryWorkerDTO((string)json_encode($goodbyes[0]));
+        $this->assertInstanceOf(WorkerAgentMessageDTO::class, $goodbye);
+        $this->assertSame(WorkerManagerStopCleanupTestAgent::GOODBYE_SIGNAL, $goodbye->signal->signalName->getName());
+    }
+
+    /**
+     * A master that went before the worker takes the goodbye with it, and the worker still leaves.
+     *
+     * The failed write is met the way a running worker meets it: its error handler turns the
+     * socket's warning into an ErrorException before the client sees the error code.
+     */
+    public function testCleanupLeavesQuietlyWhenTheDaemonWentFirst(): void
+    {
+        $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
+        $agent->goodbyeAcceptKey = 'unit-stop-ak';
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+        $manager->attachClient($this->connectedClient($daemonEnd));
+        $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+        socket_close($daemonEnd);
+        array_pop($this->daemonEnds);
+        $this->installManagerErrorHandler();
+
+        $manager->runCleanup();
+
+        $this->assertTrue($agent->stopHookCalled);
+        $this->assertFalse($manager->hostsAgent(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+    }
+
+    /**
+     * An orphan - its master gone without the connection closing (HIL-520) - writes nothing on
+     * the way out, rather than waiting on a socket nobody reads.
+     */
+    public function testAnOrphanedWorkerLeavesWithoutWritingItsGoodbye(): void
+    {
+        $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
+        $agent->goodbyeAcceptKey = 'unit-stop-ak';
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+        $manager->attachClient($this->connectedClient($daemonEnd));
+        $manager->parentPid = 4242;
+        $manager->rememberDaemonPid();
+        $manager->parentPid = 1;
+        $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+
+        $manager->runCleanup();
+
+        $this->assertTrue($agent->stopHookCalled);
+        $this->assertSame([], $this->framesAt($daemonEnd));
     }
 
     /**
@@ -184,10 +281,78 @@ final class WorkerManagerStopCleanupTest extends TestCase
 
         $this->assertSame(1, $agent->handshakeCallCount);
     }
+
+    /**
+     * Builds a client sitting on a live socket pair, as if connect() had succeeded.
+     *
+     * @param ?Socket $daemonEnd Receives the daemon end of the pair
+     * @return WorkerManagerStopCleanupTestSocketClient Client on the worker end
+     */
+    private function connectedClient(?Socket &$daemonEnd): WorkerManagerStopCleanupTestSocketClient
+    {
+        $pair = [];
+        socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair);
+        [$workerEnd, $daemonEnd] = $pair;
+        socket_set_nonblock($workerEnd);
+        socket_set_nonblock($daemonEnd);
+        $this->daemonEnds[] = $daemonEnd;
+
+        $client = new WorkerManagerStopCleanupTestSocketClient();
+        $client->adoptConnectedSocket($workerEnd);
+
+        return $client;
+    }
+
+    /**
+     * Reads every frame the worker wrote so far to the daemon end.
+     *
+     * @param Socket $daemonEnd Daemon end of the pair
+     * @return list<array<string, mixed>> Decoded frames, in the order written
+     */
+    private function framesAt(Socket $daemonEnd): array
+    {
+        $bytes = '';
+        while (($chunk = socket_read($daemonEnd, 8192, PHP_BINARY_READ)) !== false && $chunk !== '') {
+            $bytes .= $chunk;
+        }
+
+        $frames = [];
+        foreach (explode("\n", $bytes) as $line) {
+            if ($line !== '') {
+                $frames[] = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+            }
+        }
+
+        return $frames;
+    }
+
+    /**
+     * Installs the error handler every Hilos manager installs around its work, warnings reported.
+     *
+     * The same shape as {@see BaseManager::errorHandler()}: an active warning becomes an
+     * ErrorException, a suppressed one is left to PHP. The suite runs with warnings left out of
+     * error_reporting, which a worker does not, so they are reported again for the case. Both
+     * are restored in tearDown().
+     */
+    private function installManagerErrorHandler(): void
+    {
+        set_error_handler(static function (int $severity, string $message, string $file, int $line): bool {
+            if (!(error_reporting() & $severity)) {
+                return false;
+            }
+
+            throw new ErrorException($message, 0, $severity, $file, $line);
+        });
+        $this->reportingBeforeHandler = error_reporting();
+        error_reporting($this->reportingBeforeHandler | E_WARNING);
+    }
 }
 
 final class WorkerManagerStopCleanupTestManager extends WorkerManager
 {
+    /** Parent pid reported to the manager instead of the real one. */
+    public int $parentPid = 1;
+
     /** @var list<WorkerManagerStopCleanupTestAgent> Agents this manager hands out, in start order */
     private readonly array $testAgents;
 
@@ -223,6 +388,19 @@ final class WorkerManagerStopCleanupTestManager extends WorkerManager
     public function runCleanup(): void
     {
         $this->cleanup();
+    }
+
+    /**
+     * Captures the current parent pid the way run() does before connecting.
+     */
+    public function rememberDaemonPid(): void
+    {
+        $this->daemonPid = $this->currentParentPid();
+    }
+
+    protected function currentParentPid(): int
+    {
+        return $this->parentPid;
     }
 
     protected function createSignalRouter(): SignalRouter
@@ -272,6 +450,7 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
     public const array OWNS_RT = [self::RT_COLLECTION => TruthSourceOperation::BY_KIND];
 
     public const string AGENT_TYPE = 'unit_stop_cleanup';
+    public const string GOODBYE_SIGNAL = 'unit_stop_goodbye';
     public const string DB_COLLECTION = 'unit_stop_cleanup_db';
     public const string RT_COLLECTION = 'unit_stop_cleanup_rt';
 
@@ -281,6 +460,9 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
     public int $handshakeCallCount = 0;
     public ?ValidationException $handshakeException = null;
     public ?RuntimeException $startException = null;
+
+    /** Accept key the stop hook says goodbye to, or null for a stop hook that sends nothing. */
+    public ?string $goodbyeAcceptKey = null;
 
     /**
      * @param ?string $agentIndex Agent index, so one test can host more than one instance
@@ -322,6 +504,9 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
     public function onStop(): void
     {
         $this->stopHookCalled = true;
+        if ($this->goodbyeAcceptKey !== null) {
+            $this->sendToUser(self::GOODBYE_SIGNAL, $this->goodbyeAcceptKey, new SignalData());
+        }
         $this->sawDbTruthSourceOnStop = TruthSourceRegistry::hasTruthSource($this->dbCollection());
         $this->sawRtTruthSourceOnStop = RtTruthSourceRegistry::hasTruthSource($this->rtCollection());
 
@@ -367,5 +552,22 @@ final class WorkerManagerStopCleanupTestClient extends WorkerDaemonClient
     public function close(): void
     {
         $this->closeCount++;
+    }
+}
+
+/**
+ * Client accepting a ready-made socket, so the worker writes to a daemon end the test reads.
+ */
+final class WorkerManagerStopCleanupTestSocketClient extends WorkerDaemonClient
+{
+    /**
+     * Adopts an already established socket as the daemon connection.
+     *
+     * @param Socket $socket Worker end of a connected socket pair
+     */
+    public function adoptConnectedSocket(Socket $socket): void
+    {
+        $this->socket = $socket;
+        $this->state = DaemonConnectionState::CONNECTED;
     }
 }

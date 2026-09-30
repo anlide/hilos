@@ -73,4 +73,26 @@ Set via `$isMonopolistic` property in `WorkerManager` subclass.
 
 ## Graceful shutdown
 
-On SIGTERM: drain pending messages, run the same stop flow for all agents, disconnect from daemon.
+A worker leaves through one door, `WorkerManager::cleanup()`, whatever made it leave: SIGTERM from
+the master stopping the node, an error or an exception that ends the loop, a lost daemon connection,
+or an orphaned worker. On the way out it runs the ordinary stop flow for every agent — `onStop()`,
+truth sources taken back, the release of its RT sources reported — then sends the master what the
+stop hooks queued, writes its buffer out until it is empty, and only then disconnects (HIL-1136).
+
+Sending those frames is an attempt, not a guarantee:
+
+- A master that has already gone takes them with it: the write fails, and whatever was not written
+  is lost. An orphaned worker — its master gone without the connection closing — does not write at
+  all.
+- The worker keeps no clock of its own for the write. When the master stops the node, it kills a
+  worker still writing once its shutdown timeout runs out.
+- A node that is stopping drops the WebSocket connections of this node in the same step that
+  signals the workers, so a frame a stop hook addresses to a browser connected here does not reach
+  it. DB/RT sync and whatever the master passes on to its peers travel on while the master waits for
+  its workers to leave.
+
+A worker that leaves while its master keeps serving — an error or an exception — is read like any
+running worker, and its frames reach their addressees.
+
+Stopping one agent — a stop message, `shouldStop()`, the idle window — is not a departure of the
+worker: the frames its `onStop()` queued go out in the same tick.
