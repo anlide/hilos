@@ -10,6 +10,9 @@ mode's values back when they have drifted. The applied card is never the gesture
 itself — with no drift there is nothing to press, and with drift the one button
 inside it says out loud what it will do. While the action is in flight every card
 is disabled, or two quick clicks would race and the later write would win.
+Inside the admin view mode a viewer finds every card and the button inside the
+applied one plainly disabled — each is a `LoadingButton` (HIL-1261) — so the
+confirmation never opens for a viewer.
 
 The outcome arrives by push, not as a reply: the backend answers the action with
 nothing and sends the new state to every open tab on its next tick. There is no
@@ -188,9 +191,8 @@ function valueLines(preset: HilosSettingPreset): string[] {
           class="h-100 border rounded-3 d-flex flex-column"
           :class="cardClass(preset.name)"
         >
-          <button
-            type="button"
-            class="btn text-start border-0 rounded-0 rounded-top-3 p-3 flex-grow-1"
+          <LoadingButton
+            class="text-start border-0 rounded-0 rounded-top-3 p-3 flex-grow-1"
             :disabled="applyBusy || applied(preset.name)"
             :aria-current="applied(preset.name) ? 'true' : undefined"
             :data-id="`hilos-setting-preset-${preset.name}`"
@@ -218,7 +220,7 @@ function valueLines(preset: HilosSettingPreset): string[] {
             >
               {{ line }}
             </span>
-          </button>
+          </LoadingButton>
 
           <div
             v-if="applied(preset.name) && drifted"

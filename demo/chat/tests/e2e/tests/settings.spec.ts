@@ -13,6 +13,7 @@ import {
   watchTop,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
+import { setAdminViewMode } from '../helpers/adminViewMode'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
 
@@ -734,4 +735,41 @@ test('a refusal too long for the line still moves nothing under it', async ({
   await valueTop.unchanged()
 
   await page.setViewportSize(desktop)
+})
+
+test.describe('in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test('a guest edits a setting, has nothing to save it with, and Enter is refused in the words of the view mode', async ({
+    page,
+  }) => {
+    const key = 'notifications.delivery_log.retention_days'
+
+    await setAdminViewMode(true)
+    await openSettings(page)
+    await isolate(page, key)
+
+    const value = await draftCustomSetting(page, key, '45')
+
+    const save = page.getByTestId('hilos-settings-edit-save')
+    await expect(save).toBeDisabled()
+    await expect(save).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+
+    await value.press('Enter')
+
+    const refusal = page.getByTestId('hilos-action-error')
+    await expect(refusal).toBeVisible()
+    await expect(refusal).toContainText(
+      'View mode: you can look around, but not change anything.',
+    )
+    await expect(value).toHaveValue('45')
+    await expect(save).toBeDisabled()
+
+    await clickSubmit(page.getByTestId('hilos-settings-edit-cancel'))
+    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await expect(value).toBeHidden()
+  })
 })

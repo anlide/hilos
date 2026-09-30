@@ -23,14 +23,18 @@ const SETTING_SAVE = 'hilos-settings-edit-save'
 const SET_CUSTOM_VALUE_LABEL = 'Set custom value'
 
 /**
- * Opens one setting's edit dialog and waits until its custom switch is ready.
+ * Opens one setting's edit dialog and waits until its controls are ready.
  *
  * @param page Page carrying the settings table.
  * @param key Catalog key of the setting to edit.
  */
 export async function openSettingEdit(page: Page, key: string): Promise<void> {
   await shownByTestId(page, `${SETTING_EDIT_PREFIX}${key}`).click()
-  await page.getByTestId(SETTING_CUSTOM).waitFor({ state: 'visible' })
+  await page
+    .getByTestId(SETTING_CUSTOM)
+    .or(page.getByTestId(SETTING_VALUE))
+    .first()
+    .waitFor({ state: 'visible' })
 }
 
 /**
@@ -47,7 +51,10 @@ export async function draftCustomSetting(
   value: string | boolean,
 ): Promise<Locator> {
   await openSettingEdit(page, key)
-  await page.getByTestId(SETTING_CUSTOM).check()
+  const custom = page.getByTestId(SETTING_CUSTOM)
+  if (await custom.isVisible()) {
+    await custom.check()
+  }
 
   const valueControl = page.getByTestId(SETTING_VALUE)
   if (typeof value === 'boolean') {

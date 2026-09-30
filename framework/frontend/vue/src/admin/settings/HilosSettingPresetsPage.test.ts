@@ -1,7 +1,15 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ActionError, createSignal, HilosPages } from '@hilos/core'
+import {
+  ActionError,
+  bindAdminAccess,
+  bindSessionScope,
+  createSignal,
+  HilosPages,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  ScopeManager,
+} from '@hilos/core'
 import type {
   ActionHandle,
   ActionResult,
@@ -11,6 +19,7 @@ import type {
   HilosSettingPresetsState,
   HilosSettingPresetsVocabulary,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosSettingPresetsPage from './HilosSettingPresetsPage.vue'
@@ -454,5 +463,132 @@ describe('HilosSettingPresetsPage', () => {
         .find('[data-id="hilos-setting-preset-settings-link"]')
         .attributes('href'),
     ).toBe('/hilos/settings')
+  })
+})
+
+describe('HilosSettingPresetsPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it('a viewer finds every mode disabled and applies none of them', async () => {
+    bindSession().handshake(null, true)
+    const { context, push, dispatched } = makeContext()
+    const wrapper = mountPage(context)
+
+    push(groupState())
+    await nextTick()
+
+    for (const name of ['frugal', 'investigation']) {
+      expect(wrapper.find(card(name)).attributes('disabled')).toBeDefined()
+      expect(wrapper.find(card(name)).attributes('aria-describedby')).toBe(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+      await wrapper.find(card(name)).trigger('click')
+    }
+    await settled()
+    expect(dispatched).toHaveLength(0)
+
+    expect(wrapper.find(card('normal')).attributes('disabled')).toBeDefined()
+    expect(wrapper.find(card('normal')).attributes('aria-current')).toBe('true')
+    expect(
+      wrapper
+        .find('[data-id="hilos-setting-preset-settings-link"]')
+        .attributes('href'),
+    ).toBe('/hilos/settings')
+  })
+
+  it('a viewer raises no overwrite question and has nothing to put the values back with', async () => {
+    bindSession().handshake(null, true)
+    const { context, push, dispatched } = makeContext()
+    const wrapper = mountPage(context)
+
+    push(
+      groupState({
+        differences: [
+          { key: 'level', presetValue: 'INFO', currentValue: 'DEBUG' },
+        ],
+      }),
+    )
+    await nextTick()
+
+    expect(wrapper.find(card('frugal')).attributes('disabled')).toBeDefined()
+    await wrapper.find(card('frugal')).trigger('click')
+    await nextTick()
+
+    expect(document.body.textContent).not.toContain('Overwrite your own edits?')
+    expect(
+      document.querySelector('[data-id="hilos-setting-preset-apply-confirm"]'),
+    ).toBeNull()
+
+    const revert = wrapper.find('[data-id="hilos-setting-preset-revert"]')
+    expect(revert.attributes('disabled')).toBeDefined()
+    expect(revert.attributes('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    await revert.trigger('click')
+    await settled()
+
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it('an admin on a node in the mode applies a mode as today', async () => {
+    bindSession().handshake({ id: 1, admin: true }, true)
+    const { context, push, dispatched } = makeContext()
+    const wrapper = mountPage(context)
+
+    push(groupState())
+    await nextTick()
+
+    const frugal = wrapper.find(card('frugal'))
+    expect(frugal.attributes('disabled')).toBeUndefined()
+    expect(frugal.attributes('aria-describedby')).toBeUndefined()
+
+    await frugal.trigger('click')
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      { action: 'setting_preset_apply', payload: { preset: 'frugal' } },
+    ])
   })
 })

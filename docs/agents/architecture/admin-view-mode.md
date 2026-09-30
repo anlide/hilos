@@ -406,8 +406,7 @@ nobody is asked*).
 - Each section moves its own raw one-click mutation buttons onto
   `LoadingButton`, and the Save of its own form onto `ConflictActions` or
   `LoadingButton`; a button that only opens a form stays as it is. The
-  sections: settings and log modes (not in the code yet — HIL-1262); people —
-  impersonation, rights, block, deletion, merge, rename
+  sections: people — impersonation, rights, block, deletion, merge, rename
   (not in the code yet — HIL-1263); backup (not in the code yet — HIL-1264);
   communications (not in the code yet — HIL-1266); security — OAuth, sign-in
   methods, two-factor, step-up (not in the code yet — HIL-1267); the chat
@@ -420,7 +419,14 @@ nobody is asked*).
   filter the list (HIL-1268). Legal has nothing to move: its one mutation,
   the Save of its settings form, stands on `ConflictActions` and
   `LoadingButton` since it was built (HIL-941), and its other buttons only
-  open a form, a preview or a page (HIL-1269).
+  open a form, a preview or a page (HIL-1269). The settings have nothing to
+  move: the Save of their edit form stands on `ConflictActions`, the confirm
+  buttons of a reset and of an orphan's deletion are `LoadingButton`s, and the
+  three raw buttons of a row only open those dialogs. The log modes move
+  their cards onto `LoadingButton`: a card applies its mode at once, so a
+  viewer finds every card disabled, and the question a card asks before it
+  overwrites hand-made edits never opens for a viewer — it holds no field to
+  look at (HIL-1262).
 - The controls exist in all three frontends with full parity, as every
   primitive does
   ([../frontend/multiframework-core.md](../frontend/multiframework-core.md));
@@ -480,6 +486,16 @@ The log takeouts carry their viewer case as a unit of the rotations page
 as an e2e: a batch awaiting takeout exists on a stand only after a forced
 rotation, and only the rotation scenario of binance-btc-tracker pays for one
 (HIL-1268).
+
+The settings carry their viewer case in chat's
+`demo/chat/tests/e2e/tests/settings.spec.ts`, where their area lives until it
+moves to binance-btc-tracker with every spec of it
+(not in the code yet — HIL-1219). The log modes carry theirs as a unit of the
+setting-presets screen
+(`framework/frontend/vue/src/admin/settings/HilosSettingPresetsPage.test.ts`)
+and not as an e2e: a viewer is sent the frame of the presets hidden whole until
+its fields are classified (not in the code yet — HIL-1255), so no stand draws a
+viewer a card to find disabled (HIL-1262).
 
 ## What The View Mode Does Not Do
 
