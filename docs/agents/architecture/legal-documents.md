@@ -70,6 +70,9 @@ person/document/revision. Repeating a recorded acceptance returns its original
 row and timestamp. There are no item actions: a stored acceptance is immutable.
 The users library owns the collection; the sessions library borrows removal
 for account erasure. Erasure removes all of the person's acceptance rows.
+The only other removal is test-only: `test:legal:hold <userId> <document> <revisionId>` (HIL-324)
+forgets acceptances of revisions declared after the named one, and records it, so the test
+holds the person on the former revision; window, lapse, and freeze follow by calculation.
 Merging accounts leaves those rows with the account that gave the acceptance.
 
 ## Consent at registration

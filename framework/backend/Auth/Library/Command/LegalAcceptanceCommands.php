@@ -5,18 +5,23 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library\Command;
 
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Legal\Exception\LegalException;
 use Hilos\Legal\Exception\UnknownRevisionException;
 use Hilos\Legal\LegalAgreementsGroup;
 use Hilos\Legal\LegalAgreementsProjector;
 use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Legal\LegalDocument;
+use Hilos\Legal\LegalDocumentStanding;
 use Hilos\Legal\LegalStandingResolver;
 
 /**
  * One acceptance write boundary for registration and re-consent (HIL-498).
+ * A test holds a person on a named revision with hold() (test:legal:hold, HIL-324).
  *
  * Registration calls record() inside its account transaction.
  * TODO(HIL-500): re-consent calls accept().
@@ -63,6 +68,54 @@ final class LegalAcceptanceCommands extends AbstractLibraryCommands
             throw $e;
         }
         $this->publishState($userId);
+    }
+
+    /**
+     * Test-only hold of an exact revision: forgets later acceptances, records the revision if missing,
+     * and returns the resulting document standing.
+     *
+     * @param int $userId Person holding the revision
+     * @param string $documentKey Document key ('terms' or 'privacy')
+     * @param string $revisionId Exact revision to hold
+     * @return LegalDocumentStanding Standing of the document after the update
+     * @throws ValidationException When the document is not declared in this installation
+     * @throws ItemNotFoundForUpdateException When the person does not exist
+     * @throws LegalException When the catalog declaration fails or revision is unknown
+     * @throws HilosException When the transaction or write fails
+     */
+    public function hold(int $userId, string $documentKey, string $revisionId): LegalDocumentStanding
+    {
+        $document = LegalDocument::tryFrom($documentKey);
+        if ($document === null || !in_array($document, LegalCatalogResolver::documents(), true)) {
+            throw new ValidationException("Legal document {$documentKey} is not declared in this installation");
+        }
+
+        if ($userId <= 0 || (Hilos::$db->users[$userId] ?? null) === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+
+        LegalCatalogResolver::revision($document, $revisionId);
+
+        Database::transactionStart();
+        try {
+            Hilos::$db->legalAcceptances->actions->forgetLaterThan($userId, $document, $revisionId);
+            Hilos::$db->legalAcceptances->actions->accept($userId, $document, $revisionId);
+            Database::transactionCommit();
+        } catch (HilosException $e) {
+            Database::transactionRollback();
+            throw $e;
+        }
+
+        $this->publishState($userId);
+
+        $acceptedRevisionIds = [];
+        foreach (Hilos::$db->legalAcceptances->ofUser($userId) as $acceptance) {
+            if ($acceptance->document === $document->value) {
+                $acceptedRevisionIds[] = $acceptance->revisionId;
+            }
+        }
+
+        return LegalStandingResolver::standingOf($document, $acceptedRevisionIds, LegalStandingResolver::today());
     }
 
     /**

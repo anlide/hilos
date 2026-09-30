@@ -9,6 +9,8 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\TimeConstants;
@@ -54,6 +56,7 @@ use Hilos\HilosException;
 use Hilos\Legal\Exception\UnknownRevisionException;
 use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Legal\LegalDocument;
+use Hilos\Legal\LegalHoldCommandConstants;
 use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
@@ -69,6 +72,8 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -436,6 +441,226 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             self::assertIsInt($state->accountStanding[AccountStanding::deletionEffectiveAt] ?? null);
         }
         self::assertArrayNotHasKey(SignalConstants::PAGE_ACCESS_REASSESS_USER, $drained);
+    }
+
+    public function testHoldCommandCausesLapseAndFreezesAccountAndNotifiesSessions(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'second');
+        self::accept(self::USER_ID, 'privacy', 'privacy');
+        $sessions = new StandingSessionsLibrary();
+        $sessions->onTick();
+        $this->drained();
+
+        $this->library->onSignalCommand(
+            new CommandRequestDTO('corr-1', CliCommands::LEGAL_TEST_HOLD, [
+                LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+                LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+                LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+            ]),
+            '',
+            '',
+        );
+
+        $drained = $this->drained();
+        $reply = $drained['corr-1'][0] ?? null;
+        self::assertInstanceOf(CommandReplyDTO::class, $reply);
+        self::assertTrue($reply->isOk());
+        self::assertSame([
+            LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+            LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+            LegalHoldCommandConstants::FIELD_STANDING => 'lapsed',
+            LegalHoldCommandConstants::FIELD_DEADLINE => '2026-03-01',
+            LegalHoldCommandConstants::FIELD_FROZEN => true,
+        ], $reply->payload);
+
+        $byDoc = [];
+        foreach (Hilos::$db->legalAcceptances->ofUser(self::USER_ID) as $acceptance) {
+            $byDoc[$acceptance->document][] = $acceptance->revisionId;
+        }
+        self::assertSame(['first'], $byDoc['terms'] ?? []);
+        self::assertSame(['privacy'], $byDoc['privacy'] ?? []);
+
+        self::assertSame(AccountStandingKind::FROZEN, AccountStandingResolver::of(self::USER_ID)->shown);
+        self::assertTrue(AccountStandingResolver::isFrozen(self::USER_ID));
+        self::assertNotEmpty($drained[HilosSignalConstants::HILOS_LEGAL_AGREEMENTS_STATE] ?? []);
+
+        $sessions->onTick();
+        $drainedSessions = $this->drained();
+        $states = $drainedSessions[HilosSignalConstants::HILOS_SESSION_STATE] ?? [];
+        self::assertCount(2, $states);
+        foreach ($states as $state) {
+            self::assertSame(self::USER_ID, $state->userId);
+            self::assertTrue($state->accountStanding[AccountStanding::frozen] ?? false);
+        }
+        self::assertSame(
+            [self::USER_ID],
+            array_map(
+                static fn (PageAccessReassessUserSignalData $reassess): int => $reassess->userId,
+                $drainedSessions[SignalConstants::PAGE_ACCESS_REASSESS_USER] ?? [],
+            ),
+        );
+    }
+
+    public function testHoldCommandUnderNotYetInForceCatalogOpensWindowWithoutFreezing(): void
+    {
+        try {
+            StandingNotYetInForceHilos::initBrowser(new StandingIntegrationBrowser());
+            self::accept(self::USER_ID, 'terms', 'second');
+            self::accept(self::USER_ID, 'privacy', 'privacy');
+
+            $this->library->onSignalCommand(
+                new CommandRequestDTO('corr-1', CliCommands::LEGAL_TEST_HOLD, [
+                    LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+                    LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+                    LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+                ]),
+                '',
+                '',
+            );
+
+            $drained = $this->drained();
+            $reply = $drained['corr-1'][0] ?? null;
+            self::assertInstanceOf(CommandReplyDTO::class, $reply);
+            self::assertTrue($reply->isOk());
+            self::assertSame([
+                LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+                LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+                LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+                LegalHoldCommandConstants::FIELD_STANDING => 'window',
+                LegalHoldCommandConstants::FIELD_DEADLINE => '2999-01-01',
+                LegalHoldCommandConstants::FIELD_FROZEN => false,
+            ], $reply->payload);
+        } finally {
+            StandingIntegrationHilos::initBrowser(new StandingIntegrationBrowser());
+        }
+    }
+
+    public function testHoldCommandToCurrentRevisionCoversAndPreservesEarlierAcceptance(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+
+        $this->library->onSignalCommand(
+            new CommandRequestDTO('corr-1', CliCommands::LEGAL_TEST_HOLD, [
+                LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+                LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+                LegalHoldCommandConstants::FIELD_REVISION_ID => 'second',
+            ]),
+            '',
+            '',
+        );
+
+        $drained = $this->drained();
+        $reply = $drained['corr-1'][0] ?? null;
+        self::assertInstanceOf(CommandReplyDTO::class, $reply);
+        self::assertTrue($reply->isOk());
+        self::assertSame([
+            LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+            LegalHoldCommandConstants::FIELD_REVISION_ID => 'second',
+            LegalHoldCommandConstants::FIELD_STANDING => 'covered',
+            LegalHoldCommandConstants::FIELD_DEADLINE => null,
+            LegalHoldCommandConstants::FIELD_FROZEN => false,
+        ], $reply->payload);
+
+        $revisions = array_map(
+            static fn ($acceptance): string => $acceptance->revisionId,
+            array_values(array_filter(
+                Hilos::$db->legalAcceptances->ofUser(self::USER_ID),
+                static fn ($acceptance): bool => $acceptance->document === 'terms',
+            )),
+        );
+        self::assertContains('first', $revisions);
+        self::assertContains('second', $revisions);
+    }
+
+    public function testHoldCommandUnderRemindSettingLapsesWithoutFreezing(): void
+    {
+        try {
+            StandingIntegrationSettings::$refusal = LegalSettings::REFUSAL_REMIND;
+            self::accept(self::USER_ID, 'terms', 'second');
+
+            $this->library->onSignalCommand(
+                new CommandRequestDTO('corr-1', CliCommands::LEGAL_TEST_HOLD, [
+                    LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+                    LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+                    LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+                ]),
+                '',
+                '',
+            );
+
+            $drained = $this->drained();
+            $reply = $drained['corr-1'][0] ?? null;
+            self::assertInstanceOf(CommandReplyDTO::class, $reply);
+            self::assertTrue($reply->isOk());
+            self::assertSame([
+                LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+                LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+                LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+                LegalHoldCommandConstants::FIELD_STANDING => 'lapsed',
+                LegalHoldCommandConstants::FIELD_DEADLINE => '2026-03-01',
+                LegalHoldCommandConstants::FIELD_FROZEN => false,
+            ], $reply->payload);
+        } finally {
+            StandingIntegrationSettings::$refusal = LegalSettings::REFUSAL_FREEZE;
+        }
+    }
+
+    public function testHoldCommandRefusalsLeaveAcceptanceCountUnchanged(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        $countBefore = count(Hilos::$db->legalAcceptances);
+
+        $this->library->onSignalCommand(
+            new CommandRequestDTO('corr-1', CliCommands::LEGAL_TEST_HOLD, [
+                LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+                LegalHoldCommandConstants::FIELD_DOCUMENT => 'cookies',
+                LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+            ]),
+            '',
+            '',
+        );
+        $reply1 = $this->drained()['corr-1'][0] ?? null;
+        self::assertInstanceOf(CommandReplyDTO::class, $reply1);
+        self::assertFalse($reply1->isOk());
+        self::assertSame('Legal document cookies is not declared in this installation', $reply1->payload[CommandConstants::FIELD_MESSAGE] ?? null);
+        self::assertSame($countBefore, count(Hilos::$db->legalAcceptances));
+
+        $this->library->onSignalCommand(
+            new CommandRequestDTO('corr-2', CliCommands::LEGAL_TEST_HOLD, [
+                LegalHoldCommandConstants::FIELD_USER_ID => 999999,
+                LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+                LegalHoldCommandConstants::FIELD_REVISION_ID => 'first',
+            ]),
+            '',
+            '',
+        );
+        $reply2 = $this->drained()['corr-2'][0] ?? null;
+        self::assertInstanceOf(CommandReplyDTO::class, $reply2);
+        self::assertFalse($reply2->isOk());
+        self::assertSame('No such user: 999999', $reply2->payload[CommandConstants::FIELD_MESSAGE] ?? null);
+        self::assertSame($countBefore, count(Hilos::$db->legalAcceptances));
+
+        $this->library->onSignalCommand(
+            new CommandRequestDTO('corr-3', CliCommands::LEGAL_TEST_HOLD, [
+                LegalHoldCommandConstants::FIELD_USER_ID => self::USER_ID,
+                LegalHoldCommandConstants::FIELD_DOCUMENT => 'terms',
+                LegalHoldCommandConstants::FIELD_REVISION_ID => 'third',
+            ]),
+            '',
+            '',
+        );
+        $reply3 = $this->drained()['corr-3'][0] ?? null;
+        self::assertInstanceOf(CommandReplyDTO::class, $reply3);
+        self::assertFalse($reply3->isOk());
+        self::assertSame('Legal document terms declares no revision third', $reply3->payload[CommandConstants::FIELD_MESSAGE] ?? null);
+        self::assertSame($countBefore, count(Hilos::$db->legalAcceptances));
+    }
+
+    public function testUsersLibraryDeclaresLegalTestHoldCommand(): void
+    {
+        self::assertContains(CliCommands::LEGAL_TEST_HOLD, ProfileIntegrationLibrary::AGENT_COMMANDS);
     }
 
     /**

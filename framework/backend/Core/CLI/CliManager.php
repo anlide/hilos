@@ -51,6 +51,7 @@ use Hilos\Core\CLI\Commands\DbWaitCommand;
 use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStartCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStopCommand;
+use Hilos\Core\CLI\Commands\LegalTestHoldCommand;
 use Hilos\Core\CLI\Commands\LlmPingCommand;
 use Hilos\Core\CLI\Commands\LogTestAppendCommand;
 use Hilos\Core\CLI\Commands\MigrationDownCommand;
@@ -186,6 +187,7 @@ class CliManager
         $this->commands[CliCommands::IMPERSONATE_STOP] = new ImpersonateStopCommand();
         $this->commands[CliCommands::ACCOUNT_MERGE] = new AccountMergeCommand();
         $this->commands[CliCommands::ACCOUNT_TEST_FORCE_PURGE] = new AccountTestForcePurgeCommand();
+        $this->commands[CliCommands::LEGAL_TEST_HOLD] = new LegalTestHoldCommand();
         $this->commands[CliCommands::THROTTLE_TEST_RESET] = new ThrottleTestResetCommand();
         $this->commands[CliCommands::BACKUP_VERIFY] = new BackupVerifyCommand();
         $this->commands[CliCommands::BACKUP_RESTORE] = new BackupRestoreCommand();

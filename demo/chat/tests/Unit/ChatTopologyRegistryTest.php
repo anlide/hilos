@@ -675,6 +675,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedCommandRoutesMatchChatAgentOwnership(): void
     {
         $this->assertSame([
+            CliCommands::LEGAL_TEST_HOLD => HilosAgentType::HILOS_USERS_LIBRARY,
             CliCommands::ADMIN_CREATE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::ADMIN_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::ADMIN_REVOKE => HilosAgentType::HILOS_SESSIONS_LIBRARY,

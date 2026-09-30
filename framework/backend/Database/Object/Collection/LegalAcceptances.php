@@ -217,6 +217,31 @@ class LegalAcceptances extends Objects
     }
 
     /**
+     * @param int $userId Person whose acceptance rows are selectively removed
+     * @param LegalDocument $document Document narrowed to
+     * @param list<string> $revisionIds Revisions whose acceptance rows are removed
+     * @return list<string> Deleted revision ids
+     * @throws DatabaseException When a query or delete fails
+     * @throws InvalidArgumentException When a query or DB-sync signal is invalid
+     * @throws WriteNotAllowedException When the removal is refused
+     * @throws SourceChangeSubscriberException When a subscriber to the removal fails
+     */
+    public function deleteOfRevisions(int $userId, LegalDocument $document, array $revisionIds): array
+    {
+        $deleted = [];
+        foreach ($this->ofUser($userId) as $acceptance) {
+            if ($acceptance->document === $document->value && in_array($acceptance->revisionId, $revisionIds, true)) {
+                $id = $acceptance->id;
+                $acceptance->delete();
+                unset($this[$id]);
+                $deleted[] = $acceptance->revisionId;
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
      * @param EntityCollection<EntityLegalAcceptance> $entities Queried rows
      * @return list<ObjectLegalAcceptance> Loaded rows in query order
      */

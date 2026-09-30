@@ -240,3 +240,6 @@ The core binds the session's standing once, in `bootHilos`
   reach a freeze; chat's e2e covers the deletion strip and the mark
   (`account-deletion.spec.ts`), the card's badge and the takeover tone
   (`users.spec.ts`), and the lapsed count without a link (`legal-admin.spec.ts`).
+  When a catalog receives a second substantial revision (HIL-500), a test puts a person
+  on the former revision with the `test:legal:hold` command; its path is guarded by
+  `AccountStandingIntegrationTest`.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -218,6 +219,18 @@ final class CliCommands
      * @var string Command: Carry out one standing account-deletion request (test-only)
      */
     public const string ACCOUNT_TEST_FORCE_PURGE = 'test:account:force-purge';
+
+    /**
+     * Make a person hold an exact revision of a legal document (test-only).
+     *
+     * Doubles as the command-channel wire name routed to {@see AbstractUsersLibraryAgent},
+     * the same one-string arrangement {@see self::NOTIFICATION_TEST_EMIT} uses: there is
+     * exactly one route for it. The users library is the single writer of acceptance records
+     * and publishes the person's agreements state after changes.
+     *
+     * @var string Command: Make a person hold an exact revision of a legal document (test-only)
+     */
+    public const string LEGAL_TEST_HOLD = 'test:legal:hold';
 
     /**
      * Append lines to this node's own log through the live daemon (test-only).

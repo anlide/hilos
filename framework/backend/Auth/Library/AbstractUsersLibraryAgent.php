@@ -57,6 +57,7 @@ use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
 use Hilos\Auth\Library\DTO\LegalConsentActionDTO;
 use Hilos\Auth\Library\DTO\LegalConsentReplyDTO;
 use Hilos\Legal\LegalConsentProjector;
+use Hilos\Legal\LegalHoldCommandConstants;
 use Hilos\Legal\LegalSettings;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
@@ -113,6 +114,7 @@ use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -143,6 +145,9 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
@@ -455,6 +460,17 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
     ];
 
+    /**
+     * The single command answered by the users library (test-only).
+     *
+     * The test: prefix enforces the production ban via NonProductionGate. Routed here because
+     * the users library is the single writer of acceptance records ({@see self::OWNS_DB})
+     * and publishes the agreements state of the person.
+     */
+    public const array AGENT_COMMANDS = [
+        CliCommands::LEGAL_TEST_HOLD,
+    ];
+
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
     private const string SECOND_FACTOR_RESET_SWEEP_RULE = 'hilos_second_factor_reset_sweep';
 
@@ -660,6 +676,69 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Routes a CLI command sent to this library.
+     *
+     * The single name of {@see self::AGENT_COMMANDS}; anything else gets an error reply
+     * rather than silence, because the socket parks the caller until it is answered.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command === CliCommands::LEGAL_TEST_HOLD) {
+            $this->handleLegalHoldCommand($data);
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * Runs {@see CliCommands::LEGAL_TEST_HOLD} and answers the parked socket exactly once.
+     *
+     * @param CommandRequestDTO $data Command request carrying user id, document and revision id
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleLegalHoldCommand(CommandRequestDTO $data): void
+    {
+        $rawUserId = $data->payload[LegalHoldCommandConstants::FIELD_USER_ID] ?? null;
+        $userId = is_int($rawUserId) ? $rawUserId : (is_numeric($rawUserId) ? (int)$rawUserId : 0);
+        $documentKey = $data->payload[LegalHoldCommandConstants::FIELD_DOCUMENT] ?? null;
+        $revisionId = $data->payload[LegalHoldCommandConstants::FIELD_REVISION_ID] ?? null;
+
+        if (!is_string($documentKey) || !is_string($revisionId)) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Legal hold requires document and revision id as strings',
+            ));
+
+            return;
+        }
+
+        try {
+            $standing = $this->legalAcceptanceCommands()->hold($userId, $documentKey, $revisionId);
+            $frozen = AccountStandingResolver::isFrozen($userId);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            LegalHoldCommandConstants::FIELD_USER_ID => $userId,
+            LegalHoldCommandConstants::FIELD_DOCUMENT => $standing->document->value,
+            LegalHoldCommandConstants::FIELD_REVISION_ID => $revisionId,
+            LegalHoldCommandConstants::FIELD_STANDING => $standing->standing->value,
+            LegalHoldCommandConstants::FIELD_DEADLINE => $standing->deadline,
+            LegalHoldCommandConstants::FIELD_FROZEN => $frozen,
+        ]));
     }
 
     /**
