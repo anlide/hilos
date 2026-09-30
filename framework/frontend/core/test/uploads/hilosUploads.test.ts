@@ -467,6 +467,46 @@ describe('connection and identity lifetime', () => {
     })
   })
 
+  it('keeps a guest queue when the guest signs in, then clears it for another user', () => {
+    const { connection, actions, currentUserId } = setup(null)
+    const clientUploadId = uploadFile('message', file('a.bin', 1))
+    ready(connection)
+    connection.signal(SIGNAL_UPLOAD_STATE, {
+      clientUploadId,
+      phase: UPLOAD_PHASE_READY,
+      receivedBytes: 0,
+    })
+
+    currentUserId.set(1)
+
+    expect(hilosUploads.get()).toMatchObject([
+      { clientUploadId, phase: UPLOAD_PHASE_READY },
+    ])
+    expect(actions.pending).toHaveLength(1)
+
+    currentUserId.set(2)
+
+    expect(hilosUploads.get()).toEqual([])
+    expect(actions.pending[1]).toMatchObject({
+      action: UPLOAD_ACTION_CANCEL,
+      data: { clientUploadId },
+    })
+  })
+
+  it('cancels announced uploads and clears the list when the user signs out', () => {
+    const { connection, actions, currentUserId } = setup()
+    const clientUploadId = uploadFile('message', file('a.bin', 1))
+    ready(connection)
+
+    currentUserId.set(null)
+
+    expect(hilosUploads.get()).toEqual([])
+    expect(actions.pending[1]).toMatchObject({
+      action: UPLOAD_ACTION_CANCEL,
+      data: { clientUploadId },
+    })
+  })
+
   it('does not treat identity resolution before first readiness as a change', () => {
     const { connection, actions, currentUserId } = setup(null)
     uploadFile('message', file('a.bin', 1))

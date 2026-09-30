@@ -23,6 +23,12 @@ use Hilos\Runtime\View\Item\HilosUpload;
  * declared upload has its place reserved from the moment it is accepted. Judged on the
  * declaration alone for that reason - neither the arrival nor the publication can take more
  * than was reserved.
+ *
+ * One window is not covered: the uploads agent drops a published upload's row before the files
+ * library writes its registry row, and for that moment nobody counts the file. A declaration in
+ * that window may take the storage past its limit by the files in flight - a known limit,
+ * written down with when to come back to it in docs/agents/architecture/uploads.md, "Targets
+ * And Checks".
  */
 final readonly class StorageLimitCheck implements UploadCheckInterface
 {

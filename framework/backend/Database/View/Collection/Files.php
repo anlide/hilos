@@ -68,11 +68,11 @@ class Files extends DbCollection
     }
 
     /**
-     * Tells whether a person already owns a registered file of this content.
+     * Tells whether a person already owns a bound file of this content; an unbound row does not count.
      *
      * @param int $ownerUserId Person the file would belong to
      * @param string $contentHash Fingerprint of the content ({@see ContentHash})
-     * @return bool Whether a row of that owner carries that fingerprint
+     * @return bool Whether a bound row of that owner carries that fingerprint
      * @throws DatabaseException When the lookup query fails
      */
     public function hasOwnerContent(int $ownerUserId, string $contentHash): bool

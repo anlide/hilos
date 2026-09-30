@@ -356,6 +356,10 @@ function onUploadState(signal: ProjectSignal): void {
 /**
  * Bind the one browser upload client to the application's connection and action lifecycle.
  *
+ * A guest signing in keeps the queue and every declared upload: on publication they become
+ * the files of the person signed in. Signing out, or one person replacing another, cancels
+ * the declared uploads and clears the queue.
+ *
  * @param connection The application's Hilos connection.
  * @param actions The application's one tracked action lifecycle.
  * @param currentUserId Current session user, or null for a guest.
@@ -388,6 +392,10 @@ export function bindUploads(
   })
   const stopUser = subscribeSignal(currentUserId, (nextUserId) => {
     if (queueOwner === undefined || nextUserId === queueOwner) {
+      return
+    }
+    if (queueOwner === null) {
+      queueOwner = nextUserId
       return
     }
     for (const entry of entries.values()) {

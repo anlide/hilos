@@ -71,11 +71,14 @@ class Files extends Objects
     }
 
     /**
-     * Tells whether a person already owns a registered file of this content.
+     * Tells whether a person already owns a bound file of this content.
+     *
+     * A row nothing has linked yet does not count: the sending that should have linked it fell
+     * through, the person sees the file nowhere, and the row waits for the sweeper.
      *
      * @param int $ownerUserId Person the file would belong to
      * @param string $contentHash Fingerprint of the content ({@see ContentHash})
-     * @return bool Whether a row of that owner carries that fingerprint
+     * @return bool Whether a bound row of that owner carries that fingerprint
      * @throws DatabaseException When the lookup query fails
      */
     public function hasOwnerContent(int $ownerUserId, string $contentHash): bool
@@ -86,7 +89,7 @@ class Files extends Objects
 
         return Database::sql(
             'SELECT 1 FROM `' . EntityFile::_table . '` WHERE `' . EntityFile::owner_user_id . '` = ? AND `'
-                . EntityFile::content_hash . '` = ? LIMIT 1',
+                . EntityFile::content_hash . '` = ? AND `' . EntityFile::bound . '` = 1 LIMIT 1',
             $params,
         )->firstRow() !== null;
     }

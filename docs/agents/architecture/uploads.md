@@ -70,7 +70,19 @@ null there. The agent runs them in this order and the first refusal wins:
    declared size together exceed the setting `files.max_total_bytes`
    (`storage_limit`, `Storage limit would be exceeded`). Zero or less — the
    default — is no limit, and the setting is read on every declaration. Judged
-   on the declaration alone: from then on the place is reserved;
+   on the declaration alone: from then on the place is reserved. Two limits of
+   it are known and left as they are:
+   - *the files in flight.* On publication the uploads agent drops the upload's
+     row before the files library writes the registry row, and for that moment
+     nobody counts the file; a declaration in that window may take the storage
+     past `files.max_total_bytes` by the files in flight. Come back when the
+     limit becomes a quota somebody pays for — and decide then who holds the
+     running sum as well: who holds the reservation and who holds the sum is
+     one question;
+   - *the price.* With the limit on, every declaration runs `SELECT SUM(size)`
+     over `hilos_file` and `hilos_file_variant` and walks every upload, in the
+     one process of the uploads agent. Come back with the first project that
+     keeps a large registry. With the limit at zero there is no query at all;
 4. `AllowedContentCheck` — only for a sniffing target with a list: the type
    read from the content is outside it;
 5. the target's `extraChecks()`, in their order.
@@ -85,10 +97,22 @@ public function extraChecks(): array
 ```
 
 `DuplicateContentCheck` fails a received file whose fingerprint the same person
-already keeps — in a published file ([files-registry.md](files-registry.md)) or
-in another complete upload of theirs — with `duplicate_content`, `This file is
-already uploaded`. Only the same person: a refusal over somebody else's file
-would tell a stranger that such a file is kept. A guest's upload is not judged.
+already keeps — in a bound file of the registry
+([files-registry.md](files-registry.md)) or in another complete upload of
+theirs on any connection — with `duplicate_content`, `This file is already
+uploaded`. Only the same person: a refusal over somebody else's file would tell
+a stranger that such a file is kept. Only bound files: a row published but not
+bound — the sending fell through, and the row waits for the sweeper
+(`files.unbound_ttl_hours`, 24 by default) — is a file the person sees nowhere,
+and a refusal over it is worse than a missed duplicate.
+
+A guest's upload is not judged on arrival: a guest owns nothing to compare
+with. Its draft is judged when it is published after the guest signed in — the
+uploads agent asks the check again, for the person signed in now, and a match
+refuses the whole request ([files-registry.md](files-registry.md),
+*Publishing*). Two guest drafts of the same content in one request both pass:
+neither is that person's yet when the other is judged.
+
 The check reads the registry, so a project without `FILES` cannot create it,
 and the uploads agent, which creates its checks when it starts, does not start.
 
@@ -179,10 +203,13 @@ for a ready or uploading one it leaves a failed record with `interrupted` and
 A connection drop stops the stream and returns ready, uploading, and complete
 records to `queued` with zero received bytes. Once the replacement connection's
 page answers, they are declared from the beginning under the same id; failed
-records stay failed. When the session user changes, the client sends cancellation
-for every upload known to the current connection and clears the list, so a file
-chosen by one person is never replayed under another identity. Navigation inside
-the SPA does neither: the client and its queue live above pages.
+records stay failed. A guest who signs in keeps the list and every declared
+upload: on publication they become the files of the person signed in. When the
+session user signs out, or one signed-in user is replaced by another, the client
+sends cancellation for every upload known to the current connection and clears
+the list, so a file chosen by one person is never replayed under another
+identity. Navigation inside the SPA does neither: the client and its queue live
+above pages.
 
 The browser client does not apply target policy, publish a complete upload, or
 draw progress, failures, pickers, or drop zones. Target checks and publication

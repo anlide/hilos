@@ -49,6 +49,7 @@ use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Log\AgentLogStream;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
@@ -56,6 +57,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosUpload;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 use ReflectionProperty;
 
 /**
@@ -108,6 +110,10 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
 
     private string $filesPath = '';
 
+    private string $logPath = '';
+
+    private FilePublishTestBrowserContext $browser;
+
     private UploadsAgent $uploads;
 
     private FilePublishTestLibrary $library;
@@ -146,11 +152,15 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         $base = sys_get_temp_dir() . '/hilos-publish-' . bin2hex(random_bytes(6));
         $this->tmpPath = $base . '-tmp';
         $this->filesPath = $base . '-files';
+        $this->logPath = $base . '-logs';
+        mkdir($this->logPath);
+        Logger::setLogFile($this->logPath . '/main.log');
         Hilos::$fs = new FilePublishTestFsContext($this->tmpPath, $this->filesPath);
         Hilos::$fs->configure();
         Hilos::$files = new HilosFiles(new LocalFilesStorage());
         Hilos::$sr = new SignalRouter();
-        Hilos::$browser = new FilePublishTestBrowserContext();
+        $this->browser = new FilePublishTestBrowserContext();
+        Hilos::$browser = $this->browser;
         self::bindAppClass(FilePublishTestHilos::class);
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
@@ -184,8 +194,9 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         TruthSourceRegistry::unregisterAgent(HilosAgentType::HILOS_FILES_LIBRARY);
         ExecutionContext::clear();
         SourceChangeBus::reset();
+        Logger::resetLogFile();
 
-        foreach ([$this->tmpPath, $this->filesPath] as $directory) {
+        foreach ([$this->tmpPath, $this->filesPath, $this->logPath] as $directory) {
             foreach (glob($directory . '/*') ?: [] as $file) {
                 unlink($file);
             }
@@ -309,6 +320,76 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertRefusedAndUntouched('Sign in to keep this file', self::GUEST, ['u1'], ['u1']);
     }
 
+    public function testAGuestDraftBecomesTheFileOfWhoeverSignedInSince(): void
+    {
+        $this->complete(self::GUEST, 'u1', 'anonymous');
+        $this->browser->seat(self::GUEST, self::SIGNED_IN_USER);
+
+        $answer = $this->publish(self::GUEST, ['u1']);
+
+        self::assertNull($answer->error);
+        self::assertCount(1, $answer->fileIds);
+        self::assertSame(self::SIGNED_IN_USER, (int)self::row($answer->fileIds[0])['owner_user_id']);
+        self::assertSame([[self::GUEST, 'u1']], $this->goneFrames);
+    }
+
+    public function testADraftAnotherPersonDeclaredIsGoneForWhoeverIsSignedInNow(): void
+    {
+        $this->complete(self::SIGNED_IN, 'u1', 'theirs');
+        $this->browser->seat(self::SIGNED_IN, FilePublishTestKeys::OTHER_USER);
+
+        $this->assertRefusedAndUntouched('This file is gone; upload it again', self::SIGNED_IN, ['u1'], ['u1']);
+        self::assertStringContainsString(
+            'Refused to publish upload u1 of ' . self::SIGNED_IN . ': user ' . self::SIGNED_IN_USER
+                . ' declared it, user ' . FilePublishTestKeys::OTHER_USER . ' is signed in now',
+            $this->uploadsLog(),
+        );
+    }
+
+    public function testAGuestDraftDuplicatingABoundFileOfWhoeverSignedInRefusesTheWholeRequest(): void
+    {
+        $this->complete(self::SIGNED_IN, 'u1', 'same bytes');
+        $this->bind($this->publish(self::SIGNED_IN, ['u1'])->fileIds[0]);
+        $this->complete(self::GUEST, 'u1', 'other bytes', FilePublishTestHilos::DEDUP);
+        $this->complete(self::GUEST, 'u2', 'same bytes', FilePublishTestHilos::DEDUP);
+        $this->browser->seat(self::GUEST, self::SIGNED_IN_USER);
+
+        $this->assertRefusedAndUntouched(
+            'This file is already uploaded',
+            self::GUEST,
+            ['u1', 'u2'],
+            ['u1', 'u2'],
+            target: FilePublishTestHilos::DEDUP,
+        );
+    }
+
+    public function testAGuestDraftDuplicatingACompleteUploadOfWhoeverSignedInIsRefused(): void
+    {
+        $this->complete(self::SIGNED_IN, 'u1', 'same bytes');
+        $this->complete(self::GUEST, 'u1', 'same bytes', FilePublishTestHilos::DEDUP);
+        $this->browser->seat(self::GUEST, self::SIGNED_IN_USER);
+
+        $this->assertRefusedAndUntouched(
+            'This file is already uploaded',
+            self::GUEST,
+            ['u1'],
+            ['u1'],
+            target: FilePublishTestHilos::DEDUP,
+        );
+    }
+
+    public function testAGuestDraftWithNothingToDuplicateIsPublishedWhereDuplicatesAreRefused(): void
+    {
+        $this->complete(self::GUEST, 'u1', 'fresh bytes', FilePublishTestHilos::DEDUP);
+        $this->browser->seat(self::GUEST, self::SIGNED_IN_USER);
+
+        $answer = $this->publish(self::GUEST, ['u1'], target: FilePublishTestHilos::DEDUP);
+
+        self::assertNull($answer->error);
+        self::assertCount(1, $answer->fileIds);
+        self::assertSame(self::SIGNED_IN_USER, (int)self::row($answer->fileIds[0])['owner_user_id']);
+    }
+
     public function testAProjectThatKeepsNoFilesIsRefused(): void
     {
         $this->complete(self::SIGNED_IN, 'u1', 'nowhere');
@@ -396,12 +477,20 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
     public function testTheSamePersonCannotUploadAFileTheyAlreadyPublished(): void
     {
         $this->complete(self::SIGNED_IN, 'u1', 'same bytes');
-        $this->publish(self::SIGNED_IN, ['u1']);
+        $this->bind($this->publish(self::SIGNED_IN, ['u1'])->fileIds[0]);
 
         $this->declare(self::SIGNED_IN, 'u2', FilePublishTestHilos::DEDUP, size: strlen('same bytes'));
         $this->chunk(self::SIGNED_IN, 'u2', 'same bytes');
 
         $this->assertFailedAsDuplicate(self::SIGNED_IN, 'u2');
+    }
+
+    public function testAPublishedFileNothingBoundIsNotADuplicate(): void
+    {
+        $this->complete(self::SIGNED_IN, 'u1', 'same bytes');
+        $this->publish(self::SIGNED_IN, ['u1']);
+
+        $this->complete(self::SIGNED_IN, 'u2', 'same bytes', FilePublishTestHilos::DEDUP);
     }
 
     public function testTheSamePersonCannotUploadWhatAnotherOfTheirUploadsHolds(): void
@@ -465,6 +554,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         string $target = FilePublishTestHilos::OPEN,
     ): void {
         $tmp = array_map(fn(string $clientUploadId): string => $this->tmpFile($acceptKey, $clientUploadId), $untouched);
+        $rows = self::rowCount();
 
         $answer = $this->publish($acceptKey, $clientUploadIds, target: $target);
 
@@ -473,7 +563,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame($clientUploadIds, $answer->clientUploadIds);
         self::assertFalse($this->libraryAsked, 'Nothing reaches the library');
         self::assertSame([], $this->goneFrames, 'No upload is dropped');
-        self::assertSame(0, self::rowCount());
+        self::assertSame($rows, self::rowCount(), 'No row is registered');
         foreach ($tmp as $path) {
             self::assertFileExists($path);
         }
@@ -593,6 +683,31 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         self::assertNotNull($answer, 'The asker is answered');
 
         return $answer;
+    }
+
+    /**
+     * Links a registered file, as the project does once its record points at it.
+     *
+     * @param int $fileId Row id
+     * @throws HilosException When the row cannot be read or written
+     */
+    private function bind(int $fileId): void
+    {
+        ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_FILES_LIBRARY);
+        Hilos::$db->files[$fileId]?->actions->markBound();
+        ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_UPLOADS);
+        self::assertSame(1, (int)self::row($fileId)['bound']);
+    }
+
+    /**
+     * @return string What the uploads agent wrote to its main log stream
+     */
+    private function uploadsLog(): string
+    {
+        $path = AgentLogStream::pathFor($this->logPath, $this->uploads->getId(), false);
+        self::assertFileExists($path, 'The uploads agent wrote to its log');
+
+        return (string)file_get_contents($path);
     }
 
     /**
@@ -827,16 +942,34 @@ final class FilePublishTestLibrary extends AbstractFilesLibraryAgent
 }
 
 /**
- * Browser context that knows two signed-in connections.
+ * Browser context that knows two signed-in connections, and whoever a case seated since.
  */
 final class FilePublishTestBrowserContext extends BrowserContext
 {
+    /** @var array<string, ?int> Person a case seated on a connection, by accept key; null seats a guest */
+    private array $seated = [];
+
+    /**
+     * Seats another person - or a guest - on a connection, as a sign-in or a sign-out would.
+     *
+     * @param string $acceptKey Connection accept key
+     * @param ?int $userId Person signed in from now on, or null for a guest
+     */
+    public function seat(string $acceptKey, ?int $userId): void
+    {
+        $this->seated[$acceptKey] = $userId;
+    }
+
     /**
      * @param string $acceptKey Connection accept key
-     * @return ConnectionIdentity A signed-in person on each of two connections, a guest on any other
+     * @return ConnectionIdentity Whoever a case seated there; else a signed-in person on each of two connections, a guest on any other
      */
     protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
     {
+        if (array_key_exists($acceptKey, $this->seated)) {
+            return ConnectionIdentity::resolved($this->seated[$acceptKey]);
+        }
+
         return ConnectionIdentity::resolved(match ($acceptKey) {
             FilePublishTestKeys::SIGNED_IN => FilePublishTestKeys::SIGNED_IN_USER,
             FilePublishTestKeys::OTHER => FilePublishTestKeys::OTHER_USER,

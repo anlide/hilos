@@ -86,14 +86,28 @@ a moderation verdict. Declare that name in the consuming agent's
   keeps no files — `Files are not kept here`; no such upload, or it failed —
   `This file is gone; upload it again`; still arriving — `This file has not
   finished uploading`; declared for another target — `This file was uploaded
-  for something else`; uploaded by a guest — `Sign in to keep this file`. The
-  target is in the request so that a file accepted under one target's soft
-  policy is not published under another's strict one.
+  for something else`. The target is in the request so that a file accepted
+  under one target's soft policy is not published under another's strict one.
+- **The owner is judged last**, against whoever is signed in on the
+  connection of the request now — asked once per request, not taken from the
+  declaration. Nobody is signed in — `Sign in to keep this file`. The upload
+  was declared by another person than the one signed in — `This file is gone;
+  upload it again`; the uploads agent logs a warning with the upload, the
+  connection, who declared it and who is signed in. The upload was declared by
+  a guest who has signed in since — it passes, and where the target switched on
+  `DuplicateContentCheck` it is judged again for the person signed in: their
+  bound file of the same content, or another complete upload of theirs on any
+  connection, refuses the whole request with `This file is already uploaded`
+  ([uploads.md](uploads.md), *Targets And Checks*). A failed read of the
+  registry or the uploads there is not caught, as it is not on arrival.
 - When all pass, each upload row goes and its temporary file stays, handed
   over; its connection gets the usual `gone` state frame. One frame carries the
   files to the library: temporary file, name, type — the one read from the
   content where the target sniffs, the declared one otherwise — declared size,
-  owner and fingerprint.
+  owner and fingerprint. The owner is the person signed in at publication, not
+  at the declaration. Between the upload row going and the registry row being
+  written nobody counts the file in the storage limit — a known limit
+  ([uploads.md](uploads.md), *Targets And Checks*).
 - **The library** keeps each file under a random stored name (32 hex characters
   from the secure random axis, and an extension by type) and writes its row,
   unbound, with the visibility the request named. All kept →
@@ -144,8 +158,9 @@ storages and Azure Blob wait as a TODO at this seam —
 `content_hash` is the sha256 of the file's bytes, lowercase hex (`ContentHash`).
 The uploads agent counts it while the chunks arrive and writes it onto the
 complete upload; the library copies it onto the row. The duplicate check
-([uploads.md](uploads.md)) looks it up among the same owner's rows through the
-index `idx_file_owner_hash (owner_user_id, content_hash)`.
+([uploads.md](uploads.md)) looks it up among the same owner's bound rows
+through the index `idx_file_owner_hash (owner_user_id, content_hash)`; a row
+nothing has bound yet does not count.
 
 A row never shares its file with another: one copy for several links needs
 reference counting, and without it the janitor or an unbind would delete the

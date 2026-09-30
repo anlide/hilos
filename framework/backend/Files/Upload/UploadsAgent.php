@@ -22,12 +22,14 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Files\ContentHash;
 use Hilos\Files\DTO\FilePublishItemData;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\Upload\Check\AllowedContentCheck;
 use Hilos\Files\Upload\Check\DeclaredMimeCheck;
+use Hilos\Files\Upload\Check\DuplicateContentCheck;
 use Hilos\Files\Upload\Check\SizeLimitCheck;
 use Hilos\Files\Upload\Check\StorageLimitCheck;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
@@ -40,6 +42,7 @@ use Hilos\Fs\FsPath;
 use Hilos\Fs\FsTmpDirectory;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\View\Item\HilosUpload;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -243,6 +246,8 @@ final class UploadsAgent extends AbstractAgent
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this agent declares
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
+     * @throws DatabaseException When the registry cannot be read to judge a guest's draft for a duplicate
+     * @throws RtActionsStateCollectionNullException When the uploads cannot be read to judge a guest's draft for a duplicate
      * @throws HilosException Whatever removing an upload row raises
      * @throws InvalidArgumentException When the answer, the state frame or the frame to the library cannot be named
      */
@@ -396,6 +401,10 @@ final class UploadsAgent extends AbstractAgent
     /**
      * Hands the named uploads over to the files library, or refuses them all.
      *
+     * The owner of every file is whoever is signed in on the connection of the request now, not
+     * whoever was when the upload was declared: a guest's draft published after signing in
+     * becomes the file of the person signed in.
+     *
      * Every upload is judged before any is touched, in the order the request names them, and the
      * first that does not pass refuses the whole request: nothing moves, and the answer goes
      * straight back to the asker. The uploads that pass leave their rows - their temporary files
@@ -403,6 +412,8 @@ final class UploadsAgent extends AbstractAgent
      * upload is gone, as it would after a cancel.
      *
      * @param UploadPublishSignalData $request Publication request of the project
+     * @throws DatabaseException When the registry cannot be read to judge a guest's draft for a duplicate
+     * @throws RtActionsStateCollectionNullException When the uploads cannot be read to judge a guest's draft for a duplicate
      * @throws HilosException Whatever removing an upload row raises
      * @throws InvalidArgumentException When the answer, the state frame or the frame to the library cannot be named
      */
@@ -414,10 +425,11 @@ final class UploadsAgent extends AbstractAgent
             return;
         }
 
+        $ownerUserId = Hilos::$browser?->resolveActionUserId($request->acceptKey);
         $uploads = [];
         foreach ($request->clientUploadIds as $clientUploadId) {
             $upload = Hilos::$rt->hilosUploads->find($request->acceptKey, $clientUploadId);
-            $refusal = $upload === null ? self::MESSAGE_GONE : $this->refusalToHandOver($upload, $request->target);
+            $refusal = $upload === null ? self::MESSAGE_GONE : $this->refusalToHandOver($upload, $request->target, $ownerUserId);
             if ($refusal !== null) {
                 $this->refuseHandOver($request, $refusal);
 
@@ -433,7 +445,7 @@ final class UploadsAgent extends AbstractAgent
                 filename: $upload->filename,
                 mimeType: $upload->detectedMimeType ?? $upload->mimeType,
                 size: $upload->declaredSize,
-                ownerUserId: $upload->userId,
+                ownerUserId: $ownerUserId,
                 contentHash: $upload->contentHash,
             );
         }
@@ -472,20 +484,60 @@ final class UploadsAgent extends AbstractAgent
      * gone as a failed one, and saying so keeps the asker from waiting on a frame that would
      * never be built.
      *
+     * The owner is judged last. Nobody signed in keeps nothing. A draft another person declared
+     * is gone for the one signed in now - the person reads that, and the agent's log keeps who
+     * declared it and who is signed in. A guest's draft becomes the file of the one signed in,
+     * so the target's duplicate check, which let it through on arrival with nobody to compare
+     * with, judges it again for that person.
+     *
      * @param HilosUpload $upload Upload the request names
      * @param string $target Upload target the request publishes for
+     * @param ?int $ownerUserId Person signed in on the connection of the request now, null for a guest
      * @return ?string Sentence of the refusal, or null when the upload may be handed over
+     * @throws DatabaseException When the registry cannot be read to judge a guest's draft for a duplicate
+     * @throws RtActionsStateCollectionNullException When the uploads cannot be read to judge a guest's draft for a duplicate
      */
-    private function refusalToHandOver(HilosUpload $upload, string $target): ?string
+    private function refusalToHandOver(HilosUpload $upload, string $target, ?int $ownerUserId): ?string
     {
-        return match (true) {
-            $upload->phase === UploadPhase::FAILED => self::MESSAGE_GONE,
-            $upload->phase->isReceiving() => self::MESSAGE_NOT_FINISHED,
-            $upload->tmpIndex === null, $upload->contentHash === null => self::MESSAGE_GONE,
-            $upload->target !== $target => self::MESSAGE_OTHER_TARGET,
-            $upload->userId === null => self::MESSAGE_SIGN_IN,
-            default => null,
-        };
+        if ($upload->phase === UploadPhase::FAILED) {
+            return self::MESSAGE_GONE;
+        }
+        if ($upload->phase->isReceiving()) {
+            return self::MESSAGE_NOT_FINISHED;
+        }
+        if ($upload->tmpIndex === null || $upload->contentHash === null) {
+            return self::MESSAGE_GONE;
+        }
+        if ($upload->target !== $target) {
+            return self::MESSAGE_OTHER_TARGET;
+        }
+        if ($ownerUserId === null) {
+            return self::MESSAGE_SIGN_IN;
+        }
+
+        if ($upload->userId !== null) {
+            if ($upload->userId === $ownerUserId) {
+                return null;
+            }
+            $this->logAgentWarning(
+                "Refused to publish upload {$upload->clientUploadId} of {$upload->acceptKey}: "
+                    . "user {$upload->userId} declared it, user {$ownerUserId} is signed in now",
+            );
+
+            return self::MESSAGE_GONE;
+        }
+
+        foreach ($this->checks[$upload->target] as $check) {
+            if (!$check instanceof DuplicateContentCheck) {
+                continue;
+            }
+            $refusal = $check->checkOwner($upload, $ownerUserId);
+            if ($refusal !== null) {
+                return $refusal->message;
+            }
+        }
+
+        return null;
     }
 
     /**

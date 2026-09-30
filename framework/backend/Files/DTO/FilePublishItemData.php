@@ -26,7 +26,7 @@ final class FilePublishItemData extends BaseDTO
      * @param string $filename Name the uploader gave the file
      * @param string $mimeType Type read from the content when the target read it, the declared one otherwise
      * @param int $size Size of the file in bytes
-     * @param int $ownerUserId Person who uploaded the file
+     * @param int $ownerUserId Person signed in on the connection when the file was published
      * @param string $contentHash Fingerprint of the file's content ({@see ContentHash})
      */
     public function __construct(
