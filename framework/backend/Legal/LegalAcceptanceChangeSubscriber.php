@@ -6,12 +6,18 @@ namespace Hilos\Legal;
 
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeProvenance;
-use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Pages\Legal\LegalAdminAudience;
 
-/** Invalidates the section's cached histograms for local and mirrored acceptance changes. */
-final class LegalAcceptanceChangeSubscriber implements SourceChangeSubscriberInterface
+/**
+ * Invalidates the section's cached histograms for local and mirrored acceptance changes.
+ *
+ * A mirror rather than a reaction: the staleness it marks is this process's own memory, so it is
+ * told at the write and not at the commit. A histogram rebuilt for a write that then rolls back
+ * costs one rebuild and nothing else.
+ */
+final class LegalAcceptanceChangeSubscriber implements SourceMirrorSubscriberInterface
 {
     /**
      * @param SourceChange $change Source fact, including collection clears

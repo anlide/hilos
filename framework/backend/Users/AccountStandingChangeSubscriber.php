@@ -6,7 +6,7 @@ namespace Hilos\Users;
 
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeProvenance;
-use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\AccountDeletion as EntityAccountDeletion;
@@ -25,8 +25,13 @@ use Hilos\Database\Entity\Item\User as EntityUser;
  * would be emptied faster than the guard reads it. A deletion request's update carries only the
  * columns that moved, and those do not name the person; such a change, and a cleared table, drop
  * every verdict instead of guessing whose it was.
+ *
+ * A mirror rather than a reaction: the verdict it drops is this process's own memory, read by the
+ * very code that may still be inside the transaction that wrote the block, so it is told at the
+ * write and not at the commit. A verdict dropped for a write that then rolls back costs one
+ * re-read and nothing else.
  */
-final class AccountStandingChangeSubscriber implements SourceChangeSubscriberInterface
+final class AccountStandingChangeSubscriber implements SourceMirrorSubscriberInterface
 {
     /**
      * @param SourceChange $change Source fact, including collection clears

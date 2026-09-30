@@ -39,6 +39,7 @@ use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -427,6 +428,12 @@ class SignalRouter
      * is awaited back, not from whom, so the receiving side needs the stamp to tell
      * this process's own echo from another writer's change to the same row.
      *
+     * Under an open transaction the frame is queued when the outermost level commits,
+     * and a rollback drops it. The registration travels with the frame: registered at
+     * the write, a dropped frame would leave an echo awaited that never comes - the
+     * next foreign write to the row would raise the race warning, and the registration
+     * would then eat the echo of this process's next own write to it.
+     *
      * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
      * @param DbSyncSignalDataInterface $signalData Signal data with collectionKey and idString
      * @throws InvalidArgumentException When the signal name is empty
@@ -437,16 +444,18 @@ class SignalRouter
             return;
         }
 
-        if ($signalData->collectionKey !== '' && $signalData->idString !== '') {
-            $this->dbSelfBroadcast->register($signalData->collectionKey, $signalData->idString);
-        }
+        Database::afterCommit(function () use ($signalName, $signalData): void {
+            if ($signalData->collectionKey !== '' && $signalData->idString !== '') {
+                $this->dbSelfBroadcast->register($signalData->collectionKey, $signalData->idString);
+            }
 
-        $this->queueSignal(
-            signalSource: new SignalSource(SignalSource::DB),
-            signalType: new SignalType($signalName),
-            signalName: new SignalName($signalName),
-            signalData: $signalData->withEmitter($this->emitter),
-        );
+            $this->queueSignal(
+                signalSource: new SignalSource(SignalSource::DB),
+                signalType: new SignalType($signalName),
+                signalName: new SignalName($signalName),
+                signalData: $signalData->withEmitter($this->emitter),
+            );
+        });
     }
 
     /**
@@ -490,6 +499,8 @@ class SignalRouter
     /**
      * Queue a DB sync cleared signal (collection-scoped truncate).
      * Skips if broadcast disabled. Stamps the payload with this process's emitter identity.
+     * Under an open transaction the frame is queued when the outermost level commits, and
+     * a rollback drops it.
      *
      * @param DbSyncClearedSignalData $signalData Cleared signal data with collectionKey
      * @throws InvalidArgumentException When the cleared signal cannot be named
@@ -500,12 +511,14 @@ class SignalRouter
             return;
         }
 
-        $this->queueSignal(
-            signalSource: new SignalSource(SignalSource::DB),
-            signalType: new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
-            signalName: new SignalName(SignalTypeConstants::DB_SYNC_CLEARED),
-            signalData: $signalData->withEmitter($this->emitter),
-        );
+        Database::afterCommit(function () use ($signalData): void {
+            $this->queueSignal(
+                signalSource: new SignalSource(SignalSource::DB),
+                signalType: new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
+                signalName: new SignalName(SignalTypeConstants::DB_SYNC_CLEARED),
+                signalData: $signalData->withEmitter($this->emitter),
+            );
+        });
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Hilos\Core\Source;
 
 use Closure;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Database\Database;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\HilosException;
 use Hilos\Runtime\RtSyncApplicator;
@@ -20,6 +21,14 @@ use Throwable;
  * registration order, because the first of them repairs a view that must not answer a read with
  * a row the store no longer holds.
  *
+ * A change to a database row made under an open transaction reaches the two kinds of subscriber
+ * at two moments. A mirror ({@see SourceMirrorSubscriberInterface}) hears it at the write, as it
+ * must: it repairs this process's memory, which the code still inside the transaction reads. A
+ * reaction hears it when the transaction commits, and not at all when it rolls back - told at
+ * the write, it would act on a row the database may never hold. Outside a transaction the two
+ * moments are one, and the order is the registration order as before. A runtime fact is heard
+ * by every subscriber at once: the runtime is not covered by the transaction (HIL-1165).
+ *
  * Static like {@see RtSyncApplicator} and {@see DbSyncApplicator} rather than a facade global:
  * facade globals hold project data and are configured by the project, and this is core machinery
  * no project configures.
@@ -28,6 +37,12 @@ final class SourceChangeBus
 {
     /** @var list<SourceChangeSubscriberInterface> Subscribers in the order they were registered */
     private static array $subscribers = [];
+
+    /** @var list<SourceMirrorSubscriberInterface> The mirrors among them, in that order */
+    private static array $mirrors = [];
+
+    /** @var list<SourceChangeSubscriberInterface> The reactions among them, in that order */
+    private static array $reactions = [];
 
     /** @var SourceChangeProvenance Origin of the write currently running */
     private static SourceChangeProvenance $provenance = SourceChangeProvenance::LocalWrite;
@@ -40,6 +55,11 @@ final class SourceChangeBus
     public static function subscribe(SourceChangeSubscriberInterface $subscriber): void
     {
         self::$subscribers[] = $subscriber;
+        if ($subscriber instanceof SourceMirrorSubscriberInterface) {
+            self::$mirrors[] = $subscriber;
+        } else {
+            self::$reactions[] = $subscriber;
+        }
     }
 
     /**
@@ -51,19 +71,29 @@ final class SourceChangeBus
      * it is, because a publish made from inside a reaction would otherwise bury the original one
      * floor deeper.
      *
+     * A database fact reaches the mirrors now and the reactions once the transaction it was
+     * made under commits - now, when there is none - with the provenance the write had at this
+     * moment, not the one in force when the commit releases it. A failing reaction released by
+     * a commit reaches the caller of that commit instead. A runtime fact reaches everyone now.
+     *
      * @param SourceChange $change Fact describing what happened to the source
      * @throws SourceChangeSubscriberException When a subscriber's reaction fails
      */
     public static function publish(SourceChange $change): void
     {
-        foreach (self::$subscribers as $subscriber) {
-            try {
-                $subscriber->onSourceChange($change, self::$provenance);
-            } catch (SourceChangeSubscriberException $wrapped) {
-                throw $wrapped;
-            } catch (Throwable $failure) {
-                throw new SourceChangeSubscriberException($subscriber::class, $change, $failure);
-            }
+        $provenance = self::$provenance;
+        if ($change->isRt()) {
+            self::deliver(self::$subscribers, $change, $provenance);
+
+            return;
+        }
+
+        self::deliver(self::$mirrors, $change, $provenance);
+        $reactions = self::$reactions;
+        if ($reactions !== []) {
+            Database::afterCommit(static function () use ($reactions, $change, $provenance): void {
+                self::deliver($reactions, $change, $provenance);
+            });
         }
     }
 
@@ -97,6 +127,29 @@ final class SourceChangeBus
     public static function reset(): void
     {
         self::$subscribers = [];
+        self::$mirrors = [];
+        self::$reactions = [];
         self::$provenance = SourceChangeProvenance::LocalWrite;
+    }
+
+    /**
+     * Tells the given subscribers, in order, stopping at the first failure.
+     *
+     * @param list<SourceChangeSubscriberInterface> $subscribers Subscribers to tell, in registration order
+     * @param SourceChange $change Fact describing what happened to the source
+     * @param SourceChangeProvenance $provenance Origin of the write, as it stood when the fact was published
+     * @throws SourceChangeSubscriberException When a subscriber's reaction fails
+     */
+    private static function deliver(array $subscribers, SourceChange $change, SourceChangeProvenance $provenance): void
+    {
+        foreach ($subscribers as $subscriber) {
+            try {
+                $subscriber->onSourceChange($change, $provenance);
+            } catch (SourceChangeSubscriberException $wrapped) {
+                throw $wrapped;
+            } catch (Throwable $failure) {
+                throw new SourceChangeSubscriberException($subscriber::class, $change, $failure);
+            }
+        }
     }
 }

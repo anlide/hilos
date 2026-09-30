@@ -16,7 +16,9 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Context\HilosDbContext;
@@ -245,6 +247,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
         $requestId = (int)$request->id;
+        // The seeds announced their own rows; what is judged below is what the sweep announces.
+        $this->drainQueue();
 
         $this->runSweep(failing: true);
 
@@ -255,7 +259,13 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertNull($row['completed_at'], 'The request is still standing and due');
         self::assertNull($row['canceled_at']);
         self::assertSame(self::USER_ID, self::userOf(self::SIGNED_IN_TOKEN));
-        self::assertSame([], $this->forgottenUsers());
+        $queued = $this->drainQueue();
+        self::assertSame([], self::forgottenUsersAmong($queued));
+        self::assertSame(
+            [],
+            self::dbFrameTypesAmong($queued),
+            'A rolled-back erasure announces none of its deletions to the other processes (HIL-1164)',
+        );
     }
 
     /**
@@ -481,8 +491,30 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
      */
     private function forgottenUsers(): array
     {
-        $users = [];
+        return self::forgottenUsersAmong($this->drainQueue());
+    }
+
+    /**
+     * @return list<SignalDTO> Every queued signal, in queue order; the queue is empty afterwards
+     */
+    private function drainQueue(): array
+    {
+        $signals = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $signals[] = $signal;
+        }
+
+        return $signals;
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Drained queue
+     * @return list<int> People the notifications library was asked to forget, in order
+     */
+    private static function forgottenUsersAmong(array $signals): array
+    {
+        $users = [];
+        foreach ($signals as $signal) {
             if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER) {
                 continue;
             }
@@ -492,6 +524,22 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         }
 
         return $users;
+    }
+
+    /**
+     * @param list<SignalDTO> $signals Drained queue
+     * @return list<string> Signal type of each DB-sync frame - the announcements to the other processes - in order
+     */
+    private static function dbFrameTypesAmong(array $signals): array
+    {
+        $types = [];
+        foreach ($signals as $signal) {
+            if ($signal->signalSource->getSource() === SignalSource::DB) {
+                $types[] = $signal->signalType->getType();
+            }
+        }
+
+        return $types;
     }
 
     /**

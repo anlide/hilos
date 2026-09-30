@@ -58,8 +58,9 @@ is the single orchestration entry for registration and re-consent:
   `hilos_legal_agreements:<userId>`. A caller of `record()` publishes only after
   its outer transaction commits.
 
-Transactions are not nested. Registration uses `record()` inside its existing
-transaction; it must not call `accept()` there. Both paths record the exact
+The framework never nests a transaction
+([../orm/transactions.md](../orm/transactions.md)). Registration uses `record()`
+inside its existing transaction; it must not call `accept()` there. Both paths record the exact
 named declared revisions, never silently substitute the newest ones. An
 undeclared document or revision is a programming error at this internal entry.
 

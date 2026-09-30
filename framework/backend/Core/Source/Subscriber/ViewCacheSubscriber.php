@@ -6,7 +6,7 @@ namespace Hilos\Core\Source\Subscriber;
 
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeProvenance;
-use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Hilos;
 
@@ -23,8 +23,12 @@ use Hilos\Hilos;
  *
  * Provenance is deliberately ignored: a view holding a row the store lost is equally wrong
  * whether this process wrote the change or applied someone else's.
+ *
+ * A mirror rather than a reaction: the cache it repairs is this process's own memory, and it
+ * answers reads made inside the transaction that deleted the row, so it is told at the write
+ * and not at the commit.
  */
-final class ViewCacheSubscriber implements SourceChangeSubscriberInterface
+final class ViewCacheSubscriber implements SourceMirrorSubscriberInterface
 {
     /**
      * Forgets the cached wrapper of the row the change created or deleted.

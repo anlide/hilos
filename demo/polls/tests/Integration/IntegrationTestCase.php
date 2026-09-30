@@ -327,12 +327,20 @@ abstract class IntegrationTestCase extends TestCase
     }
 
     /**
-     * Unregisters test truth-source ownership after each test.
+     * Closes the transaction a case left open and unregisters test truth-source ownership.
+     *
+     * The case fails for the transaction: left on the connection, it would refuse every later
+     * case its start.
      */
     protected function tearDown(): void
     {
+        $leftOpen = Database::rollBackLeftOpen();
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         parent::tearDown();
+
+        if ($leftOpen !== null) {
+            self::fail($leftOpen->getMessage());
+        }
     }
 }

@@ -235,8 +235,13 @@ abstract class IntegrationTestCase extends TestCase
      */
     protected function tearDown(): void
     {
+        $leftOpen = Database::rollBackLeftOpen();
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         parent::tearDown();
+
+        if ($leftOpen !== null) {
+            self::fail($leftOpen->getMessage());
+        }
     }
 }

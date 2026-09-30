@@ -10,6 +10,7 @@ use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandExecutionSite;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
+use Hilos\Database\Database;
 use Hilos\Database\Migration;
 use Hilos\Database\Seed;
 use Hilos\Hilos;
@@ -92,7 +93,17 @@ final class CliApplication
                 LogWriteLevelApplier::applyFromSettings();
             }
 
-            exit($cliManager->run());
+            $exitCode = $cliManager->run();
+
+            // A transaction lives inside the command that opened it. One left open here would
+            // die with the process uncommitted anyway - what is owed is the word: rolled back,
+            // announcements dropped, and the command failed rather than exited as it pleased.
+            $leftOpen = Database::rollBackLeftOpen();
+            if ($leftOpen !== null) {
+                throw $leftOpen;
+            }
+
+            exit($exitCode);
         } catch (Throwable $e) {
             Logger::error('CLI failed: ' . $e->getMessage(), [
                 ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),

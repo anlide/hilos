@@ -17,6 +17,7 @@ use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
 use Hilos\Tests\CodeStyle\Rule\MemberIndentRule;
+use Hilos\Tests\CodeStyle\Rule\NestableTransactionRule;
 use Hilos\Tests\CodeStyle\Rule\ObjectStoreMutationRule;
 use Hilos\Tests\CodeStyle\Rule\PageReachRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
@@ -225,6 +226,7 @@ final class CodeStyleGuardTest extends TestCase
             new RandomSourceRule(),
             new BlockingResolutionRule(),
             new ProcessForkRule($root),
+            new NestableTransactionRule($root),
             new MalformedInputMarkerRule(),
             new TruthSourceClaimRule(),
             new SecretInQueryRule(),

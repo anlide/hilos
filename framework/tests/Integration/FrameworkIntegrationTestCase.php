@@ -95,10 +95,32 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     }
 
     /**
-     * Closes connection index 0 when still open.
+     * Closes the transaction a passing case left open, and fails the case for it - before tearDown.
+     *
+     * Here rather than in tearDown because a subclass's tearDown may drop its stub tables, and
+     * DDL commits an open transaction implicitly: the leak would be committed into the shared test
+     * database and then reported as rolled back. PHPUnit runs this after a test body that passed;
+     * a failing one is red already, and tearDown below closes its transaction after the fact.
+     */
+    protected function assertPostConditions(): void
+    {
+        parent::assertPostConditions();
+
+        $leftOpen = Database::rollBackLeftOpen();
+        if ($leftOpen !== null) {
+            self::fail($leftOpen->getMessage());
+        }
+    }
+
+    /**
+     * Closes the transaction a failing case left open, then connection index 0 when still open.
+     *
+     * The transaction goes first: closed with the connection instead, its levels would stay on
+     * the stack as failed and every later case would be refused a start.
      */
     protected function tearDown(): void
     {
+        Database::rollBackLeftOpen();
         if (Database::isConnected()) {
             Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
         }

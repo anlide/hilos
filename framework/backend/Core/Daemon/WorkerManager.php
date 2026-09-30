@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\DbReHydrateOutcome;
@@ -173,6 +174,15 @@ abstract class WorkerManager extends BaseManager
 
     /** What a wait with no consumer of its own is parked under: the daemon link, waiting for the framework's own rows. */
     private const string PARKED_LINK_KEY = 'link';
+
+    /** Address of the project's tick hook in a contained failure, in the unit's own terms. */
+    private const string ADDRESS_ON_TICK = 'onTick';
+
+    /** Address of the signal drain in a contained failure, in the unit's own terms. */
+    private const string ADDRESS_DISPATCH_SIGNALS = 'dispatchSignals';
+
+    /** Address of the analytics tick in a contained failure, in the unit's own terms. */
+    private const string ADDRESS_ANALYTICS_TICK = 'analytics tick';
 
     /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
@@ -352,12 +362,15 @@ abstract class WorkerManager extends BaseManager
                 // order of arrival is the order of handling (HIL-1012).
                 $this->releaseParkedFrames(microtime(true));
 
-                // Process messages from daemon queue
+                // Process messages from daemon queue. Every unit below ends through endUnit(),
+                // whether it returned or raised: a transaction lives inside the unit that opened
+                // it, and one left standing would take in every later write of this worker.
                 while (($message = $this->daemonClient->getNextMessage()) !== null) {
                     try {
                         $this->handleDaemonMessage($message);
+                        $this->endUnit(WorkerTickUnit::DAEMON_MESSAGE, $message->getType());
                     } catch (Throwable $failure) {
-                        $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
+                        $this->endUnit(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
                     } finally {
                         ExecutionContext::clear();
                     }
@@ -367,8 +380,9 @@ abstract class WorkerManager extends BaseManager
                 $this->setCurrentAgentId(null);
                 try {
                     $this->onTick();
+                    $this->endUnit(WorkerTickUnit::WORKER_TICK, self::ADDRESS_ON_TICK);
                 } catch (Throwable $failure) {
-                    $this->containFailure(WorkerTickUnit::WORKER_TICK, 'onTick', $failure);
+                    $this->endUnit(WorkerTickUnit::WORKER_TICK, self::ADDRESS_ON_TICK, $failure);
                 }
 
                 // Tick all agents
@@ -378,14 +392,16 @@ abstract class WorkerManager extends BaseManager
                 $this->setCurrentAgentId(null);
                 try {
                     $this->dispatchSignals();
+                    $this->endUnit(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS);
                 } catch (Throwable $failure) {
-                    $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, 'dispatchSignals', $failure);
+                    $this->endUnit(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
                 }
 
                 try {
                     Hilos::$ac?->tick();
+                    $this->endUnit(WorkerTickUnit::ANALYTICS, self::ADDRESS_ANALYTICS_TICK);
                 } catch (Throwable $failure) {
-                    $this->containFailure(WorkerTickUnit::ANALYTICS, 'analytics tick', $failure);
+                    $this->endUnit(WorkerTickUnit::ANALYTICS, self::ADDRESS_ANALYTICS_TICK, $failure);
                 }
             }
 
@@ -2659,8 +2675,9 @@ abstract class WorkerManager extends BaseManager
     {
         try {
             $this->handleDaemonMessage($message);
+            $this->endUnit(WorkerTickUnit::DAEMON_MESSAGE, $message->getType());
         } catch (Throwable $failure) {
-            $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
+            $this->endUnit(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
         } finally {
             ExecutionContext::clear();
         }
@@ -3010,7 +3027,7 @@ abstract class WorkerManager extends BaseManager
             try {
                 $this->dispatchSignals();
             } catch (Throwable $failure) {
-                $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, 'dispatchSignals', $failure);
+                $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
             }
             try {
                 $this->flushDaemonClient();
@@ -3087,7 +3104,9 @@ abstract class WorkerManager extends BaseManager
      * Runs one tick pass over every worker-local agent and takes the stop decision for each.
      *
      * Two ways an agent leaves here and no third: it asked, or it has sat unaddressed past the
-     * window its type declared. Both go out through {@see self::stopAgentLocally()}.
+     * window its type declared. Both go out through {@see self::stopAgentLocally()}. The agent's
+     * unit covers a stop taken here too, so a transaction a stop hook leaves open is closed and
+     * charged to the agent like one its tick left.
      */
     private function tickAgents(): void
     {
@@ -3107,11 +3126,12 @@ abstract class WorkerManager extends BaseManager
                         $this->stopAgentLocally($agentId, $agent, "idle for {$expiredWindow}s");
                     }
                 }
+                $this->endUnit(WorkerTickUnit::AGENT, $agent->getId());
             } catch (Throwable $failure) {
                 // The agent stays in the manager: it is not a connection, dropping it
                 // would lose the truth sources it owns and the work it had started, and
                 // the decision to stop belongs to the agent and its owner, not here.
-                $this->containFailure(WorkerTickUnit::AGENT, $agent->getId(), $failure);
+                $this->endUnit(WorkerTickUnit::AGENT, $agent->getId(), $failure);
             }
         }
     }
@@ -3334,6 +3354,34 @@ abstract class WorkerManager extends BaseManager
         // Whatever agent this unit was running under is not running any more. Left set,
         // its id would sign the journal lines of every unit that follows in this tick.
         $this->setCurrentAgentId(null);
+    }
+
+    /**
+     * Ends one unit of the tick: closes the transaction it left open, then contains its failures.
+     *
+     * A transaction lives inside the handler that opened it: left standing on the worker's
+     * connection, it would take in every later write this worker makes and be committed by an
+     * unrelated BEGIN. So the end of every unit rolls it back, drops what it held and writes the
+     * failure as the unit's own - the same card, the same journal line and the same project hook
+     * as a failure the unit raised itself, after that failure when there is one.
+     *
+     * The rollback comes first, before the project is told anything: told inside the leaked
+     * transaction, whatever the project's hook wrote about the failure would be rolled back with
+     * it a moment later.
+     *
+     * @param WorkerTickUnit $unit Unit of work that just ended
+     * @param string $address Which one of that unit ended, in the unit's own terms
+     * @param ?Throwable $failure Failure the unit ended with, or null when it returned
+     */
+    private function endUnit(WorkerTickUnit $unit, string $address, ?Throwable $failure = null): void
+    {
+        $leftOpen = Database::rollBackLeftOpen();
+        if ($failure !== null) {
+            $this->containFailure($unit, $address, $failure);
+        }
+        if ($leftOpen !== null) {
+            $this->containFailure($unit, $address, $leftOpen);
+        }
     }
 
     /**

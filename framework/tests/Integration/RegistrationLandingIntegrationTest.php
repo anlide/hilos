@@ -19,6 +19,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -459,6 +460,8 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
             $this->seedLiveHold(IdentityType::PASSWORD, self::SESSION_TOKEN, $email);
             Hilos::$db?->identities->createPasswordIdentity(self::RIVAL_USER_ID, $email, self::RIVAL_SECRET);
             $library = new RegistrationLandingFixtureLibrary();
+            // The seeds announced their own rows; what is judged below is what the landing announces.
+            $this->queuedDbFrameTypes();
 
             $outcome = new RegistrationLandingTestCommands($library)
                 ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', self::PASSWORD);
@@ -471,6 +474,11 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
             $this->assertTheLandingRolledBackAndClosed($library);
             Database::sql('SELECT COUNT(*) AS total FROM hilos_legal_acceptance');
             self::assertSame(0, (int)Database::row()['total'], 'Acceptance rows roll back with the refused account');
+            self::assertSame(
+                [],
+                $this->queuedDbFrameTypes(),
+                'A rolled-back landing announces none of its rows to the other processes (HIL-1164)',
+            );
         } finally {
             $this->dropFixtureUserTable();
         }
@@ -669,6 +677,23 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
      * @throws CantConnectToMysqlServerException When connect retries are exhausted
      * @throws EnvException When env variables are missing or invalid
      */
+    /**
+     * Drains the queue and names the DB-sync frames in it - the announcements to the other processes.
+     *
+     * @return list<string> Signal type of each DB-sourced frame, in queue order
+     */
+    private function queuedDbFrameTypes(): array
+    {
+        $types = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalSource->getSource() === SignalSource::DB) {
+                $types[] = $signal->signalType->getType();
+            }
+        }
+
+        return $types;
+    }
+
     private function rowsSeenByAnotherConnection(): int
     {
         Database::configure(

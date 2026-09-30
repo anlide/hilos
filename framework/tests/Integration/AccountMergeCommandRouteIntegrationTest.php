@@ -19,6 +19,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
@@ -136,6 +137,9 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
 
     /** @var ?SignalRouter Signal router to restore after the test */
     private ?SignalRouter $previousSignalRouter = null;
+
+    /** @var list<string> Signal types of the DB-sync frames the last reply drained out of the queue with it */
+    private array $drainedDbFrameTypes = [];
 
     /** @var ?RtContext Runtime to restore after the test */
     private ?RtContext $previousRt = null;
@@ -454,6 +458,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
         $agent = new AccountMergeRouteTestAgent();
         $agent->failTheRowMove = true;
+        // The seed announced its own row; what is judged below is what the merge announces.
+        $this->consumeQueuedSeedFrames();
 
         $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
 
@@ -461,6 +467,11 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::assertSame(self::LOSER_USER_ID, self::identityOwner($loserEmail));
         self::assertNull(self::survivorOf(self::LOSER_USER_ID));
         self::assertFalse(self::isBlocked(self::LOSER_USER_ID));
+        self::assertSame(
+            [],
+            $this->drainedDbFrameTypes,
+            'A rolled-back merge announces none of its moved rows to the other processes (HIL-1164)',
+        );
     }
 
     /**
@@ -729,20 +740,37 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     /**
      * Takes the one reply the agent queued and fails the test when it queued none or two.
      *
+     * The DB-sync frames drained with it are kept aside, so a case can tell whether the merge
+     * announced its rows to the other processes.
+     *
      * @return CommandReplyDTO The queued reply
      */
     private function consumeReply(): CommandReplyDTO
     {
         $replies = [];
+        $this->drainedDbFrameTypes = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             if ($signal->data instanceof CommandReplyDTO) {
                 $replies[] = $signal->data;
+            }
+            if ($signal->signalSource->getSource() === SignalSource::DB) {
+                $this->drainedDbFrameTypes[] = $signal->signalType->getType();
             }
         }
 
         self::assertCount(1, $replies, 'Every merge answers the operator exactly once');
 
         return $replies[0];
+    }
+
+    /**
+     * Empties the queue of what the seeds announced, so a later drain reads the merge alone.
+     */
+    private function consumeQueuedSeedFrames(): void
+    {
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            // Every frame so far is a seed's own announcement
+        }
     }
 
     /**

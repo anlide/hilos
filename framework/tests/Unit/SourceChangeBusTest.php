@@ -11,6 +11,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\TruthSourceKeys;
@@ -42,6 +43,9 @@ use TypeError;
 final class SourceChangeBusTest extends TestCase
 {
     private const string AGENT_ID = 'unit-source-change-bus-host';
+
+    /** Key of a database collection nothing mounts: the framework subscribers have nothing to look up under it. */
+    private const string DB_COLLECTION = 'unit-source-change-bus-db';
 
     private ?SignalRouter $previousSignalRouter = null;
 
@@ -80,6 +84,38 @@ final class SourceChangeBusTest extends TestCase
         SourceChangeBus::publish(SourceChange::rtCreated(BusRtContext::COLLECTION, 'a', []));
 
         $this->assertSame(['first', 'second', 'third'], $seen);
+    }
+
+    /**
+     * A database fact reaches a mirror at the write and a reaction at the commit, and with no
+     * transaction open those are the same moment - so outside a transaction the mirror still
+     * comes first, whatever the registration order, because the write it repairs the memory for
+     * is the one the reactions are told about (HIL-1164).
+     */
+    public function testAMirrorHearsADatabaseFactBeforeAReactionRegisteredAheadOfIt(): void
+    {
+        $seen = [];
+        SourceChangeBus::subscribe(new BusLabelSubscriber($seen, 'reaction'));
+        SourceChangeBus::subscribe(new BusMirrorSubscriber($seen, 'mirror'));
+
+        SourceChangeBus::publish(SourceChange::dbCreated(self::DB_COLLECTION, 'a', []));
+
+        $this->assertSame(['mirror', 'reaction'], $seen);
+    }
+
+    /**
+     * A runtime fact is outside the transaction and keeps the registration order for everyone:
+     * a mirror registered after a reaction hears it after that reaction.
+     */
+    public function testARuntimeFactKeepsTheRegistrationOrderForAMirrorToo(): void
+    {
+        $seen = [];
+        SourceChangeBus::subscribe(new BusLabelSubscriber($seen, 'reaction'));
+        SourceChangeBus::subscribe(new BusMirrorSubscriber($seen, 'mirror'));
+
+        SourceChangeBus::publish(SourceChange::rtCreated(BusRtContext::COLLECTION, 'a', []));
+
+        $this->assertSame(['reaction', 'mirror'], $seen);
     }
 
     /**
@@ -375,6 +411,29 @@ final class BusRecordingSubscriber implements SourceChangeSubscriberInterface
  * Records its own label whenever it is told of a change.
  */
 final class BusLabelSubscriber implements SourceChangeSubscriberInterface
+{
+    /**
+     * @param array<int, string> $seen Recording target, appended to on every change
+     * @param string $label Name this subscriber records itself under
+     */
+    public function __construct(private array &$seen, private readonly string $label)
+    {
+    }
+
+    /**
+     * @param SourceChange $change Announced change, not read here
+     * @param SourceChangeProvenance $provenance Announced provenance, not read here
+     */
+    public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+    {
+        $this->seen[] = $this->label;
+    }
+}
+
+/**
+ * Records its own label whenever it is told of a change, as a mirror of this process's memory.
+ */
+final class BusMirrorSubscriber implements SourceMirrorSubscriberInterface
 {
     /**
      * @param array<int, string> $seen Recording target, appended to on every change

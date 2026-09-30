@@ -9,6 +9,7 @@ use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreAnonymizer;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
 use Random\RandomException;
 
@@ -126,7 +127,7 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
      *
      * @param int $index Connection index the pass runs over
      * @param string $database Database name the connection imported into
-     * @throws RestoreFailedException When a statement of the pass fails
+     * @throws RestoreFailedException When a statement of the pass, its transaction or its commit fails
      * @throws DatabaseException When the connection the pass rewrites over cannot be reached
      */
     public function anonymizeConnection(int $index, string $database): void
@@ -146,7 +147,7 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
                 Database::sql($statement, tryReconnect: false);
             }
             Database::transactionCommit();
-        } catch (DatabaseException $failure) {
+        } catch (HilosException $failure) {
             self::rollBack();
 
             throw new RestoreFailedException(

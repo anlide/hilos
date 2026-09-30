@@ -15,6 +15,7 @@ use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
 use Hilos\Tests\CodeStyle\Rule\MemberIndentRule;
+use Hilos\Tests\CodeStyle\Rule\NestableTransactionRule;
 use Hilos\Tests\CodeStyle\Rule\ObjectStoreMutationRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
@@ -30,6 +31,7 @@ use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
 use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\SourceScanner;
+use Hilos\Tests\CodeStyle\Violation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -643,6 +645,29 @@ final class RuleFixtureTest extends TestCase
     }
 
     /**
+     * The nestable mark is judged by root: every call of it in the framework backend is a hit,
+     * a demo's backend and the framework's own suite are handed an empty report, and the
+     * declaration of the method itself is not a call under any root.
+     */
+    public function testTheNestableMarkIsAHitInTheFrameworkBackendAlone(): void
+    {
+        $relativePath = 'Bad/NestableTransactionSamples.php';
+        $tokens = token_get_all((string)file_get_contents($this->fixtureRoot() . '/' . $relativePath));
+
+        $framework = iterator_to_array(new NestableTransactionRule('framework/backend')->check($relativePath, $tokens), false);
+        $demo = iterator_to_array(new NestableTransactionRule('demo/chat/backend')->check($relativePath, $tokens), false);
+        $suite = iterator_to_array(new NestableTransactionRule('framework/tests')->check($relativePath, $tokens), false);
+
+        $this->assertSame(
+            [23, 24, 25],
+            array_map(static fn(Violation $violation): int => $violation->line, $framework),
+            'The static, the instance and the nullsafe call are hits; the declaration below them is not',
+        );
+        $this->assertSame([], $demo);
+        $this->assertSame([], $suite);
+    }
+
+    /**
      * Scans the fixture tree with the same scanner and rules the guard test uses.
      * The whole-root mode of the empty-string rule needs a root where nothing is
      * outside a zone, so it gets a fixture root of its own — judged separately and
@@ -717,6 +742,7 @@ final class RuleFixtureTest extends TestCase
             new RandomSourceRule(),
             new BlockingResolutionRule(),
             new ProcessForkRule('framework/tests/CodeStyle/Fixtures'),
+            new NestableTransactionRule('framework/tests/CodeStyle/Fixtures'),
             new MalformedInputMarkerRule(),
             new TruthSourceClaimRule(),
             new SecretInQueryRule(),
