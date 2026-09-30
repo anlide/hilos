@@ -21,6 +21,9 @@ enum FileDownloadOutcome
     /** No X-Accel is configured and the file is above what the daemon sends itself: 500 */
     case TOO_LARGE_TO_SEND_DIRECTLY;
 
+    /** No X-Accel is configured and the browser's connection is held by another node, which the daemon's own body does not travel to: 500 */
+    case CONNECTION_ON_ANOTHER_NODE;
+
     /** The file is there and its read failed: 404 */
     case UNREADABLE;
 }

@@ -2821,25 +2821,21 @@ final class TopologyValidator
     /**
      * Validates the HTTP addresses agents declare to answer.
      *
-     * AGENT_HTTP_ROUTES is a map of method to a list of exact paths. A method is one the HTTP
-     * server routes; a path starts with '/' and is made of unreserved URL characters, so it carries
-     * neither a query string nor a '{' placeholder - the router matches an agent's address exactly,
-     * and a placeholder would reach the agent without a name - nor a character the route registry
-     * would compile into its pattern. One method and path is answered by exactly one agent: a
-     * second declaration would silently win or lose the address, which is a download answered by
-     * somebody nobody expected, so it refuses the start and names both.
+     * AGENT_HTTP_ROUTES is a map of method to a list of exact paths. The one method is GET: a
+     * request an agent answers carries neither a body nor headers (HttpRequestDTO), so a POST
+     * address would start and read nothing, and any other key refuses the start. A path starts
+     * with '/' and is made of unreserved URL characters, so it carries neither a query string nor
+     * a '{' placeholder - the router matches an agent's address exactly, and a placeholder would
+     * reach the agent without a name - nor a character the route registry would compile into its
+     * pattern. One method and path is answered by exactly one agent: a second declaration would
+     * silently win or lose the address, which is a download answered by somebody nobody expected,
+     * so it refuses the start and names both.
      *
      * @param array $agents Agent registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validateAgentHttpRoutes(array $agents, array &$errors): void
     {
-        $methods = [
-            HttpConstants::METHOD_GET,
-            HttpConstants::METHOD_POST,
-            HttpConstants::METHOD_PUT,
-            HttpConstants::METHOD_DELETE,
-        ];
         /** @var array<string, array<string, string>> $declaredRoutes Declaring agent type by method, then by path */
         $declaredRoutes = [];
         foreach ($agents as $agentType => $registryEntry) {
@@ -2850,8 +2846,9 @@ final class TopologyValidator
 
             foreach ($agentClass::AGENT_HTTP_ROUTES as $method => $paths) {
                 $declaration = "AGENTS[{$agentType}] class {$agentClass} AGENT_HTTP_ROUTES[{$method}]";
-                if (!in_array($method, $methods, true)) {
-                    $errors[] = "{$declaration} must be keyed by one of " . implode(', ', $methods);
+                if ($method !== HttpConstants::METHOD_GET) {
+                    $errors[] = "{$declaration} must be keyed by " . HttpConstants::METHOD_GET
+                        . ': a request an agent answers carries neither a body nor headers';
                     continue;
                 }
 

@@ -35,6 +35,12 @@ final class FileDownloadResponseTest extends TestCase
     /** Internal nginx location the tests configure */
     private const string XACCEL_LOCATION = '/_files_internal/';
 
+    /** Node the library runs on in the cluster cases */
+    private const string THIS_NODE = 'node-a';
+
+    /** Node holding the browser's connection when it is not the library's */
+    private const string OTHER_NODE = 'node-b';
+
     public function testAnImageIsServedInlineWithItsTypeAndNosniff(): void
     {
         $response = $this->serve($this->file('photo.png', 'image/png'), $this->storage("\x89PNG"), '');
@@ -139,6 +145,80 @@ final class FileDownloadResponseTest extends TestCase
         $this->assertSame(HttpConstants::HTTP_OK, $response->reply->status);
     }
 
+    public function testAFileForABrowserOnAnotherNodeWithoutNginxIsRefusedWith500(): void
+    {
+        $storage = $this->storage('x');
+        $response = $this->serve($this->file('photo.png', 'image/png'), $storage, '', self::OTHER_NODE, self::THIS_NODE);
+
+        $this->assertSame(FileDownloadOutcome::CONNECTION_ON_ANOTHER_NODE, $response->outcome);
+        $this->assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $response->reply->status);
+        $this->assertSame(HttpConstants::CACHE_CONTROL_NO_STORE, $response->reply->headers[HttpConstants::HEADER_CACHE_CONTROL]);
+        $this->assertSame(0, $storage->reads, 'a file for another node is not read at all');
+    }
+
+    /** The node, not the size, is what the operator has to fix: nginx serves a file of any size. */
+    public function testAFileAboveTheCeilingForABrowserOnAnotherNodeIsRefusedForTheNode(): void
+    {
+        $response = $this->serve(
+            $this->file('big.png', 'image/png'),
+            $this->storage('x', size: FileDownloadResponse::DIRECT_MAX_BYTES + 1),
+            '',
+            self::OTHER_NODE,
+            self::THIS_NODE,
+        );
+
+        $this->assertSame(FileDownloadOutcome::CONNECTION_ON_ANOTHER_NODE, $response->outcome);
+        $this->assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $response->reply->status);
+    }
+
+    public function testBehindNginxAFileIsHandedToXAccelForABrowserOnAnotherNode(): void
+    {
+        $response = $this->serve(
+            $this->file('photo.png', 'image/png'),
+            $this->storage('x'),
+            self::XACCEL_LOCATION,
+            self::OTHER_NODE,
+            self::THIS_NODE,
+        );
+
+        $this->assertSame(FileDownloadOutcome::SERVED, $response->outcome);
+        $this->assertSame(HttpConstants::HTTP_OK, $response->reply->status);
+        $this->assertSame('', $response->reply->body);
+        $this->assertSame('/_files_internal/' . self::STORED_NAME, $response->reply->headers[HttpConstants::HEADER_X_ACCEL_REDIRECT]);
+    }
+
+    public function testAFileForABrowserOnThisNodeIsSentByTheDaemon(): void
+    {
+        $response = $this->serve($this->file('photo.png', 'image/png'), $this->storage("\x89PNG"), '', self::THIS_NODE, self::THIS_NODE);
+
+        $this->assertSame(FileDownloadOutcome::SERVED, $response->outcome);
+        $this->assertSame(HttpConstants::HTTP_OK, $response->reply->status);
+        $this->assertSame("\x89PNG", $response->reply->body);
+    }
+
+    public function testAVariantAndItsFallbackForABrowserOnAnotherNodeWithoutNginxAreRefused(): void
+    {
+        $request = new HttpRequestDTO(
+            str_repeat('c', 32),
+            HttpConstants::METHOD_GET,
+            '/_hilos/file',
+            ['id' => '1', 'variant' => 'thumb'],
+            null,
+            self::OTHER_NODE,
+        );
+        $file = $this->file('photo.jpg', 'image/jpeg');
+
+        $variant = FileDownloadResponse::forVariant(
+            $request, $file, $this->variant(), $this->storage('webp copy', 'copy.webp'), '', self::THIS_NODE,
+        );
+        $fallback = FileDownloadResponse::forFallback($request, $file, $this->storage('original'), '', self::THIS_NODE);
+
+        $this->assertSame(FileDownloadOutcome::CONNECTION_ON_ANOTHER_NODE, $variant->outcome);
+        $this->assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $variant->reply->status);
+        $this->assertSame(FileDownloadOutcome::CONNECTION_ON_ANOTHER_NODE, $fallback->outcome);
+        $this->assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $fallback->reply->status);
+    }
+
     public function testARowWithNoFileOnDiskIsRefusedWith404(): void
     {
         $response = $this->serve($this->file('gone.png', 'image/png'), new FileDownloadResponseTestStorage([]), '');
@@ -166,7 +246,7 @@ final class FileDownloadResponseTest extends TestCase
             foreach (['', self::XACCEL_LOCATION] as $xAccelLocation) {
                 $storage = $this->storage('webp copy', 'copy.webp');
                 $response = FileDownloadResponse::forVariant(
-                    $request, $this->file('photo.jpg', 'image/jpeg', $visibility), $this->variant(), $storage, $xAccelLocation,
+                    $request, $this->file('photo.jpg', 'image/jpeg', $visibility), $this->variant(), $storage, $xAccelLocation, null,
                 );
                 self::assertSame(200, $response->reply->status);
                 self::assertSame('image/webp', $response->reply->headers[HttpConstants::HEADER_CONTENT_TYPE]);
@@ -194,7 +274,7 @@ final class FileDownloadResponseTest extends TestCase
         foreach ([FileVisibility::PUBLIC, FileVisibility::OWNER, FileVisibility::AUTHENTICATED] as $visibility) {
             foreach (['', self::XACCEL_LOCATION] as $xAccelLocation) {
                 $response = FileDownloadResponse::forFallback(
-                    $request, $this->file('photo.jpg', 'image/jpeg', $visibility), $this->storage('original'), $xAccelLocation,
+                    $request, $this->file('photo.jpg', 'image/jpeg', $visibility), $this->storage('original'), $xAccelLocation, null,
                 );
                 self::assertSame(200, $response->reply->status);
                 self::assertSame('image/jpeg', $response->reply->headers[HttpConstants::HEADER_CONTENT_TYPE]);
@@ -211,7 +291,7 @@ final class FileDownloadResponseTest extends TestCase
     {
         $request = new HttpRequestDTO(str_repeat('c', 32), 'GET', '/_hilos/file', ['id' => '1'], null, null);
         $response = FileDownloadResponse::forVariant(
-            $request, $this->file('.jpg', 'image/jpeg'), $this->variant(), $this->storage('copy', 'copy.webp'), '',
+            $request, $this->file('.jpg', 'image/jpeg'), $this->variant(), $this->storage('copy', 'copy.webp'), '', null,
         );
         self::assertSame("inline; filename=\"file.webp\"; filename*=UTF-8''file.webp",
             $response->reply->headers[HttpConstants::HEADER_CONTENT_DISPOSITION]);
@@ -236,13 +316,27 @@ final class FileDownloadResponseTest extends TestCase
      * @param File $file Row of the file served
      * @param FilesStorageInterface $storage Storage the file is kept in
      * @param string $xAccelLocation Internal nginx location, empty for none
+     * @param ?string $originNodeId Node holding the browser's connection, null off a cluster
+     * @param ?string $localNodeId Node the library runs on, null off a cluster
      * @return FileDownloadResponse Response built
      */
-    private function serve(File $file, FilesStorageInterface $storage, string $xAccelLocation): FileDownloadResponse
-    {
-        $request = new HttpRequestDTO(str_repeat('c', 32), HttpConstants::METHOD_GET, '/_hilos/file', ['id' => '1'], null, null);
+    private function serve(
+        File $file,
+        FilesStorageInterface $storage,
+        string $xAccelLocation,
+        ?string $originNodeId = null,
+        ?string $localNodeId = null,
+    ): FileDownloadResponse {
+        $request = new HttpRequestDTO(
+            str_repeat('c', 32),
+            HttpConstants::METHOD_GET,
+            '/_hilos/file',
+            ['id' => '1'],
+            null,
+            $originNodeId,
+        );
 
-        return FileDownloadResponse::forFile($request, $file, $storage, $xAccelLocation);
+        return FileDownloadResponse::forFile($request, $file, $storage, $xAccelLocation, $localNodeId);
     }
 
     /**

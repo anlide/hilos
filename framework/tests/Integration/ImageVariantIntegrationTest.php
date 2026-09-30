@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -57,7 +58,12 @@ use ReflectionProperty;
 final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
 {
     private const array TABLES = ['hilos_setting', 'hilos_session', 'hilos_file', 'hilos_file_variant'];
+    /** Node the library runs on, and the one holding the browser's connection unless a case says otherwise. */
+    private const string LIBRARY_NODE = 'node-b';
+    /** Cluster env values setUp sets, and tearDown removes. */
+    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'];
     private ?DbContext $previousDb;
+    private ?ClusterContext $previousCluster;
     private ?FsContext $previousFs;
     private ?HilosFiles $previousFiles;
     private ?SettingsAccessor $previousSetting;
@@ -100,6 +106,12 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         putenv(EnvConstants::HILOS_FILES_XACCEL_LOCATION->name . '=');
+        // A request carries its origin only on a cluster, and the daemon's own body goes to a browser of this node alone.
+        $this->previousCluster = Hilos::$cluster;
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=' . self::LIBRARY_NODE);
+        putenv('CLUSTER_NODE_ROLE=master');
+        Hilos::$cluster = new ClusterContext();
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_FILES_LIBRARY);
         $this->library = new ImageVariantLibrary();
         OwnershipDeclaration::claimAll($this->library);
@@ -126,6 +138,10 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
         }
         rmdir($this->directory);
         putenv(EnvConstants::HILOS_FILES_XACCEL_LOCATION->name);
+        foreach (self::CLUSTER_ENV as $key) {
+            putenv($key);
+        }
+        Hilos::$cluster = $this->previousCluster;
         Hilos::$files = $this->previousFiles;
         Hilos::$fs = $this->previousFs;
         Hilos::$db = $this->previousDb;
@@ -245,6 +261,22 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
         $this->deliver($result);
         self::assertSame(1, $this->engine->probes);
         self::assertSame([], glob($this->directory . '/tmp/*'));
+    }
+
+    /** The copy is still drawn and kept; only the daemon's own body stays off the peer link. */
+    public function testAVariantForABrowserOnAnotherNodeWithoutNginxIsRefusedAfterTheRender(): void
+    {
+        $file = $this->publish();
+        $this->ask($file, null, 'node-c');
+        $this->deliver($this->render($this->takeRender()));
+
+        $this->copy($file);
+        self::assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $this->reply()->status);
+        self::assertSame('node-c', $this->reply()->originNodeId);
+        self::assertSame([
+            "File {$file->id} variant thumb is not sent by the daemon: the browser's connection is on node node-c"
+            . " and the daemon's own body does not travel between nodes; set HILOS_FILES_XACCEL_LOCATION",
+        ], $this->library->errors);
     }
 
     /** Exercises the library and renderer over real registry rows and files. */
@@ -463,12 +495,13 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
     /**
      * @param File $file Original being requested
      * @param ?string $token Presented session token
+     * @param string $originNodeId Node holding the browser's connection
      * @return HttpRequestDTO Request passed to the library
      */
-    private function ask(File $file, ?string $token = null): HttpRequestDTO
+    private function ask(File $file, ?string $token = null, string $originNodeId = self::LIBRARY_NODE): HttpRequestDTO
     {
         $request = new HttpRequestDTO(bin2hex(random_bytes(16)), 'GET', '/_hilos/file',
-            ['id' => (string)$file->id, 'variant' => 'thumb', 'v' => 'ignored'], $token, 'node-b');
+            ['id' => (string)$file->id, 'variant' => 'thumb', 'v' => 'ignored'], $token, $originNodeId);
         $this->library->onSignalHttpRequest($request, SignalSource::DAEMON, 'GET /_hilos/file');
         return $request;
     }

@@ -41,10 +41,13 @@ final class CatalogAgent extends AbstractAgent
 }
 ```
 
-The key is a method (`GET`, `POST`, `PUT`, `DELETE`), the value a list of exact
-paths: starting with `/`, no query string, no `{placeholder}` — parameters ride
-the query, which the agent reads by name. One method and path has exactly one
-agent; the topology refuses the start and names both when two declare it.
+The key is `GET`, the one method an agent may declare: the request carries
+neither a body nor headers («What Is Not Here»), so a `POST` address would start
+and read nothing, and any other key refuses the start and names the key. The
+value is a list of exact paths: starting with `/`, no query string, no
+`{placeholder}` — parameters ride the query, which the agent reads by name. One
+method and path has exactly one agent; the topology refuses the start and names
+both when two declare it.
 `Hilos::getHttpAgentRoutes()` is the computed map, and a demo's topology
 snapshot pins it.
 
@@ -108,9 +111,12 @@ browser's — whose close is the event above.
 
 - Streaming, `Range`, and bodies larger than a frame should carry: the reply is
   one frame, through the master and in a cluster over the peer link (8 MiB write
-  queue). A large file is nginx's to send — `X-Accel-Redirect` in the reply
+  queue). A large file is nginx's to send — `X-Accel-Redirect` in the reply.
+  The files library and the data export never send their own body to a browser on another node:
+  without X-Accel such a request is a 500 whose line names the node and the env
   ([files-registry.md](files-registry.md), «Serving A File»).
 - Request bodies and headers other than the session token — a webhook's POST
-  body among them: no address that needs them is built yet.
+  body among them: no address that needs them is built yet. Until then an agent
+  declares only `GET` (HIL-204).
 - The analytics row is still written in the master when the request is routed —
   an existing violation of the master rule, recorded as P-415.

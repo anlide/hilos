@@ -154,8 +154,6 @@ class HttpRouter
         }
 
         if (isset($this->agentRoutes[$route['method']][$route['path']])) {
-            $cluster = Hilos::$cluster;
-
             return new ParkedHttpRequest(
                 new HttpRequestDTO(
                     correlationId: RandomHelper::hex(self::CORRELATION_ID_BYTES),
@@ -163,7 +161,7 @@ class HttpRouter
                     path: $route['path'],
                     query: $queryParams->toArray(),
                     sessionToken: $sessionToken,
-                    originNodeId: $cluster !== null && $cluster->isEnabled() ? $cluster->identity()->nodeId : null,
+                    originNodeId: Hilos::$cluster?->localNodeId(),
                 ),
                 $apiRequestId,
                 hrtime(true),

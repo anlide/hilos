@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\DataExport\DataExportNotificationType;
 use Hilos\Constants\HilosSignalConstants;
@@ -37,10 +38,13 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     private const array EXTRA_TABLES = [
         'hilos_passkey_credential', 'hilos_push_subscription', 'hilos_notification', 'hilos_notification_preference',
     ];
+    /** Cluster env values the cluster case sets, and tearDown removes. */
+    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'];
     private string $directory;
     private ?FsContext $previousFs;
     private ?SignalRouter $previousRouter;
     private ?HilosNotifier $previousNotify;
+    private ?ClusterContext $previousCluster;
 
     /**
      * @throws HilosException When the fixture cannot be mounted
@@ -50,6 +54,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         parent::setUp();
         $this->previousRouter = Hilos::$sr;
         $this->previousNotify = Hilos::$notify;
+        $this->previousCluster = Hilos::$cluster;
         Hilos::$sr = new SignalRouter();
         Hilos::$notify = new HilosNotifier();
         foreach (self::EXTRA_TABLES as $table) {
@@ -73,6 +78,10 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     protected function tearDown(): void
     {
         SourceChangeBus::reset();
+        foreach (self::CLUSTER_ENV as $key) {
+            putenv($key);
+        }
+        Hilos::$cluster = $this->previousCluster;
         Hilos::$sr = $this->previousRouter;
         Hilos::$notify = $this->previousNotify;
         Hilos::$fs = $this->previousFs;
@@ -204,6 +213,36 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         file_put_contents($this->directory . '/expired.zip', 'expired bytes');
         $agent->onSignalHttpRequest(new HttpRequestDTO('request', 'GET', DataExportHttp::DOWNLOAD_PATH, [], 'owner', null), '', '');
         self::assertSame(404, $agent->httpReply?->status, 'An expired copy is not served before the hourly sweep');
+    }
+
+    /**
+     * Without nginx the daemon's own body reaches only a browser this node holds; the journal names
+     * the node and the env value the operator has to set.
+     *
+     * @throws HilosException When seeding or HTTP delivery fails
+     */
+    public function testHttpDownloadToABrowserOnAnotherNodeNeedsNginx(): void
+    {
+        self::seedSession('owner', 7, '2026-01-01 00:00:00', null);
+        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $agent = new DataExportTestAgent();
+        $agent->onStart();
+        $agent->onTick();
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        Hilos::$cluster = new ClusterContext();
+
+        $agent->onSignalHttpRequest(new HttpRequestDTO('request', 'GET', DataExportHttp::DOWNLOAD_PATH, [], 'owner', 'node-b'), '', '');
+        self::assertSame(500, $agent->httpReply?->status);
+        self::assertSame([
+            "Data export is not sent by the daemon: the browser's connection is on node node-b"
+            . " and the daemon's own body does not travel between nodes; set HILOS_DATA_EXPORT_XACCEL_LOCATION",
+        ], $agent->errors);
+
+        $agent->onSignalHttpRequest(new HttpRequestDTO('request', 'GET', DataExportHttp::DOWNLOAD_PATH, [], 'owner', 'node-a'), '', '');
+        self::assertSame(200, $agent->httpReply?->status);
+        self::assertStringStartsWith('PK', $agent->httpReply->body);
     }
 
     /**
@@ -384,11 +423,19 @@ final class DataExportTestAgent extends AbstractDataExportAgent
     public array $published = [];
     public ?Closure $duringExport = null;
     public ?HttpReplyDTO $httpReply = null;
+    /** @var list<string> Error lines */
+    public array $errors = [];
 
     /** @param HttpReplyDTO $reply Captured HTTP response */
     public function replyToHttpRequest(HttpReplyDTO $reply): void
     {
         $this->httpReply = $reply;
+    }
+
+    /** @param string $message Message the export agent logged */
+    protected function logAgentError(string $message): void
+    {
+        $this->errors[] = $message;
     }
 
     /**

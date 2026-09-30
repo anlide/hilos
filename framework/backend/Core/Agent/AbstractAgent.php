@@ -220,10 +220,12 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
     /**
      * @var array<string, list<string>> HTTP addresses this agent answers, as exact paths keyed by
-     *     method. The daemon mounts each of them on its HTTP server; a request to one is parked in
-     *     the master and reaches {@see self::onSignalHttpRequest()}, which answers it through
-     *     {@see self::replyToHttpRequest()} (docs/agents/architecture/agent-http-routes.md). The
-     *     HTTP twin of {@see self::AGENT_COMMANDS}: one method and path, one agent.
+     *     GET, the one method an agent may declare: the request carries neither a body nor headers,
+     *     so the start refuses any other key. The daemon mounts each of them on its HTTP server; a
+     *     request to one is parked in the master and reaches {@see self::onSignalHttpRequest()},
+     *     which answers it through {@see self::replyToHttpRequest()}
+     *     (docs/agents/architecture/agent-http-routes.md). The HTTP twin of
+     *     {@see self::AGENT_COMMANDS}: one method and path, one agent.
      */
     public const array AGENT_HTTP_ROUTES = [];
 

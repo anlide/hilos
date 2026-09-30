@@ -70,6 +70,23 @@ final class DataExportDownloadResponseTest extends TestCase
         self::assertSame('/__exports/copy.zip', $nginx->reply->headers['X-Accel-Redirect']);
     }
 
+    /** Without nginx the daemon's own body reaches only a browser this node holds, whatever the size. */
+    public function testABrowserOnAnotherNodeNeedsNginx(): void
+    {
+        file_put_contents($this->file->getPath(), "PK\x00\xff");
+        $direct = $this->response('', 'node-b', 'node-a');
+        self::assertSame(500, $direct->reply->status);
+        self::assertTrue($direct->onAnotherNode);
+        self::assertFalse($direct->tooLarge);
+        self::assertSame('no-store', $direct->reply->headers['Cache-Control']);
+        $nginx = $this->response('/__exports/', 'node-b', 'node-a');
+        self::assertSame(200, $nginx->reply->status);
+        self::assertSame('/__exports/copy.zip', $nginx->reply->headers['X-Accel-Redirect']);
+        $here = $this->response('', 'node-a', 'node-a');
+        self::assertSame(200, $here->reply->status);
+        self::assertSame("PK\x00\xff", $here->reply->body);
+    }
+
     /** A missing file never produces a cached redirect. */
     public function testMissingFileIsNotFound(): void
     {
@@ -80,13 +97,15 @@ final class DataExportDownloadResponseTest extends TestCase
 
     /**
      * @param string $location Optional nginx location
+     * @param ?string $originNodeId Node holding the browser's connection, null off a cluster
+     * @param ?string $localNodeId Node the export agent runs on, null off a cluster
      * @return DataExportDownloadResponse Response under test
      */
-    private function response(string $location): DataExportDownloadResponse
+    private function response(string $location, ?string $originNodeId = null, ?string $localNodeId = null): DataExportDownloadResponse
     {
         return DataExportDownloadResponse::forFile(
-            new HttpRequestDTO('request', HttpConstants::METHOD_GET, '/_hilos/data-export', [], 'session', null),
-            $this->file, '2026-09-27 12:00:00', $location,
+            new HttpRequestDTO('request', HttpConstants::METHOD_GET, '/_hilos/data-export', [], 'session', $originNodeId),
+            $this->file, '2026-09-27 12:00:00', $location, $localNodeId,
         );
     }
 }

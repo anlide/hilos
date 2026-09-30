@@ -14,14 +14,15 @@ use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 
-/** Delivers an authorized archive through nginx or a bounded direct reply. */
+/** Delivers an authorized archive through nginx or a bounded direct reply to a browser this node holds. */
 final readonly class DataExportDownloadResponse
 {
     /**
      * @param HttpReplyDTO $reply HTTP response
      * @param bool $tooLarge Whether direct transport refused the size and the operator needs nginx
+     * @param bool $onAnotherNode Whether the browser's connection is on another node and the operator needs nginx
      */
-    private function __construct(public HttpReplyDTO $reply, public bool $tooLarge = false)
+    private function __construct(public HttpReplyDTO $reply, public bool $tooLarge = false, public bool $onAnotherNode = false)
     {
     }
 
@@ -30,11 +31,17 @@ final readonly class DataExportDownloadResponse
      * @param FsFile $file Authorized archive on disk
      * @param string $finishedAt Archive readiness date in SQL form
      * @param string $xAccelLocation Internal nginx location, or empty for direct transport
+     * @param ?string $localNodeId This node's id, null off a cluster
      * @return self Private download or refusal
      * @throws FsException When the existing file cannot be measured
      */
-    public static function forFile(HttpRequestDTO $request, FsFile $file, string $finishedAt, string $xAccelLocation): self
-    {
+    public static function forFile(
+        HttpRequestDTO $request,
+        FsFile $file,
+        string $finishedAt,
+        string $xAccelLocation,
+        ?string $localNodeId,
+    ): self {
         if (!$file->exists()) {
             return new self(HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND));
         }
@@ -51,6 +58,9 @@ final readonly class DataExportDownloadResponse
             $headers[HttpConstants::HEADER_X_ACCEL_REDIRECT] = rtrim($xAccelLocation, '/') . '/' . rawurlencode($file->getFilename());
 
             return new self(HttpReplyDTO::response($request, HttpConstants::HTTP_OK, $headers, ''));
+        }
+        if ($request->originNodeId !== null && $request->originNodeId !== $localNodeId) {
+            return new self(HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR), onAnotherNode: true);
         }
         if ($file->size() > FileDownloadResponse::DIRECT_MAX_BYTES) {
             return new self(HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR), tooLarge: true);

@@ -237,9 +237,13 @@ under its id.
 `X-Accel-Redirect` names the stored file under that internal location; nginx
 sends the bytes, and `Range` with them. Empty — the dev stack with no web server
 in front — the daemon sends the bytes in the reply itself, up to 4 MiB
-(`FileDownloadResponse::DIRECT_MAX_BYTES`, set by the 8 MiB queue of the peer
-link and base64's 4/3); a larger file is a 500 whose line names the env. The
-nginx side, beside the location proxying the daemon:
+(`FileDownloadResponse::DIRECT_MAX_BYTES`, which keeps the base64 frame the
+master decodes small); a larger file is a 500 whose line names the env. The
+daemon sends its own body only to a browser whose connection this node holds:
+it never rides the peer link, whose 8 MiB queue two such downloads would
+overflow and drop together with every other frame between the nodes. A browser
+on another node gets a 500 at any size, and the line names its node and the
+env. The nginx side, beside the location proxying the daemon:
 
 ```nginx
 location = /_hilos/file { proxy_pass http://daemon; }

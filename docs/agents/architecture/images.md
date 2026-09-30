@@ -158,10 +158,10 @@ that memory. Implementations of the engine must preserve this distinction.
 
 A copy gets its own MIME type, `inline`, the original filename with the copy's
 extension, ASCII and UTF-8 names, and `nosniff`. It uses the original's public
-or private one-year immutable cache and the same transports: X-Accel or a
-direct body up to 4 MiB. A fallback original keeps its ordinary download
-headers but uses `max-age=3600` without `immutable`, so engine improvements
-reach a browser within an hour.
+or private one-year immutable cache and the same transports: X-Accel, or a
+direct body up to 4 MiB to a browser on the library's own node. A fallback
+original keeps its ordinary download headers but uses `max-age=3600` without
+`immutable`, so engine improvements reach a browser within an hour.
 
 The library's janitor removes copy rows first, then the original row, then
 their files. If a project's foreign key keeps the original, it is marked

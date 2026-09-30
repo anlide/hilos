@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HttpConstants;
@@ -56,6 +57,15 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
     /** Internal nginx location the X-Accel case configures. */
     private const string XACCEL_LOCATION = '/_files_internal';
 
+    /** Node the library runs on in the cluster case. */
+    private const string THIS_NODE = 'node-a';
+
+    /** Node holding the browser's connection when it is not the library's. */
+    private const string OTHER_NODE = 'node-b';
+
+    /** Cluster env values the cluster case sets, and tearDown removes. */
+    private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'];
+
     private ?DbContext $previousDb = null;
 
     private ?FsContext $previousFs = null;
@@ -63,6 +73,8 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
     private ?HilosFiles $previousFiles = null;
 
     private ?SignalRouter $previousRouter = null;
+
+    private ?ClusterContext $previousCluster = null;
 
     private string $filesPath;
 
@@ -86,6 +98,7 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
         $this->previousFs = Hilos::$fs;
         $this->previousFiles = Hilos::$files;
         $this->previousRouter = Hilos::$sr;
+        $this->previousCluster = Hilos::$cluster;
         Hilos::$db = new FileDownloadTestDbContext();
         Hilos::$db->configure();
         $this->filesPath = sys_get_temp_dir() . '/hilos-files-' . bin2hex(random_bytes(6));
@@ -110,12 +123,16 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
         ExecutionContext::clear();
         SourceChangeBus::reset();
         putenv(EnvConstants::HILOS_FILES_XACCEL_LOCATION->name);
+        foreach (self::CLUSTER_ENV as $key) {
+            putenv($key);
+        }
 
         foreach (glob($this->filesPath . '/*') ?: [] as $file) {
             unlink($file);
         }
         rmdir($this->filesPath);
 
+        Hilos::$cluster = $this->previousCluster;
         Hilos::$sr = $this->previousRouter;
         Hilos::$files = $this->previousFiles;
         Hilos::$fs = $this->previousFs;
@@ -219,6 +236,32 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
+     * Without nginx the daemon's own body reaches only a browser this node holds: to one on another
+     * node it would ride the peer link, whose queue two such downloads overflow.
+     *
+     * @throws HilosException When a row cannot be written or the library fails
+     */
+    public function testAFileForABrowserOnAnotherNodeWithoutNginxIsRefusedAndTheJournalNamesTheEnv(): void
+    {
+        $agent = new FileDownloadTestAgent();
+        $fileId = $this->publish(FileVisibility::PUBLIC, 'x');
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=' . self::THIS_NODE);
+        putenv('CLUSTER_NODE_ROLE=master');
+        Hilos::$cluster = new ClusterContext();
+
+        $this->assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $this->ask($agent, (string)$fileId, null, self::OTHER_NODE)->status);
+        $this->assertSame([
+            "File {$fileId} is not sent by the daemon: the browser's connection is on node node-b"
+            . " and the daemon's own body does not travel between nodes; set HILOS_FILES_XACCEL_LOCATION",
+        ], $agent->errors);
+
+        $reply = $this->ask($agent, (string)$fileId, null, self::THIS_NODE);
+        $this->assertSame(HttpConstants::HTTP_OK, $reply->status);
+        $this->assertSame('x', $reply->body);
+    }
+
+    /**
      * The project's extension may only let a viewer in, and it may let in a guest - which is how
      * a project keeps a file visible to everyone who opened the site (HIL-144's question for chat).
      *
@@ -240,10 +283,11 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
      * @param AbstractFilesLibraryAgent $agent Library answering
      * @param ?string $id Value of the id key, or null to send none
      * @param ?string $sessionToken Session token the request presents, or null for none
+     * @param ?string $originNodeId Node holding the browser's connection, null off a cluster
      * @return HttpReplyDTO Reply the library queued
      * @throws HilosException When the library fails
      */
-    private function ask(AbstractFilesLibraryAgent $agent, ?string $id, ?string $sessionToken): HttpReplyDTO
+    private function ask(AbstractFilesLibraryAgent $agent, ?string $id, ?string $sessionToken, ?string $originNodeId = null): HttpReplyDTO
     {
         $request = new HttpRequestDTO(
             str_repeat('c', 32),
@@ -251,7 +295,7 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
             HilosFiles::DOWNLOAD_PATH,
             $id === null ? [] : [HilosFiles::DOWNLOAD_ID_KEY => $id],
             $sessionToken,
-            null,
+            $originNodeId,
         );
 
         $agent->onSignalHttpRequest($request, SignalSource::DAEMON, HttpConstants::METHOD_GET . ' ' . HilosFiles::DOWNLOAD_PATH);

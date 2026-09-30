@@ -111,8 +111,10 @@ A successful response is an attachment named `your-data-YYYY-MM-DD.zip`, dated
 by readiness. `HILOS_DATA_EXPORT_XACCEL_LOCATION` makes nginx send the bytes
 from its internal location. Empty, it sends a direct body up to the files
 subsystem's 4 MiB ceiling; above that it returns 500 and logs which env value to
-configure. The demos configure nginx for test/prod and direct same-origin
-proxies for dev.
+configure. The direct body goes only to a browser this node holds; one on
+another node gets the same 500 and a line naming its node, at any size
+([files-registry.md](files-registry.md), «Serving A File»). The demos configure
+nginx for test/prod and direct same-origin proxies for dev.
 
 `data_export` is a cluster directory ([filesystem.md](filesystem.md)): every
 node and its nginx see it — one machine, or a shared volume the installation

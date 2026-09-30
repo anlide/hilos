@@ -223,7 +223,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
     /**
      * @param HttpRequestDTO $request Request carrying a cookie/header session, never a URL credential
      * @return HttpReplyDTO This session's archive or a refusal without caching
-     * @throws HilosException When a required database source or environment value cannot be read
+     * @throws HilosException When a required database source, environment value or this node's cluster identity cannot be read
      */
     private function serveCopy(HttpRequestDTO $request): HttpReplyDTO
     {
@@ -250,6 +250,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
                 $this->directory[$export->storedName],
                 $export->finishedAt,
                 Hilos::$env[EnvConstants::HILOS_DATA_EXPORT_XACCEL_LOCATION]->string(),
+                Hilos::$cluster?->localNodeId(),
             );
         } catch (FsException $e) {
             $this->logAgentError('Cannot serve the data export: ' . $e->getMessage());
@@ -259,6 +260,12 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         if ($response->tooLarge) {
             $this->logAgentError(
                 'Data export exceeds the direct response ceiling; set ' . EnvConstants::HILOS_DATA_EXPORT_XACCEL_LOCATION->name,
+            );
+        }
+        if ($response->onAnotherNode) {
+            $this->logAgentError(
+                "Data export is not sent by the daemon: the browser's connection is on node {$request->originNodeId}"
+                . " and the daemon's own body does not travel between nodes; set " . EnvConstants::HILOS_DATA_EXPORT_XACCEL_LOCATION->name,
             );
         }
 

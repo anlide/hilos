@@ -24,8 +24,8 @@ use Hilos\Utils\Helpers\HttpHeaderHelper;
  * Built apart from the library agent so the headers and both transports can be tested without
  * a daemon: {@see AbstractFilesLibraryAgent} decides WHETHER to serve, this decides HOW. Behind
  * nginx the body is empty and X-Accel-Redirect names the file under the configured internal
- * location; without it the daemon sends the bytes itself, which is the transport of a dev stack
- * and is capped by {@see self::DIRECT_MAX_BYTES}.
+ * location; without it the daemon sends the bytes itself, which is the transport of a dev stack:
+ * capped by {@see self::DIRECT_MAX_BYTES}, and only to a browser whose connection this node holds.
  *
  * What it answers is read off {@see self::$reply}, and {@see self::$outcome} names what went wrong
  * when it is a refusal, so the agent can say it in its own journal.
@@ -35,10 +35,10 @@ final readonly class FileDownloadResponse
     /**
      * Largest file the daemon sends in the body of its own response, in bytes.
      *
-     * The body rides the reply frame base64-encoded, 4/3 of its size, through the master - and in
-     * a cluster over the peer link, whose writer is dropped above an 8 MiB queue (PeerLink's
-     * MAX_WRITE_BUFFER_BYTES). 4 MiB keeps the frame well under that with room for the rest of
-     * the queue, and keeps the frame the master decodes small. Anything larger is nginx's to send.
+     * The body rides the reply frame base64-encoded, 4/3 of its size, through the master of this
+     * node and never over the peer link: a browser on another node gets
+     * {@see FileDownloadOutcome::CONNECTION_ON_ANOTHER_NODE} instead. 4 MiB keeps the frame the
+     * master decodes small. Anything larger is nginx's to send.
      */
     public const int DIRECT_MAX_BYTES = 4194304;
 
@@ -80,6 +80,7 @@ final readonly class FileDownloadResponse
      * @param FilesStorageInterface $storage Where the file is kept
      * @param string $xAccelLocation Internal nginx location of the files directory, empty when the
      *     daemon sends the bytes itself ({@see EnvConstants::HILOS_FILES_XACCEL_LOCATION})
+     * @param ?string $localNodeId This node's id, null off a cluster
      * @return self Response, or the refusal that stands in for it
      * @throws FsException When the storage itself cannot be reached
      * @throws HilosException When the file row refuses a field it is read for
@@ -89,10 +90,11 @@ final readonly class FileDownloadResponse
         File $file,
         FilesStorageInterface $storage,
         string $xAccelLocation,
+        ?string $localNodeId,
     ): self {
         return self::build($request, $file->storedName, $file->mimeType, $file->filename,
             $file->visibility === FileVisibility::PUBLIC ? self::CACHE_CONTROL_PUBLIC : self::CACHE_CONTROL_PRIVATE,
-            $storage, $xAccelLocation);
+            $storage, $xAccelLocation, $localNodeId);
     }
 
     /**
@@ -101,6 +103,7 @@ final readonly class FileDownloadResponse
      * @param FileVariant $variant Registered copy to serve
      * @param FilesStorageInterface $storage Where the copy is kept
      * @param string $xAccelLocation Internal nginx location, empty for a direct reply
+     * @param ?string $localNodeId This node's id, null off a cluster
      * @return self Copy response or its storage refusal
      * @throws FsException When the storage cannot be reached
      */
@@ -110,13 +113,14 @@ final readonly class FileDownloadResponse
         FileVariant $variant,
         FilesStorageInterface $storage,
         string $xAccelLocation,
+        ?string $localNodeId,
     ): self {
         $basename = pathinfo($file->filename, PATHINFO_FILENAME);
 
         return self::build($request, $variant->storedName, $variant->mimeType,
             ($basename === '' ? 'file' : $basename) . FsFile::extensionForMime($variant->mimeType),
             $file->visibility === FileVisibility::PUBLIC ? self::CACHE_CONTROL_PUBLIC : self::CACHE_CONTROL_PRIVATE,
-            $storage, $xAccelLocation);
+            $storage, $xAccelLocation, $localNodeId);
     }
 
     /**
@@ -126,6 +130,7 @@ final readonly class FileDownloadResponse
      * @param File $file Original to send in place of its unavailable variant
      * @param FilesStorageInterface $storage Where the original is kept
      * @param string $xAccelLocation Internal nginx location, empty for a direct reply
+     * @param ?string $localNodeId This node's id, null off a cluster
      * @return self Original response with a short cache lifetime, or its storage refusal
      * @throws FsException When the storage cannot be reached
      */
@@ -134,10 +139,11 @@ final readonly class FileDownloadResponse
         File $file,
         FilesStorageInterface $storage,
         string $xAccelLocation,
+        ?string $localNodeId,
     ): self {
         return self::build($request, $file->storedName, $file->mimeType, $file->filename,
             $file->visibility === FileVisibility::PUBLIC ? self::CACHE_CONTROL_FALLBACK_PUBLIC : self::CACHE_CONTROL_FALLBACK_PRIVATE,
-            $storage, $xAccelLocation);
+            $storage, $xAccelLocation, $localNodeId);
     }
 
     /**
@@ -148,6 +154,7 @@ final readonly class FileDownloadResponse
      * @param string $cacheControl Cache policy selected by the response kind
      * @param FilesStorageInterface $storage Where the bytes are kept
      * @param string $xAccelLocation Internal nginx location, empty for direct transport
+     * @param ?string $localNodeId This node's id, null off a cluster
      * @return self Served response or the precise storage refusal
      * @throws FsException When the storage cannot be reached
      */
@@ -159,6 +166,7 @@ final readonly class FileDownloadResponse
         string $cacheControl,
         FilesStorageInterface $storage,
         string $xAccelLocation,
+        ?string $localNodeId,
     ): self {
         $size = $storage->size($storedName);
         if ($size === null) {
@@ -187,6 +195,14 @@ final readonly class FileDownloadResponse
             return new self(
                 HttpReplyDTO::response($request, HttpConstants::HTTP_OK, $headers, ''),
                 FileDownloadOutcome::SERVED,
+                $size,
+            );
+        }
+
+        if ($request->originNodeId !== null && $request->originNodeId !== $localNodeId) {
+            return new self(
+                HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR),
+                FileDownloadOutcome::CONNECTION_ON_ANOTHER_NODE,
                 $size,
             );
         }

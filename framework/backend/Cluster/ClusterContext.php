@@ -168,6 +168,20 @@ final class ClusterContext
     }
 
     /**
+     * Returns this node's id: the origin HttpRouter gives a request it parks for an agent, and the
+     * node an agent answering that request compares it with.
+     *
+     * @return ?string This node's id, null off a cluster
+     * @throws EnvException When the cluster-enabled flag value is invalid or a cluster env value cannot be read
+     * @throws ClusterConfigurationException When enabled but node config is missing or invalid
+     * @throws ClusterDisabledException When the cluster reports itself on and then refuses its identity
+     */
+    public function localNodeId(): ?string
+    {
+        return $this->isEnabled() ? $this->identity()->nodeId : null;
+    }
+
+    /**
      * Returns the master-owned live membership registry, seeded with the local node.
      *
      * The registry is the single source of truth for cluster membership and lives

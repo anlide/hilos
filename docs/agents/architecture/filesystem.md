@@ -163,7 +163,9 @@ X-Accel alias still assume a disk.
 ## What Is Not Here
 
 - Carrying a file between nodes — declined (HIL-303, 27.09.2026).
-- The body sent through the nodes when no nginx stands in front — HIL-1172.
+- The daemon's own body sent through the nodes: without nginx in front, a
+  browser on another node gets a 500 whose line names the env to set
+  ([files-registry.md](files-registry.md), "Serving A File").
 - Handing an upload between nodes, live on a stand — when the first cluster
   demo declares `UPLOADS` (no leaf).
 - Chat attachments onto the registry — HIL-144.

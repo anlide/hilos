@@ -81,6 +81,23 @@ final class ClusterContextTest extends TestCase
         $this->assertSame('node-a', new ClusterContext()->identity()->nodeId);
     }
 
+    public function testLocalNodeIdIsNullWhileTheClusterIsDisabled(): void
+    {
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+
+        $this->assertNull(new ClusterContext()->localNodeId());
+    }
+
+    public function testLocalNodeIdIsThisNodesIdentity(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+
+        $this->assertSame('node-a', new ClusterContext()->localNodeId());
+    }
+
     public function testIdentityIsMemoized(): void
     {
         putenv('CLUSTER_ENABLED=true');

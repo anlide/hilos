@@ -221,7 +221,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      * @param HttpRequestDTO $data Request the master parked for this address
      * @param string $source Signal source (unused)
      * @param string $name Signal name, the method and the path (unused)
-     * @throws HilosException When the row, the session or the environment cannot be read
+     * @throws HilosException When the row, the session, the environment or this node's cluster identity cannot be read
      * @throws InvalidArgumentException When the reply cannot be named
      */
     public function onSignalHttpRequest(HttpRequestDTO $data, string $source, string $name): void
@@ -259,7 +259,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      *
      * @param HttpRequestDTO $request Request for a file
      * @return ?HttpReplyDTO The file or refusal, or null while the request travels with a rendering job
-     * @throws HilosException When the row, the session or the environment cannot be read
+     * @throws HilosException When the row, the session, the environment or this node's cluster identity cannot be read
      */
     private function serveFile(HttpRequestDTO $request): ?HttpReplyDTO
     {
@@ -309,6 +309,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
                 $file,
                 $this->storage(),
                 Hilos::$env[EnvConstants::HILOS_FILES_XACCEL_LOCATION]->string(),
+                Hilos::$cluster?->localNodeId(),
             );
         } catch (FsException $e) {
             $this->logAgentError("File {$fileId} cannot be served: the storage is not reachable - {$e->getMessage()}");
@@ -322,6 +323,10 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             FileDownloadOutcome::TOO_LARGE_TO_SEND_DIRECTLY => $this->logAgentError(
                 "File {$fileId} is {$response->size} bytes, above the " . FileDownloadResponse::DIRECT_MAX_BYTES
                 . ' the daemon serves itself; set ' . EnvConstants::HILOS_FILES_XACCEL_LOCATION->name,
+            ),
+            FileDownloadOutcome::CONNECTION_ON_ANOTHER_NODE => $this->logAgentError(
+                "File {$fileId} is not sent by the daemon: the browser's connection is on node {$request->originNodeId}"
+                . " and the daemon's own body does not travel between nodes; set " . EnvConstants::HILOS_FILES_XACCEL_LOCATION->name,
             ),
             FileDownloadOutcome::UNREADABLE => $this->logAgentError("File {$fileId} is on disk and could not be read"),
         };
@@ -465,13 +470,13 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      * @param File $file Original row supplying the filename and visibility
      * @param FileVariant $copy Registered copy
      * @return HttpReplyDTO Copy or storage refusal
-     * @throws HilosException When the environment cannot be read
+     * @throws HilosException When the environment or this node's cluster identity cannot be read
      */
     private function respondVariant(HttpRequestDTO $request, File $file, FileVariant $copy): HttpReplyDTO
     {
         try {
             $response = FileDownloadResponse::forVariant($request, $file, $copy, $this->storage(),
-                Hilos::$env[EnvConstants::HILOS_FILES_XACCEL_LOCATION]->string());
+                Hilos::$env[EnvConstants::HILOS_FILES_XACCEL_LOCATION]->string(), Hilos::$cluster?->localNodeId());
         } catch (FsException $e) {
             $this->logAgentError("File {$file->id} variant {$copy->variant} cannot be served: " . $e->getMessage());
             return HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR);
@@ -484,14 +489,14 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      * @param HttpRequestDTO $request Authorized request naming the unavailable variant
      * @param File $file Original to serve with a short cache lifetime
      * @return HttpReplyDTO Original or storage refusal
-     * @throws HilosException When the environment cannot be read
+     * @throws HilosException When the environment or this node's cluster identity cannot be read
      */
     private function respondFallback(HttpRequestDTO $request, File $file): HttpReplyDTO
     {
         $variant = $request->query[HilosFiles::DOWNLOAD_VARIANT_KEY];
         try {
             $response = FileDownloadResponse::forFallback($request, $file, $this->storage(),
-                Hilos::$env[EnvConstants::HILOS_FILES_XACCEL_LOCATION]->string());
+                Hilos::$env[EnvConstants::HILOS_FILES_XACCEL_LOCATION]->string(), Hilos::$cluster?->localNodeId());
         } catch (FsException $e) {
             $this->logAgentError("File {$file->id} variant {$variant} fallback cannot be served: " . $e->getMessage());
             return HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR);
@@ -514,6 +519,11 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             FileDownloadOutcome::TOO_LARGE_TO_SEND_DIRECTLY => $this->logAgentError(
                 "File {$fileId} variant {$variant} is {$response->size} bytes, above the " . FileDownloadResponse::DIRECT_MAX_BYTES
                 . ' the daemon serves itself; set ' . EnvConstants::HILOS_FILES_XACCEL_LOCATION->name,
+            ),
+            FileDownloadOutcome::CONNECTION_ON_ANOTHER_NODE => $this->logAgentError(
+                "File {$fileId} variant {$variant} is not sent by the daemon: the browser's connection is on node"
+                . " {$response->reply->originNodeId} and the daemon's own body does not travel between nodes; set "
+                . EnvConstants::HILOS_FILES_XACCEL_LOCATION->name,
             ),
             FileDownloadOutcome::UNREADABLE => $this->logAgentError("File {$fileId} variant {$variant} is on disk and could not be read"),
         };

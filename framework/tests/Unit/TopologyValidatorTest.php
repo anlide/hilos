@@ -360,13 +360,27 @@ final class TopologyValidatorTest extends TestCase
         TopologyUnknownCommandConfigKeyHilos::validateTopology();
     }
 
-    public function testAgentHttpRoutesMustBeKeyedByAMethodTheServerRoutes(): void
+    /**
+     * Each of the four keys is refused on its own - the three methods with a body the HTTP server
+     * routes and one it does not know - because a request an agent answers carries neither.
+     */
+    public function testAgentHttpRoutesMustBeKeyedByGet(): void
     {
-        $this->expectException(InvalidTopologyException::class);
-        $this->expectExceptionMessage('AGENTS[invalid_agent_http_route_agent] class');
-        $this->expectExceptionMessage('AGENT_HTTP_ROUTES[FETCH] must be keyed by one of GET, POST, PUT, DELETE');
-
-        TopologyInvalidAgentHttpRouteHilos::validateTopology();
+        try {
+            TopologyInvalidAgentHttpRouteHilos::validateTopology();
+            $this->fail('An agent HTTP address not keyed by GET must refuse the topology');
+        } catch (InvalidTopologyException $e) {
+            $message = $e->getMessage();
+            $this->assertSame(4, substr_count(
+                $message,
+                'must be keyed by GET: a request an agent answers carries neither a body nor headers',
+            ));
+            $this->assertStringContainsString('AGENTS[invalid_agent_http_route_agent] class', $message);
+            $this->assertStringContainsString('AGENT_HTTP_ROUTES[POST]', $message);
+            $this->assertStringContainsString('AGENT_HTTP_ROUTES[PUT]', $message);
+            $this->assertStringContainsString('AGENT_HTTP_ROUTES[DELETE]', $message);
+            $this->assertStringContainsString('AGENT_HTTP_ROUTES[FETCH]', $message);
+        }
     }
 
     /**
@@ -1911,6 +1925,9 @@ final class TopologyInvalidAgentHttpRouteAgent extends TopologyTestAgent
     public const string AGENT_TYPE = 'invalid_agent_http_route_agent';
 
     public const array AGENT_HTTP_ROUTES = [
+        HttpConstants::METHOD_POST => ['/_test/file'],
+        HttpConstants::METHOD_PUT => ['/_test/file'],
+        HttpConstants::METHOD_DELETE => ['/_test/file'],
         'FETCH' => ['/_test/file'],
     ];
 }

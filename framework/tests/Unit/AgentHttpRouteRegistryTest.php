@@ -22,12 +22,12 @@ final class AgentHttpRouteRegistryTest extends TestCase
             HttpConstants::METHOD_GET => [
                 '/_test/download' => 'download_agent',
                 '/_test/preview' => 'download_agent',
-                '/_test/status' => 'webhook_agent',
+                '/_test/status' => 'status_agent',
+                '/_test/health' => 'status_agent',
             ],
-            HttpConstants::METHOD_POST => ['/_test/hook' => 'webhook_agent'],
         ], AgentHttpRouteRegistry::routes([
             'download_agent' => [AgentRegistryKey::WORKER => HttpDownloadRouteAgent::class],
-            'webhook_agent' => [AgentRegistryKey::WORKER => HttpWebhookRouteAgent::class],
+            'status_agent' => [AgentRegistryKey::WORKER => HttpStatusRouteAgent::class],
             'silent_agent' => [AgentRegistryKey::WORKER => HttpSilentRouteAgent::class],
         ]));
     }
@@ -52,14 +52,11 @@ final class HttpDownloadRouteAgent extends AbstractAgent
     }
 }
 
-final class HttpWebhookRouteAgent extends AbstractAgent
+final class HttpStatusRouteAgent extends AbstractAgent
 {
-    public const string AGENT_TYPE = 'webhook_agent';
+    public const string AGENT_TYPE = 'status_agent';
 
-    public const array AGENT_HTTP_ROUTES = [
-        HttpConstants::METHOD_POST => ['/_test/hook'],
-        HttpConstants::METHOD_GET => ['/_test/status'],
-    ];
+    public const array AGENT_HTTP_ROUTES = [HttpConstants::METHOD_GET => ['/_test/status', '/_test/health']];
 
     public function onStop(): void
     {
