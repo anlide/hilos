@@ -167,6 +167,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
             type="button"
             class="btn btn-secondary"
             [disabled]="circleAdd.busy()"
+            data-id="hilos-maintenance-circle-add-cancel"
             (click)="requestClose()"
           >
             Cancel
@@ -214,6 +215,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
             type="button"
             class="btn btn-secondary"
             [disabled]="circleRemove.busy()"
+            data-id="hilos-maintenance-circle-remove-cancel"
             (click)="requestClose()"
           >
             Cancel

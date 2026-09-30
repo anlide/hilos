@@ -409,11 +409,13 @@ nobody is asked*).
   sections: settings and log modes (not in the code yet — HIL-1262); people —
   impersonation, rights, block, deletion, merge, rename
   (not in the code yet — HIL-1263); backup (not in the code yet — HIL-1264);
-  maintenance (not in the code yet — HIL-1265); communications
-  (not in the code yet — HIL-1266); security — OAuth, sign-in methods,
-  two-factor, step-up (not in the code yet — HIL-1267); log takeouts
+  communications (not in the code yet — HIL-1266); security — OAuth, sign-in
+  methods, two-factor, step-up (not in the code yet — HIL-1267); log takeouts
   (not in the code yet — HIL-1268); Legal (not in the code yet — HIL-1269);
-  the chat demo's own admin (not in the code yet — HIL-1270).
+  the chat demo's own admin (not in the code yet — HIL-1270). Maintenance has
+  nothing to move: the confirm buttons of its two dialogs — naming a verifier
+  and taking one out — are `LoadingButton`s, and its two raw buttons only open
+  those dialogs (HIL-1265).
 - The controls exist in all three frontends with full parity, as every
   primitive does
   ([../frontend/multiframework-core.md](../frontend/multiframework-core.md));
@@ -460,8 +462,12 @@ the scenarios that expect a non-admin to be refused run with it off. In the chat
 e2e the lever is `setAdminViewMode()`
 (`demo/chat/tests/e2e/helpers/adminViewMode.ts`); it acts on the whole node, so a
 spec that turns it on turns it off in its `afterEach`, and a tab opened before the
-flip is opened again to learn it. How the viewer's e2e is
-laid out across the three frontends is HIL-1273's
+flip is opened again to learn it. The operations sections carry their viewer cases
+in binance-btc-tracker
+([../frontend/testing-strategy.md](../frontend/testing-strategy.md), "Which demo carries a spec"),
+where the lever is the same `setAdminViewMode()` of
+`demo/binance-btc-tracker/tests/e2e/helpers/adminViewMode.ts`. How the viewer's
+e2e is laid out across the three frontends is HIL-1273's
 (not in the code yet — HIL-1273).
 
 ## What The View Mode Does Not Do

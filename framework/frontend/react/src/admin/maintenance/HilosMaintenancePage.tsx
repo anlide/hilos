@@ -216,6 +216,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
               type="button"
               className="btn btn-secondary"
               disabled={circleAdd.busy}
+              data-id="hilos-maintenance-circle-add-cancel"
               onClick={requestClose}
             >
               Cancel
@@ -272,6 +273,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
               type="button"
               className="btn btn-secondary"
               disabled={circleRemove.busy}
+              data-id="hilos-maintenance-circle-remove-cancel"
               onClick={requestClose}
             >
               Cancel

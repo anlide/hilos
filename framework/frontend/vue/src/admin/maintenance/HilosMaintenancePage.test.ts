@@ -4,17 +4,22 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionError,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
   ActionHandle,
   ActionLifecycle,
   ActionResult,
+  HilosConnection,
   HilosMaintenanceContext,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosMaintenancePage from './HilosMaintenancePage.vue'
@@ -593,5 +598,142 @@ describe('HilosMaintenancePage', () => {
     expect(document.body.textContent).not.toContain(
       'Nobody has proven this address',
     )
+  })
+})
+
+describe('HilosMaintenancePage and the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  /**
+   * Bind the session scope and the admin access the way bootHilos does, over
+   * handshakes this harness emits.
+   */
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      /**
+       * One handshake: who is behind the session, if anybody, and the node's
+       * admin view mode, both as the backend stamps them (HIL-1253).
+       *
+       * @param user The person behind the session, or null for a guest.
+       * @param viewMode The node's admin view mode.
+       */
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it('a viewer opens the add dialog, may type an address and has nothing to send it with', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { actions, dispatched } = makeActions()
+    const { context } = seededContext([], actions)
+    const wrapper = await mountPage(context)
+
+    const addButton = wrapper.get<HTMLButtonElement>(
+      '[data-id="hilos-maintenance-circle-add"]',
+    )
+    expect(addButton.element.disabled).toBe(false)
+
+    await openAndType(wrapper, 'someone@example.test')
+    expect(addField()?.disabled).toBe(false)
+    expect(addField()?.value).toBe('someone@example.test')
+    expect(addConfirm().disabled).toBe(true)
+    expect(addConfirm().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    addConfirm().click()
+    await settled()
+    expect(dispatched).toHaveLength(0)
+
+    const cancelButton = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-maintenance-circle-add-cancel"]',
+    )
+    expect(cancelButton).not.toBeNull()
+    expect(cancelButton?.disabled).toBe(false)
+    cancelButton?.click()
+    await settled()
+    expect(addField()).toBeNull()
+  })
+
+  it('a viewer opens the remove dialog over a row and has nothing to send from it', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { actions, dispatched } = makeActions()
+    const { context, focus } = seededContext([ANN], actions)
+    await mountPage(context)
+
+    const trashButton = trash('ann@example.test')
+    expect(trashButton.disabled).toBe(false)
+    trashButton.click()
+    await settled()
+
+    expect(focus).toEqual(['1'])
+    expect(removeConfirm()?.disabled).toBe(true)
+    expect(removeConfirm()?.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    removeConfirm()?.click()
+    await settled()
+    expect(dispatched).toHaveLength(0)
+
+    const cancelButton = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-maintenance-circle-remove-cancel"]',
+    )
+    expect(cancelButton).not.toBeNull()
+    expect(cancelButton?.disabled).toBe(false)
+    cancelButton?.click()
+    await settled()
+
+    expect(removeConfirm()).toBeNull()
+    expect(focus).toEqual(['1', ''])
+  })
+
+  it('an admin on a node in the mode names a verifier as today', async () => {
+    const { handshake } = bindSession()
+    handshake({ id: 1, admin: true }, true)
+    const { actions } = makeActions()
+    const { context } = seededContext([], actions)
+    const wrapper = await mountPage(context)
+
+    await openAndType(wrapper, 'someone@example.test')
+    expect(addConfirm().disabled).toBe(false)
+    expect(addConfirm().getAttribute('aria-describedby')).toBeNull()
   })
 })
