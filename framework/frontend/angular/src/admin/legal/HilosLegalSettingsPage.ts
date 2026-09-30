@@ -178,15 +178,6 @@ let inputSequence = 0
           </form>
         }
         <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            [disabled]="action.busy()"
-            data-id="legal-setting-cancel"
-            (click)="requestClose()"
-          >
-            Cancel
-          </button>
           <div
             hilosConflictActions
             [conflict]="state().conflict"
@@ -196,6 +187,17 @@ let inputSequence = 0
             (acceptMine)="editor().keepMine()"
             (acceptTheirs)="editor().takeTheirs()"
           >
+            <ng-template #cancelButton>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                [disabled]="action.busy()"
+                data-id="legal-setting-cancel"
+                (click)="requestClose()"
+              >
+                Cancel
+              </button>
+            </ng-template>
             <ng-template #saveButton let-disabled="disabled" let-onSave="onSave"
               ><button
                 hilosLoadingButton

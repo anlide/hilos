@@ -28,7 +28,7 @@ export class Watched {
     take = async (what, measure) => new Watched(what, await measure(), measure)
   }
 
-  /** Only this module's three measurement functions can take a bookmark. */
+  /** Only this module's measurement functions can take a bookmark. */
   private constructor(
     what: string,
     taken: number,
@@ -55,6 +55,13 @@ export async function watchTop(element: Locator): Promise<Watched> {
   const what = `${element.toString()} top`
 
   return take(what, () => measureBox(element, 'y', what))
+}
+
+/** Take a bookmark of the element's left edge in the viewport. */
+export async function watchLeft(element: Locator): Promise<Watched> {
+  const what = `${element.toString()} left`
+
+  return take(what, () => measureBox(element, 'x', what))
 }
 
 /**
@@ -214,7 +221,7 @@ export async function shareOneRow(...elements: Locator[]): Promise<void> {
 /** Read a box field, refusing an absent box on both the first and later reads. */
 async function measureBox(
   element: Locator,
-  field: 'y' | 'height',
+  field: 'x' | 'y' | 'height',
   what: string,
 ): Promise<number> {
   return (await readBox(element, what))[field]

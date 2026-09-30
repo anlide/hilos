@@ -25,6 +25,7 @@ export {
   shareOneRow,
   watchFirstRowTop,
   watchHeight,
+  watchLeft,
   watchTop,
   watchTopWithin,
   Watched,

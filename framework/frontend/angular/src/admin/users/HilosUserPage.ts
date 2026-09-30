@@ -363,15 +363,6 @@ function noticeText(live: RowEditState<UserEditFields>): string {
           />
         </form>
         <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            [disabled]="loading()"
-            data-id="hilos-user-cancel"
-            (click)="requestClose()"
-          >
-            Cancel
-          </button>
           <div
             hilosConflictActions
             [conflict]="live().conflict"
@@ -381,6 +372,17 @@ function noticeText(live: RowEditState<UserEditFields>): string {
             (acceptMine)="acceptMine()"
             (acceptTheirs)="acceptTheirs()"
           >
+            <ng-template #cancelButton>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                [disabled]="loading()"
+                data-id="hilos-user-cancel"
+                (click)="requestClose()"
+              >
+                Cancel
+              </button>
+            </ng-template>
             <ng-template
               #saveButton
               let-disabled="disabled"

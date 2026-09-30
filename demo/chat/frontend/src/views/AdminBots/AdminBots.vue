@@ -566,14 +566,6 @@ async function submitDelete(): Promise<void> {
           />
         </form>
         <template #actions="{ requestClose }">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            :disabled="formBusy"
-            @click="requestClose"
-          >
-            Cancel
-          </button>
           <ConflictActions
             :conflict="formConflict"
             :disable-save="saveDisabled"
@@ -582,6 +574,16 @@ async function submitDelete(): Promise<void> {
             @accept-mine="acceptMine"
             @accept-theirs="acceptTheirs"
           >
+            <template #cancel-button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                :disabled="formBusy"
+                @click="requestClose"
+              >
+                Cancel
+              </button>
+            </template>
             <template #save-button="{ disabled, onSave }">
               <LoadingButton
                 class="btn-primary"

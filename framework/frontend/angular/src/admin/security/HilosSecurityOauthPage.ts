@@ -245,14 +245,6 @@ function noticeText(
           />
         </form>
         <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            [disabled]="edit.busy()"
-            (click)="requestClose()"
-          >
-            Cancel
-          </button>
           <div
             hilosConflictActions
             [conflict]="live().conflict"
@@ -262,6 +254,16 @@ function noticeText(
             (acceptMine)="acceptMine()"
             (acceptTheirs)="acceptTheirs()"
           >
+            <ng-template #cancelButton>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                [disabled]="edit.busy()"
+                (click)="requestClose()"
+              >
+                Cancel
+              </button>
+            </ng-template>
             <ng-template
               #saveButton
               let-disabled="disabled"

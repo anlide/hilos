@@ -262,15 +262,6 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
           </form>
         }
         <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            data-id="hilos-settings-edit-cancel"
-            [disabled]="edit.busy()"
-            (click)="requestClose()"
-          >
-            Cancel
-          </button>
           <div
             hilosConflictActions
             [conflict]="live().conflict"
@@ -280,6 +271,17 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
             (acceptMine)="acceptMine()"
             (acceptTheirs)="acceptTheirs()"
           >
+            <ng-template #cancelButton>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-id="hilos-settings-edit-cancel"
+                [disabled]="edit.busy()"
+                (click)="requestClose()"
+              >
+                Cancel
+              </button>
+            </ng-template>
             <ng-template
               #saveButton
               let-disabled="disabled"

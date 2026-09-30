@@ -10,6 +10,19 @@ const IN_VIEW_MODE = {
   global: { provide: { [hilosAdminViewModeKey as symbol]: ref(true) } },
 }
 
+/** The window's Cancel, handed in through the slot the way a page does. */
+const CANCEL_SLOT = {
+  'cancel-button':
+    '<button type="button" data-id="host-cancel">Cancel</button>',
+}
+
+/** Document order of every data-id under the mounted root. */
+function dataIds(root: Element): string[] {
+  return [...root.querySelectorAll('[data-id]')].map(
+    (el) => el.getAttribute('data-id') ?? '',
+  )
+}
+
 describe('ConflictActions', () => {
   it('shows only save without a conflict', () => {
     const wrapper = mount(ConflictActions)
@@ -66,6 +79,67 @@ describe('ConflictActions', () => {
       expect(btn.classes()).not.toContain('btn-sm')
       expect(btn.classes()).toContain('btn')
     }
+  })
+
+  it('stands the choices, then the handed Cancel, then Save', () => {
+    const wrapper = mount(ConflictActions, {
+      props: { conflict: true },
+      slots: CANCEL_SLOT,
+    })
+
+    expect(dataIds(wrapper.element)).toEqual([
+      'conflict-choices',
+      'conflict-accept-mine',
+      'conflict-accept-theirs',
+      'host-cancel',
+      'conflict-save',
+    ])
+  })
+
+  it("holds the choices' room with an idle twin while no conflict stands", () => {
+    const wrapper = mount(ConflictActions, {
+      props: { conflict: false, mergeable: true },
+      slots: CANCEL_SLOT,
+    })
+    const twin = wrapper.get('[data-id="conflict-choices-idle"]')
+
+    expect(twin.classes()).toContain('hilos-conflict-choices')
+    expect(twin.classes()).toContain('invisible')
+    expect(twin.attributes('aria-hidden')).toBe('true')
+    expect(twin.findAll('button')).toHaveLength(0)
+    expect(twin.findAll('span').map((span) => span.text())).toEqual([
+      'Keep mine',
+      'Take theirs',
+      'Merge',
+    ])
+    expect(wrapper.find('[data-id="conflict-choices"]').exists()).toBe(false)
+    expect(dataIds(wrapper.element)).toEqual([
+      'conflict-choices-idle',
+      'host-cancel',
+      'conflict-save',
+    ])
+  })
+
+  it('swaps the twin for the choices with the same classes and labels', async () => {
+    const wrapper = mount(ConflictActions, {
+      props: { conflict: false, mergeable: true },
+    })
+    const read = (id: string): { className: string; text: string }[] =>
+      [...wrapper.get(`[data-id="${id}"]`).element.children].map((node) => ({
+        className: (node as HTMLElement).className,
+        text: (node.textContent ?? '').trim(),
+      }))
+
+    const twin = read('conflict-choices-idle')
+    await wrapper.setProps({ conflict: true })
+    expect(wrapper.find('[data-id="conflict-choices-idle"]').exists()).toBe(
+      false,
+    )
+    expect(read('conflict-choices')).toEqual(twin)
+
+    await wrapper.setProps({ conflict: false })
+    expect(wrapper.find('[data-id="conflict-choices"]').exists()).toBe(false)
+    expect(read('conflict-choices-idle')).toEqual(twin)
   })
 })
 

@@ -254,6 +254,24 @@ body.modal-open .toast-container > * {
   }
 }
 
+// WHY: the choices of a conflict come and go while the person's hand is on
+// Cancel and Save, and below md the footer's buttons share one row equally —
+// choices standing in that row would narrow both and move them. Bootstrap has
+// no utility that sends one item of a wrapping row to a line of its own.
+// WHAT: the conflict choices of ConflictActions, and their invisible twin that
+// holds the same room while no conflict stands — below md a row of their own
+// above Cancel and Save, shared equally (mockups/components/modal, the
+// conflict node; HIL-1148).
+.modal-footer > .hilos-button-group > .hilos-conflict-choices {
+  @media (max-width: 767.98px) {
+    flex: 1 1 100%;
+
+    > * {
+      flex: 1 1 0;
+    }
+  }
+}
+
 // WHY: Bootstrap's progress bar takes its width from an inline style, and a width
 // computed from the server's own two numbers has no class to be expressed as — the
 // custom property is the one legal channel (styling-rules.md, "A computed value").

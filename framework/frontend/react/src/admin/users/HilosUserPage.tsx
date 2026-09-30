@@ -771,36 +771,36 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
         onClose={closeEdit}
         header={<ConflictHeader title={editTitle} conflict={live.conflict} />}
         actions={({ requestClose }) => (
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={loading}
-              data-id="hilos-user-cancel"
-              onClick={requestClose}
-            >
-              Cancel
-            </button>
-            <ConflictActions
-              conflict={live.conflict}
-              disableSave={!valid || !dirty || loading || live.gone}
-              saveLabel={saveLabel}
-              onSave={submit}
-              onAcceptMine={acceptMine}
-              onAcceptTheirs={acceptTheirs}
-              saveButton={({ disabled, onSave }) => (
-                <LoadingButton
-                  className="btn-primary"
-                  loading={loading}
-                  disabled={disabled}
-                  data-id="hilos-user-save"
-                  onClick={onSave}
-                >
-                  {saveLabel}
-                </LoadingButton>
-              )}
-            />
-          </>
+          <ConflictActions
+            conflict={live.conflict}
+            disableSave={!valid || !dirty || loading || live.gone}
+            saveLabel={saveLabel}
+            onSave={submit}
+            onAcceptMine={acceptMine}
+            onAcceptTheirs={acceptTheirs}
+            cancelButton={
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={loading}
+                data-id="hilos-user-cancel"
+                onClick={requestClose}
+              >
+                Cancel
+              </button>
+            }
+            saveButton={({ disabled, onSave }) => (
+              <LoadingButton
+                className="btn-primary"
+                loading={loading}
+                disabled={disabled}
+                data-id="hilos-user-save"
+                onClick={onSave}
+              >
+                {saveLabel}
+              </LoadingButton>
+            )}
+          />
         )}
       >
         {/* The refusal is announced from here and not from the row that shows

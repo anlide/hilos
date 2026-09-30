@@ -104,4 +104,79 @@ describe('ConflictActions', () => {
       expect(btn?.classList.contains('btn')).toBe(true)
     }
   })
+
+  it('stands the choices, then the handed Cancel, then Save', () => {
+    const { container } = render(
+      <ConflictActions
+        conflict
+        cancelButton={
+          <button type="button" data-id="host-cancel">
+            Cancel
+          </button>
+        }
+      />,
+    )
+    const ids = [...container.querySelectorAll('[data-id]')].map((el) =>
+      el.getAttribute('data-id'),
+    )
+    expect(ids).toEqual([
+      'conflict-choices',
+      'conflict-accept-mine',
+      'conflict-accept-theirs',
+      'host-cancel',
+      'conflict-save',
+    ])
+  })
+
+  it("holds the choices' room with an idle twin while no conflict stands", () => {
+    const { container } = render(
+      <ConflictActions
+        mergeable
+        cancelButton={
+          <button type="button" data-id="host-cancel">
+            Cancel
+          </button>
+        }
+      />,
+    )
+    const twin = container.querySelector(
+      '[data-id="conflict-choices-idle"]',
+    ) as HTMLElement
+    expect(twin.classList.contains('hilos-conflict-choices')).toBe(true)
+    expect(twin.classList.contains('invisible')).toBe(true)
+    expect(twin.getAttribute('aria-hidden')).toBe('true')
+    expect(twin.querySelectorAll('button')).toHaveLength(0)
+    expect(
+      [...twin.querySelectorAll('span')].map((span) => span.textContent),
+    ).toEqual(['Keep mine', 'Take theirs', 'Merge'])
+    expect(container.querySelector('[data-id="conflict-choices"]')).toBeNull()
+    const ids = [...container.querySelectorAll('[data-id]')].map((el) =>
+      el.getAttribute('data-id'),
+    )
+    expect(ids).toEqual([
+      'conflict-choices-idle',
+      'host-cancel',
+      'conflict-save',
+    ])
+  })
+
+  it('swaps the twin for the choices with the same classes and labels', () => {
+    const read = (root: ParentNode, id: string) =>
+      [...root.querySelector(`[data-id="${id}"]`)!.children].map((node) => ({
+        className: (node as HTMLElement).className,
+        text: (node.textContent ?? '').trim(),
+      }))
+    const { container, rerender } = render(<ConflictActions mergeable />)
+    const twin = read(container, 'conflict-choices-idle')
+
+    rerender(<ConflictActions conflict mergeable />)
+    expect(
+      container.querySelector('[data-id="conflict-choices-idle"]'),
+    ).toBeNull()
+    expect(read(container, 'conflict-choices')).toEqual(twin)
+
+    rerender(<ConflictActions mergeable />)
+    expect(container.querySelector('[data-id="conflict-choices"]')).toBeNull()
+    expect(read(container, 'conflict-choices-idle')).toEqual(twin)
+  })
 })

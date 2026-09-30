@@ -9,6 +9,7 @@ import {
   shownByTestId,
   sidewaysOverflow,
   watchHeight,
+  watchLeft,
   watchTop,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
@@ -431,17 +432,41 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
   await isolate(page, key)
   await isolate(tabB, key)
 
-  await draftCustomSetting(tabB, key, 'mine-provider')
+  const value = await draftCustomSetting(tabB, key, 'mine-provider')
+  const save = tabB.getByTestId('hilos-settings-edit-save')
+  const cancel = tabB.getByTestId('hilos-settings-edit-cancel')
+  // The choices of a conflict hold their room from the open (HIL-1148): their
+  // arrival and their leaving move neither Cancel nor Save, nor the field.
+  const wide = [
+    await watchLeft(save),
+    await watchTop(save),
+    await watchLeft(cancel),
+    await watchTop(cancel),
+  ]
 
   await setCustomSetting(page, key, 'theirs-provider')
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
     'theirs-provider',
   )
   await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
+  for (const mark of wide) {
+    await mark.unchanged()
+  }
+
+  await tabB.setViewportSize({ width: 375, height: 800 })
+  const narrow = [
+    await watchLeft(save),
+    await watchTop(save),
+    await watchLeft(cancel),
+    await watchTop(cancel),
+    await watchTop(value),
+  ]
 
   await tabB.getByTestId('conflict-accept-mine').click()
   await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
-  const save = tabB.getByTestId('hilos-settings-edit-save')
+  for (const mark of narrow) {
+    await mark.unchanged()
+  }
   await expect(save).toBeEnabled()
   await clickSubmit(save)
   await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(

@@ -380,36 +380,36 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
         onClose={closeEdit}
         header={<ConflictHeader title={editTitle} conflict={live.conflict} />}
         actions={({ requestClose }) => (
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              data-id="hilos-settings-edit-cancel"
-              disabled={edit.busy}
-              onClick={requestClose}
-            >
-              Cancel
-            </button>
-            <ConflictActions
-              conflict={live.conflict}
-              disableSave={!editDirty || edit.busy || live.gone}
-              saveLabel={editSaveLabel}
-              onSave={() => void submitEdit()}
-              onAcceptMine={acceptMine}
-              onAcceptTheirs={acceptTheirs}
-              saveButton={({ disabled, onSave }) => (
-                <LoadingButton
-                  className="btn-primary"
-                  loading={edit.loading}
-                  disabled={disabled}
-                  data-id="hilos-settings-edit-save"
-                  onClick={onSave}
-                >
-                  {editSaveLabel}
-                </LoadingButton>
-              )}
-            />
-          </>
+          <ConflictActions
+            conflict={live.conflict}
+            disableSave={!editDirty || edit.busy || live.gone}
+            saveLabel={editSaveLabel}
+            onSave={() => void submitEdit()}
+            onAcceptMine={acceptMine}
+            onAcceptTheirs={acceptTheirs}
+            cancelButton={
+              <button
+                type="button"
+                className="btn btn-secondary"
+                data-id="hilos-settings-edit-cancel"
+                disabled={edit.busy}
+                onClick={requestClose}
+              >
+                Cancel
+              </button>
+            }
+            saveButton={({ disabled, onSave }) => (
+              <LoadingButton
+                className="btn-primary"
+                loading={edit.loading}
+                disabled={disabled}
+                data-id="hilos-settings-edit-save"
+                onClick={onSave}
+              >
+                {editSaveLabel}
+              </LoadingButton>
+            )}
+          />
         )}
       >
         <HilosActionError action={edit} detailsTitle="Couldn't save" />

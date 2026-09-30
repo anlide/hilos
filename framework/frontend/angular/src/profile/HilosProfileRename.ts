@@ -143,15 +143,6 @@ function mirror<T>(
             </button>
           }
         } @else {
-          <button
-            type="button"
-            class="btn btn-outline-secondary"
-            [disabled]="busy()"
-            data-id="profile-rename-cancel"
-            (click)="requestClose()"
-          >
-            {{ copy.cancel }}
-          </button>
           <div
             hilosConflictActions
             [conflict]="edit().conflict"
@@ -161,6 +152,17 @@ function mirror<T>(
             (acceptMine)="flow().keepMine()"
             (acceptTheirs)="flow().takeTheirs()"
           >
+            <ng-template #cancelButton>
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                [disabled]="busy()"
+                data-id="profile-rename-cancel"
+                (click)="requestClose()"
+              >
+                {{ copy.cancel }}
+              </button>
+            </ng-template>
             <ng-template
               #saveButton
               let-disabled="disabled"

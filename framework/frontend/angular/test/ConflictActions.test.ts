@@ -24,6 +24,9 @@ import { ConflictActions } from '../src/ConflictActions.js'
       (acceptTheirs)="onAcceptTheirs()"
       (merge)="onMerge()"
     >
+      <ng-template #cancelButton>
+        <button type="button" data-id="host-cancel">Cancel</button>
+      </ng-template>
       @if (useCustomSave()) {
         <ng-template #saveButton let-disabled="disabled" let-onSave="onSave">
           <button
@@ -178,4 +181,77 @@ describe('ConflictActions', () => {
       expect(btn?.classList.contains('btn')).toBe(true)
     }
   })
+
+  it('stands the choices, then the handed Cancel, then Save', () => {
+    const fixture = mountHost()
+    fixture.componentInstance.conflict.set(true)
+    fixture.detectChanges()
+
+    expect(dataIds()).toEqual([
+      'conflict-choices',
+      'conflict-accept-mine',
+      'conflict-accept-theirs',
+      'host-cancel',
+      'conflict-save',
+    ])
+  })
+
+  it("holds the choices' room with an idle twin while no conflict stands", () => {
+    const fixture = mountHost()
+    fixture.componentInstance.mergeable.set(true)
+    fixture.detectChanges()
+    const twin = document.querySelector(
+      '[data-id="conflict-choices-idle"]',
+    ) as HTMLElement
+
+    expect(twin.classList.contains('hilos-conflict-choices')).toBe(true)
+    expect(twin.classList.contains('invisible')).toBe(true)
+    expect(twin.getAttribute('aria-hidden')).toBe('true')
+    expect(twin.querySelectorAll('button')).toHaveLength(0)
+    expect(
+      [...twin.querySelectorAll('span')].map((span) => span.textContent),
+    ).toEqual(['Keep mine', 'Take theirs', 'Merge'])
+    expect(document.querySelector('[data-id="conflict-choices"]')).toBeNull()
+    expect(dataIds()).toEqual([
+      'conflict-choices-idle',
+      'host-cancel',
+      'conflict-save',
+    ])
+  })
+
+  it('swaps the twin for the choices with the same classes and labels', () => {
+    const fixture = mountHost()
+    fixture.componentInstance.mergeable.set(true)
+    fixture.detectChanges()
+    const twin = readChildren('conflict-choices-idle')
+
+    fixture.componentInstance.conflict.set(true)
+    fixture.detectChanges()
+    expect(
+      document.querySelector('[data-id="conflict-choices-idle"]'),
+    ).toBeNull()
+    expect(readChildren('conflict-choices')).toEqual(twin)
+
+    fixture.componentInstance.conflict.set(false)
+    fixture.detectChanges()
+    expect(document.querySelector('[data-id="conflict-choices"]')).toBeNull()
+    expect(readChildren('conflict-choices-idle')).toEqual(twin)
+  })
 })
+
+/** Document order of every data-id under the mounted action group. */
+function dataIds(): string[] {
+  const root = document.querySelector('.hilos-button-group')
+  return [...(root?.querySelectorAll('[data-id]') ?? [])].map(
+    (el) => el.getAttribute('data-id') ?? '',
+  )
+}
+
+/** className and text of the direct children of a choices group. */
+function readChildren(id: string): { className: string; text: string }[] {
+  const group = document.querySelector(`[data-id="${id}"]`)
+  return [...(group?.children ?? [])].map((node) => ({
+    className: (node as HTMLElement).className,
+    text: (node.textContent ?? '').trim(),
+  }))
+}

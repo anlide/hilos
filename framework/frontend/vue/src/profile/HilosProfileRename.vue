@@ -133,15 +133,6 @@ watch(step, (next, previous) => {
         </LoadingButton>
       </template>
       <template v-else>
-        <button
-          type="button"
-          class="btn btn-outline-secondary"
-          :disabled="busy"
-          data-id="profile-rename-cancel"
-          @click="requestClose"
-        >
-          {{ COPY.cancel }}
-        </button>
         <ConflictActions
           :conflict="edit.conflict"
           :disable-save="!valid || !edit.dirty || busy || edit.gone"
@@ -150,6 +141,17 @@ watch(step, (next, previous) => {
           @accept-mine="flow.keepMine()"
           @accept-theirs="flow.takeTheirs()"
         >
+          <template #cancel-button>
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              :disabled="busy"
+              data-id="profile-rename-cancel"
+              @click="requestClose"
+            >
+              {{ COPY.cancel }}
+            </button>
+          </template>
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"

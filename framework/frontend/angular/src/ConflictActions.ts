@@ -1,13 +1,18 @@
 // ConflictActions — the action group for an edit modal with 3-way-merge
-// conflict resolution, whose buttons stand in the footer's row alongside Cancel
-// on a narrow screen. The selector is an attribute on a native div, so the host
-// IS the action group. It renders a Save button (provide an
-// `<ng-template #saveButton>` to supply a custom one, e.g. a LoadingButton; it
-// receives the computed `disabled` and an `onSave` handler through the template
-// context) and, only while a conflict is unresolved, the three resolution
-// choices: keep mine, take theirs, and merge where the surface asks for it.
-// Save stays disabled until the conflict is resolved. The outputs fire the choice; the parent form applies it
-// against the core threeWayMerge result. Bootstrap classes only.
+// conflict resolution. The group draws, left to right, the conflict choices, the
+// window's Cancel (`<ng-template #cancelButton>`) and Save, in that same markup
+// order, so Tab runs left to right. While no conflict stands, an invisible twin
+// of the same markup holds the choices' room, so neither the arrival nor the
+// leaving of a conflict moves Cancel or Save (styling-rules.md, "The room a
+// live message takes"; the owner's decision on the acceptance of HIL-1050). The
+// selector is an attribute on a native div, so the host IS the action group. It
+// renders a Save button (provide an `<ng-template #saveButton>` to supply a
+// custom one, e.g. a LoadingButton; it receives the computed `disabled` and an
+// `onSave` handler through the template context) and, only while a conflict is
+// unresolved, the three resolution choices: keep mine, take theirs, and merge
+// where the surface asks for it. Save stays disabled until the conflict is
+// resolved. The outputs fire the choice; the parent form applies it against the
+// core threeWayMerge result. Bootstrap classes only.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -27,6 +32,12 @@ export interface ConflictSaveButtonContext {
   onSave: () => void
 }
 
+/**
+ * The choice buttons and the inert spans of their twin, to the character —
+ * the room equals the true width of the choices only while the classes match.
+ */
+const CHOICE_CLASS = 'btn btn-outline-secondary'
+
 /** The Save-plus-resolutions action group for a conflict-aware edit modal. */
 @Component({
   selector: 'div[hilosConflictActions]',
@@ -36,6 +47,55 @@ export interface ConflictSaveButtonContext {
     class: 'hilos-button-group d-md-flex align-items-center gap-2 flex-wrap',
   },
   template: `
+    @if (conflict()) {
+      <div
+        class="hilos-conflict-choices d-flex gap-2"
+        data-id="conflict-choices"
+      >
+        <button
+          type="button"
+          [class]="choiceClass"
+          data-id="conflict-accept-mine"
+          (click)="acceptMine.emit()"
+        >
+          Keep mine
+        </button>
+        <button
+          type="button"
+          [class]="choiceClass"
+          data-id="conflict-accept-theirs"
+          (click)="acceptTheirs.emit()"
+        >
+          Take theirs
+        </button>
+        @if (mergeable()) {
+          <button
+            type="button"
+            [class]="choiceClass"
+            data-id="conflict-merge"
+            (click)="merge.emit()"
+          >
+            Merge
+          </button>
+        }
+      </div>
+    } @else {
+      <div
+        class="hilos-conflict-choices d-flex gap-2 invisible"
+        aria-hidden="true"
+        data-id="conflict-choices-idle"
+      >
+        <!-- Spans, not buttons: the twin holds the room, it takes no focus. -->
+        <span [class]="choiceClass">Keep mine</span>
+        <span [class]="choiceClass">Take theirs</span>
+        @if (mergeable()) {
+          <span [class]="choiceClass">Merge</span>
+        }
+      </div>
+    }
+    @if (cancelButton(); as cancel) {
+      <ng-container [ngTemplateOutlet]="cancel" />
+    }
     @if (saveButton(); as tpl) {
       <ng-container
         [ngTemplateOutlet]="tpl"
@@ -51,34 +111,6 @@ export interface ConflictSaveButtonContext {
       >
         {{ saveLabel() }}
       </button>
-    }
-    @if (conflict()) {
-      <button
-        type="button"
-        class="btn btn-outline-secondary"
-        data-id="conflict-accept-mine"
-        (click)="acceptMine.emit()"
-      >
-        Keep mine
-      </button>
-      <button
-        type="button"
-        class="btn btn-outline-secondary"
-        data-id="conflict-accept-theirs"
-        (click)="acceptTheirs.emit()"
-      >
-        Take theirs
-      </button>
-      @if (mergeable()) {
-        <button
-          type="button"
-          class="btn btn-outline-secondary"
-          data-id="conflict-merge"
-          (click)="merge.emit()"
-        >
-          Merge
-        </button>
-      }
     }
   `,
 })
@@ -106,9 +138,19 @@ export class ConflictActions {
   /** Resolve a conflict by merging. */
   readonly merge = output<void>()
 
+  /**
+   * A consumer's `<ng-template #cancelButton>` — the window's Cancel, drawn
+   * between the choices and Save.
+   */
+  protected readonly cancelButton =
+    contentChild<TemplateRef<unknown>>('cancelButton')
+
   /** A consumer's `<ng-template #saveButton>` replacing the default Save button. */
   protected readonly saveButton =
     contentChild<TemplateRef<ConflictSaveButtonContext>>('saveButton')
+
+  /** The class the choice buttons and their twin share, to the character. */
+  protected readonly choiceClass = CHOICE_CLASS
 
   protected readonly disabled = computed(
     () => this.disableSave() || this.conflict(),

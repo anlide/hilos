@@ -167,36 +167,36 @@ export function HilosLegalSettingsPage({
         }
         onClose={editor.close}
         actions={({ requestClose }) => (
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={action.busy}
-              data-id="legal-setting-cancel"
-              onClick={requestClose}
-            >
-              Cancel
-            </button>
-            <ConflictActions
-              conflict={state.conflict}
-              disableSave={!state.dirty || action.busy || state.gone}
-              saveLabel={state.gone ? 'Deleted' : 'Save'}
-              onSave={() => void save()}
-              onAcceptMine={editor.keepMine}
-              onAcceptTheirs={editor.takeTheirs}
-              saveButton={({ disabled, onSave }) => (
-                <LoadingButton
-                  className="btn-primary"
-                  loading={action.loading}
-                  disabled={disabled}
-                  data-id="legal-setting-save"
-                  onClick={onSave}
-                >
-                  {state.gone ? 'Deleted' : 'Save'}
-                </LoadingButton>
-              )}
-            />
-          </>
+          <ConflictActions
+            conflict={state.conflict}
+            disableSave={!state.dirty || action.busy || state.gone}
+            saveLabel={state.gone ? 'Deleted' : 'Save'}
+            onSave={() => void save()}
+            onAcceptMine={editor.keepMine}
+            onAcceptTheirs={editor.takeTheirs}
+            cancelButton={
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={action.busy}
+                data-id="legal-setting-cancel"
+                onClick={requestClose}
+              >
+                Cancel
+              </button>
+            }
+            saveButton={({ disabled, onSave }) => (
+              <LoadingButton
+                className="btn-primary"
+                loading={action.loading}
+                disabled={disabled}
+                data-id="legal-setting-save"
+                onClick={onSave}
+              >
+                {state.gone ? 'Deleted' : 'Save'}
+              </LoadingButton>
+            )}
+          />
         )}
       >
         <HilosActionError

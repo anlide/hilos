@@ -461,15 +461,6 @@ async function submitReset(): Promise<void> {
         />
       </form>
       <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          data-id="hilos-settings-edit-cancel"
-          :disabled="editBusy"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
         <ConflictActions
           :conflict="live.conflict"
           :disable-save="!editDirty || editBusy || live.gone"
@@ -478,6 +469,17 @@ async function submitReset(): Promise<void> {
           @accept-mine="acceptMine"
           @accept-theirs="acceptTheirs"
         >
+          <template #cancel-button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-id="hilos-settings-edit-cancel"
+              :disabled="editBusy"
+              @click="requestClose"
+            >
+              Cancel
+            </button>
+          </template>
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"

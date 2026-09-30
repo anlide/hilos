@@ -753,15 +753,6 @@ watch(error, (reason) => {
         />
       </form>
       <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="loading"
-          data-id="hilos-user-cancel"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
         <ConflictActions
           :conflict="live.conflict"
           :disable-save="!valid || !dirty || loading || live.gone"
@@ -770,6 +761,17 @@ watch(error, (reason) => {
           @accept-mine="acceptMine"
           @accept-theirs="acceptTheirs"
         >
+          <template #cancel-button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="loading"
+              data-id="hilos-user-cancel"
+              @click="requestClose"
+            >
+              Cancel
+            </button>
+          </template>
           <template #save-button="{ disabled, onSave }">
             <LoadingButton
               class="btn-primary"

@@ -202,15 +202,6 @@ async function save(): Promise<void> {
         />
       </form>
       <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="busy"
-          data-id="legal-setting-cancel"
-          @click="requestClose"
-        >
-          Cancel
-        </button>
         <ConflictActions
           :conflict="state.conflict"
           :disable-save="!state.dirty || busy || state.gone"
@@ -219,6 +210,17 @@ async function save(): Promise<void> {
           @accept-mine="editor.keepMine"
           @accept-theirs="editor.takeTheirs"
         >
+          <template #cancel-button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="busy"
+              data-id="legal-setting-cancel"
+              @click="requestClose"
+            >
+              Cancel
+            </button>
+          </template>
           <template #save-button="{ disabled, onSave }"
             ><LoadingButton
               class="btn-primary"

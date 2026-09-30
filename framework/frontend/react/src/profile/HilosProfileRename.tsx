@@ -84,36 +84,36 @@ export function HilosProfileRename({ flow }: HilosProfileRenameProps) {
             ) : null}
           </>
         ) : (
-          <>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              disabled={busy}
-              data-id="profile-rename-cancel"
-              onClick={requestClose}
-            >
-              {COPY.cancel}
-            </button>
-            <ConflictActions
-              conflict={edit.conflict}
-              disableSave={!valid || !edit.dirty || busy || edit.gone}
-              saveLabel={saveLabel}
-              onSave={() => flow.save()}
-              onAcceptMine={() => flow.keepMine()}
-              onAcceptTheirs={() => flow.takeTheirs()}
-              saveButton={({ disabled, onSave }) => (
-                <LoadingButton
-                  className="btn-primary"
-                  loading={busy}
-                  disabled={disabled}
-                  data-id="profile-rename-save"
-                  onClick={onSave}
-                >
-                  {saveLabel}
-                </LoadingButton>
-              )}
-            />
-          </>
+          <ConflictActions
+            conflict={edit.conflict}
+            disableSave={!valid || !edit.dirty || busy || edit.gone}
+            saveLabel={saveLabel}
+            onSave={() => flow.save()}
+            onAcceptMine={() => flow.keepMine()}
+            onAcceptTheirs={() => flow.takeTheirs()}
+            cancelButton={
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                disabled={busy}
+                data-id="profile-rename-cancel"
+                onClick={requestClose}
+              >
+                {COPY.cancel}
+              </button>
+            }
+            saveButton={({ disabled, onSave }) => (
+              <LoadingButton
+                className="btn-primary"
+                loading={busy}
+                disabled={disabled}
+                data-id="profile-rename-save"
+                onClick={onSave}
+              >
+                {saveLabel}
+              </LoadingButton>
+            )}
+          />
         )
       }
     >
