@@ -579,6 +579,7 @@ async function submitDelete(): Promise<void> {
                 type="button"
                 class="btn btn-secondary"
                 :disabled="formBusy"
+                data-id="admin-bots-cancel"
                 @click="requestClose"
               >
                 Cancel

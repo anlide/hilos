@@ -5,6 +5,7 @@ import {
   watchFirstRowTop,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
+import { setAdminViewMode } from '../helpers/adminViewMode'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
 import {
@@ -83,7 +84,7 @@ function nameBeforeAll(stamp: number): string {
 }
 
 /**
- * Open the bots admin and wait for the live window's first row; the caller is admin already.
+ * Open the bots admin and wait for the live window's first row; the caller is admin already, or a viewer of the admin view mode.
  *
  * @param page The Playwright page.
  */
@@ -995,3 +996,30 @@ test('reaches the bots admin from the dashboard', async ({ page }) => {
   await expect(page.getByTestId('admin-bots-view')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos/app/bots')
 })
+
+test.describe('in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test('a guest opens the add dialog, fills it in and has nothing to save it with', async ({
+    page,
+  }) => {
+    await setAdminViewMode(true)
+    await openBots(page)
+    await clickSubmit(page.getByTestId('admin-bots-add'))
+
+    const name = page.getByTestId('admin-bots-name')
+    await typeInto(name, 'Viewer draft')
+
+    const save = page.getByTestId('admin-bots-save')
+    await expect(save).toBeDisabled()
+    await expect(save).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+
+    await clickSubmit(page.getByTestId('admin-bots-cancel'))
+    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await expect(name).toBeHidden()
+  })
+})
+

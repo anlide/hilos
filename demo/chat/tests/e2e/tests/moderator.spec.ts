@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
+import { setAdminViewMode } from '../helpers/adminViewMode'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
 import { tableRowKeyByText } from '../helpers/table'
@@ -17,7 +18,7 @@ import { tableRowKeyByText } from '../helpers/table'
 // A second tab of the same browser context inherits the session cookie, so it
 // signs in once per test and not once per tab.
 
-/** Open the moderation admin and wait for the live table; the caller is admin already. */
+/** Open the moderation admin and wait for the live table; the caller is admin already, or a viewer of the admin view mode. */
 async function openModerator(page: Page): Promise<void> {
   await gotoPage(page, '/hilos/app/moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -257,3 +258,32 @@ test('an open edit conflicts with the other tab, keeps mine, then reads Deleted'
   await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
   await tabB.close()
 })
+
+test.describe('in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test('a guest opens the add dialog, fills it in and has nothing to save it with', async ({
+    page,
+  }) => {
+    await setAdminViewMode(true)
+    await openModerator(page)
+    await clickSubmit(page.getByTestId('admin-moderator-add'))
+
+    await expect(page.getByTestId('admin-moderator-section')).toBeEnabled()
+
+    const prompt = page.getByTestId('admin-moderator-prompt')
+    await typeInto(prompt, 'Reject messages that ask for a password.')
+
+    const save = page.getByTestId('admin-moderator-save')
+    await expect(save).toBeDisabled()
+    await expect(save).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+
+    await clickSubmit(page.getByTestId('admin-moderator-cancel'))
+    await clickSubmit(page.getByTestId('modal-confirm-discard'))
+    await expect(prompt).toBeHidden()
+  })
+})
+

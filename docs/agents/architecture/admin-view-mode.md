@@ -409,8 +409,7 @@ nobody is asked*).
   sections: people — impersonation, rights, block, deletion, merge, rename
   (not in the code yet — HIL-1263); backup (not in the code yet — HIL-1264);
   security — OAuth, sign-in methods, two-factor, step-up
-  (not in the code yet — HIL-1267); the chat demo's own admin
-  (not in the code yet — HIL-1270). Maintenance has nothing to move: the
+  (not in the code yet — HIL-1267). Maintenance has nothing to move: the
   confirm buttons of its two dialogs — naming a verifier and taking one out —
   are `LoadingButton`s, and its two raw buttons only open those dialogs
   (HIL-1265). Log takeouts have nothing to move: the confirm buttons of
@@ -431,7 +430,11 @@ nobody is asked*).
   their cards onto `LoadingButton`: a card applies its mode at once, so a
   viewer finds every card disabled, and the question a card asks before it
   overwrites hand-made edits never opens for a viewer — it holds no field to
-  look at (HIL-1262).
+  look at (HIL-1262). The chat demo's own admin has nothing to move: the Saves
+  of its bot and prompt-piece dialogs and of a chat user's rename stand on
+  `ConflictActions` and `LoadingButton`, the confirms of its two deletions are
+  `LoadingButton`s, its raw buttons only open those dialogs, and the Guardian's
+  pages have no view to hold a control (HIL-1270).
 - The controls exist in all three frontends with full parity, as every
   primitive does
   ([../frontend/multiframework-core.md](../frontend/multiframework-core.md));
