@@ -39,7 +39,8 @@ agents whose only job is to keep their workers busy.
   The files live in `docker/tls/` — see [TLS fixtures](#tls-fixtures). A sixth
   node, `x1` (`cluster-x1`, compose profile `intruder`), is certified by an
   authority the cluster does not trust; the shared harness's `stranger up|down`
-  drives it, and only scenario 17 uses it.
+  drives it. It was there for scenario 17, which now runs on the cluster stand
+  of binance-btc-tracker, and it leaves together with this stand.
 
 ## Running
 
@@ -57,7 +58,7 @@ composer -d demo/cluster run test:cluster:scenarios # the scenario matrix, on a 
 composer -d demo/cluster run test:cluster:down-volumes  # tear everything down, database too
 ```
 
-`composer -d demo/cluster run test:cluster:scenarios -- 17 20` runs only the
+`composer -d demo/cluster run test:cluster:scenarios -- 3 12` runs only the
 scenarios named, in the matrix's order. The harness's other commands — `kill`,
 `partition`, `crash-daemon`, `inspect` and the rest — are called on the module
 directly, from `demo/cluster`:
@@ -72,7 +73,11 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 ## Scenario matrix (the shared harness, `framework/docker/cluster/scenarios.py`)
 
 The stand names the scenarios it carries in the `x-hilos-cluster` block of its
-compose file; this one carries all of them.
+compose file; this one carries 3, 4, 6, 9, 11, 12, 14, 15, 16, 18, 19, 21 and
+22.
+Scenarios 1, 2, 5, 7, 8, 10, 13, 17 and 20 run on the cluster stand of
+binance-btc-tracker ([its README](../binance-btc-tracker/README.md), section
+"Cluster stand"). The list below is the harness's whole matrix.
 
 1. master-slave mesh — exactly one leader, slaves follow
 2. master-master — one leader among masters, slaves never lead

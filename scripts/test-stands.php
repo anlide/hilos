@@ -98,6 +98,16 @@ return [
         'holdsDatabase' => true,
     ],
     [
+        'id' => 'binance-btc-tracker-cluster',
+        'cwd' => 'demo/binance-btc-tracker',
+        'composeFile' => 'docker/docker-compose.cluster.yml',
+        'project' => 'hilos-binance-btc-tracker-cluster',
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
+    [
         'id' => 'ecommerce-shop',
         'cwd' => 'demo/ecommerce-shop',
         'composeFile' => 'docker/docker-compose.test.yml',

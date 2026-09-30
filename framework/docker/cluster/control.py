@@ -55,18 +55,47 @@ def _cli_profiles(stand):
 
 # ------------------------------------------------------------------ stand lifecycle
 
+def _logged_nodes(stand):
+    """Every node of the stand that writes logs: the members, and the stranger when there is one."""
+    return [*stand.members.values(), *([stand.stranger] if stand.stranger is not None else [])]
+
+
 def ensure_env(stand):
-    """The demo's env files from their examples, and the host log directory, before a start."""
+    """The demo's env files from their examples, and where the nodes' log directories go, before a start.
+
+    The parent of each node's log directory, not the directory itself: docker creates that one on
+    the node's first start, owned by root like everything the daemon writes into it.
+    """
     demo = stand.demo_dir
     for env in (demo / ".env", demo / "tests" / ".env"):
         example = env.with_name(".env.example")
         if not env.exists() and example.exists():
             env.write_bytes(example.read_bytes())
-    (demo / "data" / "logs").mkdir(parents=True, exist_ok=True)
+    for node in _logged_nodes(stand):
+        node.log_dir.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _freeze_files(stand):
+    """The freeze files a node's last run may have left, as the cli container sees them.
+
+    The cli container mounts the demo at /app and nothing else of the host, so a node whose log
+    directory is not inside the demo is refused here, before anything is built or started.
+    """
+    demo = stand.demo_dir.resolve()
+    paths = []
+    for node in _logged_nodes(stand):
+        try:
+            inside = node.log_dir.resolve().relative_to(demo)
+        except ValueError:
+            raise StandRefused(f"{stand.project}: node {node.id} logs to {node.log_dir}, outside "
+                               f"{stand.demo_dir}, which the cli container cannot reach") from None
+        paths.append(f"/app/{inside.as_posix()}/protected-mode.state.json*")
+    return paths
 
 
 def up(stand, prog):
     """Build every image, clear the last run's freezes, start the members and the cli container."""
+    freeze_files = _freeze_files(stand)
     ensure_env(stand)
     print("cluster: building images...", flush=True)
     # Every profile, so the stranger's image too: a scenario starts it from a finished image rather
@@ -74,13 +103,13 @@ def up(stand, prog):
     code = compose(stand, "--profile", "*", "build", capture=False)
     if code != 0:
         return code
-    # Clear any freeze the last run left on a node, from INSIDE a container: data/logs/<node> is
-    # owned by root (the daemons run as root in their containers) and unlink asks permission of the
-    # DIRECTORY, so an rm from the host cannot reach it. On the up rather than on the teardown for
-    # the same reason as the three demos (HOTFIX d5f0ad75): a run killed hard never reaches its own
-    # teardown, but it always reaches the next up.
+    # Clear any freeze the last run left on a node, from INSIDE a container: a node's log directory
+    # is owned by root (the daemons run as root in their containers) and unlink asks permission of
+    # the DIRECTORY, so an rm from the host cannot reach it. On the up rather than on the teardown
+    # for the same reason as the three demos (HOTFIX d5f0ad75): a run killed hard never reaches its
+    # own teardown, but it always reaches the next up.
     code = compose(stand, *_cli_profiles(stand), "run", "--rm", stand.cli_service,
-                   "sh", "-c", "rm -f /app/data/logs/*/protected-mode.state.json*", capture=False)
+                   "sh", "-c", "rm -f " + " ".join(freeze_files), capture=False)
     if code != 0:
         return code
     # The database, and a one-off schema step if the stand still has one, are not named: compose

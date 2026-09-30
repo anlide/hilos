@@ -52,6 +52,8 @@ use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
+use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -106,6 +108,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * Notifications are switched on with them: the bell in the header, a person's own channel
  * switches on /profile/notifications (the one profile page this demo has, without the profile
  * root) and delivery by email and SMS.
+ *
+ * Its cluster stand (docker/docker-compose.cluster.yml) runs the framework's fleet and
+ * runtime-set probes.
  *
  * Usage:
  * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string()
@@ -257,6 +262,12 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
+        // The probes of this demo's cluster stand - scenarios 5 and 13 read the fleet, scenario
+        // 20 the set probe. A probe starts only on a clustered node of a non-production
+        // environment, so this demo on one node, on its Playwright stand and in production
+        // carries the rows and runs none of them (docs/agents/testing.md, "The cluster stands").
+        HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
+        HilosAgentType::HILOS_PROBE_RT_SET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_RT_SET],
     ];
 
     /**

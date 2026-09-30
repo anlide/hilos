@@ -48,6 +48,7 @@ use Demo\BinanceBtcTracker\Tables\BinanceBtcTrackerTableContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
+use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -94,7 +95,8 @@ use PHPUnit\Framework\TestCase;
  * Communications, its three pages and tables (HIL-1224) - sign-in activated on the framework
  * libraries, and notifications with delivery by email and SMS: the notifications library, its
  * group, the SMS channel agent and the one profile page, the person's channel switches
- * (HIL-1224). The page registry
+ * (HIL-1224). The agent registry closes on the framework's fleet and runtime-set probes,
+ * which only its cluster stand runs (HIL-1215). The page registry
  * below is a snapshot, so every leaf that moves another admin section here turns it red on
  * purpose and rewrites it with its own.
  */
@@ -176,7 +178,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testAgentRegistryIsTheAppTheIndexSignInAndTheAdminSections(): void
+    public function testAgentRegistryIsTheAppTheIndexSignInTheAdminSectionsAndTheClusterProbes(): void
     {
         $this->assertSame([
             AgentType::BINANCE_BTC_TRACKER,
@@ -194,7 +196,18 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_LOG_STORE,
             HilosAgentType::HILOS_LOG_CARRIER,
             HilosAgentType::HILOS_LOG_AGGREGATOR,
+            HilosAgentType::HILOS_PROBE_FLEET,
+            HilosAgentType::HILOS_PROBE_RT_SET,
         ], array_keys(Hilos::AGENTS));
+    }
+
+    public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void
+    {
+        // The rows are the framework's records, not this demo's copy of them: the flags every
+        // cluster scenario stands on are pinned once, in the framework's own registry test.
+        foreach ([HilosAgentType::HILOS_PROBE_FLEET, HilosAgentType::HILOS_PROBE_RT_SET] as $agentType) {
+            $this->assertSame(ClusterProbe::AGENTS[$agentType], Hilos::AGENTS[$agentType], "{$agentType} is listed as the framework wrote it");
+        }
     }
 
     public function testPageSubscriptionOwnersAreDeclaredByPageClasses(): void

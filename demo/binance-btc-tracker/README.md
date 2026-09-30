@@ -147,6 +147,89 @@ pointed at a subset.
 | `composer run test:e2e-down` | tear the e2e stack down |
 | `composer run test:e2e-full` | build → install → check → up → test → down; `-- <spec>` or `-- --grep "…"` points the same clean cycle at a subset |
 
+## Cluster stand
+
+`docker/docker-compose.cluster.yml` raises this demo as a Hilos cluster: three
+masters, `m1`–`m3`, that declare no capacity and so take no placed work; two
+slaves, `s1` and `s2`, both `worker,ram=10`; and `x1`, a node certified by an
+authority the cluster does not trust, under the compose profile `stranger` so
+it never comes up with the rest. All of them share one MariaDB and one schema,
+on the subnet 10.221, and nothing is published on the host. It is a compose
+project of its own, `hilos-binance-btc-tracker-cluster`, because the e2e steps
+take their whole project down when they start.
+
+Nothing here drives the stand: the framework's shared cluster harness
+(`framework/docker/cluster/`) reads the nodes out of the compose file and runs
+the scenarios it names — 1 master-slave mesh, 2 master-master, 5 leader-kill
+re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser,
+13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate
+refused and 20 rt set width across nodes (parked, P-456)
+(`docs/agents/testing.md`, "The cluster stands — three demos, three shapes").
+The framework's probe fleet and runtime-set probe are in this demo's `AGENTS`,
+and they start only here: on one node, on the Playwright stand and in
+production the rows are carried and nothing is run.
+
+| Command | What it does |
+|---|---|
+| `composer run test:cluster:up` | build the images and start the database, the five nodes and the cli container |
+| `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
+| `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 17 20` runs only the ones named |
+| `composer run test:cluster:down-volumes` | take the stand down, database included |
+| `composer run test:cluster:down` | take the stand down the way the test runner does |
+
+The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`,
+`stranger up` and the rest — are called on the module directly, from
+`demo/binance-btc-tracker`:
+
+```bash
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
+```
+
+### TLS fixtures
+
+`docker/tls/` holds the certificates of this stand, and they are **stand
+fixtures only**: the authority behind them signs nothing else, its key is not
+in the repository, and it is not the authority of any other stand on the same
+machine. Nothing here is a template for a real cluster — issue your own.
+
+| File | What it is | Used by |
+|---|---|---|
+| `ca.pem` | the stand authority's certificate, no key | `CLUSTER_TLS_CA_FILE` of the five nodes |
+| `m1.pem` … `s2.pem` | a node certificate (CN = node id) followed by its key | `CLUSTER_TLS_CERT_FILE` of that node |
+| `x1.pem` | node `x1`, signed by a *foreign* authority | the stranger of scenario 17 |
+| `stranger-ca.pem` | that foreign authority's certificate | `x1`'s trust file, so `x1` passes its own start-up check |
+
+Reissuing means a new set in full: the old authority's key is gone, so no
+single file can be replaced alone. The commands run in the image of the
+stand's cli container, which exists after the first
+`composer -d demo/binance-btc-tracker run test:cluster:up`. The framework's own
+commands print PEM to stdout and the host shell writes the files, so they come
+out owned by you rather than root. Keep both authority files
+(`cluster-ca.pem`, `foreign-ca.pem`) outside the repository and delete them
+when done — from the repository root:
+
+```bash
+cli() {  # one framework CLI command in a throwaway container, no network needed
+  docker run --rm --network none --user "$(id -u):$(id -g)" \
+    -v "$PWD/demo/binance-btc-tracker":/app:ro -v "$PWD/composer.json":/hilos/composer.json:ro \
+    -v "$PWD/composer.lock":/hilos/composer.lock:ro -v "$PWD/framework":/hilos/framework:ro \
+    -v /tmp/cluster-ca:/ca:ro -w /app -e APP_ENV=dev \
+    hilos-binance-btc-tracker-cluster-binance-btc-tracker-cluster-cli:latest php backend/Bootstrap/cli.php "$@"
+}
+mkdir -p /tmp/cluster-ca && t=demo/binance-btc-tracker/docker/tls
+cli cluster:tls:ca > /tmp/cluster-ca/cluster-ca.pem
+cli cluster:tls:trust /ca/cluster-ca.pem > $t/ca.pem
+for n in m1 m2 m3 s1 s2; do cli cluster:tls:issue $n /ca/cluster-ca.pem > $t/$n.pem; done
+# the stranger: a second, foreign authority
+cli cluster:tls:ca > /tmp/cluster-ca/foreign-ca.pem
+cli cluster:tls:trust /ca/foreign-ca.pem > $t/stranger-ca.pem
+cli cluster:tls:issue x1 /ca/foreign-ca.pem > $t/x1.pem
+rm -r /tmp/cluster-ca
+```
+
+The node certificates are valid for ten years (the authority's lifetime); a
+node warns in its log from 30 days before the end.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file in the root of the Hilos framework for details.

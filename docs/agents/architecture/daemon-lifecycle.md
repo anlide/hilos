@@ -523,9 +523,9 @@ everything, as it does for the role and the seeds.
 
 **Rolling out** is one step: a node of the old code and a node of the new simply do not link.
 `PeerProtocol::VERSION` did not move — no frame changed. The stand of
-binance-btc-tracker carries its own fixtures and a node of a foreign authority,
-`x1`, which scenario 17 shows refused on both ends and listed by nobody
-(not in the code yet — HIL-1215).
+binance-btc-tracker carries its own fixtures ([its README](../../../demo/binance-btc-tracker/README.md),
+section "TLS fixtures") and a node of a foreign authority, `x1`, which scenario 17
+shows refused on both ends and listed by nobody.
 
 ## The database both ends read (HIL-1206)
 

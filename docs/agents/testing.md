@@ -126,6 +126,7 @@ wall-clock, so they are a **deliberate, infrequent** run — never an inner loop
 | FE core / SDK or a view (`@hilos/*`, TS) | `test:framework:frontend` (check + vitest + lint + format) | every change |
 | An Angular view's template | `test:framework:frontend` — plain `tsc` does not read templates, so the `@hilos/angular` check runs a second pass, `ngc --noEmit` over the `tsconfig.build.json` the ng-packagr build uses; a template error — and an Angular extended template diagnostic (`NG8xxx`), which `tsconfig.build.json` raises to an error — is red here, not only in `test:framework:frontend:build` | every Angular template change |
 | Wire / signal / subscription **contract** (backend + FE together) | the above **plus** one affected demo's `test:e2e-full` — the cross-boundary path only e2e exercises | when the contract moves |
+| Cluster behavior — consensus, membership, placement, the peer link and its TLS, what a write on one node does on another (`framework/backend/Cluster/`, the cluster seams of `DaemonManager` and `WorkerServer`, the harness in `framework/docker/cluster/`) | the scenarios that cover it, on the stand that carries them, pointed: `composer -d demo/<demo> run test:cluster:scenarios -- <numbers>` — a fresh stand every time; that stand's whole matrix before the merge. Which stand carries which scenario: section "The cluster stands — three demos, three shapes" below | when cluster code moves |
 | An e2e spec or a selector | that demo's full cycle, pointed: `composer run test:e2e-full -- <spec file>` or `-- --grep "<title>"` — the same clean stand as the full run, so a repeat is a fresh verdict | while editing the spec |
 | Cross-connection behavior — subscription, viewport, pending/Apply, presence | the **two-window** e2e across the affected demos (and a full pass) | rarely — see below |
 | Accessibility — ARIA roles/names, keyboard, focus, screen-reader semantics | the **a11y** e2e (`a11y.spec.ts`) across the affected demos (and a full pass) | rarely — see below |
@@ -335,7 +336,7 @@ scenario on a single shape retires (not in the code yet — HIL-1218).
 
 | Demo | View | Hilos cluster | MySQL | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (not in the code yet — HIL-1215) |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (parked, P-456) |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4` | a primary and a replica behind one address (not in the code yet — HIL-1229) | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet, 18 capacity is consumed, 19 worker death on a live node (not in the code yet — HIL-1216) |
 | online-testing | Angular | three equal masters that host work themselves | a three-node multi-primary (not in the code yet — HIL-1230) | 11 cross-node db fact, 15 db interest addressing (not in the code yet — HIL-1217); a database node that dies and the nodes that reconnect (not in the code yet — HIL-1231); the schema rolled out once by nodes that start together (scenario 21 on the demo/cluster stand today — moves with HIL-1217); a node reading another database refused on both ends (scenario 22 on the demo/cluster stand today — moves with HIL-1217) |
 
@@ -367,10 +368,10 @@ HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_
 
 A probe starts only on a node that is in a cluster and whose `APP_ENV` is not
 production-like, so the same demo on one node, on its own Playwright stand and
-in production carries the rows and runs none of them. Which demo takes which
-(not in the code yet — HIL-1215, HIL-1216, HIL-1217): binance the fleet and the
-runtime set probe, ecommerce the fleet, the claimer and the ballast,
-online-testing the fleet and the database probe.
+in production carries the rows and runs none of them. Which demo takes which:
+binance-btc-tracker the fleet and the runtime set probe; ecommerce-shop the
+fleet, the claimer and the ballast, and online-testing the fleet and the
+database probe (not in the code yet — HIL-1216, HIL-1217).
 
 The stand's compose file is the one place its nodes are written, and there is
 no second copy: a node is a service with `CLUSTER_ENABLED=true` and a
@@ -384,6 +385,16 @@ script calls `python3 ../../framework/docker/cluster/cluster.py <compose file>
 scenarios`. A scenario the stand names but cannot carry by its shape — too few
 masters or slaves, no stranger — is refused before the stand is raised, and so
 is a stand that leaves out what the harness reads.
+
+A demo's cluster stand is `docker/docker-compose.cluster.yml` beside its other
+stacks, and a compose project of its own: the demo's e2e steps take their whole
+project down when they start, and a fleet inside it would fall in the middle of
+its matrix. Its nodes log to `data/logs-cluster/<node>`, and it has a TLS
+authority of its own, so two stands on one machine never trust each other. It
+has a step of its own in the full run, `<demo>-cluster`, which runs the demo's
+`composer run test:cluster:scenarios` — binance-btc-tracker's today,
+ecommerce-shop's and online-testing's (not in the code yet — HIL-1216,
+HIL-1217).
 
 A new scenario is written on the stand whose shape it needs. When two shapes
 would do, the reasons above decide. A scenario that needs a shape none of the

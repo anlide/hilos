@@ -31,7 +31,7 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 1. Classify the change: PHP backend logic, FE core/SDK, an FE view, an Angular
    template, a wire/signal/subscription contract, a topology registry change
    (`Hilos::PAGES` / `AGENTS` / `ACTIONS` / `SIGNALS` / `AGENT_SIGNALS`), an e2e
-   spec, or cross-connection behavior.
+   spec, cross-connection behavior, or cluster behavior.
 2. A defect where two processes see different state goes down that ladder: e2e
    first, the stand gateway when the missing participant is an external service
    (`docs/agents/stand-services.md`), a second process inside a unit test last
@@ -45,10 +45,15 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    once is `composer run test:suite`; run either rarely.
 6. An e2e spec runs through its demo's full cycle pointed at it —
    `composer run test:e2e-full -- <spec | --grep "…">` — which resets for you.
-7. A step that went red while another step was running is not a verdict: re-run it
+7. Cluster behavior runs the scenarios that cover it on the stand that carries
+   them — `composer run test:cluster:scenarios -- <numbers>` from the directory of
+   the demo whose stand it is, a fresh stand every time; which stand carries which
+   scenario: `docs/agents/testing.md`, section "The cluster stands — three demos,
+   three shapes".
+8. A step that went red while another step was running is not a verdict: re-run it
    alone (`php scripts/run-test-suite.php <id> --lanes=1`) on the same HEAD. Green
    alone makes the run inconclusive, not green.
-8. An `=== unstable: ... ===` section at the end of a run names tests that only
+9. An `=== unstable: ... ===` section at the end of a run names tests that only
    passed on a retry. It does not widen the scope you chose: name the test, check
    how long it has flickered, and leave a foreign one to its own ticket.
 

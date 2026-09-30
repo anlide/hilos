@@ -60,16 +60,19 @@ declare(strict_types=1);
  * be cut by area across stands of its own (hilos-ops/proposals, P-452) — not the
  * order of the steps and not the lane count.
  *
- * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `cluster` today, the fleets of
- * binance-btc-tracker, ecommerce-shop and online-testing once HIL-1215…1217 add
- * their steps — may run beside any e2e step. Neither an edge nor the order keeps
+ * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `cluster` and
+ * `binance-btc-tracker-cluster` today, those of ecommerce-shop and online-testing
+ * once HIL-1216 and HIL-1217 add their steps — may run beside any e2e step. Neither an edge nor the order keeps
  * them apart, and a fleet leaves with its own step (`downsStand`), which is hygiene
  * rather than separation. Decided by the owner on 2026-09-29 on 43 full runs on
  * nova-de (27–29.09), where cluster overlapped chat-e2e for 1.5–6 minutes and
  * every one was green; run 0659 added three more e2e suites beside them. A red
  * step beside a fleet is read like any other: the neighbours in the step's
  * SNAPSHOT.txt, then a re-run alone. Keeping the fleets apart from EACH OTHER,
- * should that be needed, belongs to the leaves that add them.
+ * should that be needed, belongs to the leaves that add them. The first two need
+ * nothing of the kind: in run 0684 on nova-de (2026-09-30, HIL-1215) `cluster` and
+ * `binance-btc-tracker-cluster` started in the same second, overlapped for 1m45s,
+ * and both were green.
  */
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
@@ -143,9 +146,11 @@ $steps = [
     // 2026-08-27, green next to chat-php at two lanes, and on nova-de green next to
     // chat-e2e in 43 full runs (27–29.09.2026). The red this step produced for three
     // weeks was a cluster defect (HIL-746 roster liveness, HIL-747 hand-over scope),
-    // not a busy box, so do not reach for lanes when it goes red again. The 253s
-    // below is measured with scenarios 13, 16 and 19 parked (P-169, P-441, HIL-1216);
-    // returning them moves the number.
+    // not a busy box, so do not reach for lanes when it goes red again. The seconds
+    // below are measured in run 0684 (2026-09-30), beside binance-btc-tracker-cluster,
+    // with scenarios 16 and 19 parked (P-441, HIL-1216) and with 1, 2, 5, 7, 8, 10, 13,
+    // 17 and 20 run on binance-btc-tracker-cluster instead; returning or moving one
+    // moves the number.
     [
         'id' => 'cluster',
         'command' => 'composer run test:cluster:all',
@@ -154,7 +159,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 253,
+        'seconds' => 162,
         // Takes its stand down with it, at any outcome. This is hygiene: a fleet has no reason
         // to outlive its step, and one that was FORGOTTEN kept eating cores for the rest of the
         // run — on nova-lt that turned chat-e2e into 16m10s against 9m36s with fourteen failures
@@ -162,6 +167,24 @@ $steps = [
         // the head of this file says they may overlap. Declared here rather than appended to
         // the composer chain because that chain breaks at the first red, and the runner is the
         // one that holds the outcome.
+        'downsStand' => true,
+    ],
+    // The fleet of binance-btc-tracker (HIL-1215): five nodes of the whole demo on one database,
+    // and a stranger scenario 17 raises. It may run beside `cluster` and beside any e2e step - no
+    // group and no edge keep it apart from them (the head of this file). Takes its stand down
+    // with it, at any outcome, for the reason `cluster` does. The demo's unit suite is not run
+    // here but in binance-btc-tracker-php. The seconds are measured in run 0684 (2026-09-30),
+    // beside `cluster`, with scenarios 13 and 20 parked (P-169, P-456); returning one moves
+    // the number.
+    [
+        'id' => 'binance-btc-tracker-cluster',
+        'command' => 'composer run test:cluster:scenarios',
+        'cwd' => 'demo/binance-btc-tracker',
+        'stand' => 'binance-btc-tracker-cluster',
+        'deps' => [],
+        'group' => null,
+        'tags' => ['cluster', 'backend'],
+        'seconds' => 91,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

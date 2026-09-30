@@ -100,7 +100,12 @@
             "@test:phpunit",
             "@test:down",
             "@test:e2e-full"
-        ]
+        ],
+        "test:cluster:up": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml up",
+        "test:cluster:down": "@php ../../scripts/down-stands.php binance-btc-tracker-cluster",
+        "test:cluster:down-volumes": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml down --volumes",
+        "test:cluster:status": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml status",
+        "test:cluster:scenarios": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml scenarios"
     },
     "config": {
         "process-timeout": 0,

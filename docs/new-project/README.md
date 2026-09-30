@@ -168,7 +168,7 @@ registry of taken host ports:
 | polls test | 33066 | 8107/8108/8109 | — | — | http 8088 / https 8448 | — | 10.188 |
 | binance-btc-tracker local | 33067 | 8110/8111/8112 | 8119 | 8120 | https 8116 | 5176 | 10.201 |
 | binance-btc-tracker test | 33068 | 8113/8114/8115 | — | — | http 8117 / https 8118 | — | 10.211 |
-| binance-btc-tracker cluster (not in the code yet — HIL-1215) | — | — | — | — | — | — | 10.221 |
+| binance-btc-tracker cluster | — | — | — | — | — | — | 10.221 |
 | ecommerce-shop local | 33069 | 8130/8131/8132 | 8139 | 8140 | https 8136 | 5177 | 10.202 |
 | ecommerce-shop test | 33070 | 8133/8134/8135 | — | — | http 8137 / https 8138 | — | 10.212 |
 | ecommerce-shop cluster (not in the code yet — HIL-1216) | — | — | — | — | — | — | 10.222 |
