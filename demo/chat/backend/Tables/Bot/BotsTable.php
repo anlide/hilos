@@ -13,6 +13,7 @@ use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\Actions\BotItemActions;
 use Demo\Chat\Tables\Bot\Actions\BotsTableActions;
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -137,6 +138,35 @@ final class BotsTable extends TableDefinition implements ViewportTable
                     StateBotAgentStatus::status => $status,
                 ],
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a bot row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * A bot is written by the installation, not by a person, and is the same for everyone: each column
+     * of the bot entity is non-personal by its entity verdict (_piiNotPersonal). The agent status is
+     * merged from runtime state and declared non-personal.
+     *
+     * @return array<string, WireField> Bot row field to where it comes from
+     */
+    public function wireFields(): array
+    {
+        return [
+            BotTableRow::id => WireField::column(ChatDbContext::bots, ObjectBot::id),
+            BotTableRow::name => WireField::column(ChatDbContext::bots, ObjectBot::name),
+            BotTableRow::description => WireField::column(ChatDbContext::bots, ObjectBot::description),
+            BotTableRow::style => WireField::column(ChatDbContext::bots, ObjectBot::style),
+            BotTableRow::topics => WireField::column(ChatDbContext::bots, ObjectBot::topics),
+            BotTableRow::personality => WireField::column(ChatDbContext::bots, ObjectBot::personality),
+            BotTableRow::active => WireField::column(ChatDbContext::bots, ObjectBot::active),
+            BotTableRow::reactionDelayMin => WireField::column(ChatDbContext::bots, ObjectBot::reactionDelayMin),
+            BotTableRow::reactionDelayMax => WireField::column(ChatDbContext::bots, ObjectBot::reactionDelayMax),
+            BotTableRow::reactionChance => WireField::column(ChatDbContext::bots, ObjectBot::reactionChance),
+            BotTableRow::topicMatchRequired => WireField::column(ChatDbContext::bots, ObjectBot::topicMatchRequired),
+            BotTableRow::cooldownAfterMessage => WireField::column(ChatDbContext::bots, ObjectBot::cooldownAfterMessage),
+            BotTableRow::priority => WireField::column(ChatDbContext::bots, ObjectBot::priority),
+            BotTableRow::status => WireField::notPersonal(),
         ];
     }
 

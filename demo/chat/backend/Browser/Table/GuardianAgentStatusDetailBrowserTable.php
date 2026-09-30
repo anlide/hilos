@@ -43,6 +43,11 @@ final class GuardianAgentStatusDetailBrowserTable
                     GuardianAgentStatus::status,
                     GuardianAgentStatus::updatedAt,
                 ],
+                BrowserTableFieldKey::NOT_PERSONAL => [
+                    GuardianAgentStatus::agentId,
+                    GuardianAgentStatus::status,
+                    GuardianAgentStatus::updatedAt,
+                ],
             ],
         ],
     ];

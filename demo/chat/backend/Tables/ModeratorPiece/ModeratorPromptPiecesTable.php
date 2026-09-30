@@ -12,6 +12,7 @@ use Demo\Chat\Database\View\Item\ModeratorPromptPiece as DbModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPiecesTableActions;
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -146,6 +147,32 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
             BrowserPageSignalData::sources => [
                 ChatDbContext::moderatorPromptPieces => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a prompt piece row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * A prompt piece is prompt text the installation wrote for its moderator bot: each column of the
+     * moderator prompt piece entity is non-personal by its entity verdict (_piiNotPersonal).
+     *
+     * @return array<string, WireField> Prompt piece row field to where it comes from
+     */
+    public function wireFields(): array
+    {
+        return [
+            ModeratorPromptPieceTableRow::id => WireField::column(
+                ChatDbContext::moderatorPromptPieces,
+                ObjectModeratorPromptPiece::id,
+            ),
+            ModeratorPromptPieceTableRow::section => WireField::column(
+                ChatDbContext::moderatorPromptPieces,
+                ObjectModeratorPromptPiece::section,
+            ),
+            ModeratorPromptPieceTableRow::promptPiece => WireField::column(
+                ChatDbContext::moderatorPromptPieces,
+                ObjectModeratorPromptPiece::promptPiece,
+            ),
         ];
     }
 

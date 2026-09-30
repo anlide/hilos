@@ -13,6 +13,7 @@ use Hilos\Database\View\Item\User as DbUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -141,6 +142,26 @@ final class AdminUsersTable extends TableDefinition implements ViewportTable
                 ChatDbContext::users => $fields,
                 ChatRtContext::connections => $connections,
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of an admin user row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The name is declared as a column and hidden by the column's verdict (FAKE_NAME) rather than by omission
+     * in the map; lastActivity is non-personal by its column verdict; presence and onlineSessionCount are
+     * aggregates of runtime connections and declared non-personal.
+     *
+     * @return array<string, WireField> Admin user row field to where it comes from
+     */
+    public function wireFields(): array
+    {
+        return [
+            AdminUserTableRow::id => WireField::column(ChatDbContext::users, ObjectUser::id),
+            AdminUserTableRow::name => WireField::column(ChatDbContext::users, ObjectUser::name),
+            AdminUserTableRow::lastActivity => WireField::column(ChatDbContext::users, ObjectUser::lastActivity),
+            AdminUserTableRow::presence => WireField::notPersonal(),
+            AdminUserTableRow::onlineSessionCount => WireField::notPersonal(),
         ];
     }
 
