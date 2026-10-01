@@ -11,8 +11,9 @@ use Hilos\Database\PhpType;
  * Framework merge row: an account folded into another one - which, into which, when (HIL-1199).
  *
  * Keyed by the folded account, so an account is folded at most once and the row answers
- * "is this account merged" by key. A null `survivor_user_id` is a survivor whose account was
- * erased since - the folded account stays folded. A null `merged_at` is a row carried over
+ * "is this account merged" by key. A null `survivor_user_id` belongs to an older row whose
+ * survivor was erased before erasure began taking folded accounts with it (HIL-1200).
+ * A null `merged_at` is a row carried over
  * from a project's former column, which never recorded the moment. A project adds columns by
  * extending the whole ORM chain under the userMerges key (docs/agents/architecture/people-table.md).
  *

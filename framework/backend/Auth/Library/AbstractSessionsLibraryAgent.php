@@ -192,8 +192,9 @@ use Throwable;
  * every project (HIL-1197) - minting the first administrator ({@see ensureAdminUser()}), the
  * admin flag ({@see applyAdminGrant()}), the block ({@see applyAccountBlock()}) and whether one
  * person may take another over ({@see assertImpersonationAllowed()}). So is whether two accounts
- * may be merged and the tombstone of the loser (HIL-1199, {@see assertMergeable()}). What a
- * project adds is the claims over its own way in - the sign-in waits and the registration holds,
+ * may be merged and the tombstone of the loser (HIL-1199, {@see assertMergeable()}). The framework
+ * also removes the person, their rename journal and the accounts folded into them on erasure
+ * (HIL-1200). What a project adds is the claims over its own way in - the sign-in waits and the registration holds,
  * declared where a sign-in surface exists - and its own rows in a merge
  * ({@see applyAccountMerge()}) and an erasure ({@see applyAccountErasure()}).
  *
@@ -236,7 +237,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * a project that wires the merge inherits it.
      *
      * The person table is the users library's too, and this library holds a narrower share of it:
-     * adding and editing, nothing else (HIL-1197). It mints the first administrator
+     * adding, editing and removing the erased person's row (HIL-1197, HIL-1200). It mints the
+     * first administrator
      * ({@see ensureAdminUser()}) and writes the admin and block flags ({@see applyAdminGrant()},
      * {@see applyAccountBlock()}). The share may add, so the start does not wait for it the way it
      * waits for a borrowed claim; nothing here reads a person at start, which is what a co-owner
@@ -259,8 +261,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The rest are borrowed for the account erasure (HIL-302), which runs here for the reason the
      * merge does: signing the person out of every session is this library's, and it happens in
      * the same process right after the commit. The request is marked carried out - an edit - and
-     * the users library's rows of the person are removed; nothing more. Three of them were read
-     * here before, and still are: the live code behind a session's step is asked about on every
+     * the users library's rows of the person, their rename journal and lastly their row are
+     * removed. Three of them were read here before, and still are: the live code behind a
+     * session's step is asked about on every
      * handshake ({@see pendingAuthStepFor()}), and a person's confirmed authenticator and a
      * removal of it decide what a proven sign-in is let into. A claim is the interest of its
      * owner (docs/agents/architecture/truth-source.md), so they are no longer listed as reads.
@@ -274,8 +277,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
         // TODO(HIL-630): borrowed claim - the users library owns the person row; this library mints an
-        // administrator and writes the admin and block flags (HIL-1197).
-        HilosDbContext::users => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        // administrator, writes the admin and block flags (HIL-1197) and deletes the erased person's row (HIL-1200).
+        HilosDbContext::users => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the identity table belongs to the users library.
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // TODO(HIL-630): borrowed claim - the users library owns it; carried out with the account here (HIL-302).
@@ -296,6 +299,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // TODO(HIL-630): also credited by the sign-in the block refused (HIL-303); shared with the users library.
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure.
+        HilosDbContext::userRenames => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure (HIL-1200).
         HilosDbContext::userMerges => TruthSourceOperation::ALL,
     ];
 
@@ -4922,28 +4926,26 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Erases one account whose deletion fell due - irreversibly and whole (HIL-302).
+     * Erases a person whose deletion fell due, including every account folded into them (HIL-1200).
      *
      * One transaction, so half an erased account never exists: the request is marked carried
      * out first, under the condition that it still stands - a "Keep my account" that won the
-     * race leaves everything untouched - then the framework's rows of the person go, children
-     * before their parents, then the project erases its own ({@see self::applyAccountErasure()}).
-     * Any failure rolls all of it back, the request included.
-     *
-     * An account folded into another one can still be erased - its deletion was asked for before
-     * the merge and came due - and its merge row goes with the framework's rows (HIL-1199). The
-     * accounts folded into the person being erased need nothing here: the database clears their
-     * survivor when the person's row goes, and they stay folded.
+     * race leaves everything untouched. All folded accounts are gathered before any deletion,
+     * then erased from leaves to the named account. A folded account can also have its own due
+     * request made before its merge; its circle is erased without touching the survivor. Any live
+     * request of an account in the circle is completed, but no new request is written for it.
+     * The framework's rows go first, then the project's rows, then the rename journal and the
+     * person row. A failure at any account rolls the entire circle and its requests back.
      *
      * After the commit, outside the transaction because none of it can be rolled back: every
-     * session the person stands in is signed out, the files the project's rows pointed at are
-     * removed, and the notifications library is asked to forget the person - its tables are not
+     * session of every erased account is signed out, the files the project's rows pointed at are
+     * removed, and the notifications library is asked to forget each account - its tables are not
      * claimed here, because the feature is not mounted everywhere. The request row stays behind,
      * carried out: the number of an account that no longer exists and three dates. A failure
      * there is logged and not retried - the request is carried out, and no sweep returns to it.
      *
      * @param AccountDeletion $deletion Standing request whose moment has come
-     * @return ?AccountErasure Project erasure outcome, or null when cancellation won the race
+     * @return ?AccountErasure Combined project erasure outcome, or null when cancellation won the race
      * @throws NotImplementedException When the project has not wired the erasure seam
      * @throws HilosException On database or truth-source failure (transaction rolled back)
      */
@@ -4959,19 +4961,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 return null;
             }
 
-            // The device keys before the ways in: a credential restricts the delete of its anchor.
-            Hilos::$db->passkeyCredentials->deleteForUser($userId);
-            Hilos::$db->identities->deleteForUser($userId);
-            Hilos::$db->verifications->deleteForUser($userId);
-            Hilos::$db->secondFactors->actions->deleteForUser($userId);
-            Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($userId);
-            Hilos::$db->secondFactorResets->actions->deleteForUser($userId);
-            Hilos::$db->secondFactorSettings->actions->deleteForUser($userId);
-            Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
-            Hilos::$db->stepUps->actions->deleteForUser($userId);
-            Hilos::$db->legalAcceptances->actions->deleteForUser($userId);
-            Hilos::$db->userMerges->actions->deleteForUser($userId);
-            $erasure = $this->applyAccountErasure($userId);
+            $userIds = $this->erasureOrderOf($userId);
+            $erasure = new AccountErasure([], []);
+            foreach ($userIds as $erasedId) {
+                if ($erasedId !== $userId) {
+                    Hilos::$db->accountDeletions->liveOf($erasedId)?->actions->complete();
+                }
+                $erasure = $erasure->plus($this->erasePerson($erasedId));
+            }
             Database::transactionCommit();
         } catch (HilosException $e) {
             try {
@@ -4988,17 +4985,86 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             'user' => $userId,
             'requestedAt' => $deletion->requestedAt,
             'rows' => $erasure->rowsErased,
+            'folded' => array_values(array_diff($userIds, [$userId])),
         ]));
 
-        try {
-            $this->killUserSessions($userId);
-            $this->removeErasedFiles($erasure->publishedFiles);
-            Hilos::$notify?->forgetUser($userId);
-            DataExportNotifier::forgetUser($userId);
-        } catch (HilosException | RandomException $e) {
-            // The account is gone and the request carried out, so no sweep comes back for it.
-            $this->logAgentError("Account of user {$userId} erased, but what follows the commit failed: {$e->getMessage()}");
+        foreach ($userIds as $erasedId) {
+            try {
+                $this->killUserSessions($erasedId);
+                Hilos::$notify?->forgetUser($erasedId);
+                DataExportNotifier::forgetUser($erasedId);
+            } catch (HilosException | RandomException $e) {
+                // The account is gone and its request carried out, so no sweep comes back for it.
+                $this->logAgentError("Account of user {$erasedId} erased, but what follows the commit failed: {$e->getMessage()}");
+            }
         }
+        try {
+            $this->removeErasedFiles($erasure->publishedFiles);
+        } catch (HilosException $e) {
+            $this->logAgentError("Account of user {$userId} erased, but removing its files failed: {$e->getMessage()}");
+        }
+
+        return $erasure;
+    }
+
+    /**
+     * Lists an account and all accounts folded into it, deepest first (HIL-1200).
+     *
+     * Each merge row is removed while its survivor still exists; reversing the breadth-first
+     * walk keeps descendants ahead of their survivors so the database's SET NULL is not used.
+     * Merges normally form a tree, but remembering visited ids keeps the walk finite even for
+     * rows written outside the merge rules.
+     *
+     * @param int $userId Account at the root of the erasure
+     * @return list<int> Account ids in erasure order
+     * @throws HilosException On merge lookup failure
+     */
+    private function erasureOrderOf(int $userId): array
+    {
+        $walked = [$userId];
+        $seen = [$userId => true];
+        for ($index = 0; $index < count($walked); $index++) {
+            $id = $walked[$index];
+            foreach (Hilos::$db->userMerges->foldedInto($id) as $merge) {
+                if (isset($seen[$merge->userId])) {
+                    continue;
+                }
+                $seen[$merge->userId] = true;
+                $walked[] = $merge->userId;
+            }
+        }
+
+        return array_reverse($walked);
+    }
+
+    /**
+     * Erases one account's framework and project rows within the caller's transaction (HIL-1200).
+     *
+     * @param int $userId Account being erased
+     * @return AccountErasure The project's rows and files for this account
+     * @throws NotImplementedException When the project has not wired the erasure seam
+     * @throws ItemNotFoundForUpdateException When the person row has no persisted id
+     * @throws HilosException On database or truth-source failure
+     */
+    private function erasePerson(int $userId): AccountErasure
+    {
+        // The device keys before the ways in: a credential restricts the delete of its anchor.
+        Hilos::$db->passkeyCredentials->deleteForUser($userId);
+        Hilos::$db->identities->deleteForUser($userId);
+        Hilos::$db->verifications->deleteForUser($userId);
+        Hilos::$db->secondFactors->actions->deleteForUser($userId);
+        Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($userId);
+        Hilos::$db->secondFactorResets->actions->deleteForUser($userId);
+        Hilos::$db->secondFactorSettings->actions->deleteForUser($userId);
+        Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
+        Hilos::$db->stepUps->actions->deleteForUser($userId);
+        Hilos::$db->legalAcceptances->actions->deleteForUser($userId);
+        Hilos::$db->userMerges->actions->deleteForUser($userId);
+        $erasure = $this->applyAccountErasure($userId);
+        // Chat reads rename rows while deleting its feed events. Rows where this account
+        // was only the author remain; the database clears their author reference (HIL-1195).
+        Hilos::$db->userRenames->actions->deleteByUser($userId);
+        Hilos::$db->users[$userId]?->actions->delete();
 
         return $erasure;
     }
@@ -5006,11 +5072,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Deletes everything this project keeps of a person whose account is being erased (HIL-302).
      *
-     * Called INSIDE the erasure's transaction, after the framework's rows of the person are
-     * gone, so whatever it writes rolls back with the rest. The project deletes EVERY row of
-     * its own that belongs to the person - the person's row itself last, since the others
-     * point at it - because that is what a published privacy text promises; where the person
-     * is only mentioned in somebody else's row, the mention goes and the row stays.
+     * Called INSIDE the erasure's transaction for each account in the circle, after its other
+     * framework rows are gone and before the framework removes its rename journal and person row.
+     * The journal remains readable by the project here. The project deletes EVERY row of its own
+     * that belongs to the person; where the person is only mentioned in somebody else's row, the
+     * mention goes and the row stays.
      *
      * A refusing default, as the merge's seams have: a project that forgot to erase its rows
      * hears it the first time an account falls due, rather than keeping them in silence.

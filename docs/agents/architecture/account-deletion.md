@@ -70,44 +70,51 @@ asks none.
 ## The Erasure
 
 Once a minute, where a sign-in exists, the session holder sweeps the due
-requests (`AbstractSessionsLibraryAgent`). Each account is erased in ONE
-transaction:
+requests (`AbstractSessionsLibraryAgent`). A due request erases its named account
+and every account folded into it, including folded accounts down a chain. Those
+accounts belong to one person (owner decision, 30 September 2026). The holder
+gathers the entire circle first and erases it from leaves to the named account
+in ONE transaction:
 
 1. the request is marked carried out; lost to a cancel — rolled back, nothing
    touched;
-2. the framework's rows of the person go: device keys before ways in, codes,
+2. for each folded account, a live request of its own is marked carried out;
+3. for each account, the framework's rows go: device keys before ways in, codes,
    the second factor whole, operation confirmations, legal acceptances, and the
-   person's merge row when the account was folded into another one — its
-   deletion may have been asked for before the merge (HIL-1199);
-3. the project's seam `applyAccountErasure(int $userId): AccountErasure` deletes
-   the project's rows.
+   account's merge row when it was folded into another one (HIL-1199);
+4. the project's seam `applyAccountErasure(int $userId): AccountErasure` deletes
+   its rows for that account;
+5. the framework removes the account's rename journal rows, then its person row.
 
-The accounts folded INTO the person need nothing here: their merge rows stay,
-the database clears the survivor when the person's row goes, and they stay
-folded ([people-table.md](people-table.md), *A Merged Account*).
+Erasing the survivor erases the accounts folded into it: it is one person.
+Erasing a folded account under its own earlier request erases it and the
+accounts folded into it, leaving its survivor alone. The leaf-first order
+removes each merge row while its survivor still exists; the merge table's
+`SET NULL` does not run in this erasure. Folded accounts receive no new request:
+the named account's completed request and the erasure log record the operation.
 
 Any failure rolls all of it back; the request stays live and due, and the next
 minute tries again. Half an erased account never exists.
 
 Tests can bring a request due with `test:account:force-purge <userId>`: the
 session holder moves its moment to now and erases it through this path,
-returning the project's tally. A failed erasure leaves the request due for the
-next sweep.
+returning the sum of the project's tallies for the circle. A failed erasure
+leaves the request due for the next sweep.
 
-After the commit, outside the transaction: every session the person stands in
-is signed out — signed in as them, taking over somebody else's account, or
+After the commit, outside the transaction: every session of every erased
+account is signed out — signed in as them, taking over somebody else's account, or
 waiting on their second factor; the files the project named are removed from
 disk (a file that will not go is logged as an orphan, not retried); and
-`Hilos::$notify->forgetUser()` sends `hilos_notification_forget_user` to the
-notifications library, which deletes the person's notifications with their
+`Hilos::$notify->forgetUser()` sends `hilos_notification_forget_user` for each
+erased account to the notifications library, which deletes its notifications,
 journal, preferences and push subscriptions. That is a frame and not a write
 here because the notification feature is not mounted everywhere; a lost frame
 leaves rows of nobody. A failure after the commit is logged and not retried: the
 request is carried out, and no sweep comes back for it.
 
 `DataExportNotifier::forgetUser()` also queues `hilos_data_export_forget_user`
-to the export owner after the commit, removing the person's prepared copy. A
-builder checks the retained completed-erasure row before publishing; see
+for each account to the export owner after the commit, removing its prepared
+copy. A builder checks the retained completed-erasure row before publishing; see
 [data-export.md](data-export.md).
 
 ## The Project's Seam
@@ -120,10 +127,11 @@ project with a refusal of its own overrides it and calls the parent first.
 
 `applyAccountErasure()` refuses by default (`NotImplementedException`), like the
 merge's seam: a project that forgot to erase its rows hears it when the first
-account falls due. An implementation deletes EVERY row of its own that belongs
-to the person — the person's row last, since the others point at it — because
-that is what a published privacy text promises; where the person is only
-mentioned in somebody else's row, the mention goes and the row stays. It runs
-inside the transaction and under the holder's own claims, so each table it
+account falls due. It is called for every account in the circle. An implementation
+deletes EVERY row of its own that belongs to that account; where the person is
+only mentioned in somebody else's row, the mention goes and the row stays.
+The framework deletes the rename journal and person row after the hook; the
+journal is still readable during the hook. It runs inside the transaction and
+under the holder's own claims, so each table it
 writes needs a borrowed claim on the project's session holder. Files are
 named in the answer, never removed in the seam.

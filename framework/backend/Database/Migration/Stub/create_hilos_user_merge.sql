@@ -3,8 +3,9 @@
 -- A merged account belongs to the framework (HIL-1199): one row per account folded into
 -- another - which account, into which, when - written by the sessions library in the
 -- transaction of the merge. The row is keyed by the folded account, so an account is
--- folded at most once. survivor_user_id is cleared when the survivor's account is erased
--- (SET NULL): the folded account stays folded. merged_at is NULL only on rows carried
+-- folded at most once. The database clears survivor_user_id if the survivor's row is
+-- removed first (SET NULL); erasure removes folded accounts before their survivor
+-- (HIL-1200), so an empty survivor belongs only to older rows. merged_at is NULL on rows carried
 -- over from a project's former column, which never recorded the moment. The keys onto
 -- hilos_user are born here (docs/agents/architecture/people-table.md, Foreign Keys Onto
 -- The Person).

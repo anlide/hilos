@@ -69,7 +69,7 @@ where it is today — a hook the project implements.
 | Creating the first administrator (`ensureAdminUser()`), granting and removing rights (`applyAdminGrant()`), blocking (`applyAccountBlock()`), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197 |
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
 | The tombstone of a merged account and "is this account already folded" (`assertMergeable()`, the merge table `hilos_user_merge`), the refusals to a folded account | HIL-1199 |
-| Erasing a person — the framework deletes the person's row last, after the project's rows ([account-deletion.md](account-deletion.md)) | (not in the code yet — HIL-1200) |
+| Erasing a person — the framework deletes the person's rename journal and row after the project's rows, along with accounts folded into that person ([account-deletion.md](account-deletion.md)) | HIL-1200 |
 | The people table and the merge-candidates table in the admin section | HIL-1201 |
 | Foreign keys onto the person from every framework table that points at one | (not in the code yet — HIL-1202) |
 | `name` and `lastActivity` on the frontend `User` entity | HIL-1193 |
@@ -134,14 +134,16 @@ folded (`user_id`, the key of the row), into which (`survivor_user_id`), when
 and "is this account merged" is `Hilos::$db->userMerges[$userId] !== null`. Two
 columns are null by design: `merged_at` on the rows carried over from the chat
 demo's former column, which never recorded the moment, and `survivor_user_id`
-once the survivor's account is erased.
+only on older rows left when the survivor was erased before HIL-1200 began
+taking folded accounts with it.
 
 Its two keys onto `hilos_user` are chosen apart. The folded account is
 `RESTRICT`: its row goes only with the account's own erasure, which removes it
 among the framework's rows, and a forgotten merge row stops that erasure loudly.
-The survivor is `SET NULL`: erasing the survivor must pass, and the accounts
-folded into it stay folded — a `CASCADE` would bring them back as candidates,
-with rights and a block that could be lifted.
+The survivor is `SET NULL`: it lets the survivor's row go if it is deleted first,
+without making a folded account an unmerged candidate. Erasure takes folded
+accounts first (HIL-1200), so this key does not run on its normal path. The
+choice of the key belongs to HIL-1202.
 
 The table is the sessions library's whole, and the whole operation is framework
 code (`AbstractSessionsLibraryAgent::mergeAccounts()`): whether the two accounts

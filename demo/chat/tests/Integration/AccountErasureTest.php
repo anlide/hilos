@@ -113,7 +113,7 @@ final class AccountErasureTest extends IntegrationTestCase
 
     /**
      * An account folded into another one is erased whole - its deletion was asked for before the
-     * merge - and the framework takes its merge row before the chat deletes the person's row,
+     * merge - and the framework takes its merge row before it deletes the person's row,
      * which the merge row would hold (HIL-1199).
      *
      * @throws HilosException When seeding or the sweep fails
@@ -134,24 +134,30 @@ final class AccountErasureTest extends IntegrationTestCase
     }
 
     /**
-     * Erasing the account others were folded into leaves them folded, with nobody to point at.
+     * Erasing the survivor also erases its folded account and the folded account's feed events.
      *
      * @throws HilosException When seeding or the sweep fails
      */
-    public function testErasingTheSurvivorLeavesTheFoldedAccountFolded(): void
+    public function testErasingTheSurvivorErasesTheFoldedAccount(): void
     {
         $survivorId = (int)Hilos::$db->users->actions->createWithName('Survivor and leaving')->id;
         $foldedId = (int)Hilos::$db->users->actions->createWithName('Folded')->id;
         Hilos::$db->userMerges->actions->add($foldedId, $survivorId);
         Hilos::$db->users[$foldedId]->actions->setBlock(true);
+        $registrationId = (int)Hilos::$db->events->actions->addUserRegistered($foldedId)->id;
+        $renameId = (int)Hilos::$db->events->actions->addUserRenamed(
+            Hilos::$db->userRenames->actions->add($foldedId, $foldedId, 'Before', 'Folded'),
+        )->id;
         $this->requestDueDeletion($survivorId);
 
         $this->runErasure();
 
         self::assertCount(0, EntityUser::get([EntityUser::id => $survivorId]), 'The survivor is gone');
-        $merge = EntityUserMerge::get([EntityUserMerge::user_id => $foldedId])->first();
-        self::assertNotNull($merge, 'The folded account stays folded');
-        self::assertNull($merge->survivor_user_id);
+        self::assertCount(0, EntityUser::get([EntityUser::id => $foldedId]), 'The folded account is gone');
+        self::assertCount(0, EntityUserMerge::get([EntityUserMerge::user_id => $foldedId]));
+        self::assertCount(0, EntityUserRename::get([EntityUserRename::user_id => $foldedId]));
+        self::assertCount(0, EntityEvent::get([EntityEvent::id => $registrationId]));
+        self::assertCount(0, EntityEvent::get([EntityEvent::id => $renameId]));
     }
 
     /**

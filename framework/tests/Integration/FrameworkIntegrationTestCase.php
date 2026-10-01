@@ -36,6 +36,8 @@ abstract class FrameworkIntegrationTestCase extends TestCase
      *     claims them for the case exactly as each demo's integration base does.
      */
     private const array CLAIMED_TABLES = [
+        HilosDbContext::users,
+        HilosDbContext::userRenames,
         HilosDbContext::sessions,
         HilosDbContext::identities,
         HilosDbContext::verifications,

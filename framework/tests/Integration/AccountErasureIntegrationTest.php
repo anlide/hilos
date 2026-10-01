@@ -61,6 +61,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
 {
     public const int USER_ID = 302;
     public const int NEIGHBOUR_ID = 303;
+    private const int FOLDED_ID = 304;
+    private const int DEEPEST_ID = 305;
 
     private const string CREATED_AT = '2026-09-26 10:00:00';
     private const string PAST = '2026-01-01 00:00:00';
@@ -77,6 +79,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
 
     /** Session signed in as the neighbour. */
     private const string NEIGHBOUR_TOKEN = 'dd0000000000000000000000000000302';
+    private const string FOLDED_TOKEN = 'ee0000000000000000000000000000304';
+    private const string DEEPEST_TOKEN = 'ff0000000000000000000000000000305';
 
     /** The tables the erasure cuts by the person, each counted by its user id column. */
     private const array ERASED_TABLES = [
@@ -203,38 +207,78 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     {
         self::seedPersonRows();
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Deepest')", [self::DEEPEST_ID]);
+        $this->seedPerson(self::DEEPEST_ID, self::DEEPEST_TOKEN);
         self::seedMerge(self::USER_ID, self::NEIGHBOUR_ID);
+        self::seedMerge(self::DEEPEST_ID, self::USER_ID);
         Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
 
-        $agent = $this->runSweep(deletesPerson: true);
+        $agent = $this->runSweep();
 
-        self::assertSame([self::USER_ID], $agent->erased);
+        self::assertSame([self::DEEPEST_ID, self::USER_ID], $agent->erased);
         self::assertSame(0, self::rowsOf('hilos_user_merge', self::USER_ID));
+        self::assertSame(0, self::rowsOf('hilos_user_merge', self::DEEPEST_ID));
         self::assertFalse(self::personExists(self::USER_ID));
+        self::assertFalse(self::personExists(self::DEEPEST_ID));
         self::assertTrue(self::personExists(self::NEIGHBOUR_ID));
     }
 
     /**
-     * Erasing the account others were folded into leaves them folded, with nobody to point at.
+     * The project sees the rename journal before the framework removes it and the person row.
      *
      * @throws HilosException When seeding or the sweep fails
      */
-    public function testErasingTheSurvivorLeavesTheFoldedAccountFolded(): void
+    public function testTheHookSeesThePersonRowAndJournalThatTheFrameworkDeletesAfterIt(): void
+    {
+        self::seedPersonRows();
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_rename` '
+            . '(`user_id`, `renamed_by_user_id`, `old_name`, `new_name`, `renamed_at`) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)',
+            [self::USER_ID, self::USER_ID, 'Before', 'After', self::CREATED_AT,
+                self::NEIGHBOUR_ID, self::USER_ID, 'Old', 'New', self::CREATED_AT],
+        );
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+
+        $agent = $this->runSweep();
+
+        self::assertSame([[self::USER_ID, true, 1]], $agent->seenAtHook);
+        self::assertFalse(self::personExists(self::USER_ID));
+        self::assertSame(0, self::rowsOf('hilos_user_rename', self::USER_ID));
+        self::assertSame(1, self::rowsOf('hilos_user_rename', self::NEIGHBOUR_ID));
+        Database::sql('SELECT `renamed_by_user_id` FROM `hilos_user_rename` WHERE `user_id` = ?', [self::NEIGHBOUR_ID]);
+        self::assertNull(Database::row()['renamed_by_user_id'] ?? null);
+    }
+
+    /**
+     * Erasing a survivor takes the entire chain of accounts folded into it, leaves first.
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testErasingTheSurvivorErasesTheAccountsFoldedIntoIt(): void
     {
         self::seedPersonRows();
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
-        self::seedMerge(self::NEIGHBOUR_ID, self::USER_ID);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Folded'), (?, 'Deepest')", [self::FOLDED_ID, self::DEEPEST_ID]);
+        $this->seedPerson(self::FOLDED_ID, self::FOLDED_TOKEN);
+        $this->seedPerson(self::DEEPEST_ID, self::DEEPEST_TOKEN);
+        self::seedMerge(self::FOLDED_ID, self::USER_ID);
+        self::seedMerge(self::DEEPEST_ID, self::FOLDED_ID);
         Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+        $foldedRequest = Hilos::$db->accountDeletions->actions->request(self::FOLDED_ID, self::FUTURE);
 
-        $agent = $this->runSweep(deletesPerson: true);
+        $agent = $this->runSweep();
 
-        self::assertSame([self::USER_ID], $agent->erased);
-        self::assertFalse(self::personExists(self::USER_ID));
-        self::assertSame(1, self::rowsOf('hilos_user_merge', self::NEIGHBOUR_ID), 'The folded account stays folded');
-        Database::sql('SELECT `survivor_user_id` FROM `hilos_user_merge` WHERE `user_id` = ?', [self::NEIGHBOUR_ID]);
-        $row = Database::row();
-        self::assertNotNull($row);
-        self::assertNull($row['survivor_user_id']);
+        self::assertSame([self::DEEPEST_ID, self::FOLDED_ID, self::USER_ID], $agent->erased);
+        foreach ([self::DEEPEST_ID, self::FOLDED_ID, self::USER_ID] as $erasedId) {
+            self::assertFalse(self::personExists($erasedId));
+            self::assertSame(0, self::rowsOf('hilos_user_merge', $erasedId));
+            foreach (self::ERASED_TABLES as $table) {
+                self::assertSame(0, self::rowsOf($table, $erasedId), "{$table} keeps no row of {$erasedId}");
+            }
+        }
+        self::assertNotNull(self::requestRow((int)$foldedRequest->id)['completed_at']);
+        self::assertTrue(self::personExists(self::NEIGHBOUR_ID));
+        self::assertSame([self::DEEPEST_ID, self::FOLDED_ID, self::USER_ID], $this->forgottenUsers());
     }
 
     /**
@@ -250,7 +294,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         // The seeds announced their own rows; what is judged below is what the sweep announces.
         $this->drainQueue();
 
-        $this->runSweep(failing: true);
+        $this->runSweep(failingFor: self::USER_ID);
 
         foreach (self::ERASED_TABLES as $table) {
             self::assertSame(1, self::rowsOf($table, self::USER_ID), "{$table} is rolled back");
@@ -266,6 +310,36 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             self::dbFrameTypesAmong($queued),
             'A rolled-back erasure announces none of its deletions to the other processes (HIL-1164)',
         );
+    }
+
+    /**
+     * A refusal at a folded account undoes the named account's request and every account's rows.
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testAFailingSeamOnAFoldedAccountRollsTheWholeErasureBack(): void
+    {
+        self::seedPersonRows();
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Folded'), (?, 'Deepest')", [self::FOLDED_ID, self::DEEPEST_ID]);
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $this->seedPerson(self::FOLDED_ID, self::FOLDED_TOKEN);
+        $this->seedPerson(self::DEEPEST_ID, self::DEEPEST_TOKEN);
+        self::seedMerge(self::FOLDED_ID, self::USER_ID);
+        self::seedMerge(self::DEEPEST_ID, self::FOLDED_ID);
+        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+        $this->drainQueue();
+
+        $agent = $this->runSweep(failingFor: self::FOLDED_ID);
+
+        self::assertSame([self::DEEPEST_ID], $agent->erased);
+        foreach ([self::DEEPEST_ID, self::FOLDED_ID, self::USER_ID] as $id) {
+            self::assertTrue(self::personExists($id));
+            foreach (self::ERASED_TABLES as $table) {
+                self::assertSame(1, self::rowsOf($table, $id));
+            }
+        }
+        self::assertNull(self::requestRow((int)$request->id)['completed_at']);
+        self::assertSame([], $this->forgottenUsers());
     }
 
     /**
@@ -298,6 +372,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     {
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
+        self::seedPersonRows();
+        self::seedMerge(self::NEIGHBOUR_ID, self::USER_ID);
         self::seedSession(self::TAKEOVER_TOKEN, self::NEIGHBOUR_ID, self::CREATED_AT, null, self::USER_ID);
         $signedInId = Hilos::$db->sessions->findByToken(self::SIGNED_IN_TOKEN)->id;
         $takeoverId = Hilos::$db->sessions->findByToken(self::TAKEOVER_TOKEN)->id;
@@ -315,15 +391,15 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             $outcome->reply->payload[AccountDeletionCommandConstants::FIELD_USER_ID] ?? null,
         );
         self::assertSame(
-            ['projectRows' => 1],
+            ['projectRows' => 2],
             $outcome->reply->payload[AccountDeletionCommandConstants::FIELD_ROWS_ERASED] ?? null,
         );
-        self::assertSame([self::USER_ID], $agent->erased);
-        self::assertSame([self::USER_ID], $outcome->forgottenUsers);
+        self::assertSame([self::NEIGHBOUR_ID, self::USER_ID], $agent->erased);
+        self::assertSame([self::NEIGHBOUR_ID, self::USER_ID], $outcome->forgottenUsers);
 
         foreach (self::ERASED_TABLES as $table) {
             self::assertSame(0, self::rowsOf($table, self::USER_ID), "{$table} keeps nothing of the person");
-            self::assertSame(1, self::rowsOf($table, self::NEIGHBOUR_ID), "{$table} keeps the neighbour");
+            self::assertSame(0, self::rowsOf($table, self::NEIGHBOUR_ID), "{$table} erases the folded account");
         }
 
         $row = self::requestRow($requestId);
@@ -337,7 +413,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertNotNull(Hilos::$db->sessions[$takeoverId]);
         self::assertNull(Hilos::$db->sessions[$takeoverId]->userId, 'The takeover the person ran is ended');
         self::assertNull(Hilos::$db->sessions[$takeoverId]->impersonatorUserId);
-        self::assertSame(self::NEIGHBOUR_ID, self::userOf(self::NEIGHBOUR_TOKEN));
+        self::assertNull(self::userOf(self::NEIGHBOUR_TOKEN));
     }
 
     /**
@@ -396,7 +472,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::FUTURE);
         $requestId = (int)$request->id;
         $agent = new AccountErasureTestAgent();
-        $agent->failing = true;
+        $agent->failingFor = self::USER_ID;
         $agent->onStart();
 
         $this->sendForcePurgeCommand($agent, self::USER_ID);
@@ -468,16 +544,14 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     /**
      * Arms and runs the session holder's tick once.
      *
-     * @param bool $failing Whether the project's seam refuses
-     * @param bool $deletesPerson Whether the project's seam deletes the person's row, the way a project does
+     * @param ?int $failingFor Account whose project seam refuses, or null for no refusal
      * @return AccountErasureTestAgent The holder that ran
      * @throws HilosException When the tick fails
      */
-    private function runSweep(bool $failing = false, bool $deletesPerson = false): AccountErasureTestAgent
+    private function runSweep(?int $failingFor = null): AccountErasureTestAgent
     {
         $agent = new AccountErasureTestAgent();
-        $agent->failing = $failing;
-        $agent->deletesPerson = $deletesPerson;
+        $agent->failingFor = $failingFor;
         $agent->onStart();
         $agent->onTick();
 
@@ -772,14 +846,14 @@ abstract class AccountErasureTestHilos extends Hilos
  */
 final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
 {
-    /** Whether the seam refuses, to prove the rollback. */
-    public bool $failing = false;
-
-    /** Whether the seam deletes the person's row, the way a project does after its own rows. */
-    public bool $deletesPerson = false;
+    /** Account whose seam refuses, to prove the rollback. */
+    public ?int $failingFor = null;
 
     /** @var list<int> People whose project rows the seam was asked to delete */
     public array $erased = [];
+
+    /** @var list<array{int, bool, int}> Person and rename journal state seen by each hook call */
+    public array $seenAtHook = [];
 
     public function onStop(): void
     {
@@ -789,17 +863,18 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
      * @param int $userId Person whose account is being erased
      * @return AccountErasure Nothing of a project, and no files
      * @throws ValidationException When the case asks the seam to refuse
-     * @throws DatabaseException When the person's row cannot be deleted
+     * @throws DatabaseException When the person or rename journal cannot be inspected
      */
     protected function applyAccountErasure(int $userId): AccountErasure
     {
-        if ($this->failing) {
+        if ($this->failingFor === $userId) {
             throw new ValidationException('The project refused the erasure');
         }
         $this->erased[] = $userId;
-        if ($this->deletesPerson) {
-            Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$userId]);
-        }
+        Database::sql('SELECT `id` FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        $exists = Database::row() !== null;
+        Database::sql('SELECT COUNT(*) AS `count` FROM `hilos_user_rename` WHERE `user_id` = ?', [$userId]);
+        $this->seenAtHook[] = [$userId, $exists, (int)(Database::row()['count'] ?? 0)];
 
         return new AccountErasure(['projectRows' => 1], []);
     }

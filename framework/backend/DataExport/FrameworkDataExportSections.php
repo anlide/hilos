@@ -43,7 +43,7 @@ final class FrameworkDataExportSections
 
         // Both sides of a merge are the person's: their account folded away, and the accounts
         // folded into theirs. Null where it is not known - a row carried over without its
-        // moment, a survivor erased since.
+        // moment, an older row whose survivor was erased before HIL-1200.
         $merges = [];
         $foldedAway = Hilos::$db->userMerges[$userId];
         if ($foldedAway !== null) {

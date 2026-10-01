@@ -55,9 +55,8 @@ class UserMergesActions extends DbActions
      *
      * The row leaves through its object, so every reader hears the delete. It restricts the
      * delete of the person's row, so it goes first. Rows where the person is the survivor are
-     * not touched: the database clears that reference when the person's row goes, and the
-     * accounts folded into them stay folded. An account never folded has no row, which is not
-     * an error.
+     * not touched here: erasure removes the folded accounts before their survivor (HIL-1200).
+     * An account never folded has no row, which is not an error.
      *
      * @param int $userId Folded account being erased
      * @throws HilosException On database or truth-source failure
