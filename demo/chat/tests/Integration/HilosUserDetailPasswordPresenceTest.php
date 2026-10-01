@@ -45,7 +45,9 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
                 self::ACCEPT_KEY,
                 new PageRouteParams($params),
             );
-            $this->assertFalse($this->passwordPresenceOfNextPageResponse());
+            $initialIdentity = $this->identitySlotOfNextPageResponse();
+            $this->assertFalse($initialIdentity[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
+            $this->assertNull($initialIdentity[HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS]);
 
             Hilos::$sr->subscribeToPage(
                 UserPage::PAGE,
@@ -64,7 +66,22 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
             $failures = Hilos::$browser?->flushToSignalRouter() ?? [];
             $this->assertSame([], $failures);
 
-            $this->assertTrue($this->passwordPresenceOfNextPageResponse());
+            $unverifiedIdentity = $this->identitySlotOfNextPageResponse();
+            $this->assertTrue($unverifiedIdentity[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
+            $this->assertSame("survivor-{$userId}@example.test", $unverifiedIdentity[HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS]);
+
+            $password->markVerified();
+            Hilos::$browser?->record(SourceChange::dbUpdated(
+                HilosDbContext::identities,
+                (string) $password->id,
+                [Identity::userId => $userId, Identity::verified => true],
+            ));
+            $failures = Hilos::$browser?->flushToSignalRouter() ?? [];
+            $this->assertSame([], $failures);
+
+            $verifiedIdentity = $this->identitySlotOfNextPageResponse();
+            $this->assertTrue($verifiedIdentity[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
+            $this->assertNull($verifiedIdentity[HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS]);
         } finally {
             Hilos::$rt->connections->actions->clear();
             RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
@@ -73,9 +90,9 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
     }
 
     /**
-     * @return bool Password-presence field from the next user-detail page response
+     * @return array<string, mixed> Identity slot payload from the next user-detail page response
      */
-    private function passwordPresenceOfNextPageResponse(): bool
+    private function identitySlotOfNextPageResponse(): array
     {
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             if ($signal->signalName->getName() !== SignalTypeConstants::PAGE_RESPONSE) {
@@ -89,9 +106,17 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
             $identity = $rows[0][PagePayload::slots][HilosDbContext::identities] ?? null;
             $this->assertIsArray($identity);
 
-            return $identity[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD] ?? false;
+            return $identity;
         }
 
         $this->fail('The user-detail subscription answered with no page response.');
+    }
+
+    /**
+     * @return bool Password-presence field from the next user-detail page response
+     */
+    private function passwordPresenceOfNextPageResponse(): bool
+    {
+        return (bool) ($this->identitySlotOfNextPageResponse()[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD] ?? false);
     }
 }

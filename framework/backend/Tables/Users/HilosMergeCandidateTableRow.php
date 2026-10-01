@@ -24,12 +24,14 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
      * @param list<array{type: string, identifier: string, provider: ?string, verified: bool}> $identities Safe identity metadata
      * @param bool $hasPassword Whether the account has a password identity
      * @param ?int $exactUserId User id only when it exactly matches a numeric search term
+     * @param ?string $unverifiedPasswordAddress Address of an unconfirmed password that a merge will remove instead of demoting
      */
     public function __construct(
         public readonly array $userFields,
         public readonly array $identities,
         public readonly bool $hasPassword,
         public readonly ?int $exactUserId = null,
+        public readonly ?string $unverifiedPasswordAddress = null,
     ) {
     }
 
@@ -53,6 +55,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
         return $this->userFields + [
             HilosMergeCandidatesTable::FIELD_IDENTITIES => $this->identities,
             HilosMergeCandidatesTable::FIELD_HAS_PASSWORD => $this->hasPassword,
+            HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS => $this->unverifiedPasswordAddress,
             self::identityAddresses => implode(' ', array_column($this->identities, 'identifier')),
             self::exactUserId => $this->exactUserId,
         ];
@@ -69,14 +72,22 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
         $identities = self::optionalArray($data, HilosMergeCandidatesTable::FIELD_IDENTITIES) ?? [];
         $hasPassword = self::requireBool($data, HilosMergeCandidatesTable::FIELD_HAS_PASSWORD);
         $exactUserId = self::optionalInt($data, self::exactUserId);
+        $unverifiedPasswordAddress = self::optionalString($data, HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS);
         unset(
             $data[HilosMergeCandidatesTable::FIELD_IDENTITIES],
             $data[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD],
+            $data[HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS],
             $data[self::identityAddresses],
             $data[self::exactUserId],
         );
 
         /** @var list<array{type: string, identifier: string, provider: ?string, verified: bool}> $identities */
-        return new static($data, $identities, $hasPassword, $exactUserId);
+        return new static(
+            userFields: $data,
+            identities: $identities,
+            hasPassword: $hasPassword,
+            exactUserId: $exactUserId,
+            unverifiedPasswordAddress: $unverifiedPasswordAddress,
+        );
     }
 }

@@ -10,6 +10,8 @@ import {
   createHilosUserStanding,
   hilosStandingBadge,
   hilosUserFrozenRow,
+  HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
+  hilosPasswordFateChoices,
   HILOS_USER_CARD_STEP_UP_OPERATIONS,
   hilosUserLifecycleSections,
   resolveHilosMergeCandidateRow,
@@ -72,6 +74,7 @@ describe('resolveHilosMergeCandidateRow', () => {
             },
           ],
           hasPassword: true,
+          unverifiedPasswordAddress: 'loser@example.test',
         },
       },
     }
@@ -89,7 +92,47 @@ describe('resolveHilosMergeCandidateRow', () => {
         },
       ],
       hasPassword: true,
+      unverifiedPasswordAddress: 'loser@example.test',
     })
+  })
+
+  it('reads unverified password address as string and defaults missing or hidden to null', () => {
+    const { scopes, users } = userStore()
+    scopes
+      .page()
+      ?.entities.upsert(
+        { type: 'user', id: 7 },
+        { id: 7, name: 'Loser', lastActivity: null },
+      )
+    const rowMissing: TableRow = {
+      rowKey: '7',
+      slots: {
+        users: { type: 'user', id: 7 },
+        merge: {
+          identities: [],
+          hasPassword: true,
+        },
+      },
+    }
+    expect(
+      resolveHilosMergeCandidateRow(rowMissing, users)
+        .unverifiedPasswordAddress,
+    ).toBeNull()
+
+    const rowHidden: TableRow = {
+      rowKey: '7',
+      slots: {
+        users: { type: 'user', id: 7 },
+        merge: {
+          identities: [],
+          hasPassword: true,
+          unverifiedPasswordAddress: { _hidden: true },
+        },
+      },
+    }
+    expect(
+      resolveHilosMergeCandidateRow(rowHidden, users).unverifiedPasswordAddress,
+    ).toBeNull()
   })
 })
 
@@ -155,6 +198,41 @@ describe('createHilosUserDetail', () => {
       users: { type: 'user', id: 1 },
     })
     expect(detail.get()?.hasPassword).toBe(false)
+  })
+
+  it('reads unverified password address from the identities slot and defaults missing or hidden to null', () => {
+    const { scopes, users } = userStore()
+    const page = scopes.page()
+    page?.entities.upsert(
+      { type: 'user', id: 1 },
+      { id: 1, name: 'Survivor', lastActivity: null },
+    )
+    page?.tables.upsert('userDetail', 1, {
+      users: { type: 'user', id: 1 },
+      identities: {
+        hasPassword: true,
+        unverifiedPasswordAddress: 'survivor@example.test',
+      },
+    })
+    const detail = createHilosUserDetail({ scopes, users } as HilosUsersContext)
+    expect(detail.get()?.unverifiedPasswordAddress).toBe(
+      'survivor@example.test',
+    )
+
+    page?.tables.upsert('userDetail', 1, {
+      users: { type: 'user', id: 1 },
+      identities: {
+        hasPassword: true,
+        unverifiedPasswordAddress: { _hidden: true },
+      },
+    })
+    expect(detail.get()?.unverifiedPasswordAddress).toBeNull()
+
+    page?.tables.upsert('userDetail', 1, {
+      users: { type: 'user', id: 1 },
+      identities: { hasPassword: true },
+    })
+    expect(detail.get()?.unverifiedPasswordAddress).toBeNull()
   })
 })
 
@@ -258,6 +336,146 @@ describe('createHilosAccountMerge', () => {
           loserUserId: 57,
           passwordFate: 'loser',
         },
+      },
+    ])
+  })
+})
+
+describe('hilosPasswordFateChoices (HIL-1276)', () => {
+  it('yields three choices without removal warnings when both addresses are null or confirmed', () => {
+    const choices = hilosPasswordFateChoices(
+      { unverifiedPasswordAddress: null },
+      { unverifiedPasswordAddress: null },
+    )
+
+    expect(choices).toEqual([
+      {
+        value: 'survivor',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.survivor,
+        removes: [],
+      },
+      {
+        value: 'loser',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.loser,
+        removes: [],
+      },
+      {
+        value: 'none',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.none,
+        removes: [],
+      },
+    ])
+  })
+
+  it('warns about removing the second account unconfirmed address under survivor and none choices', () => {
+    const choices = hilosPasswordFateChoices(
+      { unverifiedPasswordAddress: null },
+      { unverifiedPasswordAddress: 'bob@example.test' },
+    )
+
+    expect(choices).toEqual([
+      {
+        value: 'survivor',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.survivor,
+        removes: [
+          'bob@example.test is not confirmed and will be removed, not moved.',
+        ],
+      },
+      {
+        value: 'loser',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.loser,
+        removes: [],
+      },
+      {
+        value: 'none',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.none,
+        removes: [
+          'bob@example.test is not confirmed and will be removed, not moved.',
+        ],
+      },
+    ])
+  })
+
+  it('warns about removing the survivor unconfirmed address under loser and none choices', () => {
+    const choices = hilosPasswordFateChoices(
+      { unverifiedPasswordAddress: 'alice@example.test' },
+      { unverifiedPasswordAddress: null },
+    )
+
+    expect(choices).toEqual([
+      {
+        value: 'survivor',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.survivor,
+        removes: [],
+      },
+      {
+        value: 'loser',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.loser,
+        removes: ['alice@example.test is not confirmed and will be removed.'],
+      },
+      {
+        value: 'none',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.none,
+        removes: ['alice@example.test is not confirmed and will be removed.'],
+      },
+    ])
+  })
+
+  it('lists both removal warnings in order (second first, then survivor) under none choice when both are unconfirmed', () => {
+    const choices = hilosPasswordFateChoices(
+      { unverifiedPasswordAddress: 'alice@example.test' },
+      { unverifiedPasswordAddress: 'bob@example.test' },
+    )
+
+    expect(choices[2]).toEqual({
+      value: 'none',
+      label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.none,
+      removes: [
+        'bob@example.test is not confirmed and will be removed, not moved.',
+        'alice@example.test is not confirmed and will be removed.',
+      ],
+    })
+  })
+
+  it('omits removal warnings when details are undefined or addresses are empty strings', () => {
+    expect(hilosPasswordFateChoices(undefined, undefined)).toEqual([
+      {
+        value: 'survivor',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.survivor,
+        removes: [],
+      },
+      {
+        value: 'loser',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.loser,
+        removes: [],
+      },
+      {
+        value: 'none',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.none,
+        removes: [],
+      },
+    ])
+
+    expect(
+      hilosPasswordFateChoices(
+        { unverifiedPasswordAddress: '' },
+        { unverifiedPasswordAddress: '' },
+      ),
+    ).toEqual([
+      {
+        value: 'survivor',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.survivor,
+        removes: [],
+      },
+      {
+        value: 'loser',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.loser,
+        removes: [],
+      },
+      {
+        value: 'none',
+        label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.none,
+        removes: [],
       },
     ])
   })
@@ -447,6 +665,7 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
     admin: false,
     block: false,
     deletionEffectiveAt: null,
+    unverifiedPasswordAddress: null,
   }
 
   it('reads the block and the deletion from the verdict rather than the row', () => {

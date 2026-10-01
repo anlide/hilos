@@ -47,6 +47,8 @@ import {
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserRename,
+  HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
+  hilosPasswordFateChoices,
   HilosPages,
   keepMineRowEdit,
   openRowEdit,
@@ -256,6 +258,9 @@ const passwordChoiceRequired = computed(
   () =>
     detail.value?.hasPassword === true &&
     selectedCandidate.value?.hasPassword === true,
+)
+const passwordChoices = computed(() =>
+  hilosPasswordFateChoices(detail.value, selectedCandidate.value),
 )
 const mergeGone = computed(
   () => mergeStep.value === 2 && selectedCandidate.value === null,
@@ -899,31 +904,42 @@ watch(error, (reason) => {
         </p>
         <fieldset v-if="passwordChoiceRequired" class="mb-3">
           <legend class="h6">
-            Both accounts have a password. Which one stays?
+            {{ HILOS_ACCOUNT_MERGE_PASSWORD_COPY.legend }}
           </legend>
           <div
-            v-for="choice in [
-              ['survivor', 'The survivor password'],
-              ['loser', 'The other account password'],
-              ['none', 'Neither password; set a new one in Profile'],
-            ] as const"
-            :key="choice[0]"
+            v-for="choice in passwordChoices"
+            :key="choice.value"
             class="form-check"
           >
             <input
-              :id="`hilos-user-merge-fate-${choice[0]}-field`"
+              :id="`hilos-user-merge-fate-${choice.value}-field`"
               v-model="passwordFate"
               class="form-check-input"
               type="radio"
               name="hilos-user-merge-password-fate"
-              :value="choice[0]"
-              :data-id="`hilos-user-merge-fate-${choice[0]}`"
+              :value="choice.value"
+              :data-id="`hilos-user-merge-fate-${choice.value}`"
+              :aria-describedby="
+                choice.removes.length > 0
+                  ? `hilos-user-merge-fate-${choice.value}-removes`
+                  : undefined
+              "
             />
             <label
               class="form-check-label"
-              :for="`hilos-user-merge-fate-${choice[0]}-field`"
-              >{{ choice[1] }}</label
+              :for="`hilos-user-merge-fate-${choice.value}-field`"
+              >{{ choice.label }}</label
             >
+            <div
+              v-if="choice.removes.length > 0"
+              :id="`hilos-user-merge-fate-${choice.value}-removes`"
+              :data-id="`hilos-user-merge-fate-${choice.value}-removes`"
+              class="form-text text-danger"
+            >
+              <div v-for="removal in choice.removes" :key="removal">
+                {{ removal }}
+              </div>
+            </div>
           </div>
         </fieldset>
       </template>

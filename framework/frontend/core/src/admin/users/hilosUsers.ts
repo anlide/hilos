@@ -113,6 +113,11 @@ export interface HilosUserRow {
 export interface HilosUserDetailRow extends HilosUserRow {
   /** Whether the account currently owns a password identity. */
   readonly hasPassword: boolean
+  /**
+   * Sign-in address of the unconfirmed password identity, or null when the password is
+   * confirmed, absent, or hidden from a viewer of the admin view mode.
+   */
+  readonly unverifiedPasswordAddress: string | null
   /** Whether the account can open the admin panel. */
   readonly admin: boolean
   /** Whether the account is blocked from signing in. */
@@ -145,6 +150,11 @@ export interface HilosMergeCandidateRow {
   readonly identities: readonly HilosMergeCandidateIdentity[]
   /** Whether the candidate currently owns a password identity. */
   readonly hasPassword: boolean
+  /**
+   * Sign-in address of the unconfirmed password identity, or null when the password is
+   * confirmed, absent, or hidden from a viewer of the admin view mode.
+   */
+  readonly unverifiedPasswordAddress: string | null
 }
 
 /** Password identity outcome when both accounts currently own a password. */
@@ -185,6 +195,10 @@ export const USER_IDENTITIES_FIELD = 'identities'
 
 /** Candidate/detail-row payload key of password presence. */
 export const USER_HAS_PASSWORD_FIELD = 'hasPassword'
+
+/** Candidate/detail-row payload key of an unconfirmed password identity's sign-in address. */
+export const USER_UNVERIFIED_PASSWORD_ADDRESS_FIELD =
+  'unverifiedPasswordAddress'
 
 /** Candidate-table filter key that excludes the account whose card is open. */
 export const USER_MERGE_SURVIVOR_FILTER = 'survivor'
@@ -398,6 +412,10 @@ export function resolveHilosMergeCandidateRow<TUser extends User>(
     identities,
     hasPassword:
       merge === undefined ? false : readBoolean(merge, USER_HAS_PASSWORD_FIELD),
+    unverifiedPasswordAddress:
+      merge === undefined
+        ? null
+        : readStringOrNull(merge, USER_UNVERIFIED_PASSWORD_ADDRESS_FIELD),
   }
 }
 
@@ -746,6 +764,13 @@ export function createHilosUserDetail<TUser extends User>(
         identities === undefined
           ? false
           : readBoolean(identities, USER_HAS_PASSWORD_FIELD),
+      unverifiedPasswordAddress:
+        identities === undefined
+          ? null
+          : readStringOrNull(
+              identities,
+              USER_UNVERIFIED_PASSWORD_ADDRESS_FIELD,
+            ),
     }
   })
 }
@@ -926,6 +951,87 @@ export function createHilosImpersonate(
       })
     },
   }
+}
+
+/** English copy for the account-merge password fate choices. */
+export const HILOS_ACCOUNT_MERGE_PASSWORD_COPY = {
+  legend: 'Both accounts have a password. Which one stays?',
+  survivor: 'The survivor password',
+  loser: 'The other account password',
+  none: 'Neither password; set a new one in Profile',
+  otherRemoved: '{address} is not confirmed and will be removed, not moved.',
+  survivorRemoved: '{address} is not confirmed and will be removed.',
+} as const
+
+/** One password fate choice presented in the account merge window. */
+export interface HilosPasswordFateChoice {
+  /** The value sent to the merge action. */
+  readonly value: HilosPasswordFate
+  /** Option label in the radio group. */
+  readonly label: string
+  /** Explanatory removal notices for unverified addresses that will be removed under this choice. */
+  readonly removes: readonly string[]
+}
+
+/**
+ * Resolves the password fate choices and their removal warnings for the account merge dialog.
+ *
+ * When both accounts own a password, the merge keeps at most one password. Any password identity
+ * that is not kept is removed rather than demoted to a link if its sign-in address is unverified
+ * ({@see Identities::demotePasswordToMagicLink()}, HIL-692/HIL-713). The dialog warns about each
+ * address that will be removed under each choice.
+ *
+ * @param survivor The survivor account detail, or null/undefined if not available.
+ * @param loser The candidate account to be merged, or null/undefined if not available.
+ * @returns The fate choices in order: survivor, loser, none.
+ */
+export function hilosPasswordFateChoices(
+  survivor:
+    | Pick<HilosUserDetailRow, 'unverifiedPasswordAddress'>
+    | null
+    | undefined,
+  loser:
+    | Pick<HilosMergeCandidateRow, 'unverifiedPasswordAddress'>
+    | null
+    | undefined,
+): readonly HilosPasswordFateChoice[] {
+  const loserAddress = loser?.unverifiedPasswordAddress
+  const survivorAddress = survivor?.unverifiedPasswordAddress
+  const loserNotice =
+    typeof loserAddress === 'string' && loserAddress.length > 0
+      ? HILOS_ACCOUNT_MERGE_PASSWORD_COPY.otherRemoved.replace(
+          '{address}',
+          loserAddress,
+        )
+      : null
+  const survivorNotice =
+    typeof survivorAddress === 'string' && survivorAddress.length > 0
+      ? HILOS_ACCOUNT_MERGE_PASSWORD_COPY.survivorRemoved.replace(
+          '{address}',
+          survivorAddress,
+        )
+      : null
+
+  return [
+    {
+      value: 'survivor',
+      label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.survivor,
+      removes: loserNotice ? [loserNotice] : [],
+    },
+    {
+      value: 'loser',
+      label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.loser,
+      removes: survivorNotice ? [survivorNotice] : [],
+    },
+    {
+      value: 'none',
+      label: HILOS_ACCOUNT_MERGE_PASSWORD_COPY.none,
+      removes: [
+        ...(loserNotice ? [loserNotice] : []),
+        ...(survivorNotice ? [survivorNotice] : []),
+      ],
+    },
+  ]
 }
 
 /**

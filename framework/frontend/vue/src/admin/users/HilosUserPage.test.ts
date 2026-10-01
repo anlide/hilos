@@ -63,7 +63,9 @@ function userContext(
   accountMerge = false,
   options: {
     detailHasPassword?: boolean
+    detailUnverifiedPasswordAddress?: string | null
     candidateHasPassword?: boolean
+    candidateUnverifiedPasswordAddress?: string | null
     stepUp?: 'skip' | 'ask' | 'refused'
   } = {},
 ): {
@@ -85,7 +87,11 @@ function userContext(
   page.tables.upsert('userDetail', 1, {
     users: { type: 'user', id: 1 },
     connections: { presence: 'online', onlineSessionCount: 1 },
-    identities: { hasPassword: options.detailHasPassword ?? false },
+    identities: {
+      hasPassword: options.detailHasPassword ?? false,
+      unverifiedPasswordAddress:
+        options.detailUnverifiedPasswordAddress ?? null,
+    },
   })
   scopes.session.data.set('currentUser', { type: 'user', id: 99 })
   const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
@@ -121,6 +127,8 @@ function userContext(
             },
           ],
           hasPassword: options.candidateHasPassword ?? false,
+          unverifiedPasswordAddress:
+            options.candidateUnverifiedPasswordAddress ?? null,
         },
       },
     },
@@ -441,6 +449,127 @@ describe('HilosUserPage rename modal', () => {
     await flushPromises()
     await nextTick()
     expect(modalEl('modal')).toBeNull()
+  })
+
+  it('shows removal notices for unconfirmed password addresses in the merge window (HIL-1276)', async () => {
+    // 1. Password on both accounts, candidate unconfirmed
+    const loserUnverifiedWorld = userContext(true, {
+      detailHasPassword: true,
+      candidateHasPassword: true,
+      candidateUnverifiedPasswordAddress: 'bob@example.test',
+    })
+    const w1 = mount(HilosUserPage, {
+      props: { context: markRaw(loserUnverifiedWorld.context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(w1)
+    await nextTick()
+    modalEl('hilos-user-merge-open')?.click()
+    await flushPromises()
+    await nextTick()
+    modalEl('hilos-user-merge-row-2')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-next')?.click()
+    await nextTick()
+
+    const survivorRemoves = modalEl('hilos-user-merge-fate-survivor-removes')
+    expect(survivorRemoves?.textContent).toContain(
+      'bob@example.test is not confirmed and will be removed, not moved.',
+    )
+    const noneRemoves = modalEl('hilos-user-merge-fate-none-removes')
+    expect(noneRemoves?.textContent).toContain(
+      'bob@example.test is not confirmed and will be removed, not moved.',
+    )
+    expect(modalEl('hilos-user-merge-fate-loser-removes')).toBeNull()
+    const survivorRadio = document.getElementById(
+      'hilos-user-merge-fate-survivor-field',
+    )
+    expect(survivorRadio?.getAttribute('aria-describedby')).toBe(
+      'hilos-user-merge-fate-survivor-removes',
+    )
+    w1.unmount()
+    mounted.splice(mounted.indexOf(w1), 1)
+
+    // 2. Password on both accounts, survivor unconfirmed
+    const survivorUnverifiedWorld = userContext(true, {
+      detailHasPassword: true,
+      detailUnverifiedPasswordAddress: 'alice@example.test',
+      candidateHasPassword: true,
+    })
+    const w2 = mount(HilosUserPage, {
+      props: { context: markRaw(survivorUnverifiedWorld.context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(w2)
+    await nextTick()
+    modalEl('hilos-user-merge-open')?.click()
+    await flushPromises()
+    await nextTick()
+    modalEl('hilos-user-merge-row-2')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-next')?.click()
+    await nextTick()
+
+    expect(modalEl('hilos-user-merge-fate-survivor-removes')).toBeNull()
+    const loserRemoves = modalEl('hilos-user-merge-fate-loser-removes')
+    expect(loserRemoves?.textContent).toContain(
+      'alice@example.test is not confirmed and will be removed.',
+    )
+    w2.unmount()
+    mounted.splice(mounted.indexOf(w2), 1)
+
+    // 3. Both passwords confirmed
+    const confirmedWorld = userContext(true, {
+      detailHasPassword: true,
+      candidateHasPassword: true,
+    })
+    const w3 = mount(HilosUserPage, {
+      props: { context: markRaw(confirmedWorld.context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(w3)
+    await nextTick()
+    modalEl('hilos-user-merge-open')?.click()
+    await flushPromises()
+    await nextTick()
+    modalEl('hilos-user-merge-row-2')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-next')?.click()
+    await nextTick()
+
+    expect(modalEl('hilos-user-merge-fate-survivor-removes')).toBeNull()
+    expect(modalEl('hilos-user-merge-fate-loser-removes')).toBeNull()
+    expect(modalEl('hilos-user-merge-fate-none-removes')).toBeNull()
+    w3.unmount()
+    mounted.splice(mounted.indexOf(w3), 1)
+
+    // 4. Password only on one account
+    const singlePasswordWorld = userContext(true, {
+      detailHasPassword: true,
+      candidateHasPassword: false,
+    })
+    const w4 = mount(HilosUserPage, {
+      props: { context: markRaw(singlePasswordWorld.context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(w4)
+    await nextTick()
+    modalEl('hilos-user-merge-open')?.click()
+    await flushPromises()
+    await nextTick()
+    modalEl('hilos-user-merge-row-2')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-next')?.click()
+    await nextTick()
+
+    expect(modalEl('hilos-user-merge-fate-survivor')).toBeNull()
+    expect(modalEl('hilos-user-merge-fate-survivor-removes')).toBeNull()
+    w4.unmount()
+    mounted.splice(mounted.indexOf(w4), 1)
   })
 
   it('opens on the committed name with save locked and the message line empty', async () => {

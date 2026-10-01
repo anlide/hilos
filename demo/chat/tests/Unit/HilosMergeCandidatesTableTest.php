@@ -45,8 +45,15 @@ final class HilosMergeCandidatesTableTest extends TestCase
             $identityRow[BrowserTableFieldKey::WHERE],
         );
         $this->assertSame(
-            [HilosMergeCandidatesTable::FIELD_HAS_PASSWORD],
+            [
+                HilosMergeCandidatesTable::FIELD_HAS_PASSWORD,
+                HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS,
+            ],
             $identityRow[BrowserTableFieldKey::COMPUTED],
+        );
+        $this->assertNotContains(
+            HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS,
+            $identityRow[BrowserTableFieldKey::NOT_PERSONAL] ?? [],
         );
     }
 

@@ -57,6 +57,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
         parent::setUp();
 
         TruthSourceRegistry::register(HilosDbContext::userMerges, TruthSourceKeys::all(), self::MERGE_OWNER_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::all(), self::MERGE_OWNER_AGENT_ID);
         ExecutionContext::setCurrentAgentId(self::MERGE_OWNER_AGENT_ID);
     }
 
@@ -117,10 +118,11 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
     public function testBrowserRowSplitsTheUserAndMergeSlotsWithoutASecret(): void
     {
         $this->seedPeople();
+        Database::sqlRun('UPDATE `hilos_identity` SET `verified` = 0 WHERE `user_id` = ? AND `type` = ?', [self::BETA, self::PASSWORD_TYPE]);
         $table = $this->table();
 
-        $row = $table->getPage(new TableQueryDTO(search: 'beta@'))->rows[0];
-        $sources = $table->browserRow($row)[BrowserPageSignalData::sources];
+        $rowBeta = $table->getPage(new TableQueryDTO(search: 'beta@'))->rows[0];
+        $sourcesBeta = $table->browserRow($rowBeta)[BrowserPageSignalData::sources];
 
         $this->assertSame(
             [
@@ -130,12 +132,30 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
                 HilosUserTableRow::name => 'Beta',
                 HilosUserTableRow::lastActivity => null,
             ],
-            $sources[HilosMergeCandidatesTable::SLOT_USER],
+            $sourcesBeta[HilosMergeCandidatesTable::SLOT_USER],
         );
-        $this->assertTrue($sources[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
-        $identity = $sources[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_IDENTITIES][0];
+        $this->assertTrue($sourcesBeta[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
+        $this->assertSame(
+            self::BETA_EMAIL,
+            $sourcesBeta[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS],
+        );
+        $identity = $sourcesBeta[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_IDENTITIES][0];
         $this->assertSame(self::BETA_EMAIL, $identity[ObjectIdentity::identifier]);
         $this->assertArrayNotHasKey('secret', $identity);
+
+        $password = Hilos::$db->identities->findPasswordByUser(self::BETA);
+        $this->assertNotNull($password);
+        $password->markVerified();
+
+        $rowBetaVerified = $table->getPage(new TableQueryDTO(search: 'beta@'))->rows[0];
+        $sourcesBetaVerified = $table->browserRow($rowBetaVerified)[BrowserPageSignalData::sources];
+        $this->assertTrue($sourcesBetaVerified[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
+        $this->assertNull($sourcesBetaVerified[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS]);
+
+        $rowAlpha = $table->getPage(new TableQueryDTO(search: 'alpha@'))->rows[0];
+        $sourcesAlpha = $table->browserRow($rowAlpha)[BrowserPageSignalData::sources];
+        $this->assertFalse($sourcesAlpha[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
+        $this->assertNull($sourcesAlpha[HilosMergeCandidatesTable::SLOT_MERGE][HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS]);
     }
 
     /**
@@ -165,6 +185,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
                     HilosMergeCandidatesTable::SLOT_MERGE => [
                         HilosMergeCandidatesTable::FIELD_IDENTITIES => [$identity],
                         HilosMergeCandidatesTable::FIELD_HAS_PASSWORD => true,
+                        HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS => null,
                     ],
                 ],
             ],
@@ -177,6 +198,27 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
     }
 
     /**
+     * Preserves the unverified password address across candidate row serialization.
+     */
+    public function testCandidateTableRowPreservesUnverifiedPasswordAddressAcrossSerialization(): void
+    {
+        $row = new HilosMergeCandidateTableRow(
+            userFields: [HilosUserTableRow::id => 7, HilosUserTableRow::name => 'Candidate'],
+            identities: [],
+            hasPassword: true,
+            exactUserId: 7,
+            unverifiedPasswordAddress: 'candidate@example.test',
+        );
+
+        $restored = HilosMergeCandidateTableRow::fromArray($row->toArray());
+
+        $this->assertSame('candidate@example.test', $restored->unverifiedPasswordAddress);
+        $this->assertSame(7, $restored->getRowKey());
+        $this->assertTrue($restored->hasPassword);
+        $this->assertSame(7, $restored->exactUserId);
+    }
+
+    /**
      * A change of a sign-in method that names only itself is traced to its owner, whose row is refreshed.
      *
      * @throws HilosException On database error
@@ -184,19 +226,23 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
     public function testAnIdentityChangeRefreshesItsOwnersCandidateRow(): void
     {
         $this->seedPeople();
-        self::seedIdentity(self::BETA, self::LINK_TYPE, self::BETA_SECOND_EMAIL);
-        Database::sql('SELECT `id` FROM `hilos_identity` WHERE `identifier` = ?', [self::BETA_SECOND_EMAIL]);
-        $identity = Database::row();
-        $this->assertNotNull($identity);
-        $identityId = (int) $identity['id'];
+        Database::sqlRun('UPDATE `hilos_identity` SET `verified` = 0 WHERE `user_id` = ? AND `type` = ?', [self::BETA, self::PASSWORD_TYPE]);
+        $password = Hilos::$db->identities->findPasswordByUser(self::BETA);
+        $this->assertNotNull($password);
+        $password->markVerified();
 
         $mutation = $this->table()->buildMutationForSourceEvent(
-            SourceChange::dbUpdated(HilosDbContext::identities, (string) $identityId, [ObjectIdentity::identifier => 'changed']),
+            SourceChange::dbUpdated(HilosDbContext::identities, (string) $password->id, [
+                ObjectIdentity::userId => self::BETA,
+                ObjectIdentity::verified => true,
+            ]),
         );
 
         $this->assertNotNull($mutation);
         $this->assertSame(TableMutationType::Update, $mutation->type);
         $this->assertSame(self::BETA, $mutation->rowKey);
+        $this->assertInstanceOf(HilosMergeCandidateTableRow::class, $mutation->row);
+        $this->assertNull($mutation->row->unverifiedPasswordAddress);
     }
 
     /**

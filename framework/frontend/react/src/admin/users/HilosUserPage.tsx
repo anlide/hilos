@@ -41,6 +41,8 @@ import {
   createHilosMergeCandidates,
   createHilosUserDetail,
   createHilosUserRename,
+  HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
+  hilosPasswordFateChoices,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
@@ -287,6 +289,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const summaryCandidate = selectedCandidate ?? selectedSnapshot
   const passwordChoiceRequired =
     detail?.hasPassword === true && selectedCandidate?.hasPassword === true
+  const passwordChoices = hilosPasswordFateChoices(detail, selectedCandidate)
   const mergeGone = mergeStep === 2 && selectedCandidate === null
   const mergeDisabled =
     mergeAction.busy ||
@@ -1023,32 +1026,42 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             {passwordChoiceRequired ? (
               <fieldset className="mb-3">
                 <legend className="h6">
-                  Both accounts have a password. Which one stays?
+                  {HILOS_ACCOUNT_MERGE_PASSWORD_COPY.legend}
                 </legend>
-                {(
-                  [
-                    ['survivor', 'The survivor password'],
-                    ['loser', 'The other account password'],
-                    ['none', 'Neither password; set a new one in Profile'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <div className="form-check" key={value}>
+                {passwordChoices.map((choice) => (
+                  <div className="form-check" key={choice.value}>
                     <input
-                      id={`hilos-user-merge-fate-${value}-field`}
+                      id={`hilos-user-merge-fate-${choice.value}-field`}
                       className="form-check-input"
                       type="radio"
                       name="hilos-user-merge-password-fate"
-                      value={value}
-                      checked={passwordFate === value}
-                      data-id={`hilos-user-merge-fate-${value}`}
-                      onChange={() => setPasswordFate(value)}
+                      value={choice.value}
+                      checked={passwordFate === choice.value}
+                      data-id={`hilos-user-merge-fate-${choice.value}`}
+                      aria-describedby={
+                        choice.removes.length > 0
+                          ? `hilos-user-merge-fate-${choice.value}-removes`
+                          : undefined
+                      }
+                      onChange={() => setPasswordFate(choice.value)}
                     />
                     <label
                       className="form-check-label"
-                      htmlFor={`hilos-user-merge-fate-${value}-field`}
+                      htmlFor={`hilos-user-merge-fate-${choice.value}-field`}
                     >
-                      {label}
+                      {choice.label}
                     </label>
+                    {choice.removes.length > 0 ? (
+                      <div
+                        id={`hilos-user-merge-fate-${choice.value}-removes`}
+                        data-id={`hilos-user-merge-fate-${choice.value}-removes`}
+                        className="form-text text-danger"
+                      >
+                        {choice.removes.map((removal) => (
+                          <div key={removal}>{removal}</div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </fieldset>

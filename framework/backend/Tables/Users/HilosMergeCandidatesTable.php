@@ -28,6 +28,7 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Item\UserMerge as ObjectUserMerge;
 use Hilos\Database\View\Item\Identity as DbIdentity;
@@ -53,6 +54,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
     public const string SLOT_MERGE = 'merge';
     public const string FIELD_IDENTITIES = 'identities';
     public const string FIELD_HAS_PASSWORD = 'hasPassword';
+    public const string FIELD_UNVERIFIED_PASSWORD_ADDRESS = 'unverifiedPasswordAddress';
     public const string FIELD_NAME = 'name';
     public const array BROWSER = [
         BrowserTableConfigKey::SOURCES => [
@@ -122,6 +124,22 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
     }
 
     /**
+     * Address of an unconfirmed password that a merge will remove instead of demoting.
+     *
+     * When this password is not kept by the administrator, the core removes it rather than demoting it
+     * to a magic link ({@see Identities::demotePasswordToMagicLink()}, HIL-692/HIL-713).
+     *
+     * A single helper serves both the candidates table and the project card so the rule is read identically.
+     *
+     * @param DbIdentity|ObjectIdentity|null $password Password identity item, if any
+     * @return ?string Identifier of the unconfirmed password, or null when confirmed or absent
+     */
+    public static function unverifiedPasswordAddress(DbIdentity|ObjectIdentity|null $password): ?string
+    {
+        return $password !== null && !$password->verified ? $password->identifier : null;
+    }
+
+    /**
      * @param AbstractTableRow $row Candidate row
      * @return array{rowKey: int|string, sources: array<string, mixed>} Browser-row envelope
      * @throws LogicException When another table row type is passed
@@ -140,6 +158,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
                 self::SLOT_MERGE => [
                     self::FIELD_IDENTITIES => $row->identities,
                     self::FIELD_HAS_PASSWORD => $row->hasPassword,
+                    self::FIELD_UNVERIFIED_PASSWORD_ADDRESS => $row->unverifiedPasswordAddress,
                 ],
             ],
         ];
@@ -276,15 +295,6 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
         );
     }
 
-    /**
-     * @param int $userId Owning user id
-     * @return bool Whether the account has a password identity
-     * @throws HilosException When identities cannot be read
-     */
-    private function hasPassword(int $userId): bool
-    {
-        return Hilos::$db->identities->findPasswordByUser($userId) !== null;
-    }
 
     /**
      * @param int $identityId Identity row id
@@ -373,6 +383,8 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
      * @param HilosUserTableRow $user User row of the candidate
      * @param ?string $search Current search term, used only for exact numeric-id matching
      * @return HilosMergeCandidateTableRow Enriched candidate row
+     * @throws DatabaseException If a lookup query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws HilosException When identities cannot be read
      */
     private function candidateRow(HilosUserTableRow $user, ?string $search = null): HilosMergeCandidateTableRow
@@ -384,16 +396,18 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
             $userFields[HilosUserTableRow::onlineSessionCount],
         );
         $normalizedSearch = $search === null ? null : trim($search);
+        $password = Hilos::$db->identities->findPasswordByUser($user->id);
 
         return new HilosMergeCandidateTableRow(
             userFields: $userFields,
             identities: $identities,
-            hasPassword: $this->hasPassword($user->id),
+            hasPassword: $password !== null,
             exactUserId: $normalizedSearch !== null
                 && ctype_digit($normalizedSearch)
                 && (int) $normalizedSearch === $user->id
                     ? $user->id
                     : null,
+            unverifiedPasswordAddress: self::unverifiedPasswordAddress($password),
         );
     }
 

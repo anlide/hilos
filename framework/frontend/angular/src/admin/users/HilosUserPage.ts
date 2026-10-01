@@ -54,6 +54,8 @@ import {
   createHilosMergeCandidates,
   createHilosUserDetail,
   createHilosUserRename,
+  HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
+  hilosPasswordFateChoices,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
@@ -600,9 +602,9 @@ function noticeText(live: RowEditState<UserEditFields>): string {
           @if (passwordChoiceRequired()) {
             <fieldset class="mb-3">
               <legend class="h6">
-                Both accounts have a password. Which one stays?
+                {{ passwordCopy.legend }}
               </legend>
-              @for (choice of passwordChoices; track choice.value) {
+              @for (choice of passwordChoices(); track choice.value) {
                 <div class="form-check">
                   <input
                     [id]="'hilos-user-merge-fate-' + choice.value + '-field'"
@@ -611,6 +613,11 @@ function noticeText(live: RowEditState<UserEditFields>): string {
                     name="hilos-user-merge-password-fate"
                     [value]="choice.value"
                     [attr.data-id]="'hilos-user-merge-fate-' + choice.value"
+                    [attr.aria-describedby]="
+                      choice.removes.length > 0
+                        ? 'hilos-user-merge-fate-' + choice.value + '-removes'
+                        : null
+                    "
                     [checked]="passwordFate() === choice.value"
                     (change)="passwordFate.set(choice.value)"
                   />
@@ -620,6 +627,21 @@ function noticeText(live: RowEditState<UserEditFields>): string {
                   >
                     {{ choice.label }}
                   </label>
+                  @if (choice.removes.length > 0) {
+                    <div
+                      [id]="
+                        'hilos-user-merge-fate-' + choice.value + '-removes'
+                      "
+                      [attr.data-id]="
+                        'hilos-user-merge-fate-' + choice.value + '-removes'
+                      "
+                      class="form-text text-danger"
+                    >
+                      @for (removal of choice.removes; track removal) {
+                        <div>{{ removal }}</div>
+                      }
+                    </div>
+                  }
                 </div>
               }
             </fieldset>
@@ -691,14 +713,7 @@ export class HilosUserPage {
   protected readonly page = HilosPages.USER
   protected readonly nameMin = 2
   protected readonly nameMax = 64
-  protected readonly passwordChoices: readonly {
-    value: HilosPasswordFate
-    label: string
-  }[] = [
-    { value: 'survivor', label: 'The survivor password' },
-    { value: 'loser', label: 'The other account password' },
-    { value: 'none', label: 'Neither password; set a new one in Profile' },
-  ]
+  protected readonly passwordCopy = HILOS_ACCOUNT_MERGE_PASSWORD_COPY
 
   // Mirrored from the core selectors, which derive from the context input.
   protected readonly detail = signal<HilosUserDetailRow | undefined>(undefined)
@@ -789,6 +804,9 @@ export class HilosUserPage {
     () =>
       this.detail()?.hasPassword === true &&
       this.selectedCandidate()?.hasPassword === true,
+  )
+  protected readonly passwordChoices = computed(() =>
+    hilosPasswordFateChoices(this.detail(), this.selectedCandidate()),
   )
   protected readonly mergeGone = computed(
     () => this.mergeStep() === 2 && this.selectedCandidate() === null,

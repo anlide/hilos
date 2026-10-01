@@ -80,6 +80,7 @@ final class UserDetailBrowserTable
                 ],
                 BrowserTableFieldKey::COMPUTED => [
                     HilosMergeCandidatesTable::FIELD_HAS_PASSWORD,
+                    HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS,
                 ],
             ],
             [

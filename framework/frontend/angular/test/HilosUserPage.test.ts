@@ -65,6 +65,12 @@ const STEP_UP_REFUSAL =
 function userContext(
   accountMerge = false,
   stepUp: 'skip' | 'ask' | 'refused' = 'skip',
+  options: {
+    detailHasPassword?: boolean
+    detailUnverifiedPasswordAddress?: string | null
+    candidateHasPassword?: boolean
+    candidateUnverifiedPasswordAddress?: string | null
+  } = {},
 ): {
   context: HilosUsersContext
   renameElsewhere: (name: string) => void
@@ -82,11 +88,69 @@ function userContext(
   page.tables.upsert('userDetail', 1, {
     users: { type: 'user', id: 1 },
     connections: { presence: 'online', onlineSessionCount: 1 },
+    identities: {
+      hasPassword: options.detailHasPassword ?? false,
+      unverifiedPasswordAddress:
+        options.detailUnverifiedPasswordAddress ?? null,
+    },
   })
   const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
   const connection = new HilosConnection({ url: 'ws://test/ws' })
   const sent: Array<{ action: string; data: unknown }> = []
   const actionListeners = new Map<string, Array<(signal: unknown) => void>>()
+  const candidateRows = () => [
+    {
+      rowKey: 2,
+      slots: {
+        users: { id: 2, name: 'Bob', lastActivity: null },
+        merge: {
+          identities: [
+            {
+              type: 'email',
+              identifier: 'bob@example.test',
+              provider: null,
+              verified: true,
+            },
+          ],
+          hasPassword: options.candidateHasPassword ?? false,
+          unverifiedPasswordAddress:
+            options.candidateUnverifiedPasswordAddress ?? null,
+        },
+      },
+    },
+    {
+      rowKey: 99,
+      slots: {
+        users: { id: 99, name: 'Admin', lastActivity: null },
+        merge: { identities: [], hasPassword: false },
+      },
+    },
+  ]
+  const tableWindowListeners: Array<(signal: unknown) => void> = []
+  const serveCandidates = (): void => {
+    const signal = {
+      kind: 'tableWindow',
+      data: {
+        page: HilosPages.USER,
+        tableKey: 'mergeCandidates',
+        rows: candidateRows(),
+        totalCount: 2,
+        totalExact: true,
+        firstAnchor: null,
+        lastAnchor: null,
+        offset: 0,
+        limit: 10,
+      },
+    }
+    for (const listener of tableWindowListeners) {
+      listener(signal)
+    }
+  }
+  vi.spyOn(connection, 'sendTableViewport').mockImplementation(() => {
+    serveCandidates()
+
+    return true
+  })
   // The server's word on the step, answered on the next microtask as a socket would.
   const answerStepUp = (action: string, requestId?: string): void => {
     const refused = action === 'hilos_step_up_start' && stepUp === 'refused'
@@ -133,6 +197,9 @@ function userContext(
       projectListeners.push(
         listener as (signal: Record<string, unknown>) => void,
       )
+    }
+    if (event === 'tableWindow') {
+      tableWindowListeners.push(listener as (signal: unknown) => void)
     }
     if (event === 'actionSuccess' || event === 'actionError') {
       actionListeners.set(event, [
@@ -593,11 +660,18 @@ describe('HilosUserPage confirmation step (HIL-1275)', () => {
   function mountCard(
     accountMerge: boolean,
     stepUp: 'skip' | 'ask' | 'refused',
+    options: {
+      detailHasPassword?: boolean
+      detailUnverifiedPasswordAddress?: string | null
+      candidateHasPassword?: boolean
+      candidateUnverifiedPasswordAddress?: string | null
+    } = {},
   ): {
     fixture: ComponentFixture<HilosUserPage>
     world: ReturnType<typeof userContext>
   } {
-    const world = userContext(accountMerge, stepUp)
+    TestBed.resetTestingModule()
+    const world = userContext(accountMerge, stepUp, options)
     TestBed.configureTestingModule({
       providers: [{ provide: HILOS_ROUTER, useValue: router() }],
     })
@@ -710,6 +784,82 @@ describe('HilosUserPage confirmation step (HIL-1275)', () => {
     expect(world.sent).toEqual([])
     expect(el(fixture, 'step-up')).toBeNull()
     expect(el(fixture, 'hilos-user-lifecycle-confirm')).not.toBeNull()
+  })
+
+  it('shows removal notices for unconfirmed password addresses in the merge window (HIL-1276)', async () => {
+    // 1. Password on both accounts, candidate unconfirmed
+    const c1 = mountCard(true, 'skip', {
+      detailHasPassword: true,
+      candidateHasPassword: true,
+      candidateUnverifiedPasswordAddress: 'bob@example.test',
+    })
+    await click(c1.fixture, 'hilos-user-merge-open')
+    await click(c1.fixture, 'hilos-user-merge-row-2')
+    await click(c1.fixture, 'hilos-user-merge-next')
+
+    const survivorRemoves = el(
+      c1.fixture,
+      'hilos-user-merge-fate-survivor-removes',
+    )
+    expect(survivorRemoves?.textContent).toContain(
+      'bob@example.test is not confirmed and will be removed, not moved.',
+    )
+    const noneRemoves = el(c1.fixture, 'hilos-user-merge-fate-none-removes')
+    expect(noneRemoves?.textContent).toContain(
+      'bob@example.test is not confirmed and will be removed, not moved.',
+    )
+    expect(el(c1.fixture, 'hilos-user-merge-fate-loser-removes')).toBeNull()
+    const survivorRadio = document.getElementById(
+      'hilos-user-merge-fate-survivor-field',
+    )
+    expect(survivorRadio?.getAttribute('aria-describedby')).toBe(
+      'hilos-user-merge-fate-survivor-removes',
+    )
+    c1.fixture.destroy()
+
+    // 2. Password on both accounts, survivor unconfirmed
+    const c2 = mountCard(true, 'skip', {
+      detailHasPassword: true,
+      detailUnverifiedPasswordAddress: 'alice@example.test',
+      candidateHasPassword: true,
+    })
+    await click(c2.fixture, 'hilos-user-merge-open')
+    await click(c2.fixture, 'hilos-user-merge-row-2')
+    await click(c2.fixture, 'hilos-user-merge-next')
+
+    expect(el(c2.fixture, 'hilos-user-merge-fate-survivor-removes')).toBeNull()
+    const loserRemoves = el(c2.fixture, 'hilos-user-merge-fate-loser-removes')
+    expect(loserRemoves?.textContent).toContain(
+      'alice@example.test is not confirmed and will be removed.',
+    )
+    c2.fixture.destroy()
+
+    // 3. Both passwords confirmed
+    const c3 = mountCard(true, 'skip', {
+      detailHasPassword: true,
+      candidateHasPassword: true,
+    })
+    await click(c3.fixture, 'hilos-user-merge-open')
+    await click(c3.fixture, 'hilos-user-merge-row-2')
+    await click(c3.fixture, 'hilos-user-merge-next')
+
+    expect(el(c3.fixture, 'hilos-user-merge-fate-survivor-removes')).toBeNull()
+    expect(el(c3.fixture, 'hilos-user-merge-fate-loser-removes')).toBeNull()
+    expect(el(c3.fixture, 'hilos-user-merge-fate-none-removes')).toBeNull()
+    c3.fixture.destroy()
+
+    // 4. Password only on one account
+    const c4 = mountCard(true, 'skip', {
+      detailHasPassword: true,
+      candidateHasPassword: false,
+    })
+    await click(c4.fixture, 'hilos-user-merge-open')
+    await click(c4.fixture, 'hilos-user-merge-row-2')
+    await click(c4.fixture, 'hilos-user-merge-next')
+
+    expect(el(c4.fixture, 'hilos-user-merge-fate-survivor')).toBeNull()
+    expect(el(c4.fixture, 'hilos-user-merge-fate-survivor-removes')).toBeNull()
+    c4.fixture.destroy()
   })
 })
 

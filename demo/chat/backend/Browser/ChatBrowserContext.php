@@ -55,6 +55,16 @@ final class ChatBrowserContext extends BrowserContext
             }
         }
 
+        if ($field === HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS) {
+            try {
+                return HilosMergeCandidatesTable::unverifiedPasswordAddress(
+                    Hilos::$db->identities->findPasswordByUser((int) $rowKey),
+                );
+            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
+                throw new PageInternalErrorException('Unverified password address could not be resolved', $exception);
+            }
+        }
+
         if (
             $field === HilosUserPresenceSummary::presence
             || $field === HilosUserPresenceSummary::onlineSessionCount
