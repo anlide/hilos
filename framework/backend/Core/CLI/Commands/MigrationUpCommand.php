@@ -8,6 +8,8 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\MigrationNumberTakenTwiceException;
+use Hilos\Database\Exception\MigrationSkippedBelowLevelException;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
 
@@ -80,9 +82,12 @@ Examples:
 
 The migration system will:
   1. Initialize migration table if not exists
-  2. Check for failed migrations (will stop if found)
-  3. Apply all pending migrations in order
-  4. Mark each migration as successful or failed
+  2. Refuse a track it cannot follow: a number taken by more than one
+     file, or a file below the database's level that was never applied
+     (not lifted by --force)
+  3. Check for failed migrations (will stop if found)
+  4. Apply all pending migrations in order
+  5. Mark each migration as successful or failed
 
 If a migration fails:
   - It will be marked as failed in the database
@@ -95,12 +100,17 @@ HELP;
      * Executes database migration process.
      *
      * Initializes migration system, applies pending migrations, handles failed migrations.
+     * The track is checked before the status is read, so a database at the code's level with a
+     * file below it that never ran is refused rather than reported up to date; --force does not
+     * lift that refusal.
      *
      * @param array<string, mixed> $options Parsed options (db-index, to, force)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws DatabaseException If database connection or migration fails
      * @throws EnvException When the rollout claim's holder name cannot read CLUSTER_NODE_ID
+     * @throws MigrationNumberTakenTwiceException When a number of the track is taken by more than one file
+     * @throws MigrationSkippedBelowLevelException When files below the database's level were never applied to it
      */
     public function execute(array $options, array $args): int
     {
@@ -121,6 +131,8 @@ HELP;
         echo "Initializing migration system...\n";
         Migration::initialize();
         echo "✓ Migration system initialized\n\n";
+
+        Migration::refuseInconsistentTrack();
 
         // Get current status
         $status = Migration::getStatus();

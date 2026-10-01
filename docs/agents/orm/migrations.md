@@ -74,6 +74,60 @@ a target that had none is left without one — the marker is the database's name
 - **A restore empties the table** before its migrate step: an archive may carry the row of a
   process that held the claim when the backup was taken.
 
+## A track the database cannot follow is refused (HIL-1238)
+
+The migrator keys a migration by its number and applies only what lies above the database's
+level — the highest `migration` row with `failed = 0`. Two kinds of file therefore used to stay
+unapplied without a word, and both are refused now, by name:
+
+- **A number taken by more than one file** — two up files, or two down files, of one number.
+  An up and a down file of one number are a pair, not a duplicate. Refused on every database,
+  a fresh one included:
+  `Migration track Schema: number 63 is taken by more than one file (063_a.sql, 063_a_down.sql,
+  063_b.sql, 063_b_down.sql); give each file a number of its own` — every such number in one
+  message, every file of it in name order.
+- **A file below the level that was never applied** — a number taken on a branch while a
+  higher one landed first:
+  `Migration track Schema: 059_create_hilos_file_variant.sql is below the database's level 61
+  and was never applied; renumber it above 61, with SQL that holds on a database that already
+  has it (IF NOT EXISTS)` — several files read `… are below … were never applied; renumber them
+  …`. It is not applied out of order instead: it was written for a database without the
+  migrations above it, and one history would then build two schemas.
+
+Where the check stands:
+
+- **Every rollout, before "nothing to apply".** `Migration::refuseInconsistentTrack()` runs in
+  `migrateUp()` right after `initialize()`, so a node's start, `test:db:reset` and the migrate
+  step of a restore all pass through it, and a database already at the code's level is checked
+  too — that is exactly the database with a hole. Duplicates are judged first and without the
+  database; the rows and the level are then read by one query.
+- **Outside the rollout claim.** It takes no claim and writes nothing: a hole is a property of
+  the track and the database, and a rollout of the same track adds none.
+- **`db:migration:up` checks before it prints the status**, so it cannot answer "All migrations
+  are up to date!" over a hole. `--force` does not lift the refusal: it is about failed
+  migrations.
+- **A rollback or a retry** that looks a file up by its number refuses a number with two files
+  of that direction, instead of taking the first by name.
+- The refusals extend `DatabaseException`: a node's watchdog exits with `Docker migration failed
+  on startup: …`, the CLI prints `✗ Database Error`, a restore fails after its import as on any
+  migration failure.
+
+**The lowest row.** A file counts as skipped only when the `migration` table has no row for it
+**and** its number lies strictly between the table's lowest row and the level. A rollout writes
+one row per file, in order, so above the lowest row every applied file has its row. Below it
+lies history a schema archive restored before this rule declared with a single row at its own
+level; such a database is not refused, and stays blind to a wrong number below that level. A row
+with `failed = 1` counts as present — it is `db:migration:retry`'s business, not this check's.
+
+**A restore of a schema archive writes a row for every file of the track up to its level**
+(`Migration::recordAppliedLevel()`), and for the level itself, so the restored database is judged
+afterwards exactly like one built from scratch.
+
+**The cure is in code, never in the table.** Renumber the file above the level, with SQL that
+holds where it already ran under its old number — a database built from scratch in between ran
+it in order (`CREATE TABLE IF NOT EXISTS`, `ADD KEY IF NOT EXISTS`). There is no command that
+marks a migration applied: the same hole stands on every database at that level.
+
 ## Seeds
 
 Seeds populate initial data. Located in `backend/Database/seeds/`.

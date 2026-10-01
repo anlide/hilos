@@ -5,6 +5,8 @@ namespace Hilos\Database;
 use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\AdminViewMode\AdminViewModeStartup;
 use Hilos\Database\Exception\MigrationMarkedFailedException;
+use Hilos\Database\Exception\MigrationNumberTakenTwiceException;
+use Hilos\Database\Exception\MigrationSkippedBelowLevelException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
@@ -162,9 +164,11 @@ class Migration
      *
      * The write counterpart of {@see getCurrentIndex()}, and the only caller today is a restore
      * of a schema archive: such an archive brings the finished schema but an empty `migration`
-     * table, so without this row {@see migrateUp()} - here and at the next daemon startup, which
+     * table, so without these rows {@see migrateUp()} - here and at the next daemon startup, which
      * calls the same method - would replay the whole history over a schema that already has it.
-     * One row is enough for both directions: they read MAX(`index`), not the list of rows.
+     * A row is written for every migration file of the track up to the level, and for the level
+     * itself: {@see refuseInconsistentTrack()} reads the list of rows, not only MAX(`index`), and one
+     * row at the level would leave the restored database blind to a wrong number below it for good.
      *
      * Idempotent on purpose: an archive that carried no `migration` table at all leaves the
      * target's old rows in place, and failing over a duplicate key there would refuse a restore
@@ -177,10 +181,17 @@ class Migration
     {
         self::initialize();
 
+        $indices = array_filter(
+            self::getAvailableMigrations(),
+            static fn (int $migrationIndex): bool => $migrationIndex < $index,
+        );
+        $indices[] = $index;
+
         Database::sqlRun(
-            'INSERT INTO `migration` (`index`, `failed`) VALUES (?, 0)'
+            'INSERT INTO `migration` (`index`, `failed`) VALUES '
+            . implode(', ', array_fill(0, count($indices), '(?, 0)'))
             . ' ON DUPLICATE KEY UPDATE `failed` = 0',
-            [$index]
+            array_values($indices)
         );
     }
 
@@ -189,28 +200,89 @@ class Migration
      */
     public static function getAvailableMigrations(): array
     {
+        return array_keys(self::upFilesByNumber(self::trackFileNames()));
+    }
+
+    /**
+     * Refuses a track the database cannot follow: a number taken by more than one file, or a file
+     * below the database's level that was never applied there (HIL-1238).
+     *
+     * Duplicates come first: while a number has two files, which of them the database counts as
+     * applied is not defined, and a skip found on such a track would be a guess. The rows and the
+     * level are read by one query, so a rollout by another holder in between cannot pair the rows
+     * of one moment with the level of another. Takes no claim and writes nothing: a gap is a
+     * property of the track and the database, and a rollout of the same track adds none, since it
+     * writes its rows in order. What is below the lowest row is not judged - see
+     * {@see MigrationTrackCheck::skipped()}.
+     *
+     * @throws DatabaseException When the migration table cannot be created or read
+     * @throws MigrationNumberTakenTwiceException When a number of the track is taken by more than one file
+     * @throws MigrationSkippedBelowLevelException When files below the database's level were never applied to it
+     */
+    public static function refuseInconsistentTrack(): void
+    {
+        self::initialize();
+
+        $fileNames = self::trackFileNames();
+        $takenTwice = MigrationTrackCheck::takenTwice($fileNames);
+        if ($takenTwice !== []) {
+            throw MigrationNumberTakenTwiceException::forNumbers(self::$migrationName, $takenTwice);
+        }
+
+        Database::sql('SELECT `index`, `failed` FROM `migration`');
+        $recorded = [];
+        $level = 0;
+        while ($row = Database::row()) {
+            $index = (int)$row['index'];
+            $recorded[] = $index;
+            if ((int)$row['failed'] === 0) {
+                $level = max($level, $index);
+            }
+        }
+
+        $upFiles = self::upFilesByNumber($fileNames);
+        $skipped = MigrationTrackCheck::skipped(array_keys($upFiles), $recorded, $level);
+        if ($skipped !== []) {
+            $skippedFiles = array_merge(...array_map(static fn (int $number): array => $upFiles[$number], $skipped));
+            sort($skippedFiles);
+            throw MigrationSkippedBelowLevelException::forFiles(self::$migrationName, $skippedFiles, $level);
+        }
+    }
+
+    /**
+     * Lists the track directory in one pass, for the numbers, the lookup by number and the check alike.
+     *
+     * @return list<string> Entry names in scandir() order; empty when no list path is set or the track has no directory
+     */
+    private static function trackFileNames(): array
+    {
         if (self::$migrationListPath === null) {
             return [];
         }
 
         $migrationPath = self::$migrationListPath . '/' . self::$migrationName;
-
         if (!is_dir($migrationPath)) {
             return [];
         }
 
-        $migrations = [];
-        $files = scandir($migrationPath);
+        return scandir($migrationPath);
+    }
 
-        foreach ($files as $file) {
-            // Match files like: 001_create_users.sql or 1_up.sql (but NOT 001_create_users_down.sql)
-            if (preg_match('/^(\d+)_(?!.*_down).*\.sql$/', $file, $matches)) {
-                $migrations[] = (int)$matches[1];
+    /**
+     * @param list<string> $fileNames Entry names of the track directory
+     * @return array<int, list<string>> Number => up files of that number in name order, numbers ascending
+     */
+    private static function upFilesByNumber(array $fileNames): array
+    {
+        $upFiles = [];
+        foreach ($fileNames as $fileName) {
+            if (preg_match(MigrationTrackCheck::UP_FILE_PATTERN, $fileName, $matches) === 1) {
+                $upFiles[(int)$matches[1]][] = $fileName;
             }
         }
+        ksort($upFiles);
 
-        sort($migrations);
-        return array_unique($migrations);
+        return $upFiles;
     }
 
     /**
@@ -227,10 +299,13 @@ class Migration
      * @throws DatabaseException When migration file is missing, unreadable, or SQL fails
      * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
      * @throws MigrationMarkedFailedException When the next migration is marked failed by an earlier run
+     * @throws MigrationNumberTakenTwiceException When a number of the track is taken by more than one file
+     * @throws MigrationSkippedBelowLevelException When files below the database's level were never applied to it
      */
     public static function migrateUp(?int $targetIndex = null, ?MigrationClaimHolder $holder = null): int
     {
         self::initialize();
+        self::refuseInconsistentTrack();
 
         $availableMigrations = self::getAvailableMigrations();
 
@@ -265,6 +340,7 @@ class Migration
      * @return int Number of migrations rolled back
      * @throws DatabaseException When rollback file is missing, unreadable, or SQL fails
      * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
+     * @throws MigrationNumberTakenTwiceException When a number rolled back is taken by more than one down file
      */
     public static function migrateDown(int $targetIndex): int
     {
@@ -336,40 +412,34 @@ class Migration
      * @param int $index Migration index
      * @param string $type Migration type (up or down)
      * @return ?string Full file path or null when not found
+     * @throws MigrationNumberTakenTwiceException When the number has more than one file of the direction
      */
     private static function findMigrationFile(int $index, string $type): ?string
     {
-        $migrationPath = self::$migrationListPath . '/' . self::$migrationName;
-        
-        if (!is_dir($migrationPath)) {
-            return null;
-        }
+        $fileNames = self::trackFileNames();
+        $pattern = $type === 'up' ? MigrationTrackCheck::UP_FILE_PATTERN : MigrationTrackCheck::DOWN_FILE_PATTERN;
 
-        $files = scandir($migrationPath);
-        
-        // Pattern to match files starting with digits (with leading zeros)
-        // For up: matches "001_something.sql" but not "001_something_down.sql"
-        // For down: matches "001_something_down.sql"
-        $pattern = $type === 'up' 
-            ? '/^(\d+)_(?!.*_down).*\.sql$/'
-            : '/^(\d+)_.*_down\.sql$/';
-
-        foreach ($files as $file) {
-            if (preg_match($pattern, $file, $matches)) {
-                // Extract the numeric index from filename (handles leading zeros)
-                $fileIndex = (int)$matches[1];
-                if ($fileIndex === $index) {
-                    return $migrationPath . '/' . $file;
-                }
+        $found = [];
+        foreach ($fileNames as $fileName) {
+            if (preg_match($pattern, $fileName, $matches) === 1 && (int)$matches[1] === $index) {
+                $found[] = $fileName;
             }
         }
 
-        return null;
+        if (count($found) > 1) {
+            throw MigrationNumberTakenTwiceException::forNumbers(
+                self::$migrationName,
+                [$index => MigrationTrackCheck::takenTwice($fileNames)[$index]],
+            );
+        }
+
+        return $found === [] ? null : self::$migrationListPath . '/' . self::$migrationName . '/' . $found[0];
     }
 
     /**
      * @param int $index Migration index
      * @throws DatabaseException When up file is missing, unreadable, or SQL fails
+     * @throws MigrationNumberTakenTwiceException When the number has more than one up file
      */
     private static function applyMigrationUp(int $index): void
     {
@@ -409,6 +479,7 @@ class Migration
     /**
      * @param int $index Migration index
      * @throws DatabaseException When down file is missing, unreadable, or SQL fails
+     * @throws MigrationNumberTakenTwiceException When the number has more than one down file
      */
     private static function applyMigrationDown(int $index): void
     {
@@ -606,6 +677,7 @@ class Migration
      * @param int $index Migration index to retry
      * @throws DatabaseException When migration is missing, not failed, or re-apply fails
      * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
+     * @throws MigrationNumberTakenTwiceException When the number retried has more than one up file
      */
     public static function retryFailed(int $index): void
     {
