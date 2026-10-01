@@ -158,8 +158,8 @@ auth). The public, SEO-relevant surface — the framework's footer pages (About,
 Terms, Privacy, License; `HILOS_FOOTER_LINKS`) — is **statically prerendered**,
 all four pages, through the view framework's own server renderer. A public page
 is no longer prose alone — three of the four carry framework-owned behavior and
-Terms a line that differs per reader ([sdk-packaging.md](sdk-packaging.md), tier
-2) — and no page leaves the prerendered set for having a per-reader part. What
+Terms its text and a line that differs per reader ([sdk-packaging.md](sdk-packaging.md),
+tier 2) — and no page leaves the prerendered set for having a per-reader part. What
 is prerendered is the **guest view**: what a person with no session sees. The
 per-reader part arrives over the page subscription once the SPA has mounted, on
 a page that is by then a live SPA page like any other. /terms and /privacy are
@@ -207,10 +207,12 @@ the page for the line. Three rules follow, and every public page keeps them:
 What each static file contains: /about the prose, the support block and the
 modal in its closed state; /privacy the prose and the erase block, button
 included, inert until the SPA mounts; /license the prose and the full inventory;
-/terms the prose and the guest header, with the accepted-revision line, the
-countdown and the history absent from the file and arriving over the
-subscription. The backend page behind each answers the subscription with nothing
-— only Terms grows a payload, and it grows it in HIL-501.
+/terms the heading and the project's introduction, with the text of the revision
+in force, its date, the reader's line and the history absent from the file and
+arriving over the subscription — the legal catalog lives on the server, and the
+frontend build does not read it. The backend pages behind About, Privacy and
+License answer the subscription with nothing; Terms answers with its own section
+([legal-documents.md](../architecture/legal-documents.md), *Public Terms page*).
 
 Vue and React run a Vite SSR build of a prerender entry that writes a flat
 `<route>.html` (and `robots.txt` + `sitemap.xml`). Angular uses its **native

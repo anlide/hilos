@@ -228,9 +228,7 @@ its data as an input, never as a fetch from inside the page: `HilosLicensePage`
 takes the inventory as a prop, and the project passes the snapshot its own build
 produced ([build-and-docker.md](build-and-docker.md), *SSG and the public
 surface*). Each page is created by the leaf that first needs it:
-`HilosLicensePage`, `HilosPrivacyPage` (not in the code yet — HIL-839),
-`HilosAboutPage` (not in the code yet — HIL-840), `HilosTermsPage` (not in the
-code yet — HIL-501).
+`HilosLicensePage`, `HilosPrivacyPage`, `HilosAboutPage`, `HilosTermsPage`.
 
 The mechanism across both tiers is the same — slots + scoped slots + shared
 composables, no mixins — and "empty inheritance" (a one-line re-export) is the
@@ -271,10 +269,11 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   static pages, and it is what the four public framework pages (tier 2, above)
   render inside themselves; it is neither the public pages' component nor
   widened for their behavior. The public pages are declared in `@hilos/core`
-  (`HilosPages` / `HILOS_PAGE_ROUTES`) and subscribe like any page; their
-  backend pages carry no payload today — Terms grows one (not in the code yet —
-  HIL-501) — so the visible content is the project's prose plus the framework's
-  behavior block;
+  (`HilosPages` / `HILOS_PAGE_ROUTES`) and subscribe like any page. About,
+  Privacy and License carry no payload, so their visible content is the
+  project's prose plus the framework's behavior block; Terms carries the text of
+  the revision in force and the reader's standing, and the project gives it an
+  introduction only;
 - a **`HilosErrorBoundary`** wrapping each page or major block, so one
   component's runtime error degrades locally instead of blanking the long-lived
   SPA;

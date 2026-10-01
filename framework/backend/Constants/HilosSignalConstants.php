@@ -135,6 +135,9 @@ final class HilosSignalConstants
     /** Browser subscription signal of the personal revision-history page (HIL-498). */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_AGREEMENTS_HISTORY = 'subscription_page_hilos_profile_agreements_history';
 
+    /** Browser subscription signal of the public Terms page (HIL-501). */
+    public const string SUBSCRIPTION_PAGE_HILOS_TERMS = 'subscription_page_hilos_terms';
+
     /** Subscription signal for the profile's "Your data" section. */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_DATA = 'subscription_page_hilos_profile_data';
 
@@ -143,6 +146,9 @@ final class HilosSignalConstants
 
     /** Client → server: compare {document, revisionId}; reply carries {document, fromRevisionId, toRevisionId, changes}. */
     public const string HILOS_LEGAL_REVISION_CHANGES = 'hilos_legal_revision_changes';
+
+    /** Client → server: read {document: 'terms', revisionId} on the public Terms page; reply {document, revisionId, clauses} (HIL-501). */
+    public const string HILOS_TERMS_REVISION_TEXT = 'hilos_terms_revision_text';
 
     /** Subscription signal for Hilos settings page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';

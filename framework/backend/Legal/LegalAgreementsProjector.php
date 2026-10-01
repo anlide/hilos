@@ -17,6 +17,7 @@ final class LegalAgreementsProjector
     public const string SECTION = 'legalAgreements';
     public const string TEXTS_SECTION = 'legalAgreementTexts';
     public const string REVISIONS_SECTION = 'legalRevisions';
+    public const string TERMS_SECTION = 'legalTerms';
 
     /**
      * @param int $userId Person whose acceptance state to read
@@ -86,20 +87,68 @@ final class LegalAgreementsProjector
     {
         $documents = [];
         foreach (LegalCatalogResolver::documents() as $document) {
-            $revisions = [];
-            $previous = null;
-            foreach (LegalCatalogResolver::revisions($document) as $revision) {
-                $revisions[] = [
-                    ...LegalWire::revision($revision),
-                    'origin' => LegalStandingResolver::origin($document, $revision->id)->value,
-                    'previousSetVersion' => $previous?->setVersion,
-                ];
-                $previous = $revision;
-            }
-            $documents[] = ['document' => $document->value, 'revisions' => $revisions];
+            $documents[] = ['document' => $document->value, 'revisions' => self::historyOf($document)];
         }
 
         return [LegalAgreementsStateSignalData::documents => $documents];
+    }
+
+    /**
+     * The public Terms section (HIL-501): the revision in force with its text and the history to every
+     * reader, and to a signed-in reader whose held revision is not the one in force, the comparison of
+     * the two.
+     *
+     * @param ?int $userId Reader acting through the session, or null for a guest
+     * @param string $today Server calendar date, YYYY-MM-DD
+     * @return ?array<string, mixed> The section, or null when the project declares no Terms or its catalog is faulty
+     * @throws HilosException When the acceptance lookup fails
+     */
+    public static function terms(?int $userId, string $today): ?array
+    {
+        $document = LegalDocument::TERMS;
+        try {
+            if (!in_array($document, LegalCatalogResolver::documents(), true)) {
+                return null;
+            }
+            $current = LegalCatalogResolver::latestRevision($document);
+            $held = $userId === null ? null : LegalStandingResolver::standingOf(
+                $document, array_keys(self::acceptedByRevision($document, Hilos::$db->legalAcceptances->ofUser($userId))), $today,
+            )->held;
+
+            return [
+                'current' => LegalWire::revision($current),
+                'clauses' => LegalWire::clauses(LegalCatalogResolver::compose($document, $current->id)),
+                'revisions' => self::historyOf($document),
+                'changes' => $held === null || $held->id === $current->id ? null : [
+                    'fromRevisionId' => $held->id,
+                    'toRevisionId' => $current->id,
+                    'changes' => LegalWire::changes(LegalRevisionComparison::between($document, $held->id, $current->id)),
+                ],
+            ];
+        } catch (LegalException) {
+            return null;
+        }
+    }
+
+    /**
+     * @param LegalDocument $document Document whose declarations to list
+     * @return list<array<string, mixed>> Every declared revision with its origin, in declaration order
+     * @throws LegalException When the catalog is invalid
+     */
+    private static function historyOf(LegalDocument $document): array
+    {
+        $revisions = [];
+        $previous = null;
+        foreach (LegalCatalogResolver::revisions($document) as $revision) {
+            $revisions[] = [
+                ...LegalWire::revision($revision),
+                'origin' => LegalStandingResolver::origin($document, $revision->id)->value,
+                'previousSetVersion' => $previous?->setVersion,
+            ];
+            $previous = $revision;
+        }
+
+        return $revisions;
     }
 
     /**

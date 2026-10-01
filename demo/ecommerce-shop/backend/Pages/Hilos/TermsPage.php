@@ -10,8 +10,8 @@ use Hilos\Pages\AbstractHilosTermsPage;
 /**
  * TermsPage - Terms page implementation for the ecommerce-shop demo.
  *
- * The framework page sends no payload; only the owning agent type is bound
- * here.
+ * The framework page owns its payload and the revision reads; only the owning
+ * agent type is bound here.
  */
 final class TermsPage extends AbstractHilosTermsPage
 {

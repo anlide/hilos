@@ -240,6 +240,53 @@ The two profile routes are `/profile/agreements` and
 `/profile/agreements/history`. The profile supplies no browser action to
 accept a revision; registration and re-consent call the command entry above.
 
+## Public Terms page
+
+The body of `/terms` (`AbstractHilosTermsPage`, the SDK's `HilosTermsPage`) is
+the text of the Terms revision in force, composed from the project's catalog —
+the same text a person accepts at registration, opens in the history and
+compares. The project's own prose is only an optional introduction the view
+slots above it. A project that declares no Terms, or whose catalog is faulty,
+shows one line saying no terms are published, with no history.
+
+The page is public, and its answer depends on the reader:
+
+- `legalTerms` goes to everyone: `current`, its `clauses`, every declared
+  revision in `revisions` (the `legalRevisions` row shape, in declaration
+  order), and `changes` — the comparison of the held revision with the one in
+  force for a signed-in reader whose held revision is not the one in force,
+  `null` for anybody else. The whole section is `null` without Terms;
+- `legalAgreements` goes only to a signed-in reader, and only beside a
+  non-null `legalTerms`: the lightweight state in the profile's shape. The
+  reader joins the agreements group after the answer.
+
+A revision of the history opens through the page's own read,
+`hilos_terms_revision_text` (`{document: 'terms', revisionId}`, replying in
+the shape of `hilos_legal_revision_text`). It is not an authenticated action:
+a guest reads it too. One action cannot belong to two pages, so the profile's
+read is not reused here. Any other document, or an undeclared revision, is a
+`ValidationException`.
+
+Acceptance is the re-consent action `hilos_legal_accept` carrying the Terms
+revision in force alone: the documents are independent, and the privacy policy
+is accepted in the shell's re-consent window. Under a takeover the page shows
+the reader's state and offers no acceptance. A person with no acceptance on
+record is shown the revision in force and asked nothing.
+
+The page asks for its whole answer again in three cases: a group frame moved
+the held or current Terms revision, the person in the tab changed (sign-in,
+sign-out, a takeover starting or ending), and an acceptance landed or was
+refused. A change of rights does not answer a public page again
+([page-access-control.md](page-access-control.md), "Pages a rights change
+cannot move are skipped"), so nobody else would. Until the answer arrives the
+text and comparison already shown stay; a frame that moved only the privacy
+policy updates the state directly.
+
+The prerendered file carries the heading, the introduction and the loading
+line: the catalog lives on the server and the frontend build does not read it
+([build-and-docker.md](../frontend/build-and-docker.md), *SSG and the public
+surface*).
+
 ## Admin section
 
 The `Legal` section under Access & identity is closed by `ADMIN`. Activate it by

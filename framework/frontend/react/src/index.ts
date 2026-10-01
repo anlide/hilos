@@ -60,6 +60,10 @@ export {
   HilosPrivacyPage,
   type HilosPrivacyPageProps,
 } from './public/HilosPrivacyPage.js'
+export {
+  HilosTermsPage,
+  type HilosTermsPageProps,
+} from './public/HilosTermsPage.js'
 export { LoadingButton, type LoadingButtonProps } from './LoadingButton.js'
 export { HilosSwitch, type HilosSwitchProps } from './HilosSwitch.js'
 export {

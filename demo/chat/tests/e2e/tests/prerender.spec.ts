@@ -47,6 +47,22 @@ test('the privacy page is prerendered with the erase block whole', async ({
   expect(html).toContain('Erase and sign out')
 })
 
+test('the terms page is prerendered with the introduction and the loading line', async ({
+  request,
+}) => {
+  const res = await request.get('/terms')
+  expect(res.status()).toBe(200)
+  const html = await res.text()
+  // The text of the revision in force lives in the backend's legal catalog,
+  // which the frontend build does not read: the file carries the heading, the
+  // project's introduction and the loading line, and the text arrives with the
+  // subscription (HIL-501).
+  expect(html).toContain('This is a demonstration application')
+  expect(html).toContain('data-id="terms-loading"')
+  expect(html).toMatch(/<title>Terms[^<]*<\/title>/)
+  expect(html).not.toContain('implies acceptance')
+})
+
 test('robots.txt and sitemap.xml advertise the public surface', async ({
   request,
 }) => {

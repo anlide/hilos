@@ -1,23 +1,25 @@
-// The public Terms page (HilosPages.TERMS). A framework-declared static page;
-// this project supplies the content. See views/about/about.ts.
+// The public Terms page (HilosPages.TERMS). The page is the framework's
+// (HilosTermsPage): its body is the text of the Terms revision in force, read
+// from the project's legal catalog (backend/Legal/), with the reader's standing
+// and the revision history. This project supplies only the introduction above
+// the text.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosStaticPage } from '@hilos/angular'
+import { HilosTermsPage } from '@hilos/angular'
+
+import { actions, connection } from '../../bootstrap/connection'
+import { scopes } from '../../bootstrap/session'
 
 @Component({
   selector: 'app-terms',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosStaticPage],
-  template: `<hilos-static-page title="Terms of Service">
+  imports: [HilosTermsPage],
+  template: `<hilos-terms-page [context]="context">
     <p>
       This is a demonstration application provided for evaluation purposes only,
       without warranty of any kind.
     </p>
-    <p>
-      The votes you cast are processed to show the framework's real-time features
-      and may be visible to other participants. Do not submit confidential or
-      personal information.
-    </p>
-    <p class="mb-0">Using this demo implies acceptance of these terms.</p>
-  </hilos-static-page>`,
+  </hilos-terms-page>`,
 })
-export class Terms {}
+export class Terms {
+  protected readonly context = { connection, scopes, actions }
+}

@@ -1,22 +1,20 @@
-<!-- The public Terms page (HilosPages.TERMS). A framework-declared static page;
-this project supplies the content. See views/About/About.vue. -->
+<!-- The public Terms page (HilosPages.TERMS). The page is the framework's: its
+body is the text of the Terms revision in force, read from the project's legal
+catalog (backend/Legal/), with the reader's standing and the revision history.
+This project supplies only the introduction above the text. -->
 <script setup lang="ts">
-import { HilosStaticPage } from '@hilos/vue'
+import { HilosTermsPage } from '@hilos/vue'
+import { actions, connection } from '../../bootstrap/connection.js'
+import { scopes } from '../../bootstrap/session.js'
 
 defineOptions({ name: 'TermsPage' })
 </script>
 
 <template>
-  <HilosStaticPage title="Terms of Service">
+  <HilosTermsPage :context="{ connection, scopes, actions }">
     <p>
       This is a demonstration application provided for evaluation purposes only,
       without warranty of any kind.
     </p>
-    <p>
-      Nothing it shows is financial advice: the trades it will show are paper
-      trades of a robot, made to show the framework's real-time features, and
-      no money is involved.
-    </p>
-    <p class="mb-0">Using this demo implies acceptance of these terms.</p>
-  </HilosStaticPage>
+  </HilosTermsPage>
 </template>

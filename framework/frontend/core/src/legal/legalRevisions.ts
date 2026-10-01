@@ -71,8 +71,16 @@ export function hilosLegalRevisionHistory(context: HilosLegalContext) {
   })
 }
 
-/** Reads only a dialog the person opened; closing or replacing it invalidates late replies. */
-export function createHilosLegalRevisionReader(context: HilosLegalContext) {
+/**
+ * Reads only a dialog the person opened; closing or replacing it invalidates late replies.
+ *
+ * @param context Where the reads are dispatched.
+ * @param options The action a revision's text is read with: the profile's by default, a page's own otherwise.
+ */
+export function createHilosLegalRevisionReader(
+  context: HilosLegalContext,
+  options: { readonly textAction?: string } = {},
+) {
   const dialog = createSignal<HilosLegalRevisionDialog | null>(null)
   let round = 0
   async function read(
@@ -86,7 +94,7 @@ export function createHilosLegalRevisionReader(context: HilosLegalContext) {
     try {
       if (kind === 'text') {
         const answer = await context.actions.dispatch(
-          LEGAL_REVISION_TEXT_ACTION,
+          options.textAction ?? LEGAL_REVISION_TEXT_ACTION,
           { document, revisionId },
           { replySchema: legalRevisionTextReplySchema },
         ).done

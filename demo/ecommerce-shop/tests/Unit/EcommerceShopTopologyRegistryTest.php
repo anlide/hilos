@@ -26,6 +26,7 @@ use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
@@ -172,7 +173,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame([], Hilos::PAGE_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
-        $this->assertSame([], Hilos::getPageActionRoutes());
+        $this->assertSame(
+            [HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS],
+            Hilos::getPageActionRoutes(),
+        );
         $this->assertSame(
             [HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class],
             EcommerceShopAgent::AGENT_SIGNALS,

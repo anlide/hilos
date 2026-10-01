@@ -1,20 +1,23 @@
-// The public Terms page (HilosPages.TERMS). A framework-declared static page;
-// this project supplies the content. See views/About/About.tsx.
-import { HilosStaticPage } from '@hilos/react'
+// The public Terms page (HilosPages.TERMS). The page is the framework's
+// (HilosTermsPage): its body is the text of the Terms revision in force, read
+// from the project's legal catalog (backend/Legal/), with the reader's standing
+// and the revision history. This project supplies only the introduction above
+// the text.
+import { HilosTermsPage } from '@hilos/react'
+
+import { actions, connection } from '../../bootstrap/connection'
+import { scopes } from '../../bootstrap/session'
+
+/** One context for the page's lifetime: the page keys its store on it. */
+const context = { connection, scopes, actions }
 
 export default function Terms() {
   return (
-    <HilosStaticPage title="Terms of Service">
+    <HilosTermsPage context={context}>
       <p>
         This is a demonstration application provided for evaluation purposes
         only, without warranty of any kind.
       </p>
-      <p>
-        Nothing it shows is for sale: the flowers, the prices and the orders it
-        will show are made up to show the framework's real-time features, no
-        payment is ever taken, and nothing is ever delivered.
-      </p>
-      <p className="mb-0">Using this demo implies acceptance of these terms.</p>
-    </HilosStaticPage>
+    </HilosTermsPage>
   )
 }

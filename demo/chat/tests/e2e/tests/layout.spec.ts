@@ -32,9 +32,7 @@ test('footer links navigate to framework static pages', async ({ page }) => {
 
   // Terms too, to prove the whole set is wired, not just the first link.
   await page.getByTestId('footer-link-hilos_terms').click()
-  await expect(page.getByTestId('static-page-title')).toHaveText(
-    'Terms of Service',
-  )
+  await expect(page.getByTestId('static-page-title')).toHaveText('Terms')
   expect(new URL(page.url()).pathname).toBe('/terms')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })

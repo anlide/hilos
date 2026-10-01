@@ -1500,6 +1500,7 @@ export * from './profile/dataExport.js'
 
 export * from './legal/legalAgreements.js'
 export * from './legal/legalRevisions.js'
+export * from './legal/legalTerms.js'
 
 export {
   LEGAL_CATALOG_REFUSAL_SECTION,

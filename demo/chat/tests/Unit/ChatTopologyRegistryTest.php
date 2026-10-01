@@ -490,6 +490,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_RESET => PageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
             HilosSignalConstants::SECURITY_SIGN_IN_METHOD_SET => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
             HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
+            HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS,
         ], Hilos::getPageActionRoutes());
     }
 
@@ -548,6 +549,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_SIGN_IN_METHOD_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
 
