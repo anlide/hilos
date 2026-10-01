@@ -15,7 +15,10 @@ access section draws the block, the freeze — a fact with no control — and th
 deletion from the same verdict. A window whose action takes something away —
 the merge, rights, the block, the deletion — first asks the server whether the
 administrator must confirm it is them, and opens on that step when it must
-(createHilosUserCardStepUp, HIL-1275). Bootstrap classes only (styling-rules.md). -->
+(createHilosUserCardStepUp, HIL-1275). A viewer of the admin view mode opens
+every window at once, without the confirmation step, and the confirmation in the
+window stands disabled by the mode (HIL-1263). Bootstrap classes only
+(styling-rules.md). -->
 <script setup lang="ts">
 import {
   computed,
@@ -595,6 +598,7 @@ watch(error, (reason) => {
                       ? 'btn-outline-danger'
                       : 'btn-primary'
                   "
+                  opens-window
                   :loading="lifecycleOpening === row.choice"
                   :disabled="row.disabled"
                   :aria-describedby="`hilos-user-${row.key}-reason`"
@@ -661,6 +665,7 @@ watch(error, (reason) => {
           </p>
           <LoadingButton
             class="btn-outline-danger"
+            opens-window
             :loading="mergeOpening"
             data-id="hilos-user-merge-open"
             @click="openMerge"
@@ -876,7 +881,11 @@ watch(error, (reason) => {
               <input
                 type="radio"
                 class="form-check-input"
-                :aria-label="`Merge ${row.name}`"
+                :aria-label="
+                  isHiddenValue(row.name)
+                    ? `Merge #${row.id}`
+                    : `Merge ${row.name}`
+                "
                 :data-id="`hilos-user-merge-row-${row.id}`"
                 :checked="selectedCandidateId === row.id"
                 :disabled="row.id === currentUserId"
@@ -884,7 +893,7 @@ watch(error, (reason) => {
               />
             </template>
             <template #cell-name="{ row }">
-              {{ row.name }}
+              <HilosHideable :value="row.name" />
               <span class="text-body-secondary">#{{ row.id }}</span>
               <span
                 v-if="row.id === currentUserId"
@@ -893,21 +902,27 @@ watch(error, (reason) => {
               >
             </template>
             <template #cell-identities="{ row }">
-              <ul class="list-unstyled mb-0">
-                <li
-                  v-for="identity in row.identities"
-                  :key="`${identity.type}:${identity.identifier}`"
-                >
-                  <span class="fw-medium">{{ identityTitle(identity) }}</span>
-                  <template v-if="identity.type !== 'passkey'">
-                    · {{ identity.identifier }}
-                  </template>
-                  <template v-if="identity.verified">
-                    <span aria-hidden="true"> ✓</span
-                    ><span class="visually-hidden"> Verified</span>
-                  </template>
-                </li>
-              </ul>
+              <HilosHideable :value="row.identities">
+                <template #default="{ value: identities }">
+                  <ul class="list-unstyled mb-0">
+                    <li
+                      v-for="identity in identities"
+                      :key="`${identity.type}:${identity.identifier}`"
+                    >
+                      <span class="fw-medium">{{
+                        identityTitle(identity)
+                      }}</span>
+                      <template v-if="identity.type !== 'passkey'">
+                        · {{ identity.identifier }}
+                      </template>
+                      <template v-if="identity.verified">
+                        <span aria-hidden="true"> ✓</span
+                        ><span class="visually-hidden"> Verified</span>
+                      </template>
+                    </li>
+                  </ul>
+                </template>
+              </HilosHideable>
             </template>
             <template #cell-lastActivity="{ row }">{{
               row.lastActivity ?? '—'
@@ -918,13 +933,13 @@ watch(error, (reason) => {
       <template v-else-if="mergeSummaryCandidate">
         <p data-id="hilos-user-merge-summary">
           <strong
-            >{{ mergeSummaryCandidate.name }} (#{{
+            ><HilosHideable :value="mergeSummaryCandidate.name" /> (#{{
               mergeSummaryCandidate.id
             }})</strong
           >
           will be merged into
           <strong
-            >{{ detail ? hiddenAsWord(detail.name) : '' }} (#{{
+            ><HilosHideable v-if="detail" :value="detail.name" /> (#{{
               detail?.id
             }})</strong
           >.

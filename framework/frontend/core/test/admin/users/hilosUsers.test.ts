@@ -25,7 +25,11 @@ import { hilosLegalLapsedHref } from '../../../src/admin/legal/hilosLegal.js'
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { type PageRouteMatch } from '../../../src/routing/PageRouter.js'
-import { type HilosAccountStanding } from '../../../src/session/sessionScope.js'
+import { bindAdminAccess } from '../../../src/session/adminAccess.js'
+import {
+  bindSessionScope,
+  type HilosAccountStanding,
+} from '../../../src/session/sessionScope.js'
 import { createSignal } from '../../../src/state/signal.js'
 import {
   ActionError,
@@ -136,6 +140,31 @@ describe('resolveHilosMergeCandidateRow', () => {
     expect(
       resolveHilosMergeCandidateRow(rowHidden, users).unverifiedPasswordAddress,
     ).toBeNull()
+  })
+
+  it('reads a hidden candidate name and hidden candidate identities', () => {
+    const { scopes, users } = userStore()
+    scopes
+      .page()
+      ?.entities.upsert(
+        { type: 'user', id: 7 },
+        { id: 7, name: { _hidden: true }, lastActivity: null },
+      )
+    const row: TableRow = {
+      rowKey: '7',
+      slots: {
+        users: { type: 'user', id: 7 },
+        merge: {
+          identities: { _hidden: true },
+          hasPassword: true,
+          unverifiedPasswordAddress: null,
+        },
+      },
+    }
+
+    const candidate = resolveHilosMergeCandidateRow(row, users)
+    expect(candidate.name).toBe(HIDDEN_VALUE)
+    expect(candidate.identities).toBe(HIDDEN_VALUE)
   })
 })
 
@@ -562,6 +591,8 @@ describe('createHilosUserLifecycle', () => {
     expect(lifecycle.graceDays.get()).toBe(30)
     scopes.openPage('hilos_user').data.set('accountDeletionGraceDays', 1)
     expect(lifecycle.graceDays.get()).toBe(1)
+    scopes.page()?.data.set('accountDeletionGraceDays', HIDDEN_VALUE)
+    expect(lifecycle.graceDays.get()).toBe(HIDDEN_VALUE)
   })
 })
 
@@ -742,6 +773,24 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
     expect(
       sections.find((section) => section.key === 'access')?.rows[0]?.state,
     ).toBe(true)
+  })
+
+  it('keeps deletion enabled and formats hidden graceDays as Hidden in the prompt', () => {
+    const sections = hilosUserLifecycleSections(
+      detail,
+      99,
+      HIDDEN_VALUE,
+      0,
+      null,
+    )
+    const deletion = sections
+      .find((section) => section.key === 'access')
+      ?.rows.find((row) => row.key === 'deletion')
+
+    expect(deletion?.disabled).toBe(false)
+
+    const prompt = hilosUserLifecyclePrompt(detail, 'delete', HIDDEN_VALUE)
+    expect(prompt.paragraphs[0]).toContain('After Hidden the account')
   })
 })
 
@@ -996,5 +1045,88 @@ describe('createHilosUserCardStepUp', () => {
     expect(refusing.step.refusal.get()).toBe(
       'Add a password, an email or a phone to your account to do this',
     )
+  })
+
+  function bindSession(
+    user: { id: number; admin: boolean } | null,
+    viewMode: boolean,
+  ): () => void {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    const release = bindAdminAccess(scopes)
+
+    const signal = {
+      kind: 'project',
+      type: 'handshake_response',
+      data: {
+        entities: {
+          currentUser: user === null ? null : { ...user, name: 'Olena' },
+        },
+        data: { adminViewMode: viewMode },
+      },
+      envelope: {},
+    } as unknown as ProjectSignal
+    for (const listener of listeners) {
+      listener(signal)
+    }
+
+    return release
+  }
+
+  it('skips the step for a viewer in the admin view mode without asking the server', async () => {
+    for (const user of [null, { id: 10, admin: false }]) {
+      const release = bindSession(user, true)
+      try {
+        const { context, calls } = stepUpContext({ required: true })
+        const stepUp = createHilosUserCardStepUp(context)
+        const windows: (keyof typeof HILOS_USER_CARD_STEP_UP_OPERATIONS &
+          HilosUserCardWindow)[] = [
+          'merge',
+          'grant',
+          'revoke',
+          'block',
+          'delete',
+        ]
+
+        for (const window of windows) {
+          expect(await stepUp.open(window)).toBe('skip')
+        }
+        expect(calls).toEqual([])
+      } finally {
+        release()
+      }
+    }
+  })
+
+  it('asks the server when an administrator is on a node in the admin view mode', async () => {
+    const release = bindSession({ id: 1, admin: true }, true)
+    try {
+      const { context, calls } = stepUpContext({ required: false })
+      const stepUp = createHilosUserCardStepUp(context)
+      const windows: (keyof typeof HILOS_USER_CARD_STEP_UP_OPERATIONS &
+        HilosUserCardWindow)[] = ['merge', 'grant', 'revoke', 'block', 'delete']
+
+      for (const window of windows) {
+        expect(await stepUp.open(window)).toBe('skip')
+      }
+      expect(calls).toEqual(
+        windows.map((window) => ({
+          action: 'hilos_step_up_start',
+          payload: { operation: HILOS_USER_CARD_STEP_UP_OPERATIONS[window] },
+        })),
+      )
+    } finally {
+      release()
+    }
   })
 })

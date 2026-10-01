@@ -429,20 +429,28 @@ nobody is asked*).
   `DISABLED-TITLE`). What stays live: Cancel and the fields of a form (a viewer
   opens it and reads it, and has nothing to save with), the conflict choices
   (they edit only the draft in the window), a button that only opens a form, a
-  table's main action (it opens the page's own modal, whose button is a control
-  of the mode), and marking rows. Outside the admin page shell nothing
-  changes. An action a viewer still reaches — a raw button not moved yet, Enter
-  in a form's field — is refused by the server and shown with the core's
-  sentence (above).
+  button that opens a window after the server's word (the person card: rights,
+  block, deletion, merge — they first ask whether the administrator needs the
+  confirmation step) is held by a `LoadingButton` with `opensWindow`, and the
+  mode does not disable it; a viewer is not shown the confirmation step and the
+  window opens at once (HIL-1263), a table's main action (it opens the page's own
+  modal, whose button is a control of the mode), and marking rows. Outside the
+  admin page shell nothing changes. An action a viewer still reaches — a raw
+  button not moved yet, Enter in a form's field — is refused by the server and
+  shown with the core's sentence (above).
 - Each section moves its own raw one-click mutation buttons onto
   `LoadingButton`, and the Save of its own form onto `ConflictActions` or
   `LoadingButton`; a button that only opens a form stays as it is. The
-  sections: people — impersonation, rights, block, deletion, merge, rename
-  (not in the code yet — HIL-1263); security — OAuth, sign-in methods,
-  two-factor, step-up (not in the code yet — HIL-1267). Maintenance has
-  nothing to move: the confirm buttons of its two dialogs — naming a verifier
-  and taking one out — are `LoadingButton`s, and its two raw buttons only open
-  those dialogs (HIL-1265). Log takeouts have nothing to move: the confirm
+  sections: security — OAuth, sign-in methods, two-factor, step-up
+  (not in the code yet — HIL-1267). The people section has nothing to move: the
+  confirms of impersonation, rights, block, deletion and merge are
+  `LoadingButton`s and a rename's Save stands on `ConflictActions`; the four
+  buttons of the card that open their windows after the server's word carry
+  `opensWindow`, so a viewer opens every window at once, without the confirmation
+  step, and the merge window shows a candidate's name and sign-in addresses as
+  the hidden mark (HIL-1263). Maintenance has nothing to move: the confirm
+  buttons of its two dialogs — naming a verifier and taking one out — are
+  `LoadingButton`s, and its two raw buttons only open those dialogs (HIL-1265). Log takeouts have nothing to move: the confirm
   buttons of their two dialogs — confirming a takeout and withdrawing it — are
   `LoadingButton`s, and their raw buttons only open or close a dialog or
   filter the list (HIL-1268). Legal has nothing to move: its one mutation,
@@ -557,6 +565,10 @@ setting-presets screen
 and not as an e2e: a viewer is sent the frame of the presets hidden whole until
 its fields are classified (not in the code yet — HIL-1255), so no stand draws a
 viewer a card to find disabled (HIL-1262).
+
+The people section carries its viewer case in
+`demo/chat/tests/e2e/tests/users.spec.ts` (HIL-1263; moving with the file under
+HIL-1219).
 
 ## What The View Mode Does Not Do
 

@@ -42,6 +42,7 @@ import { type ProjectSignal } from '../../protocol/parseSignal.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
+import { hilosAdminAccess } from '../../session/adminAccess.js'
 import {
   hilosStandingTone,
   type HilosStandingTone,
@@ -63,7 +64,11 @@ import {
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
-import { HIDDEN_VALUE, type Hideable } from '../../state/hiddenValue.js'
+import {
+  HIDDEN_VALUE,
+  type Hideable,
+  isHiddenValue,
+} from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import {
   computedSignal,
@@ -147,12 +152,20 @@ export interface HilosMergeCandidateIdentity {
 export interface HilosMergeCandidateRow {
   /** Candidate user id; also the table row key. */
   readonly id: number
-  /** Candidate display name. */
-  readonly name: string
+  /**
+   * Candidate display name.
+   *
+   * Hidden from a viewer of the admin view mode.
+   */
+  readonly name: Hideable<string>
   /** Last activity timestamp, or null when never recorded. */
   readonly lastActivity: string | null
-  /** Safe sign-in identity metadata. */
-  readonly identities: readonly HilosMergeCandidateIdentity[]
+  /**
+   * Safe sign-in identity metadata.
+   *
+   * Hidden from a viewer of the admin view mode.
+   */
+  readonly identities: Hideable<readonly HilosMergeCandidateIdentity[]>
   /** Whether the candidate currently owns a password identity. */
   readonly hasPassword: boolean
   /**
@@ -408,17 +421,25 @@ export function resolveHilosMergeCandidateRow<TUser extends User>(
 ): HilosMergeCandidateRow {
   const ref = row.slots[USER_SLOT] as EntityRef | undefined
   const user = ref ? users.signal(ref).get() : undefined
+  const nameHidden =
+    ref !== undefined && users.hidden(ref, USER_NAME_FIELD).get()
   const merge = recordSlot(row.slots[MERGE_SLOT])
-  const identities = Array.isArray(merge?.[USER_IDENTITIES_FIELD])
-    ? merge[USER_IDENTITIES_FIELD].map(resolveMergeIdentity).filter(
-        (identity): identity is HilosMergeCandidateIdentity =>
-          identity !== null,
-      )
-    : []
+  const rawIdentities = merge?.[USER_IDENTITIES_FIELD]
+  const identities: Hideable<readonly HilosMergeCandidateIdentity[]> =
+    isHiddenValue(rawIdentities)
+      ? HIDDEN_VALUE
+      : Array.isArray(rawIdentities)
+        ? rawIdentities
+            .map(resolveMergeIdentity)
+            .filter(
+              (identity): identity is HilosMergeCandidateIdentity =>
+                identity !== null,
+            )
+        : []
 
   return {
     id: Number(user?.id ?? row.rowKey),
-    name: user?.name ?? '',
+    name: nameHidden ? HIDDEN_VALUE : (user?.name ?? ''),
     lastActivity: user?.lastActivity ?? null,
     identities,
     hasPassword:
@@ -1068,8 +1089,8 @@ export function createHilosAccountMerge(
 export interface HilosUserLifecycle {
   /** Person behind the current session. */
   readonly currentUserId: ReadonlySignal<number | null>
-  /** Deletion grace period from the page's first answer. */
-  readonly graceDays: ReadonlySignal<number | null>
+  /** Deletion grace period from the page's first answer, or hidden for a view-mode viewer. */
+  readonly graceDays: ReadonlySignal<Hideable<number> | null>
   /**
    * Grant or remove administrator rights.
    * @param userId The target account.
@@ -1103,6 +1124,10 @@ export function createHilosUserLifecycle(
     currentUserId: sessionUserId(context.scopes),
     graceDays: computedSignal(() => {
       const value = graceDays.get()
+
+      if (isHiddenValue(value)) {
+        return value
+      }
 
       return typeof value === 'number' && Number.isInteger(value) && value >= 1
         ? value
@@ -1270,14 +1295,14 @@ export interface HilosUserLifecycleSection {
  *
  * @param detail The committed user row, absent until the table arrives.
  * @param currentUserId The person behind this session.
- * @param graceDays The subscription's grace-period snapshot.
+ * @param graceDays The subscription's grace-period snapshot, or hidden for a viewer.
  * @param now The current local epoch milliseconds, for the remaining days.
  * @param standing The person's standing, or `null` while the card has none.
  */
 export function hilosUserLifecycleSections(
   detail: HilosUserDetailRow | undefined,
   currentUserId: number | null,
-  graceDays: number | null,
+  graceDays: Hideable<number> | null,
   now: number,
   standing: HilosAccountStanding | null = null,
 ): readonly HilosUserLifecycleSection[] {
@@ -1396,12 +1421,12 @@ export function hilosUserFrozenRow(
  * Freeze the person and the confirmation text at the moment a control is pressed.
  * @param detail The account whose control was pressed.
  * @param choice The requested operation.
- * @param graceDays The grace period named by this page's subscription.
+ * @param graceDays The grace period named by this page's subscription, or hidden for a viewer.
  */
 export function hilosUserLifecyclePrompt(
   detail: HilosUserDetailRow,
   choice: HilosUserLifecycleChoice,
-  graceDays: number | null,
+  graceDays: Hideable<number> | null,
 ): HilosUserLifecyclePrompt {
   const copy = HILOS_USER_LIFECYCLE_COPY.confirmations[choice]
 
@@ -1412,7 +1437,11 @@ export function hilosUserLifecyclePrompt(
     paragraphs: copy.paragraphs.map((line) =>
       line.replace(
         '{graceDays}',
-        graceDays === null ? '' : formatAccountDeletionDays(graceDays),
+        graceDays === null
+          ? ''
+          : isHiddenValue(graceDays)
+            ? String(hiddenAsWord(graceDays))
+            : formatAccountDeletionDays(graceDays),
       ),
     ),
     confirm: copy.confirm,
@@ -1467,9 +1496,11 @@ export interface HilosUserCardStepUp {
   readonly step: HilosStepUpStep
   /**
    * Ask the server whether the window's operation needs a fresh confirmation of
-   * the administrator. A window without an operation answers `skip` and sends
-   * nothing; every other window asks, whatever the installation's list says —
-   * which windows ask is the list's answer, not the view's.
+   * the administrator. A viewer of the admin view mode skips the step without
+   * asking the server, because the viewer cannot act and opening the step would
+   * send a code to their address. A window without an operation answers `skip`
+   * and sends nothing; every other window asks, whatever the installation's
+   * list says — which windows ask is the list's answer, not the view's.
    *
    * @param window The window being opened.
    */
@@ -1490,7 +1521,10 @@ function cardOperation(window: HilosUserCardWindow): string | undefined {
 /**
  * The confirmation step an account-card window opens with (HIL-1275): the
  * administrator confirms it is them before an action over another person's
- * account, by the method their own account can prove.
+ * account, by the method their own account can prove. A viewer of the admin view
+ * mode skips the step without asking the server (HIL-1263): the viewer acts on
+ * nothing, and opening the step on a signed-in non-admin would send a code to
+ * their unconfirmed address.
  *
  * @param context The project context whose action lifecycle carries the step.
  */
@@ -1502,6 +1536,9 @@ export function createHilosUserCardStepUp(
   return {
     step,
     open(window) {
+      if (hilosAdminAccess.get() === 'view') {
+        return Promise.resolve('skip')
+      }
       const operation = cardOperation(window)
 
       return operation === undefined

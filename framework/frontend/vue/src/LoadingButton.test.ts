@@ -15,9 +15,11 @@ import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
 function mountInPage(
   viewMode: Ref<boolean>,
   attrs: Record<string, unknown> = {},
+  props: Record<string, unknown> = {},
 ) {
   return mount(LoadingButton, {
     attrs,
+    props,
     slots: { default: 'Save' },
     global: { provide: { [hilosAdminViewModeKey as symbol]: viewMode } },
   })
@@ -118,6 +120,61 @@ describe('LoadingButton in the admin view mode', () => {
     await wrapper.vm.$nextTick()
 
     const button = wrapper.find('button')
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(button.attributes('aria-describedby')).toBeUndefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('click')).toHaveLength(1)
+  })
+
+  it('stays live when marked as opening a window in the view mode', async () => {
+    const wrapper = mountInPage(ref(true), {}, { opensWindow: true })
+    const button = wrapper.find('button')
+
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(button.attributes('aria-describedby')).toBeUndefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('click')).toHaveLength(1)
+
+    const withOwnDesc = mountInPage(
+      ref(true),
+      { 'aria-describedby': 'own-reason' },
+      { opensWindow: true },
+    )
+    const buttonWithOwn = withOwnDesc.find('button')
+    expect(buttonWithOwn.attributes('disabled')).toBeUndefined()
+    expect(buttonWithOwn.attributes('aria-describedby')).toBe('own-reason')
+  })
+
+  it('honors disabled and loading on an opensWindow button in the view mode', async () => {
+    const disabled = mountInPage(
+      ref(true),
+      {},
+      { opensWindow: true, disabled: true },
+    )
+    expect(disabled.find('button').attributes('disabled')).toBeDefined()
+    expect(
+      disabled.find('button').attributes('aria-describedby'),
+    ).toBeUndefined()
+    await disabled.find('button').trigger('click')
+    expect(disabled.emitted('click')).toBeUndefined()
+
+    const loading = mountInPage(
+      ref(true),
+      {},
+      { opensWindow: true, loading: true },
+    )
+    expect(loading.find('button').attributes('disabled')).toBeDefined()
+    expect(
+      loading.find('button').attributes('aria-describedby'),
+    ).toBeUndefined()
+    await loading.find('button').trigger('click')
+    expect(loading.emitted('click')).toBeUndefined()
+  })
+
+  it('leaves an opensWindow button untouched outside the view mode', async () => {
+    const wrapper = mountInPage(ref(false), {}, { opensWindow: true })
+    const button = wrapper.find('button')
+
     expect(button.attributes('disabled')).toBeUndefined()
     expect(button.attributes('aria-describedby')).toBeUndefined()
     await button.trigger('click')

@@ -549,7 +549,11 @@ function noticeText(live: RowEditState<UserEditFields>): string {
                   <input
                     type="radio"
                     class="form-check-input"
-                    [attr.aria-label]="'Merge ' + row.name"
+                    [attr.aria-label]="
+                      isHiddenValue(row.name)
+                        ? 'Merge #' + row.id
+                        : 'Merge ' + row.name
+                    "
                     [attr.data-id]="'hilos-user-merge-row-' + row.id"
                     [checked]="selectedCandidateId() === row.id"
                     [disabled]="row.id === currentUserId()"
@@ -557,32 +561,36 @@ function noticeText(live: RowEditState<UserEditFields>): string {
                   />
                 </ng-template>
                 <ng-template hilosTableCell="name" let-row>
-                  {{ row.name }}
+                  {{ hiddenAsWord(row.name) }}
                   <span class="text-body-secondary">#{{ row.id }}</span>
                   @if (row.id === currentUserId()) {
                     <span class="badge text-bg-secondary ms-2">you</span>
                   }
                 </ng-template>
                 <ng-template hilosTableCell="identities" let-row>
-                  <ul class="list-unstyled mb-0">
-                    @for (
-                      identity of row.identities;
-                      track identity.type + ':' + identity.identifier
-                    ) {
-                      <li>
-                        <span class="fw-medium">{{
-                          identityTitle(identity)
-                        }}</span>
-                        @if (identity.type !== 'passkey') {
-                          · {{ identity.identifier }}
-                        }
-                        @if (identity.verified) {
-                          <span aria-hidden="true"> ✓</span>
-                          <span class="visually-hidden"> Verified</span>
-                        }
-                      </li>
-                    }
-                  </ul>
+                  @if (isHiddenValue(row.identities)) {
+                    <span>{{ hiddenWord }}</span>
+                  } @else {
+                    <ul class="list-unstyled mb-0">
+                      @for (
+                        identity of row.identities;
+                        track identity.type + ':' + identity.identifier
+                      ) {
+                        <li>
+                          <span class="fw-medium">{{
+                            identityTitle(identity)
+                          }}</span>
+                          @if (identity.type !== 'passkey') {
+                            · {{ identity.identifier }}
+                          }
+                          @if (identity.verified) {
+                            <span aria-hidden="true"> ✓</span>
+                            <span class="visually-hidden"> Verified</span>
+                          }
+                        </li>
+                      }
+                    </ul>
+                  }
                 </ng-template>
                 <ng-template hilosTableCell="lastActivity" let-row>
                   {{ row.lastActivity ?? '—' }}
@@ -592,7 +600,9 @@ function noticeText(live: RowEditState<UserEditFields>): string {
           </div>
         } @else if (mergeSummaryCandidate(); as candidate) {
           <p data-id="hilos-user-merge-summary">
-            <strong>{{ candidate.name }} (#{{ candidate.id }})</strong>
+            <strong
+              >{{ hiddenAsWord(candidate.name) }} (#{{ candidate.id }})</strong
+            >
             will be merged into
             <strong
               >{{ detail() ? hiddenAsWord(detail()!.name) : '' }} (#{{
@@ -732,6 +742,7 @@ export class HilosUserPage {
   protected readonly passwordCopy = HILOS_ACCOUNT_MERGE_PASSWORD_COPY
   protected readonly hiddenWord = HILOS_VIEW_MODE_COPY.hidden
   protected readonly hiddenAsWord = hiddenAsWord
+  protected readonly isHiddenValue = isHiddenValue
 
   // Mirrored from the core selectors, which derive from the context input.
   protected readonly detail = signal<HilosUserDetailRow | undefined>(undefined)
@@ -757,7 +768,7 @@ export class HilosUserPage {
   )
   private readonly lifecycleBody =
     viewChild<ElementRef<HTMLElement>>('lifecycleBody')
-  private readonly graceDays = signal<number | null>(null)
+  private readonly graceDays = signal<Hideable<number> | null>(null)
   private readonly lifecycleNow = signal(Date.now())
   private readonly standing = signal<HilosAccountStanding | null>(null)
   protected readonly standingBadge = computed(() => {

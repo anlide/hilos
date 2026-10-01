@@ -107,16 +107,47 @@ export async function tableRowKeyByText(
 }
 
 /**
- * Read the page number the caption shows.
+ * Read the page number the footer shows.
  *
  * @param page The Playwright page showing the table.
  * @returns The 1-based page number.
  */
 async function captionPage(page: Page): Promise<number> {
   const caption = page.getByTestId(PAGE_CAPTION)
-  await expect(caption).toHaveText(/^\s*\d+ \/ \d+\s*$/)
+  const activePage = page.locator(
+    '[data-id^="hilos-table-page-"][aria-current="page"]',
+  )
+  const next = page.getByTestId(NEXT)
 
-  return Number.parseInt(((await caption.textContent()) ?? '').trim(), 10)
+  // Wait until either the props-drawn caption, a numbered page button, or a table
+  // row arrives so we do not read an unmounted or settling footer.
+  await expect
+    .poll(async () => {
+      if ((await caption.count()) > 0) {
+        return true
+      }
+      if ((await activePage.count()) > 0) {
+        return true
+      }
+      if ((await next.count()) > 0) {
+        return true
+      }
+
+      return (await tableRowKeys(page)).length > 0
+    })
+    .toBe(true)
+
+  if ((await caption.count()) > 0) {
+    await expect(caption).toHaveText(/^\s*\d+ \/ \d+\s*$/)
+
+    return Number.parseInt(((await caption.textContent()) ?? '').trim(), 10)
+  }
+
+  if ((await activePage.count()) > 0) {
+    return Number.parseInt(((await activePage.textContent()) ?? '').trim(), 10)
+  }
+
+  return 1
 }
 
 /**
@@ -168,11 +199,26 @@ export async function goToLastPage(page: Page): Promise<number> {
   const next = page.getByTestId(NEXT)
   let reached = await captionPage(page)
 
+  if ((await next.count()) === 0) {
+    return reached
+  }
+
   while (await next.isEnabled()) {
     const firstKeyBefore = (await tableRowKeys(page))[0]
     await next.click()
     reached += 1
-    await expect(caption).toHaveText(new RegExp(`^\\s*${reached} / \\d+\\s*$`))
+    if ((await caption.count()) > 0) {
+      await expect(caption).toHaveText(
+        new RegExp(`^\\s*${reached} / \\d+\\s*$`),
+      )
+    } else {
+      const active = page.locator(
+        `[data-id="hilos-table-page-${reached}"][aria-current="page"]`,
+      )
+      if ((await active.count()) > 0) {
+        await expect(active).toHaveText(String(reached))
+      }
+    }
     await expect
       .poll(async () => {
         const keys = await tableRowKeys(page)

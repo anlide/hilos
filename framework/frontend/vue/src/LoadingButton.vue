@@ -8,7 +8,8 @@ the button keeps its width. Pass the Bootstrap variant as a class
 (`class="btn-primary"`); class, aria, and data attributes fall through to the
 button. Inside an admin page a viewer of the admin view mode finds the button
 plainly disabled, described by the mode's strip (HIL-1261); it changes neither
-its color, nor its size, nor its words. -->
+its color, nor its size, nor its words. A button marked opensWindow stays live
+for the viewer (the people card, HIL-1263). -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useAttrs, watch } from 'vue'
 import {
@@ -34,12 +35,19 @@ const props = withDefaults(
     loadingDelay?: number
     /** Native button type; `submit` inside a form, `button` otherwise. */
     type?: 'button' | 'submit' | 'reset'
+    /**
+     * The press only opens a window, at once or after the server's word; inside
+     * an admin page the admin view mode leaves it live — what the window would
+     * send stands on a control of the mode.
+     */
+    opensWindow?: boolean
   }>(),
   {
     loading: false,
     disabled: false,
     loadingDelay: DEFAULT_SPINNER_DELAY_MS,
     type: 'button',
+    opensWindow: false,
   },
 )
 
@@ -59,15 +67,17 @@ onBeforeUnmount(spinner.dispose)
 const viewMode = useAdminViewMode()
 const attrs = useAttrs()
 
+const lockedByViewMode = computed(() => viewMode.value && !props.opensWindow)
+
 const isDisabled = computed(
-  () => props.disabled || props.loading || viewMode.value,
+  () => props.disabled || props.loading || lockedByViewMode.value,
 )
 
 // Outside the view mode the caller's attributes reach the button as they are.
 // In it, the button is also described by the mode's strip, beside whatever
 // describes it already (a row's reason on the person's card).
 const buttonAttrs = computed(() => {
-  if (!viewMode.value) {
+  if (!lockedByViewMode.value) {
     return attrs
   }
   const own = attrs['aria-describedby']

@@ -980,7 +980,11 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                   <input
                     type="radio"
                     className="form-check-input"
-                    aria-label={`Merge ${row.name}`}
+                    aria-label={
+                      isHiddenValue(row.name)
+                        ? `Merge #${row.id}`
+                        : `Merge ${row.name}`
+                    }
                     data-id={`hilos-user-merge-row-${row.id}`}
                     checked={selectedCandidateId === row.id}
                     disabled={row.id === currentUserId}
@@ -989,33 +993,36 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 ),
                 name: (row) => (
                   <>
-                    {row.name}{' '}
+                    {hiddenAsWord(row.name)}{' '}
                     <span className="text-body-secondary">#{row.id}</span>
                     {row.id === currentUserId ? (
                       <span className="badge text-bg-secondary ms-2">you</span>
                     ) : null}
                   </>
                 ),
-                [USER_IDENTITIES_FIELD]: (row) => (
-                  <ul className="list-unstyled mb-0">
-                    {row.identities.map((identity) => (
-                      <li key={`${identity.type}:${identity.identifier}`}>
-                        <span className="fw-medium">
-                          {identityTitle(identity)}
-                        </span>
-                        {identity.type === 'passkey'
-                          ? null
-                          : ` · ${identity.identifier}`}
-                        {identity.verified ? (
-                          <>
-                            <span aria-hidden="true"> ✓</span>
-                            <span className="visually-hidden"> Verified</span>
-                          </>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                ),
+                [USER_IDENTITIES_FIELD]: (row) =>
+                  isHiddenValue(row.identities) ? (
+                    <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+                  ) : (
+                    <ul className="list-unstyled mb-0">
+                      {row.identities.map((identity) => (
+                        <li key={`${identity.type}:${identity.identifier}`}>
+                          <span className="fw-medium">
+                            {identityTitle(identity)}
+                          </span>
+                          {identity.type === 'passkey'
+                            ? null
+                            : ` · ${identity.identifier}`}
+                          {identity.verified ? (
+                            <>
+                              <span aria-hidden="true"> ✓</span>
+                              <span className="visually-hidden"> Verified</span>
+                            </>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ),
                 lastActivity: (row) => row.lastActivity ?? '—',
               }}
             />
@@ -1024,7 +1031,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           <>
             <p data-id="hilos-user-merge-summary">
               <strong>
-                {summaryCandidate.name} (#{summaryCandidate.id})
+                {hiddenAsWord(summaryCandidate.name)} (#{summaryCandidate.id})
               </strong>{' '}
               will be merged into{' '}
               <strong>
