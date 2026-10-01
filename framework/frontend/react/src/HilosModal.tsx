@@ -21,16 +21,19 @@
 // Open state is controlled (`open` +
 // `onClose`); the dialog portals to <body>, traps Tab focus and returns focus to
 // the opener on close, and is keyboard- and ARIA-labelled (a11y ships in v1).
-// With confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm
-// step instead of discarding a dirty draft. The confirm-step state machine is
-// the core modal controller and the focus trap / scroll lock are core/dom; this
-// view only renders and wires events. Bootstrap classes only, save for the
-// declarations the Sass layer names — the bottom sheet, which stock Bootstrap
-// has nothing for, and the modal layer. A modal opened over a modal learns its
-// depth from the core modal stack by itself, with nothing passed by the surface
-// that opens it, and hands the number to the Sass layer through
-// `--hilos-modal-depth`: each layer dims everything under it and stands one
-// step narrower (mockups/components/modal, the node for a modal over a modal).
+// With confirmOnClose, an Esc/backdrop/close attempt raises a confirm step
+// standing as a second layer over the modal — its own backdrop and one step
+// narrower (mockups/components/modal, D-106) — learning its depth from the core
+// modal stack with its own entry, instead of discarding a dirty draft. The
+// confirm-step state machine is the core modal controller and the focus trap /
+// scroll lock are core/dom; this view only renders and wires events. Bootstrap
+// classes only, save for the declarations the Sass layer names — the bottom
+// sheet, which stock Bootstrap has nothing for, and the modal layer. A modal
+// opened over a modal learns its depth from the core modal stack by itself, with
+// nothing passed by the surface that opens it, and hands the number to the Sass
+// layer through `--hilos-modal-depth`: each layer dims everything under it and
+// stands one step narrower (mockups/components/modal, the node for a modal over
+// a modal).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
@@ -161,6 +164,8 @@ export function HilosModal({
   const modalLayerOwner = useRef<ModalLayerOwner>({}).current
   // The layer this modal stands on: 0 over the page, 1 over another modal.
   const [layerDepth, setLayerDepth] = useState(0)
+  const confirmLayerOwner = useRef<ModalLayerOwner>({}).current
+  const [confirmDepth, setConfirmDepth] = useState(0)
   const [copied, setCopied] = useState(false)
 
   // The controller reads its config live through a ref so it is created once.
@@ -218,6 +223,16 @@ export function HilosModal({
       )
     }
   }, [confirmVisible, open, trap])
+
+  // An effect runs after paint, so the confirm step paints its first frame at
+  // its initial/prior depth before the effect records it in the modal stack.
+  useEffect(() => {
+    if (!open || !confirmVisible) {
+      return
+    }
+    setConfirmDepth(enterModalLayer(document, confirmLayerOwner))
+    return () => leaveModalLayer(confirmLayerOwner)
+  }, [open, confirmVisible, confirmLayerOwner])
 
   if (!open) {
     return null
@@ -311,46 +326,52 @@ export function HilosModal({
         </div>
       </div>
       {confirmVisible ? (
-        <div
-          ref={confirmRef}
-          className="modal fade show d-block hilos-modal-layer"
-          style={{ '--hilos-modal-depth': layerDepth } as CSSProperties}
-          tabIndex={-1}
-          role="alertdialog"
-          aria-modal="true"
-          aria-label={confirmTitle}
-          data-id="modal-confirm"
-          onKeyDown={(event) => onKeyDown(event, confirmRef.current)}
-        >
-          <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h5 className="modal-title mb-0">{confirmTitle}</h5>
-              </div>
-              <div className="modal-body">
-                <p className="mb-0">{confirmMessage}</p>
-              </div>
-              <div className="modal-footer hilos-button-row">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  data-id="modal-confirm-cancel"
-                  onClick={() => modal.keepEditing()}
-                >
-                  {confirmCancelText}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  data-id="modal-confirm-discard"
-                  onClick={() => modal.discard()}
-                >
-                  {confirmOkText}
-                </button>
+        <>
+          <div
+            className="modal-backdrop fade show hilos-modal-layer"
+            style={{ '--hilos-modal-depth': confirmDepth } as CSSProperties}
+          />
+          <div
+            ref={confirmRef}
+            className="modal fade show d-block hilos-modal-layer"
+            style={{ '--hilos-modal-depth': confirmDepth } as CSSProperties}
+            tabIndex={-1}
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={confirmTitle}
+            data-id="modal-confirm"
+            onKeyDown={(event) => onKeyDown(event, confirmRef.current)}
+          >
+            <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title mb-0">{confirmTitle}</h5>
+                </div>
+                <div className="modal-body">
+                  <p className="mb-0">{confirmMessage}</p>
+                </div>
+                <div className="modal-footer hilos-button-row">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    data-id="modal-confirm-cancel"
+                    onClick={() => modal.keepEditing()}
+                  >
+                    {confirmCancelText}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    data-id="modal-confirm-discard"
+                    onClick={() => modal.discard()}
+                  >
+                    {confirmOkText}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </>
       ) : null}
     </>,
     document.body,

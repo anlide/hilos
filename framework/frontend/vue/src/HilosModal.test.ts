@@ -1,5 +1,6 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
+import { ref } from 'vue'
 
 import HilosModal from './HilosModal.vue'
 
@@ -107,7 +108,7 @@ describe('HilosModal', () => {
     expect(layerDepths('[aria-label="Error details"]')).toEqual(['1'])
   })
 
-  it('puts the confirm step on the layer of its own modal', async () => {
+  it('stands the confirm step one layer above its own modal', async () => {
     mount({
       components: { HilosModal },
       template: `
@@ -123,7 +124,101 @@ describe('HilosModal', () => {
       ?.click()
     await flushPromises()
 
+    expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['2'])
+    expect(layerDepths('.modal-backdrop').sort()).toEqual(['0', '1', '2'])
+  })
+
+  it('stands the confirm step on layer 1 over a lone modal', async () => {
+    mount(HilosModal, {
+      props: { modelValue: true, title: 'Edit', confirmOnClose: true },
+    })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await flushPromises()
+
     expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['1'])
+    expect(layerDepths('.modal-backdrop').sort()).toEqual(['0', '1'])
+  })
+
+  it('releases the confirm step layer on keep editing', async () => {
+    mount(HilosModal, {
+      props: { modelValue: true, title: 'Edit', confirmOnClose: true },
+    })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await flushPromises()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-cancel"]')
+      ?.click()
+    await flushPromises()
+
+    expect(layerDepths('.modal-backdrop')).toEqual(['0'])
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    mount(HilosModal, {
+      props: { modelValue: true, title: 'Details' },
+    })
+    await flushPromises()
+
+    expect(layerDepths('[aria-label="Details"]')).toEqual(['1'])
+  })
+
+  it('releases the confirm step layer on discard', async () => {
+    mount(HilosModal, {
+      props: { modelValue: true, title: 'Edit', confirmOnClose: true },
+    })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await flushPromises()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')
+      ?.click()
+    await flushPromises()
+
+    expect(layerDepths('.modal-backdrop')).toEqual(['0'])
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    mount(HilosModal, {
+      props: { modelValue: true, title: 'Details' },
+    })
+    await flushPromises()
+
+    expect(layerDepths('[aria-label="Details"]')).toEqual(['1'])
+  })
+
+  it('releases both modal and confirm step layers on discard when modal closes', async () => {
+    const editOpen = ref(true)
+    const detailsOpen = ref(false)
+    mount({
+      components: { HilosModal },
+      setup: () => ({ editOpen, detailsOpen }),
+      template: `
+        <HilosModal v-model="editOpen" title="Edit" confirm-on-close />
+        <HilosModal v-model="detailsOpen" title="Details" />
+      `,
+    })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await flushPromises()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')
+      ?.click()
+    await flushPromises()
+
+    expect(layerDepths('.modal-backdrop')).toEqual([])
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    detailsOpen.value = true
+    await flushPromises()
+
+    expect(layerDepths('[aria-label="Details"]')).toEqual(['0'])
   })
 
   it('opens the next modal over a lone one on layer 1 again after the upper closed', async () => {

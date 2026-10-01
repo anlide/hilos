@@ -120,7 +120,7 @@ describe('HilosModal', () => {
     expect(layerDepths('[aria-label="Error details"]')).toEqual(['1'])
   })
 
-  it('puts the confirm step on the layer of its own modal', () => {
+  it('stands the confirm step one layer above its own modal', () => {
     const signIn = (editOpen: boolean) => (
       <HilosModal open title="Sign in">
         <HilosModal open={editOpen} title="Edit" confirmOnClose />
@@ -135,7 +135,93 @@ describe('HilosModal', () => {
       ) as Element,
     )
 
+    expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['2'])
+    expect(layerDepths('.modal-backdrop').sort()).toEqual(['0', '1', '2'])
+  })
+
+  it('stands the confirm step on layer 1 over a lone modal', () => {
+    render(<HilosModal open title="Edit" confirmOnClose />)
+
+    fireEvent.click(
+      document.querySelector('[data-id="modal-close"]') as Element,
+    )
+
     expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['1'])
+    expect(layerDepths('.modal-backdrop').sort()).toEqual(['0', '1'])
+  })
+
+  it('releases the confirm step layer on keep editing', () => {
+    const pair = (detailsOpen: boolean) => (
+      <>
+        <HilosModal open title="Edit" confirmOnClose />
+        <HilosModal open={detailsOpen} title="Details" />
+      </>
+    )
+    const view = render(pair(false))
+
+    fireEvent.click(
+      document.querySelector('[data-id="modal-close"]') as Element,
+    )
+    fireEvent.click(
+      document.querySelector('[data-id="modal-confirm-cancel"]') as Element,
+    )
+
+    expect(layerDepths('.modal-backdrop')).toEqual(['0'])
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    view.rerender(pair(true))
+
+    expect(layerDepths('[aria-label="Details"]')).toEqual(['1'])
+  })
+
+  it('releases the confirm step layer on discard', () => {
+    const pair = (detailsOpen: boolean) => (
+      <>
+        <HilosModal open title="Edit" confirmOnClose />
+        <HilosModal open={detailsOpen} title="Details" />
+      </>
+    )
+    const view = render(pair(false))
+
+    fireEvent.click(
+      document.querySelector('[data-id="modal-close"]') as Element,
+    )
+    fireEvent.click(
+      document.querySelector('[data-id="modal-confirm-discard"]') as Element,
+    )
+
+    expect(layerDepths('.modal-backdrop')).toEqual(['0'])
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    view.rerender(pair(true))
+
+    expect(layerDepths('[aria-label="Details"]')).toEqual(['1'])
+  })
+
+  it('releases both modal and confirm step layers on discard when modal closes', () => {
+    const pair = (editOpen: boolean, detailsOpen: boolean) => (
+      <>
+        <HilosModal open={editOpen} title="Edit" confirmOnClose />
+        <HilosModal open={detailsOpen} title="Details" />
+      </>
+    )
+    const view = render(pair(true, false))
+
+    fireEvent.click(
+      document.querySelector('[data-id="modal-close"]') as Element,
+    )
+    fireEvent.click(
+      document.querySelector('[data-id="modal-confirm-discard"]') as Element,
+    )
+
+    view.rerender(pair(false, false))
+
+    expect(layerDepths('.modal-backdrop')).toEqual([])
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    view.rerender(pair(false, true))
+
+    expect(layerDepths('[aria-label="Details"]')).toEqual(['0'])
   })
 
   it('opens the next modal over a lone one on layer 1 again after the upper closed', () => {

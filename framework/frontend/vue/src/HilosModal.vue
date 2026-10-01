@@ -20,17 +20,20 @@ else, and the rule for showing such a text belongs here rather than to every
 page that has one (docs/agents/frontend/rules-and-violations.md, section E).
 Open state is v-model (`v-model="open"`); the dialog
 teleports to <body>, traps Tab focus and returns focus to the opener on close,
-and is keyboard- and ARIA-labelled (a11y ships in v1, styling-rules.md). With
-confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm step
-instead of discarding a dirty draft. The confirm-step state machine is the core
-modal controller and the focus trap / scroll lock are core/dom; this view only
-renders and wires events. Bootstrap classes only, save for the declarations the
-Sass layer names — the bottom sheet, which stock Bootstrap has nothing for, and
-the modal layer. A modal opened over a modal learns its depth from the core
-modal stack by itself, with nothing passed by the surface that opens it, and
-hands the number to the Sass layer through `--hilos-modal-depth`: each layer
-dims everything under it and stands one step narrower
-(mockups/components/modal, the node for a modal over a modal). -->
+and is keyboard- and ARIA-labelled (a11y ships in v1, styling-rules.md).
+With confirmOnClose, an Esc/backdrop/close attempt raises a confirm step
+standing as a second layer over the modal — its own backdrop and one step
+narrower (mockups/components/modal, D-106) — learning its depth from the core
+modal stack with its own entry, instead of discarding a dirty draft. The
+confirm-step state machine is the core modal controller and the focus trap /
+scroll lock are core/dom; this view only renders and wires events. Bootstrap
+classes only, save for the declarations the Sass layer names — the bottom
+sheet, which stock Bootstrap has nothing for, and the modal layer. A modal
+opened over a modal learns its depth from the core modal stack by itself, with
+nothing passed by the surface that opens it, and hands the number to the Sass
+layer through `--hilos-modal-depth`: each layer dims everything under it and
+stands one step narrower (mockups/components/modal, the node for a modal over
+a modal). -->
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import {
@@ -147,6 +150,9 @@ const scrollLockOwner: ScrollLockOwner = {}
 const modalLayerOwner: ModalLayerOwner = {}
 // The layer this modal stands on: 0 over the page, 1 over another modal.
 const layerDepth = ref(0)
+const confirmLayerOwner: ModalLayerOwner = {}
+// The layer the confirm step stands on: one above its modal while nothing stands over it.
+const confirmDepth = ref(0)
 
 const modal = createModalController({
   confirmOnClose: () => props.confirmOnClose,
@@ -189,6 +195,7 @@ watch(
     } else {
       unlockBodyScroll(scrollLockOwner)
       leaveModalLayer(modalLayerOwner)
+      leaveModalLayer(confirmLayerOwner)
       trap.release()
     }
   },
@@ -198,10 +205,16 @@ watch(
 onUnmounted(() => {
   unlockBodyScroll(scrollLockOwner)
   leaveModalLayer(modalLayerOwner)
+  leaveModalLayer(confirmLayerOwner)
 })
 
 // Moving in and out of the confirm step keeps focus inside the visible dialog.
-watch(confirmVisible, () => {
+watch(confirmVisible, (visible) => {
+  if (visible && props.modelValue) {
+    confirmDepth.value = enterModalLayer(document, confirmLayerOwner)
+  } else {
+    leaveModalLayer(confirmLayerOwner)
+  }
   void nextTick(() => {
     const root = activeRoot()
     if (root) {
@@ -287,50 +300,55 @@ function onTab(event: KeyboardEvent): void {
           </div>
         </div>
       </div>
-      <div
-        v-if="confirmVisible"
-        ref="confirmDialog"
-        class="modal fade show d-block hilos-modal-layer"
-        :style="{ '--hilos-modal-depth': layerDepth }"
-        tabindex="-1"
-        role="alertdialog"
-        aria-modal="true"
-        :aria-label="confirmTitle"
-        data-id="modal-confirm"
-        @keydown.esc.prevent="modal.onEsc()"
-        @keydown.tab="onTab"
-      >
+      <template v-if="confirmVisible">
         <div
-          class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+          class="modal-backdrop fade show hilos-modal-layer"
+          :style="{ '--hilos-modal-depth': confirmDepth }"
+        ></div>
+        <div
+          ref="confirmDialog"
+          class="modal fade show d-block hilos-modal-layer"
+          :style="{ '--hilos-modal-depth': confirmDepth }"
+          tabindex="-1"
+          role="alertdialog"
+          aria-modal="true"
+          :aria-label="confirmTitle"
+          data-id="modal-confirm"
+          @keydown.esc.prevent="modal.onEsc()"
+          @keydown.tab="onTab"
         >
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title mb-0">{{ confirmTitle }}</h5>
-            </div>
-            <div class="modal-body">
-              <p class="mb-0">{{ confirmMessage }}</p>
-            </div>
-            <div class="modal-footer hilos-button-row">
-              <button
-                type="button"
-                class="btn btn-secondary"
-                data-id="modal-confirm-cancel"
-                @click="modal.keepEditing()"
-              >
-                {{ confirmCancelText }}
-              </button>
-              <button
-                type="button"
-                class="btn btn-danger"
-                data-id="modal-confirm-discard"
-                @click="modal.discard()"
-              >
-                {{ confirmOkText }}
-              </button>
+          <div
+            class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+          >
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title mb-0">{{ confirmTitle }}</h5>
+              </div>
+              <div class="modal-body">
+                <p class="mb-0">{{ confirmMessage }}</p>
+              </div>
+              <div class="modal-footer hilos-button-row">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  data-id="modal-confirm-cancel"
+                  @click="modal.keepEditing()"
+                >
+                  {{ confirmCancelText }}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-danger"
+                  data-id="modal-confirm-discard"
+                  @click="modal.discard()"
+                >
+                  {{ confirmOkText }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </template>
     </template>
   </teleport>
 </template>

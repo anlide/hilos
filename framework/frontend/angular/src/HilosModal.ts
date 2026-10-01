@@ -21,22 +21,24 @@
 // to every page that has one (rules-and-violations.md, section E). Open
 // state is two-way (`[(open)]`); it traps Tab focus and returns focus to the
 // opener on close, and is keyboard- and ARIA-labelled (a11y ships in v1). With
-// confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm step
-// instead of discarding a dirty draft. The confirm-step state machine is the core
-// modal controller and the focus trap / scroll lock are core/dom; this view only
-// renders and wires events. PORTAL: unlike the Vue (teleport) and React
-// (createPortal) views, this renders in place — Bootstrap's `.modal` is
-// position:fixed, so it overlays the viewport without a portal; a project needing
-// to escape a transformed-ancestor stacking context wraps it in a CDK overlay.
-// Bootstrap classes only, save for the declarations the Sass layer names — the
-// bottom sheet, which stock Bootstrap has nothing for, and the modal layer. A
-// modal opened over a modal learns its depth from the core modal stack by
-// itself, with nothing passed by the surface that opens it, and hands the number
-// to the Sass layer through `--hilos-modal-depth`: each layer dims everything
-// under it and stands one step narrower (mockups/components/modal, the node for
-// a modal over a modal). Rendered in place, a nested layer lifts its z-index
-// inside the stacking context of the modal it stands in, which is still over
-// that modal's dialog.
+// confirmOnClose, an Esc/backdrop/close attempt raises a confirm step standing
+// as a second layer over the modal — its own backdrop and one step narrower
+// (mockups/components/modal, D-106) — learning its depth from the core modal
+// stack with its own entry, instead of discarding a dirty draft. The
+// confirm-step state machine is the core modal controller and the focus trap /
+// scroll lock are core/dom; this view only renders and wires events. PORTAL:
+// unlike the Vue (teleport) and React (createPortal) views, this renders in
+// place — Bootstrap's `.modal` is position:fixed, so it overlays the viewport
+// without a portal; a project needing to escape a transformed-ancestor stacking
+// context wraps it in a CDK overlay. Bootstrap classes only, save for the
+// declarations the Sass layer names — the bottom sheet, which stock Bootstrap
+// has nothing for, and the modal layer. A modal opened over a modal learns its
+// depth from the core modal stack by itself, with nothing passed by the surface
+// that opens it, and hands the number to the Sass layer through
+// `--hilos-modal-depth`: each layer dims everything under it and stands one step
+// narrower (mockups/components/modal, the node for a modal over a modal).
+// Rendered in place, a nested layer lifts its z-index inside the stacking
+// context of the modal it stands in, which is still over that modal's dialog.
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -165,9 +167,13 @@ export interface ModalActionsContext {
       </div>
       @if (confirmVisible()) {
         <div
+          class="modal-backdrop fade show hilos-modal-layer"
+          [style.--hilos-modal-depth]="confirmDepth()"
+        ></div>
+        <div
           #confirmDialog
           class="modal fade show d-block hilos-modal-layer"
-          [style.--hilos-modal-depth]="layerDepth()"
+          [style.--hilos-modal-depth]="confirmDepth()"
           tabindex="-1"
           role="alertdialog"
           aria-modal="true"
@@ -272,6 +278,7 @@ export class HilosModal {
   private readonly trap = new FocusTrap()
   private readonly scrollLockOwner: ScrollLockOwner = {}
   private readonly modalLayerOwner: ModalLayerOwner = {}
+  private readonly confirmLayerOwner: ModalLayerOwner = {}
   private readonly dialog = viewChild<ElementRef<HTMLElement>>('dialog')
   private readonly confirmDialog =
     viewChild<ElementRef<HTMLElement>>('confirmDialog')
@@ -289,6 +296,7 @@ export class HilosModal {
   protected readonly copied = signal(false)
   /** The layer this modal stands on: 0 over the page, 1 over another modal. */
   protected readonly layerDepth = signal(0)
+  protected readonly confirmDepth = signal(0)
   protected readonly showCopy = computed(
     () => this.copyText() !== '' && isClipboardAvailable(),
   )
@@ -333,6 +341,17 @@ export class HilosModal {
           this.confirmVisible() ? 'dialog' : trapPlacement(this.initialFocus()),
         )
       }
+    })
+    // Confirm step enters its own modal layer while visible, and releases it on
+    // hide or close.
+    effect((onCleanup) => {
+      if (!this.open() || !this.confirmVisible()) {
+        return
+      }
+      this.confirmDepth.set(enterModalLayer(this.doc, this.confirmLayerOwner))
+      onCleanup(() => {
+        leaveModalLayer(this.confirmLayerOwner)
+      })
     })
   }
 

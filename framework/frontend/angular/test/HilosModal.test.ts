@@ -14,7 +14,7 @@ import { HilosModal } from '../src/HilosModal.js'
   selector: 'test-modal-host',
   imports: [HilosModal],
   template: `
-    <hilos-modal [open]="firstOpen()">
+    <hilos-modal [open]="firstOpen()" [confirmOnClose]="firstConfirmOnClose()">
       @if (nested()) {
         <hilos-modal
           [open]="nestedOpen()"
@@ -29,6 +29,7 @@ import { HilosModal } from '../src/HilosModal.js'
 })
 class ModalHost {
   readonly firstOpen = signal(true)
+  readonly firstConfirmOnClose = signal(false)
   readonly nested = signal(false)
   readonly nestedOpen = signal(false)
   readonly nestedConfirmOnClose = signal(false)
@@ -165,7 +166,7 @@ describe('HilosModal', () => {
     expect(layerDepths('[data-id="modal"]')).toEqual(['0', '1'])
   })
 
-  it('puts the confirm step on the layer of its own modal', () => {
+  it('stands the confirm step one layer above its own modal', () => {
     const fixture = mountHost()
     fixture.componentInstance.nestedConfirmOnClose.set(true)
     openNested(fixture)
@@ -175,7 +176,70 @@ describe('HilosModal', () => {
       ?.click()
     fixture.detectChanges()
 
+    expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['2'])
+    expect(layerDepths('.modal-backdrop')).toEqual(['0', '1', '2'])
+  })
+
+  it('stands the confirm step on layer 1 over a lone modal', () => {
+    const fixture = mountHost()
+    fixture.componentInstance.firstConfirmOnClose.set(true)
+    fixture.detectChanges()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    fixture.detectChanges()
+
     expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['1'])
+    expect(layerDepths('.modal-backdrop')).toEqual(['0', '1'])
+  })
+
+  it('releases the confirm step layer on keep editing', () => {
+    const fixture = mountHost()
+    fixture.componentInstance.firstConfirmOnClose.set(true)
+    fixture.detectChanges()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    fixture.detectChanges()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-cancel"]')
+      ?.click()
+    fixture.detectChanges()
+
+    expect(layerDepths('.modal-backdrop')).toEqual(['0'])
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    fixture.componentInstance.secondPresent.set(true)
+    fixture.detectChanges()
+
+    expect(layerDepths('[data-id="modal"]')).toEqual(['0', '1'])
+  })
+
+  it('releases the confirm step layer on discard', () => {
+    const fixture = mountHost()
+    fixture.componentInstance.firstConfirmOnClose.set(true)
+    fixture.detectChanges()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    fixture.detectChanges()
+
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')
+      ?.click()
+    fixture.detectChanges()
+
+    expect(layerDepths('.modal-backdrop')).toEqual([])
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+
+    fixture.componentInstance.secondPresent.set(true)
+    fixture.detectChanges()
+
+    expect(layerDepths('[data-id="modal"]')).toEqual(['0'])
   })
 
   it('stands wide when the surface asks for it, and keeps the confirm step narrow', () => {
