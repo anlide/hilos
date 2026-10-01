@@ -407,13 +407,12 @@ nobody is asked*).
   `LoadingButton`, and the Save of its own form onto `ConflictActions` or
   `LoadingButton`; a button that only opens a form stays as it is. The
   sections: people — impersonation, rights, block, deletion, merge, rename
-  (not in the code yet — HIL-1263); backup (not in the code yet — HIL-1264);
-  security — OAuth, sign-in methods, two-factor, step-up
-  (not in the code yet — HIL-1267). Maintenance has nothing to move: the
-  confirm buttons of its two dialogs — naming a verifier and taking one out —
-  are `LoadingButton`s, and its two raw buttons only open those dialogs
-  (HIL-1265). Log takeouts have nothing to move: the confirm buttons of
-  their two dialogs — confirming a takeout and withdrawing it — are
+  (not in the code yet — HIL-1263); security — OAuth, sign-in methods,
+  two-factor, step-up (not in the code yet — HIL-1267). Maintenance has
+  nothing to move: the confirm buttons of its two dialogs — naming a verifier
+  and taking one out — are `LoadingButton`s, and its two raw buttons only open
+  those dialogs (HIL-1265). Log takeouts have nothing to move: the confirm
+  buttons of their two dialogs — confirming a takeout and withdrawing it — are
   `LoadingButton`s, and their raw buttons only open or close a dialog or
   filter the list (HIL-1268). Legal has nothing to move: its one mutation,
   the Save of its settings form, stands on `ConflictActions` and
@@ -434,7 +433,11 @@ nobody is asked*).
   of its bot and prompt-piece dialogs and of a chat user's rename stand on
   `ConflictActions` and `LoadingButton`, the confirms of its two deletions are
   `LoadingButton`s, its raw buttons only open those dialogs, and the Guardian's
-  pages have no view to hold a control (HIL-1270).
+  pages have no view to hold a control (HIL-1270). Backup has nothing to move:
+  the confirm buttons of its four dialogs — creating, deleting, restoring and
+  reopening — are `LoadingButton`s, its keep toggle is a `HilosSwitch`,
+  deleting the marked copies is an operation of the table's selection panel,
+  and its raw buttons only open or close a dialog (HIL-1264).
 - The controls exist in all three frontends with full parity, as every
   primitive does
   ([../frontend/multiframework-core.md](../frontend/multiframework-core.md));
@@ -504,6 +507,15 @@ the hub's switch and the test send. The buttons that open those dialogs and the
 retry stand on row fields — whether a field is editable, where its value comes
 from, a delivery's status — and what a viewer is shown of those rows is
 HIL-1255's and HIL-1256's (HIL-1266).
+
+The backup section carries the viewer cases of its keep toggle and of its
+restore and reopen dialogs as a unit of its page
+(`framework/frontend/vue/src/admin/backup/HilosBackupPage.test.ts`); its e2e
+(`demo/binance-btc-tracker/tests/e2e/tests/backup.spec.ts`) walks the create
+dialog, the delete dialog over a row and the panel of marked rows. The toggle and
+the restore button stand on row fields, and the restore and reopen blocks on page
+data, that a viewer is sent hidden; what a viewer is shown of them is HIL-1256's
+(HIL-1264).
 
 The settings carry their viewer case in chat's
 `demo/chat/tests/e2e/tests/settings.spec.ts`, where their area lives until it

@@ -696,6 +696,7 @@ function openOutcome(row: HilosBackupRow): void {
           type="button"
           class="btn btn-secondary"
           :disabled="deleteBusy"
+          data-id="hilos-backup-delete-cancel"
           @click="requestClose"
         >
           Cancel
@@ -731,6 +732,7 @@ function openOutcome(row: HilosBackupRow): void {
           type="button"
           class="btn btn-secondary"
           :disabled="reopenBusy"
+          data-id="hilos-backup-reopen-cancel"
           @click="requestClose"
         >
           Cancel
@@ -854,6 +856,7 @@ function openOutcome(row: HilosBackupRow): void {
           type="button"
           class="btn btn-secondary"
           :disabled="restoreBusy"
+          data-id="hilos-backup-restore-cancel"
           @click="requestClose"
         >
           Cancel
@@ -963,6 +966,7 @@ function openOutcome(row: HilosBackupRow): void {
           type="button"
           class="btn btn-secondary"
           :disabled="createBusy"
+          data-id="hilos-backup-create-cancel"
           @click="requestClose"
         >
           Cancel

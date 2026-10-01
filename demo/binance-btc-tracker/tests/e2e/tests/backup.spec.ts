@@ -6,7 +6,8 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { clickSubmit, signUp } from '../helpers/session'
-import { gotoPage, PAGE_REFUSED } from '../helpers/page'
+import { setAdminViewMode } from '../helpers/adminViewMode'
+import { gotoPage, PAGE_READY, PAGE_REFUSED } from '../helpers/page'
 
 // Backup admin e2e (/hilos/backup): the one flow a human would try — press the
 // button, watch the run, read the row, delete it. It is deliberately end-to-end
@@ -971,6 +972,86 @@ test('a third click on the header the table opened by still moves the order', as
 
   await sortByDate.click()
   await expect(dateHeader).toHaveAttribute('aria-sort', 'ascending')
+})
+
+test.describe('the backup section in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test('a guest opens the create and delete dialogs and marks a row, and has nothing to send from any of them', async ({
+    page,
+    browser,
+  }) => {
+    await openBackups(page)
+    const backupId = await createNamedBackup(page)
+
+    await setAdminViewMode(true)
+
+    const guestContext = await browser.newContext()
+    const guest = await guestContext.newPage()
+    await gotoPage(guest, '/hilos/backup', PAGE_READY)
+    await expect(guest.getByTestId('page-error')).toHaveCount(0)
+    await expect(guest.getByTestId('hilos-viewport-table')).toBeVisible()
+
+    const createButton = guest.getByTestId('hilos-table-main-action')
+    await expect(createButton).toBeEnabled()
+    await createButton.click()
+
+    const dialog = guest.getByTestId('modal')
+    await expect(dialog).toBeVisible()
+    const scopeSelect = dialog.getByTestId('hilos-backup-create-scope')
+    await expect(scopeSelect).toBeEnabled()
+    await scopeSelect.selectOption('schema-only')
+
+    const create = dialog.getByTestId('hilos-backup-create-confirm')
+    await expect(create).toBeDisabled()
+    await expect(create).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+
+    const createCancel = dialog.getByTestId('hilos-backup-create-cancel')
+    await expect(createCancel).toBeEnabled()
+    await createCancel.click()
+    await expect(dialog).toBeHidden()
+
+    const row = guest.getByTestId(`hilos-table-row-${backupId}`)
+    await expect(row).toBeVisible()
+    const deleteButton = row.getByTestId(`hilos-backup-delete-${backupId}`)
+    await expect(deleteButton).toBeEnabled()
+    await deleteButton.click()
+
+    const confirm = guest.getByTestId('hilos-backup-delete-confirm')
+    await expect(confirm).toBeDisabled()
+    await expect(confirm).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+
+    await guest.getByTestId('hilos-backup-delete-cancel').click()
+    await expect(confirm).toBeHidden()
+
+    await row.getByTestId(`hilos-table-select-${backupId}`).check()
+    await expect(guest.getByTestId('hilos-table-selection-count')).toHaveText(
+      /1 marked/,
+    )
+    const bulk = guest.getByTestId('hilos-table-bulk-delete')
+    await expect(bulk).toBeDisabled()
+    await expect(bulk).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+
+    await guest.getByTestId('hilos-table-selection-clear').click()
+    await expect(
+      row.getByTestId(`hilos-table-select-${backupId}`),
+    ).not.toBeChecked()
+
+    await gotoPage(page, '/hilos/backup')
+    await expect(page.getByTestId(`hilos-table-row-${backupId}`)).toBeVisible()
+
+    await deleteBackup(page, `hilos-table-row-${backupId}`)
+    await guestContext.close()
+  })
 })
 
 // NOT covered on purpose: a refused restore reaching the tab as a toast. Producing
