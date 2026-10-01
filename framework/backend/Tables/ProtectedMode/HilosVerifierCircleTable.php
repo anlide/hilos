@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\ProtectedMode;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
@@ -160,6 +161,35 @@ final class HilosVerifierCircleTable extends TableDefinition implements SelfSnap
             BrowserPageSignalData::sources => [
                 HilosDbContext::verifierCircle => $slot,
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a verifier circle row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The address is declared as a column and hidden by its column verdict (FAKE_EMAIL) rather than omission in the map;
+     * identity type and the membership key are non-personal by their column verdicts; online is computed from live
+     * connections - presence that a viewer is shown just like on the chat users table (HIL-1259); therefore a viewer's
+     * window drops the default address sort and searches only by login method.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosVerifierCircleTableRow::id => WireField::column(
+                HilosDbContext::verifierCircle,
+                ObjectVerifierCircleMember::id,
+            ),
+            HilosVerifierCircleTableRow::identityType => WireField::column(
+                HilosDbContext::verifierCircle,
+                ObjectVerifierCircleMember::identityType,
+            ),
+            HilosVerifierCircleTableRow::identifier => WireField::column(
+                HilosDbContext::verifierCircle,
+                ObjectVerifierCircleMember::identifier,
+            ),
+            HilosVerifierCircleTableRow::online => WireField::notPersonal(),
         ];
     }
 

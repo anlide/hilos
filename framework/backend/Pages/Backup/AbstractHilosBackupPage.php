@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Backup;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteDoneSignalData;
@@ -524,6 +525,27 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                     && $protectedMode->belongsToInitiator($this->subscriberSessionTokenHash($acceptKey)),
             ],
         ]);
+    }
+
+    /**
+     * Declares where each field of the page data comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The restore and reopen sections are declared by key - the environment name and two flags, carrying no
+     * personal data; a key added to either section later stays hidden from a viewer until it is declared here.
+     *
+     * @return array<string, WireField>
+     */
+    protected function dataFields(): array
+    {
+        return [
+            self::RESTORE_SECTION => WireField::each([
+                self::RESTORE_UI_ENABLED => WireField::notPersonal(),
+                self::RESTORE_TARGET_ENV => WireField::notPersonal(),
+            ]),
+            self::REOPEN_SECTION => WireField::each([
+                self::REOPEN_OFFERED => WireField::notPersonal(),
+            ]),
+        ];
     }
 
     /**

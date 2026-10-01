@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\AdminViewMode\HiddenValue;
+use Hilos\AdminViewMode\ViewerFields;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -1037,6 +1039,77 @@ final class HilosBackupHistoryTableTest extends TestCase
             BackupHistory::restoreDurationSeconds => 0,
             BackupHistory::reachable => true,
         ];
+    }
+
+    public function testAViewerReceivesEveryRowFieldExceptTheThreeRefusalTexts(): void
+    {
+        $table = $this->table(
+            histories: $this->historiesWith(
+                BackupHistory::fromRow($this->historyRow()),
+                BackupHistory::fromRow($this->historyRow([
+                    BackupHistory::id => 'b2',
+                    BackupHistory::status => 'error',
+                    BackupHistory::failureReason => 'pg_dump failed',
+                    BackupHistory::shipOutcome => 'failed',
+                    BackupHistory::shipError => 'ssh: connect timed out',
+                ])),
+            ),
+            restore: $this->restoreRuntime('b2', [
+                StateRestoreRuntime::running => false,
+                StateRestoreRuntime::phase => 'failed',
+                StateRestoreRuntime::outcome => 'error',
+                StateRestoreRuntime::finishedAt => '2026-08-15T10:34:00+00:00',
+                StateRestoreRuntime::failureReason => 'import failed',
+                StateRestoreRuntime::databaseTouched => true,
+            ]),
+        );
+
+        $refusalFields = [
+            HilosBackupTableRow::failureReason => true,
+            HilosBackupTableRow::shipError => true,
+            HilosBackupTableRow::restoreFailureReason => true,
+        ];
+        $rows = $table->getFullSnapshot()->rows;
+        $this->assertCount(2, $rows);
+        foreach ($rows as $row) {
+            $this->assertInstanceOf(HilosBackupTableRow::class, $row);
+            $wire = $row->toArray();
+            $hidden = ViewerFields::hide(
+                $wire,
+                $table->wireFields(),
+                static fn(string $collection, string $field): bool => false,
+            );
+            $this->assertTrue(HiddenValue::isMark($hidden[HilosBackupTableRow::failureReason]));
+            $this->assertTrue(HiddenValue::isMark($hidden[HilosBackupTableRow::shipError]));
+            $this->assertTrue(HiddenValue::isMark($hidden[HilosBackupTableRow::restoreFailureReason]));
+            $this->assertSame(
+                array_diff_key($wire, $refusalFields),
+                array_diff_key($hidden, $refusalFields),
+            );
+        }
+    }
+
+    public function testAViewerReceivesTheProgressBarDetailWithItsPhaseAndRemainingSeconds(): void
+    {
+        $table = $this->table(runtime: $this->runningRuntime([
+            StateBackupRuntime::phase => 'archiving',
+            StateBackupRuntime::phaseStartedAt => '2026-07-20T11:02:00+00:00',
+            StateBackupRuntime::estimatedSeconds => 300,
+            StateBackupRuntime::percent => 62,
+            StateBackupRuntime::remainingSeconds => 40,
+        ]));
+
+        $progress = $table->progressSnapshot();
+
+        $this->assertCount(1, $progress);
+        $this->assertSame(
+            $progress[0]->detail,
+            ViewerFields::hide(
+                $progress[0]->detail,
+                $table->progressDetailFields(),
+                static fn(string $collection, string $field): bool => false,
+            ),
+        );
     }
 
     /**

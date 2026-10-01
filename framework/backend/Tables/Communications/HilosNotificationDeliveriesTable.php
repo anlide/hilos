@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Communications;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
@@ -31,6 +32,8 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
+use Hilos\Database\Object\Item\Notification as ObjectNotification;
+use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\SqlSortDirection;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DeliveryStatus;
@@ -231,6 +234,62 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a delivery row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Journal and notification columns are declared as columns; title and lastError are hidden by their column
+     * verdicts (MASK) rather than omission in the map; userLabel is omitted and therefore hidden because it is
+     * a project seam ({@see resolveUserLabel()}) whose source the framework does not know - a project resolving it
+     * from a column overrides the map to declare that column so its verdict governs.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosNotificationDeliveryTableRow::rowKey => WireField::column(
+                HilosDbContext::notificationDeliveries,
+                ObjectNotificationDelivery::id,
+            ),
+            HilosNotificationDeliveryTableRow::createdAt => WireField::column(
+                HilosDbContext::notificationDeliveries,
+                ObjectNotificationDelivery::createdAt,
+            ),
+            HilosNotificationDeliveryTableRow::channel => WireField::column(
+                HilosDbContext::notificationDeliveries,
+                ObjectNotificationDelivery::channel,
+            ),
+            HilosNotificationDeliveryTableRow::status => WireField::column(
+                HilosDbContext::notificationDeliveries,
+                ObjectNotificationDelivery::status,
+            ),
+            HilosNotificationDeliveryTableRow::attempts => WireField::column(
+                HilosDbContext::notificationDeliveries,
+                ObjectNotificationDelivery::attempts,
+            ),
+            HilosNotificationDeliveryTableRow::deliveredAt => WireField::column(
+                HilosDbContext::notificationDeliveries,
+                ObjectNotificationDelivery::deliveredAt,
+            ),
+            HilosNotificationDeliveryTableRow::lastError => WireField::column(
+                HilosDbContext::notificationDeliveries,
+                ObjectNotificationDelivery::lastError,
+            ),
+            HilosNotificationDeliveryTableRow::userId => WireField::column(
+                HilosDbContext::notifications,
+                ObjectNotification::userId,
+            ),
+            HilosNotificationDeliveryTableRow::notificationType => WireField::column(
+                HilosDbContext::notifications,
+                ObjectNotification::type,
+            ),
+            HilosNotificationDeliveryTableRow::notificationTitle => WireField::column(
+                HilosDbContext::notifications,
+                ObjectNotification::title,
+            ),
         ];
     }
 

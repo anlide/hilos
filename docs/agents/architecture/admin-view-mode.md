@@ -336,7 +336,7 @@ nobody is asked*).
   are classified by the leaves of their sections: the people rows and the
   merge candidates (not in the code yet — HIL-1254); the verifier circle, the
   deliveries, the free text of backup refusals and the maintenance texts
-  (not in the code yet — HIL-1256).
+  (HIL-1256).
 
 ## The Browser Side
 
@@ -505,8 +505,9 @@ of a delivery's retry as units of the channel and the deliveries pages
 its e2e (`demo/binance-btc-tracker/tests/e2e/tests/communications.spec.ts`) walks
 the hub's switch and the test send. The buttons that open those dialogs and the
 retry stand on row fields — whether a field is editable, where its value comes
-from, a delivery's status — and what a viewer is shown of those rows is
-HIL-1255's and HIL-1256's (HIL-1266).
+from, a delivery's status: a viewer sees the delivery status, so Retry stands
+disabled for them (HIL-1256); what a viewer is shown of the channel fields is
+HIL-1255's (HIL-1266).
 
 The backup section carries the viewer cases of its keep toggle and of its
 restore and reopen dialogs as a unit of its page
@@ -514,8 +515,8 @@ restore and reopen dialogs as a unit of its page
 (`demo/binance-btc-tracker/tests/e2e/tests/backup.spec.ts`) walks the create
 dialog, the delete dialog over a row and the panel of marked rows. The toggle and
 the restore button stand on row fields, and the restore and reopen blocks on page
-data, that a viewer is sent hidden; what a viewer is shown of them is HIL-1256's
-(HIL-1264).
+data: a viewer receives row fields and page data as an admin does (HIL-1256), so
+a live viewer sees the keep toggle and the restore button disabled (HIL-1264).
 
 The settings carry their viewer case in
 `demo/binance-btc-tracker/tests/e2e/tests/settings.spec.ts` (HIL-1262; the area

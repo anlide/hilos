@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Backup;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Backup\BackupProgress;
@@ -234,6 +235,60 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a backup history row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Every field comes from the RT index or is computed by the table (rowFromHistory), with no database columns
+     * involved, and is declared non-personal; the three refusal texts (failureReason, shipError, restoreFailureReason)
+     * may carry arbitrary exception or driver detail and are omitted from the map and therefore hidden; the migration
+     * notice is shown because code formats it from connection counts and migration levels ({@see RestoreMigrationGuard}),
+     * and the decision and lag it describes are already fields of the same row.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosBackupTableRow::rowKey => WireField::notPersonal(),
+            HilosBackupTableRow::createdAt => WireField::notPersonal(),
+            HilosBackupTableRow::env => WireField::notPersonal(),
+            HilosBackupTableRow::scope => WireField::notPersonal(),
+            HilosBackupTableRow::sizeBytes => WireField::notPersonal(),
+            HilosBackupTableRow::durationSeconds => WireField::notPersonal(),
+            HilosBackupTableRow::keep => WireField::notPersonal(),
+            HilosBackupTableRow::status => WireField::notPersonal(),
+            HilosBackupTableRow::finished => WireField::notPersonal(),
+            HilosBackupTableRow::checksumState => WireField::notPersonal(),
+            HilosBackupTableRow::verifiedAt => WireField::notPersonal(),
+            HilosBackupTableRow::shipState => WireField::notPersonal(),
+            HilosBackupTableRow::shippedAt => WireField::notPersonal(),
+            HilosBackupTableRow::restorePhase => WireField::notPersonal(),
+            HilosBackupTableRow::restoreOutcome => WireField::notPersonal(),
+            HilosBackupTableRow::restoreFinishedAt => WireField::notPersonal(),
+            HilosBackupTableRow::restoreDatabaseTouched => WireField::notPersonal(),
+            HilosBackupTableRow::restoreMigrationDecision => WireField::notPersonal(),
+            HilosBackupTableRow::restoreMigrationBehind => WireField::notPersonal(),
+            HilosBackupTableRow::restoreMigrationNotice => WireField::notPersonal(),
+            HilosBackupTableRow::holderNode => WireField::notPersonal(),
+        ];
+    }
+
+    /**
+     * Declares the fields of the backup progress bar detail, for a viewer of the admin view mode (HIL-1250).
+     *
+     * The progress phase is an enum value from code and the remaining time is an integer estimate (runningBar),
+     * so both carry no personal data and are declared non-personal.
+     *
+     * @return array<string, WireField>
+     */
+    public function progressDetailFields(): array
+    {
+        return [
+            self::PROGRESS_DETAIL_PHASE => WireField::notPersonal(),
+            self::PROGRESS_DETAIL_REMAINING_SECONDS => WireField::notPersonal(),
         ];
     }
 
