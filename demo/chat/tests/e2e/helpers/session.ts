@@ -31,7 +31,8 @@ import {
 /** A valid password (>= the 8-char minimum the surface and backend enforce). This same
  * value is the default password of the `test:user:seed` CLI (DEFAULT_PASSWORD in
  * UserTestSeedCommand), so a spec can log in as any seeded fixture user with it — the
- * way settings.spec.ts pins the e2e_orphan_delete key to its seed command. */
+ * way binance-btc-tracker's settings.spec.ts pins the e2e_orphan_delete key to its seed
+ * command. */
 export const PASSWORD = 'correct horse battery'
 
 /**

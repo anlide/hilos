@@ -6,6 +6,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import {
   addVirtualAuthenticator,
+  dismissToasts,
   shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
@@ -192,4 +193,55 @@ test('skips a protected operation disabled by an administrator', async ({
   await expect(page.getByTestId('step-up')).toHaveCount(0)
   await expect(page.getByTestId('profile-name-input')).toBeFocused()
   await rename(page)
+})
+
+// An operation declared off asks once an administrator switches it on
+// (HIL-1275). Removing rights is switched here rather than blocking: no other spec
+// of this demo opens that window, so the switch cannot reach a test running beside
+// it. It is switched back off whatever happens.
+test('asks before removing rights once the administrator switches it on', async ({
+  browser,
+  page,
+}) => {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const personContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+  })
+  const personPage = await personContext.newPage()
+  const revokeSwitch = shownByTestId(page, 'hilos-step-up-switch-revoke_admin')
+  let switched = false
+  try {
+    await signUpAdmin(page)
+    const person = await signUp(personPage)
+    await gotoPage(page, '/hilos/security/2fa')
+    await expect(revokeSwitch).not.toBeChecked()
+    await revokeSwitch.click()
+    switched = true
+    await expect(revokeSwitch).toBeChecked()
+
+    await gotoPage(page, `/hilos/user/${person.userId}`)
+    await clickSubmit(page.getByTestId('hilos-user-admin-open'))
+    await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-step-up-confirm'))
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+
+    await dismissToasts(page)
+    await clickSubmit(page.getByTestId('hilos-user-admin-open'))
+    await expect(page.getByTestId('modal')).toContainText("Confirm it's you")
+    await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-step-up-confirm'))
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('hilos-toast-success')).toContainText(
+      'Admin rights removed',
+    )
+  } finally {
+    if (switched) {
+      await gotoPage(page, '/hilos/security/2fa')
+      await revokeSwitch.click()
+      await expect(revokeSwitch).not.toBeChecked()
+    }
+    await personContext.close()
+  }
 })

@@ -36,6 +36,8 @@ import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue
 import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
 import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
+import HilosUsers from './views/Hilos/Users/Users.vue'
+import HilosUser from './views/Hilos/Users/User.vue'
 import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
 import HilosLogsKeys from './views/Hilos/Logs/Keys.vue'
 import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
@@ -51,17 +53,19 @@ const props = defineProps<{ authGate: AuthGate }>()
 
 // The page-key → view map HilosView renders from: the home, the framework admin
 // defaults (hilosAdminViews, of which only the dashboard is registered on the
-// backend today), the Backup, Maintenance, Settings, Logs and Communications
-// sections — mapped by the demo itself, because those pages need the project's
-// context and hilosAdminViews leaves them out — the one profile page, the
-// person's notification settings, and the four footer pages whose text is this
-// demo's.
+// backend today), the Backup, Maintenance, Settings, Users, Logs and
+// Communications sections — mapped by the demo itself, because those pages need
+// the project's context and hilosAdminViews leaves them out — the one profile
+// page, the person's notification settings, and the four footer pages whose text
+// is this demo's.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   ...hilosAdminViews(),
   [HilosPages.BACKUP]: HilosBackup,
   [HilosPages.MAINTENANCE]: HilosMaintenance,
   [HilosPages.SETTINGS]: HilosSettings,
+  [HilosPages.USERS]: HilosUsers,
+  [HilosPages.USER]: HilosUser,
   [HilosPages.LOGS]: HilosLogsOverview,
   [HilosPages.LOGS_KEYS]: HilosLogsKeys,
   [HilosPages.LOGS_WORKERS]: HilosLogsWorkers,

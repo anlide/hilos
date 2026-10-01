@@ -6,8 +6,12 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
-import { clickSubmit, PASSWORD, signUp, typeInto } from '../helpers/session'
-import { goToLastPage } from '../helpers/table'
+import {
+  clickSubmit,
+  PASSWORD,
+  signUpPerson,
+  typeInto,
+} from '../helpers/session'
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
 // real table in the new frontend) over the live socket, a registered user's row
@@ -77,7 +81,7 @@ test('filters the users table from the search box', async ({ page }) => {
 
   // A query no name matches empties the viewport; clearing it restores rows.
   const search = page.getByTestId('hilos-table-search')
-  await search.fill('zzz-no-such-user-zzz')
+  await typeInto(search, 'zzz-no-such-user-zzz')
   await expect(page.locator('[data-id^="hilos-users-open-"]')).toHaveCount(0)
   await search.fill('')
   await expect(
@@ -96,7 +100,7 @@ test('renames a user from the detail page and re-renders live', async ({
 
   const newName = 'E2E Renamed User'
   await page.getByTestId('hilos-user-edit').click()
-  await page.getByTestId('hilos-user-name-input').fill(newName)
+  await typeInto(page.getByTestId('hilos-user-name-input'), newName)
   await page.getByTestId('hilos-user-save').click()
 
   // The committed name returns over the live table and the edit form closes.
@@ -161,62 +165,6 @@ test('an open rename follows the other tab, then conflicts and takes theirs', as
   await expect(page.getByTestId('hilos-user-name')).toHaveText(
     'E2E Elsewhere Two',
   )
-  await tabB.close()
-})
-
-// HIL-1051: the chat admin's rename modal over the users table merges against
-// the live row the same way. Tab A holds the modal open on the row of the user
-// this test registers itself; tab B renames that user from the card. A pristine
-// modal follows and says so, a typed one conflicts and locks Save, and Keep mine
-// sends the draft over the other tab's name. The table orders by id, so the
-// rename moves the row nowhere and the modal keeps its live row.
-test('an open admin rename follows the other tab, then conflicts and keeps mine', async ({
-  page,
-}) => {
-  const userId = await signUpAdmin(page)
-  const tabB = await page.context().newPage()
-  await gotoPage(page, '/hilos/app/users')
-  await gotoPage(tabB, `/hilos/user/${userId}`)
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await expect(tabB.getByTestId('hilos-user-detail')).toBeVisible()
-
-  // The user registered a moment ago has the highest id, so its row is on the
-  // last page of the window.
-  await goToLastPage(page)
-  await page.getByTestId(`admin-users-edit-${userId}`).click()
-  await expect(page.getByTestId('admin-users-name')).toBeVisible()
-  await expect(page.getByTestId('admin-users-save')).toBeDisabled()
-  await renameUser(tabB, 'E2E Elsewhere One')
-
-  // A pristine modal follows the live row and says so on its message line.
-  await expect(page.getByTestId('admin-users-name')).toHaveValue(
-    'E2E Elsewhere One',
-  )
-  await expect(page.getByTestId('admin-users-edit-notice')).toContainText(
-    'Updated just now',
-  )
-  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
-  await expect(page.getByTestId('admin-users-save')).toBeDisabled()
-
-  // Tab A types; tab B renames again: a conflict, Save locked, no Merge.
-  await typeInto(page.getByTestId('admin-users-name'), 'E2E Mine')
-  await renameUser(tabB, 'E2E Elsewhere Two')
-  await expect(page.getByTestId('conflict-badge')).toBeVisible()
-  await expect(page.getByTestId('admin-users-edit-notice')).toContainText(
-    'Changed elsewhere to "E2E Elsewhere Two"',
-  )
-  await expect(page.getByTestId('conflict-merge')).toHaveCount(0)
-  await expect(page.getByTestId('admin-users-save')).toBeDisabled()
-
-  // Keep mine ends the conflict with the draft in place: Save opens, sends it,
-  // and the card in tab B shows the name tab A kept.
-  await page.getByTestId('conflict-accept-mine').click()
-  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
-  await clickSubmit(page.getByTestId('admin-users-save'))
-  await expect(page.getByTestId('admin-users-name')).toHaveCount(0)
-  await expect(tabB.getByTestId('hilos-user-name')).toHaveText('E2E Mine')
   await tabB.close()
 })
 
@@ -332,7 +280,7 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
 // closed by that page's ADMIN level and the sessions library performs the write, so what
 // proves the whole two-hop route in one assertion is the banner: the framework shell
 // draws it from the rebound session's own handshake, which cannot arrive unless the
-// write landed (HIL-1064 - the strip is the SDK's, the chat mounts nothing for it).
+// write landed (HIL-1064 - the strip is the SDK's, the demo mounts nothing for it).
 //
 // Stop is the way back, and it is a tracked action: its answer rides the identity the
 // server restores, so the strip leaving and the admin gear coming back are the proof
@@ -408,7 +356,7 @@ test("shows a person's standing on the card and in the takeover strip", async ({
   const personPage = await personContext.newPage()
   try {
     await signUpAdmin(page)
-    const person = await signUp(personPage)
+    const person = await signUpPerson(personPage)
     await gotoPage(page, `/hilos/user/${person.userId}`)
     const badge = page.getByTestId('user-standing-badge')
     await expect(page.getByTestId('hilos-user-frozen-state')).toContainText(
@@ -425,7 +373,8 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     )
 
     // The takeover strip and the ring by the header avatar take the color of
-    // the person taken over.
+    // the person taken over. This demo has no profile link: the avatar stands
+    // in the shell's name slot.
     await dismissToasts(page)
     await gotoPage(page, '/hilos/users')
     await typeInto(page.getByTestId('hilos-table-search'), person.name)
@@ -440,7 +389,7 @@ test("shows a person's standing on the card and in the takeover strip", async ({
     const strip = page.getByTestId('impersonation-banner')
     await expect(strip).toHaveClass(/\balert-danger\b/)
     await expect(
-      page.getByTestId('nav-profile').getByTestId('avatar-mark'),
+      page.getByTestId('nav-profile-name').getByTestId('avatar-mark'),
     ).toHaveClass(/\btext-danger-emphasis\b/)
     await expect.poll(() => sockets).toBeGreaterThan(0)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')

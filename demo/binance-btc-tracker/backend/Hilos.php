@@ -14,6 +14,8 @@ use Demo\BinanceBtcTracker\Agents\Hilos\UsersLibraryAgent;
 use Demo\BinanceBtcTracker\Auth\BinanceBtcTrackerAuthMethodDirectory;
 use Demo\BinanceBtcTracker\Backup\BackupCatalog;
 use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserContext;
+use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserRef;
+use Demo\BinanceBtcTracker\Browser\Table\UserDetailBrowserTable;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
@@ -45,18 +47,23 @@ use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Users\UsersPage;
 use Demo\BinanceBtcTracker\Pages\MainPage;
 use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
 use Demo\BinanceBtcTracker\Tables\BinanceBtcTrackerTableContext;
+use Demo\BinanceBtcTracker\Tables\HilosUser\HilosUsersTable;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\Feature\HilosFeature;
@@ -98,12 +105,14 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * Hilos - Main app facade for data access.
  *
  * The smallest complete shape of a project: sign-in by password, an empty home, the admin
- * dashboard and the four public footer pages. Five admin sections are activated so far -
+ * dashboard and the four public footer pages. Six admin sections are activated so far -
  * Maintenance, the verifier circle a freeze lets through, Backup, the database archives,
  * Settings, which carries the example keys and the keys the log and delivery sections ask for,
- * Logs, the live tail and the rotated batches, and Communications, the channel hub, a channel's
- * page and its delivery journal - and the others arrive one by one, each with the leaf that
- * moves its e2e onto this demo.
+ * Users, the people and a person's card (renaming, takeover, rights, block, scheduled
+ * deletion; no account merge - this demo wires none of its seams), Logs, the live tail and the
+ * rotated batches, and Communications, the channel hub, a channel's page and its delivery
+ * journal - and the others arrive one by one, each with the leaf that moves its e2e onto this
+ * demo.
  *
  * Notifications are switched on with them: the bell in the header, a person's own channel
  * switches on /profile/notifications (the one profile page this demo has, without the profile
@@ -151,6 +160,7 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::BACKUP,
         HilosFeature::SETTINGS,
+        HilosFeature::HILOS_USERS,
         HilosFeature::LOGS,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::NOTIFICATION_DELIVERY,
@@ -167,6 +177,8 @@ final class Hilos extends HilosFacade
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        UsersPage::PAGE => UsersPage::class,
+        UserPage::PAGE => UserPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
         LogsWorkersPage::PAGE => LogsWorkersPage::class,
@@ -302,12 +314,17 @@ final class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosBackups => HilosBackupHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         BinanceBtcTrackerTableContext::settings => HilosSettingsTable::class,
+        BinanceBtcTrackerTableContext::hilosUsers => HilosUsersTable::class,
         BinanceBtcTrackerTableContext::hilosLogKeys => HilosLogKeysTable::class,
         BinanceBtcTrackerTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         BinanceBtcTrackerTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         BinanceBtcTrackerTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
         BinanceBtcTrackerTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
         BinanceBtcTrackerTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
     ];
 
     public const array PAGE_TABLES = [
@@ -319,6 +336,16 @@ final class Hilos extends HilosFacade
         ],
         SettingsPage::PAGE => [
             BinanceBtcTrackerTableContext::settings => [],
+        ],
+        UsersPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosUsers => [],
+        ],
+        UserPage::PAGE => [
+            UserDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => BinanceBtcTrackerBrowserRef::HILOS_USER_ID,
+                ],
+            ],
         ],
         LogsKeysPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosLogKeys => [],

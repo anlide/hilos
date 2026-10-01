@@ -517,10 +517,9 @@ the restore button stand on row fields, and the restore and reopen blocks on pag
 data, that a viewer is sent hidden; what a viewer is shown of them is HIL-1256's
 (HIL-1264).
 
-The settings carry their viewer case in chat's
-`demo/chat/tests/e2e/tests/settings.spec.ts`, where their area lives until it
-moves to binance-btc-tracker with every spec of it
-(not in the code yet — HIL-1219). The log modes carry theirs as a unit of the
+The settings carry their viewer case in
+`demo/binance-btc-tracker/tests/e2e/tests/settings.spec.ts` (HIL-1262; the area
+moved with HIL-1219). The log modes carry theirs as a unit of the
 setting-presets screen
 (`framework/frontend/vue/src/admin/settings/HilosSettingPresetsPage.test.ts`)
 and not as an e2e: a viewer is sent the frame of the presets hidden whole until

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\BinanceBtcTracker\Tables;
 
 use Demo\BinanceBtcTracker\Hilos;
+use Demo\BinanceBtcTracker\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -20,10 +21,10 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * BinanceBtcTrackerTableContext - App-specific table context ($table layer) for binance-btc-tracker.
  *
  * Registers whatever the project topology lists: today the backup section's archive table, the
- * maintenance section's verifier circle table, the settings table, the three tables of the
- * logs section and the three of the communications section, accessed via
+ * maintenance section's verifier circle table, the settings table, the people table, the three
+ * tables of the logs section and the three of the communications section, accessed via
  * Hilos::$table->hilosBackups, Hilos::$table->hilosVerifierCircle, Hilos::$table->settings,
- * Hilos::$table->hilosLogKeys / hilosLogRotations / hilosLogWorkers and
+ * Hilos::$table->hilosUsers, Hilos::$table->hilosLogKeys / hilosLogRotations / hilosLogWorkers and
  * Hilos::$table->hilosCommunicationsChannels / hilosCommunicationsChannelFields /
  * hilosNotificationDeliveries.
  * The other admin sections arrive with the leaves that move their e2e onto this demo, each with
@@ -32,6 +33,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSettingsTable $settings
+ * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
@@ -44,6 +46,7 @@ final class BinanceBtcTrackerTableContext extends TableContext
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
+    public const string hilosUsers = 'hilosUsers';
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;

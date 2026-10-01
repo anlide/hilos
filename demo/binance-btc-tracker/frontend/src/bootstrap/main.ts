@@ -9,6 +9,7 @@ import { HILOS_VIEW_LAYER, hilosAuthGateKey, hilosRouterKey } from '@hilos/vue'
 import { createApp } from 'vue'
 
 import App from '../App.vue'
+import { pageEntityTypes } from '../pages/entityTypes'
 import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
 import { actions, connection } from './connection'
@@ -20,6 +21,7 @@ const hilosRouter = bootHilos({
   actions,
   scopes,
   router,
+  pageEntityTypes,
   pageTitles,
   appName,
   // Bind the notification center: this demo registers the framework notification

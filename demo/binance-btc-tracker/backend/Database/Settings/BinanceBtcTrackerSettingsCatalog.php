@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\BinanceBtcTracker\Database\Settings;
 
 use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry;
+use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
+use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Feature\Definition\LogsFeature;
 use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
@@ -25,8 +27,9 @@ use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
  * needs the rotation thresholds and the logging modes its screens write, and notification
  * delivery needs one block per registered channel and the delivery-journal keys. The three
  * example keys are what the settings and toast specs write, so no spec has to invent a
- * project-specific setting; the sign-in fragments arrive with the leaf that moves the settings
- * e2e onto this demo (HIL-1219).
+ * project-specific setting. The sign-in fragments are left out on purpose: no spec of this demo
+ * reads one, and the step-up list and the deletion grace period answer their declared defaults
+ * when the catalog carries no key for them ({@see StepUpSettings}, {@see AccountDeletionSettings}).
  *
  * @see SettingsCatalogConstants
  * @see LogsFeature The feature whose required fragment the log keys are

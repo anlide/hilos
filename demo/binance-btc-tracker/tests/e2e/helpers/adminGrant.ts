@@ -2,6 +2,7 @@ import { expect, type Page } from '@playwright/test'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { gotoPage } from './page'
+import { signUpPerson } from './session'
 
 // The daemon command channel — the same socket the CLI admin:create /
 // admin:grant / admin:revoke commands speak. The Playwright runner has no PHP,
@@ -104,6 +105,34 @@ export async function grantAdminToSelf(page: Page): Promise<number> {
   // shell draws the admin entry from it — so the gear appearing is the proof that
   // the grant reached this page, rather than merely the server.
   await expect(page.getByTestId('nav-admin')).toBeVisible()
+
+  return userId
+}
+
+/**
+ * Registers a fresh account and grants it admin over the command channel.
+ *
+ * Unlike {@link grantAdminToSelf}, the administrator made here has a password:
+ * granting rights and scheduling a deletion ask "is it you" by password (HIL-1275),
+ * and an account minted by admin:create has none to give. The account is a per-test
+ * throwaway, so no revoke is needed afterwards.
+ *
+ * @param page Playwright page still anonymous in its browser context.
+ * @returns The granted account's durable user id.
+ */
+export async function signUpAdmin(page: Page): Promise<number> {
+  const { userId } = await signUpPerson(page)
+  await setAdmin(userId, true)
+  // The command channel answers when the daemon has written the grant, which is
+  // not the same as this browser knowing about it. The daemon re-sends the
+  // handshake response to the granted user's live connections, and the shell
+  // draws the admin entry from it — so the gear appearing is the proof that the
+  // grant reached this page, rather than merely the server. Under the admin view
+  // mode the gear is drawn before the grant too, so the proof is its full mark.
+  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+    'data-access',
+    'full',
+  )
 
   return userId
 }

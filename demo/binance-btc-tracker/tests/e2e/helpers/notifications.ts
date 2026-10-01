@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { gotoPage } from './page'
-import { signUp } from './session'
+import { signUpPerson } from './session'
 
 // The daemon command channel — the same socket the CLI test:notification:emit
 // command speaks. The Playwright runner has no PHP, so the e2e emits over the
@@ -95,8 +95,7 @@ export async function emitNotification(
 export async function signUpJoined(
   page: Page,
 ): Promise<{ email: string; userId: number }> {
-  const email = await signUp(page)
-  const userId = Number(await page.getByTestId('self-user-id').textContent())
+  const { email, userId } = await signUpPerson(page)
   await gotoPage(page, '/')
 
   return { email, userId }

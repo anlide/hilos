@@ -133,7 +133,7 @@ the demo it leaves.
 
 | Area | Specs today | Lives in | Leaf |
 |---|---|---|---|
-| Settings, people and admin | chat: settings, users, admin, admin-gating, account-lifecycle | binance-btc-tracker (not in the code yet — HIL-1219) | HIL-1219 |
+| Settings, people and admin | binance-btc-tracker: settings, users, admin, admin-gating, account-lifecycle | binance-btc-tracker | HIL-1219 |
 | Backup | binance-btc-tracker: backup, backup-reopen | binance-btc-tracker | HIL-1220 |
 | Protected mode and maintenance | binance-btc-tracker: protected-mode | binance-btc-tracker | HIL-1221 |
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
@@ -146,6 +146,14 @@ the demo it leaves.
 over people, and they go with settings, people and admin: framework-level
 tests, in the owner's words on the HIL-1209 interview, not chat's.
 
+Three pieces of that area stayed in chat by the same rule — a spec lives on the
+side of the feature it is about. `admin-users.spec` is chat's own "Users"
+screen (`/hilos/app/users`, its own table), which binance-btc-tracker does not
+have. The test that switches on the confirmation before removing rights sits in
+`step-up.spec`: its subject is the switch, and the switch lives in the Security
+Center, on the account side. `admin-view-mode.spec` is the shell's gear over
+chat's screen; where the view-mode e2e lie after the moves is HIL-1273.
+
 The old demos switch nothing off — only the spec moves; the new demo switches
 on what it tests, plus sign-in.
 
@@ -155,8 +163,9 @@ on what it tests, plus sign-in.
 `message-input` sits inside the notifications specs, and the seeds of
 `test:db-prepare` (`demo/chat/composer.json`: `test:user:seed` for 25 people)
 shape the data. A new demo seeds what its moved specs read in its own
-`test:db-prepare` — binance-btc-tracker carries the 25 people and the
-`test:notification:seed` rows the notification center reads. What is shared comes from the
+`test:db-prepare` — binance-btc-tracker carries the 25 people, the
+`test:notification:seed` rows the notification center reads, and the orphan
+setting row the settings spec deletes. What is shared comes from the
 toolbox — `framework/frontend/e2e/` and `framework/frontend/scripts/`, "The
 shared toolbox" below — and is not copied across.
 

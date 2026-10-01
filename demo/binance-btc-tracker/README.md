@@ -20,7 +20,9 @@ on Vue — the one to copy (`docs/new-project/README.md`):
   verifier circle a protected-mode freeze lets through — and the **Backup**
   section: database archives created, deleted and, outside prod, restored,
   kept as files in `data/backup`, the **Settings** section, carrying the
-  example keys and the keys of the log and delivery sections, the **Logs**
+  example keys and the keys of the log and delivery sections, the **Users**
+  section: the people with their presence and a person's card — rename,
+  takeover, rights, block and a scheduled deletion — the **Logs**
   section: the live tail, the streams, the workers, the rotated batches and the
   logging modes, and the **Communications** section: the email and SMS channels,
   a channel's settings and its delivery journal. The other admin sections
@@ -31,8 +33,8 @@ on Vue — the one to copy (`docs/new-project/README.md`):
 
 The backend is the base set: one app agent owning the connections and the
 home page and the notification settings, the Hilos index agent with the
-dashboard, the Maintenance, Backup, Settings and Communications sections and
-the footer pages, the logs agent serving the Logs section
+dashboard, the Maintenance, Backup, Settings, Users and Communications sections
+and the footer pages, the logs agent serving the Logs section
 with the framework log store, carrier and aggregator behind it, the framework
 backup agent, settings and notifications libraries, the email and SMS
 delivery agents, and the framework sign-in libraries. It

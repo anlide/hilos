@@ -21,14 +21,17 @@ import { clickSubmit, typeInto } from '../helpers/session'
 // framework HilosViewportTable over the live socket. The window comes from the
 // backend — search, sort, and paging change the viewport descriptor and the
 // server replies a window — so a key is isolated with the search box before it
-// is asserted on (the chat catalog spans six pages of ten). The table is a
-// declared one, so it stands in the document twice — rows for a wide screen,
+// is asserted on (this demo's catalog spans more than one page of ten). The table
+// is a declared one, so it stands in the document twice — rows for a wide screen,
 // cards for a narrow one — and a control inside a cell is aimed at through the
 // copy on screen (shownByTestId). Live edits from
 // another connection hang as pending (a tinted row + an Apply control), while the
-// tab that made the edit applies its own change at once. Each editing test uses a
-// distinct catalog key and resets it to the catalog default, so the suite stays
-// idempotent and parallel-safe on the shared database.
+// tab that made the edit applies its own change at once. Each editing test resets
+// its key to the catalog default, so the suite stays idempotent on the shared
+// database. This catalog has one free string key with no rule and no reader —
+// example_string — and the six two-tab tests all write it, so the file runs its
+// tests one by one, in order, instead of in parallel.
+test.describe.configure({ mode: 'default' })
 
 /** Open the settings page and wait for the live table. */
 async function openSettings(page: Page): Promise<void> {
@@ -39,7 +42,7 @@ async function openSettings(page: Page): Promise<void> {
 
 /** Narrow the server window to a single key so assertions ignore pagination. */
 async function isolate(page: Page, key: string): Promise<void> {
-  await page.getByTestId('hilos-table-search').fill(key)
+  await typeInto(page.getByTestId('hilos-table-search'), key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
 }
 
@@ -58,9 +61,9 @@ test('lists settings in the server window and filters from the search box', asyn
   // framework's own state since HIL-808, distinct from the skeleton of a late
   // window); the reset restores the window and clears the box.
   const search = page.getByTestId('hilos-table-search')
-  await typeInto(search, 'chat_bot_language')
+  await typeInto(search, 'example_string')
   await expect(
-    page.getByTestId('hilos-table-row-chat_bot_language'),
+    page.getByTestId('hilos-table-row-example_string'),
   ).toBeVisible()
   await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(1)
 
@@ -178,11 +181,13 @@ test('a narrow window draws the settings as cards and never scrolls sideways', a
   // The record is isolated with the search box, so it is on screen in one branch
   // or the other whatever keys fill the first page - a framework fragment adding a
   // key sorts it in ahead (HIL-302). Which branch it is in is the whole question.
-  const key = 'chat_attachment_max_file_bytes'
+  // An integer on its default that no spec and no logging mode writes, so its ↺
+  // is drawn and locked.
+  const key = 'logs.index.push_interval_ms'
   const cards = page.getByTestId('hilos-table-cards')
   const card = cards.getByTestId(`hilos-table-card-${key}`)
   const row = page.getByTestId(`hilos-table-row-${key}`)
-  await page.getByTestId('hilos-table-search').fill(key)
+  await typeInto(page.getByTestId('hilos-table-search'), key)
 
   await expect(card).toBeVisible()
   await expect(row).toBeHidden()
@@ -275,14 +280,14 @@ test('an edit in one tab lands at once in another, raising no Apply', async ({
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
-  await isolate(page, 'chat_bot_language')
-  await isolate(tabB, 'chat_bot_language')
+  await isolate(page, 'example_string')
+  await isolate(tabB, 'example_string')
 
-  const rowA = page.getByTestId('hilos-table-row-chat_bot_language')
-  const rowB = tabB.getByTestId('hilos-table-row-chat_bot_language')
+  const rowA = page.getByTestId('hilos-table-row-example_string')
+  const rowB = tabB.getByTestId('hilos-table-row-example_string')
 
   // Tab A sets a custom value and applies its own change at once (no Apply).
-  await setCustomSetting(page, 'chat_bot_language', 'xx-test')
+  await setCustomSetting(page, 'example_string', 'xx-test')
   await expect(rowA).toContainText('xx-test')
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
@@ -306,7 +311,7 @@ test('an edit in one tab lands at once in another, raising no Apply', async ({
   await expect(rowB).not.toHaveClass(/table-success/, { timeout: 10_000 })
 
   // Reset the key back to its catalog default.
-  await clearCustomSetting(page, 'chat_bot_language')
+  await clearCustomSetting(page, 'example_string')
   await expect(rowA).not.toContainText('xx-test')
   await tabB.close()
 })
@@ -346,9 +351,9 @@ test('the edit dialog opens on the value the other tab just wrote', async ({
 test('an open pristine edit reloads when the other tab saves', async ({
   page,
 }) => {
-  // Distinct from the other two-tab keys in this file: parallel workers share
-  // the database, and this case needs a string with no catalog rule.
-  const key = 'default_bot_url'
+  // A string with no catalog rule; the file runs in order, so sharing it with the
+  // other two-tab tests is safe.
+  const key = 'example_string'
   await signUpAdmin(page)
   const tabB = await page.context().newPage()
   await openSettings(page)
@@ -385,7 +390,7 @@ test('an open pristine edit reloads when the other tab saves', async ({
 test('a dirty open edit conflicts when the other tab saves, with no Merge', async ({
   page,
 }) => {
-  const key = 'default_bot_model'
+  const key = 'example_string'
   await signUpAdmin(page)
   const tabB = await page.context().newPage()
   await openSettings(page)
@@ -425,7 +430,7 @@ test('a dirty open edit conflicts when the other tab saves, with no Merge', asyn
 test('Keep mine on a dirty conflict saves the typed value in both tabs', async ({
   page,
 }) => {
-  const key = 'default_bot_provider'
+  const key = 'example_string'
   await signUpAdmin(page)
   const tabB = await page.context().newPage()
   await openSettings(page)
@@ -491,7 +496,7 @@ test('an open edit follows its row past the window edge, and the conflict after 
   // resolves and saves. The screen under the dialog gates the departure as it
   // always did. (This table cannot say whether a row left a search, so a search
   // never takes a row off the screen; an order does.)
-  const key = 'chat_moderation_model'
+  const key = 'example_string'
   await signUpAdmin(page)
   const tabB = await page.context().newPage()
   await openSettings(page)
@@ -570,7 +575,7 @@ test('deletes an orphan setting through the confirm modal', async ({
   page,
 }) => {
   // An uncataloged (orphan) row seeded before the app came up by the composer
-  // `test:e2e-seed-orphan` step (cli `test:orphan:create e2e_orphan_delete ...`);
+  // `test:db-prepare` step (cli `test:orphan:create e2e_orphan_delete ...`);
   // keep this key in sync with that step. The full e2e run always db-resets, so
   // this test owns the row and needs no cleanup.
   const orphanKey = 'e2e_orphan_delete'
@@ -698,8 +703,8 @@ test('a refusal too long for the line still moves nothing under it', async ({
   // not fit, and a plate that wrapped would grow and push the field down.
   //
   // Only the measurement is narrow. The journey to the dialog runs at the usual
-  // width, the way demo/binance-btc-tracker/tests/e2e/tests/logs-rotation.spec.ts
-  // narrows an already-open modal: the
+  // width, the way logs-rotation.spec.ts beside it narrows an already-open
+  // modal: the
   // admin table is not what is under test here, and driving it on a phone would
   // put its own troubles into this verdict.
   //

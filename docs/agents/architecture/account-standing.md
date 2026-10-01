@@ -249,8 +249,8 @@ The core binds the session's standing once, in `bootHilos`
   published, so a person the `test:legal:hold` command puts on the second is
   frozen at once: `legal-reconsent.spec.ts` covers the freeze screen and the
   window with its icon under `remind`. Chat's e2e also covers the deletion strip
-  and the mark (`account-deletion.spec.ts`), the card's badge and the takeover
-  tone (`users.spec.ts`), and the lapsed count without a link
-  (`legal-admin.spec.ts`). The count of days left has no browser case — there
-  is no shared clock to move — and is held by the SDK unit tests and
+  and the mark (`account-deletion.spec.ts`) and the lapsed count without a link
+  (`legal-admin.spec.ts`); the card's badge and the takeover tone are covered by
+  binance-btc-tracker's `users.spec.ts`. The count of days left has no browser
+  case — there is no shared clock to move — and is held by the SDK unit tests and
   `LegalReconsentIntegrationTest`.

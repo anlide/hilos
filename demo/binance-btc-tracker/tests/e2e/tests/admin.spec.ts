@@ -15,7 +15,8 @@ const HILOS_USERS_TABLE = 'hilosUsers'
 // socket with no document reload. Each `/hilos` page renders through the
 // framework HilosAdminPage shell (breadcrumb + children resolved from the core
 // admin tree). Built sections and their children exercise both the dashboard
-// menu and per-page admin routing; unbuilt pages are covered by unbuilt-page.spec.
+// menu and per-page admin routing; unbuilt pages are covered by chat's
+// unbuilt-page.spec.
 test('navigates the admin tree with no reload or reconnect', async ({
   page,
 }) => {
@@ -32,24 +33,24 @@ test('navigates the admin tree with no reload or reconnect', async ({
   // Gear -> dashboard, which lists the sections as cards.
   await page.getByTestId('nav-admin').click()
   await expect(page.getByTestId('dashboard-view')).toBeVisible()
-  await expect(page.getByTestId('dashboard-card-hilos_security')).toBeVisible()
+  await expect(page.getByTestId('dashboard-card-hilos_logs')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos')
 
   // Dashboard card -> a top-level section page with its sub-navigation.
-  await page.getByTestId('dashboard-card-hilos_security').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Security Center')
-  expect(new URL(page.url()).pathname).toBe('/hilos/security')
+  await page.getByTestId('dashboard-card-hilos_logs').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
+  expect(new URL(page.url()).pathname).toBe('/hilos/logs')
   await expect(
-    page.getByTestId('hilos-admin-child-hilos_security_oauth'),
+    page.getByTestId('hilos-admin-child-hilos_logs_keys'),
   ).toBeVisible()
 
   // Section -> a sub-page, then back up through the breadcrumb.
-  await page.getByTestId('hilos-admin-child-hilos_security_oauth').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('OAuth providers')
-  expect(new URL(page.url()).pathname).toBe('/hilos/security/oauth')
-  await page.getByTestId('hilos-breadcrumb-hilos_security').click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Security Center')
-  expect(new URL(page.url()).pathname).toBe('/hilos/security')
+  await page.getByTestId('hilos-admin-child-hilos_logs_keys').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('By key')
+  expect(new URL(page.url()).pathname).toBe('/hilos/logs/keys')
+  await page.getByTestId('hilos-breadcrumb-hilos_logs').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
+  expect(new URL(page.url()).pathname).toBe('/hilos/logs')
 
   // The whole tour stayed in one live document on one socket.
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
