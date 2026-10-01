@@ -3,6 +3,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test'
 import {
   abandonConsent,
   denyConsent,
+  shownByTestId,
   signInAs,
   waitForProviderWindow,
   watchHeight,
@@ -25,6 +26,7 @@ import {
   waitForTelegramCode,
 } from '../../../../../framework/frontend/scripts/standTelegram.mjs'
 import { setAdmin, signUpAdmin } from '../helpers/adminGrant'
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import {
   mailsTo,
   readMagicLinkCode,
@@ -50,7 +52,12 @@ import {
   typeInto,
   uniqueEmail,
 } from '../helpers/session'
-import { expectPageRefused, gotoAuthReturn, gotoPage } from '../helpers/page'
+import {
+  expectPageRefused,
+  gotoAuthReturn,
+  gotoPage,
+  PAGE_READY,
+} from '../helpers/page'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
 // the live daemon and built frontend. It covers the surfaces that landed with the
@@ -1770,3 +1777,23 @@ async function remainingSeconds(countdown: Locator): Promise<number> {
     ? Number.MAX_SAFE_INTEGER
     : Number(parts[1]) * SECONDS_PER_MINUTE + Number(parts[2])
 }
+
+test.describe('in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test('a guest opens sign-in methods and finds the switches disabled by the view mode', async ({
+    page,
+  }) => {
+    await setAdminViewMode(true)
+    await gotoPage(page, '/hilos/security/sign-in-methods', PAGE_READY)
+    const switchControl = shownByTestId(
+      page,
+      'hilos-sign-in-method-enabled-magic_link',
+    )
+    await expect(switchControl).toBeDisabled()
+    await expect(switchControl).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+  })
+})

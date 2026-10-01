@@ -11,8 +11,14 @@ import {
   shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import { waitForMailTo } from '../helpers/mail'
-import { expectPageReady, gotoAuthReturn, gotoPage } from '../helpers/page'
+import {
+  expectPageReady,
+  gotoAuthReturn,
+  gotoPage,
+  PAGE_READY,
+} from '../helpers/page'
 import { connectFirstApp } from '../helpers/secondFactor'
 import {
   PASSWORD,
@@ -204,5 +210,27 @@ test.describe('two-step verification', () => {
     } finally {
       await setRequired(page, 'none', 'Nobody')
     }
+  })
+})
+
+test.describe('in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test('a guest opens a two-factor setting modal and finds save disabled by the view mode', async ({
+    page,
+  }) => {
+    await setAdminViewMode(true)
+    await gotoPage(page, '/hilos/security/2fa', PAGE_READY)
+    await clickSubmit(
+      shownByTestId(page, 'hilos-2fa-edit-auth.second_factor.required'),
+    )
+    const save = page.getByTestId('hilos-2fa-save')
+    await expect(save).toBeDisabled()
+    await expect(save).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('modal')).toBeHidden()
   })
 })

@@ -8,15 +8,21 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   HilosSecondFactorSettingKey,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosRouter,
   HilosTwoFactorContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosSecurity2faPage from './HilosSecurity2faPage.vue'
@@ -59,6 +65,7 @@ function seededContext(): {
   context: HilosTwoFactorContext
   pushUpdate: (rowKey: string, value: string) => void
   pushRemove: (rowKey: string) => void
+  answer: (outcome: 'success' | 'fail', errorCode?: string) => void
   sent: Array<{ action: string; payload: Record<string, unknown> }>
   focus: string[]
 } {
@@ -147,15 +154,36 @@ function seededContext(): {
       return () => {}
     },
   }
-  const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
+  const sent: Array<{
+    action: string
+    payload: Record<string, unknown>
+    requestId?: string
+  }> = []
+  const replyListeners = new Map<
+    string,
+    Set<(signal: Record<string, unknown>) => void>
+  >()
   const actions = new ActionLifecycle({
-    sendAction: (action: string, payload: Record<string, unknown>) => {
-      sent.push({ action, payload })
+    sendAction: (
+      action: string,
+      payload: Record<string, unknown>,
+      requestId?: string,
+    ) => {
+      sent.push({ action, payload, requestId })
 
       return true
     },
-    on: () => () => {},
-  })
+    on: (
+      event: string,
+      listener: (signal: Record<string, unknown>) => void,
+    ) => {
+      const listeners = replyListeners.get(event) ?? new Set()
+      listeners.add(listener)
+      replyListeners.set(event, listeners)
+
+      return () => listeners.delete(listener)
+    },
+  } as unknown as ConstructorParameters<typeof ActionLifecycle>[0])
 
   return {
     context: {
@@ -176,6 +204,19 @@ function seededContext(): {
       settings = new Map(settings)
       settings.delete(rowKey)
       pushDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
+    },
+    answer(outcome: 'success' | 'fail', errorCode?: string): void {
+      const last = sent[sent.length - 1]
+      const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
+      for (const listener of replyListeners.get(event) ?? []) {
+        listener({
+          kind: event,
+          action: last?.action,
+          requestId: last?.requestId,
+          reason: 'The setting refused the write.',
+          ...(errorCode !== undefined ? { errorCode } : {}),
+        })
+      }
     },
     sent,
     focus,
@@ -376,5 +417,115 @@ describe('HilosSecurity2faPage', () => {
     await nextTick()
 
     expect(wrapper.find('[data-id="hilos-step-up-table"]').exists()).toBe(false)
+  })
+})
+
+describe('HilosSecurity2faPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it('a viewer opens a setting edit, finds Save disabled with the mode strip reference, and closes via Cancel', async () => {
+    const { context, sent } = seededContext()
+    bindSession(context.scopes).handshake(null, true)
+    await openModal(context, REQUIRED)
+
+    expect(valueInput().disabled).toBe(false)
+    expect(saveButton().disabled).toBe(true)
+    expect(saveButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    saveButton().click()
+    await nextTick()
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    await nextTick()
+
+    expect(modalEl('modal-confirm-discard')).toBeNull()
+    expect(modalEl('modal')).toBeNull()
+  })
+
+  it('Enter in a setting edit is refused with the view mode phrase', async () => {
+    const { context, sent, answer } = seededContext()
+    bindSession(context.scopes).handshake(null, true)
+    await openModal(context, REQUIRED)
+
+    await typeDraft('everyone')
+    expect(saveButton().disabled).toBe(true)
+
+    const form = document.querySelector('[data-id="modal"] form')
+    expect(form).not.toBeNull()
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.action).toBe('security_2fa_setting_set')
+    expect(sent[0]?.payload).toMatchObject({ key: REQUIRED, value: 'everyone' })
+
+    answer('fail', 'view_mode')
+    await settle()
+    await nextTick()
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-action-error')?.textContent).toContain(
+      HILOS_VIEW_MODE_COPY.refusal,
+    )
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('an admin on a node in the mode has Save active after typing a draft', async () => {
+    const { context } = seededContext()
+    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+    await openModal(context, REQUIRED)
+
+    await typeDraft('everyone')
+    expect(saveButton().disabled).toBe(false)
+    expect(saveButton().getAttribute('aria-describedby')).toBeNull()
   })
 })

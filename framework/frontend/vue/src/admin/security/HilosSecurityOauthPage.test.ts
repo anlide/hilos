@@ -9,20 +9,27 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosRouter,
   HilosSecurityOauthContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosSecurityOauthPage from './HilosSecurityOauthPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const REDIRECT_TABLE = 'hilosSecurityOauthRedirect'
+const PROVIDERS_TABLE = 'hilosSecurityOauthProviders'
 const ROW_KEY = 'oauth_redirect_uri'
 
 function router(): HilosRouter {
@@ -62,7 +69,7 @@ function seededContext(initial: string): {
   context: HilosSecurityOauthContext
   pushUpdate: (value: string, source?: string) => void
   pushRemove: () => void
-  answer: (outcome: 'success' | 'fail') => void
+  answer: (outcome: 'success' | 'fail', errorCode?: string) => void
   sent: Array<{
     action: string
     payload: Record<string, unknown>
@@ -77,6 +84,39 @@ function seededContext(initial: string): {
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
   const serveWindow = (tableKey: string): void => {
+    if (tableKey === PROVIDERS_TABLE) {
+      const data = {
+        page: HilosPages.SECURITY_OAUTH,
+        tableKey,
+        rows: [
+          {
+            rowKey: 'oauth:github',
+            slots: {
+              provider: {
+                providerKey: 'oauth:github',
+                label: 'GitHub',
+                builtIn: true,
+                configured: true,
+                missingFields: 0,
+                secretSet: true,
+                clientIdSource: 'db',
+              },
+            },
+          },
+        ],
+        totalCount: 1,
+        totalExact: true,
+        firstAnchor: null,
+        lastAnchor: null,
+        offset: 0,
+        limit: 10,
+      }
+      for (const listener of windowListeners) {
+        listener({ data })
+      }
+
+      return
+    }
     const served = tableKey === REDIRECT_TABLE ? rows : []
     const data = {
       page: HilosPages.SECURITY_OAUTH,
@@ -200,7 +240,7 @@ function seededContext(initial: string): {
       pushDelta({ kind: 'row_removed', rowKey: ROW_KEY, reason: 'deleted' })
     },
     // Answer the last action sent, the way the server replies to it.
-    answer(outcome: 'success' | 'fail'): void {
+    answer(outcome: 'success' | 'fail', errorCode?: string): void {
       const last = sent[sent.length - 1]
       const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
       for (const listener of replyListeners.get(event) ?? []) {
@@ -209,6 +249,7 @@ function seededContext(initial: string): {
           action: last?.action,
           requestId: last?.requestId,
           reason: 'The address refused the reset.',
+          ...(errorCode !== undefined ? { errorCode } : {}),
         })
       }
     },
@@ -505,5 +546,169 @@ describe('HilosSecurityOauthPage return-address reset dialog', () => {
     await mountPage(context)
 
     expect(resetButton().disabled).toBe(true)
+  })
+})
+
+describe('HilosSecurityOauthPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  function resetButton(): HTMLButtonElement {
+    return modalEl('hilos-oauth-redirect-reset') as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return modalEl('hilos-oauth-redirect-reset-confirm') as HTMLButtonElement
+  }
+
+  it('a viewer opens return address edit and finds Save disabled with the mode strip reference', async () => {
+    const { context, sent, answer } = seededContext('https://a.example/cb')
+    bindSession(context.scopes).handshake(null, true)
+    await openModal(context)
+
+    expect(saveButton().disabled).toBe(true)
+    expect(saveButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    await typeDraft('https://mine.example/cb')
+    expect(saveButton().disabled).toBe(true)
+
+    const form = document.querySelector('[data-id="modal"] form')
+    expect(form).not.toBeNull()
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.action).toBe('security_oauth_redirect_set')
+    expect(sent[0]?.payload).toEqual({ value: 'https://mine.example/cb' })
+
+    answer('fail', 'view_mode')
+    await settle()
+    await nextTick()
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-action-error')?.textContent).toContain(
+      HILOS_VIEW_MODE_COPY.refusal,
+    )
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('a viewer opens return address reset, finds confirm disabled, and closes via Cancel', async () => {
+    const { context, sent } = seededContext('https://a.example/cb')
+    bindSession(context.scopes).handshake(null, true)
+    const wrapper = mount(HilosSecurityOauthPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    expect(resetButton().disabled).toBe(false)
+    resetButton().click()
+    await nextTick()
+
+    expect(confirmButton().disabled).toBe(true)
+    expect(confirmButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirmButton().click()
+    await nextTick()
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    await nextTick()
+
+    expect(modalEl('modal')).toBeNull()
+  })
+
+  it('a viewer sees the provider configure link in place', async () => {
+    const { context } = seededContext('https://a.example/cb')
+    bindSession(context.scopes).handshake(null, true)
+    const wrapper = mount(HilosSecurityOauthPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    const configureLink = document.querySelector(
+      '[data-id="hilos-oauth-provider-open-oauth:github"]',
+    )
+    expect(configureLink).not.toBeNull()
+  })
+
+  it('an admin on a node in the mode has Save and Reset active', async () => {
+    const { context } = seededContext('https://a.example/cb')
+    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+    await openModal(context)
+
+    await typeDraft('https://mine.example/cb')
+    expect(saveButton().disabled).toBe(false)
+    expect(saveButton().getAttribute('aria-describedby')).toBeNull()
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    cancel?.click()
+    await nextTick()
+
+    modalEl('modal-confirm-discard')?.click()
+    await nextTick()
+
+    resetButton().click()
+    await nextTick()
+
+    expect(confirmButton().disabled).toBe(false)
+    expect(confirmButton().getAttribute('aria-describedby')).toBeNull()
   })
 })

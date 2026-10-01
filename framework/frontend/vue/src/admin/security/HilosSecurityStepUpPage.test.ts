@@ -7,14 +7,19 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosRouter,
   HilosTwoFactorContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosSecurityStepUpPage from './HilosSecurityStepUpPage.vue'
@@ -193,5 +198,90 @@ describe('HilosSecurityStepUpPage', () => {
 
     expect(wrapper.find('[data-id="hilos-table-title"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Asked right before the operation')
+  })
+})
+
+describe('HilosSecurityStepUpPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it('a viewer sees disabled switches referencing the mode strip and sending nothing', async () => {
+    const { context, sent } = seededContext()
+    bindSession(context.scopes).handshake(null, true)
+    const wrapper = await mountPage(context)
+
+    const switchEl = wrapper.find<HTMLInputElement>(
+      'table input[data-id="hilos-step-up-switch-change_name"]',
+    )
+    expect(switchEl.element.disabled).toBe(true)
+    expect(switchEl.element.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    await switchEl.trigger('click')
+    expect(sent).toEqual([])
+  })
+
+  it('an admin on a node in the mode dispatches an operation switch', async () => {
+    const { context, sent } = seededContext()
+    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+    const wrapper = await mountPage(context)
+
+    const switchEl = wrapper.find<HTMLInputElement>(
+      'table input[data-id="hilos-step-up-switch-change_name"]',
+    )
+    expect(switchEl.element.disabled).toBe(false)
+    expect(switchEl.element.getAttribute('aria-describedby')).toBeNull()
+
+    await switchEl.trigger('click')
+    expect(sent).toEqual([
+      {
+        action: 'security_step_up_operation_set',
+        payload: expect.objectContaining({
+          operationKey: 'change_name',
+          enabled: true,
+        }),
+      },
+    ])
   })
 })

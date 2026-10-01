@@ -440,9 +440,13 @@ nobody is asked*).
   shown with the core's sentence (above).
 - Each section moves its own raw one-click mutation buttons onto
   `LoadingButton`, and the Save of its own form onto `ConflictActions` or
-  `LoadingButton`; a button that only opens a form stays as it is. The
-  sections: security — OAuth, sign-in methods, two-factor, step-up
-  (not in the code yet — HIL-1267). The people section has nothing to move: the
+  `LoadingButton`; a button that only opens a form stays as it is. Security has
+  nothing to move: the switches of sign-in methods, of passkey without a
+  confirmed address and of step-up operations are `HilosSwitch`es, the Save of
+  its three windows — a two-factor setting, an OAuth return address and an
+  OAuth provider field — stands on `ConflictActions` and `LoadingButton`, the
+  confirms of its two resets are `LoadingButton`s, and its pencils and ↺ only
+  open those windows (HIL-1267). The people section has nothing to move: the
   confirms of impersonation, rights, block, deletion and merge are
   `LoadingButton`s and a rename's Save stands on `ConflictActions`; the four
   buttons of the card that open their windows after the server's word carry
@@ -569,6 +573,17 @@ viewer a card to find disabled (HIL-1262).
 The people section carries its viewer case in
 `demo/chat/tests/e2e/tests/users.spec.ts` (HIL-1263; moving with the file under
 HIL-1219).
+
+The security section carries its viewer cases as units of five pages
+(`framework/frontend/vue/src/admin/security/HilosSecuritySignInMethodsPage.test.ts`,
+`framework/frontend/vue/src/admin/security/HilosSecurityStepUpPage.test.ts`,
+`framework/frontend/vue/src/admin/security/HilosSecurity2faPage.test.ts`,
+`framework/frontend/vue/src/admin/security/HilosSecurityOauthPage.test.ts`,
+`framework/frontend/vue/src/admin/security/HilosSecurityOauthProviderPage.test.ts`)
+and in the chat e2e (`demo/chat/tests/e2e/tests/auth.spec.ts`,
+`demo/chat/tests/e2e/tests/step-up.spec.ts`,
+`demo/chat/tests/e2e/tests/second-factor.spec.ts`); what a viewer is shown in
+security fields is HIL-1255's (not in the code yet — HIL-1255) (HIL-1267).
 
 ## What The View Mode Does Not Do
 

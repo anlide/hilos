@@ -10,14 +10,20 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosRouter,
   HilosSecurityOauthContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosSecurityOauthProviderPage from './HilosSecurityOauthProviderPage.vue'
@@ -95,7 +101,7 @@ function seededContext(clientId: string | null): {
   context: HilosSecurityOauthContext
   pushUpdate: (value: string | null, source?: string) => void
   pushRemove: (rowKey: string) => void
-  answer: (outcome: 'success' | 'fail') => void
+  answer: (outcome: 'success' | 'fail', errorCode?: string) => void
   sent: Array<{
     action: string
     payload: Record<string, unknown>
@@ -239,7 +245,7 @@ function seededContext(clientId: string | null): {
       pushDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
     },
     // Answer the last action sent, the way the server replies to it.
-    answer(outcome: 'success' | 'fail'): void {
+    answer(outcome: 'success' | 'fail', errorCode?: string): void {
       const last = sent[sent.length - 1]
       const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
       for (const listener of replyListeners.get(event) ?? []) {
@@ -248,6 +254,7 @@ function seededContext(clientId: string | null): {
           action: last?.action,
           requestId: last?.requestId,
           reason: 'The provider refused the reset.',
+          ...(errorCode !== undefined ? { errorCode } : {}),
         })
       }
     },
@@ -611,5 +618,151 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     await settle()
 
     expect(resetButton('client_id').disabled).toBe(true)
+  })
+})
+
+describe('HilosSecurityOauthProviderPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  function resetButton(
+    field: 'client_id' | 'client_secret' | 'scope',
+  ): HTMLButtonElement {
+    return document.querySelector(
+      `table [data-id="hilos-oauth-field-reset-${field}"]`,
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return modalEl('hilos-oauth-field-reset-confirm') as HTMLButtonElement
+  }
+
+  it('a viewer opens field edit and finds Save disabled with the mode strip reference', async () => {
+    const { context, sent, answer } = seededContext('Iv1.a')
+    bindSession(context.scopes).handshake(null, true)
+    await openModal(context, 'client_id')
+
+    expect(saveButton().disabled).toBe(true)
+    expect(saveButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    await typeDraft('Iv1.mine')
+    expect(saveButton().disabled).toBe(true)
+
+    const form = document.querySelector('[data-id="modal"] form')
+    expect(form).not.toBeNull()
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    await nextTick()
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.action).toBe('security_oauth_provider_set')
+    expect(sent[0]?.payload).toEqual({
+      providerKey: PROVIDER,
+      field: 'client_id',
+      value: 'Iv1.mine',
+    })
+
+    answer('fail', 'view_mode')
+    await settle()
+    await nextTick()
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-action-error')?.textContent).toContain(
+      HILOS_VIEW_MODE_COPY.refusal,
+    )
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('a viewer opens field reset and finds confirm disabled with the mode strip reference', async () => {
+    const { context, sent } = seededContext('Iv1.a')
+    bindSession(context.scopes).handshake(null, true)
+    const wrapper = mount(HilosSecurityOauthProviderPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    expect(resetButton('client_id').disabled).toBe(false)
+    resetButton('client_id').click()
+    await nextTick()
+
+    expect(confirmButton().disabled).toBe(true)
+    expect(confirmButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirmButton().click()
+    await nextTick()
+    expect(sent).toEqual([])
+  })
+
+  it('an admin on a node in the mode has Save and Reset active', async () => {
+    const { context } = seededContext('Iv1.a')
+    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+    await openModal(context, 'client_id')
+
+    await typeDraft('Iv1.mine')
+    expect(saveButton().disabled).toBe(false)
+    expect(saveButton().getAttribute('aria-describedby')).toBeNull()
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    cancel?.click()
+    await nextTick()
+
+    modalEl('modal-confirm-discard')?.click()
+    await nextTick()
+
+    resetButton('client_id').click()
+    await nextTick()
+
+    expect(confirmButton().disabled).toBe(false)
+    expect(confirmButton().getAttribute('aria-describedby')).toBeNull()
   })
 })

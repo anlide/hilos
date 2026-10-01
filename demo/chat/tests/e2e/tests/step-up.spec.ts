@@ -11,9 +11,10 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { signUpAdmin } from '../helpers/adminGrant'
+import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import { waitForMailCode } from '../helpers/mail'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { gotoPage } from '../helpers/page'
+import { gotoPage, PAGE_READY } from '../helpers/page'
 import { connectFirstApp } from '../helpers/secondFactor'
 import {
   PASSWORD,
@@ -252,4 +253,24 @@ test('asks before removing rights once the administrator switches it on', async 
     }
     await personContext.close()
   }
+})
+
+test.describe('in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test('a guest opens step-up operations and finds the switches disabled by the view mode', async ({
+    page,
+  }) => {
+    await setAdminViewMode(true)
+    await gotoPage(page, '/hilos/security/2fa/step-up', PAGE_READY)
+    const switchControl = shownByTestId(
+      page,
+      'hilos-step-up-switch-change_name',
+    )
+    await expect(switchControl).toBeDisabled()
+    await expect(switchControl).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+  })
 })
