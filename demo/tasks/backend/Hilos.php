@@ -66,6 +66,7 @@ use Demo\Tasks\Pages\Hilos\Security\SecurityPage;
 use Demo\Tasks\Pages\Hilos\ProfilePage;
 use Demo\Tasks\Pages\Hilos\ProfileSecurityPage;
 use Demo\Tasks\Pages\Hilos\ProfileDataPage;
+use Demo\Tasks\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Demo\Tasks\Pages\Hilos\Users\UsersPage;
@@ -190,6 +191,7 @@ final class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        SecurityStepUpPage::PAGE => SecurityStepUpPage::class,
         LegalPage::PAGE => LegalPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
@@ -391,6 +393,8 @@ final class Hilos extends HilosFacade
         ],
         SecurityTwoFactorPage::PAGE => [
             TasksTableContext::hilosSecurityTwoFactor => [],
+        ],
+        SecurityStepUpPage::PAGE => [
             TasksTableContext::hilosSecurityStepUp => [],
         ],
         LegalPage::PAGE => [

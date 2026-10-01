@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Pages\Security;
 
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
-use Hilos\Auth\StepUp\StepUpOperation;
-use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -27,11 +25,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
-use Hilos\Database\DatabaseException;
-use Hilos\Database\Settings\Exception\SettingException;
-use Hilos\Hilos;
 use Hilos\Pages\Security\DTO\HilosSecondFactorSettingSetActionDTO;
-use Hilos\Pages\Security\DTO\HilosStepUpOperationSetActionDTO;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 
 /**
@@ -43,8 +37,6 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
  * writes go through {@see SettingsLibraryAgent}, the single owner of the settings collection: this
  * page keeps the ADMIN level and narrows the write to its own six keys, and each key's rule refuses
  * a value in the dialog with the same words wherever else it is written.
- *
- * The protected-operation section is backed by the same settings owner and table fan-out.
  */
 abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
 {
@@ -56,7 +48,6 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
 
     public const array ACTIONS = [
         HilosSignalConstants::SECURITY_2FA_SETTING_SET => HilosSecondFactorSettingSetActionDTO::class,
-        HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => HilosStepUpOperationSetActionDTO::class,
     ];
 
     /** The library's answer to the setting write this page forwarded. */
@@ -84,8 +75,6 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
      * @throws InvalidActionPayloadException When the action payload does not match the action name
      * @throws TableActionException When the key is not one of the six
      * @throws InvalidArgumentException When the write cannot be handed to the library
-     * @throws DatabaseException When an operation list cannot be read
-     * @throws SettingException When its setting catalog or stored value is invalid
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -95,13 +84,6 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, HilosSecondFactorSettingSetActionDTO::class, $dto);
                 }
                 $this->handleSet($acceptKey, $dto);
-                return null;
-
-            case HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET:
-                if (!$dto instanceof HilosStepUpOperationSetActionDTO) {
-                    throw new InvalidActionPayloadException($action, HilosStepUpOperationSetActionDTO::class, $dto);
-                }
-                $this->handleStepUpSet($acceptKey, $dto);
                 return null;
 
             default:
@@ -159,50 +141,6 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
                 successMessage: 'Two-factor setting saved.',
                 key: $dto->key,
                 value: $dto->key === SecondFactorSettings::REQUIRED_KEY ? $dto->value : $this->wholeNumber($dto->value),
-            ),
-        );
-    }
-
-    /**
-     * Writes the list of the operation's declared position: departing from it lists the operation, returning takes it out.
-     *
-     * An operation declared on is listed among the switched-off, one declared off among the
-     * switched-on (HIL-1275), so an operation added to the directory later stands where it was
-     * declared, whatever was switched before it ({@see StepUpSettings}). The list keeps only
-     * operations of its own side, in directory order.
-     *
-     * @param string $acceptKey Requesting administrator
-     * @param HilosStepUpOperationSetActionDTO $dto Operation switch payload
-     * @throws TableActionException When the operation is not declared
-     * @throws InvalidArgumentException When the write cannot be handed to the library
-     * @throws DatabaseException When the operation list cannot be read
-     * @throws SettingException When its setting catalog or stored value is invalid
-     */
-    private function handleStepUpSet(string $acceptKey, HilosStepUpOperationSetActionDTO $dto): void
-    {
-        $operations = Hilos::stepUpOperationDirectoryClass()::all();
-        $operation = $operations[$dto->operationKey] ?? throw new TableActionException("Unknown operation: {$dto->operationKey}");
-
-        $listKey = StepUpSettings::listKeyFor($dto->operationKey);
-        $listed = $listKey === StepUpSettings::DISABLED_KEY ? StepUpSettings::disabledKeys() : StepUpSettings::enabledKeys();
-        $listed = $dto->enabled === $operation->enabledByDefault
-            ? array_diff($listed, [$dto->operationKey])
-            : [...$listed, $dto->operationKey];
-        $side = array_keys(array_filter(
-            $operations,
-            static fn (StepUpOperation $declared): bool => $declared->enabledByDefault === $operation->enabledByDefault,
-        ));
-
-        $this->forward(
-            HilosSignalConstants::HILOS_SETTING_WRITE,
-            new SettingWriteSignalData(
-                replySignal: HilosSignalConstants::HILOS_SECOND_FACTOR_SETTING_WRITE_DONE,
-                acceptKey: $acceptKey,
-                requestId: $this->currentActionRequestId(),
-                action: HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET,
-                successMessage: null,
-                key: $listKey,
-                value: StepUpSettings::format(array_values(array_intersect($side, $listed))),
             ),
         );
     }

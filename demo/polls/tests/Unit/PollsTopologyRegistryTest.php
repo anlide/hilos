@@ -54,6 +54,7 @@ use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Pages\Hilos\Users\UsersPage;
@@ -495,6 +496,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
                 SecurityTwoFactorPage::PAGE,
+                SecurityStepUpPage::PAGE,
                 LegalPage::PAGE,
                 LegalDocumentPage::PAGE,
                 LegalRevisionPage::PAGE,

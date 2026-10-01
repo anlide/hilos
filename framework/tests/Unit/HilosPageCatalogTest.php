@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 77;
+    private const int CATALOG_ENTRIES = 78;
 
     /** Number of dashboard sections carried over in the same transfer. */
     private const int TRANSFERRED_SECTIONS = 5;
@@ -91,6 +91,17 @@ final class HilosPageCatalogTest extends TestCase
                 );
             }
         }
+    }
+
+    /**
+     * The operations that ask for confirmation live under two-factor, not beside it (HIL-1204).
+     */
+    public function testTheStepUpOperationsAreAChildOfTwoFactor(): void
+    {
+        self::assertSame(
+            HilosPageConstants::HILOS_SECURITY_2FA,
+            HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_SECURITY_STEP_UP][PageCatalogConstants::CATALOG_ENTRY_PARENT],
+        );
     }
 
     public function testTheTransferIsComplete(): void

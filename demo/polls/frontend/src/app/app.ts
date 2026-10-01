@@ -49,6 +49,7 @@ import { SecurityOauth } from './views/hilos/security/oauth'
 import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
 import { SecuritySignInMethods } from './views/hilos/security/sign-in-methods'
 import { SecurityTwoFactor } from './views/hilos/security/two-factor'
+import { SecurityStepUp } from './views/hilos/security/step-up'
 import { Legal } from './views/hilos/legal/legal.js'
 import { LegalDocument } from './views/hilos/legal/legal-document.js'
 import { LegalRevision } from './views/hilos/legal/legal-revision.js'
@@ -197,6 +198,7 @@ export class App {
     // directory on the backend.
     [HilosPages.SECURITY_SIGN_IN_METHODS]: SecuritySignInMethods,
     [HilosPages.SECURITY_2FA]: SecurityTwoFactor,
+    [HilosPages.SECURITY_STEP_UP]: SecurityStepUp,
     [HilosPages.LEGAL]: Legal,
     [HilosPages.LEGAL_DOCUMENT]: LegalDocument,
     [HilosPages.LEGAL_REVISION]: LegalRevision,

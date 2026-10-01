@@ -204,6 +204,9 @@ final class HilosPageConstants
     /** @var string Hilos — two-factor authentication */
     public const string HILOS_SECURITY_2FA = 'hilos_security_2fa';
 
+    /** @var string Hilos — operations that ask for confirmation, a child of two-factor (HIL-1204) */
+    public const string HILOS_SECURITY_STEP_UP = 'hilos_security_step_up';
+
     /** @var string Hilos — OAuth login providers list */
     public const string HILOS_SECURITY_OAUTH = 'hilos_security_oauth';
 

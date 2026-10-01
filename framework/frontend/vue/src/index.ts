@@ -102,6 +102,7 @@ export { default as HilosSecurityOauthPage } from './admin/security/HilosSecurit
 export { default as HilosSecurityOauthProviderPage } from './admin/security/HilosSecurityOauthProviderPage.vue'
 export { default as HilosSecuritySignInMethodsPage } from './admin/security/HilosSecuritySignInMethodsPage.vue'
 export { default as HilosSecurity2faPage } from './admin/security/HilosSecurity2faPage.vue'
+export { default as HilosSecurityStepUpPage } from './admin/security/HilosSecurityStepUpPage.vue'
 export { default as HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.vue'
 export { default as HilosLogsPage } from './admin/logs/HilosLogsPage.vue'
 export { default as HilosLogsKeysPage } from './admin/logs/HilosLogsKeysPage.vue'

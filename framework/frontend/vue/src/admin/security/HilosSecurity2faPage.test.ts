@@ -363,3 +363,18 @@ describe('HilosSecurity2faPage setting modal', () => {
     expect(modalEl('modal')).toBeNull()
   })
 })
+
+describe('HilosSecurity2faPage', () => {
+  it('no longer carries the operations that ask for confirmation (HIL-1204)', async () => {
+    const { context } = seededContext()
+    const wrapper = mount(HilosSecurity2faPage, {
+      props: { context: markRaw(context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    expect(wrapper.find('[data-id="hilos-step-up-table"]').exists()).toBe(false)
+  })
+})

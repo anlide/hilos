@@ -3,24 +3,37 @@ import { describe, expect, it } from 'vitest'
 import {
   createHilosSecurityStepUpActions,
   createHilosSecurityStepUpTable,
-  HILOS_STEP_UP_ADMIN_COPY,
   resolveHilosStepUpOperationRow,
 } from '../../../src/admin/security/hilosSecurityStepUp.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosTwoFactorContext } from '../../../src/admin/security/hilosSecurityTwoFactor.js'
 
 describe('createHilosSecurityStepUpTable', () => {
-  it('names the second table independently of the page table', () => {
+  it('leaves the table untitled: the page heading names it', () => {
     const table = createHilosSecurityStepUpTable(
       {} as unknown as HilosTwoFactorContext,
     )
 
-    expect(table.controller.frame.declaration?.title).toBe(
-      HILOS_STEP_UP_ADMIN_COPY.heading,
-    )
-    expect(table.controller.frame.declaration?.subtitle).toBe(
-      HILOS_STEP_UP_ADMIN_COPY.lead,
-    )
+    expect(table.controller.frame.declaration?.title).toBeUndefined()
+    expect(table.controller.frame.declaration?.subtitle).toBeUndefined()
+  })
+
+  it('opens its window on the step-up operations page', () => {
+    const sent: Array<{ page: string; table: string }> = []
+    const context = {
+      connection: {
+        sendTableViewport: (page: string, table: string) => {
+          sent.push({ page, table })
+        },
+      },
+    } as unknown as HilosTwoFactorContext
+
+    createHilosSecurityStepUpTable(context).controller.refresh()
+
+    expect(sent[0]).toStrictEqual({
+      page: 'hilos_security_step_up',
+      table: 'hilosSecurityStepUp',
+    })
   })
 })
 

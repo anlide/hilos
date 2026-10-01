@@ -6,7 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityStepUpPage;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\HilosSignalConstants;
@@ -30,7 +30,7 @@ use Hilos\Pages\Security\DTO\HilosStepUpOperationSetActionDTO;
  * carried across by hand as the sign-in methods screen's suite carries it
  * ({@see SecuritySignInMethodsPageActionTest}).
  */
-final class SecurityTwoFactorStepUpSwitchTest extends IntegrationTestCase
+final class SecurityStepUpSwitchTest extends IntegrationTestCase
 {
     private const string SETTINGS_AGENT_ID = 'test-step-up-switch-writer';
 
@@ -108,7 +108,7 @@ final class SecurityTwoFactorStepUpSwitchTest extends IntegrationTestCase
     {
         $this->expectException(TableActionException::class);
 
-        new SecurityTwoFactorPage(new DemoHilosAgent())->onAction(
+        new SecurityStepUpPage(new DemoHilosAgent())->onAction(
             self::ACCEPT_KEY,
             HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET,
             new HilosStepUpOperationSetActionDTO('launch_rockets', true),
@@ -124,7 +124,7 @@ final class SecurityTwoFactorStepUpSwitchTest extends IntegrationTestCase
      */
     private function submit(string $operationKey, bool $enabled): ?string
     {
-        new SecurityTwoFactorPage(new DemoHilosAgent())->onAction(
+        new SecurityStepUpPage(new DemoHilosAgent())->onAction(
             self::ACCEPT_KEY,
             HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET,
             new HilosStepUpOperationSetActionDTO($operationKey, $enabled),

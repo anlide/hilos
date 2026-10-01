@@ -156,7 +156,7 @@ test('opens the add-a-way-in dialog at the chooser once an administrator switche
   page,
 }) => {
   await signUpAdmin(page)
-  await gotoPage(page, '/hilos/security/2fa')
+  await gotoPage(page, '/hilos/security/2fa/step-up')
   await expect(page.getByTestId('hilos-step-up-table')).toHaveCount(1)
   const operation = shownByTestId(
     page,
@@ -176,7 +176,15 @@ test('skips a protected operation disabled by an administrator', async ({
   page,
 }) => {
   await signUpAdmin(page)
+  // The list lives on its own page under two-factor (HIL-1204): the way in is
+  // the child card the two-factor page draws from the catalog.
   await gotoPage(page, '/hilos/security/2fa')
+  await expect(page.getByTestId('hilos-step-up-table')).toHaveCount(0)
+  await page.getByTestId('hilos-admin-child-hilos_security_step_up').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
+    'Operations that ask for confirmation',
+  )
+  expect(new URL(page.url()).pathname).toBe('/hilos/security/2fa/step-up')
   await expect(
     page.getByRole('table', {
       name: 'Operations that ask for confirmation',
@@ -214,7 +222,7 @@ test('asks before removing rights once the administrator switches it on', async 
   try {
     await signUpAdmin(page)
     const person = await signUp(personPage)
-    await gotoPage(page, '/hilos/security/2fa')
+    await gotoPage(page, '/hilos/security/2fa/step-up')
     await expect(revokeSwitch).not.toBeChecked()
     await revokeSwitch.click()
     switched = true
@@ -238,7 +246,7 @@ test('asks before removing rights once the administrator switches it on', async 
     )
   } finally {
     if (switched) {
-      await gotoPage(page, '/hilos/security/2fa')
+      await gotoPage(page, '/hilos/security/2fa/step-up')
       await revokeSwitch.click()
       await expect(revokeSwitch).not.toBeChecked()
     }

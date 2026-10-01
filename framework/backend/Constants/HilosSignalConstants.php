@@ -312,6 +312,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos security 2FA page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SECURITY_2FA = 'subscription_page_hilos_security_2fa';
 
+    /** Subscription signal for the Hilos page of operations that ask for confirmation (HIL-1204). */
+    public const string SUBSCRIPTION_PAGE_HILOS_SECURITY_STEP_UP = 'subscription_page_hilos_security_step_up';
+
     /** Subscription signal for Hilos OAuth providers list. */
     public const string SUBSCRIPTION_PAGE_HILOS_SECURITY_OAUTH = 'subscription_page_hilos_security_oauth';
 
@@ -556,7 +559,12 @@ final class HilosSignalConstants
      */
     public const string SECURITY_2FA_SETTING_SET = 'security_2fa_setting_set';
 
-    /** Client → server: switch operation-level confirmation on or off. */
+    /**
+     * Client → server: switch operation-level confirmation on or off.
+     *
+     * Owned by the step-up operations page (HIL-1204), which checks the operation is declared and
+     * asks the settings library to store the list of its side.
+     */
     public const string SECURITY_STEP_UP_OPERATION_SET = 'security_step_up_operation_set';
 
     // ── Hilos profile: second factor (client → server, signed in, HIL-494) ──
@@ -1826,6 +1834,14 @@ final class HilosSignalConstants
      * Carried by {@see HandoverAnswerSignalData}, like the other admin screens' write answers.
      */
     public const string HILOS_SECOND_FACTOR_SETTING_WRITE_DONE = 'hilos_second_factor_setting_write_done';
+
+    /**
+     * Settings library → the step-up operations page: the operation-list write it forwarded is done (HIL-1204).
+     *
+     * A name of that page's own for the same reason as {@see HILOS_CHANNEL_SETTING_WRITE_DONE}:
+     * the map of page-owned signals holds one entry per name. Carried by {@see HandoverAnswerSignalData}.
+     */
+    public const string HILOS_STEP_UP_OPERATIONS_WRITE_DONE = 'hilos_step_up_operations_write_done';
 
     /**
      * The settings library → the log modes screen: your preset is applied, or refused (HIL-946).

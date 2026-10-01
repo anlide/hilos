@@ -267,6 +267,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Two-factor authentication policy and enrollment.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY,
         ],
+        HilosPageConstants::HILOS_SECURITY_STEP_UP => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Operations that ask for confirmation',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD =>
+                'Switch confirmation on or off per operation: it is asked right before the operation runs, even on a trusted device.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY_2FA,
+        ],
         HilosPageConstants::HILOS_SECURITY_OAUTH => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'OAuth providers',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'External OAuth login providers.',

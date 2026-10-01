@@ -361,3 +361,17 @@ describe('HilosSecurity2faPage setting modal', () => {
     expect(el(fixture, 'modal')).toBeNull()
   })
 })
+
+describe('HilosSecurity2faPage', () => {
+  it('no longer carries the operations that ask for confirmation (HIL-1204)', () => {
+    const { context } = seededContext()
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosSecurity2faPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+
+    expect(el(fixture, 'hilos-step-up-table')).toBeNull()
+  })
+})

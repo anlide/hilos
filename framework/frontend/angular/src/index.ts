@@ -68,6 +68,7 @@ export { HilosSecurityOauthPage } from './admin/security/HilosSecurityOauthPage.
 export { HilosSecurityOauthProviderPage } from './admin/security/HilosSecurityOauthProviderPage.js'
 export { HilosSecuritySignInMethodsPage } from './admin/security/HilosSecuritySignInMethodsPage.js'
 export { HilosSecurity2faPage } from './admin/security/HilosSecurity2faPage.js'
+export { HilosSecurityStepUpPage } from './admin/security/HilosSecurityStepUpPage.js'
 export { HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
 export {
   HilosUsersPage,

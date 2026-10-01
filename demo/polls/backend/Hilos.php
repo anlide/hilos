@@ -64,6 +64,7 @@ use Demo\Polls\Pages\Hilos\Security\SecurityPage;
 use Demo\Polls\Pages\Hilos\ProfilePage;
 use Demo\Polls\Pages\Hilos\ProfileSecurityPage;
 use Demo\Polls\Pages\Hilos\ProfileDataPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Pages\Hilos\Users\UsersPage;
@@ -183,6 +184,7 @@ final class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        SecurityStepUpPage::PAGE => SecurityStepUpPage::class,
         LegalPage::PAGE => LegalPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
@@ -375,6 +377,8 @@ final class Hilos extends HilosFacade
         ],
         SecurityTwoFactorPage::PAGE => [
             PollsTableContext::hilosSecurityTwoFactor => [],
+        ],
+        SecurityStepUpPage::PAGE => [
             PollsTableContext::hilosSecurityStepUp => [],
         ],
         LegalPage::PAGE => [

@@ -23,13 +23,10 @@ import {
 import {
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
-  createHilosSecurityStepUpActions,
-  createHilosSecurityStepUpTable,
   describeHilosSecondFactorSetting,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
-  HILOS_STEP_UP_ADMIN_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
   keepMineRowEdit,
@@ -41,7 +38,6 @@ import {
 import type {
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
-  HilosStepUpOperationRow,
   RowEditBaseline,
   RowEditNoticeKind,
   RowEditStep,
@@ -53,7 +49,6 @@ import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosModal } from '../../HilosModal.js'
-import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -95,7 +90,6 @@ function noticeText(
     HilosActionError,
     HilosEditNotice,
     HilosModal,
-    HilosSwitch,
     HilosTableCell,
     HilosViewportTable,
     LoadingButton,
@@ -125,40 +119,6 @@ function noticeText(
           >
             <i class="bi bi-pencil" aria-hidden="true"></i>
           </button>
-        </ng-template>
-      </hilos-viewport-table>
-
-      <hilos-viewport-table
-        class="mt-4"
-        [controller]="operations().controller"
-        [dataId]="'hilos-step-up-table'"
-      >
-        <ng-template hilosTableCell="operationKey" let-row>
-          <span
-            class="fw-semibold"
-            [attr.data-id]="'hilos-step-up-row-' + row.operationKey"
-            >{{ row.label }}</span
-          >
-        </ng-template>
-        <ng-template hilosTableCell="owner" let-row>
-          <span class="badge text-bg-light border">
-            {{
-              row.owner === 'framework'
-                ? stepUpCopy.framework
-                : stepUpCopy.project
-            }}
-          </span>
-        </ng-template>
-        <ng-template hilosTableCell="enabled" let-row>
-          <hilos-switch
-            class="mb-0"
-            [checked]="row.enabled"
-            [busy]="pendingOperationKey() === row.operationKey"
-            [disabled]="operationToggle.busy()"
-            [aria-label]="'Require confirmation for ' + row.label"
-            [dataId]="'hilos-step-up-switch-' + row.operationKey"
-            (toggle)="toggleOperation(row, $event)"
-          />
         </ng-template>
       </hilos-viewport-table>
 
@@ -268,7 +228,6 @@ export class HilosSecurity2faPage {
   protected readonly requiredKey = HilosSecondFactorSettingKey.required
   protected readonly requiredValues = HILOS_SECOND_FACTOR_REQUIRED_VALUES
   protected readonly requiredCopy = HILOS_SECOND_FACTOR_REQUIRED_COPY
-  protected readonly stepUpCopy = HILOS_STEP_UP_ADMIN_COPY
 
   protected readonly settings = computed(() =>
     createHilosSecurityTwoFactorTable(this.context()),
@@ -276,14 +235,6 @@ export class HilosSecurity2faPage {
   private readonly actions = computed(() =>
     createHilosSecurityTwoFactorActions(this.context()),
   )
-  protected readonly operations = computed(() =>
-    createHilosSecurityStepUpTable(this.context()),
-  )
-  private readonly operationActions = computed(() =>
-    createHilosSecurityStepUpActions(this.context()),
-  )
-  protected readonly operationToggle = createHilosTrackedAction()
-  protected readonly pendingOperationKey = signal<string | null>(null)
 
   // The edit modal: one setting at a time, its value as typed until Save.
   protected readonly editOpen = signal(false)
@@ -329,9 +280,7 @@ export class HilosSecurity2faPage {
     // mirror the row in focus; unbind on destroy / swap.
     effect((onCleanup) => {
       const settings = this.settings()
-      const operations = this.operations()
       settings.start()
-      operations.start()
       this.liveRow.set(settings.controller.focusedRow.get())
       const unsubscribe = subscribeSignal(
         settings.controller.focusedRow,
@@ -340,7 +289,6 @@ export class HilosSecurity2faPage {
       onCleanup(() => {
         unsubscribe()
         settings.dispose()
-        operations.dispose()
       })
     })
     // The helper hands a step whenever the other side moved the value while the
@@ -445,19 +393,5 @@ export class HilosSecurity2faPage {
 
   protected onValueInput(event: Event): void {
     this.editValue.set((event.target as HTMLInputElement).value)
-  }
-
-  protected async toggleOperation(
-    row: HilosStepUpOperationRow,
-    enabled: boolean,
-  ): Promise<void> {
-    this.pendingOperationKey.set(row.operationKey)
-    try {
-      await this.operationToggle.run(
-        this.operationActions().sendOperationSet(row.operationKey, enabled),
-      )
-    } finally {
-      this.pendingOperationKey.set(null)
-    }
   }
 }

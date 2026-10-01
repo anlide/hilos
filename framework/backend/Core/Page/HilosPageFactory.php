@@ -95,6 +95,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES => true,
         HilosPageConstants::HILOS_SECURITY => true,
         HilosPageConstants::HILOS_SECURITY_2FA => true,
+        HilosPageConstants::HILOS_SECURITY_STEP_UP => true,
         HilosPageConstants::HILOS_SECURITY_OAUTH => true,
         HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER => true,
         HilosPageConstants::HILOS_BILLING => true,

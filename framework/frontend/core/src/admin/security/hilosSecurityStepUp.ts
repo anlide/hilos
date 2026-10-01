@@ -28,10 +28,8 @@ export const HilosStepUpOperationRowKey = {
   enabled: 'enabled',
 } as const
 
-/** Shared copy for the protected-operation section. */
+/** Shared copy for the protected-operation page. */
 export const HILOS_STEP_UP_ADMIN_COPY = {
-  heading: 'Operations that ask for confirmation',
-  lead: 'Asked right before the operation, even on a trusted device. The project declares the list; the framework gives the mechanism and operations of its own.',
   framework: 'Framework',
   project: 'Project',
 } as const
@@ -73,9 +71,11 @@ const STEP_UP_COLUMNS: HilosTableColumnOf<HilosStepUpOperationRow>[] = [
   { key: HilosStepUpOperationRowKey.enabled, label: 'Enabled' },
 ]
 
+/**
+ * What the operation table declares about its frame. No title: the page
+ * heading already names it.
+ */
 const STEP_UP_FRAME: HilosTableFrame = {
-  title: HILOS_STEP_UP_ADMIN_COPY.heading,
-  subtitle: HILOS_STEP_UP_ADMIN_COPY.lead,
   columns: STEP_UP_COLUMNS,
   empty: { title: 'No protected operations declared.' },
 }
@@ -88,13 +88,13 @@ export function createHilosSecurityStepUpTable(
     resolve: resolveHilosStepUpOperationRow,
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
-        HilosPages.SECURITY_2FA,
+        HilosPages.SECURITY_STEP_UP,
         STEP_UP_TABLE,
         descriptor,
       ),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(
-        HilosPages.SECURITY_2FA,
+        HilosPages.SECURITY_STEP_UP,
         STEP_UP_TABLE,
         rendered,
       ),
@@ -109,7 +109,7 @@ export function createHilosSecurityStepUpTable(
         bindTableViewport(
           context.connection,
           context.scopes,
-          { page: HilosPages.SECURITY_2FA, tableKey: STEP_UP_TABLE },
+          { page: HilosPages.SECURITY_STEP_UP, tableKey: STEP_UP_TABLE },
           controller,
         ),
       ]

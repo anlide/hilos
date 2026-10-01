@@ -15,13 +15,10 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
-  createHilosSecurityStepUpActions,
-  createHilosSecurityStepUpTable,
   describeHilosSecondFactorSetting,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
-  HILOS_STEP_UP_ADMIN_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
   keepMineRowEdit,
@@ -32,7 +29,6 @@ import {
 import type {
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
-  HilosStepUpOperationRow,
   RowEditBaseline,
   RowEditNoticeKind,
   RowEditStep,
@@ -44,7 +40,6 @@ import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosModal } from '../../HilosModal.js'
-import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
@@ -106,43 +101,12 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
     () => createHilosSecurityTwoFactorActions(context),
     [context],
   )
-  const operations = useMemo(
-    () => createHilosSecurityStepUpTable(context),
-    [context],
-  )
-  const operationActions = useMemo(
-    () => createHilosSecurityStepUpActions(context),
-    [context],
-  )
 
   useEffect(() => {
     settings.start()
-    operations.start()
 
-    return () => {
-      settings.dispose()
-      operations.dispose()
-    }
-  }, [settings, operations])
-
-  const operationToggle = useTrackedAction()
-  const [pendingOperationKey, setPendingOperationKey] = useState<string | null>(
-    null,
-  )
-
-  async function toggleOperation(
-    row: HilosStepUpOperationRow,
-    enabled: boolean,
-  ): Promise<void> {
-    setPendingOperationKey(row.operationKey)
-    try {
-      await operationToggle.run(
-        operationActions.sendOperationSet(row.operationKey, enabled),
-      )
-    } finally {
-      setPendingOperationKey(null)
-    }
-  }
+    return () => settings.dispose()
+  }, [settings])
 
   // The edit modal: one setting at a time, its value as typed until Save.
   const [editOpen, setEditOpen] = useState(false)
@@ -260,41 +224,6 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
           ),
         }}
       />
-
-      <div className="mt-4">
-        <HilosViewportTable
-          dataId="hilos-step-up-table"
-          controller={operations.controller}
-          cells={{
-            operationKey: (row) => (
-              <span
-                className="fw-semibold"
-                data-id={`hilos-step-up-row-${row.operationKey}`}
-              >
-                {row.label}
-              </span>
-            ),
-            owner: (row) => (
-              <span className="badge text-bg-light border">
-                {row.owner === 'framework'
-                  ? HILOS_STEP_UP_ADMIN_COPY.framework
-                  : HILOS_STEP_UP_ADMIN_COPY.project}
-              </span>
-            ),
-            enabled: (row) => (
-              <HilosSwitch
-                className="mb-0"
-                checked={row.enabled}
-                busy={pendingOperationKey === row.operationKey}
-                disabled={operationToggle.busy}
-                aria-label={`Require confirmation for ${row.label}`}
-                dataId={`hilos-step-up-switch-${row.operationKey}`}
-                onToggle={(enabled) => void toggleOperation(row, enabled)}
-              />
-            ),
-          }}
-        />
-      </div>
 
       <HilosModal
         open={editOpen}

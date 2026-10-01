@@ -355,3 +355,16 @@ describe('HilosSecurity2faPage setting modal', () => {
     expect(byId('modal')).toBeNull()
   })
 })
+
+describe('HilosSecurity2faPage', () => {
+  it('no longer carries the operations that ask for confirmation (HIL-1204)', () => {
+    const { context } = seededContext()
+    render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosSecurity2faPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+
+    expect(byId('hilos-step-up-table')).toBeNull()
+  })
+})

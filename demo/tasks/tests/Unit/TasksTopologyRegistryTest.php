@@ -54,6 +54,7 @@ use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
+use Demo\Tasks\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Demo\Tasks\Pages\Hilos\Users\UsersPage;
@@ -511,6 +512,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
                 SecurityTwoFactorPage::PAGE,
+                SecurityStepUpPage::PAGE,
                 LegalPage::PAGE,
                 LegalDocumentPage::PAGE,
                 LegalRevisionPage::PAGE,

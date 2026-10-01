@@ -106,7 +106,8 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     [HilosPages.SECURITY]: HilosSecurityPage,
     // SECURITY_2FA is a real framework page since HIL-494: its table reads a
     // live connection, so a project mounts HilosSecurity2faPage directly with its
-    // context.
+    // context. So is its child SECURITY_STEP_UP since HIL-1204: a project mounts
+    // HilosSecurityStepUpPage with the same two-factor context.
     // SECURITY_OAUTH and SECURITY_OAUTH_PROVIDER are real framework pages since
     // HIL-286: their tables read a live connection, so a project mounts
     // HilosSecurityOauthPage and HilosSecurityOauthProviderPage directly with its context.

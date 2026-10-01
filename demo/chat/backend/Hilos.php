@@ -154,6 +154,7 @@ use Demo\Chat\Pages\Hilos\ProfileSecurityPage;
 use Demo\Chat\Pages\Hilos\ProfileDataPage;
 use Demo\Chat\Pages\Hilos\ProfileAgreementsPage;
 use Demo\Chat\Pages\Hilos\ProfileAgreementsHistoryPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
@@ -376,6 +377,7 @@ final class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        SecurityStepUpPage::PAGE => SecurityStepUpPage::class,
         LegalPage::PAGE => LegalPage::class,
         LegalDocumentPage::PAGE => LegalDocumentPage::class,
         LegalRevisionPage::PAGE => LegalRevisionPage::class,
@@ -767,6 +769,8 @@ final class Hilos extends HilosFacade
         ],
         SecurityTwoFactorPage::PAGE => [
             ChatTableContext::hilosSecurityTwoFactor => [],
+        ],
+        SecurityStepUpPage::PAGE => [
             ChatTableContext::hilosSecurityStepUp => [],
         ],
         LegalPage::PAGE => [

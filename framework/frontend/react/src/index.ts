@@ -122,6 +122,10 @@ export {
   type HilosSecurity2faPageProps,
 } from './admin/security/HilosSecurity2faPage.js'
 export {
+  HilosSecurityStepUpPage,
+  type HilosSecurityStepUpPageProps,
+} from './admin/security/HilosSecurityStepUpPage.js'
+export {
   HilosCommunicationsDeliveriesPage,
   type HilosCommunicationsDeliveriesPageProps,
 } from './admin/communications/HilosCommunicationsDeliveriesPage.js'

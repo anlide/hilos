@@ -91,6 +91,7 @@ export const HilosPages = {
   COMMUNICATIONS_DELIVERIES: 'hilos_communications_deliveries',
   SECURITY: 'hilos_security',
   SECURITY_2FA: 'hilos_security_2fa',
+  SECURITY_STEP_UP: 'hilos_security_step_up',
   SECURITY_OAUTH: 'hilos_security_oauth',
   SECURITY_OAUTH_PROVIDER: 'hilos_security_oauth_provider',
   SECURITY_SIGN_IN_METHODS: 'hilos_security_sign_in_methods',
@@ -278,6 +279,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.SECURITY]: { path: '/hilos/security', admin: true },
   [HilosPages.SECURITY_2FA]: { path: '/hilos/security/2fa', admin: true },
+  [HilosPages.SECURITY_STEP_UP]: {
+    path: '/hilos/security/2fa/step-up',
+    admin: true,
+  },
   [HilosPages.SECURITY_OAUTH]: { path: '/hilos/security/oauth', admin: true },
   [HilosPages.SECURITY_OAUTH_PROVIDER]: {
     path: '/hilos/security/oauth/{providerId}',

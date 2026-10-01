@@ -16,13 +16,10 @@ is a debt (D-115). Bootstrap classes only (styling-rules.md). -->
 import {
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
-  createHilosSecurityStepUpActions,
-  createHilosSecurityStepUpTable,
   describeHilosSecondFactorSetting,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
-  HILOS_STEP_UP_ADMIN_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
   keepMineRowEdit,
@@ -31,7 +28,6 @@ import {
   takeTheirsRowEdit,
   type HilosTwoFactorContext,
   type HilosTwoFactorSettingRow,
-  type HilosStepUpOperationRow,
   type RowEditBaseline,
   type RowEditNoticeKind,
   type RowEditStep,
@@ -44,7 +40,6 @@ import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosModal from '../../HilosModal.vue'
-import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
@@ -57,32 +52,9 @@ const props = defineProps<{
 
 const settings = createHilosSecurityTwoFactorTable(props.context)
 const { sendSettingSet } = createHilosSecurityTwoFactorActions(props.context)
-const operations = createHilosSecurityStepUpTable(props.context)
-const { sendOperationSet } = createHilosSecurityStepUpActions(props.context)
 
-onMounted(() => {
-  settings.start()
-  operations.start()
-})
-onUnmounted(() => {
-  settings.dispose()
-  operations.dispose()
-})
-
-const { busy: operationBusy, run: runOperation } = useTrackedAction()
-const pendingOperationKey = ref<string | null>(null)
-
-async function toggleOperation(
-  row: HilosStepUpOperationRow,
-  enabled: boolean,
-): Promise<void> {
-  pendingOperationKey.value = row.operationKey
-  try {
-    await runOperation(sendOperationSet(row.operationKey, enabled))
-  } finally {
-    pendingOperationKey.value = null
-  }
-}
+onMounted(() => settings.start())
+onUnmounted(() => settings.dispose())
 
 /**
  * The name of a setting on the screen.
@@ -256,40 +228,6 @@ async function submitEdit(): Promise<void> {
         >
           <i class="bi bi-pencil" aria-hidden="true"></i>
         </button>
-      </template>
-    </HilosViewportTable>
-
-    <HilosViewportTable
-      class="mt-4"
-      :controller="operations.controller"
-      data-id="hilos-step-up-table"
-    >
-      <template #cell-operationKey="{ row }">
-        <span
-          class="fw-semibold"
-          :data-id="`hilos-step-up-row-${row.operationKey}`"
-          >{{ row.label }}</span
-        >
-      </template>
-      <template #cell-owner="{ row }">
-        <span class="badge text-bg-light border">
-          {{
-            row.owner === 'framework'
-              ? HILOS_STEP_UP_ADMIN_COPY.framework
-              : HILOS_STEP_UP_ADMIN_COPY.project
-          }}
-        </span>
-      </template>
-      <template #cell-enabled="{ row }">
-        <HilosSwitch
-          class="mb-0"
-          :checked="row.enabled"
-          :busy="pendingOperationKey === row.operationKey"
-          :disabled="operationBusy"
-          :aria-label="`Require confirmation for ${row.label}`"
-          :data-id="`hilos-step-up-switch-${row.operationKey}`"
-          @toggle="toggleOperation(row, $event)"
-        />
       </template>
     </HilosViewportTable>
 

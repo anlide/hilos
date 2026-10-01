@@ -47,6 +47,7 @@ import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth'
 import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider'
 import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods'
 import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor'
+import HilosSecurityStepUp from './views/Hilos/Security/SecurityStepUp'
 import HilosLegal from './views/Hilos/Legal/Legal.js'
 import HilosLegalDocument from './views/Hilos/Legal/LegalDocument.js'
 import HilosLegalRevision from './views/Hilos/Legal/LegalRevision.js'
@@ -112,6 +113,7 @@ const pages: Record<string, ComponentType> = {
   // (views/Hilos/Security) and, on its backend, declares its method directory.
   [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
   [HilosPages.SECURITY_2FA]: HilosSecurityTwoFactor,
+  [HilosPages.SECURITY_STEP_UP]: HilosSecurityStepUp,
   [HilosPages.LEGAL]: HilosLegal,
   [HilosPages.LEGAL_DOCUMENT]: HilosLegalDocument,
   [HilosPages.LEGAL_REVISION]: HilosLegalRevision,
