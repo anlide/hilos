@@ -16,22 +16,34 @@
 // window whose action takes something away — the merge, rights, the block, the
 // deletion — first asks the server whether the administrator must confirm it is
 // them, and opens on that step when it must (createHilosUserCardStepUp,
-// HIL-1275). Bootstrap classes only (styling-rules.md).
+// HIL-1275). The takeover lives here too (HIL-1170, on the users list before):
+// a section drawn while the installation allows impersonation, its button
+// switched off with a reason on the person's own card and on whom the settings
+// exclude, and a window — after the same confirmation step, operation
+// `impersonate` — whose words follow the settings
+// (hilosUserImpersonationSection). A success needs no word: the session rebinds
+// and the strip rises. The buttons that only open a window stay live in a
+// takeover that only looks; the confirmation in the window does not.
+// Bootstrap classes only (styling-rules.md).
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
+  createHilosImpersonate,
   createHilosUserCardStepUp,
   createHilosUserLifecycle,
   focusInitial,
   HILOS_STEP_UP_COPY,
   createHilosUserStanding,
+  HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
+  hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
   type HilosStepUpOpenOutcome,
+  type HilosUserImpersonationSection,
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   HILOS_TABLE_ACTIONS_KEY,
@@ -237,6 +249,97 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       )
     )
       closeLifecycle()
+  }
+
+  // The takeover (HIL-1170): the section reads the installation's settings the
+  // page's first answer carried, the person's live standing and admin flag, and
+  // who stands behind this session. The window keeps the words it opened with.
+  const impersonate = useMemo(() => createHilosImpersonate(context), [context])
+  const impersonateAction = useTrackedAction()
+  const impersonateStepUp = useMemo(
+    () => createHilosUserCardStepUp(context),
+    [context],
+  )
+  const impersonateStepUpBusy = useSignal(impersonateStepUp.step.busy)
+  const impersonateStepUpRefusal = useSignal(impersonateStepUp.step.refusal)
+  const [impersonateProof, setImpersonateProof] =
+    useState<HilosStepUpOpenOutcome>('skip')
+  // The proof and the target as the async confirmation sees them, past the
+  // render they were set in.
+  const impersonateProofRef = useRef<HilosStepUpOpenOutcome>('skip')
+  function moveImpersonateProof(next: HilosStepUpOpenOutcome): void {
+    impersonateProofRef.current = next
+    setImpersonateProof(next)
+  }
+  const [impersonateOpening, setImpersonateOpening] = useState(false)
+  const impersonateOpeningRef = useRef(false)
+  const impersonateBody = useRef<HTMLDivElement>(null)
+  useEffect(() => focusWindow(impersonateBody.current), [impersonateProof])
+  const impersonationSettings = useSignal(lifecycle.impersonation)
+  const impersonation = hilosUserImpersonationSection(
+    detail,
+    lifecycleUserId,
+    impersonationSettings,
+    standing,
+  )
+  const [impersonateTarget, setImpersonateTarget] = useState<{
+    userId: number
+    section: HilosUserImpersonationSection
+  } | null>(null)
+  const impersonateTargetRef = useRef<typeof impersonateTarget>(null)
+  function showImpersonateTarget(next: typeof impersonateTarget): void {
+    impersonateTargetRef.current = next
+    setImpersonateTarget(next)
+  }
+
+  async function openImpersonate(): Promise<void> {
+    const section = impersonation
+    if (
+      !detail ||
+      section === null ||
+      impersonateAction.busy ||
+      impersonateOpeningRef.current
+    )
+      return
+    const userId = detail.id
+    impersonateAction.clearError()
+    impersonateOpeningRef.current = true
+    setImpersonateOpening(true)
+    const proof = await impersonateStepUp.open('impersonate')
+    impersonateOpeningRef.current = false
+    setImpersonateOpening(false)
+    moveImpersonateProof(proof)
+    showImpersonateTarget({ userId, section })
+  }
+
+  /** Send the step's proof; the window's own content follows a success. */
+  async function confirmImpersonateStep(): Promise<void> {
+    if (
+      impersonateProofRef.current === 'ask' &&
+      (await impersonateStepUp.step.confirm()) &&
+      impersonateTargetRef.current !== null
+    ) {
+      moveImpersonateProof('skip')
+    }
+  }
+
+  function closeImpersonate(): void {
+    if (!impersonateAction.busy) showImpersonateTarget(null)
+  }
+
+  // Authoritative-backend: what the takeover changes — the strip, and this
+  // session becoming the person — arrives with the rebound session, so a success
+  // only closes the window; a refusal stays in it, and the driver toasts it.
+  async function submitImpersonate(): Promise<void> {
+    const target = impersonateTarget
+    if (
+      target === null ||
+      impersonateAction.busy ||
+      detail?.id !== target.userId
+    )
+      return
+    if (await impersonateAction.run(impersonate.start(target.userId)))
+      showImpersonateTarget(null)
   }
 
   const mergeCandidates = useMemo(
@@ -611,6 +714,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                       <div>
                         <LoadingButton
                           className={`btn-sm ${lifecycleCopy.confirmations[row.choice].danger ? 'btn-outline-danger' : 'btn-primary'}`}
+                          opensWindow
                           loading={lifecycleOpening === row.choice}
                           disabled={row.disabled}
                           aria-describedby={`hilos-user-${row.key}-reason`}
@@ -685,12 +789,52 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 </p>
                 <LoadingButton
                   className="btn-outline-danger"
+                  opensWindow
                   loading={mergeOpening}
                   data-id="hilos-user-merge-open"
                   onClick={() => void openMerge()}
                 >
                   Merge an account into this…
                 </LoadingButton>
+              </div>
+            </section>
+          ) : null}
+          {impersonation !== null ? (
+            <section className="card mt-4">
+              <div className="card-body">
+                <h2 className="h5">{impersonation.title}</h2>
+                <div className="d-flex flex-wrap align-items-start gap-3 py-2">
+                  <div className="flex-grow-1">
+                    <h3 className="h6 mb-1">{impersonation.rowTitle}</h3>
+                    <p className="small text-body-secondary mb-0">
+                      {impersonation.hint}
+                    </p>
+                  </div>
+                  <div>
+                    <LoadingButton
+                      className="btn-sm btn-primary"
+                      opensWindow
+                      loading={impersonateOpening}
+                      disabled={impersonation.disabled}
+                      aria-describedby="hilos-user-impersonate-reason"
+                      data-id="hilos-user-impersonate-open"
+                      onClick={() => void openImpersonate()}
+                    >
+                      {HILOS_USER_IMPERSONATION_COPY.open}
+                    </LoadingButton>
+                    <div className="hilos-stack small text-body-secondary mt-1">
+                      <span className="invisible" aria-hidden="true">
+                        {impersonation.reasonSpace}
+                      </span>
+                      <span
+                        id="hilos-user-impersonate-reason"
+                        data-id="hilos-user-impersonate-reason"
+                      >
+                        {impersonation.reason}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
           ) : null}
@@ -781,6 +925,91 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               <HilosStepUpStep controller={lifecycleStepUp.step} />
             </form>
           )}
+        </div>
+      </HilosModal>
+
+      <HilosModal
+        open={impersonateTarget !== null}
+        onClose={closeImpersonate}
+        title={
+          impersonateProof === 'skip'
+            ? impersonateTarget?.section.windowTitle
+            : HILOS_STEP_UP_COPY.title
+        }
+        initialFocus="inner"
+        closeOnBackdrop={!impersonateAction.busy}
+        closeOnEsc={!impersonateAction.busy}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={impersonateAction.busy}
+              data-id="hilos-user-impersonate-cancel"
+              onClick={requestClose}
+            >
+              {HILOS_USER_IMPERSONATION_COPY.cancel}
+            </button>
+            {impersonateProof === 'ask' ? (
+              <LoadingButton
+                className="btn-primary"
+                type="submit"
+                form="hilos-user-impersonate-proof"
+                loading={impersonateStepUpBusy}
+                data-id="hilos-user-impersonate-step-up-confirm"
+              >
+                {HILOS_STEP_UP_COPY.confirm}
+              </LoadingButton>
+            ) : impersonateProof === 'skip' ? (
+              <LoadingButton
+                className="btn-primary"
+                loading={impersonateAction.loading}
+                disabled={
+                  impersonateAction.busy ||
+                  detail?.id !== impersonateTarget?.userId
+                }
+                data-id="hilos-user-impersonate-confirm"
+                onClick={() => void submitImpersonate()}
+              >
+                {HILOS_USER_IMPERSONATION_COPY.confirm}
+              </LoadingButton>
+            ) : null}
+          </>
+        )}
+      >
+        <div ref={impersonateBody}>
+          <div className="visually-hidden" role="alert" aria-live="assertive">
+            {impersonateProof === 'skip'
+              ? impersonateAction.error
+              : impersonateStepUpRefusal}
+          </div>
+          {impersonateProof !== 'skip' ? (
+            <form
+              id="hilos-user-impersonate-proof"
+              data-id="hilos-user-impersonate-step-up"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void confirmImpersonateStep()
+              }}
+            >
+              <HilosStepUpStep controller={impersonateStepUp.step} />
+            </form>
+          ) : impersonateTarget !== null ? (
+            <>
+              {impersonateTarget.section.paragraphs.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+              <div className="alert alert-secondary small py-2">
+                {impersonateTarget.section.note}
+              </div>
+              <div data-id="hilos-user-impersonate-error">
+                <HilosActionError
+                  action={impersonateAction}
+                  detailsTitle="Couldn't impersonate this person"
+                />
+              </div>
+            </>
+          ) : null}
         </div>
       </HilosModal>
 

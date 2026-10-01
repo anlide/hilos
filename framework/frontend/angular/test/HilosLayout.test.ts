@@ -37,6 +37,7 @@ import {
   bindLegalReconsent,
   createSignal,
   formatCalendarDate,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HilosPages,
   bindSessionScope,
   bindSignOut,
@@ -59,6 +60,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosLayout } from '../src/HilosLayout.js'
+import { LoadingButton } from '../src/LoadingButton.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 /**
@@ -374,6 +376,36 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+/**
+ * A host for the takeover that only looks (HIL-1170): the shell over a page
+ * whose one control is a tracked button, projected the way a project's page is.
+ */
+@Component({
+  selector: 'test-page-action-host',
+  imports: [HilosLayout, LoadingButton],
+  template: `
+    <hilos-layout [connection]="connection">
+      <button hilosLoadingButton data-id="page-action">Send</button>
+    </hilos-layout>
+  `,
+})
+class PageActionHost {
+  connection = fakeConnection()
+}
+
+/**
+ * The takeover handshake carrying the installation's impersonation policy.
+ *
+ * @param viewOnly Whether the administrator may only look.
+ * @returns The handshake payload.
+ */
+function takeoverWith(viewOnly: boolean): Record<string, unknown> {
+  return {
+    ...TAKEOVER,
+    data: { impersonationPolicy: { viewOnly, carryAdmin: false } },
+  }
+}
+
 describe('HilosLayout impersonation strip', () => {
   let unbind: (() => void) | undefined
 
@@ -492,6 +524,68 @@ describe('HilosLayout impersonation strip', () => {
     expect(
       hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
     ).toEqual([['error', 'Session is not impersonating']])
+  })
+
+  it('says "view only" and switches off the page, never Stop, in a takeover that only looks (HIL-1170)', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(takeoverWith(true))
+
+    const fixture = TestBed.createComponent(PageActionHost)
+    fixture.detectChanges()
+    const root = fixture.nativeElement as HTMLElement
+    const strip = root.querySelector('[data-id="impersonation-banner"]')
+    const text = strip?.querySelector(`#${HILOS_IMPERSONATION_STRIP_TEXT_ID}`)
+
+    expect(text).not.toBeNull()
+    expect(text?.textContent).toContain('You are impersonating')
+    expect(text?.querySelector('.badge')?.textContent?.trim()).toBe('view only')
+    expect(strip?.querySelector('strong')?.textContent).toBe('Bob')
+    const stop = root.querySelector(
+      '[data-id="impersonation-stop"]',
+    ) as HTMLButtonElement
+    expect(stop.disabled).toBe(false)
+    expect(stop.getAttribute('aria-describedby')).toBeNull()
+    const action = root.querySelector(
+      '[data-id="page-action"]',
+    ) as HTMLButtonElement
+    expect(action.disabled).toBe(true)
+    expect(action.getAttribute('aria-describedby')).toBe(
+      HILOS_IMPERSONATION_STRIP_TEXT_ID,
+    )
+
+    stop.click()
+    fixture.detectChanges()
+    expect(session.source.sent[0]?.action).toBe('hilos_impersonate_stop')
+    session.source.succeed(session.source.sent[0]?.requestId)
+    await settle()
+  })
+
+  it('leaves the page live and the strip unmarked while the takeover may act, and follows the policy', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(takeoverWith(false))
+
+    const fixture = TestBed.createComponent(PageActionHost)
+    fixture.detectChanges()
+    const root = fixture.nativeElement as HTMLElement
+    const action = () =>
+      root.querySelector('[data-id="page-action"]') as HTMLButtonElement
+
+    expect(
+      root.querySelector('[data-id="impersonation-banner"] .badge'),
+    ).toBeNull()
+    expect(action().disabled).toBe(false)
+
+    session.handshake(takeoverWith(true))
+    fixture.detectChanges()
+
+    expect(
+      root
+        .querySelector('[data-id="impersonation-banner"] .badge')
+        ?.textContent?.trim(),
+    ).toBe('view only')
+    expect(action().disabled).toBe(true)
   })
 
   it('adds no live region of its own when the strip goes up', () => {

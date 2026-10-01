@@ -98,6 +98,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_SECURITY_STEP_UP => true,
         HilosPageConstants::HILOS_SECURITY_OAUTH => true,
         HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER => true,
+        HilosPageConstants::HILOS_SECURITY_IMPERSONATION => true,
         HilosPageConstants::HILOS_BILLING => true,
         HilosPageConstants::HILOS_BILLING_PROVIDER => true,
         HilosPageConstants::HILOS_BILLING_PAYMENTS => true,

@@ -15,10 +15,15 @@ access section draws the block, the freeze — a fact with no control — and th
 deletion from the same verdict. A window whose action takes something away —
 the merge, rights, the block, the deletion — first asks the server whether the
 administrator must confirm it is them, and opens on that step when it must
-(createHilosUserCardStepUp, HIL-1275). A viewer of the admin view mode opens
-every window at once, without the confirmation step, and the confirmation in the
-window stands disabled by the mode (HIL-1263). Bootstrap classes only
-(styling-rules.md). -->
+(createHilosUserCardStepUp, HIL-1275). The takeover lives here too (HIL-1170,
+on the users list before): a section drawn while the installation allows
+impersonation, its button switched off with a reason on the person's own card
+and on whom the settings exclude, and a window — after the same confirmation
+step, operation `impersonate` — whose words follow the settings
+(hilosUserImpersonationSection). A success needs no word: the session rebinds
+and the strip rises. A viewer of the admin view mode opens every window at once,
+without the confirmation step, and the confirmation in the window stands
+disabled by the mode (HIL-1263). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computed,
@@ -32,18 +37,22 @@ import {
 
 import {
   ACCOUNT_DELETION_TICK_MS,
+  createHilosImpersonate,
   createHilosUserCardStepUp,
   createHilosUserLifecycle,
   focusInitial,
   HILOS_STEP_UP_COPY,
   createHilosUserStanding,
+  HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
+  hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
   type HilosStepUpOpenOutcome,
+  type HilosUserImpersonationSection,
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   createHilosUserDetail,
@@ -233,6 +242,85 @@ async function submitLifecycle(): Promise<void> {
     )
   )
     closeLifecycle()
+}
+
+// The takeover (HIL-1170): the section reads the installation's settings the
+// page's first answer carried, the person's live standing and admin flag, and
+// who stands behind this session. The window keeps the words it opened with.
+const impersonate = createHilosImpersonate(props.context)
+const impersonateAction = useTrackedAction()
+const impersonateStepUp = createHilosUserCardStepUp(props.context)
+const impersonateStepUpBusy = useSignal(impersonateStepUp.step.busy)
+const impersonateStepUpRefusal = useSignal(impersonateStepUp.step.refusal)
+const impersonateProof = ref<HilosStepUpOpenOutcome>('skip')
+const impersonateOpening = ref(false)
+const impersonateBody = ref<HTMLElement | null>(null)
+watch(impersonateProof, () => focusWindow(impersonateBody))
+const impersonationSettings = useSignal(lifecycle.impersonation)
+const impersonation = computed(() =>
+  hilosUserImpersonationSection(
+    detail.value,
+    lifecycleUserId.value,
+    impersonationSettings.value,
+    standing.value,
+  ),
+)
+const impersonateTarget = ref<{
+  userId: number
+  section: HilosUserImpersonationSection
+} | null>(null)
+const impersonateOpen = computed({
+  get: () => impersonateTarget.value !== null,
+  set: (open: boolean) => {
+    if (!open) closeImpersonate()
+  },
+})
+
+async function openImpersonate(): Promise<void> {
+  const section = impersonation.value
+  if (
+    !detail.value ||
+    section === null ||
+    impersonateAction.busy.value ||
+    impersonateOpening.value
+  )
+    return
+  const userId = detail.value.id
+  impersonateAction.clearError()
+  impersonateOpening.value = true
+  impersonateProof.value = await impersonateStepUp.open('impersonate')
+  impersonateOpening.value = false
+  impersonateTarget.value = { userId, section }
+}
+
+/** Send the step's proof; the window's own content follows a success. */
+async function confirmImpersonateStep(): Promise<void> {
+  if (
+    impersonateProof.value === 'ask' &&
+    (await impersonateStepUp.step.confirm()) &&
+    impersonateTarget.value !== null
+  ) {
+    impersonateProof.value = 'skip'
+  }
+}
+
+function closeImpersonate(): void {
+  if (!impersonateAction.busy.value) impersonateTarget.value = null
+}
+
+// Authoritative-backend: what the takeover changes — the strip, and this
+// session becoming the person — arrives with the rebound session, so a success
+// only closes the window; a refusal stays in it, and the driver toasts it.
+async function submitImpersonate(): Promise<void> {
+  const target = impersonateTarget.value
+  if (
+    target === null ||
+    impersonateAction.busy.value ||
+    detail.value?.id !== target.userId
+  )
+    return
+  if (await impersonateAction.run(impersonate.start(target.userId)))
+    closeImpersonate()
 }
 
 const mergeCandidates = createHilosMergeCandidates(props.context)
@@ -674,6 +762,42 @@ watch(error, (reason) => {
           </LoadingButton>
         </div>
       </section>
+      <section v-if="impersonation !== null" class="card mt-4">
+        <div class="card-body">
+          <h2 class="h5">{{ impersonation.title }}</h2>
+          <div class="d-flex flex-wrap align-items-start gap-3 py-2">
+            <div class="flex-grow-1">
+              <h3 class="h6 mb-1">{{ impersonation.rowTitle }}</h3>
+              <p class="small text-body-secondary mb-0">
+                {{ impersonation.hint }}
+              </p>
+            </div>
+            <div>
+              <LoadingButton
+                class="btn-sm btn-primary"
+                opens-window
+                :loading="impersonateOpening"
+                :disabled="impersonation.disabled"
+                aria-describedby="hilos-user-impersonate-reason"
+                data-id="hilos-user-impersonate-open"
+                @click="openImpersonate"
+              >
+                {{ HILOS_USER_IMPERSONATION_COPY.open }}
+              </LoadingButton>
+              <div class="hilos-stack small text-body-secondary mt-1">
+                <span class="invisible" aria-hidden="true">{{
+                  impersonation.reasonSpace
+                }}</span>
+                <span
+                  id="hilos-user-impersonate-reason"
+                  data-id="hilos-user-impersonate-reason"
+                  >{{ impersonation.reason }}</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </template>
     <p v-else class="text-body-secondary" data-id="hilos-user-empty">
       Loading user…
@@ -748,6 +872,86 @@ watch(error, (reason) => {
           data-id="hilos-user-lifecycle-confirm"
           @click="submitLifecycle"
           >{{ lifecyclePrompt?.confirm }}</LoadingButton
+        >
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="impersonateOpen"
+      :title="
+        impersonateProof === 'skip'
+          ? impersonateTarget?.section.windowTitle
+          : HILOS_STEP_UP_COPY.title
+      "
+      initial-focus="inner"
+      :close-on-backdrop="!impersonateAction.busy.value"
+      :close-on-esc="!impersonateAction.busy.value"
+      @cancel="closeImpersonate"
+    >
+      <div ref="impersonateBody">
+        <div class="visually-hidden" role="alert" aria-live="assertive">
+          {{
+            impersonateProof === 'skip'
+              ? impersonateAction.error.value
+              : impersonateStepUpRefusal
+          }}
+        </div>
+        <form
+          v-if="impersonateProof !== 'skip'"
+          id="hilos-user-impersonate-proof"
+          data-id="hilos-user-impersonate-step-up"
+          @submit.prevent="confirmImpersonateStep()"
+        >
+          <HilosStepUpStep :controller="impersonateStepUp.step" />
+        </form>
+        <template v-else-if="impersonateTarget !== null">
+          <p
+            v-for="paragraph in impersonateTarget.section.paragraphs"
+            :key="paragraph"
+          >
+            {{ paragraph }}
+          </p>
+          <div class="alert alert-secondary small py-2">
+            {{ impersonateTarget.section.note }}
+          </div>
+          <div data-id="hilos-user-impersonate-error">
+            <HilosActionError
+              :action="impersonateAction"
+              details-title="Couldn't impersonate this person"
+            />
+          </div>
+        </template>
+      </div>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="impersonateAction.busy.value"
+          data-id="hilos-user-impersonate-cancel"
+          @click="requestClose"
+        >
+          {{ HILOS_USER_IMPERSONATION_COPY.cancel }}
+        </button>
+        <LoadingButton
+          v-if="impersonateProof === 'ask'"
+          class="btn-primary"
+          type="submit"
+          form="hilos-user-impersonate-proof"
+          :loading="impersonateStepUpBusy"
+          data-id="hilos-user-impersonate-step-up-confirm"
+          >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
+        >
+        <LoadingButton
+          v-else-if="impersonateProof === 'skip'"
+          class="btn-primary"
+          :loading="impersonateAction.loading.value"
+          :disabled="
+            impersonateAction.busy.value ||
+            detail?.id !== impersonateTarget?.userId
+          "
+          data-id="hilos-user-impersonate-confirm"
+          @click="submitImpersonate"
+          >{{ HILOS_USER_IMPERSONATION_COPY.confirm }}</LoadingButton
         >
       </template>
     </HilosModal>

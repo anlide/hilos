@@ -31,7 +31,7 @@ import {
 import { AuthSurface } from './auth/authSurface'
 import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
-import { currentUserIsAdmin, currentUserName } from './bootstrap/session'
+import { currentUserActsAsAdmin, currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import { About } from './views/about/about'
 import { License } from './views/license/license'
@@ -50,6 +50,7 @@ import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
 import { SecuritySignInMethods } from './views/hilos/security/sign-in-methods'
 import { SecurityTwoFactor } from './views/hilos/security/two-factor'
 import { SecurityStepUp } from './views/hilos/security/step-up'
+import { SecurityImpersonation } from './views/hilos/security/impersonation'
 import { Legal } from './views/hilos/legal/legal.js'
 import { LegalDocument } from './views/hilos/legal/legal-document.js'
 import { LegalRevision } from './views/hilos/legal/legal-revision.js'
@@ -128,7 +129,7 @@ import { Users } from './views/hilos/users/users'
 export class App {
   protected readonly connection = connection
 
-  protected readonly isAdmin = hilosSignal(currentUserIsAdmin)
+  protected readonly isAdmin = hilosSignal(currentUserActsAsAdmin)
 
   protected readonly userName = hilosSignal(currentUserName)
 
@@ -199,6 +200,7 @@ export class App {
     [HilosPages.SECURITY_SIGN_IN_METHODS]: SecuritySignInMethods,
     [HilosPages.SECURITY_2FA]: SecurityTwoFactor,
     [HilosPages.SECURITY_STEP_UP]: SecurityStepUp,
+    [HilosPages.SECURITY_IMPERSONATION]: SecurityImpersonation,
     [HilosPages.LEGAL]: Legal,
     [HilosPages.LEGAL_DOCUMENT]: LegalDocument,
     [HilosPages.LEGAL_REVISION]: LegalRevision,

@@ -9,6 +9,11 @@
 // It decides what is DRAWN, never what is allowed: the server answers every
 // admin page and action by its own verdict (HIL-1251), and a browser that
 // believes it may look is still shown only what the server sends.
+//
+// Inside a takeover the session acts as the person taken over, whose admin flag
+// is what the handshake carries; when the installation lets the administrator
+// carry their own rights in (HIL-1170), the section is full there too, as the
+// server's page gate then opens it.
 import { type ScopeManager } from '../state/ScopeManager.js'
 import {
   computedSignal,
@@ -18,6 +23,8 @@ import {
 } from '../state/signal.js'
 import {
   sessionAdminViewMode,
+  sessionImpersonating,
+  sessionImpersonationPolicy,
   sessionUserIsAdmin,
   type SessionScopeOptions,
 } from './sessionScope.js'
@@ -51,8 +58,10 @@ export function bindAdminAccess(
 ): () => void {
   const isAdmin = sessionUserIsAdmin(scopes, options)
   const viewMode = sessionAdminViewMode(scopes)
+  const impersonating = sessionImpersonating(scopes, options)
+  const policy = sessionImpersonationPolicy(scopes)
   const derived = computedSignal((): HilosAdminAccess => {
-    if (isAdmin.get()) {
+    if (isAdmin.get() || (impersonating.get() && policy.get().carryAdmin)) {
       return 'full'
     }
 

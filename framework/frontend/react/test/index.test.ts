@@ -14,8 +14,10 @@ import {
   HilosSkeleton,
   HilosAvatar,
   HilosSwitch,
+  HilosTakeoverViewOnlyContext,
   HilosView,
   useConnectionState,
+  useLookOnly,
   useReconnectDragging,
 } from '../src/index.js'
 
@@ -31,6 +33,8 @@ it('exports the @hilos/react public surface', () => {
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosRouterContext).toBeTypeOf('object')
   expect(HilosPageHeadingIdContext).toBeTypeOf('object')
+  expect(HilosTakeoverViewOnlyContext).toBeTypeOf('object')
+  expect(useLookOnly).toBeTypeOf('function')
   expect(HilosAuthGateContext).toBeTypeOf('object')
   expect(HilosAuthSurface).toBeTypeOf('function')
   expect(HilosMagicLinkPage).toBeTypeOf('function')

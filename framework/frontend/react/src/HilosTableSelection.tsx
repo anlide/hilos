@@ -21,6 +21,7 @@ import type { HilosTableBulkAction, TableViewportController } from '@hilos/core'
 import { HilosActionError } from './HilosActionError.js'
 import { HilosModal } from './HilosModal.js'
 import { LoadingButton } from './LoadingButton.js'
+import { useLookOnly } from './hilosLookOnly.js'
 import { useSignal } from './useSignal.js'
 import { useTrackedAction } from './useTrackedAction.js'
 
@@ -51,6 +52,7 @@ export function HilosTableSelection<R>({
   const target = useSignal(controller.selection.target)
   const count = useSignal(controller.selection.count)
   const bulkProgress = useSignal(controller.progress.bulk)
+  const lookOnly = useLookOnly()
 
   // Which operation the open confirmation is about. The dialog draws its title and
   // its confirming button from it, so the two cannot say different things.
@@ -142,7 +144,10 @@ export function HilosTableSelection<R>({
           {/* While a run is going the server refuses a second one on this table,
               and a button whose only outcome is a refusal is not a button. It is
               a courtesy and not a guarantee: a refusal that arrives anyway is
-              still shown (Flow F5). */}
+              still shown (Flow F5). In the page's area of a takeover that only
+              looks an operation is an action the server refuses, so it stands
+              disabled too (HIL-1170); marking rows, "Select all matching the
+              filter" and "Clear" stay live — they are this window's own state. */}
           {bulkActions.map((action) => (
             <button
               key={action.key}
@@ -156,7 +161,8 @@ export function HilosTableSelection<R>({
               ]
                 .filter(Boolean)
                 .join(' ')}
-              disabled={bulkProgress !== null}
+              disabled={bulkProgress !== null || lookOnly.locked}
+              aria-describedby={lookOnly.describedBy}
               data-id={`hilos-table-bulk-${action.key}`}
               onClick={() => openConfirm(action)}
             >

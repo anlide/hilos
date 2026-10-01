@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Browser\Context;
 
+use Hilos\Auth\Impersonation\ImpersonationSettings;
+use Hilos\Auth\Impersonation\Takeover;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
@@ -94,6 +96,7 @@ use Hilos\Database\Exception\PropertyNotAccessibleException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
@@ -5980,10 +5983,43 @@ abstract class BrowserContext
     }
 
     /**
+     * Whether a connection acts as an administrator, its person's own rights or ones carried into a takeover (HIL-1170).
+     *
+     * Its person is an administrator, or an administrator works inside their account and carries
+     * their own rights in. The one question the admin surface is gated by - the page gate and the admin view mode both ask
+     * it - so the administrator's rights carried into a takeover open the same pages a grant would.
+     * By default they are not carried: the administrator sees the product through the person's eyes,
+     * without their own privileges. What is carried is the surface and nothing more: the actions on
+     * people (rights, block, deletion, merge, another takeover) re-check the active administrator at
+     * the owner, and refuse a session inside a takeover whatever this answers.
+     *
+     * @param string $acceptKey Connection asked about
+     * @param int $userId Person the session acts as
+     * @return bool Whether the connection may access ADMIN-level pages and actions
+     * @throws DatabaseException When reading the user collection, the session row or the setting fails
+     * @throws InvalidArgumentException When a loaded user or session object does not match its collection
+     * @throws LogicException When the user or session collection is not configured
+     * @throws SettingException When the impersonation setting catalog or value is invalid
+     */
+    public function actsAsAdmin(string $acceptKey, int $userId): bool
+    {
+        if ($this->isAdmin($userId)) {
+            return true;
+        }
+        if (!ImpersonationSettings::carriesAdmin()) {
+            return false;
+        }
+
+        $administratorId = Takeover::administratorBehind($acceptKey);
+
+        return $administratorId !== null && $this->isAdmin($administratorId);
+    }
+
+    /**
      * Whether a connection looks at an admin page in the admin view mode - the one place the question is asked.
      *
-     * Three facts together: the page is `ADMIN`, the mode of this node is on, and the user behind the
-     * connection is not an admin ({@see self::isAdmin()}). A session without an account is a viewer too.
+     * Three facts together: the page is `ADMIN`, the mode of this node is on, and the connection does not
+     * act as an admin ({@see self::actsAsAdmin()}). A session without an account is a viewer too.
      * The cheap fact goes first: with the mode off the answer is no and nothing else is read - not the
      * page, not the database - so a node without the mode sends every frame exactly as before. The mode
      * is the node's runtime row `hilosAdminViewModeRuntime`, not the variable: the environment of a living
@@ -6015,7 +6051,7 @@ abstract class BrowserContext
         }
 
         try {
-            return !$this->isAdmin($userId);
+            return !$this->actsAsAdmin($acceptKey, $userId);
         } catch (HilosException $e) {
             Logger::error(
                 "Admin view mode: whether the user of {$acceptKey} is an admin could not be read ({$e->getMessage()}), "

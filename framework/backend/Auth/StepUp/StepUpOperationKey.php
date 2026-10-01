@@ -34,4 +34,7 @@ final class StepUpOperationKey
 
     /** An administrator scheduling the deletion of another person's account (HIL-1275). */
     public const string DELETE_OTHER_ACCOUNT = 'delete_other_account';
+
+    /** An administrator starting to act inside another person's account, from the person's card (HIL-1170). */
+    public const string IMPERSONATE = 'impersonate';
 }

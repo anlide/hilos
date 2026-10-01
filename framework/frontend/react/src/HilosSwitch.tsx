@@ -1,11 +1,15 @@
 // HilosSwitch — an authoritative-backend switch. A click reports the next
 // value but never moves the checkbox itself; the checked input follows only the
 // value its owner received from the backend. The shared LoadingButton controller
-// delays the busy spinner so a fast reply does not flash it.
+// delays the busy spinner so a fast reply does not flash it. In the page's area
+// of a takeover that only looks it stands plainly disabled in the position the
+// server sent, described by the impersonation strip besides its own hint
+// (HIL-1170).
 import { useEffect, useId, useMemo } from 'react'
 import type { HTMLAttributes, MouseEvent } from 'react'
 import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
 
+import { joinDescribedBy, useLookOnly } from './hilosLookOnly.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosSwitch}; unknown attributes fall through to the group. */
@@ -64,7 +68,8 @@ export function HilosSwitch({
   }, [spinner, busy])
   useEffect(() => () => spinner.dispose(), [spinner])
 
-  const isDisabled = disabled || busy
+  const lookOnly = useLookOnly()
+  const isDisabled = disabled || busy || lookOnly.locked
 
   function onClick(event: MouseEvent<HTMLInputElement>): void {
     event.preventDefault()
@@ -86,7 +91,10 @@ export function HilosSwitch({
         disabled={isDisabled}
         aria-busy={busy || undefined}
         aria-label={ariaLabel}
-        aria-describedby={ariaDescribedby}
+        aria-describedby={joinDescribedBy(
+          ariaDescribedby,
+          lookOnly.describedBy,
+        )}
         data-id={dataId}
         onClick={onClick}
       />

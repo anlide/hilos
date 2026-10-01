@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\StepUp;
 
+use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -14,6 +15,14 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * Server-side gate asked before every action of a protected operation (HIL-495).
+ *
+ * Inside a takeover an operation of the person's own account is closed - unless it touches the
+ * sign-in ({@see StepUpOperation::$accountAccess}) and the administrator allowed that
+ * ({@see ImpersonationSettings::allowsAccountAccess()}). Then it is the ADMINISTRATOR of this
+ * browser who confirms it, by the method their own account can prove, never the person whose
+ * account it is (HIL-1170, docs/agents/architecture/step-up.md): the threat the step guards against
+ * is somebody else at the administrator's browser. The operation's own first step proves the
+ * person's address or app, not the administrator, so inside a takeover it suppresses nothing.
  */
 final class StepUpGate
 {
@@ -54,8 +63,12 @@ final class StepUpGate
         $directory = Hilos::stepUpOperationDirectoryClass();
         $declaredOperation = $directory::get($operation);
 
-        if (self::isImpersonated($sessionToken)) {
-            return self::VERDICT_IMPERSONATED;
+        $impersonatorUserId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
+        if ($impersonatorUserId !== null) {
+            if (!self::opensInsideTakeover($declaredOperation)) {
+                return self::VERDICT_IMPERSONATED;
+            }
+            $userId = $impersonatorUserId;
         }
 
         if (!StepUpSettings::isEnabled($operation)) {
@@ -70,6 +83,9 @@ final class StepUpGate
         if ($target === null && $declaredOperation->passesWithNothingToConfirm) {
             return self::VERDICT_PASS;
         }
+        if ($impersonatorUserId !== null) {
+            return self::VERDICT_ASK;
+        }
         if ($declaredOperation->opensWithAddressCode && ($target?->method === StepUpMethod::EMAIL_CODE
             || $target?->method === StepUpMethod::SMS_CODE)) {
             return self::VERDICT_PASS;
@@ -83,12 +99,48 @@ final class StepUpGate
     }
 
     /**
+     * Who confirms an operation on this session: the person, or the administrator of a takeover allowed to touch the sign-in (HIL-1170).
+     *
+     * The step's own commands ask it, so that what they send, check and record - the code, the
+     * password, the device key, the confirmation row - is the administrator's inside such a takeover.
+     *
+     * @param string $sessionToken Browser session token
+     * @param int $userId Person the session acts as
+     * @param string $operation Declared operation key
+     * @return int The person, or the administrator behind the takeover
+     * @throws InvalidArgumentException When the operation is unknown or a collection query is invalid
+     * @throws LogicException When collection metadata is incomplete
+     * @throws DatabaseException When the session or the setting cannot be read
+     * @throws SettingException When the impersonation setting catalog or value is invalid
+     */
+    public static function confirmer(string $sessionToken, int $userId, string $operation): int
+    {
+        $impersonatorUserId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
+        if ($impersonatorUserId === null || !self::opensInsideTakeover(Hilos::stepUpOperationDirectoryClass()::get($operation))) {
+            return $userId;
+        }
+
+        return $impersonatorUserId;
+    }
+
+    /**
+     * @param StepUpOperation $operation Declared operation
+     * @return bool Whether a takeover may run it: it touches the sign-in and the administrator allowed that
+     * @throws DatabaseException When the setting cannot be read
+     * @throws SettingException When the impersonation setting catalog or value is invalid
+     */
+    private static function opensInsideTakeover(StepUpOperation $operation): bool
+    {
+        return $operation->accountAccess && ImpersonationSettings::allowsAccountAccess();
+    }
+
+    /**
      * Refuses an impersonated session or one without a live confirmation.
      *
      * @param string $sessionToken Browser session token
      * @param int $userId Acting person
      * @param string $operation Declared operation key
-     * @throws ValidationException When impersonation is active or confirmation is absent or expired
+     * @throws ValidationException When a takeover may not run the operation or confirmation is absent or expired
      * @throws InvalidArgumentException When the operation is unknown or a collection query is invalid
      * @throws LogicException When collection metadata is incomplete
      * @throws DatabaseException When the session, setting, proof or confirmation cannot be read

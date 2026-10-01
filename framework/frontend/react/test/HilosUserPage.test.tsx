@@ -7,6 +7,7 @@ import {
   formatCalendarDate,
   HilosConnection,
   HilosPages,
+  hilosToasts,
   ScopeManager,
   createSignal,
   entityCollection,
@@ -67,16 +68,29 @@ function userContext(
     detailUnverifiedPasswordAddress?: string | null
     candidateHasPassword?: boolean
     candidateUnverifiedPasswordAddress?: string | null
+    impersonation?: Record<string, unknown>
+    currentUserId?: number
   } = {},
 ): HilosUsersContext & {
   renameElsewhere: (name: string) => void
   removeRow: () => void
   failRename: () => void
   standingFrame: (data: Record<string, unknown>) => void
-  sent: Array<{ action: string; data: unknown }>
+  answerImpersonate: (reason?: string) => void
+  sent: Array<{ action: string; data: unknown; requestId?: string }>
 } {
   const scopes = new ScopeManager()
   const page = scopes.openPage('hilos_user')
+  // The installation's impersonation settings ride the card's first answer (HIL-1170).
+  if (options.impersonation !== undefined) {
+    page.data.set('impersonation', options.impersonation)
+  }
+  if (options.currentUserId !== undefined) {
+    scopes.session.data.set('currentUser', {
+      type: 'user',
+      id: options.currentUserId,
+    })
+  }
   if (seed) {
     page.entities.upsert(
       { type: 'user', id: 1 },
@@ -94,7 +108,7 @@ function userContext(
   }
   const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
   const connection = new HilosConnection({ url: 'ws://test/ws' })
-  const sent: Array<{ action: string; data: unknown }> = []
+  const sent: Array<{ action: string; data: unknown; requestId?: string }> = []
   const actionListeners = new Map<string, Array<(signal: unknown) => void>>()
   const candidateRows = () => [
     {
@@ -173,7 +187,7 @@ function userContext(
   }
   vi.spyOn(connection, 'sendAction').mockImplementation(
     (action, data, requestId) => {
-      sent.push({ action, data })
+      sent.push({ action, data, requestId })
       if (action.startsWith('hilos_step_up_')) {
         queueMicrotask(() => answerStepUp(action, requestId))
       }
@@ -233,6 +247,27 @@ function userContext(
           type: 'hilos_account_standing_state',
           data,
         })
+      }
+    },
+    answerImpersonate(reason?: string): void {
+      const requestId = sent
+        .filter((entry) => entry.action === 'hilos_impersonate_start')
+        .at(-1)?.requestId
+      const signal =
+        reason === undefined
+          ? {
+              kind: 'actionSuccess',
+              action: 'hilos_impersonate_start',
+              requestId,
+            }
+          : {
+              kind: 'actionError',
+              action: 'hilos_impersonate_start',
+              requestId,
+              reason,
+            }
+      for (const listener of actionListeners.get(signal.kind) ?? []) {
+        listener(signal)
       }
     },
     sent,
@@ -849,6 +884,202 @@ describe('HilosUserPage confirmation step (HIL-1275)', () => {
     expect(byId('hilos-user-merge-fate-survivor')).toBeNull()
     expect(byId('hilos-user-merge-fate-survivor-removes')).toBeNull()
     u4()
+  })
+})
+
+/** The installation's impersonation settings as the card's first answer carries them. */
+function impersonationSettings(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    allowed: true,
+    scope: 'act',
+    carryAdmin: false,
+    blocked: true,
+    frozen: true,
+    equal: true,
+    ...overrides,
+  }
+}
+
+describe('HilosUserPage impersonation (HIL-1170)', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+    hilosToasts.clear()
+  })
+
+  async function click(id: string): Promise<void> {
+    await act(async () => {
+      fireEvent.click(byId(id) as Element)
+    })
+  }
+
+  /** Let a reply reach the tracked driver and the window. */
+  async function settle(): Promise<void> {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+
+  it('draws no section while the card carries no settings or impersonation is off', () => {
+    const { unmount } = renderPage(userContext(true))
+    expect(byId('hilos-user-impersonate-open')).toBeNull()
+    unmount()
+
+    renderPage(
+      userContext(true, false, 'skip', {
+        impersonation: impersonationSettings({ allowed: false }),
+      }),
+    )
+    expect(byId('hilos-user-impersonate-open')).toBeNull()
+  })
+
+  it('says what the takeover will be by the settings', () => {
+    const { unmount } = renderPage(
+      userContext(true, false, 'skip', {
+        impersonation: impersonationSettings(),
+      }),
+    )
+    const open = byId('hilos-user-impersonate-open') as HTMLButtonElement
+    const section = open.closest('section')
+
+    expect(section?.querySelector('h2')?.textContent).toBe('Impersonation')
+    expect(section?.textContent).toContain('Act as Alice')
+    expect(section?.textContent).toContain(
+      'You will see the product through their eyes, without your admin rights',
+    )
+    expect(open.textContent?.trim()).toBe('Impersonate')
+    expect(open.disabled).toBe(false)
+    expect(byId('hilos-user-impersonate-reason')?.textContent).toBe('')
+    unmount()
+
+    renderPage(
+      userContext(true, false, 'skip', {
+        impersonation: impersonationSettings({ scope: 'view' }),
+      }),
+    )
+    expect(
+      byId('hilos-user-impersonate-open')?.closest('section')?.textContent,
+    ).toContain('You will only look: nothing can be changed')
+  })
+
+  it('switches the button off with its reason on the own card and on an excluded administrator', () => {
+    const context = userContext(true, false, 'skip', {
+      impersonation: impersonationSettings({ equal: false }),
+      currentUserId: 1,
+    })
+    renderPage(context)
+    const open = () => byId('hilos-user-impersonate-open') as HTMLButtonElement
+
+    expect(open().disabled).toBe(true)
+    expect(open().getAttribute('aria-describedby')).toBe(
+      'hilos-user-impersonate-reason',
+    )
+    expect(byId('hilos-user-impersonate-reason')?.textContent).toBe(
+      'You cannot impersonate yourself',
+    )
+
+    act(() => {
+      context.scopes.session.data.set('currentUser', {
+        type: 'user',
+        id: 99,
+      })
+      context.scopes
+        .page()
+        ?.entities.upsert({ type: 'user', id: 1 }, { admin: true })
+    })
+
+    expect(open().disabled).toBe(true)
+    expect(byId('hilos-user-impersonate-reason')?.textContent).toBe(
+      'Impersonating another administrator is switched off',
+    )
+  })
+
+  it('opens the window after the server says no step is needed, and closes it on the takeover', async () => {
+    const context = userContext(true, false, 'skip', {
+      impersonation: impersonationSettings(),
+    })
+    renderPage(context)
+    await click('hilos-user-impersonate-open')
+
+    expect(context.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      data: { operation: 'impersonate' },
+    })
+    const modal = byId('modal')
+    expect(modal?.textContent).toContain('Impersonate · Alice')
+    expect(modal?.textContent).toContain(
+      'You will see the product through their eyes, without your admin rights.',
+    )
+    expect(modal?.textContent).toContain(
+      'Everything you do in their name is written to the journal as done by you.',
+    )
+
+    await click('hilos-user-impersonate-confirm')
+    expect(
+      context.sent.find((entry) => entry.action === 'hilos_impersonate_start'),
+    ).toMatchObject({ data: { targetUserId: 1 } })
+    expect(
+      (byId('hilos-user-impersonate-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    act(() => context.answerImpersonate())
+    await settle()
+
+    expect(byId('modal')).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('keeps a refusal in the window and toasts it', async () => {
+    const context = userContext(true, false, 'skip', {
+      impersonation: impersonationSettings(),
+    })
+    renderPage(context)
+    await click('hilos-user-impersonate-open')
+    await click('hilos-user-impersonate-confirm')
+
+    act(() =>
+      context.answerImpersonate(
+        'Impersonating a blocked person is switched off',
+      ),
+    )
+    await settle()
+
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-user-impersonate-error')?.textContent).toContain(
+      'Impersonating a blocked person is switched off',
+    )
+    expect(
+      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
+    ).toEqual([['error', 'Impersonating a blocked person is switched off']])
+
+    await click('hilos-user-impersonate-cancel')
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('asks for the confirmation step first when the operation is on', async () => {
+    const context = userContext(true, false, 'ask', {
+      impersonation: impersonationSettings(),
+    })
+    renderPage(context)
+    await click('hilos-user-impersonate-open')
+
+    expect(byId('hilos-user-impersonate-step-up')).not.toBeNull()
+    expect(byId('hilos-user-impersonate-confirm')).toBeNull()
+
+    await act(async () => {
+      fireEvent.change(byId('step-up-password') as Element, {
+        target: { value: 'secret' },
+      })
+    })
+    await click('hilos-user-impersonate-step-up-confirm')
+
+    expect(
+      context.sent.find((entry) => entry.action === 'hilos_step_up_confirm'),
+    ).toMatchObject({ data: { operation: 'impersonate', password: 'secret' } })
+    expect(byId('hilos-user-impersonate-step-up')).toBeNull()
+    expect(byId('hilos-user-impersonate-confirm')).not.toBeNull()
   })
 })
 

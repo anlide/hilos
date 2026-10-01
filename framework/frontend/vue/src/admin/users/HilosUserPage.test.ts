@@ -4,7 +4,9 @@
 // "Deleted", and the modal asks before discarding a changed draft. The account
 // merge cases below cover the separate live two-step modal. A window that takes
 // something away opens on the server's word about the administrator's
-// confirmation (HIL-1275); the fixture answers it by `stepUp`.
+// confirmation (HIL-1275); the fixture answers it by `stepUp`. The takeover
+// lives on the card since HIL-1170: its section follows the installation's
+// settings the page's first answer carries (`impersonation`).
 import { flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +18,7 @@ import {
   bindSessionScope,
   formatCalendarDate,
   HIDDEN_VALUE,
+  hilosToasts,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   type Hideable,
@@ -78,6 +81,7 @@ function userContext(
     scopes?: ScopeManager
     currentUserId?: number
     graceDays?: Hideable<number>
+    impersonation?: Record<string, unknown>
   } = {},
 ): {
   context: HilosUsersContext
@@ -85,6 +89,7 @@ function userContext(
   removeRow: () => void
   removeCandidate: () => void
   answerMerge: (reason?: string) => void
+  answerImpersonate: (reason?: string) => void
   failRename: () => void
   standingFrame: (data: Record<string, unknown>) => void
   sent: Array<{ action: string; data: unknown; requestId?: string }>
@@ -106,6 +111,9 @@ function userContext(
   })
   if (options.graceDays !== undefined) {
     page.data.set('accountDeletionGraceDays', options.graceDays)
+  }
+  if (options.impersonation !== undefined) {
+    page.data.set('impersonation', options.impersonation)
   }
   if (options.currentUserId !== undefined) {
     scopes.session.data.set('currentUser', {
@@ -293,6 +301,26 @@ function userContext(
       emit('actionError', {
         kind: 'actionError',
         action: 'hilos_user_merge',
+        requestId,
+        reason,
+      })
+    },
+    answerImpersonate(reason?: string): void {
+      const requestId = sent
+        .filter((entry) => entry.action === 'hilos_impersonate_start')
+        .at(-1)?.requestId
+      if (reason === undefined) {
+        emit('actionSuccess', {
+          kind: 'actionSuccess',
+          action: 'hilos_impersonate_start',
+          requestId,
+        })
+
+        return
+      }
+      emit('actionError', {
+        kind: 'actionError',
+        action: 'hilos_impersonate_start',
         requestId,
         reason,
       })
@@ -1118,6 +1146,197 @@ describe('HilosUserPage confirmation step (HIL-1275)', () => {
   })
 })
 
+/** The installation's impersonation settings as the card's first answer carries them. */
+function impersonationSettings(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    allowed: true,
+    scope: 'act',
+    carryAdmin: false,
+    blocked: true,
+    frozen: true,
+    equal: true,
+    ...overrides,
+  }
+}
+
+describe('HilosUserPage impersonation (HIL-1170)', () => {
+  /** Mount the card with the fixture's settings and step-up answer. */
+  function mountCard(
+    options: Parameters<typeof userContext>[1] = {},
+  ): ReturnType<typeof userContext> {
+    const world = userContext(false, options)
+    mounted.push(
+      mount(HilosUserPage, {
+        props: { context: markRaw(world.context) },
+        attachTo: document.body,
+        global: { provide: { [hilosRouterKey as symbol]: router() } },
+      }),
+    )
+
+    return world
+  }
+
+  async function settle(): Promise<void> {
+    await flushPromises()
+    await nextTick()
+  }
+
+  async function click(id: string): Promise<void> {
+    modalEl(id)?.click()
+    await settle()
+  }
+
+  afterEach(() => {
+    hilosToasts.clear()
+  })
+
+  it('draws no section while the card carries no settings or impersonation is off', async () => {
+    mountCard()
+    await settle()
+    expect(modalEl('hilos-user-impersonate-open')).toBeNull()
+
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    mountCard({ impersonation: impersonationSettings({ allowed: false }) })
+    await settle()
+    expect(modalEl('hilos-user-impersonate-open')).toBeNull()
+  })
+
+  it('says what the takeover will be by the settings', async () => {
+    mountCard({ impersonation: impersonationSettings() })
+    await settle()
+    const open = modalEl('hilos-user-impersonate-open') as HTMLButtonElement
+    const section = open.closest('section')
+
+    expect(section?.querySelector('h2')?.textContent).toBe('Impersonation')
+    expect(section?.textContent).toContain('Act as Alice')
+    expect(section?.textContent).toContain(
+      'You will see the product through their eyes, without your admin rights',
+    )
+    expect(open.textContent?.trim()).toBe('Impersonate')
+    expect(open.disabled).toBe(false)
+    expect(modalEl('hilos-user-impersonate-reason')?.textContent).toBe('')
+
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    mountCard({ impersonation: impersonationSettings({ scope: 'view' }) })
+    await settle()
+    expect(
+      modalEl('hilos-user-impersonate-open')?.closest('section')?.textContent,
+    ).toContain('You will only look: nothing can be changed')
+  })
+
+  it('switches the button off with its reason on the own card and on an excluded administrator', async () => {
+    const world = mountCard({
+      impersonation: impersonationSettings({ equal: false }),
+      currentUserId: 1,
+    })
+    await settle()
+    const open = () =>
+      modalEl('hilos-user-impersonate-open') as HTMLButtonElement
+
+    expect(open().disabled).toBe(true)
+    expect(open().getAttribute('aria-describedby')).toBe(
+      'hilos-user-impersonate-reason',
+    )
+    expect(modalEl('hilos-user-impersonate-reason')?.textContent).toBe(
+      'You cannot impersonate yourself',
+    )
+
+    world.context.scopes.session.data.set('currentUser', {
+      type: 'user',
+      id: 99,
+    })
+    world.context.scopes
+      .page()
+      ?.entities.upsert({ type: 'user', id: 1 }, { admin: true })
+    await settle()
+
+    expect(open().disabled).toBe(true)
+    expect(modalEl('hilos-user-impersonate-reason')?.textContent).toBe(
+      'Impersonating another administrator is switched off',
+    )
+  })
+
+  it('opens the window after the server says no step is needed, and closes it on the takeover', async () => {
+    const world = mountCard({ impersonation: impersonationSettings() })
+    await settle()
+    await click('hilos-user-impersonate-open')
+
+    expect(world.sent[0]).toMatchObject({
+      action: 'hilos_step_up_start',
+      data: { operation: 'impersonate' },
+    })
+    const modal = modalEl('modal')
+    expect(modal?.textContent).toContain('Impersonate · Alice')
+    expect(modal?.textContent).toContain(
+      'You will see the product through their eyes, without your admin rights.',
+    )
+    expect(modal?.textContent).toContain(
+      'Everything you do in their name is written to the journal as done by you.',
+    )
+
+    await click('hilos-user-impersonate-confirm')
+    expect(
+      world.sent.find((entry) => entry.action === 'hilos_impersonate_start'),
+    ).toMatchObject({ data: { targetUserId: 1 } })
+    expect(
+      (modalEl('hilos-user-impersonate-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    world.answerImpersonate()
+    await settle()
+
+    expect(modalEl('modal')).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('keeps a refusal in the window and toasts it', async () => {
+    const world = mountCard({ impersonation: impersonationSettings() })
+    await settle()
+    await click('hilos-user-impersonate-open')
+    await click('hilos-user-impersonate-confirm')
+
+    world.answerImpersonate('Impersonating a blocked person is switched off')
+    await settle()
+
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-user-impersonate-error')?.textContent).toContain(
+      'Impersonating a blocked person is switched off',
+    )
+    expect(
+      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
+    ).toEqual([['error', 'Impersonating a blocked person is switched off']])
+
+    await click('hilos-user-impersonate-cancel')
+    expect(modalEl('modal')).toBeNull()
+  })
+
+  it('asks for the confirmation step first when the operation is on', async () => {
+    const world = mountCard({
+      impersonation: impersonationSettings(),
+      stepUp: 'ask',
+    })
+    await settle()
+    await click('hilos-user-impersonate-open')
+
+    expect(modalEl('hilos-user-impersonate-step-up')).not.toBeNull()
+    expect(modalEl('hilos-user-impersonate-confirm')).toBeNull()
+
+    const input = modalEl('step-up-password') as HTMLInputElement
+    input.value = 'secret'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    await click('hilos-user-impersonate-step-up-confirm')
+
+    expect(
+      world.sent.find((entry) => entry.action === 'hilos_step_up_confirm'),
+    ).toMatchObject({ data: { operation: 'impersonate', password: 'secret' } })
+    expect(modalEl('hilos-user-impersonate-step-up')).toBeNull()
+    expect(modalEl('hilos-user-impersonate-confirm')).not.toBeNull()
+  })
+})
+
 describe('HilosUserPage standing (HIL-945)', () => {
   /**
    * A standing as the wire carries it.
@@ -1412,6 +1631,34 @@ describe('HilosUserPage in the admin view mode', () => {
     modalEl('hilos-user-merge-cancel')?.click()
     await nextTick()
     expect(modalEl('modal-confirm-discard')).not.toBeNull()
+  })
+
+  it('a guest opens the takeover window directly and its confirm is disabled by the mode (HIL-1170)', async () => {
+    const { scopes, handshake } = bindSession()
+    handshake(null, true)
+    const world = userContext(false, {
+      scopes,
+      impersonation: impersonationSettings(),
+    })
+    await mountViewModePage(world.context)
+
+    const openBtn = modalEl('hilos-user-impersonate-open') as HTMLButtonElement
+    expect(openBtn.disabled).toBe(false)
+    openBtn.click()
+    await flushPromises()
+    await nextTick()
+
+    expect(modalEl('hilos-user-impersonate-step-up')).toBeNull()
+    const confirmBtn = modalEl(
+      'hilos-user-impersonate-confirm',
+    ) as HTMLButtonElement
+    expect(confirmBtn.disabled).toBe(true)
+    expect(confirmBtn.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    confirmBtn.click()
+    await flushPromises()
+    expect(world.sent).toHaveLength(0)
   })
 
   it('a logged-in non-admin on their own card sees block disabled by ownBlockReason without strip text id', async () => {

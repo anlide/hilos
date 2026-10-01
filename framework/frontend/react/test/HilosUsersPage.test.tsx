@@ -88,7 +88,7 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
   }
 
   const connection = {
-    // The takeover dispatches over the lifecycle; this fake only has to accept it.
+    // The lifecycle the context carries sends over it; this fake only has to accept it.
     sendAction(): boolean {
       return true
     },
@@ -175,6 +175,21 @@ describe('HilosUsersPage', () => {
     )
     expect(container.querySelector('[data-id="open-1"]')).not.toBeNull()
     expect(container.querySelector('[data-id="open-2"]')).not.toBeNull()
+  })
+
+  it('offers no takeover on a row: it lives on the person card (HIL-1170)', () => {
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosUsersPage context={twoUsers()} />
+      </HilosRouterContext.Provider>,
+    )
+
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-row-1"]').length,
+    ).toBeGreaterThan(0)
+    expect(
+      container.querySelector('[data-id^="hilos-users-impersonate-"]'),
+    ).toBeNull()
   })
 
   it('draws a cell under every declared column, aligned the way the column says', () => {

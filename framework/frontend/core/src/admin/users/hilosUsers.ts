@@ -204,6 +204,8 @@ const USER_DELETION_SLOT = 'accountDeletions'
 /** Row payload key of the standing deletion request's erasure time. */
 const USER_DELETION_EFFECTIVE_AT_FIELD = 'deletionEffectiveAt'
 const USER_DELETION_GRACE_DAYS_KEY = 'accountDeletionGraceDays'
+/** Page data key of the impersonation settings the card's takeover section reads (PHP `AbstractHilosUserPage::IMPERSONATION`). */
+const USER_IMPERSONATION_KEY = 'impersonation'
 const MERGE_SLOT = 'merge'
 const MERGE_IDENTITY_TYPE_FIELD = 'type'
 const MERGE_IDENTITY_IDENTIFIER_FIELD = 'identifier'
@@ -305,12 +307,12 @@ export interface HilosUsersContext<TUser extends User = User> {
   readonly accountMerge?: boolean
 }
 
-/** The impersonation control a users-list view binds to. */
+/** The impersonation control the person's card binds to (HIL-1170). */
 export interface HilosImpersonate {
   /**
-   * The signed-in user's own id, or null before the handshake answers. The row
-   * that carries it offers no takeover button: the backend refuses taking
-   * yourself over, and a control whose only outcome is a refusal is not one.
+   * The signed-in user's own id, or null before the handshake answers. The card
+   * that carries it offers the takeover switched off: the backend refuses taking
+   * yourself over.
    */
   readonly currentUserId: ReadonlySignal<number | null>
   /**
@@ -962,7 +964,8 @@ export function createHilosUserRename(
 }
 
 /**
- * The impersonation surface for the users-list view: the takeover submits as a
+ * The impersonation surface for the person's card (on the users list until
+ * HIL-1170): the takeover submits as a
  * tracked action over the lifecycle, returning an ActionHandle whose `done`
  * resolves on the page's `::success` ack and rejects with the reason on `::fail`
  * — the confirm modal closes on the first and stays open with the sentence on the
@@ -1091,6 +1094,8 @@ export interface HilosUserLifecycle {
   readonly currentUserId: ReadonlySignal<number | null>
   /** Deletion grace period from the page's first answer, or hidden for a view-mode viewer. */
   readonly graceDays: ReadonlySignal<Hideable<number> | null>
+  /** The impersonation settings from the page's first answer, or null when it carried none (HIL-1170). */
+  readonly impersonation: ReadonlySignal<HilosUserImpersonationSettings | null>
   /**
    * Grant or remove administrator rights.
    * @param userId The target account.
@@ -1119,9 +1124,13 @@ export function createHilosUserLifecycle(
   context: HilosUsersContext,
 ): HilosUserLifecycle {
   const graceDays = context.scopes.pageDataSignal(USER_DELETION_GRACE_DAYS_KEY)
+  const impersonation = context.scopes.pageDataSignal(USER_IMPERSONATION_KEY)
 
   return {
     currentUserId: sessionUserId(context.scopes),
+    impersonation: computedSignal(() =>
+      readHilosUserImpersonationSettings(impersonation.get()),
+    ),
     graceDays: computedSignal(() => {
       const value = graceDays.get()
 
@@ -1475,9 +1484,166 @@ export function submitHilosUserLifecycle(
 }
 
 /**
+ * The impersonation settings the card's takeover section is drawn from
+ * (HIL-1170, PHP `ImpersonationCardSettings`): settings of the installation, not
+ * facts about the person, so a viewer of the admin view mode is sent them too.
+ */
+export interface HilosUserImpersonationSettings {
+  /** Whether impersonation exists in the product; off, the card has no section. */
+  readonly allowed: boolean
+  /** What may be done inside: `view` — only look, `act` — look and act. */
+  readonly scope: 'view' | 'act'
+  /** Whether the administrator carries their own admin rights inside. */
+  readonly carryAdmin: boolean
+  /** Whether a blocked person may be taken over. */
+  readonly blocked: boolean
+  /** Whether a frozen person may be taken over. */
+  readonly frozen: boolean
+  /** Whether another administrator may be taken over. */
+  readonly equal: boolean
+}
+
+/** Wire keys of the card's impersonation settings (PHP `ImpersonationCardSettings`). */
+export const HilosUserImpersonationSettingsKey = {
+  allowed: 'allowed',
+  scope: 'scope',
+  carryAdmin: 'carryAdmin',
+  blocked: 'blocked',
+  frozen: 'frozen',
+  equal: 'equal',
+} as const
+
+/**
+ * Read the card's impersonation settings off the page data, or null when the
+ * answer carried none or a value hidden from a viewer.
+ *
+ * @param value The page data under the impersonation key.
+ * @returns The settings, or null.
+ */
+export function readHilosUserImpersonationSettings(
+  value: unknown,
+): HilosUserImpersonationSettings | null {
+  const record = isHiddenValue(value) ? undefined : recordSlot(value)
+  if (record === undefined) {
+    return null
+  }
+  const keys = HilosUserImpersonationSettingsKey
+
+  return {
+    allowed: record[keys.allowed] === true,
+    scope: record[keys.scope] === 'view' ? 'view' : 'act',
+    carryAdmin: record[keys.carryAdmin] === true,
+    blocked: record[keys.blocked] === true,
+    frozen: record[keys.frozen] === true,
+    equal: record[keys.equal] === true,
+  }
+}
+
+/** English copy of the card's takeover section and its window (HIL-1170). */
+export const HILOS_USER_IMPERSONATION_COPY = {
+  title: 'Impersonation',
+  row: 'Act as {name}',
+  open: 'Impersonate',
+  withoutRights:
+    'You will see the product through their eyes, without your admin rights',
+  withRights:
+    'You will see the product through their eyes, with your admin rights',
+  viewOnly: 'You will only look: nothing can be changed',
+  windowTitle: 'Impersonate · {name}',
+  strip:
+    'While the impersonation lasts, a strip with their name and a way out stands under the navigation.',
+  journal:
+    'Everything you do in their name is written to the journal as done by you.',
+  confirm: 'Impersonate',
+  cancel: 'Cancel',
+  ownReason: 'You cannot impersonate yourself',
+  blockedReason: 'Impersonating a blocked person is switched off',
+  frozenReason: 'Impersonating a frozen person is switched off',
+  equalReason: 'Impersonating another administrator is switched off',
+} as const
+
+/** The takeover section of the person's card (HIL-1170). */
+export interface HilosUserImpersonationSection {
+  readonly title: string
+  /** "Act as <name>". */
+  readonly rowTitle: string
+  /** What the takeover will be, by the settings. */
+  readonly hint: string
+  readonly disabled: boolean
+  /** Why the button is switched off, or null when it is not. */
+  readonly reason: string | null
+  /** The longest reason, so the room under the button never changes height. */
+  readonly reasonSpace: string
+  /** The window's title. */
+  readonly windowTitle: string
+  /** The window's paragraphs: what the takeover will be, and the strip. */
+  readonly paragraphs: readonly string[]
+  /** The window's note about the journal. */
+  readonly note: string
+}
+
+/**
+ * The card's takeover section, or `null` when impersonation is switched off or
+ * the card has no settings to read (HIL-1170).
+ *
+ * The button is switched off with its reason on the person's own card, and on a
+ * blocked person, a frozen person or another administrator while the row of the
+ * settings that would allow it is off. The server judges the same at the start,
+ * so a setting changed while the card is open is refused in the same words.
+ *
+ * @param detail The committed user row, absent until the table arrives.
+ * @param currentUserId The person behind this session.
+ * @param settings The card's impersonation settings, or null.
+ * @param standing The person's standing, or `null` while the card has none.
+ */
+export function hilosUserImpersonationSection(
+  detail: HilosUserDetailRow | undefined,
+  currentUserId: number | null,
+  settings: HilosUserImpersonationSettings | null,
+  standing: HilosAccountStanding | null = null,
+): HilosUserImpersonationSection | null {
+  if (!detail || settings === null || !settings.allowed) {
+    return null
+  }
+  const copy = HILOS_USER_IMPERSONATION_COPY
+  const name = String(hiddenAsWord(detail.name))
+  const blocked = standing?.blocked ?? detail.block
+  const frozen = standing?.frozen ?? false
+  const reason =
+    detail.id === currentUserId
+      ? copy.ownReason
+      : blocked && !settings.blocked
+        ? copy.blockedReason
+        : frozen && !settings.frozen
+          ? copy.frozenReason
+          : detail.admin && !settings.equal
+            ? copy.equalReason
+            : null
+  const hint =
+    settings.scope === 'view'
+      ? copy.viewOnly
+      : settings.carryAdmin
+        ? copy.withRights
+        : copy.withoutRights
+
+  return {
+    title: copy.title,
+    rowTitle: copy.row.replace('{name}', name),
+    hint,
+    disabled: reason !== null,
+    reason,
+    reasonSpace: copy.equalReason,
+    windowTitle: copy.windowTitle.replace('{name}', name),
+    paragraphs: [`${hint}.`, copy.strip],
+    note: copy.journal,
+  }
+}
+
+/**
  * The step-up operation behind each account-card window that takes something
- * away from the person (HIL-1275). Lifting a block and calling a deletion off
- * give back rather than take, so their windows have no operation.
+ * away from the person (HIL-1275), and the takeover (HIL-1170). Lifting a block
+ * and calling a deletion off give back rather than take, so their windows have
+ * no operation.
  */
 export const HILOS_USER_CARD_STEP_UP_OPERATIONS = {
   merge: 'merge_accounts',
@@ -1485,10 +1651,14 @@ export const HILOS_USER_CARD_STEP_UP_OPERATIONS = {
   revoke: 'revoke_admin',
   block: 'block_account',
   delete: 'delete_other_account',
+  impersonate: 'impersonate',
 } as const
 
-/** A window of the account card: one of the six confirmations, or the merge. */
-export type HilosUserCardWindow = HilosUserLifecycleChoice | 'merge'
+/** A window of the account card: one of the six confirmations, the merge, or the takeover. */
+export type HilosUserCardWindow =
+  | HilosUserLifecycleChoice
+  | 'merge'
+  | 'impersonate'
 
 /** The confirmation step of one account-card window (HIL-1275). */
 export interface HilosUserCardStepUp {

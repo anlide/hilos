@@ -8,12 +8,13 @@
 // a full-width banner region below the nav carrying, in this order, the
 // framework's own protected-mode strip, its impersonation strip (drawn from the
 // session, with a Stop that waits for the server's answer, colored by the
-// standing of the person taken over), its account deletion strip (the session's
-// own scheduled deletion, with a "Keep my account" that waits the same way,
-// HIL-945), and the app-wide status strip a project fills (e.g. a trial notice)
-// through a projected [banner] node — one live region for all, empty and
-// zero-height while none is up — the content, and a footer of the public
-// framework pages
+// standing of the person taken over, and marked "view only" when the
+// administrator may only look, HIL-1170), its account deletion strip (the
+// session's own scheduled deletion, with a "Keep my account" that waits the
+// same way, HIL-945), and the app-wide status strip a project fills (e.g. a
+// trial notice) through a projected [banner] node — one live region for all,
+// empty and zero-height while none is up — the content, and a footer of the
+// public framework pages
 // (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100):
 // the nav, banner, and footer never scroll (flex-shrink-0) and the main region
 // grows and scrolls its own overflow (min-h-0 + overflow-auto), so a page
@@ -38,7 +39,13 @@
 // does not leave open — after the "Access closed" card, before the content.
 // Styling is Bootstrap classes only and the
 // shell carries no CSS of its own (styling-rules.md); the status and admin
-// icons are Bootstrap Icons (`bi-*`).
+// icons are Bootstrap Icons (`bi-*`). In a takeover that only looks the
+// controls of what is projected into the shell stand disabled and the shell's
+// own do not (HILOS_TAKEOVER_VIEW_ONLY): the token reaches projected content
+// through `providers`, and the shell's view meets `false` first through
+// `viewProviders`. Angular cannot tell the default slot from the named ones by
+// injector, so a control a project projects into [brand], [nav], [user] or
+// [banner] reads the takeover too — in Vue and React only the page's area does.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -64,6 +71,7 @@ import {
   formatHilosLegalReconsentBadge,
   HILOS_FOOTER_LINKS,
   HILOS_FROZEN_OPEN_PAGES,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PAGE_ROUTES,
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
@@ -80,6 +88,7 @@ import {
   openLegalReconsent,
   hilosImpersonation,
   hilosSignedIn,
+  hilosTakeoverViewOnly,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
   protectedModeBannerCopy,
@@ -100,6 +109,7 @@ import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
 import { HilosModal } from './HilosModal.js'
 import { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
+import { HILOS_TAKEOVER_VIEW_ONLY } from './hilosLookOnly.js'
 import { hilosSignal } from './hilosSignal.js'
 import { createHilosTrackedAction } from './hilosTrackedAction.js'
 
@@ -111,6 +121,9 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
 // share the in-progress icon, and what distinguishes them is the color and the
 // visually-hidden label.
 type ConnVisual = { icon: string; color: string }
+/** What the shell's own controls read: the takeover never locks them. */
+const SHELL_NEVER_LOCKED = signal(false).asReadonly()
+
 const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   connected: { icon: 'bi-check-circle-fill', color: 'text-success' },
   connecting: { icon: 'bi-arrow-repeat', color: 'text-success' },
@@ -125,6 +138,15 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
 @Component({
   selector: 'hilos-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [
+    {
+      provide: HILOS_TAKEOVER_VIEW_ONLY,
+      useFactory: () => hilosSignal(hilosTakeoverViewOnly),
+    },
+  ],
+  viewProviders: [
+    { provide: HILOS_TAKEOVER_VIEW_ONLY, useValue: SHELL_NEVER_LOCKED },
+  ],
   imports: [
     HilosAccountBlocked,
     HilosLegalReconsent,
@@ -273,9 +295,14 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 <div
                   class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
                 >
-                  <span>
+                  <span [id]="stripTextId">
                     <i class="bi bi-people-fill me-1" aria-hidden="true"></i>
                     {{ stripCopy.lead }} <strong>{{ strip.userName }}</strong>
+                    @if (strip.viewOnly) {
+                      <span class="badge text-bg-dark ms-1">{{
+                        stripCopy.viewOnly
+                      }}</span>
+                    }
                   </span>
                   <button
                     hilosLoadingButton
@@ -480,10 +507,14 @@ export class HilosLayout {
   // disables it at once, a refusal is the error toast and leaves the strip
   // standing, and success needs no toast - the strip leaves by itself with the
   // identity the answer rides behind. Below the protected-mode strip because
-  // what is about the node comes before what is about the session.
+  // what is about the node comes before what is about the session. Where the
+  // administrator may only look (HIL-1170) the strip says so after the name,
+  // and its text carries the id every control of the page then disabled names
+  // in aria-describedby — the page alone: Stop stays live.
   protected readonly impersonation = hilosSignal(hilosImpersonation)
   protected readonly impersonationStop = createHilosTrackedAction()
   protected readonly stripCopy = IMPERSONATION_STRIP_COPY
+  protected readonly stripTextId = HILOS_IMPERSONATION_STRIP_TEXT_ID
   // The third framework strip (HIL-945): the session's own account is scheduled
   // for deletion, so the person is told when, and how long there is left to
   // think, on every page — the product still works, and the state lives beside

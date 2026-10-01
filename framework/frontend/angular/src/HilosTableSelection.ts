@@ -37,6 +37,7 @@ import type {
 import { HilosActionError } from './HilosActionError.js'
 import { HilosModal } from './HilosModal.js'
 import { LoadingButton } from './LoadingButton.js'
+import { injectLookOnly } from './hilosLookOnly.js'
 import { createHilosTrackedAction } from './hilosTrackedAction.js'
 
 /** The selection panel of a table that declared bulk operations. */
@@ -74,7 +75,10 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
         <!-- While a run is going the server refuses a second one on this table,
         and a button whose only outcome is a refusal is not a button. It is a
         courtesy and not a guarantee: a refusal that arrives anyway is still
-        shown (Flow F5). -->
+        shown (Flow F5). In the page's area of a takeover that only looks an
+        operation is an action the server refuses, so it stands disabled too
+        (HIL-1170); marking rows, "Select all matching the filter" and "Clear"
+        stay live — they are this window's own state. -->
         @for (action of bulkActions(); track action.key) {
           <button
             type="button"
@@ -82,7 +86,8 @@ import { createHilosTrackedAction } from './hilosTrackedAction.js'
             [class.btn-outline-danger]="action.danger === true"
             [class.btn-outline-secondary]="action.danger !== true"
             [class.ms-auto]="action.key === pinnedKey()"
-            [disabled]="bulkProgress() !== null"
+            [disabled]="bulkProgress() !== null || lookOnly.locked()"
+            [attr.aria-describedby]="lookOnly.describedBy() ?? null"
             [attr.data-id]="'hilos-table-bulk-' + action.key"
             (click)="openConfirm(action)"
           >
@@ -157,6 +162,7 @@ export class HilosTableSelection<R> {
   private readonly target = signal<HilosTableSelectionTarget | null>(null)
   private readonly count = signal(0)
   protected readonly bulkProgress = signal<HilosTableProgressState | null>(null)
+  protected readonly lookOnly = injectLookOnly()
 
   // The choice by condition says words and not a number: the size of a large set is
   // a ceiling rather than a count, so "12 480 marked" would be a lie, while what is

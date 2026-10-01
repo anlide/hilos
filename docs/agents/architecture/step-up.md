@@ -19,7 +19,10 @@ an account holding one is not asked twice; it defaults to false, and
 `add_authenticator_app` declares it (HIL-1138). `enabledByDefault` says where
 the operation stands before an administrator touches the list: `true`, the
 default, for one that asks until it is switched off; `false` for one that asks
-only once it is switched on (HIL-1275, see *Administration*).
+only once it is switched on (HIL-1275, see *Administration*). `accountAccess`
+says the operation touches the sign-in of the account, so a takeover allowed
+to touch it may run it; it defaults to false (HIL-1170, see *Under a
+takeover*).
 
 The framework's own operations are the person's operations on their own
 account: changing the password or the email, deleting the account, exporting
@@ -28,9 +31,10 @@ a way to sign in (`add_sign_in_method`, one operation for a password, a phone,
 a device key and a provider link). After them come the administrator's
 operations on another person's account: merging an account into the one on the
 card (`merge_accounts`), granting and removing administrator rights
-(`grant_admin`, `revoke_admin`), blocking an account (`block_account`) and
-scheduling another person's deletion (`delete_other_account`) — see
-*Operations on another person's account*.
+(`grant_admin`, `revoke_admin`), blocking an account (`block_account`),
+scheduling another person's deletion (`delete_other_account`) and taking the
+person over from their card (`impersonate`, HIL-1170) — see *Operations on
+another person's account*.
 
 Declaring an operation does not protect it by itself. Every server action that
 belongs to the operation calls `requireStepUp($acceptKey, $operation)` before it
@@ -72,8 +76,23 @@ browser and another operation remain closed. A new sign-in rotates the session
 token and therefore leaves earlier confirmations unreachable without a special
 logout cleanup path.
 
-The gate still refuses while the session impersonates another person. Device
-trust belongs to the sign-in question and is deliberately not read here.
+Device trust belongs to the sign-in question and is deliberately not read here.
+
+## Under a takeover
+
+Inside a takeover an operation of the person's own account is closed
+(`StepUpGate::VERDICT_IMPERSONATED`), unless it touches the sign-in — it
+declares `accountAccess`: `change_password`, `change_email`,
+`add_authenticator_app`, `add_sign_in_method` — and the administrator allowed
+that with `auth.impersonation.account_access` (HIL-1170). Then it is the
+ADMINISTRATOR of this browser who confirms it, by the method their own account
+can prove: `StepUpGate::confirmer()` names them, `StepUpCommands` sends, checks
+and records the proof on them, and nothing goes to the person whose account it
+is. The operation's own address or app step proves the person, not the
+administrator, so inside a takeover it suppresses nothing. Deleting the account
+and accepting the terms stay closed to every takeover whatever the setting
+says (`StepUpGate::isImpersonated()` at their own commands): what a person does
+with their own account is never done with someone else's hands.
 
 ## A window's step lives in the session
 
@@ -153,8 +172,10 @@ someone else at it.
   scheduled deletion runs to its end through the grace period, and a person
   confirms deleting their own account, so an administrator confirms deleting
   someone else's.
-- **Declared off** — when one action gives it back: removing rights, blocking.
-  They stand in the list so that an administrator can switch them on.
+- **Declared off** — when one action gives it back: removing rights, blocking,
+  and taking the person over (`impersonate`, HIL-1170), which "Stop" ends with
+  everything returned. They stand in the list so that an administrator can
+  switch them on.
 - **Never an operation** — an action that gives back rather than takes: lifting
   a block, calling a deletion off, as calling off one's own deletion stands
   outside the gate (HIL-302).
@@ -169,8 +190,9 @@ the action's operation, before any guard of the action itself. It confirms the
 ADMINISTRATOR of this browser, by the method the administrator's own account can
 prove, never the person on the card. None of these operations passes an account
 with nothing to confirm with: such an administrator is refused. The operator's
-console commands (`account:merge`, `admin:grant`, `admin:revoke`) stand outside
-the check: at the console there is nothing to confirm with.
+console commands (`account:merge`, `admin:grant`, `admin:revoke`,
+`impersonate:start`) stand outside the check: at the console there is nothing
+to confirm with.
 
 On the card the window of such an action opens on the step
 (`createHilosUserCardStepUp`): the view asks the server by its window's

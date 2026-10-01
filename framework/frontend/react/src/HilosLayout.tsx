@@ -8,12 +8,15 @@
 // a full-width banner region below the nav carrying, in this order, the
 // framework's own protected-mode strip, its impersonation strip (drawn from the
 // session, with a Stop that waits for the server's answer, colored by the
-// standing of the person taken over), its account deletion strip (the session's
-// own scheduled deletion, with a "Keep my account" that waits the same way,
-// HIL-945), and the app-wide status strip a project fills (e.g. a trial notice)
-// through the banner prop — one live region for all, empty and zero-height
-// while none is up — the
-// content, and a footer of the public framework pages (HILOS_FOOTER_LINKS). The
+// standing of the person taken over, and marked "view only" when the
+// administrator may only look, HIL-1170), its account deletion strip (the
+// session's own scheduled deletion, with a "Keep my account" that waits the
+// same way, HIL-945), and the app-wide status strip a project fills (e.g. a
+// trial notice) through the banner prop — one live region for all, empty and
+// zero-height while none is up — the content (inside
+// HilosTakeoverViewOnlyContext, so in a takeover that only looks the page's
+// controls stand disabled and the shell's do not), and a footer of the public
+// framework pages (HILOS_FOOTER_LINKS). The
 // shell is a fixed-height viewport column (vh-100): the nav, banner, and footer
 // never scroll (flex-shrink-0) and the main region grows and scrolls its own
 // overflow (min-h-0 + overflow-auto), so a page either scrolls inside main or —
@@ -53,6 +56,7 @@ import {
   formatHilosLegalReconsentBadge,
   HILOS_FOOTER_LINKS,
   HILOS_FROZEN_OPEN_PAGES,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PAGE_ROUTES,
   HilosPages,
   createSignal,
@@ -68,6 +72,7 @@ import {
   hilosDeletionStrip,
   hilosImpersonation,
   hilosSignedIn,
+  hilosTakeoverViewOnly,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
   protectedModeBannerCopy,
@@ -90,6 +95,7 @@ import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
 import { HilosModal } from './HilosModal.js'
 import { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
+import { HilosTakeoverViewOnlyContext } from './hilosLookOnly.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useFirstFrameHold } from './useFirstFrameHold.js'
 import { useProtectedMode } from './useProtectedMode.js'
@@ -212,8 +218,12 @@ export function HilosLayout({
   // disables it at once, a refusal is the error toast and leaves the strip
   // standing, and success needs no toast - the strip leaves by itself with the
   // identity the answer rides behind. Below the protected-mode strip because
-  // what is about the node comes before what is about the session.
+  // what is about the node comes before what is about the session. Where the
+  // administrator may only look (HIL-1170) the strip says so after the name,
+  // and its text carries the id every control of the page's area then disabled
+  // names in aria-describedby — the page's area alone: Stop stays live.
   const impersonation = useSignal(hilosImpersonation)
+  const takeoverViewOnly = useSignal(hilosTakeoverViewOnly)
   const impersonationStop = useTrackedAction()
   // The "Access closed" card (HIL-289): the session lost its account to a
   // block, so the content gives way to the card on every url - the header and
@@ -505,13 +515,18 @@ export function HilosLayout({
                 data-id="impersonation-banner"
               >
                 <div className="container d-flex flex-wrap align-items-center justify-content-center gap-3">
-                  <span>
+                  <span id={HILOS_IMPERSONATION_STRIP_TEXT_ID}>
                     <i
                       className="bi bi-people-fill me-1"
                       aria-hidden="true"
                     ></i>{' '}
                     {IMPERSONATION_STRIP_COPY.lead}{' '}
                     <strong>{impersonation.userName}</strong>
+                    {impersonation.viewOnly ? (
+                      <span className="badge text-bg-dark ms-1">
+                        {IMPERSONATION_STRIP_COPY.viewOnly}
+                      </span>
+                    ) : null}
                   </span>
                   <LoadingButton
                     className="btn-sm btn-outline-dark"
@@ -590,7 +605,9 @@ export function HilosLayout({
                 </div>
               </div>
             ) : (
-              children
+              <HilosTakeoverViewOnlyContext.Provider value={takeoverViewOnly}>
+                {children}
+              </HilosTakeoverViewOnlyContext.Provider>
             )}
           </main>
           {!underMaintenance && (

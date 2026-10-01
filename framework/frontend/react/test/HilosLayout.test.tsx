@@ -10,6 +10,7 @@ import {
   bindLegalReconsent,
   createSignal,
   formatCalendarDate,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HilosPages,
   bindSessionScope,
   bindSignOut,
@@ -31,6 +32,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosLayout } from '../src/HilosLayout.js'
+import { LoadingButton } from '../src/LoadingButton.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 /** A node frozen for a restore: the shell turns into the maintenance surface. */
@@ -304,6 +306,85 @@ describe('HilosLayout impersonation strip', () => {
     expect(
       hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
     ).toEqual([['error', 'Session is not impersonating']])
+  })
+
+  /**
+   * The takeover handshake carrying the installation's impersonation policy.
+   *
+   * @param viewOnly Whether the administrator may only look.
+   */
+  function takeoverWith(viewOnly: boolean): Record<string, unknown> {
+    return {
+      ...TAKEOVER,
+      data: { impersonationPolicy: { viewOnly, carryAdmin: false } },
+    }
+  }
+
+  /** Render the shell over a page whose one control is a tracked button. */
+  function renderOverPageAction(): HTMLElement {
+    return render(
+      <HilosLayout connection={shellConnection()}>
+        <LoadingButton data-id="page-action">Send</LoadingButton>
+      </HilosLayout>,
+    ).container
+  }
+
+  it('says "view only" and switches off the page, never Stop, in a takeover that only looks (HIL-1170)', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(takeoverWith(true))
+
+    const container = renderOverPageAction()
+    const strip = surface(container, 'impersonation-banner')
+    const text = strip?.querySelector(`#${HILOS_IMPERSONATION_STRIP_TEXT_ID}`)
+
+    expect(text).not.toBeNull()
+    expect(text?.textContent).toContain('You are impersonating')
+    expect(text?.querySelector('.badge')?.textContent).toBe('view only')
+    expect(strip?.querySelector('strong')?.textContent).toBe('Bob')
+    const stop = surface(container, 'impersonation-stop') as HTMLButtonElement
+    expect(stop.disabled).toBe(false)
+    expect(stop.getAttribute('aria-describedby')).toBeNull()
+    const action = surface(container, 'page-action') as HTMLButtonElement
+    expect(action.disabled).toBe(true)
+    expect(action.getAttribute('aria-describedby')).toBe(
+      HILOS_IMPERSONATION_STRIP_TEXT_ID,
+    )
+
+    act(() => {
+      fireEvent.click(stop)
+    })
+    expect(session.source.sent[0]?.action).toBe('hilos_impersonate_stop')
+    await act(async () => {
+      session.source.succeed(session.source.sent[0]?.requestId)
+    })
+  })
+
+  it('leaves the page live and the strip unmarked while the takeover may act, and follows the policy', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(takeoverWith(false))
+
+    const container = renderOverPageAction()
+
+    expect(
+      container.querySelector('[data-id="impersonation-banner"] .badge'),
+    ).toBeNull()
+    expect(
+      (surface(container, 'page-action') as HTMLButtonElement).disabled,
+    ).toBe(false)
+
+    act(() => {
+      session.handshake(takeoverWith(true))
+    })
+
+    expect(
+      container.querySelector('[data-id="impersonation-banner"] .badge')
+        ?.textContent,
+    ).toBe('view only')
+    expect(
+      (surface(container, 'page-action') as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 
   it('adds no live region of its own when the strip goes up', () => {

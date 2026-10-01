@@ -10,6 +10,7 @@ use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStateSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -96,7 +97,7 @@ use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
-use Hilos\Pages\Users\AbstractHilosUsersPage;
+use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
@@ -317,6 +318,9 @@ final class HilosSignalConstants
 
     /** Subscription signal for the Hilos page of operations that ask for confirmation (HIL-1204). */
     public const string SUBSCRIPTION_PAGE_HILOS_SECURITY_STEP_UP = 'subscription_page_hilos_security_step_up';
+
+    /** Subscription signal for the Hilos impersonation settings page (HIL-1170). */
+    public const string SUBSCRIPTION_PAGE_HILOS_SECURITY_IMPERSONATION = 'subscription_page_hilos_security_impersonation';
 
     /** Subscription signal for Hilos OAuth providers list. */
     public const string SUBSCRIPTION_PAGE_HILOS_SECURITY_OAUTH = 'subscription_page_hilos_security_oauth';
@@ -569,6 +573,23 @@ final class HilosSignalConstants
      * asks the settings library to store the list of its side.
      */
     public const string SECURITY_STEP_UP_OPERATION_SET = 'security_step_up_operation_set';
+
+    // ── Hilos security admin: impersonation settings actions (client → server, HIL-1170) ──
+    /**
+     * Client → server: switch one of the six yes-or-no impersonation settings.
+     *
+     * Owned by the impersonation page, which narrows the write to its own switches and asks the
+     * settings library to store it.
+     */
+    public const string SECURITY_IMPERSONATION_SWITCH_SET = 'security_impersonation_switch_set';
+
+    /**
+     * Client → server: set what may be done inside someone else's account - only look, or act as well.
+     *
+     * Owned by the impersonation page, which asks the settings library to store it; the setting's
+     * rule answers a refusal in the dialog.
+     */
+    public const string SECURITY_IMPERSONATION_SCOPE_SET = 'security_impersonation_scope_set';
 
     // ── Hilos profile: second factor (client → server, signed in, HIL-494) ──
     /**
@@ -930,14 +951,15 @@ final class HilosSignalConstants
     public const string HILOS_BROWSER_ERASE = 'hilos_browser_erase';
 
     /**
-     * Client → Hilos users page: make this admin session act as another user (HIL-729,
-     * moved onto the page by HIL-824).
+     * Client → Hilos user card: make this admin session act as the person on the card (HIL-729,
+     * moved onto a page by HIL-824, onto the card by HIL-1170).
      *
-     * The name lives on {@see AbstractHilosUsersPage} because of what closes it: only an
+     * The name lives on {@see AbstractHilosUserPage} because of what closes it: only an
      * administrator may take a person over, and an ADMIN level is a thing only a page
      * carries. It stood on the sessions library until HIL-824 on the strength of what it
      * writes - a session - and that is the writer's claim, not the gatekeeper's; the library
-     * asked the project through a seam because it had no level to stand on. The wire name is
+     * asked the project through a seam because it had no level to stand on. It stood on the
+     * people list until HIL-1170 moved the button onto the person's card. The wire name is
      * unchanged, so the browser sends the same string it always did.
      *
      * What it writes is still the library's, so the page forwards
@@ -960,7 +982,7 @@ final class HilosSignalConstants
     public const string HILOS_IMPERSONATE_STOP = 'hilos_impersonate_stop';
 
     /**
-     * Hilos users page → sessions library: rebind this session onto that person (HIL-824).
+     * Hilos user card → sessions library: rebind this session onto that person (HIL-824, HIL-1170).
      *
      * The write half of {@see self::HILOS_IMPERSONATE_START}, split off from it for the
      * reason the neighbouring pairs were split: WHO may ask is the page's ADMIN level, which
@@ -974,8 +996,8 @@ final class HilosSignalConstants
     public const string HILOS_IMPERSONATE_REQUEST = 'hilos_impersonate_request';
 
     /**
-     * Sessions library → Hilos users page: the takeover happened, or it is refused
-     * (HIL-824).
+     * Sessions library → Hilos user card: the takeover happened, or it is refused
+     * (HIL-824, HIL-1170).
      *
      * The way back for {@see self::HILOS_IMPERSONATE_REQUEST} and only for it. The page
      * deferred its own ack when it handed the work over, so this frame is what finally
@@ -1378,6 +1400,15 @@ final class HilosSignalConstants
      * code step redraw their bounds, note and checkbox. Carried by {@see SecondFactorPolicySignalData}.
      */
     public const string HILOS_SECOND_FACTOR_POLICY = 'hilos_second_factor_policy';
+
+    /**
+     * Server → client (all connected): the impersonation policy changed (HIL-1170).
+     *
+     * Sent by the settings library after a write that moved "only look" or the carried admin rights,
+     * so a tab open inside a takeover redraws its strip, its switched-off buttons and its gear. The
+     * same pair rides on the handshake. Carried by {@see ImpersonationPolicySignalData}.
+     */
+    public const string HILOS_IMPERSONATION_POLICY = 'hilos_impersonation_policy';
 
     /**
      * Server → client (all connected): code delivery availability changed (HIL-1102).
@@ -1878,6 +1909,15 @@ final class HilosSignalConstants
      * the map of page-owned signals holds one entry per name. Carried by {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_STEP_UP_OPERATIONS_WRITE_DONE = 'hilos_step_up_operations_write_done';
+
+    /**
+     * Settings library → the impersonation page: the setting write it forwarded is done (HIL-1170).
+     *
+     * One name for both of the page's actions, the way {@see HILOS_SIGN_IN_METHODS_WRITE_DONE} answers
+     * both of its page's: the map of page-owned signals holds one entry per name, and the answer
+     * carries the action it belongs to. Carried by {@see HandoverAnswerSignalData}.
+     */
+    public const string HILOS_IMPERSONATION_SETTING_WRITE_DONE = 'hilos_impersonation_setting_write_done';
 
     /**
      * The settings library → the log modes screen: your preset is applied, or refused (HIL-946).

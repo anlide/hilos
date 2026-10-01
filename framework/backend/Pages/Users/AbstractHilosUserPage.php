@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Users;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
+use Hilos\Auth\Impersonation\DTO\ImpersonationCardSettings;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
+use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -55,10 +60,12 @@ use Throwable;
  * The default subscription path answers the client, parses the `userId` route param, and then
  * calls {@see self::onHilosUserSubscribe()}.
  *
- * Its ADMIN gate closes renaming, account merging, rights, blocking and scheduled deletion. The
- * sessions or users library judges and writes each change, then returns its outcome here to
- * complete the tracked submit on the surface that accepted it. A rename is forwarded here since
- * HIL-1195, when the users library took it over from the projects' own copies of this page.
+ * Its ADMIN gate closes renaming, account merging, rights, blocking, scheduled deletion and taking
+ * the person over. The sessions or users library judges and writes each change, then returns its
+ * outcome here to complete the tracked submit on the surface that accepted it. A rename is
+ * forwarded here since HIL-1195, when the users library took it over from the projects' own copies
+ * of this page; the takeover since HIL-1170, when its button moved from the people list onto the
+ * card - the name is declared on this base class, so every project mounting the card gets it.
  */
 abstract class AbstractHilosUserPage extends AbstractHilosPage
 {
@@ -74,6 +81,9 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     /** Page data key of the standing of the person the card shows (HIL-945): the one verdict the card reads. */
     public const string ACCOUNT_STANDING = 'accountStanding';
 
+    /** Page data key of the impersonation settings the card's takeover section is drawn from (HIL-1170). */
+    public const string IMPERSONATION = 'impersonation';
+
     public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
@@ -82,6 +92,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
         HilosSignalConstants::HILOS_USER_ADMIN_SET => HilosUserAdminSetActionDTO::class,
         HilosSignalConstants::HILOS_USER_BLOCK_SET => HilosUserBlockSetActionDTO::class,
         HilosSignalConstants::HILOS_USER_DELETION_SET => HilosUserDeletionSetActionDTO::class,
+        HilosSignalConstants::HILOS_IMPERSONATE_START => ImpersonateStartActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -91,6 +102,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
             HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => HandoverAnswerSignalData::class,
+            HilosSignalConstants::HILOS_IMPERSONATE_DONE => HandoverAnswerSignalData::class,
         ],
     ];
 
@@ -165,6 +177,14 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
 
                 break;
 
+            case HilosSignalConstants::HILOS_IMPERSONATE_START:
+                if (!$dto instanceof ImpersonateStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, ImpersonateStartActionDTO::class, $dto);
+                }
+                $this->handleImpersonateStart($acceptKey, $dto);
+
+                break;
+
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
@@ -190,6 +210,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
             case HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE:
+            case HilosSignalConstants::HILOS_IMPERSONATE_DONE:
                 if (!$data->data instanceof HandoverAnswerSignalData) {
                     throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
                 }
@@ -268,12 +289,15 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     }
 
     /**
-     * Carries the deletion confirmation's grace period and the person's standing in the subscription's first answer.
+     * Carries the deletion confirmation's grace period, the person's standing and the impersonation settings in the subscription's first answer.
      *
      * The standing is the one verdict the card reads its block, freeze and scheduled deletion from
      * (HIL-945); later changes arrive as {@see HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE}.
-     * A viewer of the admin view mode is shown it hidden: the page declares no field of its data
-     * open, and the people's fields are opened by HIL-1254.
+     * The impersonation settings decide whether the card has its takeover section and for whom its
+     * button is switched off (HIL-1170); no frame follows them - a setting changed while the card is
+     * open is caught by the server's refusal in the same words. A viewer of the admin view mode is
+     * shown the impersonation settings ({@see self::dataFields()}) and the rest hidden: the people's
+     * fields are opened by HIL-1254.
      *
      * @param string $acceptKey Subscribing connection (unused)
      * @param PageRouteParams $params Route params naming the person
@@ -291,7 +315,21 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
         return new PagePayload(data: [
             self::ACCOUNT_DELETION_GRACE_DAYS => AccountDeletionSettings::graceDays(),
             self::ACCOUNT_STANDING => AccountStandingResolver::of($userId)->toArray(),
+            self::IMPERSONATION => ImpersonationCardSettings::current()->toArray(),
         ]);
+    }
+
+    /**
+     * Declares the impersonation settings open to a viewer of the admin view mode (HIL-1170).
+     *
+     * They are settings of the installation, not facts about the person on the card; the card's
+     * other keys stay hidden until the people's fields are opened (HIL-1254).
+     *
+     * @return array<string, WireField> Data key to where it comes from
+     */
+    protected function dataFields(): array
+    {
+        return [self::IMPERSONATION => WireField::notPersonal()];
     }
 
     /**
@@ -439,6 +477,42 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
                 acceptKey: $acceptKey,
                 requestId: $this->currentActionRequestId(),
                 action: HilosSignalConstants::HILOS_USER_DELETION_SET,
+                successMessage: null,
+            ),
+        );
+    }
+
+    /**
+     * Hands one takeover of the person on the card to the owner of the session and stops owing the caller an answer.
+     *
+     * The admin half of a two-step action: what this page is, is the door - it carries the ADMIN
+     * level that decides who may ask at all, and an agent action carries no such level, which is
+     * why the name is here. What it is not, is the writer: the session belongs to
+     * {@see AbstractSessionsLibraryAgent}, and a page runs in whichever worker serves the
+     * connection, so a page rebinding it would be a write with no claim behind it.
+     *
+     * Nothing is judged here on the way out, the admin's own session and the settings included:
+     * they would be read in this worker and acted on in another, and they are free to change in
+     * between. The library re-checks the administrator, asks the confirmation of the operation when
+     * it is switched on, and runs the whole guard order where it writes.
+     *
+     * No sentence is spoken on success: the takeover arrives as the rebound session on the
+     * handshake the library publishes, which is what the person sees change.
+     *
+     * @param string $acceptKey WebSocket accept key of the requesting admin
+     * @param ImpersonateStartActionDTO $dto Impersonation-start action payload
+     * @throws InvalidArgumentException When the request frame cannot be named or queued
+     */
+    private function handleImpersonateStart(string $acceptKey, ImpersonateStartActionDTO $dto): void
+    {
+        $this->forward(
+            HilosSignalConstants::HILOS_IMPERSONATE_REQUEST,
+            new ImpersonateRequestSignalData(
+                targetUserId: $dto->targetUserId,
+                replySignal: HilosSignalConstants::HILOS_IMPERSONATE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::HILOS_IMPERSONATE_START,
                 successMessage: null,
             ),
         );

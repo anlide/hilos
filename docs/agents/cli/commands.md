@@ -52,10 +52,11 @@ Every one of them is `daemon`: the CLI sends a request and prints the reply, bec
 they change lives where the accounts and the sessions do. All six are the framework's since
 HIL-729, and all six are answered by the sessions library in every project, because each of
 them ends in a session being told who it is now — the merge by consequence, since a folded-away
-account's open tabs have to be signed out before the merge is true. What a project is asked is
-a seam apiece: whether the takeover is allowed, and — for the merge — whether these two
-accounts may be merged at all plus what this project keeps for a person. A project that wires
-no seam refuses rather than falling silent.
+account's open tabs have to be signed out before the merge is true. Whether the takeover is
+allowed is the framework's own judgement over the people table and the impersonation settings
+(HIL-1197, HIL-1170); what a project is asked is the merge's seam — whether these two accounts
+may be merged at all plus what this project keeps for a person. A project that wires no merge
+refuses it rather than falling silent.
 
 | Command | Site | Description |
 |---|---|---|
@@ -69,14 +70,21 @@ no seam refuses rather than falling silent.
 `account:merge` reports what moved as a map rather than a count: the framework moves the
 sign-in identities itself and asks the project to move the rows only it knows about, so the
 reply carries the project's own tally under the project's own names — in chat, `messages`.
-It is also the one command of the six with a second way in: an admin table submits the same
-merge as the `hilos_user_merge` action on the single-user page, the page forwards it to the
-library on `hilos_account_merge`, and the outcome comes back to that page on
-`hilos_account_merge_done` so the tracked action is completed where it began. That
+It also has a second way in, as `impersonate:start` and the grant pair do: an admin table
+submits the same merge as the `hilos_user_merge` action on the single-user page, the page
+forwards it to the library on `hilos_account_merge`, and the outcome comes back to that
+page on `hilos_account_merge_done` so the tracked action is completed where it began. That
 second way in asks what the command does not: an active administrator and their fresh
 confirmation of the merge (the step-up operation `merge_accounts`, see
 [step-up.md](../architecture/step-up.md)) — the operator at the console has nothing to
 confirm with.
+
+`impersonate:start` is judged by the same `assertImpersonationAllowed()` as the person's
+card, the impersonation settings included (HIL-1170,
+[people-table.md](../architecture/people-table.md)): it is refused while impersonation is
+switched off, and for a blocked person, a frozen person or another administrator whose
+switch is off, in the card's words on the error reply. It asks no step-up — the card's
+`impersonate` operation is the browser's alone.
 
 ## Test-only commands
 

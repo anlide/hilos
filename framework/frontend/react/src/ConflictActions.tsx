@@ -10,8 +10,13 @@
 // conflict is unresolved, the three resolution choices: keep mine, take theirs,
 // and merge where the surface asks for it. Save stays disabled until the
 // conflict is resolved. The handlers fire the choice; the parent form applies
-// it against the core threeWayMerge result. Bootstrap classes only.
+// it against the core threeWayMerge result. In the page's area of a takeover
+// that only looks Save stands disabled — the default one and the custom one
+// alike (HIL-1170); Cancel and the conflict choices, which edit only the draft
+// in this window, stay as always. Bootstrap classes only.
 import type { ReactNode } from 'react'
+
+import { useLookOnly } from './hilosLookOnly.js'
 
 /** Props for {@link ConflictActions}. */
 export interface ConflictActionsProps {
@@ -68,7 +73,8 @@ export function ConflictActions({
   cancelButton,
   saveButton,
 }: ConflictActionsProps) {
-  const disabled = disableSave || conflict
+  const lookOnly = useLookOnly()
+  const disabled = disableSave || conflict || lookOnly.locked
   const handleSave = (): void => onSave?.()
 
   return (
@@ -125,6 +131,7 @@ export function ConflictActions({
           type="button"
           className="btn btn-primary"
           disabled={disabled}
+          aria-describedby={lookOnly.describedBy}
           data-id="conflict-save"
           onClick={handleSave}
         >

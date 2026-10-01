@@ -24,6 +24,11 @@ export {
   type HilosTableSelectionEdge,
 } from './hilosTableSelectionEdge.js'
 export { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
+export {
+  HILOS_TAKEOVER_VIEW_ONLY,
+  injectLookOnly,
+  type LookOnly,
+} from './hilosLookOnly.js'
 export { HILOS_AUTH_GATE } from './auth/hilosAuthGateToken.js'
 export { HilosAuthSurface } from './auth/HilosAuthSurface.js'
 export { HilosMagicLinkPage } from './auth/HilosMagicLinkPage.js'
@@ -69,6 +74,7 @@ export { HilosSecurityOauthProviderPage } from './admin/security/HilosSecurityOa
 export { HilosSecuritySignInMethodsPage } from './admin/security/HilosSecuritySignInMethodsPage.js'
 export { HilosSecurity2faPage } from './admin/security/HilosSecurity2faPage.js'
 export { HilosSecurityStepUpPage } from './admin/security/HilosSecurityStepUpPage.js'
+export { HilosSecurityImpersonationPage } from './admin/security/HilosSecurityImpersonationPage.js'
 export { HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
 export {
   HilosUsersPage,

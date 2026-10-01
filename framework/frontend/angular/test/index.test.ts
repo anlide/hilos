@@ -8,6 +8,7 @@ import {
   HILOS_AUTH_GATE,
   HILOS_PAGE_HEADING_ID,
   HILOS_ROUTER,
+  HILOS_TAKEOVER_VIEW_ONLY,
   HilosAdminPage,
   HilosAuthSurface,
   HilosBreadcrumb,
@@ -31,12 +32,15 @@ import {
   LoadingButton,
   connectionStateSignal,
   createHilosTrackedAction,
+  injectLookOnly,
 } from '../src/index.js'
 
 it('exports the @hilos/angular public surface', () => {
   expect(connectionStateSignal).toBeTypeOf('function')
   expect(HILOS_ROUTER).toBeTypeOf('object')
   expect(HILOS_PAGE_HEADING_ID).toBeTypeOf('object')
+  expect(HILOS_TAKEOVER_VIEW_ONLY).toBeTypeOf('object')
+  expect(injectLookOnly).toBeTypeOf('function')
   expect(HILOS_AUTH_GATE).toBeTypeOf('object')
   expect(HilosLink).toBeTypeOf('function')
   expect(HilosView).toBeTypeOf('function')

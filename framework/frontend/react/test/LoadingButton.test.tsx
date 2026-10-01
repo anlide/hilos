@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 import { LoadingButton } from '../src/LoadingButton.js'
+import { HilosTakeoverViewOnlyContext } from '../src/hilosLookOnly.js'
 
 function spinner(container: HTMLElement): Element | null {
   return container.querySelector('[data-id="loading-button-spinner"]')
@@ -69,5 +70,77 @@ describe('LoadingButton', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('LoadingButton in a takeover that only looks (HIL-1170)', () => {
+  afterEach(cleanup)
+
+  it('stands disabled, swallows clicks, and points at the impersonation strip beside its own', () => {
+    let clicks = 0
+    render(
+      <HilosTakeoverViewOnlyContext.Provider value>
+        <LoadingButton
+          aria-describedby="row-reason"
+          onClick={() => {
+            clicks += 1
+          }}
+        >
+          Send
+        </LoadingButton>
+      </HilosTakeoverViewOnlyContext.Provider>,
+    )
+    const button = screen.getByRole('button') as HTMLButtonElement
+
+    expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-describedby')).toBe(
+      'row-reason hilos-impersonation-strip-text',
+    )
+    expect(button.textContent).toBe('Send')
+    fireEvent.click(button)
+    expect(clicks).toBe(0)
+  })
+
+  it('is live while the takeover may act', () => {
+    let clicks = 0
+    render(
+      <HilosTakeoverViewOnlyContext.Provider value={false}>
+        <LoadingButton
+          onClick={() => {
+            clicks += 1
+          }}
+        >
+          Send
+        </LoadingButton>
+      </HilosTakeoverViewOnlyContext.Provider>,
+    )
+    const button = screen.getByRole('button') as HTMLButtonElement
+
+    expect(button.disabled).toBe(false)
+    expect(button.getAttribute('aria-describedby')).toBeNull()
+    fireEvent.click(button)
+    expect(clicks).toBe(1)
+  })
+
+  it('stays live when it only opens a window', () => {
+    let clicks = 0
+    render(
+      <HilosTakeoverViewOnlyContext.Provider value>
+        <LoadingButton
+          opensWindow
+          onClick={() => {
+            clicks += 1
+          }}
+        >
+          Open
+        </LoadingButton>
+      </HilosTakeoverViewOnlyContext.Provider>,
+    )
+    const button = screen.getByRole('button') as HTMLButtonElement
+
+    expect(button.disabled).toBe(false)
+    expect(button.getAttribute('aria-describedby')).toBeNull()
+    fireEvent.click(button)
+    expect(clicks).toBe(1)
   })
 })

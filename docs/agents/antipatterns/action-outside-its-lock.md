@@ -98,7 +98,8 @@ would have nothing to tell the person.
 - An agent action guarded by a project seam that asks "is this an
   administrator". The `Wrong` example above is hypothetical, but this one was
   real: `hilos_impersonate_start` sat in the sessions library's `AGENT_ACTIONS`
-  from HIL-729 until HIL-824 moved it onto `AbstractHilosUsersPage`, and the
+  from HIL-729 until HIL-824 moved it onto `AbstractHilosUsersPage` (onto the
+  person's card, `AbstractHilosUserPage`, since HIL-1170), and the
   admin check it needed was asked of the project through a seam because an agent
   action had no level to stand on. A reader who greps the history will find it;
   it is the mistake, not the pattern.

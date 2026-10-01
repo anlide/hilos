@@ -54,6 +54,7 @@ use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
+use Demo\Tasks\Pages\Hilos\Security\SecurityImpersonationPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
@@ -90,6 +91,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
+use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
@@ -489,6 +491,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
             TasksTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
             TasksTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+            TasksTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
             TasksTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
             TasksTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
             TasksTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
@@ -515,6 +518,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 SecuritySignInMethodsPage::PAGE,
                 SecurityTwoFactorPage::PAGE,
                 SecurityStepUpPage::PAGE,
+                SecurityImpersonationPage::PAGE,
                 LegalPage::PAGE,
                 LegalDocumentPage::PAGE,
                 LegalRevisionPage::PAGE,

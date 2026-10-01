@@ -145,6 +145,39 @@ describe('hilosAdminAccess', () => {
     expect(hilosAdminAccess.get()).toBe('view')
   })
 
+  it('is full inside a takeover that carries the administrator rights in (HIL-1170)', () => {
+    const booted = bind()
+    const takeover = (carryAdmin: boolean): Record<string, unknown> => ({
+      entities: {
+        currentUser: { id: 7, name: 'Olena', admin: false },
+        impersonatedBy: { id: 1, name: 'Ada' },
+      },
+      data: {
+        adminViewMode: false,
+        impersonationPolicy: { viewOnly: false, carryAdmin },
+      },
+    })
+
+    booted.connection.emitHandshakeResponse(takeover(false))
+    expect(hilosAdminAccess.get()).toBe('none')
+
+    booted.connection.emitHandshakeResponse(takeover(true))
+    expect(hilosAdminAccess.get()).toBe('full')
+  })
+
+  it('does not carry rights outside a takeover', () => {
+    const booted = bind()
+    booted.connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 7, name: 'Olena', admin: false } },
+      data: {
+        adminViewMode: false,
+        impersonationPolicy: { viewOnly: false, carryAdmin: true },
+      },
+    })
+
+    expect(hilosAdminAccess.get()).toBe('none')
+  })
+
   it('follows the configured current-user slot', () => {
     const booted = bind({ currentUserSlot: 'person' })
     booted.connection.emitHandshakeResponse({

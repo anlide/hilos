@@ -6,10 +6,14 @@ import {
 import {
   bindImpersonation,
   hilosImpersonation,
+  hilosTakeoverViewOnly,
   IMPERSONATION_ACTION_STOP,
   stopImpersonation,
 } from '../../src/session/impersonation.js'
-import { bindSessionScope } from '../../src/session/sessionScope.js'
+import {
+  bindSessionScope,
+  SIGNAL_IMPERSONATION_POLICY,
+} from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
 
@@ -26,9 +30,12 @@ function fakeConnection() {
       return () => {}
     },
     emitHandshakeResponse(payload: Record<string, unknown>): void {
+      this.emit('handshake_response', payload)
+    },
+    emit(type: string, payload: Record<string, unknown>): void {
       const signal = {
         kind: 'project',
-        type: 'handshake_response',
+        type,
         data: payload,
         envelope: {},
       } as unknown as ProjectSignal
@@ -115,6 +122,7 @@ describe('hilosImpersonation', () => {
     expect(hilosImpersonation.get()).toEqual({
       userName: 'Bob',
       tone: 'warning',
+      viewOnly: false,
     })
   })
 
@@ -135,6 +143,81 @@ describe('hilosImpersonation', () => {
     booted.unbind()
 
     expect(hilosImpersonation.get()).toBeNull()
+  })
+})
+
+describe('a takeover that only looks (HIL-1170)', () => {
+  let unbind: (() => void) | undefined
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+  })
+
+  /**
+   * The takeover handshake carrying the installation's policy.
+   *
+   * @param viewOnly Whether the administrator may only look.
+   */
+  function takeoverWith(viewOnly: boolean): Record<string, unknown> {
+    return {
+      ...TAKEOVER,
+      data: { impersonationPolicy: { viewOnly, carryAdmin: false } },
+    }
+  }
+
+  it('is false before any bind and for a plain session', () => {
+    expect(hilosTakeoverViewOnly.get()).toBe(false)
+
+    const booted = bind()
+    unbind = booted.unbind
+    booted.connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+      data: { impersonationPolicy: { viewOnly: true, carryAdmin: false } },
+    })
+
+    expect(hilosImpersonation.get()).toBeNull()
+    expect(hilosTakeoverViewOnly.get()).toBe(false)
+  })
+
+  it('marks the strip and the flag from the policy the handshake carries', () => {
+    const booted = bind()
+    unbind = booted.unbind
+
+    booted.connection.emitHandshakeResponse(takeoverWith(true))
+
+    expect(hilosImpersonation.get()).toEqual({
+      userName: 'Bob',
+      tone: 'warning',
+      viewOnly: true,
+    })
+    expect(hilosTakeoverViewOnly.get()).toBe(true)
+  })
+
+  it('follows the policy frame live, and drops with the takeover', () => {
+    const booted = bind()
+    unbind = booted.unbind
+    booted.connection.emitHandshakeResponse(takeoverWith(false))
+    expect(hilosTakeoverViewOnly.get()).toBe(false)
+
+    booted.connection.emit(SIGNAL_IMPERSONATION_POLICY, {
+      viewOnly: true,
+      carryAdmin: false,
+    })
+    expect(hilosImpersonation.get()?.viewOnly).toBe(true)
+    expect(hilosTakeoverViewOnly.get()).toBe(true)
+
+    booted.connection.emitHandshakeResponse(RESTORED)
+    expect(hilosTakeoverViewOnly.get()).toBe(false)
+  })
+
+  it('is false again once unbound', () => {
+    const booted = bind()
+    booted.connection.emitHandshakeResponse(takeoverWith(true))
+
+    booted.unbind()
+
+    expect(hilosTakeoverViewOnly.get()).toBe(false)
   })
 })
 

@@ -10,6 +10,10 @@ import {
   createHilosUserStanding,
   hilosStandingBadge,
   hilosUserFrozenRow,
+  hilosUserImpersonationSection,
+  HILOS_USER_IMPERSONATION_COPY,
+  readHilosUserImpersonationSettings,
+  type HilosUserImpersonationSettings,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   hilosPasswordFateChoices,
   HILOS_USER_CARD_STEP_UP_OPERATIONS,
@@ -996,6 +1000,7 @@ describe('createHilosUserCardStepUp', () => {
       revoke: 'revoke_admin',
       block: 'block_account',
       delete: 'delete_other_account',
+      impersonate: 'impersonate',
     })
   })
 
@@ -1127,6 +1132,213 @@ describe('createHilosUserCardStepUp', () => {
       )
     } finally {
       release()
+    }
+  })
+})
+
+describe('readHilosUserImpersonationSettings (HIL-1170)', () => {
+  it('reads every flag as true only when it is true, and the scope as view or act', () => {
+    expect(
+      readHilosUserImpersonationSettings({
+        allowed: true,
+        scope: 'view',
+        carryAdmin: true,
+        blocked: false,
+        frozen: true,
+        equal: false,
+      }),
+    ).toStrictEqual({
+      allowed: true,
+      scope: 'view',
+      carryAdmin: true,
+      blocked: false,
+      frozen: true,
+      equal: false,
+    })
+    expect(
+      readHilosUserImpersonationSettings({ allowed: 'true', scope: 'all' }),
+    ).toStrictEqual({
+      allowed: false,
+      scope: 'act',
+      carryAdmin: false,
+      blocked: false,
+      frozen: false,
+      equal: false,
+    })
+  })
+
+  it('is null for an answer that carried no settings', () => {
+    for (const value of [undefined, null, 'allowed', 1, []]) {
+      expect(readHilosUserImpersonationSettings(value)).toBeNull()
+    }
+  })
+
+  it('is read by the card lifecycle from the page data', () => {
+    const { scopes, users } = userStore()
+    const lifecycle = createHilosUserLifecycle({
+      scopes,
+      users,
+    } as HilosUsersContext)
+
+    expect(lifecycle.impersonation.get()).toBeNull()
+    scopes.page()?.data.set('impersonation', {
+      allowed: true,
+      scope: 'act',
+      carryAdmin: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
+    expect(lifecycle.impersonation.get()?.allowed).toBe(true)
+  })
+})
+
+describe('hilosUserImpersonationSection (HIL-1170)', () => {
+  const detail: HilosUserDetailRow = {
+    id: 5,
+    name: 'Maria',
+    lastActivity: null,
+    presence: 'online',
+    onlineSessionCount: 1,
+    hasPassword: true,
+    admin: false,
+    block: false,
+    deletionEffectiveAt: null,
+    unverifiedPasswordAddress: null,
+  }
+
+  /**
+   * The installation's settings: everything allowed, look and act.
+   *
+   * @param overrides The settings that differ.
+   */
+  function settings(
+    overrides: Partial<HilosUserImpersonationSettings> = {},
+  ): HilosUserImpersonationSettings {
+    return {
+      allowed: true,
+      scope: 'act',
+      carryAdmin: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+      ...overrides,
+    }
+  }
+
+  const copy = HILOS_USER_IMPERSONATION_COPY
+
+  it('is null while impersonation is off, the card has no settings, or no row', () => {
+    expect(
+      hilosUserImpersonationSection(detail, 99, settings({ allowed: false })),
+    ).toBeNull()
+    expect(hilosUserImpersonationSection(detail, 99, null)).toBeNull()
+    expect(hilosUserImpersonationSection(undefined, 99, settings())).toBeNull()
+  })
+
+  it('names the person and draws an open button by default', () => {
+    expect(hilosUserImpersonationSection(detail, 99, settings())).toStrictEqual(
+      {
+        title: 'Impersonation',
+        rowTitle: 'Act as Maria',
+        hint: copy.withoutRights,
+        disabled: false,
+        reason: null,
+        reasonSpace: copy.equalReason,
+        windowTitle: 'Impersonate · Maria',
+        paragraphs: [`${copy.withoutRights}.`, copy.strip],
+        note: copy.journal,
+      },
+    )
+  })
+
+  it('says what the takeover will be by the scope and the carried rights', () => {
+    expect(
+      hilosUserImpersonationSection(detail, 99, settings({ carryAdmin: true }))
+        ?.hint,
+    ).toBe(copy.withRights)
+    const viewOnly = hilosUserImpersonationSection(
+      detail,
+      99,
+      settings({ scope: 'view', carryAdmin: true }),
+    )
+    expect(viewOnly?.hint).toBe(copy.viewOnly)
+    expect(viewOnly?.paragraphs[0]).toBe(
+      'You will only look: nothing can be changed.',
+    )
+  })
+
+  it('switches the button off on the own card, whatever the settings', () => {
+    const own = hilosUserImpersonationSection(detail, 5, settings())
+
+    expect(own?.disabled).toBe(true)
+    expect(own?.reason).toBe('You cannot impersonate yourself')
+  })
+
+  it('switches the button off for a blocked person only while their row is off', () => {
+    const blocked = { ...detail, block: true }
+
+    expect(
+      hilosUserImpersonationSection(blocked, 99, settings({ blocked: false }))
+        ?.reason,
+    ).toBe('Impersonating a blocked person is switched off')
+    expect(
+      hilosUserImpersonationSection(blocked, 99, settings())?.disabled,
+    ).toBe(false)
+    // The verdict outranks the row: a lifted block reads as lifted.
+    expect(
+      hilosUserImpersonationSection(
+        blocked,
+        99,
+        settings({ blocked: false }),
+        readStanding({ blocked: false }),
+      )?.disabled,
+    ).toBe(false)
+  })
+
+  it('switches the button off for a frozen person only while their row is off', () => {
+    const frozen = readStanding({ shown: 'frozen', frozen: true })
+
+    expect(
+      hilosUserImpersonationSection(
+        detail,
+        99,
+        settings({ frozen: false }),
+        frozen,
+      )?.reason,
+    ).toBe('Impersonating a frozen person is switched off')
+    expect(
+      hilosUserImpersonationSection(detail, 99, settings(), frozen)?.disabled,
+    ).toBe(false)
+  })
+
+  it('switches the button off for another administrator only while equals are off', () => {
+    const admin = { ...detail, admin: true }
+
+    expect(
+      hilosUserImpersonationSection(admin, 99, settings({ equal: false }))
+        ?.reason,
+    ).toBe('Impersonating another administrator is switched off')
+    expect(hilosUserImpersonationSection(admin, 99, settings())?.disabled).toBe(
+      false,
+    )
+  })
+
+  it('holds the room of its longest reason', () => {
+    const reasons = [
+      copy.ownReason,
+      copy.blockedReason,
+      copy.frozenReason,
+      copy.equalReason,
+    ]
+    const space = hilosUserImpersonationSection(
+      detail,
+      99,
+      settings(),
+    )?.reasonSpace
+
+    for (const reason of reasons) {
+      expect(space?.length).toBeGreaterThanOrEqual(reason.length)
     }
   })
 })

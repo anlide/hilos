@@ -471,12 +471,12 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_FOLLOW_START => PageConstants::HILOS_LOGS_VIEW,
             HilosSignalConstants::LOGS_FOLLOW_STOP => PageConstants::HILOS_LOGS_VIEW,
             HilosSignalConstants::SETTING_PRESET_APPLY => PageConstants::HILOS_LOGS_SETTINGS,
-            HilosSignalConstants::HILOS_IMPERSONATE_START => HilosPageConstants::HILOS_USERS,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_MERGE => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_SET => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_BLOCK_SET => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_DELETION_SET => PageConstants::HILOS_USER,
+            HilosSignalConstants::HILOS_IMPERSONATE_START => PageConstants::HILOS_USER,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
@@ -492,6 +492,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_RESET => PageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
             HilosSignalConstants::SECURITY_SIGN_IN_METHOD_SET => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
             HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
+            HilosSignalConstants::SECURITY_IMPERSONATION_SWITCH_SET => HilosPageConstants::HILOS_SECURITY_IMPERSONATION,
+            HilosSignalConstants::SECURITY_IMPERSONATION_SCOPE_SET => HilosPageConstants::HILOS_SECURITY_IMPERSONATION,
             HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS,
         ], Hilos::getPageActionRoutes());
     }
@@ -530,12 +532,12 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_FOLLOW_START => AgentType::HILOS_LOGS,
             HilosSignalConstants::LOGS_FOLLOW_STOP => AgentType::HILOS_LOGS,
             HilosSignalConstants::SETTING_PRESET_APPLY => AgentType::HILOS_LOGS,
-            HilosSignalConstants::HILOS_IMPERSONATE_START => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_MERGE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_ADMIN_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_BLOCK_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_DELETION_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_IMPERSONATE_START => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => AgentType::HILOS_INDEX,
@@ -551,6 +553,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_SIGN_IN_METHOD_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SECURITY_IMPERSONATION_SWITCH_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SECURITY_IMPERSONATION_SCOPE_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
@@ -566,12 +570,12 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => HilosPageConstants::HILOS_BACKUP,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE
                     => HilosPageConstants::HILOS_LOGS_SETTINGS,
-                HilosSignalConstants::HILOS_IMPERSONATE_DONE => HilosPageConstants::HILOS_USERS,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => PageConstants::HILOS_USER,
+                HilosSignalConstants::HILOS_IMPERSONATE_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE
                     => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE
@@ -581,6 +585,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_LEGAL_SETTING_WRITE_DONE => HilosPageConstants::HILOS_LEGAL_SETTINGS,
                 HilosSignalConstants::HILOS_OAUTH_REDIRECT_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_OAUTH,
                 HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
+                HilosSignalConstants::HILOS_IMPERSONATION_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_IMPERSONATION,
             ],
         ], Hilos::getPageSignalRoutes());
     }
@@ -595,12 +600,12 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => AgentType::HILOS_LOGS,
-                HilosSignalConstants::HILOS_IMPERSONATE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_IMPERSONATE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_SECOND_FACTOR_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
@@ -608,6 +613,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_LEGAL_SETTING_WRITE_DONE => AgentType::HILOS_LEGAL,
                 HilosSignalConstants::HILOS_OAUTH_REDIRECT_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_IMPERSONATION_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
             ],
         ], Hilos::getPageSignalAgentRoutes());
     }

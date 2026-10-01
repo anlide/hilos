@@ -18,6 +18,11 @@ use Hilos\Core\Exception\InvalidArgumentException;
  * Most operations ask until an administrator switches them off. An operation declared off by
  * default - one the real administrator undoes with a single action on returning to the browser -
  * asks only once an administrator switches it on (HIL-1275).
+ *
+ * An operation that touches the sign-in of the account is closed inside a takeover unless the
+ * administrator allowed it; allowed, its confirmation is asked of the ADMINISTRATOR, by their own
+ * method, and never of the person whose account it is (HIL-1170). Every other operation of a
+ * person's own account stays closed to a takeover whatever the setting says.
  */
 final readonly class StepUpOperation
 {
@@ -35,6 +40,8 @@ final readonly class StepUpOperation
      *     authenticator app, so an account with one is not asked twice
      * @param bool $enabledByDefault Whether the operation asks until an administrator switches it off (true)
      *     or only once one switches it on (false)
+     * @param bool $accountAccess Whether the operation touches the sign-in of the account, so that a takeover
+     *     allowed to touch it may run it, confirmed by the administrator
      * @throws InvalidArgumentException When the operation key is empty or malformed
      */
     public function __construct(
@@ -46,6 +53,7 @@ final readonly class StepUpOperation
         public bool $passesWithNothingToConfirm = false,
         public bool $opensWithSecondFactorProof = false,
         public bool $enabledByDefault = true,
+        public bool $accountAccess = false,
     ) {
         if (preg_match(self::KEY_PATTERN, $key) !== 1) {
             throw new InvalidArgumentException("Invalid step-up operation key: {$key}");

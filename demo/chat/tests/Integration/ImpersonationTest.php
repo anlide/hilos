@@ -9,29 +9,52 @@ use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\Impersonation\ImpersonationMessages;
+use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\Exception\ActionImpersonationException;
+use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageAccessVerdict;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
-use Hilos\Pages\Users\AbstractHilosUsersPage;
+use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Logger;
 
 /**
  * Integration tests for admin impersonation. The CLI command handlers (HIL-166)
@@ -43,21 +66,29 @@ use Hilos\Utils\Helpers\RandomHelper;
  * the marker-before-rebind ordering.
  *
  * The two commands and the browser STOP are driven at the sessions library, which owns
- * them (HIL-729). The browser START is not: HIL-824 moved its name onto the framework
- * Hilos users page, because only an administrator may take a person over and an ADMIN
- * level is a thing only a page carries. So that one is driven at the page, which forwards
+ * them (HIL-729). The browser START is not: HIL-824 moved its name onto a framework admin
+ * page - the person's card since HIL-1170 - because only an administrator may take a person
+ * over and an ADMIN level is a thing only a page carries. So that one is driven at the page, which forwards
  * {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST} to the library and is answered on
  * {@see HilosSignalConstants::HILOS_IMPERSONATE_DONE} - and a refusal reaches it as text on
  * that frame, because the guards now run outside a page.
  *
  * Nothing of the takeover is left in this project either way: whether it is allowed is the
- * framework's check over the people table since HIL-1197. What the chat agent still does is
+ * framework's check over the people table since HIL-1197, and over the administrator's
+ * impersonation settings since HIL-1170 - written here as rows by the settings library's own
+ * hand, and taken away again by every case that wrote one. What the chat agent still does is
  * say the result out loud, which is why every case hands it the frames the library queued.
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class ImpersonationTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
+
+    /** Writer the settings rows of a case are stored under: the settings library is the one owner of that table. */
+    private const string SETTINGS_AGENT_ID = 'test-impersonation-settings-writer';
+
+    /** Lifetime of a confirmation a case grants the administrator, in seconds. */
+    private const int CONFIRMATION_TTL_SECONDS = 900;
 
     /**
      * A successful start rebinds the session (and its connection) to the target
@@ -245,6 +276,7 @@ final class ImpersonationTest extends IntegrationTestCase
             $this->assertSame($targetId, $response->selfId);
             $this->assertSame($adminId, $response->impersonatorId);
             $this->assertSame($adminName, $response->impersonatorName);
+            $this->assertSame(['viewOnly' => false, 'carryAdmin' => false], $response->impersonationPolicy);
         } finally {
             Hilos::$rt->connections->actions->clear();
         }
@@ -289,6 +321,210 @@ final class ImpersonationTest extends IntegrationTestCase
     }
 
     /**
+     * Impersonation switched off closes both doors: the card's takeover and the operator's command (HIL-1170).
+     *
+     * @throws HilosException When setup, the action or the command fails
+     */
+    public function testASwitchedOffImpersonationClosesTheCardAndTheCommand(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'off-ak', $token);
+        $targetId = $this->registerUser();
+        $this->storeSetting(ImpersonationSettings::ALLOWED_KEY, '0');
+        $this->drainSignals();
+
+        try {
+            $this->runPageStart($agent, 'off-ak', $targetId);
+            $this->assertSame(ImpersonationMessages::SWITCHED_OFF, $this->lastImpersonateDone()?->error);
+
+            $this->runCommand($agent, $this->startCommand($token, $targetId));
+
+            $session = Hilos::$db->sessions->findByToken($token);
+            $this->assertSame($adminId, $session?->userId);
+            $this->assertNull($session?->impersonatorUserId);
+        } finally {
+            $this->storeSetting(ImpersonationSettings::ALLOWED_KEY, null);
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * A blocked person is refused on the card in the words of the switched-off row, and the session is left alone (HIL-1170).
+     *
+     * @throws HilosException When setup or the action fails
+     */
+    public function testTheCardRefusesABlockedPersonOnceThatRowIsSwitchedOff(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'blocked-ak', $token);
+        $targetId = $this->registerUser();
+        Hilos::$db->users[$targetId]->actions->setBlock(true);
+        AccountStandingResolver::forgetAll();
+        $this->storeSetting(ImpersonationSettings::BLOCKED_KEY, '0');
+        $this->drainSignals();
+
+        try {
+            $this->runPageStart($agent, 'blocked-ak', $targetId);
+
+            $this->assertSame(ImpersonationMessages::BLOCKED_OFF, $this->lastImpersonateDone()?->error);
+            $this->assertSame($adminId, $this->sessionOf('blocked-ak')?->userId);
+        } finally {
+            $this->storeSetting(ImpersonationSettings::BLOCKED_KEY, null);
+            AccountStandingResolver::forgetAll();
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * The takeover from the card is an operation of the administrator's confirmation, declared off (HIL-1170).
+     *
+     * Off, the card takes the person over at once - the other cases. Switched on, the takeover
+     * asks the administrator's fresh confirmation first, and goes through once it is given. The
+     * operator's command stands outside it: the console has nothing to confirm with.
+     *
+     * @throws HilosException When setup, the action or the command fails
+     */
+    public function testASwitchedOnConfirmationHoldsTheCardButNotTheCommand(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'confirm-ak', $token);
+        $targetId = $this->registerUser();
+        $this->storeSetting(StepUpSettings::ENABLED_KEY, StepUpOperationKey::IMPERSONATE);
+        $this->drainSignals();
+
+        try {
+            $this->runPageStart($agent, 'confirm-ak', $targetId);
+            $this->assertSame(StepUpMessages::EXPIRED, $this->lastImpersonateDone()?->error);
+            $this->assertNull($this->sessionOf('confirm-ak')?->impersonatorUserId);
+
+            Hilos::$db->stepUps->actions->confirm(
+                ProtectedModeRuntime::hashSessionToken($token),
+                $adminId,
+                StepUpOperationKey::IMPERSONATE,
+                date('Y-m-d H:i:s', time() + self::CONFIRMATION_TTL_SECONDS),
+            );
+            $this->runPageStart($agent, 'confirm-ak', $targetId);
+
+            $this->assertSame($targetId, $this->sessionOf('confirm-ak')?->userId);
+            $this->assertSame($adminId, $this->sessionOf('confirm-ak')?->impersonatorUserId);
+        } finally {
+            $this->storeSetting(StepUpSettings::ENABLED_KEY, null);
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * Only looking refuses every writing action inside a takeover, with its own code, and "Stop" still returns the session (HIL-1170).
+     *
+     * Driven through the action dispatcher, where the check stands, at the sessions library's own
+     * actions: ending the person's other sessions writes, the stop is the exit.
+     *
+     * @throws HilosException When setup, a dispatch or the command fails
+     */
+    public function testOnlyLookingRefusesAWriteInsideATakeoverAndLetsTheStopThrough(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'look-ak', $token);
+        $targetId = $this->registerUser();
+        $this->runCommand($agent, $this->startCommand($token, $targetId));
+        $this->storeSetting(ImpersonationSettings::SCOPE_KEY, ImpersonationSettings::SCOPE_VIEW);
+        $this->storeSetting(ImpersonationSettings::ACCOUNT_ACCESS_KEY, '1');
+        $this->drainSignals();
+
+        try {
+            $this->dispatchToTheLibrary('look-ak', HilosSignalConstants::HILOS_SESSIONS_END_OTHERS);
+            $this->assertSame(ActionImpersonationException::CODE_VIEW_ONLY, $this->actionErrorTo('look-ak')?->errorCode);
+
+            $this->dispatchToTheLibrary('look-ak', HilosSignalConstants::HILOS_IMPERSONATE_STOP);
+            $this->deliverLibraryFrames($agent);
+
+            $this->assertSame($adminId, $this->sessionOf('look-ak')?->userId);
+            $this->assertNull($this->sessionOf('look-ak')?->impersonatorUserId);
+        } finally {
+            $this->storeSetting(ImpersonationSettings::SCOPE_KEY, null);
+            $this->storeSetting(ImpersonationSettings::ACCOUNT_ACCESS_KEY, null);
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * The sign-in of the account stays closed inside a takeover until it is allowed, and what passes is journaled with both people (HIL-1170).
+     *
+     * @throws HilosException When setup, a dispatch or the command fails
+     */
+    public function testTheSignInStaysClosedInsideATakeoverUntilAllowedAndThenIsJournaled(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'access-ak', $token);
+        $targetId = $this->registerUser();
+        $this->runCommand($agent, $this->startCommand($token, $targetId));
+        $this->drainSignals();
+        $journal = (string) tempnam(sys_get_temp_dir(), 'hilos-impersonated-action');
+        Logger::setLogFile($journal);
+
+        try {
+            $this->dispatchToTheLibrary('access-ak', HilosSignalConstants::HILOS_SESSIONS_END_OTHERS);
+            $this->assertSame(ActionImpersonationException::CODE_ACCOUNT_ACCESS, $this->actionErrorTo('access-ak')?->errorCode);
+            $this->assertStringNotContainsString('impersonated_action', (string) file_get_contents($journal));
+
+            $this->storeSetting(ImpersonationSettings::ACCOUNT_ACCESS_KEY, '1');
+            $this->dispatchToTheLibrary('access-ak', HilosSignalConstants::HILOS_SESSIONS_END_OTHERS);
+
+            $this->assertNull($this->actionErrorTo('access-ak'));
+            $line = (string) file_get_contents($journal);
+            $this->assertStringContainsString('impersonated_action', $line);
+            $this->assertStringContainsString('"admin":' . $adminId, $line);
+            $this->assertStringContainsString('"user":' . $targetId, $line);
+            $this->assertStringContainsString('"action":"' . HilosSignalConstants::HILOS_SESSIONS_END_OTHERS . '"', $line);
+        } finally {
+            Logger::resetLogFile();
+            unlink($journal);
+            $this->storeSetting(ImpersonationSettings::ACCOUNT_ACCESS_KEY, null);
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * Carried rights open the admin surface inside a takeover, and the actions on people refuse it all the same (HIL-1170).
+     *
+     * @throws HilosException When setup, the command or the action fails
+     */
+    public function testCarriedRightsOpenTheAdminSurfaceButNotTheActionsOnPeople(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $this->authenticatedAdminSession($agent, 'rights-ak', $token);
+        $targetId = $this->registerUser();
+        $otherId = $this->registerUser();
+        $this->runCommand($agent, $this->startCommand($token, $targetId));
+        $this->drainSignals();
+
+        try {
+            try {
+                PageAccessGate::verdict(UsersPage::class, 'rights-ak');
+                $this->fail('Without the carried rights the admin surface is closed inside a takeover');
+            } catch (PageForbiddenException) {
+                $this->addToAssertionCount(1);
+            }
+
+            $this->storeSetting(ImpersonationSettings::CARRY_ADMIN_KEY, '1');
+            $this->assertSame(PageAccessVerdict::ALLOW, PageAccessGate::verdict(UsersPage::class, 'rights-ak'));
+
+            $this->runPageStart($agent, 'rights-ak', $otherId);
+            $this->assertSame('Only an active administrator can do this', $this->lastImpersonateDone()?->error);
+            $this->assertSame($targetId, $this->sessionOf('rights-ak')?->userId);
+        } finally {
+            $this->storeSetting(ImpersonationSettings::CARRY_ADMIN_KEY, null);
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
      * The name is declared where the lock is, and nowhere else.
      *
      * The lock never travels with the name (HIL-771), so what closes the takeover is
@@ -301,9 +537,9 @@ final class ImpersonationTest extends IntegrationTestCase
     {
         $this->assertArrayHasKey(
             HilosSignalConstants::HILOS_IMPERSONATE_START,
-            AbstractHilosUsersPage::ACTIONS,
+            AbstractHilosUserPage::ACTIONS,
         );
-        $this->assertSame(PageAccessLevel::ADMIN, AbstractHilosUsersPage::ACCESS_LEVEL);
+        $this->assertSame(PageAccessLevel::ADMIN, AbstractHilosUserPage::ACCESS_LEVEL);
         $this->assertArrayNotHasKey(
             HilosSignalConstants::HILOS_IMPERSONATE_START,
             AbstractSessionsLibraryAgent::AGENT_ACTIONS,
@@ -439,7 +675,7 @@ final class ImpersonationTest extends IntegrationTestCase
      */
     private function runPageStart(ChatAgent $agent, string $acceptKey, int $targetUserId): void
     {
-        $page = new UsersPage(new DemoHilosAgent());
+        $page = new UserPage(new DemoHilosAgent());
         $page->onAction(
             $acceptKey,
             HilosSignalConstants::HILOS_IMPERSONATE_START,
@@ -472,6 +708,71 @@ final class ImpersonationTest extends IntegrationTestCase
         }
 
         return $found;
+    }
+
+    /**
+     * Sends one action of the sessions library through the action dispatcher, where the takeover's check stands.
+     *
+     * @param string $acceptKey Connection that submitted
+     * @param string $action Library action name; its payload is empty
+     * @throws HilosException When the dispatch fails outside the action's own answer
+     */
+    private function dispatchToTheLibrary(string $acceptKey, string $action): void
+    {
+        $library = $this->sessionsLibrary();
+        $router = new PageSignalRouter(new HilosPageFactory($library, Hilos::class), new ActionRouteConfig());
+        $this->underAgent(
+            $library,
+            static fn () => $router->dispatchAction(new WebSocketActionSignalDTO($acceptKey, $action, [], 'request-' . $action), 'websocket'),
+        );
+    }
+
+    /**
+     * Drains the queue and returns the action error sent to one connection, if any.
+     *
+     * @param string $acceptKey Connection the error went to
+     * @return ?PageActionErrorSignalData The last action error to it, or null when none was sent
+     */
+    private function actionErrorTo(string $acceptKey): ?PageActionErrorSignalData
+    {
+        $found = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === SignalConstants::ACTION_ERROR
+                && $signal->data instanceof WebSocketSignalData
+                && $signal->data->targetAcceptKey === $acceptKey
+                && $signal->data->data instanceof PageActionErrorSignalData) {
+                $found = $signal->data->data;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Stores one setting as the settings library would, or takes its row away.
+     *
+     * The settings library writes that table, so the case's own writer does, and the frame of the
+     * test is current again afterwards.
+     *
+     * @param string $key Setting key
+     * @param ?string $value Stored value, or null to delete the row
+     * @throws HilosException When the settings write fails
+     */
+    private function storeSetting(string $key, ?string $value): void
+    {
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
+        $previous = ExecutionContext::currentAgentId();
+        ExecutionContext::setCurrentAgentId(self::SETTINGS_AGENT_ID);
+
+        try {
+            Hilos::$db->settings[$key]?->actions->delete();
+            if ($value !== null) {
+                Hilos::$db->settings->actions->add($key, $value, Hilos::$setting->catalog());
+            }
+        } finally {
+            TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
+            ExecutionContext::setCurrentAgentId($previous);
+        }
     }
 
     /**

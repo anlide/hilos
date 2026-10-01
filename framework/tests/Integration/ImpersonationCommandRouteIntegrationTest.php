@@ -60,12 +60,16 @@ use Hilos\Users\AdminCommandConstants;
  * its own.
  *
  * The two browser doors stopped being symmetrical in HIL-824. The STOP is still an action of
- * this library, so its case dispatches one. The START is not: its name moved to the Hilos
- * users page, because only an administrator may take a person over and an ADMIN level is a
- * thing only a page carries, so what arrives here is the page's write frame
+ * this library, so its case dispatches one. The START is not: its name moved to a Hilos admin
+ * page - the person's card since HIL-1170 - because only an administrator may take a person
+ * over and an ADMIN level is a thing only a page carries, so what arrives here is the page's write frame
  * ({@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}) and what leaves is the answer the
  * page acks from ({@see HilosSignalConstants::HILOS_IMPERSONATE_DONE}). The core between them
  * is the same one the command socket reaches, which is the whole point of driving both here.
+ * Before the core the browser door re-checks that the asker is an active administrator and
+ * asks the confirmation of the operation when it is switched on (HIL-1170), which reads the
+ * people table; so a browser case seeds the asker there, an administrator row, while the
+ * replaced check still answers who may take whom over.
  */
 final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -96,9 +100,18 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
      *     is asked by every sign-in the holder grants (HIL-494), and has to be there to be empty.
      *     The people and their deletion requests join for the same reason (HIL-945): every state
      *     frame the holder sends carries the standing of the person the session acts as, composed
-     *     from the person's block and their scheduled deletion.
+     *     from the person's block and their scheduled deletion. Their merges join because the
+     *     browser door asks who the administrators are (HIL-1170), which leaves out a merged
+     *     account; its keys hold hilos_user, so it comes after it and is dropped before it.
      */
-    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_second_factor', 'hilos_user', 'hilos_account_deletion'];
+    private const array TABLES = [
+        'hilos_session',
+        'hilos_setting',
+        'hilos_second_factor',
+        'hilos_user',
+        'hilos_account_deletion',
+        'hilos_user_merge',
+    ];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;
@@ -323,6 +336,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     public function testTheBrowserStartFrameWritesTheSameTakeoverAndRepliesToNobody(): void
     {
         self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
+        self::seedAdministrator();
         $this->mountLiveConnection();
         $agent = new ImpersonationRouteTestAgent();
 
@@ -347,6 +361,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     public function testARefusedTakeoverAnswersThePageWithItsReason(): void
     {
         self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
+        self::seedAdministrator();
         $this->mountLiveConnection();
         $agent = new ImpersonationRouteTestAgent();
         $agent->refuseWith = new ValidationException('The check says no');
@@ -372,6 +387,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     public function testAnAcceptedTakeoverAnswersThePageWithNoReason(): void
     {
         self::seedSession(self::TOKEN, self::ADMIN_USER_ID);
+        self::seedAdministrator();
         $this->mountLiveConnection();
         $agent = new ImpersonationRouteTestAgent();
 
@@ -782,6 +798,19 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     }
 
     /**
+     * Inserts the asker as an active administrator, the one the browser door re-checks before the core.
+     *
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedAdministrator(): void
+    {
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`, `admin`) VALUES (?, 'Administrator', 1)",
+            [self::ADMIN_USER_ID],
+        );
+    }
+
+    /**
      * Reads a session's bound user straight from the database, past every in-memory collection.
      *
      * @param string $token Session cookie token
@@ -853,7 +882,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

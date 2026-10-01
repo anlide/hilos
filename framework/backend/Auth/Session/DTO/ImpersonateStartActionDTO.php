@@ -9,7 +9,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Pages\Users\AbstractHilosUsersPage;
+use Hilos\Pages\Users\AbstractHilosUserPage;
 
 /**
  * ImpersonateStartActionDTO - payload for the impersonation-start action (HIL-729).
@@ -17,12 +17,13 @@ use Hilos\Pages\Users\AbstractHilosUsersPage;
  * Names the target and nothing else: the acting admin session is read from the connection
  * on the server, so the payload can name whom to become but never who is asking.
  *
- * Owned by {@see AbstractHilosUsersPage} through ACTIONS since HIL-824, for the reason
+ * Owned by a page through ACTIONS since HIL-824 - by the person's card
+ * ({@see AbstractHilosUserPage}) since HIL-1170 - for the reason
  * {@see HilosSignalConstants::HILOS_IMPERSONATE_START} gives: only an administrator may take
  * a person over, and an ADMIN level is a thing only a page carries. What the action writes is
  * a session and that is still {@see AbstractSessionsLibraryAgent}'s, so the page forwards the
- * work; whether the asker may is still the project's answer as well, and the library keeps
- * asking for it through a seam, which is what closes the entrance that has no page.
+ * work; whether the asker may, and whom, is judged there too, which is what closes the entrance
+ * that has no page.
  */
 final class ImpersonateStartActionDTO extends ActionPayloadDTO
 {

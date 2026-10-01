@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
+use Hilos\Auth\Impersonation\ImpersonationMessages;
+use Hilos\Auth\Impersonation\ImpersonationSettings;
+use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
@@ -14,6 +17,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
@@ -126,6 +130,7 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionToastStack::RT_COLLECTION);
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
         StandingIntegrationSettings::$refusal = LegalSettings::REFUSAL_FREEZE;
+        StandingIntegrationSettings::$impersonateFrozen = true;
         Hilos::$setting = new StandingIntegrationSettings(StandingIntegrationSettingsCatalog::class);
         TruthSourceRegistry::register(HilosDbContext::users, TruthSourceKeys::all(), self::TEST_OWNER);
         SourceChangeBus::subscribe(new AccountStandingChangeSubscriber());
@@ -312,6 +317,27 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
 
         $this->expectException(PageAccountFrozenException::class);
         PageAccessGate::verdict(AbstractHilosUserPage::class, self::ADMIN_ACCEPT_KEY);
+    }
+
+    /**
+     * A frozen person may be taken over by default, and not once the row of the frozen is switched off (HIL-1170).
+     *
+     * The freeze is not a punishment and is a row of its own, apart from the block: a person who is
+     * not frozen is not touched by it.
+     */
+    public function testAFrozenPersonIsTakenOverOnlyWhileThatRowIsOn(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        $sessions = new StandingImpersonationLibrary();
+
+        $sessions->mayImpersonate(self::ADMIN_USER_ID, self::USER_ID);
+
+        StandingIntegrationSettings::$impersonateFrozen = false;
+        $sessions->mayImpersonate(self::ADMIN_USER_ID, self::OTHER_USER_ID);
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage(ImpersonationMessages::FROZEN_OFF);
+
+        $sessions->mayImpersonate(self::ADMIN_USER_ID, self::USER_ID);
     }
 
     public function testAFrozenPersonsSubscriptionIsRefusedWithTheFreezesCode(): void
@@ -851,6 +877,7 @@ final class StandingIntegrationSettingsCatalog implements CatalogProviderInterfa
             SecondFactorSettingsCatalog::getCatalog(),
             AccountDeletionSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),
+            ImpersonationSettingsCatalog::getCatalog(),
         );
     }
 }
@@ -861,14 +888,21 @@ final class StandingIntegrationSettings extends SettingsAccessor
     /** Treatment of a refusal after the deadline the case has set. */
     public static string $refusal = LegalSettings::REFUSAL_FREEZE;
 
+    /** Whether a frozen person may be taken over, as the case has set it (HIL-1170). */
+    public static bool $impersonateFrozen = true;
+
     /**
      * @param string $key Setting key
-     * @return mixed The scripted refusal treatment, or the stored value of any other key
+     * @return mixed The scripted refusal treatment or takeover of the frozen, or the stored value of any other key
      * @throws HilosException When another key cannot be read
      */
     public function effectiveValueFor(string $key): mixed
     {
-        return $key === LegalSettings::REFUSAL_KEY ? self::$refusal : parent::effectiveValueFor($key);
+        return match ($key) {
+            LegalSettings::REFUSAL_KEY => self::$refusal,
+            ImpersonationSettings::FROZEN_KEY => self::$impersonateFrozen,
+            default => parent::effectiveValueFor($key),
+        };
     }
 }
 
@@ -1062,6 +1096,22 @@ final class StandingSessionsLibrary extends AbstractSessionsLibraryAgent
 {
     public function onStop(): void
     {
+    }
+}
+
+/** The framework's sessions library with its takeover check opened to the case (HIL-1170). */
+final class StandingImpersonationLibrary extends AbstractSessionsLibraryAgent
+{
+    /**
+     * Opens the protected takeover check to the test.
+     *
+     * @param int $adminUserId User the acting session currently carries
+     * @param int $targetUserId User that session asks to act as
+     * @throws HilosException Whatever the framework's check raises
+     */
+    public function mayImpersonate(int $adminUserId, int $targetUserId): void
+    {
+        $this->assertImpersonationAllowed($adminUserId, $targetUserId);
     }
 }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
@@ -523,8 +524,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @param HandshakeResponseSignalData $identity Who the session is, as handshakeIdentity() builds it
      * @param SessionStateSignalData $state Session state frame the response answers
      * @throws InvalidArgumentException When the signal name is empty
-     * @throws DatabaseException When the sign-in method setting cannot be read
-     * @throws SettingException When the sign-in method setting's catalog entry or stored value is invalid
+     * @throws DatabaseException When the sign-in method or impersonation setting cannot be read
+     * @throws SettingException When the sign-in method or impersonation setting's catalog entry or stored value is invalid
      */
     public function sendHandshakeResponse(
         string $signalName,
@@ -546,7 +547,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                 ->withPendingAck($state->pendingAck)
                 ->withAccountBlocked($state->accountBlocked)
                 ->withAccountStanding($state->accountStanding)
-                ->withAdminViewMode(Hilos::$rt?->hilosAdminViewModeRuntime?->enabled === true),
+                ->withAdminViewMode(Hilos::$rt?->hilosAdminViewModeRuntime?->enabled === true)
+                ->withImpersonationPolicy(ImpersonationPolicySignalData::current()->toArray()),
         );
     }
 

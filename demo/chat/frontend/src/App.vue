@@ -79,6 +79,7 @@ import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProv
 import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods.vue'
 import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor.vue'
 import HilosSecurityStepUp from './views/Hilos/Security/SecurityStepUp.vue'
+import HilosSecurityImpersonation from './views/Hilos/Security/SecurityImpersonation.vue'
 import HilosLegal from './views/Hilos/Legal/Legal.vue'
 import HilosLegalDocument from './views/Hilos/Legal/LegalDocument.vue'
 import HilosLegalRevision from './views/Hilos/Legal/LegalRevision.vue'
@@ -136,6 +137,7 @@ const pages: Record<string, Component> = {
   [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
   [HilosPages.SECURITY_2FA]: HilosSecurityTwoFactor,
   [HilosPages.SECURITY_STEP_UP]: HilosSecurityStepUp,
+  [HilosPages.SECURITY_IMPERSONATION]: HilosSecurityImpersonation,
   [HilosPages.LEGAL]: HilosLegal,
   [HilosPages.LEGAL_DOCUMENT]: HilosLegalDocument,
   [HilosPages.LEGAL_REVISION]: HilosLegalRevision,

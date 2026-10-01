@@ -41,7 +41,7 @@ abstract class LegalAdminTestCase extends TestCase
         Hilos::$sr = new SignalRouter();
         Hilos::$browser = $this->createMock(BrowserContext::class);
         Hilos::$browser->method('resolveActionUserId')->willReturn(1);
-        Hilos::$browser->method('isAdmin')->willReturn(true);
+        Hilos::$browser->method('actsAsAdmin')->willReturn(true);
         LegalAdminAudience::reset();
     }
 

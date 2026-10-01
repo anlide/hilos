@@ -7,22 +7,20 @@ reply never flashes it, and the label stays in the layout under the spinner so
 the button keeps its width. Pass the Bootstrap variant as a class
 (`class="btn-primary"`); class, aria, and data attributes fall through to the
 button. Inside an admin page a viewer of the admin view mode finds the button
-plainly disabled, described by the mode's strip (HIL-1261); it changes neither
-its color, nor its size, nor its words. A button marked opensWindow stays live
-for the viewer (the people card, HIL-1263). -->
+plainly disabled, described by the mode's strip (HIL-1261), and so does an
+administrator in the page's area of a takeover that only looks, described by
+the impersonation strip (HIL-1170); it changes neither its color, nor its size,
+nor its words. A button marked opensWindow stays live for both (the people
+card, HIL-1263). -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useAttrs, watch } from 'vue'
-import {
-  DEFAULT_SPINNER_DELAY_MS,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
-  createLoadingButtonState,
-} from '@hilos/core'
+import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
 
-import { useAdminViewMode } from './hilosAdminViewMode.js'
+import { useLookOnly } from './hilosAdminViewMode.js'
 import { useSignal } from './useSignal.js'
 
 // The attributes are bound by hand: a fallen-through aria-describedby would
-// override the button's own, and in the view mode the two are joined instead.
+// override the button's own, and when only looking the two are joined instead.
 defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
@@ -36,9 +34,9 @@ const props = withDefaults(
     /** Native button type; `submit` inside a form, `button` otherwise. */
     type?: 'button' | 'submit' | 'reset'
     /**
-     * The press only opens a window, at once or after the server's word; inside
-     * an admin page the admin view mode leaves it live — what the window would
-     * send stands on a control of the mode.
+     * The press only opens a window, at once or after the server's word; the
+     * admin view mode and a takeover that only looks leave it live — what the
+     * window would send stands on a control of the mode.
      */
     opensWindow?: boolean
   }>(),
@@ -64,20 +62,21 @@ watch(
 )
 onBeforeUnmount(spinner.dispose)
 
-const viewMode = useAdminViewMode()
+const { locked, describedBy } = useLookOnly()
 const attrs = useAttrs()
 
-const lockedByViewMode = computed(() => viewMode.value && !props.opensWindow)
+const lockedToLook = computed(() => locked.value && !props.opensWindow)
 
 const isDisabled = computed(
-  () => props.disabled || props.loading || lockedByViewMode.value,
+  () => props.disabled || props.loading || lockedToLook.value,
 )
 
-// Outside the view mode the caller's attributes reach the button as they are.
-// In it, the button is also described by the mode's strip, beside whatever
-// describes it already (a row's reason on the person's card).
+// While the button may be pressed the caller's attributes reach it as they are.
+// Locked to look, it is also described by the strip that says why, beside
+// whatever describes it already (a row's reason on the person's card).
 const buttonAttrs = computed(() => {
-  if (!lockedByViewMode.value) {
+  const strip = describedBy.value
+  if (!lockedToLook.value || strip === undefined) {
     return attrs
   }
   const own = attrs['aria-describedby']
@@ -85,9 +84,7 @@ const buttonAttrs = computed(() => {
   return {
     ...attrs,
     'aria-describedby':
-      typeof own === 'string' && own !== ''
-        ? `${own} ${HILOS_VIEW_MODE_STRIP_TEXT_ID}`
-        : HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      typeof own === 'string' && own !== '' ? `${own} ${strip}` : strip,
   }
 })
 

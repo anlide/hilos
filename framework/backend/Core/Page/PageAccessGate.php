@@ -42,7 +42,8 @@ use Hilos\Users\AccountStandingResolver;
  *
  * Identity resolves through the project browser context
  * ({@see BrowserContext::resolveActionUserId} and
- * {@see BrowserContext::isAdmin}), and whether the connection is a viewer is
+ * {@see BrowserContext::actsAsAdmin} - an administrator's rights carried into a
+ * takeover open the same pages, HIL-1170), and whether the connection is a viewer is
  * asked in one place, {@see BrowserContext::isAdminViewModeViewer}. A project
  * without a mounted browser context fails closed: no identity is resolvable, so
  * every non-PUBLIC page denies instead of opening.
@@ -54,8 +55,8 @@ final class PageAccessGate
      *
      * In this order: a PUBLIC page allows; a viewer of the admin view mode views; an
      * anonymous session is refused 401; a frozen person is refused with the freeze's own
-     * 403 unless the page is open while frozen (HIL-945); an ADMIN page refuses a non-admin
-     * 403; anything else allows. With the mode off the viewer question answers no without
+     * 403 unless the page is open while frozen (HIL-945); an ADMIN page refuses a connection that
+     * does not act as an admin 403; anything else allows. With the mode off the viewer question answers no without
      * reading anything, and the rest is the path the gate has always taken - a failed admin
      * lookup included. With the mode on a failed lookup makes a viewer, never an admin.
      *
@@ -93,7 +94,7 @@ final class PageAccessGate
             throw new PageAccountFrozenException();
         }
 
-        if ($level === PageAccessLevel::ADMIN && Hilos::$browser?->isAdmin($userId) !== true) {
+        if ($level === PageAccessLevel::ADMIN && Hilos::$browser?->actsAsAdmin($acceptKey, $userId) !== true) {
             throw new PageForbiddenException('Access forbidden');
         }
 

@@ -32,7 +32,7 @@ import type { ComponentType } from 'react'
 import AuthSurface from './auth/AuthSurface'
 import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
-import { currentUserIsAdmin, currentUserName } from './bootstrap/session'
+import { currentUserActsAsAdmin, currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
 import HilosBackup from './views/Hilos/Backup/Backup'
@@ -48,6 +48,7 @@ import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProv
 import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods'
 import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor'
 import HilosSecurityStepUp from './views/Hilos/Security/SecurityStepUp'
+import HilosSecurityImpersonation from './views/Hilos/Security/SecurityImpersonation'
 import HilosLegal from './views/Hilos/Legal/Legal.js'
 import HilosLegalDocument from './views/Hilos/Legal/LegalDocument.js'
 import HilosLegalRevision from './views/Hilos/Legal/LegalRevision.js'
@@ -114,6 +115,7 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
   [HilosPages.SECURITY_2FA]: HilosSecurityTwoFactor,
   [HilosPages.SECURITY_STEP_UP]: HilosSecurityStepUp,
+  [HilosPages.SECURITY_IMPERSONATION]: HilosSecurityImpersonation,
   [HilosPages.LEGAL]: HilosLegal,
   [HilosPages.LEGAL_DOCUMENT]: HilosLegalDocument,
   [HilosPages.LEGAL_REVISION]: HilosLegalRevision,
@@ -147,7 +149,7 @@ export interface AppProps {
 const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 
 export default function App({ authGate }: AppProps) {
-  const isAdmin = useSignal(currentUserIsAdmin)
+  const isAdmin = useSignal(currentUserActsAsAdmin)
   const userName = useSignal(currentUserName)
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.

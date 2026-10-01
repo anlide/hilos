@@ -32,14 +32,16 @@ With the mode off, everything is byte for byte as it is today.
 
 ## Who Is A Viewer
 
-A viewer is a connection on an `ADMIN` page, with the mode on, whose user does
-not pass `isAdmin()` — a session without an account and a signed-in non-admin
-alike. The word is *viewer* and not *guest*, because a guest in Hilos is the
-session without an account, one case of a viewer rather than another name for
-one. An admin is never a viewer, and the line between the two moves live:
-granting the rights turns a viewer's open pages into the full admin surface,
-and taking them away turns the pages back into the view,
-the browser following in the same movement — by the same re-decision that
+A viewer is a connection on an `ADMIN` page, with the mode on, that does not
+act as an admin (`BrowserContext::actsAsAdmin()`: its user passes `isAdmin()`,
+or an administrator's own rights are carried into a takeover, HIL-1170) — a
+session without an account and a signed-in non-admin alike. The word is
+*viewer* and not *guest*, because a guest in Hilos is the session without an
+account, one case of a viewer rather than another name for one. An admin is
+never a viewer, and the line between the two moves live: granting the rights
+turns a viewer's open pages into the full admin surface, and taking them away
+turns the pages back into the view, the browser following in the same
+movement — by the same re-decision that
 re-sends an open page when rights change today
 ([page-access-control.md](page-access-control.md), *Re-deciding an OPEN page
 when rights change*). The browser follows because the session response carries
@@ -50,7 +52,7 @@ reaction to a moved flag waits for that answer instead of drawing a 403
 The mode touches `ADMIN` pages only. `PUBLIC` and `AUTHENTICATED` pages keep
 their own rules — the profile stays the person's own and nobody else's. Roles
 (HIL-306) are not the basis of the mode: a viewer is told apart by the same
-`isAdmin()` the gate reads today, and the authorization hook of HIL-309 will
+`actsAsAdmin()` the gate reads today, and the authorization hook of HIL-309 will
 change the body of that question, not the mode around it.
 
 ## The Switch And Its Prod Latch
@@ -363,7 +365,8 @@ nobody is asked*).
   stays on the server (`BrowserContext::isAdminViewModeViewer()`). The core
   reads it with `sessionAdminViewMode()`, true only when the server said true.
 - What the admin section is to the browser is derived once, in the core:
-  `hilosAdminAccess` is `'full'` for an admin, `'view'` for a non-admin with
+  `hilosAdminAccess` is `'full'` for an admin (and inside a takeover whose
+  `impersonationPolicy.carryAdmin` is on, HIL-1170), `'view'` for a non-admin with
   the mode on, `'none'` otherwise, bound by `bootHilos` (`bindAdminAccess`)
   from the admin flag and the mode of the same response. The admin gear, the
   mode banner and the controls of the mode all read it — the controls not
@@ -430,25 +433,37 @@ nobody is asked*).
   opens it and reads it, and has nothing to save with), the conflict choices
   (they edit only the draft in the window), a button that only opens a form, a
   button that opens a window after the server's word (the person card: rights,
-  block, deletion, merge — they first ask whether the administrator needs the
-  confirmation step) is held by a `LoadingButton` with `opensWindow`, and the
-  mode does not disable it; a viewer is not shown the confirmation step and the
-  window opens at once (HIL-1263), a table's main action (it opens the page's own
+  block, deletion, merge, takeover — they first ask whether the administrator
+  needs the confirmation step) is held by a `LoadingButton` with `opensWindow`,
+  and the mode does not disable it; a viewer is not shown the confirmation step
+  and the window opens at once (HIL-1263), a table's main action (it opens the page's own
   modal, whose button is a control of the mode), and marking rows. Outside the
   admin page shell nothing changes. An action a viewer still reaches — a raw
   button not moved yet, Enter in a form's field — is refused by the server and
   shown with the core's sentence (above).
+- The "look only" flag these controls read has two sources (HIL-1170): the
+  admin page shell (a viewer of the mode on this page, described by the
+  view-mode strip) and the takeover scope around the page's area, true while a
+  takeover only looks (`auth.impersonation.scope = view`, the core's
+  `hilosTakeoverViewOnly`) and described by the impersonation strip
+  (`HILOS_IMPERSONATION_STRIP_TEXT_ID`). In Vue the scope is
+  `HilosTakeoverScope` and the controls read both through `useLookOnly()`;
+  React and Angular carry it in their own `hilosLookOnly` context and token.
+  The scope wraps the page's area and never the shell, so the strip's Stop
+  stays live. The server refuses the same actions on its own
+  ([page-access-control.md](page-access-control.md), *The takeover gate*).
 - Each section moves its own raw one-click mutation buttons onto
   `LoadingButton`, and the Save of its own form onto `ConflictActions` or
   `LoadingButton`; a button that only opens a form stays as it is. Security has
   nothing to move: the switches of sign-in methods, of passkey without a
-  confirmed address and of step-up operations are `HilosSwitch`es, the Save of
-  its three windows — a two-factor setting, an OAuth return address and an
-  OAuth provider field — stands on `ConflictActions` and `LoadingButton`, the
+  confirmed address, of step-up operations and of impersonation are
+  `HilosSwitch`es, the Save of its four windows — a two-factor setting, an
+  OAuth return address, an OAuth provider field and the impersonation scope
+  (HIL-1170) — stands on `ConflictActions` and `LoadingButton`, the
   confirms of its two resets are `LoadingButton`s, and its pencils and ↺ only
   open those windows (HIL-1267). The people section has nothing to move: the
   confirms of impersonation, rights, block, deletion and merge are
-  `LoadingButton`s and a rename's Save stands on `ConflictActions`; the four
+  `LoadingButton`s and a rename's Save stands on `ConflictActions`; the five
   buttons of the card that open their windows after the server's word carry
   `opensWindow`, so a viewer opens every window at once, without the confirmation
   step, and the merge window shows a candidate's name and sign-in addresses as
@@ -574,8 +589,9 @@ The people section carries its viewer case in
 `demo/chat/tests/e2e/tests/users.spec.ts` (HIL-1263; moving with the file under
 HIL-1219).
 
-The security section carries its viewer cases as units of five pages
+The security section carries its viewer cases as units of six pages
 (`framework/frontend/vue/src/admin/security/HilosSecuritySignInMethodsPage.test.ts`,
+`framework/frontend/vue/src/admin/security/HilosSecurityImpersonationPage.test.ts`,
 `framework/frontend/vue/src/admin/security/HilosSecurityStepUpPage.test.ts`,
 `framework/frontend/vue/src/admin/security/HilosSecurity2faPage.test.ts`,
 `framework/frontend/vue/src/admin/security/HilosSecurityOauthPage.test.ts`,

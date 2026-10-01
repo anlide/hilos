@@ -12,6 +12,7 @@ use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\Exception\ActionAccountFrozenException;
 use Hilos\Core\Page\Exception\ActionForbiddenException;
+use Hilos\Core\Page\Exception\ActionImpersonationException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\ActionViewModeException;
@@ -203,7 +204,7 @@ final class ActionReply
      * Sends the failure ack a raised exception is turned into, gate included.
      *
      * The whole frame is read off the exception here - the sentence through
-     * {@see ActionFailureReason::forClient()}, the code and the retry hint off the four
+     * {@see ActionFailureReason::forClient()}, the code and the retry hint off the five
      * failures that classify themselves - so no caller has to know which part of a failure
      * a client may see. The original text and the class name ride along only for a caller
      * already proven to be an administrator; for anyone else the frame is byte for byte
@@ -236,6 +237,7 @@ final class ActionReply
                 $e instanceof ActionUnauthorizedException => $e->errorCode,
                 $e instanceof ActionForbiddenException => $e->errorCode,
                 $e instanceof ActionViewModeException => $e->errorCode,
+                $e instanceof ActionImpersonationException => $e->errorCode,
                 default => null,
             },
             $e instanceof ActionRateLimitedException ? $e->retryAfter : null,
@@ -267,6 +269,7 @@ final class ActionReply
                 ActionFailureReason::forClient($e),
                 errorCode: $e instanceof ActionUnauthorizedException
                     || $e instanceof ActionViewModeException
+                    || $e instanceof ActionImpersonationException
                     || $e instanceof ActionAccountFrozenException ? $e->errorCode : null,
             ),
         );

@@ -6,6 +6,8 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
+use Hilos\Auth\Impersonation\ImpersonationSettings;
+use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
@@ -61,6 +63,11 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     private const string SECRET_BYTES = '12345678901234567890';
     public const string OPERATION = 'test_operation';
     public const int USER_ID = 495;
+
+    /** Administrator behind a takeover of the acting session (HIL-1170). */
+    private const int ADMINISTRATOR_ID = 7;
+    private const string ADMINISTRATOR_EMAIL = 'root@example.test';
+    private const string ADMINISTRATOR_PASSWORD = 'administrator horse battery staple';
     private const int TTL_SECONDS = 900;
 
     private ?RtContext $previousRt = null;
@@ -475,6 +482,104 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
+     * Inside a takeover an operation that touches the sign-in stays closed until the administrator allowed it (HIL-1170).
+     *
+     * @throws HilosException When the session update or the opening fails
+     */
+    public function testInsideATakeoverTheSignInStaysClosedUntilAllowed(): void
+    {
+        $this->takeOver();
+        $this->addPassword();
+
+        $this->expectExceptionMessage(StepUpMessages::IMPERSONATED);
+        $this->start(StepUpOperationKey::CHANGE_PASSWORD);
+    }
+
+    /**
+     * Allowed, the step asks the ADMINISTRATOR by their own method, and the confirmation is theirs (HIL-1170).
+     *
+     * The person's password is no proof here: the step guards against somebody else at the
+     * administrator's browser, so it is the administrator who proves themselves.
+     *
+     * @throws HilosException When an identity, the opening or a confirmation fails
+     */
+    public function testWithTheSignInAllowedTheAdministratorConfirmsWithTheirOwnPassword(): void
+    {
+        $this->takeOver();
+        Hilos::$setting = new SettingsAccessor(StepUpAccountAccessIntegrationSettingsCatalog::class);
+        $this->addPassword();
+        Hilos::$db->identities->createPasswordIdentity(self::ADMINISTRATOR_ID, self::ADMINISTRATOR_EMAIL, self::ADMINISTRATOR_PASSWORD)
+            ->markVerified();
+
+        $opening = $this->start(StepUpOperationKey::CHANGE_PASSWORD);
+        self::assertTrue($opening->required);
+        self::assertSame(StepUpMethod::PASSWORD, $opening->method);
+
+        try {
+            $this->confirm(StepUpOperationKey::CHANGE_PASSWORD, StepUpMethod::PASSWORD, password: self::PASSWORD);
+            self::fail("The person's password confirms nothing inside a takeover");
+        } catch (ValidationException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->confirm(StepUpOperationKey::CHANGE_PASSWORD, StepUpMethod::PASSWORD, password: self::ADMINISTRATOR_PASSWORD);
+
+        $this->library->assertOperation(self::ACCEPT_KEY, StepUpOperationKey::CHANGE_PASSWORD);
+        $hash = ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN);
+        self::assertTrue(Hilos::$db->stepUps->isConfirmed($hash, self::ADMINISTRATOR_ID, StepUpOperationKey::CHANGE_PASSWORD));
+        self::assertFalse(Hilos::$db->stepUps->isConfirmed($hash, self::USER_ID, StepUpOperationKey::CHANGE_PASSWORD));
+    }
+
+    /**
+     * The operation's own address step proves the person's address, not the administrator, so inside a takeover it suppresses nothing (HIL-1170).
+     *
+     * Outside a takeover the same opening passes ({@see self::testFrameworkAddressCodeOperationSkipsDuplicateProof()}).
+     *
+     * @throws HilosException When an identity or the opening fails
+     */
+    public function testInsideATakeoverTheOperationsOwnAddressStepSuppressesNothing(): void
+    {
+        $this->takeOver();
+        Hilos::$setting = new SettingsAccessor(StepUpAccountAccessIntegrationSettingsCatalog::class);
+        Hilos::$db->identities->createMagicLinkIdentity(self::USER_ID, self::EMAIL);
+        Hilos::$db->identities->createMagicLinkIdentity(self::ADMINISTRATOR_ID, self::ADMINISTRATOR_EMAIL);
+
+        $opening = $this->start(StepUpOperationKey::CHANGE_EMAIL);
+
+        self::assertTrue($opening->required);
+        self::assertSame(StepUpMethod::EMAIL_CODE, $opening->method);
+        self::assertSame(self::ADMINISTRATOR_EMAIL, $opening->destination);
+    }
+
+    /**
+     * Deleting the account is never done with someone else's hands, whatever the setting says (HIL-302, HIL-1170).
+     *
+     * @throws HilosException When the session update or the opening fails
+     */
+    public function testDeletingTheAccountStaysClosedInsideATakeoverWhenTheSignInIsAllowed(): void
+    {
+        $this->takeOver();
+        Hilos::$setting = new SettingsAccessor(StepUpAccountAccessIntegrationSettingsCatalog::class);
+        $this->addPassword();
+
+        $this->expectExceptionMessage(StepUpMessages::IMPERSONATED);
+        $this->start(StepUpOperationKey::DELETE_ACCOUNT);
+    }
+
+    /**
+     * Puts the acting session inside a takeover by the administrator.
+     *
+     * @throws DatabaseException When the session update fails
+     */
+    private function takeOver(): void
+    {
+        Database::sqlRun(
+            'UPDATE `hilos_session` SET `impersonator_user_id` = ? WHERE `token` = ?',
+            [self::ADMINISTRATOR_ID, self::SESSION_TOKEN],
+        );
+    }
+
+    /**
      * @throws HilosException When the identity cannot be created
      */
     private function addPassword(): void
@@ -675,6 +780,23 @@ final class StepUpIntegrationSettingsCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return array_replace(StepUpSettingsCatalog::getCatalog(), SecondFactorSettingsCatalog::getCatalog());
+    }
+}
+
+/**
+ * The same catalog with the impersonation settings, the sign-in of a taken-over account allowed (HIL-1170).
+ */
+final class StepUpAccountAccessIntegrationSettingsCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> Fixture settings catalog
+     */
+    public static function getCatalog(): array
+    {
+        $catalog = array_replace(StepUpIntegrationSettingsCatalog::getCatalog(), ImpersonationSettingsCatalog::getCatalog());
+        $catalog[ImpersonationSettings::ACCOUNT_ACCESS_KEY][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE] = true;
+
+        return $catalog;
     }
 }
 

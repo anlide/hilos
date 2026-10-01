@@ -12,7 +12,10 @@
 // unresolved, the three resolution choices: keep mine, take theirs, and merge
 // where the surface asks for it. Save stays disabled until the conflict is
 // resolved. The outputs fire the choice; the parent form applies it against the
-// core threeWayMerge result. Bootstrap classes only.
+// core threeWayMerge result. In the page's area of a takeover that only looks
+// Save stands disabled — the default one and the custom one alike (HIL-1170);
+// Cancel and the conflict choices, which edit only the draft in this window,
+// stay as always. Bootstrap classes only.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -23,6 +26,8 @@ import {
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
 import { NgTemplateOutlet } from '@angular/common'
+
+import { injectLookOnly } from './hilosLookOnly.js'
 
 /** The context a custom save-button template receives. */
 export interface ConflictSaveButtonContext {
@@ -106,6 +111,7 @@ const CHOICE_CLASS = 'btn btn-outline-secondary'
         type="button"
         class="btn btn-primary"
         [disabled]="disabled()"
+        [attr.aria-describedby]="lookOnly.describedBy() ?? null"
         data-id="conflict-save"
         (click)="onSave()"
       >
@@ -152,8 +158,9 @@ export class ConflictActions {
   /** The class the choice buttons and their twin share, to the character. */
   protected readonly choiceClass = CHOICE_CLASS
 
+  protected readonly lookOnly = injectLookOnly()
   protected readonly disabled = computed(
-    () => this.disableSave() || this.conflict(),
+    () => this.disableSave() || this.conflict() || this.lookOnly.locked(),
   )
   protected readonly onSave = (): void => {
     this.save.emit()

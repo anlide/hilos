@@ -13,6 +13,7 @@ use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
+use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Files\FilesSettingsCatalog;
@@ -141,6 +142,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             AuthMethodSettingsCatalog::getCatalog(),
             SecondFactorSettingsCatalog::getCatalog(),
             StepUpSettingsCatalog::getCatalog(),
+            ImpersonationSettingsCatalog::getCatalog(),
             AccountDeletionSettingsCatalog::getCatalog(),
             // Chat opts in to accounts without an address (owner, 26.09.2026).
             [PasskeyAddressPolicy::SETTING_KEY => [

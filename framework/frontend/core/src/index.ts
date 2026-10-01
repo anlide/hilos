@@ -285,8 +285,11 @@ export {
   readHilosAccountStanding,
   accountStandingSchema,
   sessionSecondFactorPolicy,
+  sessionImpersonationPolicy,
+  impersonationPolicySchema,
   SIGNAL_AUTH_METHODS,
   SIGNAL_SECOND_FACTOR_POLICY,
+  SIGNAL_IMPERSONATION_POLICY,
   SIGNAL_CODE_DELIVERY,
   SIGNAL_HANDSHAKE_RESPONSE,
   SESSION_ACK_PASSWORD_CHANGED,
@@ -302,6 +305,7 @@ export {
   type PendingAuthStep,
   type PendingSecondFactor,
   type SecondFactorPolicy,
+  type ImpersonationPolicy,
   type SessionScopeOptions,
 } from './session/sessionScope.js'
 export { applyServerTime, offsetMs, toLocal } from './session/serverClock.js'
@@ -319,8 +323,14 @@ export {
   stopImpersonation,
   IMPERSONATION_ACTION_STOP,
   IMPERSONATION_STRIP_COPY,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
+  hilosTakeoverViewOnly,
   type ImpersonationStrip,
 } from './session/impersonation.js'
+export {
+  IMPERSONATION_ERROR_CODE,
+  IMPERSONATION_REFUSAL_COPY,
+} from './session/impersonationRefusal.js'
 export {
   bindAccountBlocked,
   hilosAccountBlocked,
@@ -1020,6 +1030,12 @@ export {
   createHilosUserCardStepUp,
   createHilosUserStanding,
   HILOS_USER_CARD_STEP_UP_OPERATIONS,
+  HILOS_USER_IMPERSONATION_COPY,
+  HilosUserImpersonationSettingsKey,
+  hilosUserImpersonationSection,
+  readHilosUserImpersonationSettings,
+  type HilosUserImpersonationSection,
+  type HilosUserImpersonationSettings,
   HILOS_USER_LIFECYCLE_COPY,
   HILOS_USER_STANDING_SECTION,
   HILOS_USERS_LAPSED_FILTER,
@@ -1292,6 +1308,25 @@ export {
   type HilosStepUpTable,
   type HilosSecurityStepUpActions,
 } from './admin/security/hilosSecurityStepUp.js'
+export {
+  resolveHilosImpersonationSettingRow,
+  createHilosSecurityImpersonationTable,
+  createHilosSecurityImpersonationActions,
+  hilosImpersonationScopeOf,
+  isHilosImpersonationSwitch,
+  HilosImpersonationSettingKey,
+  HilosImpersonationSettingRowKey,
+  HILOS_IMPERSONATION_SCOPE_VALUES,
+  HILOS_IMPERSONATION_SCOPE_COPY,
+  HILOS_IMPERSONATION_SCOPE_HINT,
+  HILOS_IMPERSONATION_SETTING_COPY,
+  type HilosImpersonationScope,
+  type HilosImpersonationSettingCopy,
+  type HilosImpersonationSettingRow,
+  type HilosImpersonationContext,
+  type HilosImpersonationActions,
+  type HilosImpersonationTable,
+} from './admin/security/hilosSecurityImpersonation.js'
 export {
   resolveHilosLogKeyRow,
   createHilosLogKeysTable,

@@ -259,7 +259,7 @@ final class LegalAdminAudienceTest extends LegalAdminTestCase
         $admin = true;
         Hilos::$browser = $this->createMock(BrowserContext::class);
         Hilos::$browser->method('resolveActionUserId')->willReturn(1);
-        Hilos::$browser->method('isAdmin')->willReturnCallback(static function () use (&$admin): bool { return $admin; });
+        Hilos::$browser->method('actsAsAdmin')->willReturnCallback(static function () use (&$admin): bool { return $admin; });
         Hilos::$browser->method('assertSubscriptionAccess')->willReturnCallback(
             static function (string $page, string $acceptKey): void {
                 if ($acceptKey === 'guard-refused') {

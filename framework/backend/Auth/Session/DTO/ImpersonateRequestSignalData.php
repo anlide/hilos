@@ -9,13 +9,13 @@ use Hilos\BaseDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Pages\Users\AbstractHilosUsersPage;
+use Hilos\Pages\Users\AbstractHilosUserPage;
 
 /**
- * Hilos users page → sessions library: take this person over (HIL-824).
+ * Hilos user card → sessions library: take this person over (HIL-824, HIL-1170).
  *
  * What {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST} carries. The admin surface
- * keeps the action and the ADMIN level closing it ({@see AbstractHilosUsersPage}), because an
+ * keeps the action and the ADMIN level closing it ({@see AbstractHilosUserPage}), because an
  * agent action has no such level to inherit; the session being rebound is owned by
  * {@see AbstractSessionsLibraryAgent}, so the takeover is judged and written there.
  *

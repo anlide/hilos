@@ -148,6 +148,7 @@ use Demo\Chat\Pages\Hilos\ProfileSessionsPage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityImpersonationPage;
 use Demo\Chat\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityPage;
 use Demo\Chat\Pages\Hilos\ProfileSecurityPage;
@@ -231,6 +232,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
+use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
 
@@ -390,6 +392,7 @@ final class Hilos extends HilosFacade
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
         SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
+        SecurityImpersonationPage::PAGE => SecurityImpersonationPage::class,
         BillingPage::PAGE => BillingPage::class,
         BillingProviderPage::PAGE => BillingProviderPage::class,
         BillingPaymentsPage::PAGE => BillingPaymentsPage::class,
@@ -609,6 +612,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         ChatTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         ChatTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+        ChatTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
         ChatTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
         ChatTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
         ChatTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
@@ -772,6 +776,9 @@ final class Hilos extends HilosFacade
         ],
         SecurityStepUpPage::PAGE => [
             ChatTableContext::hilosSecurityStepUp => [],
+        ],
+        SecurityImpersonationPage::PAGE => [
+            ChatTableContext::hilosSecurityImpersonation => [],
         ],
         LegalPage::PAGE => [
             ChatTableContext::hilosLegalDocuments => [],

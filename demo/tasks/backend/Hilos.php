@@ -61,6 +61,7 @@ use Demo\Tasks\Pages\Hilos\TermsPage;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Tasks\Pages\Hilos\Security\SecurityImpersonationPage;
 use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityPage;
 use Demo\Tasks\Pages\Hilos\ProfilePage;
@@ -120,6 +121,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
+use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -203,6 +205,7 @@ final class Hilos extends HilosFacade
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
         SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
+        SecurityImpersonationPage::PAGE => SecurityImpersonationPage::class,
     ];
 
     public const array GROUPS = [
@@ -349,6 +352,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         TasksTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         TasksTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+        TasksTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
         TasksTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
         TasksTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
         TasksTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
@@ -396,6 +400,9 @@ final class Hilos extends HilosFacade
         ],
         SecurityStepUpPage::PAGE => [
             TasksTableContext::hilosSecurityStepUp => [],
+        ],
+        SecurityImpersonationPage::PAGE => [
+            TasksTableContext::hilosSecurityImpersonation => [],
         ],
         LegalPage::PAGE => [
             TasksTableContext::hilosLegalDocuments => [],

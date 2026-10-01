@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { h } from 'vue'
 import {
   ActionLifecycle,
   applyServerTime,
@@ -9,6 +10,7 @@ import {
   bindLegalReconsent,
   createSignal,
   formatCalendarDate,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HilosPages,
   bindImpersonation,
   bindSessionScope,
@@ -31,6 +33,7 @@ import type {
 } from '@hilos/core'
 
 import HilosLayout from './HilosLayout.vue'
+import LoadingButton from './LoadingButton.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 
 /** A node frozen for a restore: the shell turns into the maintenance surface. */
@@ -303,6 +306,80 @@ describe('HilosLayout impersonation strip', () => {
     expect(
       hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
     ).toEqual([['error', 'Session is not impersonating']])
+  })
+
+  /**
+   * The takeover handshake carrying the installation's impersonation policy.
+   *
+   * @param viewOnly Whether the administrator may only look.
+   */
+  function takeoverWith(viewOnly: boolean): Record<string, unknown> {
+    return {
+      ...TAKEOVER,
+      data: { impersonationPolicy: { viewOnly, carryAdmin: false } },
+    }
+  }
+
+  /** Mount the shell over a page whose one control is a tracked button. */
+  function mountOverPageAction() {
+    return mount(HilosLayout, {
+      props: { connection: shellConnection() },
+      slots: {
+        default: () =>
+          h(LoadingButton, { 'data-id': 'page-action' }, () => 'Send'),
+      },
+    })
+  }
+
+  it('says "view only" and switches off the page, never Stop, in a takeover that only looks (HIL-1170)', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(takeoverWith(true))
+
+    const wrapper = mountOverPageAction()
+    const strip = wrapper.find('[data-id="impersonation-banner"]')
+    const text = strip.find(`#${HILOS_IMPERSONATION_STRIP_TEXT_ID}`)
+
+    expect(text.exists()).toBe(true)
+    expect(text.text()).toContain('You are impersonating')
+    expect(text.find('.badge').text()).toBe('view only')
+    expect(strip.find('strong').text()).toBe('Bob')
+    const stop = wrapper.find('[data-id="impersonation-stop"]')
+    expect(stop.attributes('disabled')).toBeUndefined()
+    expect(stop.attributes('aria-describedby')).toBeUndefined()
+    const action = wrapper.find('[data-id="page-action"]')
+    expect(action.attributes('disabled')).toBeDefined()
+    expect(action.attributes('aria-describedby')).toBe(
+      HILOS_IMPERSONATION_STRIP_TEXT_ID,
+    )
+
+    await stop.trigger('click')
+    expect(session.source.sent[0]?.action).toBe('hilos_impersonate_stop')
+  })
+
+  it('leaves the page live and the strip unmarked while the takeover may act, and follows the policy', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(takeoverWith(false))
+
+    const wrapper = mountOverPageAction()
+
+    expect(
+      wrapper.find('[data-id="impersonation-banner"] .badge').exists(),
+    ).toBe(false)
+    expect(
+      wrapper.find('[data-id="page-action"]').attributes('disabled'),
+    ).toBeUndefined()
+
+    session.handshake(takeoverWith(true))
+    await flushPromises()
+
+    expect(wrapper.find('[data-id="impersonation-banner"] .badge').text()).toBe(
+      'view only',
+    )
+    expect(
+      wrapper.find('[data-id="page-action"]').attributes('disabled'),
+    ).toBeDefined()
   })
 
   it('adds no live region of its own when the strip goes up', () => {

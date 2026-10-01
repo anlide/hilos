@@ -119,6 +119,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'accountBlocked' => null,
                     'accountStanding' => null,
                     'adminViewMode' => null,
+                    'impersonationPolicy' => null,
                 ],
             ],
             $data->toArray(),
@@ -156,6 +157,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'accountBlocked' => null,
                     'accountStanding' => null,
                     'adminViewMode' => null,
+                    'impersonationPolicy' => null,
                 ],
             ],
             $data->toArray(),
@@ -204,6 +206,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'accountBlocked' => null,
                     'accountStanding' => null,
                     'adminViewMode' => null,
+                    'impersonationPolicy' => null,
                 ],
             ],
             $data->toArray(),
@@ -244,6 +247,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'accountBlocked' => null,
                 'accountStanding' => null,
                 'adminViewMode' => null,
+                'impersonationPolicy' => null,
             ],
             $data->toArray()['data'],
         );
@@ -315,6 +319,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'accountBlocked' => null,
                 'accountStanding' => null,
                 'adminViewMode' => null,
+                'impersonationPolicy' => null,
             ],
             $data->toArray()['data'],
         );
@@ -588,6 +593,44 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertSame(SessionAck::SIGNED_IN, $data->pendingAck);
         $this->assertSame(['identifier' => 'maria@example.com', 'dataExport' => null], $data->accountBlocked);
         $this->assertSame(self::STANDING, $data->accountStanding);
+    }
+
+    public function testTheImpersonationPolicyTravelsInTheDataSectionAndSurvivesTheRoundtrip(): void
+    {
+        // The installation's fact rides every response, the anonymous one included (HIL-1170).
+        $policy = ['viewOnly' => true, 'carryAdmin' => false];
+        $anonymous = new HandshakeResponseSignalData()->withImpersonationPolicy($policy);
+        $signedIn = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false, impersonatorId: 7, impersonatorName: 'Root')
+            ->withImpersonationPolicy($policy);
+
+        $this->assertSame($policy, $anonymous->toArray()['data']['impersonationPolicy']);
+        $this->assertSame($policy, HandshakeResponseSignalData::fromArray($anonymous->toArray())->impersonationPolicy);
+        $this->assertSame($policy, HandshakeResponseSignalData::fromArray($signedIn->toArray())->impersonationPolicy);
+    }
+
+    public function testTheImpersonationPolicySurvivesEveryOtherAxisOfTheStamp(): void
+    {
+        $policy = ['viewOnly' => false, 'carryAdmin' => true];
+        $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false)
+            ->withImpersonationPolicy($policy)
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->withPendingAck(null)
+            ->withAccountBlocked(null)
+            ->withAccountStanding(self::STANDING)
+            ->withAdminViewMode(true);
+
+        $this->assertSame($policy, $data->impersonationPolicy);
+        $this->assertTrue($data->adminViewMode);
+    }
+
+    public function testRoundtripRejectsAnImpersonationPolicyWithoutItsTwoFlags(): void
+    {
+        $payload = new HandshakeResponseSignalData()->toArray();
+        $payload['data']['impersonationPolicy'] = ['viewOnly' => true];
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
     }
 
     public function testRoundtripRejectsAViewModeThatIsNotABoolean(): void

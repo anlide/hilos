@@ -12,13 +12,12 @@ where the surface asks for it. Save stays disabled until the conflict is
 resolved.
 Emits the choice; the parent form applies it against the core threeWayMerge
 result. Inside an admin page a viewer of the admin view mode finds Save disabled
-— the default one and the slotted one alike (HIL-1261); Cancel and the conflict
-choices, which edit only the draft in this window, stay as always. Bootstrap
-classes only. -->
+— the default one and the slotted one alike (HIL-1261), and so does an
+administrator in the page's area of a takeover that only looks (HIL-1170);
+Cancel and the conflict choices, which edit only the draft in this window, stay
+as always. Bootstrap classes only. -->
 <script setup lang="ts">
-import { HILOS_VIEW_MODE_STRIP_TEXT_ID } from '@hilos/core'
-
-import { useAdminViewMode } from './hilosAdminViewMode.js'
+import { useLookOnly } from './hilosAdminViewMode.js'
 
 withDefaults(
   defineProps<{
@@ -52,7 +51,7 @@ const emit = defineEmits<{
  */
 const CHOICE_CLASS = 'btn btn-outline-secondary'
 
-const viewMode = useAdminViewMode()
+const { locked, describedBy } = useLookOnly()
 
 function onSave(): void {
   emit('save')
@@ -106,14 +105,14 @@ function onSave(): void {
     <slot name="cancel-button" />
     <slot
       name="save-button"
-      :disabled="disableSave || conflict || viewMode"
+      :disabled="disableSave || conflict || locked"
       :on-save="onSave"
     >
       <button
         type="button"
         class="btn btn-primary"
-        :disabled="disableSave || conflict || viewMode"
-        :aria-describedby="viewMode ? HILOS_VIEW_MODE_STRIP_TEXT_ID : undefined"
+        :disabled="disableSave || conflict || locked"
+        :aria-describedby="describedBy"
         data-id="conflict-save"
         @click="onSave"
       >

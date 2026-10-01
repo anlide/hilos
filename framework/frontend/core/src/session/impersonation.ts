@@ -18,6 +18,12 @@
 // The strip's color follows the person taken over (HIL-945): red while they are
 // blocked, blue while they are frozen, yellow otherwise. The color is about the
 // person whose name is in the strip, not about the takeover.
+//
+// What the administrator may do inside follows the installation's policy
+// (HIL-1170): with only looking allowed the strip says "view only", and the
+// controls of the page under it stand switched off and point at the strip's
+// text, as a viewer's do at the view-mode strip (HIL-1261). Stop and the shell
+// stay live: the flag is provided around the page's area, never the shell.
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -33,6 +39,7 @@ import { hilosStandingTone, type HilosStandingTone } from './accountStanding.js'
 import {
   sessionAccountStanding,
   sessionImpersonating,
+  sessionImpersonationPolicy,
   sessionUserName,
   type SessionScopeOptions,
 } from './sessionScope.js'
@@ -44,7 +51,15 @@ export const IMPERSONATION_ACTION_STOP = 'hilos_impersonate_stop'
 export const IMPERSONATION_STRIP_COPY = {
   lead: 'You are impersonating',
   stop: 'Stop',
+  viewOnly: 'view only',
 } as const
+
+/**
+ * Id of the strip's text, which the switched-off controls of a view-only
+ * takeover name in `aria-describedby` (HIL-1170).
+ */
+export const HILOS_IMPERSONATION_STRIP_TEXT_ID =
+  'hilos-impersonation-strip-text'
 
 /** What the strip draws while a takeover lasts. */
 export interface ImpersonationStrip {
@@ -52,6 +67,8 @@ export interface ImpersonationStrip {
   readonly userName: string
   /** The strip's color: the tone of the standing shown for the user taken over (HIL-945). */
   readonly tone: HilosStandingTone
+  /** Whether the administrator only looks: the page's controls stand switched off (HIL-1170). */
+  readonly viewOnly: boolean
 }
 
 const impersonation = createSignal<ImpersonationStrip | null>(null)
@@ -75,6 +92,16 @@ export const hilosImpersonation: ReadonlySignal<ImpersonationStrip | null> =
   impersonation
 
 /**
+ * Whether this session is inside a takeover where the administrator only looks
+ * (HIL-1170). The SDKs provide it around the page's area as a second source of
+ * the flag their controls read in the admin view mode, so the page's buttons,
+ * switches and bulk actions stand switched off while Stop does not.
+ */
+export const hilosTakeoverViewOnly: ReadonlySignal<boolean> = computedSignal(
+  () => impersonation.get()?.viewOnly === true,
+)
+
+/**
  * Derive {@link hilosImpersonation} from the session scope and remember the
  * lifecycle {@link stopImpersonation} dispatches on.
  *
@@ -95,11 +122,13 @@ export function bindImpersonation(
   const impersonating = sessionImpersonating(scopes, options)
   const userName = sessionUserName(scopes, options)
   const standing = sessionAccountStanding(scopes)
+  const policy = sessionImpersonationPolicy(scopes)
   const strip = computedSignal<ImpersonationStrip | null>(() =>
     impersonating.get()
       ? {
           userName: userName.get(),
           tone: hilosStandingTone(standing.get()?.shown ?? 'none'),
+          viewOnly: policy.get().viewOnly,
         }
       : null,
   )

@@ -18,8 +18,15 @@
 // verdict. A window whose action takes something away — the merge, rights, the
 // block, the deletion — first asks the server whether the administrator must
 // confirm it is them, and opens on that step when it must
-// (createHilosUserCardStepUp, HIL-1275). Bootstrap classes only
-// (styling-rules.md).
+// (createHilosUserCardStepUp, HIL-1275). The takeover lives here too (HIL-1170,
+// on the users list before): a section drawn while the installation allows
+// impersonation, its button switched off with a reason on the person's own card
+// and on whom the settings exclude, and a window — after the same confirmation
+// step, operation `impersonate` — whose words follow the settings
+// (hilosUserImpersonationSection). A success needs no word: the session rebinds
+// and the strip rises. The buttons that only open a window stay live in a
+// takeover that only looks; the confirmation in the window does not. Bootstrap
+// classes only (styling-rules.md).
 import {
   afterRenderEffect,
   ChangeDetectionStrategy,
@@ -34,13 +41,16 @@ import {
 } from '@angular/core'
 import {
   ACCOUNT_DELETION_TICK_MS,
+  createHilosImpersonate,
   createHilosUserCardStepUp,
   createHilosUserLifecycle,
   focusInitial,
   HILOS_STEP_UP_COPY,
   createHilosUserStanding,
+  HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
+  hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
@@ -77,6 +87,8 @@ import type {
   HilosStepUpOpenOutcome,
   HilosUserCardStepUp,
   HilosUserDetailRow,
+  HilosUserImpersonationSection,
+  HilosUserImpersonationSettings,
   HilosUserRename,
   HilosUsersContext,
   RowEditBaseline,
@@ -230,11 +242,10 @@ function noticeText(live: RowEditState<UserEditFields>): string {
                       [class.btn-primary]="
                         !lifecycleCopy.confirmations[row.choice].danger
                       "
+                      [opensWindow]="true"
                       [loading]="lifecycleOpening() === row.choice"
                       [disabled]="row.disabled"
-                      [attr.aria-describedby]="
-                        'hilos-user-' + row.key + '-reason'
-                      "
+                      [aria-describedby]="'hilos-user-' + row.key + '-reason'"
                       [attr.data-id]="'hilos-user-' + row.key + '-open'"
                       (click)="openLifecycle(row.choice)"
                     >
@@ -305,12 +316,52 @@ function noticeText(live: RowEditState<UserEditFields>): string {
               <button
                 hilosLoadingButton
                 class="btn-outline-danger"
+                [opensWindow]="true"
                 [loading]="mergeOpening()"
                 data-id="hilos-user-merge-open"
                 (click)="openMerge()"
               >
                 Merge an account into this…
               </button>
+            </div>
+          </section>
+        }
+        @if (impersonation(); as section) {
+          <section class="card mt-4">
+            <div class="card-body">
+              <h2 class="h5">{{ section.title }}</h2>
+              <div class="d-flex flex-wrap align-items-start gap-3 py-2">
+                <div class="flex-grow-1">
+                  <h3 class="h6 mb-1">{{ section.rowTitle }}</h3>
+                  <p class="small text-body-secondary mb-0">
+                    {{ section.hint }}
+                  </p>
+                </div>
+                <div>
+                  <button
+                    hilosLoadingButton
+                    class="btn-sm btn-primary"
+                    [opensWindow]="true"
+                    [loading]="impersonateOpening()"
+                    [disabled]="section.disabled"
+                    aria-describedby="hilos-user-impersonate-reason"
+                    data-id="hilos-user-impersonate-open"
+                    (click)="openImpersonate()"
+                  >
+                    {{ impersonationCopy.open }}
+                  </button>
+                  <div class="hilos-stack small text-body-secondary mt-1">
+                    <span class="invisible" aria-hidden="true">{{
+                      section.reasonSpace
+                    }}</span>
+                    <span
+                      id="hilos-user-impersonate-reason"
+                      data-id="hilos-user-impersonate-reason"
+                      >{{ section.reason }}</span
+                    >
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
         }
@@ -495,6 +546,88 @@ function noticeText(live: RowEditState<UserEditFields>): string {
               (click)="submitLifecycle()"
             >
               {{ lifecyclePrompt()?.confirm }}
+            </button>
+          }
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
+        [open]="impersonateTarget() !== null"
+        (openChange)="onImpersonateOpenChange($event)"
+        [title]="
+          impersonateProof() === 'skip'
+            ? (impersonateTarget()?.section?.windowTitle ?? '')
+            : stepUpCopy.title
+        "
+        initialFocus="inner"
+        [closeOnBackdrop]="!impersonateAction.busy()"
+        [closeOnEsc]="!impersonateAction.busy()"
+      >
+        <div #impersonateBody>
+          <div class="visually-hidden" role="alert" aria-live="assertive">
+            {{
+              impersonateProof() === 'skip'
+                ? impersonateAction.error()
+                : impersonateStepUpRefusal()
+            }}
+          </div>
+          @if (impersonateProof() !== 'skip') {
+            <form
+              id="hilos-user-impersonate-proof"
+              data-id="hilos-user-impersonate-step-up"
+              (submit)="$event.preventDefault(); confirmImpersonateStep()"
+            >
+              <hilos-step-up-step [controller]="impersonateStepUp().step" />
+            </form>
+          } @else if (impersonateTarget(); as target) {
+            @for (paragraph of target.section.paragraphs; track paragraph) {
+              <p>{{ paragraph }}</p>
+            }
+            <div class="alert alert-secondary small py-2">
+              {{ target.section.note }}
+            </div>
+            <div data-id="hilos-user-impersonate-error">
+              <hilos-action-error
+                [action]="impersonateAction"
+                detailsTitle="Couldn't impersonate this person"
+              />
+            </div>
+          }
+        </div>
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="impersonateAction.busy()"
+            data-id="hilos-user-impersonate-cancel"
+            (click)="requestClose()"
+          >
+            {{ impersonationCopy.cancel }}
+          </button>
+          @if (impersonateProof() === 'ask') {
+            <button
+              hilosLoadingButton
+              class="btn-primary"
+              type="submit"
+              form="hilos-user-impersonate-proof"
+              [loading]="impersonateStepUpBusy()"
+              data-id="hilos-user-impersonate-step-up-confirm"
+            >
+              {{ stepUpCopy.confirm }}
+            </button>
+          } @else if (impersonateProof() === 'skip') {
+            <button
+              hilosLoadingButton
+              class="btn-primary"
+              [loading]="impersonateAction.loading()"
+              [disabled]="
+                impersonateAction.busy() ||
+                detail()?.id !== impersonateTarget()?.userId
+              "
+              data-id="hilos-user-impersonate-confirm"
+              (click)="submitImpersonate()"
+            >
+              {{ impersonationCopy.confirm }}
             </button>
           }
         </ng-template>
@@ -790,6 +923,37 @@ export class HilosUserPage {
       this.standing(),
     ),
   )
+  // The takeover (HIL-1170): the section reads the installation's settings the
+  // page's first answer carried, the person's live standing and admin flag, and
+  // who stands behind this session. The window keeps the words it opened with.
+  protected readonly impersonationCopy = HILOS_USER_IMPERSONATION_COPY
+  private readonly impersonate = computed(() =>
+    createHilosImpersonate(this.context()),
+  )
+  protected readonly impersonateAction = createHilosTrackedAction()
+  protected readonly impersonateStepUp = computed(() =>
+    createHilosUserCardStepUp(this.context()),
+  )
+  protected readonly impersonateStepUpBusy = signal(false)
+  protected readonly impersonateStepUpRefusal = signal<string | null>(null)
+  protected readonly impersonateProof = signal<HilosStepUpOpenOutcome>('skip')
+  protected readonly impersonateOpening = signal(false)
+  private readonly impersonateBody =
+    viewChild<ElementRef<HTMLElement>>('impersonateBody')
+  private readonly impersonationSettings =
+    signal<HilosUserImpersonationSettings | null>(null)
+  protected readonly impersonation = computed(() =>
+    hilosUserImpersonationSection(
+      this.detail(),
+      this.currentUserId(),
+      this.impersonationSettings(),
+      this.standing(),
+    ),
+  )
+  protected readonly impersonateTarget = signal<{
+    userId: number
+    section: HilosUserImpersonationSection
+  } | null>(null)
   private rename: HilosUserRename | undefined
   private mergeCandidates: HilosMergeCandidates | undefined
   private accountMerge: HilosAccountMerge | undefined
@@ -972,6 +1136,7 @@ export class HilosUserPage {
       const lifecycle = createHilosUserLifecycle(context)
       this.lifecycle = lifecycle
       this.graceDays.set(lifecycle.graceDays.get())
+      this.impersonationSettings.set(lifecycle.impersonation.get())
       const userStanding = createHilosUserStanding(context)
       userStanding.start()
       this.standing.set(userStanding.standing.get())
@@ -983,6 +1148,9 @@ export class HilosUserPage {
       const subscriptions = [
         subscribeSignal(lifecycle.graceDays, (value) =>
           this.graceDays.set(value),
+        ),
+        subscribeSignal(lifecycle.impersonation, (value) =>
+          this.impersonationSettings.set(value),
         ),
         subscribeSignal(userStanding.standing, (value) => {
           if (
@@ -1045,6 +1213,11 @@ export class HilosUserPage {
       (value) => this.mergeStepUpBusy.set(value),
       (value) => this.mergeStepUpRefusal.set(value),
     )
+    mirrorStepUp(
+      this.impersonateStepUp,
+      (value) => this.impersonateStepUpBusy.set(value),
+      (value) => this.impersonateStepUpRefusal.set(value),
+    )
     // The step a window moves to takes the focus once it is drawn.
     afterRenderEffect(() => {
       this.lifecycleProof()
@@ -1053,6 +1226,10 @@ export class HilosUserPage {
     afterRenderEffect(() => {
       this.mergeProof()
       focusWindow(this.mergeBody()?.nativeElement)
+    })
+    afterRenderEffect(() => {
+      this.impersonateProof()
+      focusWindow(this.impersonateBody()?.nativeElement)
     })
 
     effect(() => {
@@ -1110,6 +1287,59 @@ export class HilosUserPage {
         }
       })
     })
+  }
+
+  protected async openImpersonate(): Promise<void> {
+    const detail = this.detail()
+    const section = this.impersonation()
+    if (
+      !detail ||
+      section === null ||
+      this.impersonateAction.busy() ||
+      this.impersonateOpening()
+    )
+      return
+    this.impersonateAction.clearError()
+    this.impersonateOpening.set(true)
+    this.impersonateProof.set(
+      await this.impersonateStepUp().open('impersonate'),
+    )
+    this.impersonateOpening.set(false)
+    this.impersonateTarget.set({ userId: detail.id, section })
+  }
+
+  /** Send the step's proof; the window's own content follows a success. */
+  protected async confirmImpersonateStep(): Promise<void> {
+    if (
+      this.impersonateProof() === 'ask' &&
+      (await this.impersonateStepUp().step.confirm()) &&
+      this.impersonateTarget() !== null
+    ) {
+      this.impersonateProof.set('skip')
+    }
+  }
+
+  protected onImpersonateOpenChange(open: boolean): void {
+    if (!open && !this.impersonateAction.busy()) {
+      this.impersonateTarget.set(null)
+    }
+  }
+
+  // Authoritative-backend: what the takeover changes — the strip, and this
+  // session becoming the person — arrives with the rebound session, so a success
+  // only closes the window; a refusal stays in it, and the driver toasts it.
+  protected async submitImpersonate(): Promise<void> {
+    const target = this.impersonateTarget()
+    if (
+      target === null ||
+      this.impersonateAction.busy() ||
+      this.detail()?.id !== target.userId
+    )
+      return
+    if (
+      await this.impersonateAction.run(this.impersonate().start(target.userId))
+    )
+      this.impersonateTarget.set(null)
   }
 
   protected openEdit(): void {

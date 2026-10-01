@@ -26,7 +26,9 @@ Every page class declares (or inherits) `ACCESS_LEVEL`, a `PageAccessLevel`:
 - `PUBLIC` — no identity check. The `AbstractPage` default, so project pages
   keep the anonymous-read model unless they declare otherwise.
 - `AUTHENTICATED` — the connection must resolve to a user, else 401.
-- `ADMIN` — the user must also pass the `isAdmin()` seam, else 403
+- `ADMIN` — the connection must also act as an admin
+  (`BrowserContext::actsAsAdmin()`: the `isAdmin()` seam, or an administrator's
+  rights carried into a takeover — *The takeover gate*, below), else 403
   (401 when anonymous). The `AbstractHilosPage` default: every framework admin
   page is closed unless it explicitly relaxes its level.
 
@@ -57,7 +59,10 @@ mandatory — silence would open the profile to guests.
   an authenticated non-admin 403 `ActionForbiddenException`, and — with the admin
   view mode on — a viewer of an `ADMIN` page 403 `view_mode`
   (`ActionViewModeException`) for every action the page did not declare in
-  `READING_ACTIONS`. A page's actions are closed by its level; the
+  `READING_ACTIONS`. After the `AUTH_ACTIONS` and freeze guard,
+  `PageSignalRouter::assertTakeover()` holds an administrator inside someone
+  else's account to the impersonation settings (*The takeover gate*, below).
+  A page's actions are closed by its level; the
   per-action `AUTH_ACTIONS` list remains for project pages with the
   anonymous-read + authenticated-write model. The level closes the actions the
   *page* holds, and it does not travel with the name: an action name moved to an
@@ -70,8 +75,8 @@ mandatory — silence would open the profile to guests.
 Identity comes from two `BrowserContext` seams (see the identity hook below):
 `resolveActionUserId()` answers "which user", and `isAdmin(int $userId): bool` —
 answered by the framework from `hilos_user.admin` — answers "is that user an
-admin". A project without a mounted browser context fails **closed**: nothing
-resolves, the surface denies.
+admin"; the `ADMIN` level asks `actsAsAdmin()` over it. A project without a
+mounted browser context fails **closed**: nothing resolves, the surface denies.
 
 ## The freeze step (a frozen account)
 
@@ -112,6 +117,39 @@ qualification — except that the text rule holds there too: a non-admin whose
 action the gate refused is not told the text of the refusal. The mode whole —
 the switch and its production latch, who a viewer is, the bridge, the browser
 side, what a new admin section owes — is [admin-view-mode.md](admin-view-mode.md).
+
+## The takeover gate (an administrator inside someone else's account)
+
+Inside a takeover the impersonation settings (`ImpersonationSettings`, HIL-1170)
+are read live on every action that writes, by
+`PageSignalRouter::assertTakeover()`, right after the `AUTH_ACTIONS` and
+freeze guard. An action writes when it is an `AUTH_ACTIONS` name of any owner,
+touches the sign-in of the account (`ImpersonationAccountAccess::ACTIONS`, one
+framework list), or is an action of an `ADMIN` page the page did not declare
+in `READING_ACTIONS`. Nothing else — reading, subscriptions, table windows,
+"Stop", signing out — reads the session row at all. The administrator behind
+the connection is read off the session row (`Takeover::administratorBehind()`).
+
+- `auth.impersonation.scope = view` refuses every writing action with 403
+  `impersonation_view_only`.
+- `auth.impersonation.account_access` off refuses an action that touches the
+  sign-in with 403 `impersonated`.
+
+Both are `ActionImpersonationException`, journaled as an INFO verdict, not a
+failure. What passes leaves the journal line
+`impersonated_action {event, admin, user, host, action, session}` with both
+people, so nothing done in someone else's name is anonymous.
+
+Carried admin rights (`auth.impersonation.carry_admin`) open the admin surface
+through `BrowserContext::actsAsAdmin()`, the one question the `ADMIN` level and
+the admin view mode ask: the connection's person is an admin, or an admin works
+inside their account and the setting carries the rights in. Only the surface
+is carried: the actions on people — rights, block, deletion, merge, another
+takeover — re-check the active administrator at their owner
+(`AskingAdministrator`) and refuse a session inside a takeover whatever
+`actsAsAdmin()` answers. Whether and whom a takeover may start is judged by the
+sessions library at the start, not here
+([people-table.md](people-table.md)).
 
 ## Declaring a guard
 
@@ -225,7 +263,9 @@ with (HIL-289). Unlike a declarative `ACCESS` guard, the seam runs in whatever
 worker serves the page, so it reads a source readable there — the framework
 declares `users` in `HilosDbContext::processWideReadCollections()` (HIL-750). A
 project may override the seam when it decides otherwise; when a central
-authorization hook lands (HIL-309), only this method's body changes.
+authorization hook lands (HIL-309), only this method's body changes. The level
+asks it through `actsAsAdmin()`, which adds only the rights carried into a
+takeover (*The takeover gate*).
 
 ## Error codes
 
@@ -261,9 +301,11 @@ internal-error sentence for a 500). The frontend picks what to show by the codes
 An action the gate refuses is answered on `action_error`, not here, with the
 codes of the page — 401 `unauthorized`, 403 `forbidden`, 403 `account_frozen`
 (`ActionAccountFrozenException`, carried on a tracked and an untracked action's
-error alike) — and one of its own: 403 `view_mode` (`ActionViewModeException`),
-the refusal of a viewer of the admin view mode, whose reason is the impersonal
-sentence and never the exception's text.
+error alike) — and its own: 403 `view_mode` (`ActionViewModeException`),
+the refusal of a viewer of the admin view mode, and 403
+`impersonation_view_only` / `impersonated` (`ActionImpersonationException`),
+the refusals of the takeover gate; their reason is the impersonal sentence and
+never the exception's text.
 
 ## Guards run on EVERY delivery path
 

@@ -120,6 +120,25 @@ rename to the event of its feed is the first case: the column `event_id`, which
 its `afterUserRenamed()` writes through the journal row's item actions — empty in
 the framework and left for exactly this (HIL-1196).
 
+## Taking A Person Over
+
+Whether one person may take another over is
+`AbstractSessionsLibraryAgent::assertImpersonationAllowed()`, the one judge of
+both ways in — the person's card and `impersonate:start`. The asker must be an
+administrator, and only then is the target looked up. Then the impersonation
+settings (`ImpersonationSettings`, HIL-1170): impersonation must be allowed
+(`auth.impersonation.allowed`), and a blocked person, a frozen person (by
+`AccountStandingResolver`) or another administrator is taken over only while
+its switch is on (`auth.impersonation.blocked`, `.frozen`, `.equal`). A refusal
+speaks the words the card shows under its switched-off button
+(`ImpersonationMessages`). The asker naming themselves is not "another
+administrator": the library refuses that on its own, after.
+
+These settings are judged at the start and nowhere later: a takeover under way
+is not ended by a later switch, the way a sign-in method switched off signs
+nobody out. What may be done inside is judged on every action instead
+([page-access-control.md](page-access-control.md), *The takeover gate*).
+
 ## A Merged Account
 
 The tombstone of an account folded into another is a framework table, one row

@@ -7,8 +7,9 @@ import { clickSubmit, signUp } from '../helpers/session'
 import { goToLastPage } from '../helpers/table'
 
 // The framework people section under admin view mode (HIL-1263): a viewer — a guest
-// included — opens every window of the users table and the person card directly, without
-// the confirmation step, and every mutation control stands disabled by the mode.
+// included — opens every window of the person card directly, without the confirmation
+// step, and every mutation control stands disabled by the mode. The takeover is one of
+// the card's windows since HIL-1170; the users list carries none.
 test.describe('the people section in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
 
@@ -34,22 +35,21 @@ test.describe('the people section in the admin view mode', () => {
 
       await setAdminViewMode(true)
 
-      // 1. Users list: impersonate modal
-      await gotoPage(page, '/hilos/users')
-      await goToLastPage(page)
-      await clickSubmit(
-        shownByTestId(page, `hilos-users-impersonate-${userBId}`),
-      )
-
+      // 1. User card: the takeover window
+      await gotoPage(page, `/hilos/user/${userBId}`)
+      await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
+      await expect(
+        page.getByTestId('hilos-user-impersonate-step-up'),
+      ).toHaveCount(0)
       const impersonateConfirm = page.getByTestId(
-        'hilos-users-impersonate-confirm',
+        'hilos-user-impersonate-confirm',
       )
       await expect(impersonateConfirm).toBeDisabled()
       await expect(impersonateConfirm).toHaveAttribute(
         'aria-describedby',
         /(^| )hilos-view-mode-strip-text( |$)/,
       )
-      await clickSubmit(page.getByTestId('hilos-users-impersonate-cancel'))
+      await clickSubmit(page.getByTestId('hilos-user-impersonate-cancel'))
 
       // 2. User card: lifecycle modals (admin, block, deletion)
       await gotoPage(page, `/hilos/user/${userAId}`)

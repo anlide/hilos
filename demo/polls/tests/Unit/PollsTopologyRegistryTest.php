@@ -54,6 +54,7 @@ use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityImpersonationPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
@@ -86,6 +87,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
+use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
@@ -474,6 +476,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
             PollsTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
             PollsTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+            PollsTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
             PollsTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
             PollsTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
             PollsTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
@@ -499,6 +502,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 SecuritySignInMethodsPage::PAGE,
                 SecurityTwoFactorPage::PAGE,
                 SecurityStepUpPage::PAGE,
+                SecurityImpersonationPage::PAGE,
                 LegalPage::PAGE,
                 LegalDocumentPage::PAGE,
                 LegalRevisionPage::PAGE,

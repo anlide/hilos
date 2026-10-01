@@ -466,14 +466,16 @@ single-user ADMIN page owns `HILOS_USER_MERGE`, forwards `HILOS_ACCOUNT_MERGE` w
 project's merge seams inside the transaction, then answers the page on
 `HILOS_ACCOUNT_MERGE_DONE` with the finished summary as the success message. The project
 does not mint a second action or ack name merely because it contributes rows to the write;
-the gatekeeper still owns the browser outcome. The card's admin-rights, block and
-deletion actions use the same handover: the sessions library writes rights and blocks,
-and the users library schedules or cancels deletion; the ADMIN page answers each press.
+the gatekeeper still owns the browser outcome. The card's admin-rights, block,
+deletion and takeover actions use the same handover: the sessions library writes rights,
+blocks and the takeover, and the users library schedules or cancels deletion; the ADMIN
+page answers each press.
 
 **An operation with two entrances: the gatekeeper's lock closes the browser one
 only.** The writer keeps its own check for the entrance that has no page. The
 impersonation is the case: `AbstractSessionsLibraryAgent::assertImpersonationAllowed()`
-— the framework's check over `hilos_user` since HIL-1197 — stayed where it was after
+— the framework's check over `hilos_user` since HIL-1197, and over the impersonation
+settings since HIL-1170 — stayed where it was after
 the page took the name, because `CliCommands::IMPERSONATE_START` reaches the same core
 from a command socket, where there is no level to check and the check is the only
 judge. A check that duplicates a page level for the browser is not a redundancy to
@@ -486,8 +488,9 @@ library asked the project for. It failed the first half of the criterion above �
 only an administrator may take a person over, which is more than "you have a
 session" — and it had been read as a precedent, because it was the first session
 operation with two entrances and the shape it wore was the one the next operation
-would copy. It now stands on `AbstractHilosUsersPage::ACTIONS` with the ADMIN level
-that closes it, and the library performs the write on
+would copy. HIL-824 moved it onto the people list, `AbstractHilosUsersPage`; since
+HIL-1170 it stands on the person's card, `AbstractHilosUserPage::ACTIONS`, with the
+ADMIN level that closes it, and the library performs the write on
 `HILOS_IMPERSONATE_REQUEST`, answering `HILOS_IMPERSONATE_DONE`. The wire name did
 not change: `PageSignalRouter::resolveActionHost()` asks the agent's own actions
 first and the static action-to-page map second, so the browser sends the same

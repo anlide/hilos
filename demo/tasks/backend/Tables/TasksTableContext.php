@@ -24,6 +24,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
+use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -51,6 +52,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosLegalAcceptancesTable $hilosLegalAcceptances
  * @property-read HilosLegalSettingsTable $hilosLegalSettings
  * @property-read HilosSecurityStepUpTable $hilosSecurityStepUp
+ * @property-read HilosSecurityImpersonationTable $hilosSecurityImpersonation
  */
 final class TasksTableContext extends TableContext
 {
@@ -72,6 +74,7 @@ final class TasksTableContext extends TableContext
     public const string hilosLegalAcceptances = HilosLegalAcceptancesTable::TABLE;
     public const string hilosLegalSettings = HilosLegalSettingsTable::TABLE;
     public const string hilosSecurityStepUp = HilosSecurityStepUpTable::TABLE;
+    public const string hilosSecurityImpersonation = HilosSecurityImpersonationTable::TABLE;
 
     /**
      * Registers tasks table definitions from the project topology registry.

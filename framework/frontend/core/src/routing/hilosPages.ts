@@ -95,6 +95,7 @@ export const HilosPages = {
   SECURITY_OAUTH: 'hilos_security_oauth',
   SECURITY_OAUTH_PROVIDER: 'hilos_security_oauth_provider',
   SECURITY_SIGN_IN_METHODS: 'hilos_security_sign_in_methods',
+  SECURITY_IMPERSONATION: 'hilos_security_impersonation',
   LEGAL: 'hilos_legal',
   LEGAL_DOCUMENT: 'hilos_legal_document',
   LEGAL_REVISION: 'hilos_legal_revision',
@@ -290,6 +291,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   },
   [HilosPages.SECURITY_SIGN_IN_METHODS]: {
     path: '/hilos/security/sign-in-methods',
+    admin: true,
+  },
+  [HilosPages.SECURITY_IMPERSONATION]: {
+    path: '/hilos/security/impersonation',
     admin: true,
   },
   [HilosPages.LEGAL]: { path: '/hilos/legal', admin: true },

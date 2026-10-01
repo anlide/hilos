@@ -6,6 +6,9 @@ namespace Hilos\Core\Page;
 
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
+use Hilos\Auth\Impersonation\ImpersonationAccountAccess;
+use Hilos\Auth\Impersonation\ImpersonationSettings;
+use Hilos\Auth\Impersonation\Takeover;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Constants\ErrorConstants;
@@ -30,6 +33,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\ActionAccountFrozenException;
 use Hilos\Core\Page\Exception\ActionForbiddenException;
+use Hilos\Core\Page\Exception\ActionImpersonationException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\ActionViewModeException;
@@ -979,6 +983,7 @@ class PageSignalRouter
      * @throws ActionAccountFrozenException When a frozen person asks for an action that is not an exit
      * @throws ActionUnauthorizedException When the page or the action requires a session the caller has not got
      * @throws ActionViewModeException When a viewer of the admin view mode asks for an action the page did not declare reading
+     * @throws ActionImpersonationException When an administrator inside someone else's account asks for what the settings close there
      * @throws FramePopOrderException When the handler leaves the execution frame stack imbalanced
      * @throws Throwable Whatever the action handler raises
      */
@@ -993,6 +998,7 @@ class PageSignalRouter
             $this->assertPageAccessLevel($host, $acceptKey, $action);
         }
         $this->assertActionAuthorized($host, $action, $acceptKey);
+        $this->assertTakeover($host, $action, $acceptKey);
         $host->beginActionDispatch($requestId);
         try {
             $reply = ExecutionContext::withOrigin(
@@ -1053,6 +1059,13 @@ class PageSignalRouter
             // at exactly that page - so one line of INFO, with no trace to read.
             Logger::info(
                 "Action refused in the admin view mode: host={$host->actionHostName()}, action={$action}, acceptKey={$acceptKey}",
+            );
+        } elseif ($e instanceof ActionImpersonationException) {
+            // A verdict for the same reason: an administrator inside someone else's account
+            // pressed a button the impersonation settings close there.
+            Logger::info(
+                "Action refused inside an impersonation: host={$host->actionHostName()}, action={$action}, "
+                    . "code={$e->errorCode}, acceptKey={$acceptKey}",
             );
         } else {
             // The client is told an action failed, never why: the frontend shows a
@@ -2047,6 +2060,63 @@ class PageSignalRouter
         ) {
             throw new ActionAccountFrozenException();
         }
+    }
+
+    /**
+     * Holds an administrator inside someone else's account to the impersonation settings, and journals what they write (HIL-1170).
+     *
+     * Asked only of an action that writes: one that needs a signed-in session ({@see ActionHostInterface::authActions()}
+     * of any owner - the chat's message, a rename, the profile's commands), one that touches the sign-in of the
+     * account ({@see ImpersonationAccountAccess::ACTIONS}), and an action of an ADMIN page that the page did not
+     * declare reading, which a takeover reaches only with the administrator's rights carried inside. Reading, the
+     * subscriptions, the windows of a table, "Stop" and signing out are none of these, and pass without the session
+     * row being read at all.
+     *
+     * Inside a takeover the settings are read live, on every action: with only looking allowed every such action is
+     * refused; with the sign-in closed, an action that touches it is. What passes is written to the node's journal
+     * with both people - the administrator and the person whose account it acts in - so nothing done in someone
+     * else's name is done anonymously.
+     *
+     * @param ActionHostInterface $host Owner the action was routed to
+     * @param string $action Dispatched action name
+     * @param string $acceptKey Acting connection accept key
+     * @throws ActionImpersonationException When the settings close the action inside a takeover
+     * @throws HilosException When the session row or a setting cannot be read
+     */
+    private function assertTakeover(ActionHostInterface $host, string $action, string $acceptKey): void
+    {
+        $touchesSignIn = in_array($action, ImpersonationAccountAccess::ACTIONS, true);
+        $writes = $touchesSignIn
+            || in_array($action, $host->authActions(), true)
+            || (
+                $host instanceof AbstractPage
+                && $host::ACCESS_LEVEL === PageAccessLevel::ADMIN
+                && !in_array($action, $host::READING_ACTIONS, true)
+            );
+        if (!$writes) {
+            return;
+        }
+
+        $administratorId = Takeover::administratorBehind($acceptKey);
+        if ($administratorId === null) {
+            return;
+        }
+
+        if (ImpersonationSettings::isViewOnly()) {
+            throw new ActionImpersonationException(ActionImpersonationException::CODE_VIEW_ONLY);
+        }
+        if ($touchesSignIn && !ImpersonationSettings::allowsAccountAccess()) {
+            throw new ActionImpersonationException(ActionImpersonationException::CODE_ACCOUNT_ACCESS);
+        }
+
+        Logger::info('impersonated_action ' . json_encode([
+            'event' => 'impersonated_action',
+            'admin' => $administratorId,
+            'user' => Hilos::$browser?->resolveActionUserId($acceptKey),
+            'host' => $host->actionHostName(),
+            'action' => $action,
+            'session' => Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionId,
+        ]));
     }
 
     /**

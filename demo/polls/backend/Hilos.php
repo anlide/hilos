@@ -59,6 +59,7 @@ use Demo\Polls\Pages\Hilos\TermsPage;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityImpersonationPage;
 use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityPage;
 use Demo\Polls\Pages\Hilos\ProfilePage;
@@ -115,6 +116,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
+use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -196,6 +198,7 @@ final class Hilos extends HilosFacade
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
         SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
+        SecurityImpersonationPage::PAGE => SecurityImpersonationPage::class,
     ];
 
     public const array GROUPS = [
@@ -336,6 +339,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         PollsTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         PollsTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+        PollsTableContext::hilosSecurityImpersonation => HilosSecurityImpersonationTable::class,
         PollsTableContext::hilosLegalDocuments => HilosLegalDocumentsTable::class,
         PollsTableContext::hilosLegalChecks => HilosLegalChecksTable::class,
         PollsTableContext::hilosLegalRevisions => HilosLegalRevisionsTable::class,
@@ -380,6 +384,9 @@ final class Hilos extends HilosFacade
         ],
         SecurityStepUpPage::PAGE => [
             PollsTableContext::hilosSecurityStepUp => [],
+        ],
+        SecurityImpersonationPage::PAGE => [
+            PollsTableContext::hilosSecurityImpersonation => [],
         ],
         LegalPage::PAGE => [
             PollsTableContext::hilosLegalDocuments => [],

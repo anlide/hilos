@@ -1,7 +1,9 @@
+import { signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HilosSwitch } from '../src/HilosSwitch.js'
+import { HILOS_TAKEOVER_VIEW_ONLY } from '../src/hilosLookOnly.js'
 
 function mount(
   inputs: { checked: boolean; busy?: boolean; spinnerDelay?: number } = {
@@ -107,5 +109,34 @@ describe('HilosSwitch', () => {
     expect(firstInput.id).not.toBe(secondInput.id)
     expect(firstLabel?.htmlFor).toBe(firstInput.id)
     expect(secondLabel?.htmlFor).toBe(secondInput.id)
+  })
+})
+
+describe('HilosSwitch in a takeover that only looks (HIL-1170)', () => {
+  it('stands disabled where the server put it, described by its hint and the impersonation strip', () => {
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HILOS_TAKEOVER_VIEW_ONLY,
+          useValue: signal(true).asReadonly(),
+        },
+      ],
+    })
+    const fixture = TestBed.createComponent(HilosSwitch)
+    fixture.componentRef.setInput('checked', true)
+    fixture.componentRef.setInput('dataId', 'setting-toggle')
+    fixture.componentRef.setInput('aria-label', 'Enable setting')
+    fixture.componentRef.setInput('aria-describedby', 'setting-hint')
+    fixture.detectChanges()
+    const toggles: boolean[] = []
+    fixture.componentInstance.toggle.subscribe((next) => toggles.push(next))
+
+    expect(input(fixture).checked).toBe(true)
+    expect(input(fixture).disabled).toBe(true)
+    expect(input(fixture).getAttribute('aria-describedby')).toBe(
+      'setting-hint hilos-impersonation-strip-text',
+    )
+    input(fixture).click()
+    expect(toggles).toEqual([])
   })
 })

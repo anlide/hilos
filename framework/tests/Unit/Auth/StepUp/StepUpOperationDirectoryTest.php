@@ -29,13 +29,15 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::REVOKE_ADMIN,
             StepUpOperationKey::BLOCK_ACCOUNT,
             StepUpOperationKey::DELETE_OTHER_ACCOUNT,
+            StepUpOperationKey::IMPERSONATE,
             StepUpTestDirectory::PROJECT_OPERATION,
         ], StepUpTestDirectory::keys());
     }
 
     /**
-     * The administrator's operations on another person's account: three declared on, the two an
-     * administrator undoes with one action declared off (HIL-1275).
+     * The administrator's operations on another person's account: three declared on, the three an
+     * administrator undoes with one action declared off (HIL-1275) - the takeover among them, whose
+     * "Stop" returns everything (HIL-1170).
      */
     public function testAdministratorOperationsCarryTheirCopyAndTheirDefaults(): void
     {
@@ -45,6 +47,7 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::REVOKE_ADMIN => ['Remove admin rights', 'remove admin rights', false],
             StepUpOperationKey::BLOCK_ACCOUNT => ['Block an account', 'block this account', false],
             StepUpOperationKey::DELETE_OTHER_ACCOUNT => ["Delete another person's account", 'delete this account', true],
+            StepUpOperationKey::IMPERSONATE => ['Impersonate a person', 'impersonate this person', false],
         ];
         foreach ($expected as $key => [$label, $purpose, $enabledByDefault]) {
             $operation = StepUpTestDirectory::get($key);

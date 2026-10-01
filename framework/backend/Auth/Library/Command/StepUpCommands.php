@@ -24,6 +24,11 @@ use Random\RandomException;
 
 /**
  * Opens, verifies and records fresh proof before a protected operation (HIL-495).
+ *
+ * The proof is asked of whoever the gate names as the confirmer ({@see StepUpGate::confirmer()}):
+ * the person, or inside a takeover allowed to touch the sign-in the administrator behind it, whose
+ * method, code, password or device key it then is, and on whom the confirmation is recorded
+ * (HIL-1170). Nothing goes to the person whose account it is.
  */
 final class StepUpCommands extends AbstractLibraryCommands
 {
@@ -68,6 +73,7 @@ final class StepUpCommands extends AbstractLibraryCommands
             return new StepUpOpeningReplyDTO(false, $operation->purpose);
         }
 
+        $acting = $this->confirming($acting, $dto->operation);
         $target = new StepUpMethodResolver()->resolve($acting->userId);
         if ($target === null) {
             throw new ValidationException(StepUpMessages::NOTHING_TO_CONFIRM_WITH);
@@ -126,6 +132,7 @@ final class StepUpCommands extends AbstractLibraryCommands
             return;
         }
 
+        $acting = $this->confirming($acting, $dto->operation);
         $target = new StepUpMethodResolver()->resolve($acting->userId);
         if ($target === null || $target->method !== $dto->method) {
             throw new ValidationException(StepUpMessages::EXPIRED);
@@ -188,5 +195,20 @@ final class StepUpCommands extends AbstractLibraryCommands
     public function require(string $acceptKey, string $operation): void
     {
         $this->confirmedUser($acceptKey, $operation);
+    }
+
+    /**
+     * The browser and the person who prove the operation: the acting person, or the administrator behind a takeover.
+     *
+     * @param ActingSession $acting Browser and the person the session acts as
+     * @param string $operation Declared operation key
+     * @return ActingSession The same browser with the confirmer the gate names
+     * @throws HilosException When the operation is not declared, or the session or the setting cannot be read
+     */
+    private function confirming(ActingSession $acting, string $operation): ActingSession
+    {
+        $confirmer = StepUpGate::confirmer($acting->sessionToken, (int)$acting->userId, $operation);
+
+        return $confirmer === $acting->userId ? $acting : new ActingSession($acting->acceptKey, $acting->sessionToken, $confirmer);
     }
 }

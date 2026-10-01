@@ -255,7 +255,11 @@ describe('the session standing (HIL-945)', () => {
         ),
       )
 
-      expect(hilosImpersonation.get()).toEqual({ userName: 'Bob', tone })
+      expect(hilosImpersonation.get()).toEqual({
+        userName: 'Bob',
+        tone,
+        viewOnly: false,
+      })
       expect(hilosSessionAvatarMark.get()).toEqual({
         tone,
         icon: 'bi-people-fill',

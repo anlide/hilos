@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Settings\Library;
 
+use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
@@ -71,7 +72,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * key and the request id, and the receipt of the ask stamps them on the write this library
  * performs ({@see HandoverAskInterface}) - nothing here calls for the stamp.
  *
- * BESIDES ITS ANSWERS IT SENDS three installation-wide frames. The sign-in method set
+ * BESIDES ITS ANSWERS IT SENDS four installation-wide frames. The sign-in method set
  * (HIL-427) is one. An
  * administrator narrows the methods through one setting, and every open sign-in surface has
  * to rebuild itself when that setting moves - whichever door moved it: the sign-in methods
@@ -82,9 +83,10 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * carries the passkey policy as well ({@see PasskeyAddressPolicy}, HIL-1105), so a write that
  * moved only the policy is sent the same way. A screen could not do it - the general table
  * knows nothing of sign-in - and a subscriber to the settings collection would fire once per
- * worker instead of once per write. The second-factor policy (HIL-494) and code delivery
- * availability (HIL-1102) travel separately: they have readers independent of the method
- * set. Each is compared around the same write, whichever door requested it.
+ * worker instead of once per write. The second-factor policy (HIL-494), code delivery
+ * availability (HIL-1102) and the impersonation policy (HIL-1170) travel separately: they have
+ * readers independent of the method set. Each is compared around the same write, whichever door
+ * requested it.
  *
  * WHY THE REPLY NAME RIDES IN THE ASK. There are three gatekeepers to this one scribe, and a
  * fixed pair of names would make it know each screen by name - the next screen that writes a
@@ -148,13 +150,21 @@ final class SettingsLibraryAgent extends AbstractAgent
         $methodsBefore = $this->offeredMethods();
         $policyBefore = $this->secondFactorPolicy();
         $deliveryBefore = CodeDeliverySignalData::current();
+        $impersonationBefore = $this->impersonationPolicy();
 
         switch ($name) {
             case HilosSignalConstants::HILOS_SETTING_WRITE:
                 if (!$data->data instanceof SettingWriteSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingWriteSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->storeValue($data->data), $methodsBefore, $policyBefore, $deliveryBefore);
+                $this->settle(
+                    $data->data,
+                    $this->storeValue($data->data),
+                    $methodsBefore,
+                    $policyBefore,
+                    $deliveryBefore,
+                    $impersonationBefore,
+                );
 
                 return;
 
@@ -162,7 +172,14 @@ final class SettingsLibraryAgent extends AbstractAgent
                 if (!$data->data instanceof SettingResetSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingResetSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->resetToDefault($data->data), $methodsBefore, $policyBefore, $deliveryBefore);
+                $this->settle(
+                    $data->data,
+                    $this->resetToDefault($data->data),
+                    $methodsBefore,
+                    $policyBefore,
+                    $deliveryBefore,
+                    $impersonationBefore,
+                );
 
                 return;
 
@@ -170,7 +187,14 @@ final class SettingsLibraryAgent extends AbstractAgent
                 if (!$data->data instanceof SettingDeleteSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingDeleteSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->dropOrphan($data->data), $methodsBefore, $policyBefore, $deliveryBefore);
+                $this->settle(
+                    $data->data,
+                    $this->dropOrphan($data->data),
+                    $methodsBefore,
+                    $policyBefore,
+                    $deliveryBefore,
+                    $impersonationBefore,
+                );
 
                 return;
 
@@ -182,7 +206,14 @@ final class SettingsLibraryAgent extends AbstractAgent
                         $data->data,
                     );
                 }
-                $this->settle($data->data, $this->applyPreset($data->data), $methodsBefore, $policyBefore, $deliveryBefore);
+                $this->settle(
+                    $data->data,
+                    $this->applyPreset($data->data),
+                    $methodsBefore,
+                    $policyBefore,
+                    $deliveryBefore,
+                    $impersonationBefore,
+                );
 
                 return;
 
@@ -318,11 +349,16 @@ final class SettingsLibraryAgent extends AbstractAgent
      * Delivery is compared independently of both policies: an unreadable policy cannot hide
      * a change of delivery availability, whose reader itself fails open (HIL-1102).
      *
+     * So is the impersonation policy (HIL-1170): a write that moved "only look" or the carried
+     * admin rights is told to every connection, so a tab open inside a takeover redraws its strip,
+     * its switched-off buttons and its gear at once.
+     *
      * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
      * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
      * @param ?AuthMethodsSignalData $methodsBefore Method-set frame before the write, or null when unread
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
      * @param CodeDeliverySignalData $deliveryBefore Delivery availability before the write
+     * @param ?ImpersonationPolicySignalData $impersonationBefore Impersonation policy before the write, or null when unread
      * @throws InvalidArgumentException When the answer or an installation-wide frame cannot be named or queued
      */
     private function settle(
@@ -331,6 +367,7 @@ final class SettingsLibraryAgent extends AbstractAgent
         ?AuthMethodsSignalData $methodsBefore,
         ?SecondFactorPolicy $policyBefore,
         CodeDeliverySignalData $deliveryBefore,
+        ?ImpersonationPolicySignalData $impersonationBefore,
     ): void {
         $this->answer($ask, $refusal);
         if ($refusal !== null) {
@@ -347,6 +384,11 @@ final class SettingsLibraryAgent extends AbstractAgent
             $this->sendToAllConnected(HilosSignalConstants::HILOS_CODE_DELIVERY, $deliveryAfter);
         }
 
+        $impersonationAfter = $impersonationBefore === null ? null : $this->impersonationPolicy();
+        if ($impersonationAfter !== null && $impersonationAfter->toArray() !== $impersonationBefore->toArray()) {
+            $this->sendToAllConnected(HilosSignalConstants::HILOS_IMPERSONATION_POLICY, $impersonationAfter);
+        }
+
         $policyAfter = $policyBefore === null ? null : $this->secondFactorPolicy();
         if ($policyBefore === null || $policyAfter === null) {
             return;
@@ -354,6 +396,25 @@ final class SettingsLibraryAgent extends AbstractAgent
         $announced = SecondFactorPolicySignalData::of($policyAfter);
         if ($announced->toArray() !== SecondFactorPolicySignalData::of($policyBefore)->toArray()) {
             $this->sendToAllConnected(HilosSignalConstants::HILOS_SECOND_FACTOR_POLICY, $announced);
+        }
+    }
+
+    /**
+     * Reads the impersonation policy as it stands, or null when it cannot be read (HIL-1170).
+     *
+     * Logged and answered with null rather than thrown, for the reason {@see offeredMethods()}
+     * gives: the write being served is answered either way.
+     *
+     * @return ?ImpersonationPolicySignalData The policy in force, or null when unread
+     */
+    private function impersonationPolicy(): ?ImpersonationPolicySignalData
+    {
+        try {
+            return ImpersonationPolicySignalData::current();
+        } catch (HilosException $e) {
+            $this->logAgentError("Impersonation settings could not be read: {$e->getMessage()}");
+
+            return null;
         }
     }
 

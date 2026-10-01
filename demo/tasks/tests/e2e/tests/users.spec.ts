@@ -1,6 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
 import { gotoPage, PAGE_REFUSED } from '../helpers/page'
+import { clickSubmit } from '../helpers/session'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own granted row is present, search filters the client
@@ -235,23 +236,28 @@ test('a revoked admin loses the gear and the door', async ({ page }) => {
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 })
 
-// HIL-824: the takeover button is drawn by the SDK page, not by this project. The backend
-// route is one shared framework path for all three demos and is covered where it lives
-// (demo/chat), so what is worth a case here is the only thing that differs — the markup —
-// and a visible button is what proves it reached this framework's view.
-test('draws the framework takeover button on a row that is not your own', async ({
+// HIL-824: the takeover is drawn by the SDK page, not by this project — on the person's
+// card since HIL-1170 (on the users list before). The backend route is one shared framework
+// path for all three demos and is covered where it lives (demo/chat), so what is worth a case
+// here is the only thing that differs — the markup: the card's button opens this framework's
+// window, and its confirm reaching the server is proved by the shell's strip, which arrives
+// with the rebound session rather than with an ack the view acted on.
+test('takes a person over from the framework card that is not your own', async ({
   page,
   browser,
 }) => {
-  // A second visitor, so the table holds a row other than the admin's own: the control is
-  // offered on every row but yours, since taking yourself over is refused server-side.
+  // A second visitor, so there is a card other than the admin's own: on your own card the
+  // control stands switched off, since taking yourself over is refused server-side.
   const other = await openSecondVisitor(browser)
-  await grantAdminToSelf(other)
+  const otherId = await grantAdminToSelf(other)
 
   await grantAdminToSelf(page)
-  await openUsers(page)
+  await gotoPage(page, `/hilos/user/${otherId}`)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  await expect(
-    page.locator('[data-id^="hilos-users-impersonate-"]').first(),
-  ).toBeVisible()
+  // The impersonation step is declared off (step-up.md), so the window opens at once.
+  await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
+  await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
+
+  await expect(page.getByTestId('impersonation-banner')).toBeVisible()
 })

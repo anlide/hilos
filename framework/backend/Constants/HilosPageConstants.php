@@ -216,6 +216,9 @@ final class HilosPageConstants
     /** @var string Hilos — sign-in methods an installation offers (HIL-427) */
     public const string HILOS_SECURITY_SIGN_IN_METHODS = 'hilos_security_sign_in_methods';
 
+    /** @var string Hilos — whether and within which limits an administrator may act in another person's account (HIL-1170) */
+    public const string HILOS_SECURITY_IMPERSONATION = 'hilos_security_impersonation';
+
     /** @var string Hilos — billing (payment providers) hub */
     public const string HILOS_BILLING = 'hilos_billing';
 

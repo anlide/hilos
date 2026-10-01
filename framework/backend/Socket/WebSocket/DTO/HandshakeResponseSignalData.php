@@ -6,11 +6,13 @@ namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\DataExport\DTO\DataExportStateSignalData;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
+use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\BaseDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Users\AccountStanding;
@@ -119,6 +121,14 @@ use Hilos\Users\AccountStandingResolver;
  * and the admin flag together, from one frame. Null means the stamp never ran; the surface reads
  * null, an absent key and anything but true as off - the same fail-closed default the admin flag
  * takes. The framework stamps it ({@see withAdminViewMode()}) on every send path.
+ *
+ * `impersonationPolicy` is the pair of impersonation settings an open tab draws a takeover by
+ * (HIL-1170, {@see ImpersonationPolicySignalData}): whether inside a takeover the administrator only
+ * looks, and whether they carry their own admin rights inside. Like the view mode it is the
+ * installation's fact and rides every response; a change between handshakes arrives on
+ * {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY}. Null means the stamp never ran; the
+ * surface reads it as the defaults - act, rights not carried. The framework stamps it
+ * ({@see withImpersonationPolicy()}) on every send path.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -151,6 +161,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string accountBlocked = 'accountBlocked';
     public const string accountStanding = 'accountStanding';
     public const string adminViewMode = 'adminViewMode';
+    public const string impersonationPolicy = 'impersonationPolicy';
 
     /**
      * Creates handshake response signal data.
@@ -189,6 +200,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
      *     Standing of the person the session acts as ({@see AccountStanding}), or null when it is anonymous
      * @param ?bool $adminViewMode Whether this node is in the admin view mode, or null before the framework stamp
+     * @param ?array{viewOnly: bool, carryAdmin: bool} $impersonationPolicy Impersonation policy of the installation,
+     *     or null before the framework stamp
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -205,6 +218,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?array $accountBlocked = null,
         public readonly ?array $accountStanding = null,
         public readonly ?bool $adminViewMode = null,
+        public readonly ?array $impersonationPolicy = null,
     ) {
     }
 
@@ -236,6 +250,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountBlocked: $this->accountBlocked,
             accountStanding: $this->accountStanding,
             adminViewMode: $this->adminViewMode,
+            impersonationPolicy: $this->impersonationPolicy,
         );
     }
 
@@ -267,6 +282,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountBlocked: $accountBlocked,
             accountStanding: $this->accountStanding,
             adminViewMode: $this->adminViewMode,
+            impersonationPolicy: $this->impersonationPolicy,
         );
     }
 
@@ -299,6 +315,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountBlocked: $this->accountBlocked,
             accountStanding: $accountStanding,
             adminViewMode: $this->adminViewMode,
+            impersonationPolicy: $this->impersonationPolicy,
         );
     }
 
@@ -329,6 +346,37 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountBlocked: $this->accountBlocked,
             accountStanding: $this->accountStanding,
             adminViewMode: $adminViewMode,
+            impersonationPolicy: $this->impersonationPolicy,
+        );
+    }
+
+    /**
+     * Returns the same response carrying the installation's impersonation policy (HIL-1170).
+     *
+     * The axis of the view mode's kind: the installation's fact, which the project does not read, so
+     * the framework stamps it on every send path and the project never builds it.
+     *
+     * @param array{viewOnly: bool, carryAdmin: bool} $impersonationPolicy Impersonation policy in force
+     * @return self The same response carrying that policy
+     */
+    public function withImpersonationPolicy(array $impersonationPolicy): self
+    {
+        return new self(
+            selfId: $this->selfId,
+            selfName: $this->selfName,
+            selfAdmin: $this->selfAdmin,
+            impersonatorId: $this->impersonatorId,
+            impersonatorName: $this->impersonatorName,
+            pendingAck: $this->pendingAck,
+            serverTimeMs: $this->serverTimeMs,
+            pendingAuthStep: $this->pendingAuthStep,
+            codeDelivery: $this->codeDelivery,
+            authMethods: $this->authMethods,
+            passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
+            accountBlocked: $this->accountBlocked,
+            accountStanding: $this->accountStanding,
+            adminViewMode: $this->adminViewMode,
+            impersonationPolicy: $impersonationPolicy,
         );
     }
 
@@ -374,6 +422,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountBlocked: $this->accountBlocked,
             accountStanding: $this->accountStanding,
             adminViewMode: $this->adminViewMode,
+            impersonationPolicy: $this->impersonationPolicy,
         );
     }
 
@@ -410,6 +459,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::accountBlocked => $this->accountBlocked,
                 self::accountStanding => $this->accountStanding,
                 self::adminViewMode => $this->adminViewMode,
+                self::impersonationPolicy => $this->impersonationPolicy,
             ],
         ];
     }
@@ -451,6 +501,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $accountBlocked = self::readAccountBlocked($section);
         $accountStanding = self::readAccountStanding($section);
         $adminViewMode = self::optionalBool($section, self::adminViewMode);
+        $impersonationPolicy = self::optionalArray($section, self::impersonationPolicy);
+        if ($impersonationPolicy !== null) {
+            $impersonationPolicy = ImpersonationPolicySignalData::fromArray($impersonationPolicy)->toArray();
+        }
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
@@ -462,6 +516,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 accountBlocked: $accountBlocked,
                 accountStanding: $accountStanding,
                 adminViewMode: $adminViewMode,
+                impersonationPolicy: $impersonationPolicy,
             );
         }
 
@@ -480,6 +535,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountBlocked: $accountBlocked,
             accountStanding: $accountStanding,
             adminViewMode: $adminViewMode,
+            impersonationPolicy: $impersonationPolicy,
         );
     }
 

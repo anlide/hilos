@@ -12,6 +12,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Tests\Unit\Notification\DeliveryRetryTwoStepTest;
 use PHPUnit\Framework\TestCase;
@@ -21,8 +22,9 @@ use PHPUnit\Framework\TestCase;
  * shape already has for the delivery retry ({@see DeliveryRetryTwoStepTest}).
  *
  * The takeover's start is the submit that LEFT its owner in this leaf, and what it got
- * instead is four declarations that only hold together: the action is declared on the Hilos
- * users page, that page carries the ADMIN level which is the whole reason the name is there,
+ * instead is four declarations that only hold together: the action is declared on a Hilos
+ * admin page - the person's card since HIL-1170, which moved the button off the people list -
+ * that page carries the ADMIN level which is the whole reason the name is there,
  * the write frame is declared by the library that owns the session, and the answer frame is
  * declared back on the page, so the admin is answered by the surface they submitted to.
  *
@@ -42,13 +44,22 @@ final class ImpersonationTwoStepTest extends TestCase
     {
         self::assertSame(
             ImpersonateStartActionDTO::class,
-            AbstractHilosUsersPage::ACTIONS[HilosSignalConstants::HILOS_IMPERSONATE_START] ?? null,
+            AbstractHilosUserPage::ACTIONS[HilosSignalConstants::HILOS_IMPERSONATE_START] ?? null,
         );
 
         self::assertArrayNotHasKey(
             HilosSignalConstants::HILOS_IMPERSONATE_START,
             AbstractSessionsLibraryAgent::AGENT_ACTIONS,
         );
+    }
+
+    /**
+     * The people list lost the button to the card (HIL-1170), and with it the name and the answer.
+     */
+    public function testThePeopleListNoLongerOwnsTheTakeover(): void
+    {
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_IMPERSONATE_START, AbstractHilosUsersPage::ACTIONS);
+        self::assertArrayNotHasKey(SignalTypeConstants::AGENT_SIGNAL, AbstractHilosUsersPage::SIGNALS);
     }
 
     /**
@@ -60,7 +71,7 @@ final class ImpersonationTwoStepTest extends TestCase
      */
     public function testTheAdminPageIsWhatClosesIt(): void
     {
-        self::assertSame(PageAccessLevel::ADMIN, AbstractHilosUsersPage::ACCESS_LEVEL);
+        self::assertSame(PageAccessLevel::ADMIN, AbstractHilosUserPage::ACCESS_LEVEL);
     }
 
     public function testTheLibraryIsAddressedByTheWriteFrame(): void
@@ -75,7 +86,7 @@ final class ImpersonationTwoStepTest extends TestCase
     {
         self::assertSame(
             HandoverAnswerSignalData::class,
-            AbstractHilosUsersPage::SIGNALS[SignalTypeConstants::AGENT_SIGNAL]
+            AbstractHilosUserPage::SIGNALS[SignalTypeConstants::AGENT_SIGNAL]
                 [HilosSignalConstants::HILOS_IMPERSONATE_DONE] ?? null,
         );
     }
@@ -97,7 +108,7 @@ final class ImpersonationTwoStepTest extends TestCase
 
         self::assertArrayNotHasKey(
             HilosSignalConstants::HILOS_IMPERSONATE_STOP,
-            AbstractHilosUsersPage::ACTIONS,
+            AbstractHilosUserPage::ACTIONS,
         );
     }
 }

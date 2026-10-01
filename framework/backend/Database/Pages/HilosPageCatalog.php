@@ -288,6 +288,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Which ways in this installation offers.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY,
         ],
+        HilosPageConstants::HILOS_SECURITY_IMPERSONATION => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Impersonation',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD =>
+                "Whether an administrator may act inside another person's account, and within which limits.",
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY,
+        ],
         HilosPageConstants::HILOS_BILLING => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Billing',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Payment providers, payments, and refunds.',

@@ -1,9 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import {
-  dismissToasts,
-  shownByTestId,
-} from '../../../../../framework/frontend/e2e/index.js'
+import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import {
@@ -276,11 +273,12 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
   await expect(rows).toHaveCount(10)
 })
 
-// HIL-824: the takeover is a framework row action on the Hilos users page. Its name is
-// closed by that page's ADMIN level and the sessions library performs the write, so what
-// proves the whole two-hop route in one assertion is the banner: the framework shell
-// draws it from the rebound session's own handshake, which cannot arrive unless the
-// write landed (HIL-1064 - the strip is the SDK's, the demo mounts nothing for it).
+// HIL-824: the takeover is a framework action on the person's card (on the users list
+// until HIL-1170). Its name is closed by that page's ADMIN level and the sessions library
+// performs the write, so what proves the whole two-hop route in one assertion is the
+// banner: the framework shell draws it from the rebound session's own handshake, which
+// cannot arrive unless the write landed (HIL-1064 - the strip is the SDK's, the demo
+// mounts nothing for it).
 //
 // Stop is the way back, and it is a tracked action: its answer rides the identity the
 // server restores, so the strip leaving and the admin gear coming back are the proof
@@ -288,55 +286,61 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
 //
 // The refusal branch is not driven from here on purpose. Once the ADMIN level closes the
 // page, the guards the library still runs are out of a browser's reach — a non-admin never
-// gets the table, self-impersonation offers no button, and a nested takeover has no admin
-// page left to press from. What a refusal looks like on the wire is pinned in
+// gets the card, the own card offers the button switched off, and a nested takeover has no
+// admin page left to press from. What a refusal looks like on the wire is pinned in
 // demo/chat/tests/Integration/ImpersonationTest.php instead.
-test('takes a user over from the users table and shows the shell banner', async ({
+test('takes a person over from their card and shows the shell banner', async ({
+  browser,
   page,
 }) => {
-  await signUpAdmin(page)
-  await gotoPage(page, '/hilos/users')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+  const personPage = await personContext.newPage()
+  try {
+    await signUpAdmin(page)
+    const person = await signUpPerson(personPage)
+    await gotoPage(page, `/hilos/user/${person.userId}`)
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  // Every row but the admin's own carries the control; the seeded users fill the rest.
-  const impersonate = page
-    .locator('[data-id^="hilos-users-impersonate-"]')
-    .first()
-  await expect(impersonate).toBeVisible()
-  await impersonate.click()
+    // The impersonation step is declared off (step-up.md), so the window opens at once.
+    const impersonate = page.getByTestId('hilos-user-impersonate-open')
+    await expect(impersonate).toBeVisible()
+    await impersonate.click()
 
-  // The takeover rotates the session token, and the client drops and reopens its socket
-  // for it once the takeover is answered. The proof the reopen happened is the next
-  // socket, not a glimpse of the reconnecting label a fast reopen passes through unseen.
-  let sockets = 0
-  page.on('websocket', () => {
-    sockets += 1
-  })
+    // The takeover rotates the session token, and the client drops and reopens its socket
+    // for it once the takeover is answered. The proof the reopen happened is the next
+    // socket, not a glimpse of the reconnecting label a fast reopen passes through unseen.
+    let sockets = 0
+    page.on('websocket', () => {
+      sockets += 1
+    })
 
-  // A mutation is confirmed in a modal, and the confirm is what dispatches.
-  const confirm = page.getByTestId('hilos-users-impersonate-confirm')
-  await expect(confirm).toBeVisible()
-  await confirm.click()
+    // A mutation is confirmed in a modal, and the confirm is what dispatches.
+    const confirm = page.getByTestId('hilos-user-impersonate-confirm')
+    await expect(confirm).toBeVisible()
+    await confirm.click()
 
-  // The takeover arrives as the rebound session, not as an ack the view acted on.
-  await expect(page.getByTestId('impersonation-banner')).toBeVisible()
+    // The takeover arrives as the rebound session, not as an ack the view acted on.
+    await expect(page.getByTestId('impersonation-banner')).toBeVisible()
 
-  // Stop pressed inside the rotation's reopen is refused as not connected - honestly,
-  // and beside the point here - so it waits for the new socket to be up.
-  await expect.poll(() => sockets).toBeGreaterThan(0)
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  const stop = page.getByTestId('impersonation-stop')
-  await stop.scrollIntoViewIfNeeded()
-  await expect(stop).toBeVisible()
-  await expect(stop).toBeEnabled()
-  await stop.focus()
-  await stop.click()
+    // Stop pressed inside the rotation's reopen is refused as not connected - honestly,
+    // and beside the point here - so it waits for the new socket to be up.
+    await expect.poll(() => sockets).toBeGreaterThan(0)
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    const stop = page.getByTestId('impersonation-stop')
+    await stop.scrollIntoViewIfNeeded()
+    await expect(stop).toBeVisible()
+    await expect(stop).toBeEnabled()
+    await stop.focus()
+    await stop.click()
 
-  // The way back arrives the same way: the restored identity takes the strip away and
-  // brings the admin gear back.
-  await expect(page.getByTestId('impersonation-banner')).toBeHidden()
-  await expect(page.getByTestId('nav-admin')).toBeVisible()
+    // The way back arrives the same way: the restored identity takes the strip away and
+    // brings the admin gear back.
+    await expect(page.getByTestId('impersonation-banner')).toBeHidden()
+    await expect(page.getByTestId('nav-admin')).toBeVisible()
+  } finally {
+    await personContext.close()
+  }
 })
 
 // HIL-945: the card reads one verdict of the person's standing — the badge in its
@@ -374,18 +378,15 @@ test("shows a person's standing on the card and in the takeover strip", async ({
 
     // The takeover strip and the ring by the header avatar take the color of
     // the person taken over. This demo has no profile link: the avatar stands
-    // in the shell's name slot.
+    // in the shell's name slot. A blocked person may be taken over by default
+    // (HIL-1170), so the card's button stays live.
     await dismissToasts(page)
-    await gotoPage(page, '/hilos/users')
-    await typeInto(page.getByTestId('hilos-table-search'), person.name)
-    await clickSubmit(
-      shownByTestId(page, `hilos-users-impersonate-${person.userId}`),
-    )
+    await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
     let sockets = 0
     page.on('websocket', () => {
       sockets += 1
     })
-    await clickSubmit(page.getByTestId('hilos-users-impersonate-confirm'))
+    await clickSubmit(page.getByTestId('hilos-user-impersonate-confirm'))
     const strip = page.getByTestId('impersonation-banner')
     await expect(strip).toHaveClass(/\balert-danger\b/)
     await expect(

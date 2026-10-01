@@ -34,6 +34,11 @@ export {
   type HilosTableSelectionEdge,
 } from './hilosTableSelectionEdge.js'
 export { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
+export {
+  HilosTakeoverViewOnlyContext,
+  useLookOnly,
+  type LookOnly,
+} from './hilosLookOnly.js'
 export { HilosLink, type HilosLinkProps } from './HilosLink.js'
 export { HilosView, type HilosViewProps } from './HilosView.js'
 export { HilosSkeleton, type HilosSkeletonProps } from './HilosSkeleton.js'
@@ -125,6 +130,10 @@ export {
   HilosSecurityStepUpPage,
   type HilosSecurityStepUpPageProps,
 } from './admin/security/HilosSecurityStepUpPage.js'
+export {
+  HilosSecurityImpersonationPage,
+  type HilosSecurityImpersonationPageProps,
+} from './admin/security/HilosSecurityImpersonationPage.js'
 export {
   HilosCommunicationsDeliveriesPage,
   type HilosCommunicationsDeliveriesPageProps,

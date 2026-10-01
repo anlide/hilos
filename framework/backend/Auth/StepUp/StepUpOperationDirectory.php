@@ -29,12 +29,14 @@ abstract class StepUpOperationDirectory
                 'Change password',
                 'change your password',
                 true,
+                accountAccess: true,
             ),
             StepUpOperationKey::CHANGE_EMAIL => new StepUpOperation(
                 StepUpOperationKey::CHANGE_EMAIL,
                 'Change email',
                 'change your email',
                 true,
+                accountAccess: true,
             ),
             StepUpOperationKey::DELETE_ACCOUNT => new StepUpOperation(
                 StepUpOperationKey::DELETE_ACCOUNT,
@@ -57,6 +59,7 @@ abstract class StepUpOperationDirectory
                 false,
                 passesWithNothingToConfirm: true,
                 opensWithSecondFactorProof: true,
+                accountAccess: true,
             ),
             StepUpOperationKey::ADD_SIGN_IN_METHOD => new StepUpOperation(
                 StepUpOperationKey::ADD_SIGN_IN_METHOD,
@@ -64,6 +67,7 @@ abstract class StepUpOperationDirectory
                 'add a way to sign in',
                 false,
                 passesWithNothingToConfirm: true,
+                accountAccess: true,
             ),
             StepUpOperationKey::MERGE_ACCOUNTS => new StepUpOperation(
                 StepUpOperationKey::MERGE_ACCOUNTS,
@@ -96,6 +100,13 @@ abstract class StepUpOperationDirectory
                 "Delete another person's account",
                 'delete this account',
                 false,
+            ),
+            StepUpOperationKey::IMPERSONATE => new StepUpOperation(
+                StepUpOperationKey::IMPERSONATE,
+                'Impersonate a person',
+                'impersonate this person',
+                false,
+                enabledByDefault: false,
             ),
         ];
     }

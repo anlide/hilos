@@ -3,16 +3,14 @@ value but never moves the checkbox itself; the checked input follows only the
 value its owner received from the backend. The shared LoadingButton controller
 delays the busy spinner so a fast reply does not flash it. Inside an admin page a
 viewer of the admin view mode finds it plainly disabled in the position the
-server sent, described by the mode's strip besides its own hint (HIL-1261). -->
+server sent, described by the mode's strip besides its own hint (HIL-1261); in
+the page's area of a takeover that only looks it stands the same way, described
+by the impersonation strip (HIL-1170). -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useId, watch } from 'vue'
-import {
-  DEFAULT_SPINNER_DELAY_MS,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
-  createLoadingButtonState,
-} from '@hilos/core'
+import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
 
-import { useAdminViewMode } from './hilosAdminViewMode.js'
+import { useLookOnly } from './hilosAdminViewMode.js'
 import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
@@ -56,20 +54,19 @@ watch(
 )
 onBeforeUnmount(spinner.dispose)
 
-const viewMode = useAdminViewMode()
+const { locked, describedBy } = useLookOnly()
 
-const isDisabled = computed(
-  () => props.disabled || props.busy || viewMode.value,
-)
+const isDisabled = computed(() => props.disabled || props.busy || locked.value)
 
 const describingIds = computed(() => {
-  if (!viewMode.value) {
+  const strip = describedBy.value
+  if (strip === undefined) {
     return props.ariaDescribedby
   }
 
   return props.ariaDescribedby === undefined
-    ? HILOS_VIEW_MODE_STRIP_TEXT_ID
-    : `${props.ariaDescribedby} ${HILOS_VIEW_MODE_STRIP_TEXT_ID}`
+    ? strip
+    : `${props.ariaDescribedby} ${strip}`
 })
 
 function onClick(event: MouseEvent): void {

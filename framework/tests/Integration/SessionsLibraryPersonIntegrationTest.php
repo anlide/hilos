@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Impersonation\ImpersonationMessages;
+use Hilos\Auth\Impersonation\ImpersonationSettings;
+use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -15,7 +19,11 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AdminAudience;
 
 /**
@@ -27,12 +35,18 @@ use Hilos\Users\AdminAudience;
  * runs in the library's own frame and under the claim the library itself declares: in a frame
  * a write passes only by that agent's own grant, which is what proves the base holds the share
  * of the row it writes.
+ *
+ * Whom a takeover may reach is judged with the impersonation settings of the installation
+ * (HIL-1170), read from a fixture catalog whose defaults a case switches off: a default is the
+ * value in force when no row is stored, so no settings row is written.
  */
 final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegrationTestCase
 {
     private const int MISSING_USER_ID = 9999;
 
     private SessionsLibraryPersonTestLibrary $library;
+
+    private ?SettingsAccessor $previousSetting = null;
 
     /**
      * @throws HilosException When the schema reset or the context build fails
@@ -43,6 +57,9 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
 
         $this->library = new SessionsLibraryPersonTestLibrary();
         OwnershipDeclaration::claimDb($this->library::class, $this->library->getId());
+        $this->previousSetting = Hilos::$setting;
+        self::switchOff();
+        AccountStandingResolver::forgetAll();
     }
 
     /**
@@ -50,6 +67,8 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
      */
     protected function tearDown(): void
     {
+        AccountStandingResolver::forgetAll();
+        Hilos::$setting = $this->previousSetting;
         TruthSourceRegistry::unregisterAgent($this->library->getId());
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
 
@@ -275,6 +294,105 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     }
 
     /**
+     * Impersonation switched off for the product refuses every takeover, before whom it would reach is asked.
+     *
+     * @throws HilosException When a fixture row cannot be written or the check cannot read it
+     */
+    public function testRefusesEveryTakeoverWhenImpersonationIsSwitchedOff(): void
+    {
+        $adminId = self::seedPerson('Root', admin: true, block: false);
+        $targetId = self::seedPerson('Ada', admin: false, block: false);
+        self::switchOff(ImpersonationSettings::ALLOWED_KEY);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage(ImpersonationMessages::SWITCHED_OFF);
+
+        $this->library->mayImpersonate($adminId, $targetId);
+    }
+
+    /**
+     * A blocked person may be taken over by default, for service work (HIL-289), and not once the row is switched off.
+     *
+     * @throws HilosException When a fixture row cannot be written or the check cannot read it
+     */
+    public function testRefusesABlockedPersonOnlyWhenThatRowIsSwitchedOff(): void
+    {
+        $adminId = self::seedPerson('Root', admin: true, block: false);
+        $targetId = self::seedPerson('Ada', admin: false, block: true);
+
+        $this->library->mayImpersonate($adminId, $targetId);
+
+        self::switchOff(ImpersonationSettings::BLOCKED_KEY);
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage(ImpersonationMessages::BLOCKED_OFF);
+
+        $this->library->mayImpersonate($adminId, $targetId);
+    }
+
+    /**
+     * The row of the blocked does not reach a person who is not blocked.
+     *
+     * @throws HilosException When a fixture row cannot be written or the check cannot read it
+     */
+    public function testTheBlockedRowLeavesEverybodyElseAlone(): void
+    {
+        $adminId = self::seedPerson('Root', admin: true, block: false);
+        $targetId = self::seedPerson('Ada', admin: false, block: false);
+        self::switchOff(ImpersonationSettings::BLOCKED_KEY, ImpersonationSettings::FROZEN_KEY, ImpersonationSettings::EQUAL_KEY);
+
+        $this->library->mayImpersonate($adminId, $targetId);
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Another administrator may be taken over by default, and not once the row of the equal is switched off.
+     *
+     * @throws HilosException When a fixture row cannot be written or the check cannot read it
+     */
+    public function testRefusesAnotherAdministratorOnlyWhenThatRowIsSwitchedOff(): void
+    {
+        $adminId = self::seedPerson('Root', admin: true, block: false);
+        $otherAdminId = self::seedPerson('Grace', admin: true, block: false);
+
+        $this->library->mayImpersonate($adminId, $otherAdminId);
+
+        self::switchOff(ImpersonationSettings::EQUAL_KEY);
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage(ImpersonationMessages::EQUAL_OFF);
+
+        $this->library->mayImpersonate($adminId, $otherAdminId);
+    }
+
+    /**
+     * The asker naming their own user is not another administrator: the library refuses that one in its own words, later.
+     *
+     * @throws HilosException When a fixture row cannot be written or the check cannot read it
+     */
+    public function testTheAskerNamingThemselvesIsNotAnotherAdministrator(): void
+    {
+        $adminId = self::seedPerson('Root', admin: true, block: false);
+        self::switchOff(ImpersonationSettings::EQUAL_KEY);
+
+        $this->library->mayImpersonate($adminId, $adminId);
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Mounts the impersonation settings with these yes-or-no keys switched off and every other on its default.
+     *
+     * A fresh accessor, because an accessor asks its catalog once.
+     *
+     * @param string ...$keys Keys to switch off
+     */
+    private static function switchOff(string ...$keys): void
+    {
+        SessionsLibraryPersonTestImpersonationCatalog::$switchedOff = array_values($keys);
+        Hilos::$setting = new SettingsAccessor(SessionsLibraryPersonTestImpersonationCatalog::class);
+    }
+
+    /**
      * Runs one step in the library's own frame, the way its worker would.
      *
      * @template T
@@ -404,5 +522,30 @@ final class SessionsLibraryPersonTestLibrary extends AbstractSessionsLibraryAgen
     public function mayImpersonate(int $adminUserId, int $targetUserId): void
     {
         $this->assertImpersonationAllowed($adminUserId, $targetUserId);
+    }
+}
+
+/**
+ * The framework's impersonation settings with the defaults a case switches off.
+ *
+ * Every key of the fragment, the scope included, so the readers find what a project folding the
+ * fragment in would give them; only the yes-or-no keys a case names stand off.
+ */
+final class SessionsLibraryPersonTestImpersonationCatalog implements CatalogProviderInterface
+{
+    /** @var list<string> Yes-or-no keys whose default the case switched off */
+    public static array $switchedOff = [];
+
+    /**
+     * @return array<string, array<string, mixed>> Fixture settings catalog
+     */
+    public static function getCatalog(): array
+    {
+        $catalog = ImpersonationSettingsCatalog::getCatalog();
+        foreach (self::$switchedOff as $key) {
+            $catalog[$key][SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE] = false;
+        }
+
+        return $catalog;
     }
 }

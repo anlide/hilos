@@ -15,6 +15,10 @@
 // frontends point at it (aria-describedby), as does the strip itself.
 
 import { type Hideable, isHiddenValue } from '../state/hiddenValue.js'
+import {
+  IMPERSONATION_ERROR_CODE,
+  IMPERSONATION_REFUSAL_COPY,
+} from '../session/impersonationRefusal.js'
 
 /**
  * The refusal the server answers a viewer of the admin view mode with (PHP
@@ -58,7 +62,8 @@ export function hiddenAsWord<T>(value: Hideable<T>): T | string {
 
 /**
  * The sentence the screen shows for a failed action: the view mode's own
- * refusal for {@link VIEW_MODE_ERROR_CODE}, the server's reason for any other
+ * refusal for {@link VIEW_MODE_ERROR_CODE}, a takeover's for the two codes of
+ * {@link IMPERSONATION_ERROR_CODE} (HIL-1170), the server's reason for any other
  * code or none.
  *
  * @param reason The failure reason the server sent.
@@ -68,7 +73,14 @@ export function actionFailureReason(
   reason: string,
   errorCode: string | undefined,
 ): string {
-  return errorCode === VIEW_MODE_ERROR_CODE
-    ? HILOS_VIEW_MODE_COPY.refusal
-    : reason
+  switch (errorCode) {
+    case VIEW_MODE_ERROR_CODE:
+      return HILOS_VIEW_MODE_COPY.refusal
+    case IMPERSONATION_ERROR_CODE.viewOnly:
+      return IMPERSONATION_REFUSAL_COPY.viewOnly
+    case IMPERSONATION_ERROR_CODE.accountAccess:
+      return IMPERSONATION_REFUSAL_COPY.accountAccess
+    default:
+      return reason
+  }
 }

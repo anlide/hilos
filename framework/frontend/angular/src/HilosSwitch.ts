@@ -1,7 +1,10 @@
 // HilosSwitch — an authoritative-backend switch. A click reports the next
 // value but never moves the checkbox itself; the checked input follows only the
 // value its owner received from the backend. The shared LoadingButton controller
-// delays the busy spinner so a fast reply does not flash it.
+// delays the busy spinner so a fast reply does not flash it. In the page's area
+// of a takeover that only looks it stands plainly disabled in the position the
+// server sent, described by the impersonation strip besides its own hint
+// (HIL-1170).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -14,6 +17,7 @@ import {
 } from '@angular/core'
 import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
 
+import { injectLookOnly, joinDescribedBy } from './hilosLookOnly.js'
 import { hilosSignal } from './hilosSignal.js'
 
 // Distinct ids so two renderings of one table row never share a label `for`.
@@ -36,7 +40,7 @@ let switchSeq = 0
       [disabled]="isDisabled()"
       [attr.aria-busy]="busy() || null"
       [attr.aria-label]="ariaLabel() || null"
-      [attr.aria-describedby]="ariaDescribedby() || null"
+      [attr.aria-describedby]="describedBy()"
       [attr.data-id]="dataId()"
       (click)="onClick($event)"
     />
@@ -80,7 +84,13 @@ export class HilosSwitch {
   private readonly spinner = createLoadingButtonState(() => this.spinnerDelay())
   protected readonly id = `hilos-switch-${switchSeq++}`
   protected readonly showSpinner = hilosSignal(this.spinner.showSpinner)
-  protected readonly isDisabled = computed(() => this.disabled() || this.busy())
+  private readonly lookOnly = injectLookOnly()
+  protected readonly isDisabled = computed(
+    () => this.disabled() || this.busy() || this.lookOnly.locked(),
+  )
+  protected readonly describedBy = computed(() =>
+    joinDescribedBy(this.ariaDescribedby(), this.lookOnly.describedBy()),
+  )
 
   constructor() {
     effect(() => {

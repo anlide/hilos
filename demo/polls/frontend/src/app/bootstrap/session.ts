@@ -4,11 +4,12 @@
 // mints it; the handshake-response plumbing and the current-user selector come
 // from @hilos/core; this file holds only the project's session state.
 import {
+  computedSignal,
+  hilosAdminAccess,
   ScopeManager,
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionUserId,
-  sessionUserIsAdmin,
   sessionUserName,
 } from '@hilos/core'
 
@@ -21,8 +22,14 @@ export const currentUserName = sessionUserName(scopes)
 /** The current user's id; null until the handshake response lands. */
 export const currentUserId = sessionUserId(scopes)
 
-/** Whether the current user holds the admin privilege; false until the handshake says so. */
-export const currentUserIsAdmin = sessionUserIsAdmin(scopes)
+/**
+ * Whether the shell offers the admin section in full: the current user holds
+ * the admin privilege, or an administrator carries their own rights into a
+ * takeover of this session (HIL-1170). False until the handshake says so.
+ */
+export const currentUserActsAsAdmin = computedSignal(
+  () => hilosAdminAccess.get() === 'full',
+)
 
 /**
  * The auth step this session stands on and has not finished, or null when it

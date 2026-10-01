@@ -12,6 +12,8 @@ use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpMethodResolver;
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
+use Hilos\Auth\Impersonation\ImpersonationMessages;
+use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Detection\IdentifierDetection;
@@ -125,6 +127,8 @@ use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Object\Item\Session as ObjectSession;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\AccountDeletion;
 use Hilos\Database\View\Item\Session;
@@ -133,7 +137,7 @@ use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
-use Hilos\Pages\Users\AbstractHilosUsersPage;
+use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
@@ -346,7 +350,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * raised by any agent that finished something a person is waiting on, and it arrives here
      * because the stack it lands on is the session's.
      *
-     * The twelfth is sent by {@see AbstractHilosUsersPage} (HIL-824), which holds the
+     * The twelfth is sent by {@see AbstractHilosUserPage} (HIL-824, HIL-1170), which holds the
      * impersonation action because an ADMIN level is a thing only a page carries, and forwards
      * the write here. {@see HilosSignalConstants::HILOS_IMPERSONATE_DONE} is absent for the
      * same reason the two above are: it is the frame this library sends BACK, and the page
@@ -436,8 +440,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * guest from pressing it is not a right but the session's own state - a session with
      * nobody signed in is inside no takeover, and the core refuses it as such (HIL-1061).
      * Its start left in HIL-824 for failing the FIRST half: only an administrator may take a
-     * person over, which is more than "you have a session". It now stands on
-     * {@see AbstractHilosUsersPage} and the write comes back here on
+     * person over, which is more than "you have a session". It now stands on the person's card,
+     * {@see AbstractHilosUserPage}, and the write comes back here on
      * {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}. The check
      * {@see self::assertImpersonationAllowed()} stays either way: the command line is a second
      * entrance with no page at all, and there the check is the only judge.
@@ -4157,7 +4161,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the answer travels with the ticket the browser trades for its new cookie.
      *
      * STARTING a takeover is no longer among them (HIL-824): it is closed by more than "you
-     * have a session", so the name stands on {@see AbstractHilosUsersPage} and only the write
+     * have a session", so the name stands on {@see AbstractHilosUserPage} and only the write
      * arrives here, on {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}.
      *
      * The presentation of a provider sign-in's key (HIL-1044) is the one that DOES answer here,
@@ -4416,6 +4420,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * A success says nothing beyond the frame: what the person sees is the rebound session's
      * own state, published from where it was written.
      *
+     * Before the guards, the administrator is re-checked and their fresh confirmation of the
+     * takeover is asked when an administrator switched the operation on
+     * ({@see AskingAdministrator::confirmed()}, HIL-1170): it is declared off, because "Stop"
+     * returns everything in one action. The command-line way stands outside it - the operator at
+     * the console has nothing to confirm with.
+     *
      * @param ImpersonateRequestSignalData $request Whom to become, and the admin waiting on the answer
      * @throws InvalidArgumentException When the answering frame cannot be named
      */
@@ -4429,6 +4439,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         try {
+            AskingAdministrator::confirmed($request->acceptKey, StepUpOperationKey::IMPERSONATE);
             $this->startImpersonation($sessionToken, $request->targetUserId, $request->acceptKey, null);
         } catch (Throwable $e) {
             $refusal = ActionRefusal::fromThrowable($e);
@@ -4595,25 +4606,31 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Decides whether one user may take another over, from their `hilos_user` rows.
+     * Decides whether one user may take another over, from their `hilos_user` rows and the impersonation settings.
      *
-     * Both halves are refused by throwing, in the order the chat demo ran them before the check
-     * moved here (HIL-1197), so the refusals a caller can see are unchanged: the asker must be
-     * an administrator, and only then is the target looked up at all. An unprivileged caller
-     * therefore never learns from this whether the id it named exists. The refusal reaches an
-     * operator as the command's error reply and a browser as the action's fail ack.
+     * Every half is refused by throwing. The first two keep the order the chat demo ran them in
+     * before the check moved here (HIL-1197): the asker must be an administrator, and only then is
+     * the target looked up at all, so an unprivileged caller never learns from this whether the id
+     * it named exists. Then the administrator's settings (HIL-1170, {@see ImpersonationSettings}):
+     * impersonation must exist in the product, and the target must not be a blocked person, a
+     * frozen person or another administrator whose row of the settings is switched off. The
+     * refusal reaches an operator as the command's error reply and a browser as the action's fail
+     * ack, in the words the card shows under its switched-off button ({@see ImpersonationMessages}).
      *
-     * Nothing here says the target may not be an administrator too: admin-on-admin takeover is
-     * allowed, and what the library refuses on its own is a session naming its own user. Who may
-     * be taken over and what a takeover may do is the policy of HIL-1170, not a project hook.
+     * The settings are judged here, at the start, and nowhere later: a takeover under way is not
+     * ended by a switch, the way a sign-in method switched off signs nobody out. What may be done
+     * inside is judged on every action instead, by the action dispatcher. The asker naming their own
+     * user is not "another administrator": that one the library refuses on its own, after.
      * Not final, for the reason {@see self::ensureAdminUser()} gives.
      *
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
-     * @throws ValidationException When the asker is not an administrator or the target is unknown
-     * @throws DatabaseException When reading the user collection fails
+     * @throws ValidationException When the asker is not an administrator, the target is unknown, or a setting closes the takeover
+     * @throws DatabaseException When reading the user collection, the target's standing or a setting fails
+     * @throws SettingException When a setting catalog or value is invalid
      * @throws InvalidArgumentException When a loaded user object does not match the collection
      * @throws LogicException When the user collection is not configured
+     * @throws ObjectGetIdStringNotImplementedException When a row read for the target's standing lacks its primary key
      */
     protected function assertImpersonationAllowed(int $adminUserId, int $targetUserId): void
     {
@@ -4622,8 +4639,24 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             throw new ValidationException('Session is not an admin session');
         }
 
-        if ((Hilos::$db->users[$targetUserId] ?? null) === null) {
+        $target = Hilos::$db->users[$targetUserId] ?? null;
+        if ($target === null) {
             throw new ValidationException("No such user: {$targetUserId}");
+        }
+
+        if (!ImpersonationSettings::isAllowed()) {
+            throw new ValidationException(ImpersonationMessages::SWITCHED_OFF);
+        }
+
+        $standing = AccountStandingResolver::of($targetUserId);
+        if ($standing->blocked && !ImpersonationSettings::allowsBlocked()) {
+            throw new ValidationException(ImpersonationMessages::BLOCKED_OFF);
+        }
+        if ($standing->frozen && !ImpersonationSettings::allowsFrozen()) {
+            throw new ValidationException(ImpersonationMessages::FROZEN_OFF);
+        }
+        if ($target->admin && $targetUserId !== $adminUserId && !ImpersonationSettings::allowsEqual()) {
+            throw new ValidationException(ImpersonationMessages::EQUAL_OFF);
         }
     }
 

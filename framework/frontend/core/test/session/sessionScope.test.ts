@@ -17,9 +17,11 @@ import {
   sessionAccountBlocked,
   sessionAccountStanding,
   sessionSecondFactorPolicy,
+  sessionImpersonationPolicy,
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
   SIGNAL_SECOND_FACTOR_POLICY,
+  SIGNAL_IMPERSONATION_POLICY,
   SIGNAL_CODE_DELIVERY,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
@@ -933,6 +935,59 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
     // Every frame is a new value: that is how a reader tells a frame newer
     // than its answer from the one it was answered under.
     expect(policy.get()).not.toBe(first)
+  })
+})
+
+describe('the impersonation policy (HIL-1170)', () => {
+  it('reads the defaults until a handshake says otherwise', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const policy = sessionImpersonationPolicy(scopes)
+
+    // Nothing said yet: act, rights not carried — the product before the settings.
+    expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: false })
+
+    connection.emitHandshakeResponse({
+      data: { impersonationPolicy: { viewOnly: true, carryAdmin: true } },
+    })
+    expect(policy.get()).toStrictEqual({ viewOnly: true, carryAdmin: true })
+
+    // An unreadable node falls back to the defaults rather than guessing.
+    connection.emitHandshakeResponse({
+      data: { impersonationPolicy: { viewOnly: 'yes', carryAdmin: true } },
+    })
+    expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: false })
+
+    connection.emitHandshakeResponse({ data: { impersonationPolicy: null } })
+    expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: false })
+  })
+
+  it('registers the policy frame and shares its slot with every handshake', () => {
+    const schema = SESSION_SIGNAL_SCHEMAS[SIGNAL_IMPERSONATION_POLICY]
+    expect(SIGNAL_IMPERSONATION_POLICY).toBe('hilos_impersonation_policy')
+    expect(
+      schema.safeParse({ viewOnly: true, carryAdmin: false }).success,
+    ).toBe(true)
+    expect(schema.safeParse({ viewOnly: true }).success).toBe(false)
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const policy = sessionImpersonationPolicy(scopes)
+    connection.emitHandshakeResponse({
+      data: { impersonationPolicy: { viewOnly: false, carryAdmin: false } },
+    })
+
+    connection.emit(SIGNAL_IMPERSONATION_POLICY, {
+      viewOnly: true,
+      carryAdmin: false,
+    })
+    expect(policy.get()).toStrictEqual({ viewOnly: true, carryAdmin: false })
+
+    connection.emitHandshakeResponse({
+      data: { impersonationPolicy: { viewOnly: false, carryAdmin: true } },
+    })
+    expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: true })
   })
 })
 

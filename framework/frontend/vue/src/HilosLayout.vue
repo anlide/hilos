@@ -7,13 +7,16 @@ the SDK owns (core-and-connection.md), and, last, its tracked sign-out control
 while a person stands behind the session; a full-width banner region below the nav
 carrying, in this order, the framework's own protected-mode strip, its
 impersonation strip (drawn from the session, with a Stop that waits for the
-server's answer, colored by the standing of the person taken over), its account
+server's answer, colored by the standing of the person taken over, and marked
+"view only" when the administrator may only look, HIL-1170), its account
 deletion strip (the session's own scheduled deletion, with a "Keep my account"
 that waits the same way, HIL-945), its view-mode strip (a viewer of the admin view
 mode on an admin route, HIL-1260), and the app-wide status strip a project
 fills (e.g. a trial notice) through the #banner slot — one live region for all,
 empty and zero-height while none is up — the
-routed page content in the default slot, and a footer of the public framework pages
+routed page content in the default slot (inside HilosTakeoverScope, so in a
+takeover that only looks the page's controls stand disabled and the shell's do
+not), and a footer of the public framework pages
 (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100): the
 nav, banner, and footer never scroll (flex-shrink-0) and the main region grows
 and scrolls its own overflow (min-h-0 + overflow-auto), so a page either scrolls
@@ -49,6 +52,7 @@ import {
   formatHilosLegalReconsentBadge,
   HILOS_FOOTER_LINKS,
   HILOS_FROZEN_OPEN_PAGES,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PAGE_ROUTES,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -81,6 +85,7 @@ import HilosAccountBlocked from './HilosAccountBlocked.vue'
 import HilosLink from './HilosLink.vue'
 import LoadingButton from './LoadingButton.vue'
 import HilosMaintenance from './HilosMaintenance.vue'
+import HilosTakeoverScope from './HilosTakeoverScope.vue'
 import HilosToastHost from './HilosToastHost.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'
 import HilosOAuthWaitModal from './auth/HilosOAuthWaitModal.vue'
@@ -136,7 +141,10 @@ const verificationBanner = computed(() =>
 // disables it at once, a refusal is the error toast and leaves the strip
 // standing, and success needs no toast - the strip leaves by itself with the
 // identity the answer rides behind. Below the protected-mode strip because what
-// is about the node comes before what is about the session.
+// is about the node comes before what is about the session. Where the
+// administrator may only look (HIL-1170) the strip says so after the name, and
+// its text carries the id every control of the page's area then disabled names
+// in aria-describedby — the page's area alone: Stop stays live.
 const impersonation = useSignal(hilosImpersonation)
 
 // The "Access closed" card (HIL-289): the session lost its account to a block,
@@ -513,10 +521,15 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         <div
           class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
         >
-          <span>
+          <span :id="HILOS_IMPERSONATION_STRIP_TEXT_ID">
             <i class="bi bi-people-fill me-1" aria-hidden="true"></i>
             {{ IMPERSONATION_STRIP_COPY.lead }}
             <strong>{{ impersonation.userName }}</strong>
+            <span
+              v-if="impersonation.viewOnly"
+              class="badge text-bg-dark ms-1"
+              >{{ IMPERSONATION_STRIP_COPY.viewOnly }}</span
+            >
           </span>
           <LoadingButton
             class="btn-sm btn-outline-dark"
@@ -612,7 +625,9 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
           />
         </div>
       </div>
-      <slot v-else />
+      <HilosTakeoverScope v-else>
+        <slot />
+      </HilosTakeoverScope>
     </main>
     <footer
       v-if="!underMaintenance"

@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { ref, type Ref } from 'vue'
 
 import LoadingButton from './LoadingButton.vue'
-import { hilosAdminViewModeKey } from './hilosAdminViewMode.js'
+import {
+  hilosAdminViewModeKey,
+  hilosTakeoverViewOnlyKey,
+} from './hilosAdminViewMode.js'
 
 /**
  * Mount the button inside a page that says whether a viewer of the admin view
@@ -177,6 +180,81 @@ describe('LoadingButton in the admin view mode', () => {
 
     expect(button.attributes('disabled')).toBeUndefined()
     expect(button.attributes('aria-describedby')).toBeUndefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('click')).toHaveLength(1)
+  })
+})
+
+describe('LoadingButton in a takeover that only looks (HIL-1170)', () => {
+  /**
+   * Mount the button inside the page's area of a takeover, the way the shell's
+   * HilosTakeoverScope provides it, and inside an admin page as well when asked.
+   *
+   * @param viewOnly The provided takeover flag.
+   * @param viewMode The admin page's view mode, when the button stands on one.
+   * @param props The props the caller passes to the button.
+   */
+  function mountInTakeover(
+    viewOnly: Ref<boolean>,
+    viewMode?: Ref<boolean>,
+    props: Record<string, unknown> = {},
+  ) {
+    return mount(LoadingButton, {
+      props,
+      slots: { default: 'Send' },
+      global: {
+        provide: {
+          [hilosTakeoverViewOnlyKey as symbol]: viewOnly,
+          ...(viewMode === undefined
+            ? {}
+            : { [hilosAdminViewModeKey as symbol]: viewMode }),
+        },
+      },
+    })
+  }
+
+  it('stands disabled, swallows clicks, and points at the impersonation strip', async () => {
+    const wrapper = mountInTakeover(ref(true))
+    const button = wrapper.find('button')
+
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('aria-describedby')).toBe(
+      'hilos-impersonation-strip-text',
+    )
+    expect(wrapper.text()).toBe('Send')
+    await button.trigger('click')
+    expect(wrapper.emitted('click')).toBeUndefined()
+  })
+
+  it('names both strips when the page is also seen in the admin view mode', () => {
+    const button = mountInTakeover(ref(true), ref(true)).find('button')
+
+    expect(button.attributes('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text hilos-impersonation-strip-text',
+    )
+  })
+
+  it('is live while the takeover may act, and comes alive when the policy moves', async () => {
+    const viewOnly = ref(true)
+    const wrapper = mountInTakeover(viewOnly)
+
+    viewOnly.value = false
+    await wrapper.vm.$nextTick()
+
+    const button = wrapper.find('button')
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(button.attributes('aria-describedby')).toBeUndefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('click')).toHaveLength(1)
+  })
+
+  it('stays live when it only opens a window', async () => {
+    const wrapper = mountInTakeover(ref(true), undefined, {
+      opensWindow: true,
+    })
+    const button = wrapper.find('button')
+
+    expect(button.attributes('disabled')).toBeUndefined()
     await button.trigger('click')
     expect(wrapper.emitted('click')).toHaveLength(1)
   })

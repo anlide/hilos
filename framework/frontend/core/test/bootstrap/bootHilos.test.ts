@@ -252,6 +252,7 @@ describe('bootHilos', () => {
     expect(hilosImpersonation.get()).toEqual({
       userName: 'Bob',
       tone: 'warning',
+      viewOnly: false,
     })
 
     connection.emitProjectSignal('handshake_response', {
