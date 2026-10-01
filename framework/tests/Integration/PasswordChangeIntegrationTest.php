@@ -39,8 +39,14 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
+use Hilos\Runtime\State\Item\HilosProfileFlow;
 
-/** Existing-password change through the users library, including proof order and all-address recovery invalidation. */
+/**
+ * Existing-password change through the users library, including proof order and all-address recovery invalidation.
+ *
+ * The proof the final submit stands on is the session's record of a matched code (HIL-1182), written through the
+ * session holder by the step that matched it - the tab no longer sends the code with the new password.
+ */
 final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
 {
     private const string EMAIL = 'password-change@example.test';
@@ -50,6 +56,9 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     private const string PASSWORD = 'correct horse battery';
     private const string NEW_PASSWORD = 'a-brand-new-secret';
     private const string CODE = '300300';
+
+    /** How much later than the first a newer code of the same address dies. */
+    private const int NEWER_CODE_LATER_BY_SECONDS = 60;
 
     /**
      * Restores the framework facade after a case selecting the phone channel.
@@ -116,8 +125,9 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     public function testCodeRequestMailsItsOwnTypeAndCooldownDoesNotSendTwice(): void
     {
         $this->prepareChange();
-        $this->submit(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
-        $this->submit(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        self::assertSame(HilosProfileFlow::STEP_CODE_SENT, $this->flowStep(StepUpOperationKey::CHANGE_PASSWORD));
         self::assertSame(
             self::USER_ID,
             $this->verifications()->findActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS)?->userId,
@@ -165,18 +175,37 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         self::assertNull($this->verifications()->findActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS));
     }
 
-    /** @throws HilosException When the seed or command fails */
+    /**
+     * Every way the proof can be missing is answered before password policy: no record, a live code
+     * that never matched in this session, a record of a code only sent, and a proven record whose
+     * code then died, was spent elsewhere, or was replaced by a newer code of the same address.
+     *
+     * @throws HilosException When the seed or command fails
+     */
     public function testSaveRefusesMissingWrongExpiredAndSpentProofBeforePasswordPolicy(): void
     {
         $this->prepareChange();
-        $this->refuseSave(self::CODE, self::PASSWORD);
+        $this->refuseSave(self::PASSWORD);
         $this->seedCode(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::USER_ID, self::CODE);
-        $this->refuseSave('000000', 'short');
+        $this->refuseSave('short');
+        $this->seedFlow(StepUpOperationKey::CHANGE_PASSWORD, HilosProfileFlow::STEP_CODE_SENT, VerificationType::PASSWORD_CHANGE, self::EMAIL);
+        $this->refuseSave('short');
+        $this->seedProvenCode();
         $this->verifications()->expireActive(VerificationType::PASSWORD_CHANGE, self::EMAIL);
-        $this->refuseSave(self::CODE, '12345678');
-        $this->seedCode(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::USER_ID, self::CODE);
+        $this->refuseSave('12345678');
+        $this->seedProvenCode();
         $this->verifications()->voidActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS);
-        $this->refuseSave(self::CODE, self::PASSWORD);
+        $this->refuseSave(self::PASSWORD);
+        $this->seedProvenCode();
+        $this->verifications()->voidActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS);
+        $this->verifications()->createChallenge(
+            VerificationType::PASSWORD_CHANGE,
+            self::EMAIL,
+            self::USER_ID,
+            self::CODE,
+            self::TTL_SECONDS + self::NEWER_CODE_LATER_BY_SECONDS,
+        );
+        $this->refuseSave(self::NEW_PASSWORD);
         self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::PASSWORD));
         self::assertSame([], $this->passwordUpdates());
     }
@@ -190,7 +219,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
             try {
                 $this->submit(
                     HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
-                    new ProfileChangePasswordActionDTO(self::CODE, $password, true),
+                    new ProfileChangePasswordActionDTO($password, true),
                 );
                 self::fail('Password policy must refuse the proposed secret');
             } catch (ValidationException $exception) {
@@ -200,11 +229,13 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         }
         self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::PASSWORD));
         self::assertSame([], $this->passwordUpdates());
-        $this->submit(
+        self::assertSame(HilosProfileFlow::STEP_CODE_PROVEN, $this->flowStep(StepUpOperationKey::CHANGE_PASSWORD));
+        $this->submitStep(
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
-            new ProfileChangePasswordActionDTO(self::CODE, self::NEW_PASSWORD, false),
+            new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, false),
         );
         self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::NEW_PASSWORD));
+        self::assertNull($this->flowStep(StepUpOperationKey::CHANGE_PASSWORD), 'The finished flow leaves no record');
     }
 
     /** @throws HilosException When the seed or command fails */
@@ -217,7 +248,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::EMAIL, self::USER_ID, self::CODE);
         $this->submit(
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
-            new ProfileChangePasswordActionDTO(self::CODE, self::NEW_PASSWORD, true),
+            new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, true),
         );
         self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::NEW_PASSWORD));
         self::assertFalse(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::PASSWORD));
@@ -228,7 +259,8 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         self::assertNotNull($this->verifications()->findActive(VerificationType::PASSWORD_RESET, self::FOREIGN_EMAIL, self::MAX_ATTEMPTS));
         self::assertNotNull($this->verifications()->findActive(VerificationType::EMAIL_CHANGE_CURRENT, self::EMAIL, self::MAX_ATTEMPTS));
         $this->assertChangeFrames(signOutOthers: true);
-        $this->refuseSave(self::CODE, self::PASSWORD);
+        self::assertNull($this->flowStep(StepUpOperationKey::CHANGE_PASSWORD), 'The finished flow leaves no record');
+        $this->refuseSave(self::PASSWORD);
     }
 
     /** @throws HilosException When the seed or command fails */
@@ -237,7 +269,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->prepareChange(withCode: true);
         $this->submit(
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
-            new ProfileChangePasswordActionDTO(self::CODE, self::NEW_PASSWORD, false),
+            new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, false),
         );
         $this->assertChangeFrames(signOutOthers: false);
         self::assertSame(self::USER_ID, Hilos::$db->sessions->findByToken(self::OTHER_SESSION_TOKEN)?->userId);
@@ -259,8 +291,36 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM,
             new ProfileChangePasswordCodeConfirmActionDTO(self::CODE),
         );
-        $this->submit(HilosSignalConstants::PROFILE_CHANGE_PASSWORD, new ProfileChangePasswordActionDTO('', self::NEW_PASSWORD, false));
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD, new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, false));
         self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::NEW_PASSWORD));
+        self::assertSame(0, count($this->profileFlows()), 'No code, no proof, no record');
+    }
+
+    /**
+     * The three steps walked through the session's record, start to finish.
+     *
+     * @throws HilosException When the seed or a command fails
+     */
+    public function testTheStepsWalkThroughTheSessionsRecord(): void
+    {
+        $this->prepareChange();
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        self::assertSame(HilosProfileFlow::STEP_CODE_SENT, $this->flowStep(StepUpOperationKey::CHANGE_PASSWORD));
+
+        // The letter's code is not readable here, so the case puts one it knows in its place.
+        $this->verifications()->voidActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS);
+        $this->seedCode(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::USER_ID, self::CODE);
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM, new ProfileChangePasswordCodeConfirmActionDTO(self::CODE));
+        self::assertSame(HilosProfileFlow::STEP_CODE_PROVEN, $this->flowStep(StepUpOperationKey::CHANGE_PASSWORD));
+
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD, new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, false));
+
+        self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::NEW_PASSWORD));
+        self::assertNull($this->flowStep(StepUpOperationKey::CHANGE_PASSWORD));
+        self::assertNull(
+            $this->verifications()->findActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS),
+            'The proof is spent by the save',
+        );
     }
 
     /** @throws HilosException When the seed or command fails */
@@ -269,7 +329,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->seedPassword();
         Hilos::$setting = new SettingsAccessor(PasswordChangeDisabledSettingsCatalog::class);
         self::assertSame('email', $this->open()->channel);
-        $this->refuseSave(self::CODE, self::NEW_PASSWORD);
+        $this->refuseSave(self::NEW_PASSWORD);
     }
 
     /** The guessing actions are authenticated and throttled; opening and sending guess nothing. */
@@ -283,7 +343,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     }
 
     /**
-     * @param bool $withCode Whether to seed a live address proof
+     * @param bool $withCode Whether to seed a live address code and the session's record that it matched
      * @throws HilosException When a seed or operation confirmation fails
      */
     private function prepareChange(bool $withCode = false): void
@@ -294,8 +354,23 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
             new StepUpConfirmActionDTO(StepUpOperationKey::CHANGE_PASSWORD, StepUpMethod::PASSWORD, '', false, self::PASSWORD, null),
         );
         if ($withCode) {
-            $this->seedCode(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::USER_ID, self::CODE);
+            $this->seedProvenCode();
         }
+    }
+
+    /**
+     * Seeds the one live address code and the session's record that it matched.
+     *
+     * Whatever code was live before is voided first, so the record stands on this one alone - an
+     * older code left alive would die at the same second and keep a case's proof standing.
+     *
+     * @throws HilosException When the challenge writes or the record write fail
+     */
+    private function seedProvenCode(): void
+    {
+        $this->verifications()->voidActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS);
+        $this->seedCode(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(StepUpOperationKey::CHANGE_PASSWORD, HilosProfileFlow::STEP_CODE_PROVEN, VerificationType::PASSWORD_CHANGE, self::EMAIL);
     }
 
     /** @throws HilosException When the password identity cannot be written */
@@ -327,7 +402,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
             new ProfileChangePasswordOpenActionDTO(),
             new ProfileChangePasswordCodeRequestActionDTO(),
             new ProfileChangePasswordCodeConfirmActionDTO(self::CODE),
-            new ProfileChangePasswordActionDTO(self::CODE, 'short', true),
+            new ProfileChangePasswordActionDTO('short', true),
         ];
     }
 
@@ -348,25 +423,27 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     }
 
     /**
-     * @param string $code Proof submitted
      * @param string $password Proposed password
      * @throws HilosException When the command fails unexpectedly
      */
-    private function refuseSave(string $code, string $password): void
+    private function refuseSave(string $password): void
     {
         $this->assertRefused(
             StepUpMessages::EXPIRED,
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
-            new ProfileChangePasswordActionDTO($code, $password, true),
+            new ProfileChangePasswordActionDTO($password, true),
         );
     }
 
-    /** @param bool $signOutOthers Whether a session-ending frame must follow the two tab announcements */
+    /**
+     * @param bool $signOutOthers Whether a session-ending frame must follow the two tab announcements
+     * @throws HilosException When the holder fails to write a step on the way
+     */
     private function assertChangeFrames(bool $signOutOthers): void
     {
         $updates = [];
         $ends = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        foreach ($this->drainSignals() as $signal) {
             if ($signal->signalName->getName() === HilosSignalConstants::PROFILE_PASSWORD_UPDATED) {
                 self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
                 self::assertInstanceOf(ProfilePasswordUpdatedSignalData::class, $signal->data->data);

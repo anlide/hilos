@@ -12,6 +12,7 @@ use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Database;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
@@ -19,17 +20,24 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Template\EmailChangedMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
+use Hilos\Runtime\State\Item\HilosProfileFlow;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * The profile email change, run by the framework's users library (HIL-299, HIL-495, HIL-1137).
  *
- * Four submits, one proof carried between them, and the account moved only on the last one.
+ * Four submits, one proof kept between them, and the account moved only on the last one.
  * Step 1 mails a code to the address the account holds; step 2 checks it without spending
- * it; step 3 judges the new address and mails it a code, carrying the first code as proof;
+ * it; step 3 judges the new address and mails it a code, standing on the first code as proof;
  * step 4 spends the new address's code, then the proof, moves every password and sign-in-link
  * row of the old address inside one transaction, and notifies both addresses. Every step
  * opens with the operation's confirmation. What is pinned here is the ORDER: which refusal
  * spends what, so that a typo costs nothing and a lost race changes nothing.
+ *
+ * The proof and the step reached are the session's record since HIL-1182, not the tab's: every
+ * step that lands writes it through the session holder, and steps 3 and 4 stand on it only while
+ * it is this person's, on the right step, on the account's address, and on the very code that
+ * matched.
  */
 final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
 {
@@ -40,6 +48,9 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
     private const string NEW_CODE = '535353';
     private const string WRONG_CODE = '000000';
     private const string PASSWORD = 'a-long-enough-secret';
+
+    /** How much later than the first a newer code of the same address dies. */
+    private const int NEWER_CODE_LATER_BY_SECONDS = 60;
 
     /**
      * An account whose only proof is its address passes the confirmation and is mailed a code.
@@ -52,7 +63,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
 
-        $this->submit(HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST, new ProfileEmailChangeCurrentRequestActionDTO());
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST, new ProfileEmailChangeCurrentRequestActionDTO());
 
         self::assertSame(
             self::USER_ID,
@@ -62,6 +73,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
             [[self::CURRENT, MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT]],
             $this->mailer->sentTo(MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT),
         );
+        self::assertSame(HilosProfileFlow::STEP_CURRENT_SENT, $this->flowStep(StepUpOperationKey::CHANGE_EMAIL));
     }
 
     /**
@@ -121,12 +133,12 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->assertRefused(
             StepUpMessages::IMPERSONATED,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
-            new ProfileEmailChangeNewConfirmActionDTO(self::CURRENT_CODE, self::NEW_EMAIL, self::NEW_CODE),
+            new ProfileEmailChangeNewConfirmActionDTO(self::NEW_CODE),
         );
     }
 
     /**
-     * The right code passes step 2 and stays alive, because steps 3 and 4 carry it.
+     * The right code passes step 2 and stays alive, because steps 3 and 4 stand on it.
      *
      * @throws HilosException When the seed or the command fails
      */
@@ -135,7 +147,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
         $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
 
-        $this->submit(
+        $this->submitStep(
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
             new ProfileEmailChangeCurrentConfirmActionDTO(self::CURRENT_CODE),
         );
@@ -144,6 +156,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
             $this->verifications()->findActive(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::MAX_ATTEMPTS),
             'A proven code must survive step 2',
         );
+        self::assertSame(HilosProfileFlow::STEP_CURRENT_PROVEN, $this->flowStep(StepUpOperationKey::CHANGE_EMAIL));
     }
 
     /**
@@ -161,6 +174,9 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
             new ProfileEmailChangeCurrentConfirmActionDTO(self::WRONG_CODE),
         );
+        $this->settleProfileFlows();
+
+        self::assertNull($this->flowStep(StepUpOperationKey::CHANGE_EMAIL), 'A refusal writes no step');
     }
 
     /**
@@ -174,7 +190,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
         self::seedIdentity(self::OTHER_USER_ID, IdentityType::MAGIC_LINK, self::TAKEN);
-        $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
+        $this->seedProvenCurrentAddress();
 
         $cases = [
             'not-an-address' => AuthMessages::INVALID_EMAIL,
@@ -185,7 +201,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
             $this->assertRefused(
                 $message,
                 HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
-                new ProfileEmailChangeNewRequestActionDTO(self::CURRENT_CODE, $address),
+                new ProfileEmailChangeNewRequestActionDTO($address),
             );
             self::assertNull(
                 $this->verifications()->findActive(VerificationType::EMAIL_CHANGE, strtolower($address), self::MAX_ATTEMPTS),
@@ -198,21 +214,95 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
             $this->verifications()->findActive(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::MAX_ATTEMPTS),
             'An address refusal must not spend the proof',
         );
+        $this->settleProfileFlows();
+        self::assertSame(HilosProfileFlow::STEP_CURRENT_PROVEN, $this->flowStep(StepUpOperationKey::CHANGE_EMAIL));
     }
 
     /**
-     * With the proof of the current address gone, step 3 asks the person to start over.
+     * A live code of the current address is no proof by itself: the session has to have seen it match.
+     *
+     * The tab used to carry the code from step to step, and a code the tab knew was the proof.
+     * Since HIL-1182 a code that never matched in this session - or matched in another browser of
+     * the same person - leaves nothing for step 3 to stand on.
      *
      * @throws HilosException When the seed fails
      */
-    public function testStepThreeWithoutALiveProofAsksToStartAgain(): void
+    public function testStepThreeWithoutAProofInTheSessionAsksToStartAgain(): void
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
+        $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
+        $this->submitStep(
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
+            new ProfileEmailChangeCurrentConfirmActionDTO(self::CURRENT_CODE),
+            self::OTHER_ACCEPT_KEY,
+        );
 
         $this->assertRefused(
             StepUpMessages::EXPIRED,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
-            new ProfileEmailChangeNewRequestActionDTO(self::CURRENT_CODE, self::NEW_EMAIL),
+            new ProfileEmailChangeNewRequestActionDTO(self::NEW_EMAIL),
+        );
+
+        self::assertNull($this->verifications()->findActive(VerificationType::EMAIL_CHANGE, self::NEW_EMAIL, self::MAX_ATTEMPTS));
+    }
+
+    /**
+     * The session's record is a proof only for its person, on the step it reached.
+     *
+     * @throws HilosException When the seed fails
+     */
+    public function testStepThreeStandsOnlyOnThisPersonsRecordOnTheProvenStep(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
+        $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
+        $records = [
+            'another person' => [HilosProfileFlow::STEP_CURRENT_PROVEN, self::OTHER_USER_ID],
+            'a code only sent' => [HilosProfileFlow::STEP_CURRENT_SENT, self::USER_ID],
+        ];
+        foreach ($records as $case => [$step, $userId]) {
+            $this->seedFlow(
+                StepUpOperationKey::CHANGE_EMAIL,
+                $step,
+                VerificationType::EMAIL_CHANGE_CURRENT,
+                self::CURRENT,
+                null,
+                $userId,
+            );
+
+            try {
+                $this->submit(HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST, new ProfileEmailChangeNewRequestActionDTO(self::NEW_EMAIL));
+                self::fail("A record of {$case} must not let step 3 through");
+            } catch (ValidationException $exception) {
+                self::assertSame(StepUpMessages::EXPIRED, $exception->getMessage());
+            }
+        }
+
+        self::assertSame([], $this->mailer->sent);
+    }
+
+    /**
+     * A newer code of the current address - sent from another browser, or after the first died -
+     * is not the code that matched, and the proof dies with the old one.
+     *
+     * @throws HilosException When the seed fails
+     */
+    public function testStepThreeAfterANewCodeOfTheSameAddressAsksToStartAgain(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
+        $this->seedProvenCurrentAddress();
+        $this->verifications()->voidActive(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::MAX_ATTEMPTS);
+        $this->verifications()->createChallenge(
+            VerificationType::EMAIL_CHANGE_CURRENT,
+            self::CURRENT,
+            self::USER_ID,
+            self::CURRENT_CODE,
+            self::TTL_SECONDS + self::NEWER_CODE_LATER_BY_SECONDS,
+        );
+
+        $this->assertRefused(
+            StepUpMessages::EXPIRED,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
+            new ProfileEmailChangeNewRequestActionDTO(self::NEW_EMAIL),
         );
 
         self::assertNull($this->verifications()->findActive(VerificationType::EMAIL_CHANGE, self::NEW_EMAIL, self::MAX_ATTEMPTS));
@@ -226,11 +316,11 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
     public function testStepThreeMailsACodeToTheNewAddress(): void
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
-        $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
+        $this->seedProvenCurrentAddress();
 
-        $this->submit(
+        $this->submitStep(
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
-            new ProfileEmailChangeNewRequestActionDTO(self::CURRENT_CODE, strtoupper(self::NEW_EMAIL)),
+            new ProfileEmailChangeNewRequestActionDTO(strtoupper(self::NEW_EMAIL)),
         );
 
         self::assertSame(
@@ -241,6 +331,13 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
             [[self::NEW_EMAIL, MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE]],
             $this->mailer->sentTo(MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE),
         );
+        $flow = $this->profileFlows()[HilosProfileFlow::idFor(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            StepUpOperationKey::CHANGE_EMAIL,
+        )];
+        self::assertSame(HilosProfileFlow::STEP_NEW_SENT, $flow?->step);
+        self::assertSame(self::NEW_EMAIL, $flow?->target);
+        self::assertSame(self::CURRENT, $flow?->address);
     }
 
     /**
@@ -254,9 +351,9 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->confirmStepUp(StepUpOperationKey::CHANGE_EMAIL);
         $this->seedBothCodes();
 
-        $this->submit(
+        $this->submitStep(
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
-            new ProfileEmailChangeNewConfirmActionDTO(self::CURRENT_CODE, self::NEW_EMAIL, self::NEW_CODE),
+            new ProfileEmailChangeNewConfirmActionDTO(self::NEW_CODE),
         );
 
         self::assertNull($this->verifications()->findActive(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::MAX_ATTEMPTS));
@@ -277,6 +374,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
             ],
             $this->mailer->sent,
         );
+        self::assertNull($this->flowStep(StepUpOperationKey::CHANGE_EMAIL), 'The finished flow leaves no record');
     }
 
     /**
@@ -292,8 +390,9 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->assertRefused(
             AuthMessages::INVALID_CODE,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
-            new ProfileEmailChangeNewConfirmActionDTO(self::CURRENT_CODE, self::NEW_EMAIL, self::WRONG_CODE),
+            new ProfileEmailChangeNewConfirmActionDTO(self::WRONG_CODE),
         );
+        $this->settleProfileFlows();
 
         self::assertNotNull(
             $this->verifications()->findActive(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::MAX_ATTEMPTS),
@@ -301,6 +400,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
         );
         self::assertSame([[IdentityType::MAGIC_LINK, self::CURRENT, true]], self::rowsOf(self::USER_ID));
         self::assertSame([], $this->mailer->sent);
+        self::assertSame(HilosProfileFlow::STEP_NEW_SENT, $this->flowStep(StepUpOperationKey::CHANGE_EMAIL));
     }
 
     /**
@@ -317,7 +417,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->assertRefused(
             StepUpMessages::EXPIRED,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
-            new ProfileEmailChangeNewConfirmActionDTO(self::CURRENT_CODE, self::NEW_EMAIL, self::NEW_CODE),
+            new ProfileEmailChangeNewConfirmActionDTO(self::NEW_CODE),
         );
 
         self::assertSame([[IdentityType::MAGIC_LINK, self::CURRENT, true]], self::rowsOf(self::USER_ID));
@@ -338,7 +438,7 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->assertRefused(
             AuthMessages::EMAIL_IN_USE,
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
-            new ProfileEmailChangeNewConfirmActionDTO(self::CURRENT_CODE, self::NEW_EMAIL, self::NEW_CODE),
+            new ProfileEmailChangeNewConfirmActionDTO(self::NEW_CODE),
         );
 
         self::assertNotNull($this->verifications()->findActive(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::MAX_ATTEMPTS));
@@ -358,13 +458,78 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
     }
 
     /**
-     * Seeds the live proof of the current address and the code of the new one.
+     * The four steps walked through the session's record, start to finish.
      *
-     * @throws HilosException When a challenge insert fails
+     * Each step stands on what the step before it wrote; nothing passes from one submit to the
+     * next except through the record.
+     *
+     * @throws HilosException When the seed or a command fails
+     */
+    public function testTheFourStepsWalkThroughTheSessionsRecord(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST, new ProfileEmailChangeCurrentRequestActionDTO());
+        self::assertSame(HilosProfileFlow::STEP_CURRENT_SENT, $this->flowStep(StepUpOperationKey::CHANGE_EMAIL));
+
+        // The letter's code is not readable here, so the case puts one it knows in its place.
+        $this->verifications()->voidActive(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::MAX_ATTEMPTS);
+        $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
+        $this->submitStep(
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
+            new ProfileEmailChangeCurrentConfirmActionDTO(self::CURRENT_CODE),
+        );
+        self::assertSame(HilosProfileFlow::STEP_CURRENT_PROVEN, $this->flowStep(StepUpOperationKey::CHANGE_EMAIL));
+
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST, new ProfileEmailChangeNewRequestActionDTO(self::NEW_EMAIL));
+        self::assertSame(HilosProfileFlow::STEP_NEW_SENT, $this->flowStep(StepUpOperationKey::CHANGE_EMAIL));
+
+        $this->verifications()->voidActive(VerificationType::EMAIL_CHANGE, self::NEW_EMAIL, self::MAX_ATTEMPTS);
+        $this->seedCode(VerificationType::EMAIL_CHANGE, self::NEW_EMAIL, self::USER_ID, self::NEW_CODE);
+        $this->submitStep(
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
+            new ProfileEmailChangeNewConfirmActionDTO(self::NEW_CODE),
+        );
+
+        self::assertSame([[IdentityType::MAGIC_LINK, self::NEW_EMAIL, true]], self::rowsOf(self::USER_ID));
+        self::assertNull($this->flowStep(StepUpOperationKey::CHANGE_EMAIL));
+        self::assertNull(
+            $this->verifications()->findActive(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::MAX_ATTEMPTS),
+            'The proof is spent by the move',
+        );
+    }
+
+    /**
+     * Seeds the live code of the current address, and the session's record that it matched.
+     *
+     * @throws HilosException When the challenge insert or the record write fails
+     */
+    private function seedProvenCurrentAddress(): void
+    {
+        $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
+        $this->seedFlow(
+            StepUpOperationKey::CHANGE_EMAIL,
+            HilosProfileFlow::STEP_CURRENT_PROVEN,
+            VerificationType::EMAIL_CHANGE_CURRENT,
+            self::CURRENT,
+        );
+    }
+
+    /**
+     * Seeds the live proof of the current address, the code of the new one, and the session's
+     * record that the new one was sent.
+     *
+     * @throws HilosException When a challenge insert or the record write fails
      */
     private function seedBothCodes(): void
     {
         $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::CURRENT, self::USER_ID, self::CURRENT_CODE);
         $this->seedCode(VerificationType::EMAIL_CHANGE, self::NEW_EMAIL, self::USER_ID, self::NEW_CODE);
+        $this->seedFlow(
+            StepUpOperationKey::CHANGE_EMAIL,
+            HilosProfileFlow::STEP_NEW_SENT,
+            VerificationType::EMAIL_CHANGE_CURRENT,
+            self::CURRENT,
+            self::NEW_EMAIL,
+        );
     }
 }

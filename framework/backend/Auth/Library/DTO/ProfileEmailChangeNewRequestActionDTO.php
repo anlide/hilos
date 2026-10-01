@@ -11,26 +11,23 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /**
  * ProfileEmailChangeNewRequestActionDTO - DTO for step 3 of the profile email change (HIL-299, HIL-1137).
  *
- * Carries the new address and, beside it, the code of the current address proven on the
- * step before. The server holds no state between the steps, so that unspent code IS the
- * proof that this surface already answered for the current mailbox. Both are trimmed here;
- * the address is lowercased and format-checked by the handler.
+ * Carries the new address and nothing else. The proof that this browser already answered for
+ * the current mailbox is the session's record of the matched code, kept by the server between the
+ * steps (HIL-1182) - the tab no longer carries the code. The address is trimmed here; it is
+ * lowercased and format-checked by the handler.
  */
 final class ProfileEmailChangeNewRequestActionDTO extends ActionPayloadDTO
 {
-    public const string CURRENT_CODE = 'currentCode';
     public const string EMAIL = 'email';
 
-    public const array SECRET_FIELDS = [self::CURRENT_CODE];
+    public const array SECRET_FIELDS = [];
 
     /**
      * Creates a new-address request DTO.
      *
-     * @param string $currentCode Code of the current address proven on step 2 (trimmed)
      * @param string $email Submitted new email address (trimmed)
      */
     public function __construct(
-        public readonly string $currentCode,
         public readonly string $email,
     ) {
     }
@@ -50,12 +47,11 @@ final class ProfileEmailChangeNewRequestActionDTO extends ActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Request DTO instance
-     * @throws InvalidFormatException When a field the action needs is absent or not a string
+     * @throws InvalidFormatException When the address is absent or not a string
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            currentCode: trim(self::requireString($data, self::CURRENT_CODE)),
             email: trim(self::requireString($data, self::EMAIL)),
         );
     }
@@ -63,23 +59,22 @@ final class ProfileEmailChangeNewRequestActionDTO extends ActionPayloadDTO
     /**
      * Convert to array for transport.
      *
-     * @return array{currentCode: string, email: string} Request payload
+     * @return array{email: string} Request payload
      */
     public function toArray(): array
     {
         return [
-            self::CURRENT_CODE => $this->currentCode,
             self::EMAIL => $this->email,
         ];
     }
 
     /**
-     * Check if the payload is valid (a non-empty proof and email).
+     * Check if the payload is valid (a non-empty email).
      *
      * @return bool True if valid
      */
     public function isValid(): bool
     {
-        return $this->currentCode !== '' && $this->email !== '';
+        return $this->email !== '';
     }
 }

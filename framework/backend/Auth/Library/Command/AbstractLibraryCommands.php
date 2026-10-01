@@ -16,8 +16,10 @@ use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\StepUp\StepUpGate;
+use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Auth\Verification\VerificationSendOutcome;
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
@@ -32,7 +34,9 @@ use Hilos\Database\Object\Collection\Identities;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\View\Item\HilosProfileFlow;
 use Random\RandomException;
 
 /**
@@ -210,6 +214,55 @@ abstract class AbstractLibraryCommands
         }
 
         return $acting;
+    }
+
+    /**
+     * Reads what an earlier step of a profile window proved in this session, or refuses the step
+     * that needs it (HIL-1182).
+     *
+     * The proof a window carries from step to step is the session's record, written by the session
+     * holder each time a step lands ({@see AbstractUsersLibraryAgent::announceProfileFlowStep()}). It
+     * stands only while all of it is still true: the record is this person's, the window is on one
+     * of the steps the caller continues from, the account's address is the one the proof was given
+     * for, and the live code of that address dies at the moment the record copied - which is what
+     * says it is the very code that matched, and not a newer one sent from another browser or after
+     * the first one died. Every failure is the confirmation's start-over sentence: none of them is a
+     * typo the person can fix on the spot.
+     *
+     * Read off this process's replica of the holder's collection. The holder syncs the row before
+     * it answers the step that wrote it, so the person's next submit does not overtake it.
+     *
+     * @param ActingSession $acting Browser and person submitting the step
+     * @param string $operation Operation key of the window
+     * @param list<string> $steps Steps the caller continues from ({@see StateHilosProfileFlow}'s STEP_* constants)
+     * @param string $codeType Verification type of the code the proof stands on
+     * @param string $address The account's address the proof must stand on now
+     * @return HilosProfileFlow The record the step continues from
+     * @throws ValidationException When there is no such proof, or it is no longer alive
+     * @throws HilosException When the runtime collection or a verification query fails
+     */
+    protected function requireProfileFlow(
+        ActingSession $acting,
+        string $operation,
+        array $steps,
+        string $codeType,
+        string $address,
+    ): HilosProfileFlow {
+        $flow = Hilos::$rt->hilosProfileFlows[StateHilosProfileFlow::idFor(
+            StateProtectedModeRuntime::hashSessionToken($acting->sessionToken),
+            $operation,
+        )];
+        if (
+            $flow === null
+            || $flow->userId !== $acting->userId
+            || !in_array($flow->step, $steps, true)
+            || $flow->address !== $address
+            || new VerificationService()->activeExpiresAt($codeType, $address) !== $flow->expiresAt
+        ) {
+            throw new ValidationException(StepUpMessages::EXPIRED);
+        }
+
+        return $flow;
     }
 
     /**

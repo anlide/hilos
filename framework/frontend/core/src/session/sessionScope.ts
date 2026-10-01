@@ -12,6 +12,10 @@ import {
   SIGNAL_CODE_SEND_PROGRESS,
   codeSendProgressSchema,
 } from '../auth/authSendProgress.js'
+import {
+  SIGNAL_PROFILE_FLOWS,
+  profileFlowsSchema,
+} from '../profile/profileFlows.js'
 import { z } from 'zod'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
@@ -403,11 +407,13 @@ export const SESSION_ACK_SIGNED_IN = 'auth_signed_in'
  * merged per project, and going that way would leave a demo without the line.
  * What it has in common with the toast stack is what decides it: both are
  * addressed to the SESSION, and a session is something every project carries.
+ * The profile windows' list rides here for the same reason (HIL-1182).
  */
 export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_HANDSHAKE_RESPONSE]: scopePayloadSchema,
   [SIGNAL_SESSION_TOASTS]: sessionToastsSchema,
   [SIGNAL_CODE_SEND_PROGRESS]: codeSendProgressSchema,
+  [SIGNAL_PROFILE_FLOWS]: profileFlowsSchema,
   [SIGNAL_AUTH_METHODS]: authMethodsSchema,
   [SIGNAL_SECOND_FACTOR_POLICY]: secondFactorPolicySchema,
   [SIGNAL_CODE_DELIVERY]: codeDeliverySchema,

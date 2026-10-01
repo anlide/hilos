@@ -2,12 +2,17 @@
 // surface, and the window's steps over them (HIL-1169). Framework-agnostic — the
 // view packages draw the window, this module is the wire and the step machine.
 //
-// The server keeps nothing between the steps: the current address's code, proven
-// on step 2, is carried by the flow into steps 3 and 4 as the proof. Every step
-// first asks the operation's confirmation (HIL-495). None answers with a reply;
-// the moved address arrives in the identities projection. Server-confirmed, never
-// optimistic — a step advances on the backend `::success` only, and a refusal
-// stays on the step with the typed values intact.
+// The server remembers the step (HIL-1182): how far the window got and what was
+// proven on it — the current address's code matched, the new address and its
+// code sent — is the SESSION's record, told to every tab of it on the profile
+// flows frame. The window stands on that record: opened in any tab or after a
+// reload it opens on the step reached, and an open window moves when another tab
+// of the same browser moves the flow. The tab no longer carries the current
+// address's code. Every step first asks the operation's confirmation (HIL-495).
+// None answers with a reply; the moved address arrives in the identities
+// projection. Server-confirmed, never optimistic — a step advances on the
+// backend's word only, and a refusal stays on the step with the typed values
+// intact. Discarding the window ends the flow for the whole session.
 import {
   createHilosStepUpActions,
   createHilosStepUpStep,
@@ -21,9 +26,19 @@ import {
 import {
   computedSignal,
   createSignal,
+  subscribeSignal,
   type ReadonlySignal,
+  type Unsubscribe,
   type WritableSignal,
 } from '../state/signal.js'
+import {
+  hilosProfileFlowFor,
+  PROFILE_FLOW_CANCEL_ACTION,
+  PROFILE_FLOW_STEP_CURRENT_PROVEN,
+  PROFILE_FLOW_STEP_CURRENT_SENT,
+  PROFILE_FLOW_STEP_NEW_SENT,
+  type HilosProfileFlowState,
+} from './profileFlows.js'
 
 /**
  * Client→server: send a code to the address the account holds now (PHP
@@ -40,8 +55,8 @@ export const PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM_ACTION =
   'profile_change_email_current_confirm'
 
 /**
- * Client→server: send a code to the new address, carrying the current address's
- * code (PHP `HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST`).
+ * Client→server: send a code to the new address; the proof of the current one is
+ * the session's record (PHP `HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST`).
  */
 export const PROFILE_CHANGE_EMAIL_NEW_REQUEST_ACTION =
   'profile_change_email_new_request'
@@ -74,18 +89,16 @@ export interface HilosProfileEmailChangeActions {
   /**
    * Send a code to the new address.
    *
-   * @param currentCode The current address's code proven on step 2.
    * @param email The new address.
    */
-  requestNewCode(currentCode: string, email: string): ActionHandle
+  requestNewCode(email: string): ActionHandle
   /**
-   * Prove the new address and move the account onto it.
+   * Prove the new address and move the account onto it; the address is the one
+   * the session's record names.
    *
-   * @param currentCode The current address's code proven on step 2.
-   * @param email The new address.
    * @param code The code the new address received.
    */
-  confirmNewCode(currentCode: string, email: string, code: string): ActionHandle
+  confirmNewCode(code: string): ActionHandle
 }
 
 /**
@@ -109,16 +122,13 @@ export function createHilosProfileEmailChangeActions(
         { code },
       )
     },
-    requestNewCode(currentCode, email) {
+    requestNewCode(email) {
       return context.actions.dispatch(PROFILE_CHANGE_EMAIL_NEW_REQUEST_ACTION, {
-        currentCode,
         email,
       })
     },
-    confirmNewCode(currentCode, email, code) {
+    confirmNewCode(code) {
       return context.actions.dispatch(PROFILE_CHANGE_EMAIL_NEW_CONFIRM_ACTION, {
-        currentCode,
-        email,
         code,
       })
     },
@@ -143,11 +153,11 @@ export type HilosProfileEmailChangeStep =
 export interface HilosProfileEmailChangeFlow {
   readonly step: ReadonlySignal<HilosProfileEmailChangeStep>
   readonly stepUp: HilosStepUpStep
-  /** The address the account held when the window opened. */
+  /** The address the account held when the window opened - the session's record of it, when there is one. */
   readonly was: ReadonlySignal<string>
-  /** The code from the current address, typed on step 2 and carried after it. */
+  /** The code from the current address, typed on step 2. */
   readonly currentCode: WritableSignal<string>
-  /** The new address, typed on step 3. */
+  /** The new address, typed on step 3; on step 4 the one the session's record names. */
   readonly newEmail: WritableSignal<string>
   /** The code from the new address, typed on step 4. */
   readonly newCode: WritableSignal<string>
@@ -162,7 +172,8 @@ export interface HilosProfileEmailChangeFlow {
   /** Whether closing asks first: a code is already out on steps 2 to 4. */
   readonly asksBeforeClosing: ReadonlySignal<boolean>
   /**
-   * Ask whether the operation needs a confirmation, then open on it or on step 1.
+   * Ask whether the operation needs a confirmation, then open on it or on the
+   * step the session's record names (step 1 when there is none).
    *
    * @param address The verified address the account holds now.
    */
@@ -171,7 +182,13 @@ export interface HilosProfileEmailChangeFlow {
   submit(): Promise<void>
   /** Walk the window again from step 1, the address just set being the current one. */
   again(): Promise<void>
+  /**
+   * Close the window. On steps 2 to 4 - after the person agreed to discard - it
+   * ends the flow for the whole session first and closes on the server's word;
+   * anywhere else it closes at once and leaves the flow alone.
+   */
   close(): void
+  /** Let the window go without touching the flow: leaving the page is not discarding it. */
   dispose(): void
 }
 
@@ -214,14 +231,32 @@ export const HILOS_PROFILE_EMAIL_CHANGE_COPY = {
   unreached: 'Could not reach the server. Please try again.',
 } as const
 
-/** The step each step past the confirmation leads to on its `::success`. */
-const STEP_AFTER: Readonly<
-  Partial<Record<HilosProfileEmailChangeStep, HilosProfileEmailChangeStep>>
-> = {
-  'send-current': 'confirm-current',
-  'confirm-current': 'new-address',
-  'new-address': 'confirm-new',
-  'confirm-new': 'done',
+/** The steps the session's record decides, where a frame may move the window. */
+const RECORD_STEPS: ReadonlySet<HilosProfileEmailChangeStep> = new Set([
+  'send-current',
+  'confirm-current',
+  'new-address',
+  'confirm-new',
+])
+
+/**
+ * The step a window stands on for the session's record of its flow.
+ *
+ * @param record The session's record of the email change, or null when it has none.
+ */
+function stepOfRecord(
+  record: HilosProfileFlowState | null,
+): HilosProfileEmailChangeStep {
+  switch (record?.step) {
+    case PROFILE_FLOW_STEP_CURRENT_SENT:
+      return 'confirm-current'
+    case PROFILE_FLOW_STEP_CURRENT_PROVEN:
+      return 'new-address'
+    case PROFILE_FLOW_STEP_NEW_SENT:
+      return 'confirm-new'
+    default:
+      return 'send-current'
+  }
 }
 
 /**
@@ -244,7 +279,12 @@ export function createHilosProfileEmailChangeFlow(
   const now = createSignal('')
   const busy = createSignal(false)
   const refusal = createSignal<string | null>(null)
+  const record = hilosProfileFlowFor(EMAIL_CHANGE_OPERATION)
   let round = 0
+  // Actions of this window still waiting for their answer: while one is, the
+  // record going away is its own ending, and the answer says how it ended.
+  let pending = 0
+  let following: Unsubscribe | null = null
 
   const canSubmit = computedSignal(() => {
     switch (step.get()) {
@@ -259,34 +299,110 @@ export function createHilosProfileEmailChangeFlow(
     }
   })
 
+  const asksBeforeClosing = computedSignal(
+    () =>
+      step.get() === 'confirm-current' ||
+      step.get() === 'new-address' ||
+      step.get() === 'confirm-new',
+  )
+
   /** Send the step on screen to the server. */
   function dispatchStep(): ActionHandle {
     switch (step.get()) {
       case 'confirm-current':
         return actions.confirmCurrentCode(currentCode.get().trim())
       case 'new-address':
-        return actions.requestNewCode(
-          currentCode.get().trim(),
-          newEmail.get().trim(),
-        )
+        return actions.requestNewCode(newEmail.get().trim())
       case 'confirm-new':
-        return actions.confirmNewCode(
-          currentCode.get().trim(),
-          newEmail.get().trim(),
-          newCode.get().trim(),
-        )
+        return actions.confirmNewCode(newCode.get().trim())
       default:
         return actions.requestCurrentCode()
     }
   }
 
-  function close(): void {
+  /**
+   * Stand the window on the step the session's record names, with the addresses
+   * the record carries.
+   *
+   * @param flow The session's record of the email change, or null when it has none.
+   */
+  function standOn(flow: HilosProfileFlowState | null): void {
+    if (flow !== null) {
+      was.set(flow.address)
+      if (flow.target !== null) newEmail.set(flow.target)
+    }
+    step.set(stepOfRecord(flow))
+  }
+
+  /**
+   * Take one frame of the session's record: move the open window to the step it
+   * names, or close it when the flow ended in another tab.
+   *
+   * @param flow The session's record of the email change, or null when it has none.
+   */
+  function follow(flow: HilosProfileFlowState | null): void {
+    const current = step.get()
+    if (!RECORD_STEPS.has(current)) return
+    if (flow === null) {
+      // Finished or discarded elsewhere; this window's own action, if one is
+      // waiting, ends the flow itself and its answer says how.
+      if (pending === 0 && current !== 'send-current') finish()
+      return
+    }
+    const next = stepOfRecord(flow)
+    if (
+      next === current &&
+      (next !== 'confirm-new' || flow.target === newEmail.get())
+    )
+      return
+    refusal.set(null)
+    if (next === 'confirm-current') currentCode.set('')
+    if (next === 'new-address') newEmail.set('')
+    if (next === 'confirm-new') newCode.set('')
+    standOn(flow)
+  }
+
+  /** Stand on the session's record and keep following it while the window is open. */
+  function enterFlow(): void {
+    standOn(record.get())
+    following ??= subscribeSignal(record, follow)
+  }
+
+  /** Close the window here, leaving the flow as it is. */
+  function finish(): void {
     round += 1
     step.set('closed')
     busy.set(false)
     refusal.set(null)
     stepUp.password.set('')
     stepUp.code.set('')
+    following?.()
+    following = null
+  }
+
+  /** End the flow for the whole session, then close on the server's word. */
+  async function discard(): Promise<void> {
+    const started = ++round
+    busy.set(true)
+    refusal.set(null)
+    pending += 1
+    try {
+      await context.actions.dispatch(PROFILE_FLOW_CANCEL_ACTION, {
+        operation: EMAIL_CHANGE_OPERATION,
+      }).done
+    } catch (error) {
+      if (round !== started) return
+      busy.set(false)
+      refusal.set(
+        error instanceof ActionError && error.outcome === 'fail'
+          ? error.message
+          : HILOS_PROFILE_EMAIL_CHANGE_COPY.unreached,
+      )
+      return
+    } finally {
+      pending -= 1
+    }
+    if (round === started) finish()
   }
 
   async function open(address: string): Promise<void> {
@@ -302,7 +418,8 @@ export function createHilosProfileEmailChangeFlow(
     const verdict = await stepUp.open(EMAIL_CHANGE_OPERATION)
     if (round !== started) return
     busy.set(false)
-    step.set(verdict === 'skip' ? 'send-current' : 'step-up')
+    if (verdict === 'skip') enterFlow()
+    else step.set('step-up')
   }
 
   return {
@@ -316,12 +433,7 @@ export function createHilosProfileEmailChangeFlow(
     busy,
     refusal,
     canSubmit,
-    asksBeforeClosing: computedSignal(
-      () =>
-        step.get() === 'confirm-current' ||
-        step.get() === 'new-address' ||
-        step.get() === 'confirm-new',
-    ),
+    asksBeforeClosing,
     open,
     async submit() {
       const current = step.get()
@@ -339,9 +451,10 @@ export function createHilosProfileEmailChangeFlow(
         const confirmed = await stepUp.confirm()
         if (round !== started) return
         busy.set(false)
-        if (confirmed) step.set('send-current')
+        if (confirmed) enterFlow()
         return
       }
+      pending += 1
       try {
         await dispatchStep().done
       } catch (error) {
@@ -353,19 +466,29 @@ export function createHilosProfileEmailChangeFlow(
             : HILOS_PROFILE_EMAIL_CHANGE_COPY.unreached,
         )
         return
+      } finally {
+        pending -= 1
       }
       if (round !== started) return
       busy.set(false)
-      // The server stores the address lowercased; the outcome names what was set.
-      if (current === 'confirm-new')
+      if (current === 'confirm-new') {
+        // The server stores the address lowercased; the outcome names what was set.
         now.set(newEmail.get().trim().toLowerCase())
-      step.set(STEP_AFTER[current] ?? 'done')
+        step.set('done')
+        return
+      }
+      // The frame naming the new step arrived before this answer; a send the
+      // server had nothing to stand on leaves the window where it was.
+      standOn(record.get())
     },
     async again() {
       if (step.get() !== 'done') return
       await open(now.get())
     },
-    close,
-    dispose: close,
+    close() {
+      if (asksBeforeClosing.get() && record.get() !== null) void discard()
+      else finish()
+    },
+    dispose: finish,
   }
 }

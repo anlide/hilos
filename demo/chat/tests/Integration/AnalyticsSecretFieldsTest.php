@@ -101,17 +101,19 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
     public function testAgentReactionIsRecordedWithTheCodeAndPasswordMaskedInsideData(): void
     {
         $agentSessionId = $this->openAgentSession();
-        $envelope = new WebSocketActionSignalDTO($this->acceptKey, HilosSignalConstants::PROFILE_CHANGE_PASSWORD, [
+        // The add-password confirm carries both a code and a password; the password change
+        // stopped carrying its code when the proof moved into the session (HIL-1182).
+        $envelope = new WebSocketActionSignalDTO($this->acceptKey, HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM, [
+            'email' => 'hil-1187@example.test',
             'code' => '123456',
             'newPassword' => 'hil-1187-new',
-            'signOutOthers' => true,
         ]);
 
         $this->collector->logAgentUserAction(
             self::AGENT_TYPE,
             null,
             null,
-            HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
             $envelope->toArray(),
         );
         $lines = $this->journalLines();
@@ -131,7 +133,7 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
         $this->assertStringNotContainsString('123456', $json);
         $this->assertStringNotContainsString('hil-1187-new', $json);
         $this->assertSame(
-            ['code' => SecretPayloadMask::MASK, 'newPassword' => SecretPayloadMask::MASK, 'signOutOthers' => true],
+            ['code' => SecretPayloadMask::MASK, 'email' => 'hil-1187@example.test', 'newPassword' => SecretPayloadMask::MASK],
             json_decode($json, true, flags: JSON_THROW_ON_ERROR)['data'],
         );
     }

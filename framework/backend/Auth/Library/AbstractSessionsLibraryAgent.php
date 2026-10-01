@@ -36,6 +36,7 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
@@ -58,6 +59,8 @@ use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
+use Hilos\Auth\Session\DTO\ProfileFlowCancelActionDTO;
+use Hilos\Auth\Session\DTO\ProfileFlowsSignalData;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionEndActionDTO;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
@@ -382,6 +385,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * A block-change frame has no fixed sender (HIL-289): whoever wrote a person's flag asks
      * this library to enforce it. Two requests from the admin card (HIL-304) write rights and
      * block flags here; their answer names belong to the page that deferred the submit.
+     *
+     * One more is the users library's (HIL-1182): a profile window of a session reached a step or
+     * finished. The record of how far it got is the session's, so it is written here, and
+     * {@see HilosSignalConstants::HILOS_PROFILE_FLOWS} is absent for the usual reason: it is what
+     * this library sends on to the tabs.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -410,6 +418,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
+        HilosSignalConstants::HILOS_PROFILE_FLOW_STEP => ProfileFlowStepSignalData::class,
     ];
 
     /**
@@ -453,6 +462,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * It is not throttled - the key is 128 random bits and presenting one spends nothing.
      * Ending one other session or all others is authenticated rather than merely
      * session-bound: both operations act on the signed-in user's session set.
+     *
+     * {@see HilosSignalConstants::HILOS_PROFILE_FLOW_CANCEL} is the Discard of a profile window
+     * (HIL-1182), and authenticated for the same reason: the flow it ends was started by the
+     * signed-in person, and the record it takes away is this session's.
      */
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
@@ -466,12 +479,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_TOAST_EXPIRED => SessionToastExpiredActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_READING => SessionToastReadingActionDTO::class,
         HilosSignalConstants::HILOS_OAUTH_RESUME => OAuthResumeActionDTO::class,
+        HilosSignalConstants::HILOS_PROFILE_FLOW_CANCEL => ProfileFlowCancelActionDTO::class,
     ];
 
     /** Actions that require an authenticated user in the acting session. */
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_SESSION_END,
         HilosSignalConstants::HILOS_SESSIONS_END_OTHERS,
+        HilosSignalConstants::HILOS_PROFILE_FLOW_CANCEL,
     ];
 
     /**
@@ -753,6 +768,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepRegistrationWaiters();
         $this->sweepRecoveryWaiters();
         $this->sweepCodeSendAttempts();
+        $this->sweepProfileFlows();
         $this->sweepOAuthTrips();
         $this->sweepAccountDeletions();
     }
@@ -1188,6 +1204,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->publishSessionToasts($sessionTokenHash);
         if ($this->hasSignInSurface()) {
             $this->publishCodeSendProgress($sessionTokenHash);
+            $this->publishProfileFlows($sessionTokenHash);
         }
     }
 
@@ -2158,6 +2175,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $this->forgetSessionToasts($sessionToken);
+        $this->forgetProfileFlows($sessionToken);
         Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
         if ($impersonatorId !== null) {
             $this->logAgentInfo('impersonate_stop ' . json_encode([
@@ -2513,6 +2531,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $this->forgetSessionToasts($sessionToken);
+        $this->forgetProfileFlows($sessionToken);
         Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
         if ($impersonatorId !== null) {
             $this->logAgentInfo('impersonate_stop ' . json_encode([
@@ -2584,6 +2603,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $vacatedUserId = $session->userId;
         $session->actions->unbindUser();
         $this->forgetSessionToasts($sessionToken);
+        $this->forgetProfileFlows($sessionToken);
         if ($impersonatorId !== null) {
             $this->logAgentInfo('impersonate_stop ' . json_encode([
                 'event' => 'impersonate_stop',
@@ -3241,8 +3261,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * a code, each time the send moves (HIL-826), one from the agent holding the logins a
      * restore left (HIL-846), two about a provider sign-in a tab is waiting on and one from the
      * master about agents that are gone (HIL-1044), one from whoever wrote a block flag (HIL-289),
-     * two from the admin card asking to write rights or a block (HIL-304), and the password
-     * change's request to end other sessions (HIL-300).
+     * two from the admin card asking to write rights or a block (HIL-304), the password
+     * change's request to end other sessions (HIL-300), and a profile window's step (HIL-1182).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -3307,6 +3327,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->openRecoveryPasswordStep($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_PROFILE_FLOW_STEP:
+                if (!$data->data instanceof ProfileFlowStepSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProfileFlowStepSignalData::class, $data->data);
+                }
+
+                $this->applyProfileFlowStep($data->data);
 
                 return;
 
@@ -3761,6 +3790,139 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Writes how far one profile window of a session has got, tells every tab, and answers the
+     * tab that submitted (HIL-1182).
+     *
+     * Three steps, and the order is the mechanism - the one {@see self::openRecoveryPasswordStep()}
+     * keeps. The record is written first, so a step that reads it next finds it. The whole list
+     * goes to every tab of the session next, so the window open in any of them moves to the step
+     * just reached. The answer to the tab that submitted goes LAST: it moves on the same frame its
+     * neighbours move on, and an answer overtaking that frame would leave it with nothing to
+     * move to.
+     *
+     * A frame that reaches no step - the flow finished, or a step naming no address or moment,
+     * which the frame refuses off the wire - takes the window's record away instead.
+     *
+     * @param ProfileFlowStepSignalData $frame Session, window, the step reached, and the answer to give
+     * @throws HilosException On database or runtime failure
+     * @throws InvalidArgumentException When the list frame or the answer cannot be named or queued
+     */
+    private function applyProfileFlowStep(ProfileFlowStepSignalData $frame): void
+    {
+        $flows = Hilos::$rt?->hilosProfileFlows;
+        if ($flows !== null) {
+            $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($frame->sessionToken);
+            if ($frame->step === null || $frame->address === null || $frame->expiresAt === null) {
+                $flows->actions->drop($sessionTokenHash, $frame->operation);
+            } else {
+                $flows->actions->put(
+                    $sessionTokenHash,
+                    $frame->operation,
+                    $frame->userId,
+                    $frame->step,
+                    $frame->address,
+                    $frame->target,
+                    $frame->expiresAt,
+                );
+            }
+            $this->publishProfileFlows($sessionTokenHash);
+        }
+
+        $this->answerLibraryAction(
+            $frame->initiatorAcceptKey,
+            $frame->sessionToken,
+            $frame->action,
+            $frame->requestId,
+            null,
+        );
+    }
+
+    /**
+     * Ends one profile window's flow because the person discarded it (HIL-1182).
+     *
+     * A flow already gone - finished or discarded in another tab a moment earlier - is a quiet
+     * success: what the person asked for is true, and saying "failed" would leave the window open
+     * over a flow that no longer exists. So is a project with no sign-in surface, which mounts no
+     * flows at all: the action is declared everywhere this library is, the windows only there.
+     *
+     * The list goes to the session EVEN WHEN nothing was dropped. The tick reclaims a flow whose
+     * code died without a frame ({@see self::sweepProfileFlows()}), so a tab that stayed connected
+     * still holds it, opens its window on it, and is refused there; the Discard that refusal asks
+     * for is the moment that tab learns the flow is gone. Answering it with silence would reopen
+     * the window on the same dead step until the next reconnect.
+     *
+     * @param string $sessionToken Session cookie token of the acting connection
+     * @param string $operation Operation key of the window being discarded
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the list frame cannot be named or queued
+     */
+    private function cancelProfileFlow(string $sessionToken, string $operation): void
+    {
+        $flows = $this->hasSignInSurface() ? Hilos::$rt?->hilosProfileFlows : null;
+        if ($flows === null) {
+            return;
+        }
+
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
+        $flows->actions->drop($sessionTokenHash, $operation);
+        $this->publishProfileFlows($sessionTokenHash);
+    }
+
+    /**
+     * Sends one session's whole list of profile flows to every tab of it (HIL-1182).
+     *
+     * Addressed by hash through {@see AbstractAgent::sendToSession()}, exactly as the send-progress
+     * line is, and carrying the LIST rather than the step, so a handshake, a second tab and an
+     * ordinary step are one sentence. Every handshake gets one, INCLUDING the empty one, for the
+     * reason {@see self::publishCodeSendProgress()} gives: a tab that comes back to a flow finished
+     * while it was away must be told there is nothing left, or its window would wait on a step
+     * nothing will ever move.
+     *
+     * @param string $sessionTokenHash Hash of the session cookie token being told
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    private function publishProfileFlows(string $sessionTokenHash): void
+    {
+        $flows = Hilos::$rt?->hilosProfileFlows;
+        if ($flows === null) {
+            return;
+        }
+
+        $this->sendToSession(
+            HilosSignalConstants::HILOS_PROFILE_FLOWS,
+            $sessionTokenHash,
+            ProfileFlowsSignalData::fromFlows($flows->forSessionTokenHash($sessionTokenHash), TimeHelper::nowMs()),
+        );
+    }
+
+    /**
+     * Takes every profile flow of a session away because the session has changed person, and
+     * says so (HIL-1182).
+     *
+     * Called wherever the toast stack is forgotten and where a takeover starts or ends: a proof
+     * belongs to the person who gave it, and whoever the session is now gave none. Nothing is sent
+     * for a session that had nothing going. Those places run in a project with no sign-in surface
+     * too, where the flows are not mounted at all, and there is nothing to forget.
+     *
+     * @param string $sessionToken Session cookie token whose person changed
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the list frame cannot be named or queued
+     */
+    private function forgetProfileFlows(string $sessionToken): void
+    {
+        $flows = $this->hasSignInSurface() ? Hilos::$rt?->hilosProfileFlows : null;
+        if ($flows === null) {
+            return;
+        }
+
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
+        if ($flows->actions->forget($sessionTokenHash)) {
+            $this->publishProfileFlows($sessionTokenHash);
+        }
+    }
+
+    /**
      * Takes one card off a session's stack because a person closed it.
      *
      * @param string $sessionToken Session cookie token of the acting connection
@@ -4003,7 +4165,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * - the result signal, or the state frame of a sign-in - exactly as it would have without a
      * reconnect, and the tab reads it the same way.
      * Ending one other session or all others is the exception: the target sessions receive
-     * their state frames, while the acting tab receives the ordinary tracked action ack.
+     * their state frames, while the acting tab receives the ordinary tracked action ack. So does
+     * the Discard of a profile window (HIL-1182); the windows of the other tabs close on the list
+     * frame it sends the whole session.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
@@ -4111,6 +4275,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 return $this->resumeOAuthTrip($sessionToken, $acceptKey, $dto->tripKey);
+
+            case HilosSignalConstants::HILOS_PROFILE_FLOW_CANCEL:
+                if (!$dto instanceof ProfileFlowCancelActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileFlowCancelActionDTO::class, $dto);
+                }
+                $this->cancelProfileFlow($sessionToken, $dto->operation);
+
+                return null;
 
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
@@ -4303,6 +4475,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * builds is unchanged, marker and all, which is why the ordering that frame documents -
      * the impersonator written before the bind - still holds.
      *
+     * The session's profile windows are let go after the bind (HIL-1182): what was proven in them
+     * was proven by the administrator, and the person the session acts as now proved nothing.
+     *
      * @param string $sessionToken Session cookie token of the acting admin session
      * @param int $targetUserId User id to impersonate
      * @param ?string $initiatorAcceptKey Accept key of the admin's connection, or null for the CLI path
@@ -4345,6 +4520,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             initiatorAcceptKey: $initiatorAcceptKey,
             correlationId: $correlationId,
         ));
+        $this->forgetProfileFlows($sessionToken);
 
         $this->logAgentInfo('impersonate_start ' . json_encode([
             'event' => 'impersonate_start',
@@ -4366,6 +4542,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * on every writer keeping that promise, and a row the old code left - a marker on an
      * anonymous session - would otherwise hand a guest the administrator's account through
      * this door.
+     *
+     * The session's profile windows are let go after the bind, as they are when a takeover starts
+     * (HIL-1182): a proof belongs to the person who gave it.
      *
      * @param string $sessionToken Session cookie token of the impersonating session
      * @param ?string $initiatorAcceptKey Accept key of the requesting connection, or null for the CLI path
@@ -4404,6 +4583,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             initiatorAcceptKey: $initiatorAcceptKey,
             correlationId: $correlationId,
         ), $requestId, $action);
+        $this->forgetProfileFlows($sessionToken);
 
         $this->logAgentInfo('impersonate_stop ' . json_encode([
             'event' => 'impersonate_stop',
@@ -5269,6 +5449,28 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $attempts->actions->forgetStale(
             Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int() * TimeConstants::MS_PER_SECOND,
         );
+    }
+
+    /**
+     * Drops the profile flows whose code has died (HIL-1182).
+     *
+     * By the code's own moment and by no clock of this library's: a flow lives exactly as long as
+     * the code its proof stands on, and the moment that code dies is written on the row.
+     *
+     * Nothing is published, for the reason {@see self::sweepCodeSendAttempts()} gives: the next
+     * step of a window over a dead flow is refused anyway, a tab that comes back is told by its
+     * handshake, and the list sent there already leaves a dead flow out.
+     *
+     * @throws HilosException On runtime failure
+     */
+    private function sweepProfileFlows(): void
+    {
+        $flows = Hilos::$rt?->hilosProfileFlows;
+        if ($flows === null || count($flows) === 0) {
+            return;
+        }
+
+        $flows->actions->forgetExpired(TimeHelper::nowMs());
     }
 
     /**

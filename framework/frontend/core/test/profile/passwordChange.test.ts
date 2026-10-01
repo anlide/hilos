@@ -3,10 +3,16 @@ import {
   ActionError,
   type ActionLifecycle,
 } from '../../src/connection/actionLifecycle.js'
+import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
   createHilosProfilePasswordChangeActions,
   createHilosProfilePasswordChangeFlow,
 } from '../../src/profile/passwordChange.js'
+import {
+  bindProfileFlows,
+  profileFlowsSchema,
+  SIGNAL_PROFILE_FLOWS,
+} from '../../src/profile/profileFlows.js'
 
 const OPENING = { channel: 'email', destination: 'me@example.test' }
 const SKIP = { required: false, purpose: 'change your password' }
@@ -15,7 +21,51 @@ const ASK = {
   purpose: 'change your password',
   method: 'password',
 }
+/** The session's record of the password change at one step. */
+function record(step: string) {
+  return {
+    operation: 'change_password',
+    step,
+    address: 'me@example.test',
+    target: null,
+  }
+}
+
+/** Bind the held list to a fake connection and return what tells it a frame. */
+function bound(): (flows: unknown[]) => void {
+  const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  bindProfileFlows({
+    on: (_event: string, listener: (signal: never) => void) => {
+      listeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+
+  return (flows) => {
+    for (const listener of listeners) {
+      listener({
+        type: SIGNAL_PROFILE_FLOWS,
+        data: profileFlowsSchema.parse({ flows }),
+      })
+    }
+  }
+}
+
+const tell = bound()
+
+/** The list the server tells the session when a step lands, before it answers. */
+const FRAME_AFTER: Record<string, unknown[]> = {
+  profile_change_password_code_request: [record('code_sent')],
+  profile_change_password_code_confirm: [record('code_proven')],
+  profile_change_password: [],
+  hilos_profile_flow_cancel: [],
+}
+
 function setup(extra: Record<string, unknown> = {}) {
+  tell([])
   const answers: Record<string, unknown> = {
     hilos_step_up_start: SKIP,
     profile_change_password_open: OPENING,
@@ -29,13 +79,14 @@ function setup(extra: Record<string, unknown> = {}) {
     ): { done: Promise<{ reply: unknown }> } => {
       void payload
       const answer = answers[name] ?? []
+      if (typeof answer === 'string')
+        return { done: Promise.reject(new ActionError(name, 'fail', answer)) }
+      const frame = FRAME_AFTER[name]
+      if (frame !== undefined) tell(frame)
       return {
-        done:
-          typeof answer === 'string'
-            ? Promise.reject(new ActionError(name, 'fail', answer))
-            : Promise.resolve({
-                reply: options.replySchema?.parse(answer) ?? answer,
-              }),
+        done: Promise.resolve({
+          reply: options.replySchema?.parse(answer) ?? answer,
+        }),
       }
     },
   )
@@ -48,6 +99,11 @@ function setup(extra: Record<string, unknown> = {}) {
   }
 }
 
+/** Let every answer already on its way land. */
+function settled(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 describe('password change', () => {
   it('carries exactly the four action payloads', async () => {
     const world = setup()
@@ -55,16 +111,17 @@ describe('password change', () => {
     await actions.open().done
     await actions.requestCode().done
     await actions.confirmCode('123456').done
-    await actions.change('123456', ' secret ', false).done
+    await actions.change(' secret ', false).done
     expect(
       world.dispatch.mock.calls.map(([name, payload]) => [name, payload]),
     ).toEqual([
       ['profile_change_password_open', {}],
       ['profile_change_password_code_request', {}],
       ['profile_change_password_code_confirm', { code: '123456' }],
+      // The save carries no code: the session keeps the proof of it.
       [
         'profile_change_password',
-        { code: '123456', newPassword: ' secret ', signOutOthers: false },
+        { newPassword: ' secret ', signOutOthers: false },
       ],
     ])
   })
@@ -118,7 +175,7 @@ describe('password change', () => {
       dispatch.mock.calls.filter(([name]) => name === 'hilos_step_up_start'),
     ).toHaveLength(1)
   })
-  it('goes straight to password without an address and submits an empty code', async () => {
+  it('goes straight to password without an address and sends no code', async () => {
     const { flow, dispatch } = setup({
       profile_change_password_open: { channel: null, destination: null },
     })
@@ -128,10 +185,58 @@ describe('password change', () => {
     flow.newPassword.set('new-secret')
     await flow.save()
     expect(dispatch).toHaveBeenLastCalledWith('profile_change_password', {
-      code: '',
       newPassword: 'new-secret',
       signOutOthers: true,
     })
+  })
+  it('opens on the step the session already reached', async () => {
+    const { flow } = setup()
+    tell([record('code_proven')])
+    await flow.open()
+    expect(flow.step.get()).toBe('password')
+    expect(flow.asksBeforeClosing.get()).toBe(true)
+  })
+  it('moves the open window when another tab moves the flow', async () => {
+    const { flow } = setup()
+    await flow.open()
+    expect(flow.step.get()).toBe('start')
+    tell([record('code_sent')])
+    expect(flow.step.get()).toBe('code')
+    flow.code.set('12')
+    tell([record('code_proven')])
+    expect(flow.step.get()).toBe('password')
+    expect(flow.newPassword.get()).toBe('')
+    tell([])
+    // Saved or discarded in the other tab: nothing is left for this window.
+    expect(flow.step.get()).toBe('closed')
+  })
+  it('follows no flow when a code has nowhere to go', async () => {
+    const { flow } = setup({
+      profile_change_password_open: { channel: null, destination: null },
+    })
+    await flow.open()
+    tell([record('code_sent')])
+    tell([])
+    expect(flow.step.get()).toBe('password')
+  })
+  it('discards the flow for the whole session and leaves it alone on leaving', async () => {
+    const { flow, dispatch } = setup()
+    await flow.open()
+    await flow.sendCode()
+    flow.close()
+    await settled()
+    expect(dispatch).toHaveBeenLastCalledWith('hilos_profile_flow_cancel', {
+      operation: 'change_password',
+    })
+    expect(flow.step.get()).toBe('closed')
+
+    tell([record('code_sent')])
+    await flow.open()
+    expect(flow.step.get()).toBe('code')
+    const sent = dispatch.mock.calls.length
+    flow.dispose()
+    expect(flow.step.get()).toBe('closed')
+    expect(dispatch.mock.calls).toHaveLength(sent)
   })
   it('keeps every refused step and its fields for another submit', async () => {
     const { flow, answers } = setup({
@@ -180,7 +285,7 @@ describe('password change', () => {
     expect(flow.step.get()).toBe('done')
   })
   it.each(['open', 'send', 'confirm', 'save'] as const)(
-    'ignores a late %s reply after closing',
+    'ignores a late %s reply after the window is let go',
     async (at) => {
       const { flow, dispatch } = setup()
       if (at !== 'open') await flow.open()
@@ -204,7 +309,7 @@ describe('password change', () => {
             : at === 'confirm'
               ? flow.confirmCode()
               : flow.save()
-      flow.close()
+      flow.dispose()
       resolve({ reply: at === 'open' ? SKIP : [] })
       await pending
       expect(flow.step.get()).toBe('closed')

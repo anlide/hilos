@@ -34,6 +34,7 @@ use Hilos\Notification\HilosNotifier;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
+use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
@@ -786,6 +787,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             StateRecoveryWaiter::RT_COLLECTION,
             StateRegistrationWaiter::RT_COLLECTION,
             StateHilosCodeSendAttempt::RT_COLLECTION,
+            StateHilosProfileFlow::RT_COLLECTION,
         ];
     }
 

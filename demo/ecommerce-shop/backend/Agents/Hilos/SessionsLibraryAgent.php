@@ -13,6 +13,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
+use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Users\AccountErasure;
@@ -62,6 +63,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * and the transports carrying the code report to this library by frame.
      * Neither have the provider sign-ins tabs are waiting on, which stand here for the same
      * reason (HIL-1044): the agents carrying the exchange report every ending by frame.
+     * Nor have the profile windows half-way through (HIL-1182): the users library reports every step by frame.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -70,6 +72,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         StateRecoveryWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateHilosCodeSendAttempt::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateHilosOAuthTrip::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateHilosProfileFlow::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
 
     /**

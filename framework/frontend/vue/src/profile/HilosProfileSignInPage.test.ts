@@ -139,7 +139,6 @@ describe('profile sign-in page dialogs', () => {
     byId('profile-password-save').click()
     await flushPromises()
     expect(world.dispatch).toHaveBeenCalledWith('profile_change_password', {
-      code: '',
       newPassword: 'new-secret',
       signOutOthers: true,
     })

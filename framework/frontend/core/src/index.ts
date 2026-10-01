@@ -571,6 +571,20 @@ export {
   type HilosProfileEmailChangeFlow,
   type HilosProfileEmailChangeStep,
 } from './profile/emailChange.js'
+export {
+  bindProfileFlows,
+  hilosProfileFlowFor,
+  hilosProfileFlows,
+  PROFILE_FLOW_CANCEL_ACTION,
+  PROFILE_FLOW_STEP_CODE_PROVEN,
+  PROFILE_FLOW_STEP_CODE_SENT,
+  PROFILE_FLOW_STEP_CURRENT_PROVEN,
+  PROFILE_FLOW_STEP_CURRENT_SENT,
+  PROFILE_FLOW_STEP_NEW_SENT,
+  profileFlowsSchema,
+  SIGNAL_PROFILE_FLOWS,
+  type HilosProfileFlowState,
+} from './profile/profileFlows.js'
 export { qrMatrix } from './auth/qrMatrix.js'
 export {
   createBrowserPushEnvironment,

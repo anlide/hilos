@@ -366,6 +366,111 @@ test('changes the account email in five steps (HIL-299)', async ({ page }) => {
   await waitForMailTo(now, 'Your email address was changed')
 })
 
+// The step a profile window reached lives in the session, not in the tab
+// (HIL-1182): two tabs of one context share the session cookie, so a window
+// opened in the second one stands on the step the first one reached, and a step
+// taken in either moves the open window of the other.
+test('continues the email change in another tab of the same session (HIL-1182)', async ({
+  context,
+}) => {
+  const tabA = await context.newPage()
+  const { email: was } = await signUp(tabA)
+  await gotoPage(tabA, '/profile')
+  await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
+  await tabA.getByTestId('profile-email-change').click()
+  await confirmStepUp(tabA, 'profile-email-step-up-confirm')
+  await clickSubmit(tabA.getByTestId('profile-email-send-current'))
+  const currentCode = await waitForMailCode(
+    was,
+    'Confirm it is you to change your email address',
+  )
+  await typeInto(tabA.getByTestId('profile-email-code-current'), currentCode)
+  await clickSubmit(tabA.getByTestId('profile-email-confirm-current'))
+  await expect(tabA.getByTestId('profile-email-new')).toBeVisible()
+
+  // The second tab opens the window on step 3: the confirmation and the proven
+  // current address are the session's, so neither is asked again.
+  const tabB = await context.newPage()
+  await gotoPage(tabB, '/profile')
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await tabB.getByTestId('profile-email-change').click()
+  await expect(tabB.getByTestId('profile-email-new')).toBeVisible()
+
+  const now = uniqueEmail()
+  await typeInto(tabB.getByTestId('profile-email-new'), now)
+  await clickSubmit(tabB.getByTestId('profile-email-send-new'))
+  await expect(tabB.getByTestId('profile-email-code-new')).toBeVisible()
+  // The first tab's open window moved to step 4 without anybody touching it.
+  await expect(tabA.getByTestId('profile-email-code-new')).toBeVisible()
+
+  const newCode = await waitForMailCode(now, 'Confirm your new email address')
+  await typeInto(tabB.getByTestId('profile-email-code-new'), newCode)
+  await clickSubmit(tabB.getByTestId('profile-email-confirm-new'))
+
+  // The tab that finished shows the outcome; the other one's window closes.
+  await expect(tabB.getByTestId('profile-email-now')).toHaveText(now)
+  await expect(tabA.getByTestId('modal')).toBeHidden()
+  await expect(tabA.getByTestId('profile-email')).toContainText(now)
+  await tabB.getByTestId('profile-email-done').click()
+  await expect(tabB.getByTestId('profile-email')).toContainText(now)
+})
+
+test('opens the email change on the step reached before a reload (HIL-1182)', async ({
+  page,
+}) => {
+  const { email: was } = await signUp(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await page.getByTestId('profile-email-change').click()
+  await confirmStepUp(page, 'profile-email-step-up-confirm')
+  await clickSubmit(page.getByTestId('profile-email-send-current'))
+  await expect(page.getByTestId('profile-email-code-current')).toBeVisible()
+  const currentCode = await waitForMailCode(
+    was,
+    'Confirm it is you to change your email address',
+  )
+
+  // A reload does not open the window by itself; Change opens it on step 2.
+  await page.reload()
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('modal')).toHaveCount(0)
+  await page.getByTestId('profile-email-change').click()
+  await expect(page.getByTestId('profile-email-code-current')).toBeVisible()
+
+  // The code sent before the reload is still the one to type.
+  await typeInto(page.getByTestId('profile-email-code-current'), currentCode)
+  await clickSubmit(page.getByTestId('profile-email-confirm-current'))
+  await expect(page.getByTestId('profile-email-new')).toBeVisible()
+})
+
+test('saves the new password from another tab of the same session (HIL-1182)', async ({
+  context,
+}) => {
+  const tabA = await context.newPage()
+  const { email } = await signUp(tabA)
+  await gotoPage(tabA, '/profile/sign-in')
+  await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
+  await clickSubmit(tabA.getByTestId('profile-password-change'))
+  await confirmStepUp(tabA, 'profile-password-step-up-confirm')
+  await clickSubmit(tabA.getByTestId('profile-password-send-code'))
+  const code = await waitForMailCode(email, 'Confirm changing your password')
+  await typeInto(tabA.getByTestId('profile-password-code'), code)
+  await clickSubmit(tabA.getByTestId('profile-password-confirm-code'))
+  await expect(tabA.getByTestId('profile-password-new')).toBeVisible()
+
+  // The second tab opens the window on New password: the code matched in the session.
+  const tabB = await context.newPage()
+  await gotoPage(tabB, '/profile/sign-in')
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await clickSubmit(tabB.getByTestId('profile-password-change'))
+  await expect(tabB.getByTestId('profile-password-new')).toBeVisible()
+  await typeInto(tabB.getByTestId('profile-password-new'), 'a-fresh-passphrase')
+  await clickSubmit(tabB.getByTestId('profile-password-save'))
+
+  await expect(tabB.getByTestId('profile-password-outcome')).toBeVisible()
+  await expect(tabA.getByTestId('profile-password-modal')).toHaveCount(0)
+})
+
 test('ends one other browser session from the sessions page', async ({
   browser,
 }) => {

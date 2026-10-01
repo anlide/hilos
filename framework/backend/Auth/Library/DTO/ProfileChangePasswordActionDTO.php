@@ -8,22 +8,24 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
-/** The final password-change submit; the password is preserved byte for byte (HIL-300). */
+/**
+ * The final password-change submit; the password is preserved byte for byte (HIL-300).
+ *
+ * It carries no code: the proof that the account's address answered is the session's record of
+ * the matched code (HIL-1182), read by the handler.
+ */
 final class ProfileChangePasswordActionDTO extends ActionPayloadDTO
 {
-    public const string CODE = 'code';
     public const string NEW_PASSWORD = 'newPassword';
     public const string SIGN_OUT_OTHERS = 'signOutOthers';
 
-    public const array SECRET_FIELDS = [self::CODE, self::NEW_PASSWORD];
+    public const array SECRET_FIELDS = [self::NEW_PASSWORD];
 
     /**
-     * @param string $code Address code, empty when the account has no reachable address
      * @param string $newPassword New password to set
      * @param bool $signOutOthers Whether to end the person's other sessions
      */
     public function __construct(
-        public readonly string $code,
         public readonly string $newPassword,
         public readonly bool $signOutOthers,
     ) {
@@ -43,17 +45,15 @@ final class ProfileChangePasswordActionDTO extends ActionPayloadDTO
     public static function fromArray(array $data): static
     {
         return new static(
-            trim(self::requireString($data, self::CODE)),
             self::requireString($data, self::NEW_PASSWORD),
             self::requireBool($data, self::SIGN_OUT_OTHERS),
         );
     }
 
-    /** @return array{code: string, newPassword: string, signOutOthers: bool} Submitted payload */
+    /** @return array{newPassword: string, signOutOthers: bool} Submitted payload */
     public function toArray(): array
     {
         return [
-            self::CODE => $this->code,
             self::NEW_PASSWORD => $this->newPassword,
             self::SIGN_OUT_OTHERS => $this->signOutOthers,
         ];

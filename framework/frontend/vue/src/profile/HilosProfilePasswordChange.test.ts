@@ -1,7 +1,11 @@
 import {
   ActionError,
+  bindProfileFlows,
   createHilosProfilePasswordChangeFlow,
+  profileFlowsSchema,
+  SIGNAL_PROFILE_FLOWS,
   type ActionLifecycle,
+  type HilosConnection,
 } from '@hilos/core'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -17,7 +21,47 @@ function byId(id: string): HTMLElement {
   if (!found) throw new Error(`Missing ${id}`)
   return found
 }
+const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+bindProfileFlows({
+  on: (_event: string, listener: (signal: never) => void) => {
+    listeners.push(
+      listener as (signal: { type: string; data: unknown }) => void,
+    )
+    return () => undefined
+  },
+} as unknown as HilosConnection)
+
+/**
+ * Tell the session's record of the password change, as the frame carries it -
+ * the steps are the session's (HIL-1182), told before the step is answered.
+ */
+function tell(step: string | null): void {
+  const flows =
+    step === null
+      ? []
+      : [
+          {
+            operation: 'change_password',
+            step,
+            address: 'a@example.test',
+            target: null,
+          },
+        ]
+  for (const listener of listeners)
+    listener({
+      type: SIGNAL_PROFILE_FLOWS,
+      data: profileFlowsSchema.parse({ flows }),
+    })
+}
+
+const FRAME_AFTER: Record<string, string | null> = {
+  profile_change_password_code_request: 'code_sent',
+  profile_change_password_code_confirm: 'code_proven',
+  profile_change_password: null,
+}
+
 function setup() {
+  tell(null)
   const dispatched: Array<{ name: string; payload?: unknown }> = []
   const answers: Record<string, unknown> = {
     hilos_step_up_start: { required: false, purpose: 'change your password' },
@@ -30,12 +74,12 @@ function setup() {
     actions: {
       dispatch: (name: string, payload?: unknown) => {
         dispatched.push({ name, payload })
-        return {
-          done:
-            typeof answers[name] === 'string'
-              ? Promise.reject(new ActionError(name, 'fail', answers[name]))
-              : Promise.resolve({ reply: answers[name] ?? [] }),
-        }
+        if (typeof answers[name] === 'string')
+          return {
+            done: Promise.reject(new ActionError(name, 'fail', answers[name])),
+          }
+        if (name in FRAME_AFTER) tell(FRAME_AFTER[name] ?? null)
+        return { done: Promise.resolve({ reply: answers[name] ?? [] }) }
       },
     } as unknown as ActionLifecycle,
   })

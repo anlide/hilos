@@ -5,17 +5,21 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
@@ -31,11 +35,16 @@ use Hilos\HilosException;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\HilosMailer;
+use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\View\Actions\Collection\HilosProfileFlowsActions;
+use Hilos\Runtime\View\Collection\HilosProfileFlows;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\HilosSmsSender;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AdminAudience;
 
 /**
@@ -48,6 +57,11 @@ use Hilos\Users\AdminAudience;
  *
  * Codes are seeded with a known value, as the other code flows are tested; the letters are
  * caught by a mailer that records instead of queueing.
+ *
+ * The step a profile window reached is the session's record, kept by the session holder
+ * (HIL-1182): a library step reports it by frame. A case that walks those steps hands the
+ * frames to a holder of the fixture ({@see self::submitStep()}), so the next step reads the
+ * record the last one wrote - the two processes of a stand, folded into one.
  */
 abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCase
 {
@@ -77,6 +91,9 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
 
     protected ProfileIntegrationLibrary $library;
 
+    /** The session holder of the fixture, writing what the profile windows reached. */
+    protected ProfileIntegrationHolder $holder;
+
     protected ProfileRecordingMailer $mailer;
 
     private ?RtContext $previousRt = null;
@@ -88,6 +105,9 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     private ?HilosMailer $previousMail = null;
 
     private ?HilosSmsSender $previousSms = null;
+
+    /** @var list<SignalDTO> Signals taken off the queue while handing profile steps to the holder, in order */
+    private array $drained = [];
 
     /**
      * @throws DatabaseException When a stub statement or seed fails
@@ -118,12 +138,15 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         Hilos::$rt = $rt;
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        RtTruthSourceRegistry::registerDaemon(StateHilosProfileFlow::RT_COLLECTION);
 
         self::seedSession(self::SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null);
         self::seedSession(self::OTHER_SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null);
         self::seedSession(self::ANONYMOUS_SESSION_TOKEN, null, self::CREATED_AT, null);
         self::seedSession(self::ADMIN_SESSION_TOKEN, self::ADMIN_USER_ID, self::CREATED_AT, null);
         $this->library = new ProfileIntegrationLibrary();
+        $this->holder = new ProfileIntegrationHolder();
+        $this->drained = [];
     }
 
     /**
@@ -131,6 +154,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
      */
     protected function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosProfileFlow::RT_COLLECTION);
         SourceChangeBus::reset();
         putenv(EnvConstants::MAIL_SMTP_HOST->name);
         Hilos::$sms = $this->previousSms;
@@ -154,6 +178,113 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     protected function submit(string $action, ActionPayloadDTO $dto, string $acceptKey = self::ACCEPT_KEY): void
     {
         self::assertNull($this->library->onAgentAction($acceptKey, $action, $dto), 'A profile submit answers with no reply');
+    }
+
+    /**
+     * Submits one step of a profile window and lets the session holder write what it reached.
+     *
+     * @param string $action Action wire name
+     * @param ActionPayloadDTO $dto Action payload
+     * @param string $acceptKey Tab that submits
+     * @throws HilosException When the command refuses or fails
+     */
+    protected function submitStep(string $action, ActionPayloadDTO $dto, string $acceptKey = self::ACCEPT_KEY): void
+    {
+        $this->submit($action, $dto, $acceptKey);
+        $this->settleProfileFlows();
+    }
+
+    /**
+     * Hands every queued profile step to the holder, keeping every signal taken off the queue.
+     *
+     * @throws HilosException When the holder fails to write a step
+     */
+    protected function settleProfileFlows(): void
+    {
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $this->drained[] = $signal;
+            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_PROFILE_FLOW_STEP) {
+                continue;
+            }
+
+            self::assertInstanceOf(AgentSignalData::class, $signal->data);
+            $this->holder->onSignalAgent($signal->data, 'test', HilosSignalConstants::HILOS_PROFILE_FLOW_STEP);
+        }
+    }
+
+    /**
+     * Takes every signal off the queue, profile steps handed to the holder on the way.
+     *
+     * @return list<SignalDTO> Every signal queued since the last drain, in order
+     * @throws HilosException When the holder fails to write a step
+     */
+    protected function drainSignals(): array
+    {
+        $this->settleProfileFlows();
+        $signals = $this->drained;
+        $this->drained = [];
+
+        return $signals;
+    }
+
+    /**
+     * Writes what an earlier step of a window proved in the acting session, as the holder would.
+     *
+     * The record stands on the code that is live for the address now, so a case seeds the code
+     * first and the proof second - which is the order the steps write them in.
+     *
+     * @param string $operation Operation key of the window
+     * @param string $step Step reached
+     * @param string $codeType Verification type of the code the proof stands on
+     * @param string $address The account's address the proof stands on
+     * @param ?string $target New address of an email change, on its last step alone
+     * @param int $userId The person the flow is for
+     * @throws HilosException When the code cannot be read or the record cannot be written
+     */
+    protected function seedFlow(
+        string $operation,
+        string $step,
+        string $codeType,
+        string $address,
+        ?string $target = null,
+        int $userId = self::USER_ID,
+    ): void {
+        $expiresAt = new VerificationService()->activeExpiresAt($codeType, $address);
+        self::assertNotNull($expiresAt, 'A proof stands on a live code');
+        $this->profileFlows()->actions->put(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            $operation,
+            $userId,
+            $step,
+            $address,
+            $target,
+            $expiresAt,
+        );
+    }
+
+    /**
+     * @param string $operation Operation key of the window
+     * @return ?string Step the acting session's window is on, or null when it has no flow
+     * @throws HilosException When the collection cannot be read
+     */
+    protected function flowStep(string $operation): ?string
+    {
+        return $this->profileFlows()[StateHilosProfileFlow::idFor(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            $operation,
+        )]?->step;
+    }
+
+    /**
+     * @return HilosProfileFlows The holder's record of the profile windows
+     * @throws HilosException When the collection cannot be read
+     */
+    protected function profileFlows(): HilosProfileFlows
+    {
+        $flows = Hilos::$rt?->hilosProfileFlows;
+        self::assertInstanceOf(HilosProfileFlows::class, $flows);
+
+        return $flows;
     }
 
     /**
@@ -258,11 +389,12 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
      * Drains the queue and returns every password-updated frame in it, as tab and mode.
      *
      * @return list<array{0: string, 1: string}> Target accept key and mode of each frame, in order
+     * @throws HilosException When the holder fails to write a step on the way
      */
     protected function passwordUpdates(): array
     {
         $updates = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        foreach ($this->drainSignals() as $signal) {
             if ($signal->signalName->getName() !== HilosSignalConstants::PROFILE_PASSWORD_UPDATED) {
                 continue;
             }
@@ -313,15 +445,19 @@ final class ProfileIntegrationSettingsCatalog implements CatalogProviderInterfac
 }
 
 /**
- * Runtime holding two signed-in tabs of one person and one signed-out tab.
+ * Runtime holding two signed-in tabs of one person and one signed-out tab, and the record of the
+ * profile windows the sign-in feature mounts beside them.
  */
 final class ProfileIntegrationRtContext extends RtContext
 {
     /**
-     * Mounts the three tabs.
+     * Mounts the tabs, and the one collection of the sign-in feature the profile windows write.
      */
     public function configure(): void
     {
+        $this->mountFeatureCollection(StateHilosProfileFlow::RT_COLLECTION, StateHilosProfileFlows::init());
+        $this->setRepresent(StateHilosProfileFlow::RT_COLLECTION, HilosProfileFlows::class, HilosProfileFlowsActions::class);
+
         $connections = ProfileIntegrationConnections::init();
         $connections->add(ProfileIntegrationConnection::create(
             ProfileIntegrationTestCase::ACCEPT_KEY,
@@ -394,6 +530,16 @@ final class ProfileIntegrationLibrary extends AbstractUsersLibraryAgent
     protected function buildOAuthService(): ?OAuthService
     {
         return $this->oauthService;
+    }
+}
+
+/**
+ * Session holder of the fixture project: every profile window's record is the framework's own.
+ */
+final class ProfileIntegrationHolder extends AbstractSessionsLibraryAgent
+{
+    public function onStop(): void
+    {
     }
 }
 

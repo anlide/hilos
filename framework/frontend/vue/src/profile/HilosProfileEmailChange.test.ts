@@ -1,10 +1,16 @@
 // Covers what the email window's view owns (HIL-1169): the step list marking
 // the step on screen, the address in the text of step one, a refusal kept on
-// its step, and the outcome naming what the address was and is now.
+// its step, and the outcome naming what the address was and is now. The steps
+// are the session's record (HIL-1182), so the fake server tells it before it
+// answers, as the session holder does.
 import {
   ActionError,
+  bindProfileFlows,
   createHilosProfileEmailChangeFlow,
+  profileFlowsSchema,
+  SIGNAL_PROFILE_FLOWS,
   type ActionLifecycle,
+  type HilosConnection,
 } from '@hilos/core'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -31,8 +37,48 @@ function typeInto(id: string, value: string): void {
   field.dispatchEvent(new Event('input'))
 }
 
+const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+bindProfileFlows({
+  on: (_event: string, listener: (signal: never) => void) => {
+    listeners.push(
+      listener as (signal: { type: string; data: unknown }) => void,
+    )
+    return () => undefined
+  },
+} as unknown as HilosConnection)
+
+/** Tell the session's record of the email change, as the frame carries it. */
+function tell(step: string | null, target: string | null = null): void {
+  const flows =
+    step === null
+      ? []
+      : [
+          {
+            operation: 'change_email',
+            step,
+            address: 'old@example.test',
+            target,
+          },
+        ]
+  for (const listener of listeners)
+    listener({
+      type: SIGNAL_PROFILE_FLOWS,
+      data: profileFlowsSchema.parse({ flows }),
+    })
+}
+
+/** What the server tells the session when a step lands, before it answers the step. */
+function frameAfter(action: string, payload: unknown): void {
+  if (action === 'profile_change_email_current_request') tell('current_sent')
+  if (action === 'profile_change_email_current_confirm') tell('current_proven')
+  if (action === 'profile_change_email_new_request')
+    tell('new_sent', (payload as { email: string }).email.toLowerCase())
+  if (action === 'profile_change_email_new_confirm') tell(null)
+}
+
 /** A mounted window whose server answers each action from the table; a string refuses. */
 function setup(answers: Record<string, unknown> = {}) {
+  tell(null)
   const dispatched: Array<{ action: string; payload?: unknown }> = []
   const table: Record<string, unknown> = {
     hilos_step_up_start: { required: false, purpose: 'change your email' },
@@ -42,12 +88,14 @@ function setup(answers: Record<string, unknown> = {}) {
     actions: {
       dispatch: (action: string, payload?: unknown) => {
         dispatched.push({ action, payload })
-        return {
-          done:
-            typeof table[action] === 'string'
-              ? Promise.reject(new ActionError(action, 'fail', table[action]))
-              : Promise.resolve({ reply: table[action] ?? [] }),
-        }
+        if (typeof table[action] === 'string')
+          return {
+            done: Promise.reject(
+              new ActionError(action, 'fail', table[action]),
+            ),
+          }
+        frameAfter(action, payload)
+        return { done: Promise.resolve({ reply: table[action] ?? [] }) }
       },
     } as unknown as ActionLifecycle,
   })

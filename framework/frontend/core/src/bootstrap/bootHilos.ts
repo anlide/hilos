@@ -31,6 +31,7 @@ import {
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
+import { bindProfileFlows } from '../profile/profileFlows.js'
 import { bindAccountBlocked } from '../session/accountBlocked.js'
 import { bindAccountStanding } from '../session/accountStanding.js'
 import { bindLegalReconsent } from '../legal/legalReconsent.js'
@@ -132,6 +133,10 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // leaf promises. No option either: a project with codes has the line, and one
   // without them is never sent a frame.
   bindCodeSendProgress(config.connection)
+  // The profile windows' list (HIL-1182) is published on the handshake too, before
+  // any page mounts its window - a window opened after a reload reads the step it
+  // stands on from what was held here.
+  bindProfileFlows(config.connection)
   // The impersonation strip (HIL-1064) is the shell's, drawn in every SDK from
   // the session this binding follows, and its Stop runs on the application's
   // own lifecycle. One behavior, no option: a project with takeovers has the

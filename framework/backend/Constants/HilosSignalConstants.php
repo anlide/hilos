@@ -25,6 +25,7 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
+use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStateSignalData;
@@ -33,6 +34,8 @@ use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
+use Hilos\Auth\Session\DTO\ProfileFlowCancelActionDTO;
+use Hilos\Auth\Session\DTO\ProfileFlowsSignalData;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
@@ -1409,6 +1412,39 @@ final class HilosSignalConstants
      * subsystem learns about auth. Carried by {@see CodeSendStepSignalData}.
      */
     public const string HILOS_CODE_SEND_STEP = 'hilos_code_send_step';
+
+    /**
+     * Sessions library → every tab of one browser session: these are the profile windows it is
+     * half-way through (HIL-1182).
+     *
+     * Addressed to the SESSION for the reason {@see HILOS_CODE_SEND_PROGRESS} is: a second tab and
+     * a reloaded one open the email-change or password-change window on the step already reached,
+     * and another browser of the same person sees nothing. It carries the whole list
+     * {flows: [{operation, step, address, target}]}, so a handshake and an ordinary step are one
+     * sentence; an empty list is the legal frame that closes every window. Carried by
+     * {@see ProfileFlowsSignalData}.
+     */
+    public const string HILOS_PROFILE_FLOWS = 'hilos_profile_flows';
+
+    /**
+     * Users library → sessions library: a profile window of this session reached a step, or its
+     * flow is over (HIL-1182).
+     *
+     * The one door every step of the email-change and password-change windows is written through:
+     * the library runs the step and spends the codes, the holder owns the record of the session and
+     * writes it, tells every tab, and answers the submitting one LAST. Carried by
+     * {@see ProfileFlowStepSignalData}.
+     */
+    public const string HILOS_PROFILE_FLOW_STEP = 'hilos_profile_flow_step';
+
+    /**
+     * Client → sessions library (page-independent): the person discarded a profile window, so its
+     * flow ends in every tab of this session (HIL-1182).
+     *
+     * Payload {operation}, answered with an empty success; the windows of the other tabs close on
+     * the frame that carries the shortened list. Carried by {@see ProfileFlowCancelActionDTO}.
+     */
+    public const string HILOS_PROFILE_FLOW_CANCEL = 'hilos_profile_flow_cancel';
 
     // ── Hilos uploads: one connection ⇄ the uploads agent (HIL-135) ──────────
     /**

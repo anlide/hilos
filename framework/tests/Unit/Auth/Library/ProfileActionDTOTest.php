@@ -140,30 +140,32 @@ final class ProfileActionDTOTest extends TestCase
         ProfileSetPasswordActionDTO::fromArray([]);
     }
 
-    /** Only the code is trimmed; the session choice remains a boolean. */
+    /**
+     * Only the code is trimmed; the session choice remains a boolean. The final submit carries no
+     * code: the proof is the session's record (HIL-1182), and a code sent anyway is not read.
+     */
     public function testPasswordChangePayloadsRoundTrip(): void
     {
         self::assertSame([], ProfileChangePasswordOpenActionDTO::fromArray(['userId' => 99])->toArray());
         self::assertSame([], ProfileChangePasswordCodeRequestActionDTO::fromArray(['email' => 'ignored'])->toArray());
         self::assertSame(['code' => '123456'], ProfileChangePasswordCodeConfirmActionDTO::fromArray(['code' => ' 123456 '])->toArray());
-        $dto = ProfileChangePasswordActionDTO::fromArray(['code' => ' 123456 ', 'newPassword' => ' secret ', 'signOutOthers' => false]);
-        self::assertSame(['code' => '123456', 'newPassword' => ' secret ', 'signOutOthers' => false], $dto->toArray());
+        $dto = ProfileChangePasswordActionDTO::fromArray(['code' => '123456', 'newPassword' => ' secret ', 'signOutOthers' => false]);
+        self::assertSame(['newPassword' => ' secret ', 'signOutOthers' => false], $dto->toArray());
         self::assertTrue($dto->isValid());
-        self::assertTrue(new ProfileChangePasswordActionDTO('', 'secret', true)->isValid());
-        self::assertFalse(new ProfileChangePasswordActionDTO('123456', '', true)->isValid());
+        self::assertFalse(new ProfileChangePasswordActionDTO('', true)->isValid());
     }
 
     /** A truthy string must not turn into consent to sign out other sessions. */
     public function testPasswordChangeRefusesANonBooleanSessionChoice(): void
     {
         $this->expectException(InvalidFormatException::class);
-        ProfileChangePasswordActionDTO::fromArray(['code' => '123456', 'newPassword' => 'secret', 'signOutOthers' => 'false']);
+        ProfileChangePasswordActionDTO::fromArray(['newPassword' => 'secret', 'signOutOthers' => 'false']);
     }
 
-    /** Each action field is required, including the explicitly empty code when no address exists. */
+    /** Each action field is required. */
     public function testPasswordChangeRefusesMissingMembers(): void
     {
-        $payload = ['code' => '', 'newPassword' => 'secret', 'signOutOthers' => true];
+        $payload = ['newPassword' => 'secret', 'signOutOthers' => true];
         foreach (array_keys($payload) as $key) {
             $incomplete = $payload;
             unset($incomplete[$key]);
@@ -238,34 +240,43 @@ final class ProfileActionDTOTest extends TestCase
     }
 
     /**
-     * The email-change steps carry exactly their fields, trimmed; the first carries none.
+     * The email-change steps carry exactly their fields, trimmed; the first carries none. Neither
+     * later step carries the current address's code any more, and the last does not repeat the new
+     * address: both live in the session's record (HIL-1182), and a field sent anyway is not read.
      */
     public function testEmailChangeStepsCarryTheirFieldsTrimmed(): void
     {
         $this->assertSame([], ProfileEmailChangeCurrentRequestActionDTO::fromArray(['email' => 'ignored@example.com'])->toArray());
         $this->assertSame(['code' => '111111'], ProfileEmailChangeCurrentConfirmActionDTO::fromArray(['code' => ' 111111 '])->toArray());
         $this->assertSame(
-            ['currentCode' => '111111', 'email' => 'new@example.com'],
-            ProfileEmailChangeNewRequestActionDTO::fromArray(['currentCode' => ' 111111 ', 'email' => ' new@example.com '])->toArray(),
+            ['email' => 'new@example.com'],
+            ProfileEmailChangeNewRequestActionDTO::fromArray(['currentCode' => '111111', 'email' => ' new@example.com '])->toArray(),
         );
         $this->assertSame(
-            ['currentCode' => '111111', 'email' => 'new@example.com', 'code' => '222222'],
+            ['code' => '222222'],
             ProfileEmailChangeNewConfirmActionDTO::fromArray([
-                'currentCode' => ' 111111 ',
-                'email' => ' new@example.com ',
+                'currentCode' => '111111',
+                'email' => 'new@example.com',
                 'code' => ' 222222 ',
             ])->toArray(),
         );
     }
 
     /**
-     * A step that carries the current address's code is refused without it.
+     * The new-address step is refused without the address, and the last step without its code.
      */
-    public function testEmailChangeNewRequestRefusesAPayloadWithoutTheCurrentCode(): void
+    public function testEmailChangeLaterStepsRefuseAPayloadWithoutTheirField(): void
     {
+        try {
+            ProfileEmailChangeNewRequestActionDTO::fromArray([]);
+            self::fail('A new-address request without the address must be refused');
+        } catch (InvalidFormatException) {
+            self::assertTrue(true);
+        }
+
         $this->expectException(InvalidFormatException::class);
 
-        ProfileEmailChangeNewRequestActionDTO::fromArray(['email' => 'new@example.com']);
+        ProfileEmailChangeNewConfirmActionDTO::fromArray([]);
     }
 
     /**
@@ -302,16 +313,16 @@ final class ProfileActionDTOTest extends TestCase
         );
         $this->assertSame(
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
-            new ProfileEmailChangeNewRequestActionDTO('c', 'e')->getAction(),
+            new ProfileEmailChangeNewRequestActionDTO('e')->getAction(),
         );
         $this->assertSame(
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
-            new ProfileEmailChangeNewConfirmActionDTO('c', 'e', 'c')->getAction(),
+            new ProfileEmailChangeNewConfirmActionDTO('c')->getAction(),
         );
         self::assertSame(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN, new ProfileChangePasswordOpenActionDTO()->getAction());
         self::assertSame(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO()->getAction());
         self::assertSame(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM, new ProfileChangePasswordCodeConfirmActionDTO('c')->getAction());
-        self::assertSame(HilosSignalConstants::PROFILE_CHANGE_PASSWORD, new ProfileChangePasswordActionDTO('c', 'p', true)->getAction());
+        self::assertSame(HilosSignalConstants::PROFILE_CHANGE_PASSWORD, new ProfileChangePasswordActionDTO('p', true)->getAction());
         $this->assertSame(HilosSignalConstants::HILOS_LINK_OAUTH_START, new LinkOAuthStartActionDTO('p', 't')->getAction());
     }
 

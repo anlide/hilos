@@ -75,6 +75,41 @@ logout cleanup path.
 The gate still refuses while the session impersonates another person. Device
 trust belongs to the sign-in question and is deliberately not read here.
 
+## A window's step lives in the session
+
+The confirmation is not the only thing another tab continues: the step a
+multi-step profile window reached is the session's too (HIL-1182). The email
+change and the password change keep, per session and window, one row of
+`hilosProfileFlows` — the step reached, what was proven on it (the current
+address's code matched; the new address and its code sent), the account's
+address the proof stands on, and the moment the code of that proof dies.
+
+- **One writer.** The users library runs a step and spends the codes exactly
+  where it did before; it reports the step on `hilos_profile_flow_step`, and the
+  sessions library writes the row, sends the session's whole list on
+  `hilos_profile_flows` to every tab of it, and answers the submitting tab LAST,
+  so that tab moves on the same frame its neighbours move on.
+- **The tab carries no code.** "The code matched" is the row; a later step
+  stands on it only while it is this person's, on the right step, on the
+  account's current address, and while the live code of that address dies at
+  the moment the row copied. A newer code of the same address — another browser,
+  a resend after the first died — dies at another moment, and the proof with it.
+  The row has no clock of its own; the tick drops dead rows without a frame, and
+  the handshake never sends one.
+- **Discard ends the flow for the session.** `hilos_profile_flow_cancel` is the
+  window's Discard, and it always answers the session with the list, even when
+  nothing was left to drop: a tab can still hold a flow the tick reclaimed
+  without a frame. Closing without the question, leaving the page and a reload
+  leave the flow alone. A flow finished or discarded in one tab closes the open
+  window of the others, and the tab that finished it shows the outcome.
+- **A change of person ends it.** Signing out and a takeover starting or ending
+  take the session's rows away, where its toast stack is forgotten; signing in
+  moves the session onto a new token, which leaves them unreachable.
+
+Another browser of the same person sees nothing. The account-deletion window and
+"Add a way to sign in" join the same record in their own leaves (HIL-1183,
+HIL-1184).
+
 ## Adding a way in
 
 Every action that adds the signed-in person a way into their OWN account, or

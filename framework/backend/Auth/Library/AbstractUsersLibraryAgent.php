@@ -87,6 +87,7 @@ use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
+use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
@@ -149,6 +150,7 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -1199,7 +1201,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     /**
      * Asks the session holder to end the person's other ordinary sessions (HIL-300).
-     * The password action answers immediately; the holder processes this frame independently.
+     * The holder processes this frame independently of the answer to the password action: that
+     * answer is the dispatcher's, or - when a code proved the change - the holder's own, handed
+     * over by the frame that ends the flow and so sent after this one (HIL-1182).
      *
      * @param ActingSession $acting Person and acting session to preserve
      * @throws InvalidArgumentException When the frame cannot be named or queued
@@ -1209,6 +1213,48 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $this->sendToAgent(
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END,
             new AuthOtherSessionsEndSignalData($acting->userId, $acting->sessionToken),
+        );
+    }
+
+    /**
+     * Tells the session holder how far a profile window of this browser has got, and hands it the
+     * answer (HIL-1182).
+     *
+     * The step is a fact about the SESSION, not about the tab that submitted it: every tab of the
+     * browser opens the window on it, and a reloaded one does too. So the holder writes it, tells
+     * those tabs, and answers this one last - the counterpart of {@see announceRecoveryGranted()}
+     * for a person who is already signed in. A null step ends the flow and takes the record away.
+     *
+     * @param ActingSession $acting Browser and person the step was run for
+     * @param string $operation Operation key of the window
+     * @param ?string $step Step reached ({@see HilosProfileFlow}'s STEP_* constants), or null when the flow is over
+     * @param ?string $address The account's address the proof stands on, or null when the flow is over
+     * @param ?string $target New address of an email change, on its last step alone
+     * @param ?int $expiresAt Epoch milliseconds the code of the proof dies at, or null when the flow is over
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceProfileFlowStep(
+        ActingSession $acting,
+        string $operation,
+        ?string $step,
+        ?string $address = null,
+        ?string $target = null,
+        ?int $expiresAt = null,
+    ): void {
+        $this->handOff(
+            HilosSignalConstants::HILOS_PROFILE_FLOW_STEP,
+            new ProfileFlowStepSignalData(
+                $acting->sessionToken,
+                $acting->userId,
+                $operation,
+                $step,
+                $address,
+                $target,
+                $expiresAt,
+                $acting->acceptKey,
+                $this->currentActionRequestId(),
+                $this->currentAction,
+            ),
         );
     }
 
