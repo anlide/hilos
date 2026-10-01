@@ -391,7 +391,7 @@ test('signs in by a phone code over every channel the demo registers', async ({
     await clickSubmit(page.getByTestId('auth-submit'))
     await continueFromDone(page)
 
-    await expect(page.getByTestId('self-user')).toHaveText(phone)
+    await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
 
     // The next leg starts from a guest.
     await logout(page)
@@ -422,7 +422,7 @@ test('signs in by a phone code over every channel the demo registers', async ({
     await clickSubmit(page.getByTestId('auth-submit'))
     await continueFromDone(page)
 
-    await expect(page.getByTestId('self-user')).toHaveText(phone)
+    await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
   })
 })
 

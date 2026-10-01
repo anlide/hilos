@@ -56,6 +56,12 @@ use Random\RandomException;
  */
 abstract class AbstractLibraryCommands
 {
+    private const string GENERATED_ACCOUNT_NAME_PREFIX = 'User';
+
+    private const int GENERATED_ACCOUNT_NAME_MIN_NUMBER = 100000;
+
+    private const int GENERATED_ACCOUNT_NAME_NUMBER_RANGE = 900000;
+
     /**
      * @param AbstractUsersLibraryAgent $library Library whose seams and frames this group runs on
      */
@@ -318,6 +324,20 @@ abstract class AbstractLibraryCommands
         $atPosition = strpos($email, '@');
 
         return $atPosition === false ? $email : substr($email, 0, $atPosition);
+    }
+
+    /**
+     * Names an account whose sign-in has no name fit to show: a passkey without an
+     * address (HIL-1106) or a phone code (HIL-1176). The name is not unique and can
+     * be changed in Profile.
+     *
+     * @param int $draw Non-negative number from which the six digits are derived
+     * @return string Generated account name
+     */
+    protected function generatedAccountName(int $draw): string
+    {
+        return self::GENERATED_ACCOUNT_NAME_PREFIX
+            . (self::GENERATED_ACCOUNT_NAME_MIN_NUMBER + $draw % self::GENERATED_ACCOUNT_NAME_NUMBER_RANGE);
     }
 
     /**

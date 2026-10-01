@@ -60,6 +60,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
     private const string TEST_AGENT_ID = 'test-agent';
     private const string CODE = '424242';
     private const string WRONG_CODE = '111111';
+    private const string PHONE_ACCOUNT_NAME = 'User424242';
     private const int TTL_SECONDS = 900;
 
     /**
@@ -89,7 +90,11 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
 
             $userId = $identity->userId;
             $this->assertNotNull($userId);
-            $this->assertSame($phone, Hilos::$db->users[$userId]?->name, 'The account is named by its number');
+            $this->assertMatchesRegularExpression(
+                '/^User[1-9]\\d{5}$/',
+                Hilos::$db->users[$userId]?->name,
+                'The account is named User and six digits, never by its number',
+            );
             $this->assertSame(
                 1,
                 EntityEventUserRegistration::count([EntityEventUserRegistration::target_user_id => $userId]),
@@ -418,7 +423,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
      */
     private function seedPhoneAccount(string $phone): int
     {
-        $userId = (int)Hilos::$db->users->actions->createWithName($phone)->id;
+        $userId = (int)Hilos::$db->users->actions->createWithName(self::PHONE_ACCOUNT_NAME)->id;
         Hilos::$db->identities->createSmsIdentity($userId, $phone);
 
         return $userId;

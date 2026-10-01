@@ -316,6 +316,10 @@ same questions again, because seconds pass between the two.
   receives `passkey:<credential id>` as the sign-in identifier. This browser's own
   reservation, if it had one, is released; nobody else's is touched.
 
+  An account registered by a code sent to a phone (SMS or Telegram, HIL-1176) has
+  the same `User` plus six digits form. Its digits are random at landing, when the
+  code is checked; the phone number never becomes its name.
+
 - **The setting** is `auth.passkey.allow_unproven_address`
   (`PasskeyAddressPolicy::SETTING_KEY`), a boolean in the sign-in method catalog
   fragment (`AuthMethodSettingsCatalog`), **off by default** in the framework.

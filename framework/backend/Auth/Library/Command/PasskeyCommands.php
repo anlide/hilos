@@ -91,13 +91,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
      */
     private const string NEW_ACCOUNT_HANDLE_SCOPE = 'new-account:';
 
-    private const string NEW_ACCOUNT_NAME_PREFIX = 'User';
-
     private const string NEW_ACCOUNT_NAME_SCOPE = 'passkey-account-name:';
-
-    private const int NEW_ACCOUNT_NAME_MIN_NUMBER = 100000;
-
-    private const int NEW_ACCOUNT_NAME_NUMBER_RANGE = 900000;
 
     /**
      * Mints WebAuthn registration options for the signed-in user (HIL-284).
@@ -823,7 +817,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Derives the same non-unique name for the options and the account, without storing a draft.
+     * Derives the number for the shared account name from both submits without storing a draft.
      *
      * @param WebAuthnConfig $config Resolved WebAuthn configuration (challenge secret)
      * @param string $challenge Challenge shared by both submits
@@ -833,8 +827,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
     {
         $digest = hash_hmac('sha256', self::NEW_ACCOUNT_NAME_SCOPE . $challenge, $config->challengeSecret, true);
 
-        return self::NEW_ACCOUNT_NAME_PREFIX
-            . (self::NEW_ACCOUNT_NAME_MIN_NUMBER + unpack('N', $digest)[1] % self::NEW_ACCOUNT_NAME_NUMBER_RANGE);
+        return $this->generatedAccountName(unpack('N', $digest)[1]);
     }
 
     /**

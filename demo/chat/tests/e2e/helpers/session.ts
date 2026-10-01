@@ -550,8 +550,8 @@ const EMAIL_ADD_SUBJECT = 'Confirm your email address'
  * change that breaks it for a user breaks it here too.
  *
  * @param page Page starting from any location (it navigates to '/' and '/profile/sign-in').
- * @returns The account's proven email, its display name (the phone the user was
- *          minted from), and its durable user id.
+ * @returns The account's proven email, its display name (User and six digits,
+ *          as a phone sign-up names the account), and its durable user id.
  */
 export async function signUpWithVerifiedEmail(
   page: Page,
@@ -563,7 +563,8 @@ export async function signUpWithVerifiedEmail(
   await page.getByTestId('message-signin').click()
   const loginCode = await signInByPhone(page, phone)
 
-  await expect(page.getByTestId('self-user')).toHaveText(phone)
+  await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
+  const name = await page.getByTestId('self-user').innerText()
   const userId = Number(await page.getByTestId('self-user-id').textContent())
 
   // Step 1 of the wizard: name the address. It is only offered to a user with
@@ -601,5 +602,5 @@ export async function signUpWithVerifiedEmail(
   await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
   await expect(page.getByTestId('profile-password-change')).toBeVisible()
 
-  return { email, name: phone, userId }
+  return { email, name, userId }
 }

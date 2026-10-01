@@ -140,6 +140,9 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * reaches every OTHER session on this number rides the second one - the browsers
      * racing it are told the number is taken by the process that can see them.
      *
+     * A new account is named User plus six random digits, never its phone number:
+     * participants in a chat room can see the account name (HIL-1176).
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param ConfirmPhoneCodeActionDTO $dto Parsed confirm payload (phone, code)
      * @return ?AuthFlowOutcome The rollback to the identifier step, or null when the session holder answers
@@ -149,6 +152,7 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * @throws InvalidFormatException When the proven number is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification, the account, identity, or reservation write fails
+     * @throws RandomException When the platform CSPRNG cannot draw the new account name's digits
      */
     public function confirmPhoneCode(string $acceptKey, ConfirmPhoneCodeActionDTO $dto): ?AuthFlowOutcome
     {
@@ -183,6 +187,6 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
             );
         }
 
-        return $this->landRegistration($acting, $phone, $phone);
+        return $this->landRegistration($acting, $phone, $this->generatedAccountName(random_int(0, PHP_INT_MAX)));
     }
 }

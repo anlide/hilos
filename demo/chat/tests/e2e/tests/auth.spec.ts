@@ -1489,7 +1489,7 @@ test('signs in with the code delivered over Telegram', async ({ page }) => {
   await clickSubmit(page.getByTestId('auth-submit'))
   await continueFromDone(page)
 
-  await expect(page.getByTestId('self-user')).toHaveText(phone)
+  await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
 })
 
 test('leaves a number that is not on Telegram free to sign in by SMS', async ({
@@ -1528,7 +1528,7 @@ test('leaves a number that is not on Telegram free to sign in by SMS', async ({
   await clickSubmit(page.getByTestId('auth-submit'))
   await continueFromDone(page)
 
-  await expect(page.getByTestId('self-user')).toHaveText(phone)
+  await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
 })
 
 test('says the code could not be sent when the Telegram gateway fails the send', async ({

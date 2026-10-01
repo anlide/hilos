@@ -314,7 +314,7 @@ export async function signInByPhone(page: Page): Promise<string> {
   await typeInto(page.getByTestId('auth-code'), await waitForSmsCode(phone))
   await clickSubmit(page.getByTestId('auth-submit'))
   await continueFromDone(page)
-  await expect(page.getByTestId('self-user')).toHaveText(phone)
+  await expect(page.getByTestId('self-user')).toHaveText(/^User[1-9]\d{5}$/)
 
   return phone
 }
