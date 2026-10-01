@@ -110,7 +110,11 @@ async function isolate(tab: Page, key: string): Promise<void> {
  * @param key Catalog key to write.
  * @param value Value to write, as the field takes it.
  */
-async function setSetting(tab: Page, key: string, value: string): Promise<void> {
+async function setSetting(
+  tab: Page,
+  key: string,
+  value: string,
+): Promise<void> {
   await isolate(tab, key)
   await setCustomSetting(tab, key, value)
 
@@ -118,7 +122,9 @@ async function setSetting(tab: Page, key: string, value: string): Promise<void> 
   // was accepted and written; the row then reads as a custom value rather than
   // as the catalog default it was.
   await expect(tab.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
-  await expect(tab.getByTestId(`${ROW_ID_PREFIX}${key}`)).toContainText('custom')
+  await expect(tab.getByTestId(`${ROW_ID_PREFIX}${key}`)).toContainText(
+    'custom',
+  )
 }
 
 /**
@@ -144,13 +150,15 @@ async function resetSetting(tab: Page, key: string): Promise<void> {
  * @param page The tab holding the table.
  */
 async function rowKeys(page: Page): Promise<string[]> {
-  return page.locator(`[data-id^="${ROW_ID_PREFIX}"]`).evaluateAll(
-    (rows, prefix) =>
-      rows.map((row) =>
-        (row.getAttribute('data-id') ?? '').slice(prefix.length),
-      ),
-    ROW_ID_PREFIX,
-  )
+  return page
+    .locator(`[data-id^="${ROW_ID_PREFIX}"]`)
+    .evaluateAll(
+      (rows, prefix) =>
+        rows.map((row) =>
+          (row.getAttribute('data-id') ?? '').slice(prefix.length),
+        ),
+      ROW_ID_PREFIX,
+    )
 }
 
 /**

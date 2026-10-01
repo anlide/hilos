@@ -4,7 +4,8 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 // speaks. The Playwright runner has no PHP, so the e2e sets the lag over the wire
 // directly; the master answers it itself and writes the node's lag row, which the
 // workers serving the tables read on every tick (HIL-1020).
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
+const COMMAND_HOST =
+  process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // The master answers out of its own memory, without parking the request for an

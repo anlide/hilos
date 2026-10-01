@@ -150,6 +150,8 @@ prerender are not finalized here yet.
 |---------|-------------|
 | `composer run frontend:install` | install frontend npm dependencies |
 | `composer run frontend:check` | type-check (`vue-tsc`) |
+| `composer run frontend:lint` | lint (`eslint . --max-warnings 0`) |
+| `composer run frontend:format-check` | check formatting (`prettier --check .`) |
 | `composer run frontend:build` | production build (`vite build` → `dist/`) |
 | `composer run frontend:logs` | follow the Vite dev server logs |
 
@@ -211,7 +213,7 @@ Tests select elements by stable `data-id` attributes only.
 
 | Command | Description |
 |---------|-------------|
-| `composer run test:check` | install + typecheck the frontend app (test toolchain) |
+| `composer run test:check` | install + typecheck, lint and format-check the frontend app; lint and format-check the e2e suite (test toolchain) |
 | `composer run test:e2e-build` | build the frontend artifact (`frontend/dist`) |
 | `composer run test:e2e-install` | install the Playwright runner dependencies |
 | `composer run test:e2e-check` | typecheck the e2e test code (in the runner) |

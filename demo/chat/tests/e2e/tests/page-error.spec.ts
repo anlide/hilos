@@ -17,7 +17,9 @@ test('shows the 404 error page for a non-existent user', async ({ page }) => {
   await expect(error).toContainText('Page Not Found')
 })
 
-test('clears the error page when navigating home in place', async ({ page }) => {
+test('clears the error page when navigating home in place', async ({
+  page,
+}) => {
   let fullLoads = 0
   page.on('load', () => {
     fullLoads += 1

@@ -6,7 +6,10 @@
 // computed here from the secret the enrolment screen prints, as any app would.
 import { test, expect, type Browser, type Page } from '@playwright/test'
 
-import { enableEmailChannel, shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  enableEmailChannel,
+  shownByTestId,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
 import { expectPageReady, gotoAuthReturn, gotoPage } from '../helpers/page'

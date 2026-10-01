@@ -139,7 +139,9 @@ test.describe('admin rights and their confirmation', () => {
       await clickSubmit(page.getByTestId('hilos-user-admin-open'))
       await expect(page.getByTestId('modal')).toContainText("Confirm it's you")
       await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-      await clickSubmit(page.getByTestId('hilos-user-lifecycle-step-up-confirm'))
+      await clickSubmit(
+        page.getByTestId('hilos-user-lifecycle-step-up-confirm'),
+      )
       await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
       await expect(page.getByTestId('modal')).toBeHidden()
       await expect(page.getByTestId('hilos-toast-success')).toContainText(

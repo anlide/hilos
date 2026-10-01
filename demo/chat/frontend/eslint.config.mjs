@@ -11,7 +11,7 @@ import configPrettier from 'eslint-config-prettier'
 export default tseslint.config(
   // src/generated/** is the license inventory snapshot a framework generator
   // writes before every build, check and dev start — it is not hand-authored code.
-  { ignores: ['dist/**', 'dist-prerender/**', 'src/generated/**'] },
+  { ignores: ['dist/**', 'dist-prerender/**', '.vite/**', 'src/generated/**'] },
   js.configs.recommended,
   // As of PhpStorm 2026.1, the IDE type inspection falsely flags the next line —
   // it rejects typescript-eslint's CompatibleConfigArray for config()'s parameter,
@@ -28,6 +28,12 @@ export default tseslint.config(
     // vue-tsc the same way, so disable it here too — otherwise DOM globals used as
     // types (e.g. MouseEvent) are false-flagged.
     rules: { 'no-undef': 'off' },
+  },
+  // public/sw.js is the web-push service worker (HIL-199): a classic worker
+  // script, not an application module. Its only global is self.
+  {
+    files: ['public/sw.js'],
+    languageOptions: { globals: { self: 'readonly' } },
   },
   configPrettier,
 )

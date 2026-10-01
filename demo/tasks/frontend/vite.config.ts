@@ -58,7 +58,8 @@ export default defineConfig(({ mode }) => {
       hmr: env.VITE_DISABLE_HMR ? false : undefined,
       proxy: {
         '/_hilos/data-export': {
-          target: env.VITE_DATA_EXPORT_TARGET || 'http://tasks-daemon-local:8090',
+          target:
+            env.VITE_DATA_EXPORT_TARGET || 'http://tasks-daemon-local:8090',
           changeOrigin: true,
         },
         '/ws': {

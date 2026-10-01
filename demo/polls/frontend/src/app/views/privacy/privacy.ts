@@ -12,10 +12,7 @@ import { actions, connection } from '../../bootstrap/connection'
   selector: 'app-privacy',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosPrivacyPage],
-  template: `<hilos-privacy-page
-    [connection]="connection"
-    [actions]="actions"
-  >
+  template: `<hilos-privacy-page [connection]="connection" [actions]="actions">
     <p>
       This demo stores only the data needed to show its real-time features: your
       chosen display name and the votes you cast.

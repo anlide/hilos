@@ -12,10 +12,7 @@ import { actions, connection } from '../../bootstrap/connection.js'
   selector: 'app-privacy',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosPrivacyPage],
-  template: `<hilos-privacy-page
-    [connection]="connection"
-    [actions]="actions"
-  >
+  template: `<hilos-privacy-page [connection]="connection" [actions]="actions">
     <p>
       This demo stores what an account and its sign-in need: your email address,
       your password in hashed form, the display name taken from the address, the

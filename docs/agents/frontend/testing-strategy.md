@@ -560,8 +560,9 @@ is in [build-and-docker.md](build-and-docker.md).
 
 One root aggregate answers "is the whole frontend green": `composer run
 test:frontend:all`. It installs and builds the SDK, runs the SDK checks
-(typecheck, unit, lint, format), then for every demo runs the app typecheck and
-the full e2e cycle. The SDK build comes first because consumers resolve
+(typecheck, unit, lint, format), then for every demo runs the frontend
+typecheck, lint and format-check, the e2e package's lint and format-check,
+and then the full e2e cycle. The SDK build comes first because consumers resolve
 `@hilos/*` to the built `dist` ([sdk-packaging.md](sdk-packaging.md)), so the aggregate passes
 on a fresh clone. Run it at milestones and before handing a change over.
 

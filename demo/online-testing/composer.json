@@ -62,6 +62,8 @@
         "pma-stop": "docker compose -f docker/docker-compose.local.yml stop online-testing-phpmyadmin-local",
         "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm online-testing-frontend-cli-local npm install",
         "frontend:check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm online-testing-frontend-cli-local npm run check",
+        "frontend:lint": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm online-testing-frontend-cli-local npm run lint",
+        "frontend:format-check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm online-testing-frontend-cli-local npm run format:check",
         "frontend:build": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm online-testing-frontend-cli-local npm run build",
         "frontend:logs": "docker compose -f docker/docker-compose.local.yml logs -f online-testing-frontend-local",
         "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm online-testing-cli-test composer update phpunit/phpunit --no-interaction",
@@ -77,7 +79,11 @@
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm online-testing-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm online-testing-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm online-testing-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
-        "test:check": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm online-testing-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run check\"",
+        "test:check": [
+            "docker compose -f docker/docker-compose.test.yml --profile cli run --rm online-testing-frontend-cli-test sh -c \"set -e; node ../../../framework/frontend/scripts/npm-install-if-stale.mjs; echo '--- frontend: check'; npm run check; echo '--- frontend: lint'; npm run lint; echo '--- frontend: format-check'; npm run format:check\"",
+            "@test:e2e-install",
+            "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm online-testing-e2e-runner sh -c \"set -e; echo '--- e2e: lint'; npm run lint; echo '--- e2e: format-check'; npm run format:check\""
+        ],
         "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm online-testing-frontend-cli-test sh -c \"node ../../../framework/frontend/scripts/npm-install-if-stale.mjs && npm run build\"",
         "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm online-testing-e2e-runner node ../../../../framework/frontend/scripts/npm-install-if-stale.mjs",
         "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm online-testing-e2e-runner npm run check",

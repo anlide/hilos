@@ -44,7 +44,9 @@ test('a held window change draws the row skeleton, and the window it was waiting
   const rowCount = await rows.count()
   const rowKeys = async (): Promise<string> =>
     JSON.stringify(
-      await rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-id'))),
+      await rows.evaluateAll((els) =>
+        els.map((el) => el.getAttribute('data-id')),
+      ),
     )
   const firstKeys = await rowKeys()
 
@@ -84,7 +86,9 @@ test('facet counts held back leave the options bare while the table stands, and 
   await expect(scopeToggle).toHaveAttribute('aria-expanded', 'true')
 
   // The window is here and the options are drawn, without a number beside any.
-  await expect(page.locator('[data-id^="hilos-table-facet-scope-"]')).toHaveCount(0)
+  await expect(
+    page.locator('[data-id^="hilos-table-facet-scope-"]'),
+  ).toHaveCount(0)
 
   await clearTableLag()
 

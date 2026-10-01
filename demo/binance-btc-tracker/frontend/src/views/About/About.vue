@@ -13,20 +13,19 @@ defineOptions({ name: 'AboutPage' })
   <HilosAboutPage>
     <p class="lead">
       BTC Tracker is a demonstration of the Hilos framework — background
-      computation over a live market, drawn on a real-time, no-refresh
-      WebSocket application.
+      computation over a live market, drawn on a real-time, no-refresh WebSocket
+      application.
     </p>
     <p>
-      It is going to follow BTC/USDT: take every minute from the Binance
-      stream, fold it into fifteen timeframes, compute RSI(14) on each, find
-      the signals the chains of zones and divergences give, and let a robot
-      open and close paper trades on them — with a Telegram bot telling you
-      what happened.
+      It is going to follow BTC/USDT: take every minute from the Binance stream,
+      fold it into fifteen timeframes, compute RSI(14) on each, find the signals
+      the chains of zones and divergences give, and let a robot open and close
+      paper trades on them — with a Telegram bot telling you what happened.
     </p>
     <p class="mb-0">
-      Today it is the empty shell of that application: you can create an
-      account and sign in, and the home page says who is looking. The chart
-      and the rest arrive one by one.
+      Today it is the empty shell of that application: you can create an account
+      and sign in, and the home page says who is looking. The chart and the rest
+      arrive one by one.
     </p>
   </HilosAboutPage>
 </template>

@@ -153,7 +153,10 @@ export async function inspectProtectedMode(
     refuse: (message) => new ProtectedModeCommandRefused(message),
   })
 
-  return (await inspect(INSPECT_COMMAND, {})) as unknown as ProtectedModeSnapshot
+  return (await inspect(
+    INSPECT_COMMAND,
+    {},
+  )) as unknown as ProtectedModeSnapshot
 }
 
 /**

@@ -12,11 +12,16 @@ Common ground (containers, connection, e2e, stable ids) is in
   supports vite 7 (6.x requires vite 8).
 - `package.json`: deps `react@^19` + `react-dom`; devDeps `vite@^7`,
   `@vitejs/plugin-react@^5`, `@types/react`, `@types/react-dom`, `typescript`,
-  `sass-embedded`; deps `@hilos/react` + `@hilos/core` as local `file:` paths
-  into `framework/frontend/{react,core}`. The `prebuild` hook builds the SDK
+  `sass-embedded`, and the SDK lint and format ranges (`@eslint/js`, `eslint`,
+  `eslint-config-prettier`, `prettier`, `typescript-eslint`); deps
+  `@hilos/react` + `@hilos/core` as local `file:` paths into
+  `framework/frontend/{react,core}`. The `prebuild` hook builds the SDK
   when it is stale; `prebuild`, `precheck` and `predev` write the license
   inventory the License page draws. Type checks via plain `tsc`
-  (`npm run check`); `tsconfig.json` adds `"jsx": "react-jsx"`.
+  (`npm run check`); `tsconfig.json` adds `"jsx": "react-jsx"`. `lint` is
+  `eslint . --max-warnings 0`.
+- `eslint.config.mjs`, `.prettierrc.json` and `.prettierignore` repeat the flat
+  SDK baseline (no React plugin; the SDK has none).
 - Start the lockfile from an existing React demo's `package-lock.json` and let
   `npm install` prune it, rather than resolving from scratch, so `react` stays on
   the version the SDK workspace resolved.

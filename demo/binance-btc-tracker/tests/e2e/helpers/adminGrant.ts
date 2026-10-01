@@ -9,7 +9,8 @@ import { signUpPerson } from './session'
 // so the e2e drives the commands over the wire directly; this still exercises
 // the real CommandServer parking, the framework's routing, and the demo's own
 // seams behind it.
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
+const COMMAND_HOST =
+  process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 const REPLY_TIMEOUT_MS = 5_000
 
@@ -32,7 +33,10 @@ const SESSION_COOKIE_PREFIX = 'hilos_session_token_'
 const ROTATE_COOKIE_SUFFIX = '_rotate'
 
 function isSessionCookie(name: string): boolean {
-  return name.startsWith(SESSION_COOKIE_PREFIX) && !name.endsWith(ROTATE_COOKIE_SUFFIX)
+  return (
+    name.startsWith(SESSION_COOKIE_PREFIX) &&
+    !name.endsWith(ROTATE_COOKIE_SUFFIX)
+  )
 }
 
 /**

@@ -158,7 +158,10 @@ async function grantAccess(
  * @param account The account to sign in as.
  * @returns The authorization code the provider issued.
  */
-async function codeFor(page: Page, account: StandOAuthAccount): Promise<string> {
+async function codeFor(
+  page: Page,
+  account: StandOAuthAccount,
+): Promise<string> {
   const callback = await grantAccess(page, account, `state-${account.subject}`)
 
   return callback.get('code') ?? ''
@@ -230,9 +233,12 @@ async function readUserInfo(
   profile: StandOAuthProfile,
   token: string,
 ): Promise<Answer> {
-  const response = await fetch(`${STAND_GATEWAY_URL}/oauth/${profile}/userinfo`, {
-    headers: { Authorization: `Bearer ${token}`, 'User-Agent': USER_AGENT },
-  })
+  const response = await fetch(
+    `${STAND_GATEWAY_URL}/oauth/${profile}/userinfo`,
+    {
+      headers: { Authorization: `Bearer ${token}`, 'User-Agent': USER_AGENT },
+    },
+  )
 
   return { status: response.status, body: await response.text() }
 }
@@ -393,7 +399,9 @@ test('spends an authorization code exactly once', async ({ page }) => {
   // would have been; Google answers a status of its own.
   const gitHubAgain = await exchange('github', { code: gitHubCode })
   expect(gitHubAgain.status).toBe(200)
-  expect(payloadOf(gitHubAgain)).toMatchObject({ error: 'bad_verification_code' })
+  expect(payloadOf(gitHubAgain)).toMatchObject({
+    error: 'bad_verification_code',
+  })
 
   const atGoogle = await declareOAuthAccount('google')
   const googleCode = await codeFor(page, atGoogle)
@@ -404,7 +412,9 @@ test('spends an authorization code exactly once', async ({ page }) => {
   expect(payloadOf(googleAgain)).toMatchObject({ error: 'invalid_grant' })
 })
 
-test('issues an expired code once when a spec ordered one', async ({ page }) => {
+test('issues an expired code once when a spec ordered one', async ({
+  page,
+}) => {
   // The code is refused by the exchange's ordinary check of its lifetime, so each provider
   // says it in its own form — the same two forms a code spent twice gets above.
   const refusals: [StandOAuthProfile, number, string][] = [

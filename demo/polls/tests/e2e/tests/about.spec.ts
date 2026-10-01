@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test'
-import { watchHeight, watchTop } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  watchHeight,
+  watchTop,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { gotoPage } from '../helpers/page'
 
 // The support block at the end of /about (HIL-840), as a guest: no session is

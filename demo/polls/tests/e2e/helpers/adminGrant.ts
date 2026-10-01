@@ -31,7 +31,10 @@ const SESSION_COOKIE_PREFIX = 'hilos_session_token_'
 const ROTATE_COOKIE_SUFFIX = '_rotate'
 
 function isSessionCookie(name: string): boolean {
-  return name.startsWith(SESSION_COOKIE_PREFIX) && !name.endsWith(ROTATE_COOKIE_SUFFIX)
+  return (
+    name.startsWith(SESSION_COOKIE_PREFIX) &&
+    !name.endsWith(ROTATE_COOKIE_SUFFIX)
+  )
 }
 
 /**

@@ -14,10 +14,10 @@ defineOptions({ name: 'PrivacyPage' })
 <template>
   <HilosPrivacyPage :connection="connection" :actions="actions">
     <p>
-      This demo stores what an account and its sign-in need: your email
-      address, your password in hashed form, the display name taken from the
-      address, the terms you accepted, your browser sessions, and — for a
-      while — the network address of repeated failed attempts.
+      This demo stores what an account and its sign-in need: your email address,
+      your password in hashed form, the display name taken from the address, the
+      terms you accepted, your browser sessions, and — for a while — the network
+      address of repeated failed attempts.
     </p>
     <p class="mb-0">
       No analytics or third-party trackers are used, and demo data may be reset

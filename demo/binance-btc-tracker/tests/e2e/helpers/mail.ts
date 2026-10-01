@@ -7,7 +7,8 @@ import { mailWaitTimeout } from '../../../../../framework/frontend/scripts/timeo
 // verification code, a recovery code — lands in a mailbox the runner can read
 // over HTTP. This is the only place a spec can prove a message actually left the
 // node: the daemon's own log saying `sent` is the daemon's word for it.
-const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://binance-btc-tracker-mailpit-test:8025'
+const MAILPIT_URL =
+  process.env.MAILPIT_URL ?? 'http://binance-btc-tracker-mailpit-test:8025'
 
 /**
  * How long a wait on a letter may run on this host, in milliseconds.

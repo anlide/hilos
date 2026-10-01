@@ -7,9 +7,11 @@
 import { RenderMode, type ServerRoute } from '@angular/ssr'
 import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES } from '@hilos/core'
 
-export const serverRoutes: ServerRoute[] = HILOS_FOOTER_LINKS.flatMap(({ page }) => {
-  const route = HILOS_PAGE_ROUTES[page]
-  return route === undefined
-    ? []
-    : [{ path: route.replace(/^\//, ''), renderMode: RenderMode.Prerender }]
-})
+export const serverRoutes: ServerRoute[] = HILOS_FOOTER_LINKS.flatMap(
+  ({ page }) => {
+    const route = HILOS_PAGE_ROUTES[page]
+    return route === undefined
+      ? []
+      : [{ path: route.replace(/^\//, ''), renderMode: RenderMode.Prerender }]
+  },
+)

@@ -140,9 +140,9 @@ test.fixme('shows the connected user as online with a live session', async ({
   // (the project browser context returned null), so the live user rendered as
   // offline with 0 sessions.
   await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
-  await expect(
-    page.locator('[data-id="hilos-user-detail"] .badge'),
-  ).toHaveText('online')
+  await expect(page.locator('[data-id="hilos-user-detail"] .badge')).toHaveText(
+    'online',
+  )
 })
 
 test('a rename in one tab lands at once in another, raising no Apply', async ({

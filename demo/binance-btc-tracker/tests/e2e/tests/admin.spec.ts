@@ -68,12 +68,18 @@ test('cold-loads a parametrized admin page through the framework shell', async (
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Deliveries')
 
   // The framework breadcrumb keeps channelId in the channel's own address.
-  const channel = page.getByTestId('hilos-breadcrumb-hilos_communications_channel')
+  const channel = page.getByTestId(
+    'hilos-breadcrumb-hilos_communications_channel',
+  )
   await expect(channel).toHaveAttribute('href', '/hilos/communications/email')
-  const communications = page.getByTestId('hilos-breadcrumb-hilos_communications')
+  const communications = page.getByTestId(
+    'hilos-breadcrumb-hilos_communications',
+  )
   await expect(communications).toHaveText('Communications')
   await communications.click()
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Communications')
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText(
+    'Communications',
+  )
   expect(new URL(page.url()).pathname).toBe('/hilos/communications')
 })
 
@@ -129,9 +135,9 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
   // proof of the drop is the NEXT socket rather than a glimpse of the
   // disconnected label, which a fast reconnect can pass through unseen.
   await dropSocket(page)
-  await expect.poll(() => sockets, { timeout: 15_000 }).toBeGreaterThan(
-    socketsBeforeDrop,
-  )
+  await expect
+    .poll(() => sockets, { timeout: 15_000 })
+    .toBeGreaterThan(socketsBeforeDrop)
   await expect(page.getByTestId('conn-state')).toHaveText('connected', {
     timeout: 15_000,
   })
@@ -165,7 +171,8 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
   expect(
     frames.filter(
       (frame) =>
-        frame.type === 'subscription_page_error' && frame.data?.httpCode === 401,
+        frame.type === 'subscription_page_error' &&
+        frame.data?.httpCode === 401,
     ),
   ).toEqual([])
 })

@@ -21,8 +21,8 @@ import { HilosAboutPage } from '@hilos/angular'
       using the same SDK that powers the Vue and React demos.
     </p>
     <p class="mb-0">
-      The page you are reading is a framework-declared static page: the framework
-      owns its route and layout, while this project supplies the text.
+      The page you are reading is a framework-declared static page: the
+      framework owns its route and layout, while this project supplies the text.
     </p>
   </hilos-about-page>`,
 })

@@ -1,5 +1,9 @@
 import type { Locator, Page } from '@playwright/test'
-import { ROW_PREFIX, ROWS, TABLE } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  ROW_PREFIX,
+  ROWS,
+  TABLE,
+} from '../../../../../framework/frontend/e2e/index.js'
 
 // What a spec reads off a live viewport table (HilosViewportTable). Every handle
 // is one the table's own registry names (docs/agents/frontend/table-subscription.md,

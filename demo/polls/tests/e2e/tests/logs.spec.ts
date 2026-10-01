@@ -58,7 +58,9 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(page.getByTestId('hilos-log-stream')).toBeVisible()
   await expect(page.getByTestId('hilos-log-level')).toBeVisible()
   await expect(page.getByTestId('hilos-log-pane')).toBeVisible()
-  await expect(page.getByTestId('hilos-log-count')).toHaveText('0 entries shown')
+  await expect(page.getByTestId('hilos-log-count')).toHaveText(
+    '0 entries shown',
+  )
   // The catalog rides a frame the backend sends ahead of page_response, and the
   // outlet mounts the view only after that answer: the frame is held for the
   // late listener (HIL-873), so the pane asks for a stream instead of saying
@@ -82,7 +84,9 @@ test('renders every screen of the logs section over the live socket', async ({
   // A stand that has never applied a mode has no settings rows at all, so the values
   // in force are the defaults — and those are what the chosen mode declares, so its
   // card opens with no differences (HIL-906).
-  await expect(page.getByTestId('hilos-setting-preset-differences')).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-setting-preset-differences'),
+  ).toHaveCount(0)
 
   // And the clicks themselves, which are the only writes the section makes: both were
   // refused until the agent serving this screen owned the settings it writes (HIL-888),
@@ -92,12 +96,16 @@ test('renders every screen of the logs section over the live socket', async ({
   const retentionKey = 'logs.archive_retention.max_age_seconds'
   await gotoPage(page, '/hilos/settings')
   await page.getByTestId('hilos-table-search').fill(retentionKey)
-  await expect(page.getByTestId(`hilos-table-row-${retentionKey}`)).toBeVisible()
+  await expect(
+    page.getByTestId(`hilos-table-row-${retentionKey}`),
+  ).toBeVisible()
   await setCustomSetting(page, retentionKey, '1209600')
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
 
   await gotoPage(page, '/hilos/logs/settings')
-  await expect(page.getByTestId('hilos-setting-preset-differences')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-setting-preset-differences'),
+  ).toBeVisible()
 
   // Putting them back is the gesture the defect was found on, and it asks nothing
   // first: the card is already the chosen one.
@@ -111,7 +119,9 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(page.getByTestId('hilos-toast-success')).toHaveCount(0)
   // The differences going is the new state arriving over the socket, not a guess about
   // when it will: the backend answers the action with nothing and pushes the state.
-  await expect(page.getByTestId('hilos-setting-preset-differences')).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-setting-preset-differences'),
+  ).toHaveCount(0)
 
   // Choosing another mode, which is the second gesture and the second sentence. With
   // the values back there is nothing of anyone's own to overwrite, so no confirmation

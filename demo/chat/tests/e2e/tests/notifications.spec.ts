@@ -1,6 +1,9 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 
-import { openBell, unreadBadge } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  openBell,
+  unreadBadge,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { dictateModerationVerdict } from '../helpers/moderation'

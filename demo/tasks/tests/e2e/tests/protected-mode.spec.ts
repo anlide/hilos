@@ -144,7 +144,8 @@ async function watchFirstFrame(page: Page): Promise<void> {
 function readFirstFrameWatch(page: Page): Promise<BootWatch | null> {
   return page.evaluate(
     (hook) =>
-      (window as unknown as Record<string, BootWatch | undefined>)[hook] ?? null,
+      (window as unknown as Record<string, BootWatch | undefined>)[hook] ??
+      null,
     BOOT_WATCH_HOOK,
   )
 }

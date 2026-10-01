@@ -12,7 +12,9 @@ test('answers 404 for a page the project does not serve', async ({ page }) => {
   await expect(error).toContainText('Page Not Found')
 })
 
-test('draws no card for a page the project does not serve', async ({ page }) => {
+test('draws no card for a page the project does not serve', async ({
+  page,
+}) => {
   await grantAdminToSelf(page)
   await gotoPage(page, '/hilos')
 

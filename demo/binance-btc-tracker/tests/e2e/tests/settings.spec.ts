@@ -62,9 +62,7 @@ test('lists settings in the server window and filters from the search box', asyn
   // window); the reset restores the window and clears the box.
   const search = page.getByTestId('hilos-table-search')
   await typeInto(search, 'example_string')
-  await expect(
-    page.getByTestId('hilos-table-row-example_string'),
-  ).toBeVisible()
+  await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
   await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(1)
 
   await typeInto(search, 'zzz-no-such-setting-zzz')

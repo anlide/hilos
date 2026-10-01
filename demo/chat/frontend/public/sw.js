@@ -5,7 +5,8 @@
 // registers it with scope "/". Vite copies files under `public/` to the dist
 // root and serves them at "/" in dev too, so the SDK's registration helper can
 // register a stable "/sw.js". Kept identical across SDK apps — copy this file
-// verbatim when a React/Angular app adds the push toggle.
+// verbatim when a React/Angular app adds the push toggle. The lint block for
+// this file lives in eslint.config.mjs and is copied with the file.
 //
 // The backend push agent (`Hilos\Push\Delivery\PushDeliveryChannelAgent`) sends a
 // JSON payload shaped `{ title, body, data: { ...appData, notificationId, type } }`
@@ -13,10 +14,10 @@
 // system notification and routes a click back into the app.
 
 self.addEventListener('push', (event) => {
-  let payload = {}
+  let payload
   try {
     payload = event.data ? event.data.json() : {}
-  } catch (error) {
+  } catch {
     // A malformed or empty payload still shows a generic notice rather than
     // silently dropping the push.
     payload = {}

@@ -42,7 +42,7 @@ demo/<name>/
     phpunit.xml        # unit suite; bootstrap = backend/Bootstrap/phpunit.php
     Unit/              # at minimum: the topology registry test
     .env.example       # test DB coordinates
-    e2e/               # Playwright package (own package.json)
+    e2e/               # Playwright package (own package.json; own eslint and prettier configs)
   docker/
     Dockerfile         # php:8.4-cli + sockets/pcntl/posix/mysqli/pdo + pecl event
     Dockerfile.nginx   # nginx:alpine + envsubst + self-signed TLS entrypoint

@@ -13,13 +13,17 @@ const POLL_INTERVAL_MS = 2_000
  */
 function probeStatic(baseURL: string, agent: https.Agent): Promise<boolean> {
   return new Promise((resolve) => {
-    const request = https.request(baseURL, { method: 'HEAD', agent }, (response) => {
-      response.resume()
-      response.on('end', () => {
-        const status = response.statusCode ?? 0
-        resolve(status >= 200 && status < 400)
-      })
-    })
+    const request = https.request(
+      baseURL,
+      { method: 'HEAD', agent },
+      (response) => {
+        response.resume()
+        response.on('end', () => {
+          const status = response.statusCode ?? 0
+          resolve(status >= 200 && status < 400)
+        })
+      },
+    )
     request.on('error', () => resolve(false))
     request.end()
   })
@@ -34,7 +38,10 @@ function probeStatic(baseURL: string, agent: https.Agent): Promise<boolean> {
  * @param baseURL Stack origin, e.g. https://binance-btc-tracker-nginx-test.
  * @param agent Shared agent that tolerates the self-signed test certificate.
  */
-function probeWebSocketUpgrade(baseURL: string, agent: https.Agent): Promise<boolean> {
+function probeWebSocketUpgrade(
+  baseURL: string,
+  agent: https.Agent,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const request = https.request(`${baseURL}/ws`, {
       agent,
@@ -100,7 +107,9 @@ async function globalSetup(): Promise<void> {
   const agent = new https.Agent({ rejectUnauthorized: false })
   const deadline = Date.now() + READY_TIMEOUT_MS
 
-  await waitUntilReady(`App at ${baseURL}`, deadline, () => probeStatic(baseURL, agent))
+  await waitUntilReady(`App at ${baseURL}`, deadline, () =>
+    probeStatic(baseURL, agent),
+  )
   await waitUntilReady(`WebSocket at ${baseURL}/ws`, deadline, () =>
     probeWebSocketUpgrade(baseURL, agent),
   )

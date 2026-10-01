@@ -16,7 +16,7 @@ import {
   HilosView,
   hilosAdminViews,
   useSignal,
-} from "@hilos/react";
+} from '@hilos/react'
 import {
   AUTH_MAGIC_LINK_PATH,
   AUTH_SECOND_FACTOR_CANCEL_PATH,
@@ -25,44 +25,44 @@ import {
   HilosPages,
   hilosSessionAvatarMark,
   type AuthGate,
-} from "@hilos/core";
-import { useContext } from "react";
-import type { ComponentType } from "react";
+} from '@hilos/core'
+import { useContext } from 'react'
+import type { ComponentType } from 'react'
 
-import AuthSurface from "./auth/AuthSurface";
-import { hilosAuthContext } from "./auth/hilosAuthContext";
-import { connection } from "./bootstrap/connection";
-import { currentUserIsAdmin, currentUserName } from "./bootstrap/session";
-import { PAGE_MAIN } from "./pages/keys";
-import About from "./views/About/About";
-import HilosBackup from "./views/Hilos/Backup/Backup";
-import HilosLogsKeys from "./views/Hilos/Logs/Keys";
-import HilosLogsOverview from "./views/Hilos/Logs/Overview";
-import HilosLogsRotations from "./views/Hilos/Logs/Rotations";
-import HilosLogsSettings from "./views/Hilos/Logs/Settings";
-import HilosLogsView from "./views/Hilos/Logs/View";
-import HilosLogsWorkers from "./views/Hilos/Logs/Workers";
-import HilosMaintenance from "./views/Hilos/Maintenance/Maintenance.js";
-import HilosSecurityOauth from "./views/Hilos/Security/SecurityOauth";
-import HilosSecurityOauthProvider from "./views/Hilos/Security/SecurityOauthProvider";
-import HilosSecuritySignInMethods from "./views/Hilos/Security/SecuritySignInMethods";
-import HilosSecurityTwoFactor from "./views/Hilos/Security/SecurityTwoFactor";
-import HilosLegal from "./views/Hilos/Legal/Legal.js";
-import HilosLegalDocument from "./views/Hilos/Legal/LegalDocument.js";
-import HilosLegalRevision from "./views/Hilos/Legal/LegalRevision.js";
-import HilosLegalAcceptances from "./views/Hilos/Legal/LegalAcceptances.js";
-import HilosLegalSettings from "./views/Hilos/Legal/LegalSettings.js";
-import Profile from "./views/Profile/Profile.js";
-import ProfileSecurity from "./views/Profile/ProfileSecurity";
-import ProfileData from "./views/Profile/ProfileData.js";
-import HilosUser from "./views/Hilos/Users/User";
-import HilosUsers from "./views/Hilos/Users/Users";
-import License from "./views/License/License";
-import Main from "./views/Main/Main";
-import MainSkeleton from "./views/Main/MainSkeleton";
-import Privacy from "./views/Privacy/Privacy";
-import Settings from "./views/Hilos/Settings/Settings";
-import Terms from "./views/Terms/Terms";
+import AuthSurface from './auth/AuthSurface'
+import { hilosAuthContext } from './auth/hilosAuthContext'
+import { connection } from './bootstrap/connection'
+import { currentUserIsAdmin, currentUserName } from './bootstrap/session'
+import { PAGE_MAIN } from './pages/keys'
+import About from './views/About/About'
+import HilosBackup from './views/Hilos/Backup/Backup'
+import HilosLogsKeys from './views/Hilos/Logs/Keys'
+import HilosLogsOverview from './views/Hilos/Logs/Overview'
+import HilosLogsRotations from './views/Hilos/Logs/Rotations'
+import HilosLogsSettings from './views/Hilos/Logs/Settings'
+import HilosLogsView from './views/Hilos/Logs/View'
+import HilosLogsWorkers from './views/Hilos/Logs/Workers'
+import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.js'
+import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth'
+import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider'
+import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods'
+import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor'
+import HilosLegal from './views/Hilos/Legal/Legal.js'
+import HilosLegalDocument from './views/Hilos/Legal/LegalDocument.js'
+import HilosLegalRevision from './views/Hilos/Legal/LegalRevision.js'
+import HilosLegalAcceptances from './views/Hilos/Legal/LegalAcceptances.js'
+import HilosLegalSettings from './views/Hilos/Legal/LegalSettings.js'
+import Profile from './views/Profile/Profile.js'
+import ProfileSecurity from './views/Profile/ProfileSecurity'
+import ProfileData from './views/Profile/ProfileData.js'
+import HilosUser from './views/Hilos/Users/User'
+import HilosUsers from './views/Hilos/Users/Users'
+import License from './views/License/License'
+import Main from './views/Main/Main'
+import MainSkeleton from './views/Main/MainSkeleton'
+import Privacy from './views/Privacy/Privacy'
+import Settings from './views/Hilos/Settings/Settings'
+import Terms from './views/Terms/Terms'
 
 // The page-key → view map HilosView renders from. Pages without a mapped view
 // (other routes land later) render nothing.
@@ -124,13 +124,13 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENSE]: License,
-};
+}
 
 // The pages that draw a skeleton of their own shape while they wait for their
 // first answer (HIL-983); every other page gets the outlet's default skeleton.
 const pageSkeletons: Record<string, ComponentType> = {
   [PAGE_MAIN]: MainSkeleton,
-};
+}
 
 export interface AppProps {
   /**
@@ -138,18 +138,18 @@ export interface AppProps {
    * to open the sign-in modal over a live page, and the shell's Sign in button
    * calls it directly.
    */
-  authGate: AuthGate;
+  authGate: AuthGate
 }
 
 /** The profile root the avatar leads to (HIL-1169). */
-const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE];
+const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 
 export default function App({ authGate }: AppProps) {
-  const isAdmin = useSignal(currentUserIsAdmin);
-  const userName = useSignal(currentUserName);
+  const isAdmin = useSignal(currentUserIsAdmin)
+  const userName = useSignal(currentUserName)
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.
-  const avatarMark = useSignal(hilosSessionAvatarMark);
+  const avatarMark = useSignal(hilosSessionAvatarMark)
 
   // The magic-link confirm route (HIL-283) and the OAuth callback route
   // (HIL-281). Neither carries a page of its own — the router falls both back to
@@ -158,13 +158,13 @@ export default function App({ authGate }: AppProps) {
   // navigates home once the session upgrades. The paths come from @hilos/core
   // (HIL-409): a mail client and a provider enter them, so both halves have to
   // agree on the strings.
-  const router = useContext(HilosRouterContext);
+  const router = useContext(HilosRouterContext)
   if (!router) {
     throw new Error(
-      "App requires a HilosRouterContext provider: <HilosRouterContext.Provider value={router}>.",
-    );
+      'App requires a HilosRouterContext provider: <HilosRouterContext.Provider value={router}>.',
+    )
   }
-  const currentPath = useSignal(router.currentPath);
+  const currentPath = useSignal(router.currentPath)
 
   return (
     <HilosLayout
@@ -215,5 +215,5 @@ export default function App({ authGate }: AppProps) {
         />
       )}
     </HilosLayout>
-  );
+  )
 }

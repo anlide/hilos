@@ -48,7 +48,9 @@ export default defineConfig(({ mode }) => {
         // origin lets the session cookie (SameSite=Strict) and rotation ticket
         // ride the connection without cross-site issues; in test/prod nginx does the same.
         '/ws': {
-          target: env.VITE_WS_TARGET || 'http://binance-btc-tracker-daemon-local:8092',
+          target:
+            env.VITE_WS_TARGET ||
+            'http://binance-btc-tracker-daemon-local:8092',
           ws: true,
         },
       },

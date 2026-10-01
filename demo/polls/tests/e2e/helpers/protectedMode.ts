@@ -149,6 +149,7 @@ export async function mintProtectedModePass(): Promise<string> {
       throw new Error(
         `${PASS_COMMAND} was not answered, and ${INSPECT_COMMAND} was not answered either; ` +
           'whether a pass was minted is unknown',
+        { cause: error },
       )
     }
 
@@ -156,6 +157,7 @@ export async function mintProtectedModePass(): Promise<string> {
     throw new Error(
       `${PASS_COMMAND} was not answered; the node now holds ${snapshot.passCount} passes, ` +
         'but a pass exists only in the reply that was lost - mint another',
+      { cause: error },
     )
   }
 
@@ -206,7 +208,10 @@ export async function inspectProtectedMode(
     refuse: (message) => new ProtectedModeCommandRefused(message),
   })
 
-  return (await inspect(INSPECT_COMMAND, {})) as unknown as ProtectedModeSnapshot
+  return (await inspect(
+    INSPECT_COMMAND,
+    {},
+  )) as unknown as ProtectedModeSnapshot
 }
 
 /**

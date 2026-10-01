@@ -3,8 +3,8 @@
 // component mapped to the navigator's current page. The brand and the shell's
 // gear move between the main page and the framework dashboard with no refresh.
 // The live connection state is the shell's own indicator.
-import { ChangeDetectionStrategy, Component, inject } from "@angular/core";
-import type { Type } from "@angular/core";
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core'
+import type { Type } from '@angular/core'
 import {
   HILOS_AUTH_GATE,
   HilosAvatar,
@@ -12,22 +12,22 @@ import {
   HilosView,
   hilosAdminViews,
   hilosSignal,
-} from "@hilos/angular";
-import { HilosPages, hilosSessionAvatarMark } from "@hilos/core";
+} from '@hilos/angular'
+import { HilosPages, hilosSessionAvatarMark } from '@hilos/core'
 
-import { AuthSurface } from "./auth/authSurface.js";
-import { currentUserIsAdmin, currentUserName } from "./bootstrap/session.js";
-import { connection } from "./bootstrap/connection.js";
-import { PAGE_MAIN } from "./pages/keys.js";
-import { About } from "./views/about/about.js";
-import { License } from "./views/license/license.js";
-import { Main } from "./views/main/main.js";
-import { MainSkeleton } from "./views/main/main-skeleton.js";
-import { Privacy } from "./views/privacy/privacy.js";
-import { Terms } from "./views/terms/terms.js";
+import { AuthSurface } from './auth/authSurface.js'
+import { currentUserIsAdmin, currentUserName } from './bootstrap/session.js'
+import { connection } from './bootstrap/connection.js'
+import { PAGE_MAIN } from './pages/keys.js'
+import { About } from './views/about/about.js'
+import { License } from './views/license/license.js'
+import { Main } from './views/main/main.js'
+import { MainSkeleton } from './views/main/main-skeleton.js'
+import { Privacy } from './views/privacy/privacy.js'
+import { Terms } from './views/terms/terms.js'
 
 @Component({
-  selector: "app-root",
+  selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosAvatar, HilosLayout, HilosView],
   // The user region is ONE projected node, not two: the shell's slot is
@@ -74,15 +74,15 @@ import { Terms } from "./views/terms/terms.js";
   </hilos-layout>`,
 })
 export class App {
-  protected readonly connection = connection;
+  protected readonly connection = connection
 
-  protected readonly isAdmin = hilosSignal(currentUserIsAdmin);
+  protected readonly isAdmin = hilosSignal(currentUserIsAdmin)
 
-  protected readonly userName = hilosSignal(currentUserName);
+  protected readonly userName = hilosSignal(currentUserName)
 
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.
-  protected readonly avatarMark = hilosSignal(hilosSessionAvatarMark);
+  protected readonly avatarMark = hilosSignal(hilosSessionAvatarMark)
 
   /**
    * The application's auth gate. Injected and not taken as an input: the root
@@ -90,10 +90,10 @@ export class App {
    * button calls the gate directly while HilosView needs it to open the sign-in
    * modal over a live page.
    */
-  protected readonly authGate = inject(HILOS_AUTH_GATE);
+  protected readonly authGate = inject(HILOS_AUTH_GATE)
 
   // The class, not an instance: HilosView mounts it through ngComponentOutlet.
-  protected readonly authSurfaceType: Type<unknown> = AuthSurface;
+  protected readonly authSurfaceType: Type<unknown> = AuthSurface
 
   // The page-key → view map HilosView renders from. A page with no mapped view
   // renders nothing; a page the backend does not register is refused by the
@@ -108,11 +108,11 @@ export class App {
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,
     [HilosPages.LICENSE]: License,
-  };
+  }
 
   // The pages that draw a skeleton of their own shape while they wait for their
   // first answer (HIL-983); every other page gets the outlet's default skeleton.
   protected readonly pageSkeletons: Record<string, Type<unknown>> = {
     [PAGE_MAIN]: MainSkeleton,
-  };
+  }
 }

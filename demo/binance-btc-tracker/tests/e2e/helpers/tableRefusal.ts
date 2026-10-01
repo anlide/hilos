@@ -4,7 +4,8 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 // speaks. The Playwright runner has no PHP, so the e2e names the refused table over
 // the wire directly; the master answers it itself and writes the node's refusal
 // row, which the workers read every time they build a window (HIL-1131).
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
+const COMMAND_HOST =
+  process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // The master answers out of its own memory, without parking the request for an

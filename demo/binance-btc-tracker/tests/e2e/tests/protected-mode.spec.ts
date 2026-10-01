@@ -130,7 +130,9 @@ test('every tab of the browser that asked agrees, phase by phase', async ({
 
   // Entered for this BROWSER and for no particular socket: the accept key is left
   // empty on purpose, so whatever happens below happens to the session.
-  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
+    'active',
+  )
 
   // The tab that was already open goes to the stub without being asked to reload:
   // the entry frame leaves nobody out any more.
@@ -345,7 +347,9 @@ test('the tabs the operator already had open are raised and lowered together', a
   await gotoPage(otherTab, '/')
   await expect(otherTab.getByTestId('maintenance')).toBeHidden()
 
-  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
+    'active',
+  )
 
   // Both tabs, on the stub, by the frame alone: neither was navigated, and the tab
   // that pressed nothing is the one the old defect left looking at a live-looking
@@ -634,7 +638,9 @@ test('the operator and the admitted verifier both see the verification banner, a
 
   // Entered for the operator's browser and then ended, which is what leaves the
   // node in the verification window with them inside it.
-  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
+    'active',
+  )
   expect(await leaveProtectedMode()).toBe('verifying')
 
   // Pushed onto the tab that was already open: nothing tore it down, so this is
@@ -728,7 +734,9 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // passing on a row nobody could have created.
   await addToMaintenanceCircle(page, memberEmail)
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
-  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(CIRCLE_ONLINE)
+  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(
+    CIRCLE_ONLINE,
+  )
 
   // The member has to be HERE when the node freezes: what is photographed is the set
   // of live connections, so a tab opened afterwards is a tab that was never in it.
@@ -742,7 +750,9 @@ test('the named circle walks in with the tab it already had open, and nobody els
 
   // The freeze, entered for the operator's browser and then ended - the same two moves
   // a restore makes, and the ready in between is where the circle is photographed.
-  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
+    'active',
+  )
   expect(await leaveProtectedMode()).toBe('verifying')
 
   // The inspector counts what was named and what was admitted, and the pair is the
@@ -800,7 +810,8 @@ test('the named circle walks in with the tab it already had open, and nobody els
   await expectInsideMainPage(member)
   expect(
     await member.evaluate(
-      () => (window as Window & { hil1082Stamp?: boolean }).hil1082Stamp === true,
+      () =>
+        (window as Window & { hil1082Stamp?: boolean }).hil1082Stamp === true,
     ),
   ).toBe(true)
   await expect(member.getByTestId('self-user')).toHaveAttribute(
@@ -856,7 +867,9 @@ test('a circle member who was away when the node froze is named and still outsid
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await gotoPage(member, '/')
   await expect(member.getByTestId('conn-state')).toHaveText('connected')
-  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(CIRCLE_ONLINE)
+  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(
+    CIRCLE_ONLINE,
+  )
 
   // Away: the whole context goes, and then the case waits for the NODE to have noticed.
   // Closing a browser is a client-side act, and freezing in the same breath photographs a
@@ -867,9 +880,13 @@ test('a circle member who was away when the node froze is named and still outsid
   // live connections the freeze photographs, so its change also proves the node saw
   // the departure before freezing.
   await memberContext.close()
-  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(CIRCLE_OFFLINE)
+  await expect(maintenanceCircleOnline(page, memberEmail)).toHaveText(
+    CIRCLE_OFFLINE,
+  )
 
-  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
+    'active',
+  )
   expect(await leaveProtectedMode()).toBe('verifying')
 
   // Named, and admitted nobody - which is exactly the pair the count exists to tell
@@ -1014,7 +1031,8 @@ async function watchFirstFrame(page: Page): Promise<void> {
 function readFirstFrameWatch(page: Page): Promise<BootWatch | null> {
   return page.evaluate(
     (hook) =>
-      (window as unknown as Record<string, BootWatch | undefined>)[hook] ?? null,
+      (window as unknown as Record<string, BootWatch | undefined>)[hook] ??
+      null,
     BOOT_WATCH_HOOK,
   )
 }
@@ -1049,7 +1067,9 @@ test.describe('the maintenance section in the admin view mode', () => {
     ).toBeVisible()
     await expect(guest.getByTestId('page-error')).toHaveCount(0)
 
-    await expect(guest.getByTestId('hilos-maintenance-circle-add')).toBeEnabled()
+    await expect(
+      guest.getByTestId('hilos-maintenance-circle-add'),
+    ).toBeEnabled()
     await guest.getByTestId('hilos-maintenance-circle-add').click()
     const field = guest.getByTestId('hilos-maintenance-circle-add-field')
     await expect(field).toBeEnabled()
@@ -1068,7 +1088,9 @@ test.describe('the maintenance section in the admin view mode', () => {
     await expect(field).toBeHidden()
 
     const table = guest.getByTestId('hilos-maintenance-circle-table')
-    await table.getByTestId('hilos-table-loading').waitFor({ state: 'detached' })
+    await table
+      .getByTestId('hilos-table-loading')
+      .waitFor({ state: 'detached' })
     const removeButton = table
       .getByTestId(/^hilos-maintenance-circle-remove-/)
       .first()
@@ -1092,4 +1114,3 @@ test.describe('the maintenance section in the admin view mode', () => {
     await guestContext.close()
   })
 })
-

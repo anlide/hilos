@@ -10,10 +10,14 @@ Common ground (containers, connection, e2e, stable ids) is in
 
 - Vite + `@vitejs/plugin-vue`; type checks via `vue-tsc` (`npm run check`).
 - `package.json`: dep `vue@^3.5`; devDeps `vite@^7`, `@vitejs/plugin-vue@^6`,
-  `vue-tsc`, `typescript`, `sass-embedded`; deps `@hilos/vue` + `@hilos/core` as
-  local `file:` paths into `framework/frontend/{vue,core}`. The `prebuild` hook
+  `vue-tsc`, `typescript`, `sass-embedded`, and the SDK lint and format ranges
+  (`@eslint/js`, `eslint`, `eslint-config-prettier`, `eslint-plugin-vue`,
+  `prettier`, `typescript-eslint`); deps `@hilos/vue` + `@hilos/core` as local
+  `file:` paths into `framework/frontend/{vue,core}`. The `prebuild` hook
   builds the SDK when it is stale; `prebuild`, `precheck` and `predev` write the
-  license inventory the License page draws.
+  license inventory the License page draws. `lint` is `eslint . --max-warnings 0`.
+- `eslint.config.mjs`, `.prettierrc.json` and `.prettierignore` repeat the SDK
+  baseline (`framework/frontend`), including `eslint-plugin-vue`.
 - Start the lockfile from an existing Vue demo's `package-lock.json` and let
   `npm install` prune it, rather than resolving from scratch: `vue` must be the
   SAME version the SDK workspace (`framework/frontend`) resolved. Two different

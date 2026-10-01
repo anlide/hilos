@@ -107,9 +107,7 @@ async function deleteBackup(
     .click()
   await page.getByTestId('hilos-backup-delete-confirm').click()
   await expect(
-    page.locator(
-      `[data-id="${rowKey}"] [data-id^="hilos-backup-delete-"]`,
-    ),
+    page.locator(`[data-id="${rowKey}"] [data-id^="hilos-backup-delete-"]`),
   ).toHaveCount(0, { timeout: 20_000 })
 }
 
@@ -573,9 +571,7 @@ test('agrees between two tabs about the card a finished backup raised', async ({
   // A removal leaves either a placeholder or an empty table when this was the
   // last archive; in both cases the deleted backup stops offering its actions.
   await expect(
-    tabA.locator(
-      `[data-id="${createdKey}"] [data-id^="hilos-backup-delete-"]`,
-    ),
+    tabA.locator(`[data-id="${createdKey}"] [data-id^="hilos-backup-delete-"]`),
   ).toHaveCount(0, { timeout: 20_000 })
 })
 
@@ -851,7 +847,10 @@ test('deletes marked backups in bulk and names the one that was gone before its 
   await expect(list).toContainText('The row was gone by the time its turn came')
   await expect(list).not.toContainText(deletedInBulk)
 
-  await tabA.locator('.modal-footer').getByRole('button', { name: 'Close' }).click()
+  await tabA
+    .locator('.modal-footer')
+    .getByRole('button', { name: 'Close' })
+    .click()
   await expect(list).toHaveCount(0)
   await expect(report).toBeVisible()
 

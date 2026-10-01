@@ -56,7 +56,9 @@ test('the verification window offers the reopen block to the operator, and to no
 
   // Entered for the operator's BROWSER, exactly as a restore started from this page
   // enters it, and then ended - which is what leaves the node in the window.
-  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe('active')
+  expect(await enterProtectedMode(OPERATION, '', operatorSession)).toBe(
+    'active',
+  )
   expect(await leaveProtectedMode()).toBe('verifying')
 
   // The operator, back on the page. The block is there and it carries its button.

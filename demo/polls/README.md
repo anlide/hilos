@@ -106,6 +106,8 @@ is the container `env_file`.
 | `composer run daemon-status` | daemon status via the CLI |
 | `composer run frontend:install` | `npm install` in the frontend container |
 | `composer run frontend:check` | type-check the frontend (`tsc`) |
+| `composer run frontend:lint` | lint the frontend (`eslint . --max-warnings 0`) |
+| `composer run frontend:format-check` | check frontend formatting (`prettier --check .`) |
 | `composer run frontend:build` | production build into `frontend/dist` |
 | `composer run frontend:logs` | follow the dev-server logs |
 
@@ -137,7 +139,7 @@ pointed at a subset.
 
 | Command | What it does |
 |---|---|
-| `composer run test:check` | install + typecheck the frontend app (test toolchain) |
+| `composer run test:check` | install + typecheck, lint and format-check the frontend app; lint and format-check the e2e suite (test toolchain) |
 | `composer run test:e2e-build` | install + build the frontend for the test stack |
 | `composer run test:e2e-install` | install the Playwright deps |
 | `composer run test:e2e-check` | typecheck the e2e test code (in the runner) |

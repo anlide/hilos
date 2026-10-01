@@ -57,9 +57,9 @@ test('a table refused on the way in shows it is unavailable while its page stand
   await clearTableRefusal()
   const socketsBeforeDrop = sockets
   await dropSocket(page)
-  await expect.poll(() => sockets, { timeout: 15_000 }).toBeGreaterThan(
-    socketsBeforeDrop,
-  )
+  await expect
+    .poll(() => sockets, { timeout: 15_000 })
+    .toBeGreaterThan(socketsBeforeDrop)
   await expect(page.getByTestId('conn-state')).toHaveText('connected', {
     timeout: 15_000,
   })

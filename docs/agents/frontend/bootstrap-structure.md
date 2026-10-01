@@ -156,6 +156,7 @@ owns those.
 
 ## Validation
 
-- Per demo: `composer -d demo/<name> run test:check` (typecheck) and
+- Per demo: `composer -d demo/<name> run test:check` (typecheck, lint and
+  format of the frontend and the e2e package) and
   `composer -d demo/<name> run test:e2e-build` (entry wiring + bundling).
 - SDK: `composer test:framework:frontend` (check, unit, lint, format).

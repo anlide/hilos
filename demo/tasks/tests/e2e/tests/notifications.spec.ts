@@ -109,7 +109,9 @@ test('marking a row read clears the badge', async ({ page }) => {
   await expect(badge(page)).toHaveText(/^1\b/)
 
   await openBell(page)
-  await page.getByTestId(`hilos-notification-mark-read-${notificationId}`).click()
+  await page
+    .getByTestId(`hilos-notification-mark-read-${notificationId}`)
+    .click()
 
   // The store never turns read optimistically: it turns when the server fans the
   // read signal back, so the badge going and the row's own mark-read control
@@ -174,7 +176,9 @@ test('a read in one tab reaches the other tab of the same user', async ({
 
   await openBell(page)
   await openBell(tabB)
-  await page.getByTestId(`hilos-notification-mark-read-${notificationId}`).click()
+  await page
+    .getByTestId(`hilos-notification-mark-read-${notificationId}`)
+    .click()
 
   // The read is fanned to every connection of the recipient, so tab B settles
   // without asking for anything.
@@ -199,7 +203,9 @@ test('saving a setting raises a toast the close button dismisses', async ({
   await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await page.getByTestId('hilos-table-search').fill('example_boolean')
-  await expect(page.getByTestId('hilos-table-row-example_boolean')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-table-row-example_boolean'),
+  ).toBeVisible()
 
   const save = page.getByTestId('hilos-settings-edit-save')
   await setCustomSetting(page, 'example_boolean', true)

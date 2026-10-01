@@ -11,7 +11,8 @@ import { signUpPerson } from './session'
 // signal, and dispatches the channels exactly as the product path does. This
 // demo delivers by email and SMS, so queuedChannels says something here: it names
 // the channels that got a delivery row.
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
+const COMMAND_HOST =
+  process.env.COMMAND_HOST ?? 'binance-btc-tracker-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // Past the emit's own work — a durable write, a group fan-out, and one delivery

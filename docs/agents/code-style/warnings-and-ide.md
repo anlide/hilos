@@ -21,8 +21,11 @@ read that one config. Fix the warning where it appears. Do not raise the
 threshold, lower the category, or mute a check for the whole package; a confirmed
 false positive goes by the priority order below. A toolchain upgrade that brings
 a new diagnostic turns the step red on the leaf that brought it, and is fixed
-there. The demo frontends keep their own lint and build settings and are not held
-by this.
+there. Each demo holds the same bar in its `<demo>-check` step
+(`composer run test:check`): the frontend and the e2e package run
+`eslint . --max-warnings 0` and `prettier --check .` on their own configs,
+which repeat the SDK baseline (Vue frontends with eslint-plugin-vue; React,
+Angular and the e2e packages on the flat baseline).
 
 ## Resolving IDE friction — the priority order
 

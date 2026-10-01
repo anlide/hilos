@@ -78,12 +78,12 @@ declare(strict_types=1);
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
-    'chat' => ['check' => 6, 'php' => 106, 'e2e' => 849],
-    'tasks' => ['check' => 6, 'php' => 17, 'e2e' => 132],
-    'polls' => ['check' => 13, 'php' => 17, 'e2e' => 166],
-    'binance-btc-tracker' => ['check' => 6, 'php' => 15, 'e2e' => 394],
-    'ecommerce-shop' => ['check' => 5, 'php' => 15, 'e2e' => 57],
-    'online-testing' => ['check' => 17, 'php' => 15, 'e2e' => 61],
+    'chat' => ['check' => 11, 'php' => 106, 'e2e' => 849],
+    'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 132],
+    'polls' => ['check' => 15, 'php' => 17, 'e2e' => 166],
+    'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'e2e' => 394],
+    'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 57],
+    'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 61],
 ];
 
 $steps = [

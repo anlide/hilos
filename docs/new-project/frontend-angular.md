@@ -30,8 +30,12 @@ Common ground (containers, connection, e2e, stable ids) is in
   built with **ng-packagr** (Angular Package Format: a FESM2022 bundle + a
   generated manifest), unlike the Vue/React layers' Vite library build, because
   only an Angular-aware compiler can emit the shell's declarables. devDeps
-  `@angular/{build,cli,compiler-cli}`, `typescript ~6.0.x`;
-  `cli.analytics: false` for container runs. Like the Vite demos, the SDK
+  `@angular/{build,cli,compiler-cli}`, `typescript ~6.0.x`, and the SDK lint
+  and format ranges (`@eslint/js`, `eslint`, `eslint-config-prettier`,
+  `prettier`, `typescript-eslint`); `lint` is `eslint . --max-warnings 0`.
+  `eslint.config.mjs`, `.prettierrc.json` and `.prettierignore` repeat the flat
+  SDK baseline, and the ignores cover `dist/`, `out-tsc/`, `.angular/` and
+  `src/generated/`. `cli.analytics: false` for container runs. Like the Vite demos, the SDK
   resolves to **`src` in dev** and to its built **`dist` in production** (the
   package `main`/`types`), so a dev edit shows up with no ng-packagr rebuild and
   only e2e/prod — which run the production build — need the dist rebuilt first.

@@ -20,7 +20,9 @@ export default function Main() {
       <h1 className="visually-hidden">Tasks</h1>
       <p>
         {selfId === null ? 'Browsing as ' : 'Signed in as '}
-        <span data-id="self-user">{selfId === null ? guestName : selfName}</span>
+        <span data-id="self-user">
+          {selfId === null ? guestName : selfName}
+        </span>
         <span data-id="self-user-id" hidden>
           {selfId}
         </span>

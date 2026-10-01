@@ -5,10 +5,16 @@ import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoAdmitted, gotoPage } from '../helpers/page.js'
 import { clickSubmit, login, PASSWORD, signUp } from '../helpers/session.js'
 
-test('a blocked account prepares and downloads its data after a credited password sign-in', async ({ browser, page }) => {
+test('a blocked account prepares and downloads its data after a credited password sign-in', async ({
+  browser,
+  page,
+}) => {
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
-  const strangerContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+  const strangerContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+  })
   const personPage = await personContext.newPage()
   try {
     await signUpAdmin(page)
@@ -26,7 +32,9 @@ test('a blocked account prepares and downloads its data after a credited passwor
     await login(personPage, person.email, PASSWORD)
     await expect(personPage.getByTestId('account-blocked')).toBeVisible()
     await personPage.setViewportSize({ width: 375, height: 900 })
-    await expect(personPage.getByTestId('data-export')).toContainText('Your data')
+    await expect(personPage.getByTestId('data-export')).toContainText(
+      'Your data',
+    )
 
     const otherTab = await personContext.newPage()
     // The block card replaces the page outlet, so there is no page-ready marker to await.
@@ -40,7 +48,9 @@ test('a blocked account prepares and downloads its data after a credited passwor
     const downloading = personPage.waitForEvent('download')
     await clickSubmit(personPage.getByTestId('data-export-download'))
     const download = await downloading
-    expect(download.suggestedFilename()).toMatch(/^your-data-\d{4}-\d{2}-\d{2}\.zip$/)
+    expect(download.suggestedFilename()).toMatch(
+      /^your-data-\d{4}-\d{2}-\d{2}\.zip$/,
+    )
     expect(await download.failure()).toBeNull()
     const path = await download.path()
     if (path === null) throw new Error('The browser did not save the export')

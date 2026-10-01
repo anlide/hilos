@@ -3,8 +3,8 @@
 // component mapped to the navigator's current page. The brand and the shell's
 // gear move between the main page and the framework dashboard with no refresh.
 // The live connection state is the shell's own indicator.
-import { ChangeDetectionStrategy, Component, inject } from "@angular/core";
-import type { Type } from "@angular/core";
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core'
+import type { Type } from '@angular/core'
 import {
   HILOS_AUTH_GATE,
   HILOS_ROUTER,
@@ -18,7 +18,7 @@ import {
   HilosView,
   hilosAdminViews,
   hilosSignal,
-} from "@hilos/angular";
+} from '@hilos/angular'
 import {
   AUTH_MAGIC_LINK_PATH,
   AUTH_SECOND_FACTOR_CANCEL_PATH,
@@ -26,44 +26,44 @@ import {
   HILOS_PAGE_ROUTES,
   HilosPages,
   hilosSessionAvatarMark,
-} from "@hilos/core";
+} from '@hilos/core'
 
-import { AuthSurface } from "./auth/authSurface";
-import { hilosAuthContext } from "./auth/hilosAuthContext";
-import { connection } from "./bootstrap/connection";
-import { currentUserIsAdmin, currentUserName } from "./bootstrap/session";
-import { PAGE_MAIN } from "./pages/keys";
-import { About } from "./views/about/about";
-import { License } from "./views/license/license";
-import { LogKeys } from "./views/hilos/logs/keys";
-import { LogRotations } from "./views/hilos/logs/rotations";
-import { LogSettings } from "./views/hilos/logs/settings";
-import { LogViewer } from "./views/hilos/logs/view";
-import { LogWorkers } from "./views/hilos/logs/workers";
-import { LogsOverview } from "./views/hilos/logs/overview";
-import { Maintenance } from "./views/hilos/maintenance/maintenance.js";
-import { Main } from "./views/main/main";
-import { MainSkeleton } from "./views/main/main-skeleton";
-import { Privacy } from "./views/privacy/privacy";
-import { SecurityOauth } from "./views/hilos/security/oauth";
-import { SecurityOauthProvider } from "./views/hilos/security/oauth-provider";
-import { SecuritySignInMethods } from "./views/hilos/security/sign-in-methods";
-import { SecurityTwoFactor } from "./views/hilos/security/two-factor";
-import { Legal } from "./views/hilos/legal/legal.js";
-import { LegalDocument } from "./views/hilos/legal/legal-document.js";
-import { LegalRevision } from "./views/hilos/legal/legal-revision.js";
-import { LegalAcceptances } from "./views/hilos/legal/legal-acceptances.js";
-import { LegalSettings } from "./views/hilos/legal/legal-settings.js";
-import { Profile } from "./views/profile/profile.js";
-import { ProfileSecurity } from "./views/profile/profile-security";
-import { ProfileData } from "./views/profile/profile-data.js";
-import { Settings } from "./views/hilos/settings/settings";
-import { Terms } from "./views/terms/terms";
-import { User } from "./views/hilos/users/user";
-import { Users } from "./views/hilos/users/users";
+import { AuthSurface } from './auth/authSurface'
+import { hilosAuthContext } from './auth/hilosAuthContext'
+import { connection } from './bootstrap/connection'
+import { currentUserIsAdmin, currentUserName } from './bootstrap/session'
+import { PAGE_MAIN } from './pages/keys'
+import { About } from './views/about/about'
+import { License } from './views/license/license'
+import { LogKeys } from './views/hilos/logs/keys'
+import { LogRotations } from './views/hilos/logs/rotations'
+import { LogSettings } from './views/hilos/logs/settings'
+import { LogViewer } from './views/hilos/logs/view'
+import { LogWorkers } from './views/hilos/logs/workers'
+import { LogsOverview } from './views/hilos/logs/overview'
+import { Maintenance } from './views/hilos/maintenance/maintenance.js'
+import { Main } from './views/main/main'
+import { MainSkeleton } from './views/main/main-skeleton'
+import { Privacy } from './views/privacy/privacy'
+import { SecurityOauth } from './views/hilos/security/oauth'
+import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
+import { SecuritySignInMethods } from './views/hilos/security/sign-in-methods'
+import { SecurityTwoFactor } from './views/hilos/security/two-factor'
+import { Legal } from './views/hilos/legal/legal.js'
+import { LegalDocument } from './views/hilos/legal/legal-document.js'
+import { LegalRevision } from './views/hilos/legal/legal-revision.js'
+import { LegalAcceptances } from './views/hilos/legal/legal-acceptances.js'
+import { LegalSettings } from './views/hilos/legal/legal-settings.js'
+import { Profile } from './views/profile/profile.js'
+import { ProfileSecurity } from './views/profile/profile-security'
+import { ProfileData } from './views/profile/profile-data.js'
+import { Settings } from './views/hilos/settings/settings'
+import { Terms } from './views/terms/terms'
+import { User } from './views/hilos/users/user'
+import { Users } from './views/hilos/users/users'
 
 @Component({
-  selector: "app-root",
+  selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAvatar,
@@ -125,18 +125,18 @@ import { Users } from "./views/hilos/users/users";
   </hilos-layout>`,
 })
 export class App {
-  protected readonly connection = connection;
+  protected readonly connection = connection
 
-  protected readonly isAdmin = hilosSignal(currentUserIsAdmin);
+  protected readonly isAdmin = hilosSignal(currentUserIsAdmin)
 
-  protected readonly userName = hilosSignal(currentUserName);
+  protected readonly userName = hilosSignal(currentUserName)
 
   /** The profile root the avatar leads to (HIL-1169). */
-  protected readonly profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE];
+  protected readonly profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.
-  protected readonly avatarMark = hilosSignal(hilosSessionAvatarMark);
+  protected readonly avatarMark = hilosSignal(hilosSessionAvatarMark)
 
   /**
    * The application's auth gate. Injected and not taken as an input: the root
@@ -144,9 +144,9 @@ export class App {
    * button calls the gate directly while HilosView needs it to open the sign-in
    * modal over a live page.
    */
-  protected readonly authGate = inject(HILOS_AUTH_GATE);
+  protected readonly authGate = inject(HILOS_AUTH_GATE)
 
-  protected readonly authContext = hilosAuthContext;
+  protected readonly authContext = hilosAuthContext
 
   // The magic-link confirm route (HIL-283) and the OAuth callback route
   // (HIL-281). Neither carries a page of its own — the router falls both back to
@@ -155,18 +155,16 @@ export class App {
   // navigates home once the session upgrades. The paths come from @hilos/core
   // (HIL-409): a mail client and a provider enter them, so both halves have to
   // agree on the strings.
-  protected readonly currentPath = hilosSignal(
-    inject(HILOS_ROUTER).currentPath,
-  );
+  protected readonly currentPath = hilosSignal(inject(HILOS_ROUTER).currentPath)
 
-  protected readonly AUTH_MAGIC_LINK_PATH = AUTH_MAGIC_LINK_PATH;
+  protected readonly AUTH_MAGIC_LINK_PATH = AUTH_MAGIC_LINK_PATH
   protected readonly AUTH_SECOND_FACTOR_CANCEL_PATH =
-    AUTH_SECOND_FACTOR_CANCEL_PATH;
+    AUTH_SECOND_FACTOR_CANCEL_PATH
 
-  protected readonly AUTH_OAUTH_CALLBACK_PATH = AUTH_OAUTH_CALLBACK_PATH;
+  protected readonly AUTH_OAUTH_CALLBACK_PATH = AUTH_OAUTH_CALLBACK_PATH
 
   // The class, not an instance: HilosView mounts it through ngComponentOutlet.
-  protected readonly authSurfaceType: Type<unknown> = AuthSurface;
+  protected readonly authSurfaceType: Type<unknown> = AuthSurface
 
   // The page-key → view map HilosView renders from. Pages without a mapped view
   // (other routes land later) render nothing.
@@ -224,11 +222,11 @@ export class App {
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,
     [HilosPages.LICENSE]: License,
-  };
+  }
 
   // The pages that draw a skeleton of their own shape while they wait for their
   // first answer (HIL-983); every other page gets the outlet's default skeleton.
   protected readonly pageSkeletons: Record<string, Type<unknown>> = {
     [PAGE_MAIN]: MainSkeleton,
-  };
+  }
 }

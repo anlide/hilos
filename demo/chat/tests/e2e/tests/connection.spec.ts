@@ -59,8 +59,8 @@ test('renders the anonymous identity line when the cookie names no session', asy
 }) => {
   await gotoPage(page, '/')
 
-  const session = (await context.cookies()).find(
-    (cookie) => isSessionCookie(cookie.name),
+  const session = (await context.cookies()).find((cookie) =>
+    isSessionCookie(cookie.name),
   )
   if (session === undefined) {
     throw new Error(`the stand issued no ${SESSION_COOKIE_PREFIX}* cookie`)
@@ -95,7 +95,10 @@ test('subscribes the URL page on load', async ({ page }) => {
     .poll(() =>
       sentFrames.some((payload) => {
         try {
-          const message = JSON.parse(payload) as { type?: string; page?: string }
+          const message = JSON.parse(payload) as {
+            type?: string
+            page?: string
+          }
 
           return message.type === 'page_subscribe' && message.page === 'main'
         } catch {

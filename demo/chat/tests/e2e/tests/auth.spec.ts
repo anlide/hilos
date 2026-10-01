@@ -313,7 +313,7 @@ test('refuses the sign-in when the provider says the code has expired', async ({
 test('returns quietly to the field when the person refuses at the provider', async ({
   page,
 }) => {
-  const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+  await declareOAuthAccount('github', { email: uniqueEmail() })
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
@@ -331,7 +331,7 @@ test('returns quietly to the field when the person refuses at the provider', asy
 test('returns quietly to the field when the person closes the provider window', async ({
   page,
 }) => {
-  const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+  await declareOAuthAccount('google', { email: uniqueEmail() })
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
@@ -771,7 +771,9 @@ test('makes an account with no password, then signs it in by the mailed code', a
   // address field, where both roads mail the same address and there is nothing to
   // choose between, but under Save password, once the address is proved.
   await registerWithoutPassword(page, email)
-  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+  await expect(page.getByTestId('profile-name')).toHaveText(
+    nameFromEmail(email),
+  )
   await logout(page)
 
   // And what the account it made signs in by from then on. The link is its only
@@ -796,7 +798,9 @@ test('makes an account with no password, then signs it in by the mailed code', a
   await typeInto(page.getByTestId('auth-code'), await readMagicLinkCode(email))
   await clickSubmit(page.getByTestId('auth-submit'))
   await continueFromDone(page)
-  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+  await expect(page.getByTestId('profile-name')).toHaveText(
+    nameFromEmail(email),
+  )
 
   // Two letters and no more: the code that proved the address, and the link that
   // signed it back in. Neither half of the second one bought a third.
@@ -831,7 +835,9 @@ test('signs a member in by the code, on an address that already has an account',
   await typeInto(page.getByTestId('auth-code'), await readMagicLinkCode(email))
   await clickSubmit(page.getByTestId('auth-submit'))
   await continueFromDone(page)
-  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+  await expect(page.getByTestId('profile-name')).toHaveText(
+    nameFromEmail(email),
+  )
 })
 
 /**
@@ -878,13 +884,19 @@ test('signs a member in by clicking the link in the letter, from a cold load', a
   // condition the defect needed (HIL-607). The relay mounts while the socket is
   // still opening, so the confirm has to wait for a connection that can carry it
   // rather than be dropped and reported as an unreachable server.
-  await gotoAuthReturn(page, returnPath(await readMagicLinkUrl(email)), 'auth-magic')
+  await gotoAuthReturn(
+    page,
+    returnPath(await readMagicLinkUrl(email)),
+    'auth-magic',
+  )
 
   // Home, signed in: the relay navigates on success and the session it upgraded
   // is the one this tab is holding.
   await expect(page.getByTestId('nav-logout')).toBeVisible()
   await gotoPage(page, '/profile')
-  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+  await expect(page.getByTestId('profile-name')).toHaveText(
+    nameFromEmail(email),
+  )
 
   // Two letters and no more: the code the account was made with, and the link it
   // came back by. Whichever half of the second was used, the click bought no third.
@@ -1060,7 +1072,9 @@ test('gives the held address its own code back, instead of a second registration
   await submitRegistrationCode(page, code)
   await submitFirstPassword(page, PASSWORD)
   await continueFromDone(page)
-  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+  await expect(page.getByTestId('profile-name')).toHaveText(
+    nameFromEmail(email),
+  )
   expect(await mailsTo(email)).toHaveLength(1)
 })
 
@@ -1123,9 +1137,13 @@ test('gives the code back to a tab that returns to an address another tab of the
   // machine to the code step (applyDetection, HIL-651), bypassing held_identifier.
   // Continuing to terms is a purely local transition and sends nothing.
   await typeInto(second.getByTestId('auth-identifier'), email)
-  await expect(second.getByTestId('auth-heading')).toHaveText('Create your account')
+  await expect(second.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
+  )
   await clickSubmit(second.getByTestId('auth-submit'))
-  await expect(second.getByTestId('auth-heading')).toHaveText('Before you continue')
+  await expect(second.getByTestId('auth-heading')).toHaveText(
+    'Before you continue',
+  )
 
   // Tab A holds the address and sends the one code. Taking a hold broadcasts
   // nothing to the other tabs of the session: hilos_auth_converge only fires on
@@ -1142,16 +1160,22 @@ test('gives the code back to a tab that returns to an address another tab of the
   // Because the address was held while B was away, the lookup answers pending —
   // rendering the held_identifier screen.
   await second.getByTestId('auth-restart').click()
-  await expect(second.getByTestId('auth-heading')).toHaveText('You already have a code')
+  await expect(second.getByTestId('auth-heading')).toHaveText(
+    'You already have a code',
+  )
   await expect(second.getByTestId('auth-identifier')).toHaveValue(email)
   await expect(second.getByTestId('auth-password')).toHaveCount(0)
-  await expect(second.getByTestId('auth-resume-code')).toHaveText('Enter the code')
+  await expect(second.getByTestId('auth-resume-code')).toHaveText(
+    'Enter the code',
+  )
 
   // The way back to the code screen sends nothing and requests no second code:
   // it resumes the held registration locally.
   await clickSubmit(second.getByTestId('auth-resume-code'))
   await expect(second.getByTestId('auth-code')).toBeVisible()
-  await expect(second.getByTestId('auth-heading')).toHaveText('Confirm your email')
+  await expect(second.getByTestId('auth-heading')).toHaveText(
+    'Confirm your email',
+  )
 
   // The code from the FIRST letter carries tab B through to completion.
   await submitRegistrationCode(second, code)
@@ -1234,7 +1258,9 @@ test('moves a tab already standing on the address onto the password screen when 
   await expect(second.getByTestId('conn-state')).toHaveText('connected')
   await second.getByTestId('message-signin').click()
   await typeInto(second.getByTestId('auth-identifier'), email)
-  await expect(second.getByTestId('auth-heading')).toHaveText('Create your account')
+  await expect(second.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
+  )
 
   // Tab C opens the surface and types nothing.
   const third = await context.newPage()
@@ -1247,12 +1273,16 @@ test('moves a tab already standing on the address onto the password screen when 
   // nobody.
   await submitRegistration(page, email)
   const code = await readRegisterCode(email)
-  await expect(second.getByTestId('auth-heading')).toHaveText('Create your account')
+  await expect(second.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
+  )
 
   // Tab A proves the code, and tab B follows it with no reload.
   await submitRegistrationCode(page, code)
   await expect(page.getByTestId('auth-heading')).toHaveText('Choose a password')
-  await expect(second.getByTestId('auth-heading')).toHaveText('Choose a password')
+  await expect(second.getByTestId('auth-heading')).toHaveText(
+    'Choose a password',
+  )
   await expect(second.getByTestId('auth-new-password')).toBeVisible()
 
   // Tab C stays where it was. Asserted after tab B moved, so the frame has had
@@ -1357,7 +1387,9 @@ test('tells the tab that did not save the password that the flow succeeded', asy
   // carries the sentence. One expect timeout covers that on an idle box and does not
   // when the run shares the machine with a second demo lane.
   await expect(async () => {
-    await expect(page.getByTestId('auth-heading')).toHaveText('Password changed')
+    await expect(page.getByTestId('auth-heading')).toHaveText(
+      'Password changed',
+    )
   }).toPass()
   await expect(page.getByTestId('auth-continue')).toHaveText('Continue')
 
@@ -1485,7 +1517,10 @@ test('signs in with the code delivered over Telegram', async ({ page }) => {
     'Telegram',
   )
 
-  await typeInto(page.getByTestId('auth-code'), await waitForTelegramCode(phone))
+  await typeInto(
+    page.getByTestId('auth-code'),
+    await waitForTelegramCode(phone),
+  )
   await clickSubmit(page.getByTestId('auth-submit'))
   await continueFromDone(page)
 
@@ -1634,7 +1669,9 @@ test('counts the code down and comes back to it, still counting, after a reload'
   const countdown = page.getByTestId('auth-expires-in')
   await expect(countdown).toContainText(/\d+:\d{2}/)
   const started = await remainingSeconds(countdown)
-  await expect.poll(async () => remainingSeconds(countdown)).toBeLessThan(started)
+  await expect
+    .poll(async () => remainingSeconds(countdown))
+    .toBeLessThan(started)
   const beforeReload = await remainingSeconds(countdown)
 
   // The whole reason the moment comes from the server instead of from a duration

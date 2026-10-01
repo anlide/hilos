@@ -11,7 +11,11 @@
     "build": "vite build && vite build --ssr scripts/prerenderEntry.tsx --outDir dist-prerender && node dist-prerender/prerenderEntry.js",
     "preview": "vite preview",
     "precheck": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@hilos/core": "file:../../../framework/frontend/core",
@@ -20,11 +24,16 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
+    "eslint": "^10.4.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.4",
     "sass-embedded": "^1.83.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
     "vite": "^7.0.0"
   }
 }

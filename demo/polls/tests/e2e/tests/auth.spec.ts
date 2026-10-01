@@ -26,7 +26,6 @@ import {
   openSignIn,
   register,
   submitFirstPassword,
-  submitRegistration,
   submitRegistrationCode,
   typeInto,
   uniqueEmail,
@@ -84,7 +83,9 @@ test('holds the address in a modal over the page, and signs the session in on th
 
   await openSignIn(page)
   await typeInto(page.getByTestId('auth-identifier'), email)
-  await expect(page.getByTestId('auth-heading')).toHaveText('Create your account')
+  await expect(page.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
+  )
   await clickSubmit(page.getByTestId('auth-submit'))
   await expect(page.getByTestId('legal-consent-no-deviations')).toBeVisible()
   await page.getByTestId('auth-consent-accept').check()
@@ -273,11 +274,16 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     // The screen the person asked for does not change under them — it grows a
     // field (HIL-606). The link is still there to click; this step is the person
     // who cannot, because their mail is open on another device.
-    await expect(page.getByTestId('auth-heading')).toHaveText('Check your inbox')
+    await expect(page.getByTestId('auth-heading')).toHaveText(
+      'Check your inbox',
+    )
     await expect(page.getByTestId('auth-link-sent')).toBeVisible()
     await expect(page.getByTestId('auth-code')).toBeVisible()
 
-    await typeInto(page.getByTestId('auth-code'), await readMagicLinkCode(email))
+    await typeInto(
+      page.getByTestId('auth-code'),
+      await readMagicLinkCode(email),
+    )
     await clickSubmit(page.getByTestId('auth-submit'))
     await continueFromDone(page)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
@@ -385,7 +391,9 @@ test('signs in by a phone code over every channel the demo registers', async ({
     // The code screen opens on the agent's outcome signal, not on the click, and
     // it names the channel the code actually went over.
     await expect(page.getByTestId('auth-code')).toBeVisible()
-    await expect(page.getByTestId('auth-delivered-channel')).toContainText('SMS')
+    await expect(page.getByTestId('auth-delivered-channel')).toContainText(
+      'SMS',
+    )
 
     await typeInto(page.getByTestId('auth-code'), await waitForSmsCode(phone))
     await clickSubmit(page.getByTestId('auth-submit'))
@@ -449,7 +457,9 @@ test('signs in through every OAuth provider the demo offers', async ({
     await expect(page.getByTestId('self-user-id')).toBeEmpty()
     await openSignIn(page)
 
-    const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+    const account = await declareOAuthAccount('github', {
+      email: uniqueEmail(),
+    })
     const signingIn = signInAs(page, account)
     await page.getByTestId('auth-icon-oauth-github').click()
     await signingIn
@@ -469,7 +479,9 @@ test('signs in through every OAuth provider the demo offers', async ({
     await expect(page.getByTestId('self-user-id')).toBeEmpty()
     await openSignIn(page)
 
-    const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+    const account = await declareOAuthAccount('google', {
+      email: uniqueEmail(),
+    })
     const signingIn = signInAs(page, account)
     await page.getByTestId('auth-icon-oauth-google').click()
     await signingIn

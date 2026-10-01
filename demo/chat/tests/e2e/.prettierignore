@@ -1,0 +1,7 @@
+# Reporter output and the npm-managed lockfile are not formatted by Prettier.
+test-results/
+playwright-report/
+package-lock.json
+
+# Markdown docs are hand-authored to the repo's documentation style, not Prettier's.
+**/*.md

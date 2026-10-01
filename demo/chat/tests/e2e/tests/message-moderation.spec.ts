@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
 
-import { openBell, unreadBadge } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  openBell,
+  unreadBadge,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 import { signUpJoined } from '../helpers/notifications'

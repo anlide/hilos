@@ -286,4 +286,3 @@ test.describe('in the admin view mode', () => {
     await expect(prompt).toBeHidden()
   })
 })
-

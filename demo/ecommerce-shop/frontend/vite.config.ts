@@ -51,14 +51,17 @@ export default defineConfig(({ mode }) => {
       allowedHosts: ['.hilos'],
       proxy: {
         '/_hilos/data-export': {
-          target: env.VITE_DATA_EXPORT_TARGET || 'http://ecommerce-shop-daemon-local:8090',
+          target:
+            env.VITE_DATA_EXPORT_TARGET ||
+            'http://ecommerce-shop-daemon-local:8090',
           changeOrigin: true,
         },
         // Same-origin WebSocket: serving the page and the socket from the same
         // origin lets the session cookie (SameSite=Strict) and rotation ticket
         // ride the connection without cross-site issues; in test/prod nginx does the same.
         '/ws': {
-          target: env.VITE_WS_TARGET || 'http://ecommerce-shop-daemon-local:8092',
+          target:
+            env.VITE_WS_TARGET || 'http://ecommerce-shop-daemon-local:8092',
           ws: true,
         },
       },

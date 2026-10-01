@@ -65,9 +65,9 @@ test('the erase empties this browser and moves it onto a new session', async ({
   // The confirmation names what goes, one line per registry entry, so the person
   // agrees to a list rather than to an adjective.
   await expect(page.getByTestId('privacy-erase-list')).toBeVisible()
-  await expect(page.getByTestId('privacy-erase-list').locator('li')).toHaveCount(
-    4,
-  )
+  await expect(
+    page.getByTestId('privacy-erase-list').locator('li'),
+  ).toHaveCount(4)
 
   const confirm = page.getByTestId('privacy-erase-confirm')
   await confirm.scrollIntoViewIfNeeded()

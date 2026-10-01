@@ -160,4 +160,3 @@ test.describe('the communications section in the admin view mode', () => {
     await expect(page.getByTestId('page-error')).toHaveCount(0)
   })
 })
-

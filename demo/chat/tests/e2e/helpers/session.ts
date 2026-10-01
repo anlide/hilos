@@ -418,7 +418,10 @@ export async function login(
  * @returns The code the sign-in was proven with, for a later wait on this
  *          number that has to pass this one over.
  */
-export async function signInByPhone(page: Page, phone: string): Promise<string> {
+export async function signInByPhone(
+  page: Page,
+  phone: string,
+): Promise<string> {
   await typeInto(page.getByTestId('auth-identifier'), phone)
   await clickSubmit(page.getByTestId('auth-channel-sms'))
   await page.getByTestId('auth-consent-accept').check()
