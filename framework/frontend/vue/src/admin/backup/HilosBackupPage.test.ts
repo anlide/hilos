@@ -249,6 +249,70 @@ async function settled(): Promise<void> {
   await nextTick()
 }
 
+describe('HilosBackupPage with the free texts hidden (HIL-1260)', () => {
+  const HIDDEN = { _hidden: true }
+  const FAILED_ID = '2026-09-11_03-00-00'
+  const SHIP_FAILED_ID = '2026-09-12_03-00-00'
+
+  /** The modal standing on the page, or null. */
+  function modal(): HTMLElement | null {
+    return document.querySelector('[data-id="modal"]')
+  }
+
+  it('keeps the button of a hidden reason and opens the mark in place of the text', async () => {
+    const { context } = seededContext([
+      {
+        id: FAILED_ID,
+        backup: {
+          ...ARCHIVE_FIXTURE.backup,
+          status: 'error',
+          finished: null,
+          failureReason: HIDDEN,
+        } as unknown as BackupSlot,
+      },
+      {
+        id: SHIP_FAILED_ID,
+        backup: {
+          ...ARCHIVE_FIXTURE.backup,
+          shipState: 'failed',
+          shipError: HIDDEN,
+        },
+      },
+    ])
+    await mountPage(context)
+    ;(
+      document.querySelector(
+        `table [data-id="hilos-backup-details-${FAILED_ID}"]`,
+      ) as HTMLElement
+    ).click()
+    await settled()
+    expect(
+      modal()?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(
+      modal()?.querySelector('[data-id="hilos-backup-details-text"]'),
+    ).toBeNull()
+    ;(
+      document.querySelector(
+        '[data-id="hilos-backup-details-close"]',
+      ) as HTMLElement
+    ).click()
+    await settled()
+    ;(
+      document.querySelector(
+        `table [data-id="hilos-backup-ship-why-${SHIP_FAILED_ID}"]`,
+      ) as HTMLElement
+    ).click()
+    await settled()
+    expect(
+      modal()?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(
+      modal()?.querySelector('[data-id="hilos-backup-ship-error-text"]'),
+    ).toBeNull()
+  })
+})
+
 describe('HilosBackupPage in the admin view mode', () => {
   const releases: (() => void)[] = []
 

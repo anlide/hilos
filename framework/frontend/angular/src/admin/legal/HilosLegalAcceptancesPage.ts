@@ -7,6 +7,7 @@ import {
 } from '@angular/core'
 import {
   createHilosLegalAcceptancesTable,
+  hiddenAsWord,
   hilosLegalDocumentLabel,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
@@ -33,9 +34,9 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
               data-id="legal-acceptance-row"
               [attr.data-record]="row.rowKey"
             >
-              <strong>{{ row.name }}</strong>
+              <strong>{{ hiddenAsWord(row.name) }}</strong>
               <div class="small text-body-secondary">
-                {{ row.email ?? 'No verified email' }}
+                {{ hiddenAsWord(row.email) ?? 'No verified email' }}
               </div>
             </div></ng-template
           >
@@ -73,6 +74,7 @@ export class HilosLegalAcceptancesPage {
   protected readonly keys = HilosLegalRowKey
   protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
   protected readonly path = resolveHilosPath
+  protected readonly hiddenAsWord = hiddenAsWord
   protected readonly documentLabel = hilosLegalDocumentLabel
   protected readonly table = computed(() =>
     createHilosLegalAcceptancesTable(this.context()),

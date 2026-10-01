@@ -288,7 +288,13 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   hidden from screen readers; its surroundings carry the name, in the header
   as hidden text and a `title`. The project's header user area places it
   instead of the name (HIL-301). A photo fills the same circle later
-  (not in the code yet — HIL-1205).
+  (not in the code yet — HIL-1205);
+- **`HilosHiddenMark`** and **`HilosHideable`** in the Vue package — the one
+  mark of a value the server keeps from a viewer of the admin view mode, and
+  the wrapper that draws a hideable value through its slot or the mark in its
+  place ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)).
+  React (not in the code yet — HIL-1271) and Angular (not in the code yet —
+  HIL-1272) say the word through `hiddenAsWord` until then.
 
 The skeleton is a **data-block** loading state — it fills a block while that
 block's data streams in, not a wait on a code chunk: the app ships as a single

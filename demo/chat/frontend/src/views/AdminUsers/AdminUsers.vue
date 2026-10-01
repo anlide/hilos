@@ -18,6 +18,8 @@ import {
   HilosActionError,
   HilosAdminPage,
   HilosEditNotice,
+  HilosHiddenMark,
+  HilosHideable,
   HilosModal,
   HilosViewportTable,
   LoadingButton,
@@ -25,10 +27,13 @@ import {
   useTrackedAction,
 } from '@hilos/vue'
 import {
+  hiddenAsWord,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
+  type Hideable,
   type HilosTableColumn,
   type HilosUserRow,
   type RowEditBaseline,
@@ -66,9 +71,12 @@ const columns: HilosTableColumn[] = [
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 
-/** The one field the dialog edits: the display name. */
+/**
+ * The one field the dialog edits: the display name — hidden for a viewer of the
+ * admin view mode, and then the dialog shows the mark in place of the input.
+ */
 interface UserEditFields {
-  name: string
+  name: Hideable<string>
 }
 
 /** The one line the dialog says about the other side, for what the helper found. */
@@ -77,7 +85,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return `Changed elsewhere to "${live.fields.name.incoming}".`
+      return `Changed elsewhere to "${hiddenAsWord(live.fields.name.incoming)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -88,7 +96,15 @@ function noticeText(live: RowEditState<UserEditFields>): string {
 // Edit dialog: rename one user.
 const editOpen = ref(false)
 const editRow = ref<HilosUserRow | null>(null)
-const editName = ref('')
+// A hidden name stays the one hidden value, so the row-edit helper sees it
+// unchanged and the dialog is never dirty; the input edits only a name.
+const editName = ref<Hideable<string>>('')
+const editNameText = computed({
+  get: () => (isHiddenValue(editName.value) ? '' : editName.value),
+  set: (next: string) => {
+    editName.value = next
+  },
+})
 const editBaseline = ref<RowEditBaseline<UserEditFields>>(
   openRowEdit<UserEditFields>({ name: '' }),
 )
@@ -107,15 +123,24 @@ const live = computed(() =>
   resolveRowEdit(
     liveRow.value ? { name: liveRow.value.name } : undefined,
     editBaseline.value,
-    { name: editName.value.trim() },
+    {
+      name: isHiddenValue(editName.value)
+        ? editName.value
+        : editName.value.trim(),
+    },
   ),
 )
-const editEmpty = computed(() => editName.value.trim() === '')
+// A hidden name counts as empty: there is nothing to save.
+const editEmpty = computed(
+  () => isHiddenValue(editName.value) || editName.value.trim() === '',
+)
 // The title and "Last activity" follow the live row while it is there, and
 // keep the row the dialog opened with once it is gone.
 const editShown = computed(() => liveRow.value ?? editRow.value)
 const editTitle = computed(() =>
-  editShown.value ? `Edit · ${editShown.value.name}` : 'Edit user',
+  editShown.value
+    ? `Edit · ${hiddenAsWord(editShown.value.name)}`
+    : 'Edit user',
 )
 const editNotice = computed(() => live.value.notice?.kind ?? null)
 const editNoticeText = computed(() => noticeText(live.value))
@@ -176,7 +201,14 @@ function acceptTheirs(): void {
 // section E).
 async function submitEdit(): Promise<void> {
   const row = editRow.value
-  if (!row || editBusy.value || live.value.gone || editEmpty.value) {
+  const typed = editName.value
+  if (
+    !row ||
+    isHiddenValue(typed) ||
+    editBusy.value ||
+    live.value.gone ||
+    editEmpty.value
+  ) {
     return
   }
   if (!live.value.dirty) {
@@ -184,7 +216,7 @@ async function submitEdit(): Promise<void> {
 
     return
   }
-  if (await runEditAction(sendAdminUserUpdate(row.id, editName.value.trim()))) {
+  if (await runEditAction(sendAdminUserUpdate(row.id, typed.trim()))) {
     closeEdit()
   }
 }
@@ -203,7 +235,7 @@ async function submitEdit(): Promise<void> {
       >
         <template #row="{ row }">
           <td class="text-body-secondary">{{ row.id }}</td>
-          <td class="fw-medium">{{ row.name }}</td>
+          <td class="fw-medium"><HilosHideable :value="row.name" /></td>
           <td>{{ row.lastActivity ?? '—' }}</td>
           <td>
             <span
@@ -242,11 +274,15 @@ async function submitEdit(): Promise<void> {
         </template>
         <HilosActionError :action="editAction" details-title="Couldn't save" />
         <form v-if="editShown" @submit.prevent="submitEdit">
-          <div class="mb-3">
+          <div v-if="isHiddenValue(editName)" class="mb-3">
+            <span class="form-label d-block">Name</span>
+            <HilosHiddenMark />
+          </div>
+          <div v-else class="mb-3">
             <label class="form-label" for="admin-users-name">Name</label>
             <input
               id="admin-users-name"
-              v-model="editName"
+              v-model="editNameText"
               type="text"
               class="form-control"
               required

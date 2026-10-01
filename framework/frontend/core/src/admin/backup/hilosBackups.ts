@@ -24,11 +24,17 @@ import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
+  readHideableStringOrNull,
   readNumber,
   readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
+import {
+  HIDDEN_VALUE,
+  type Hideable,
+  isHiddenValue,
+} from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import {
   computedSignal,
@@ -78,9 +84,9 @@ export interface HilosBackupRow {
   /**
    * Why the run failed — the persisted diagnostic shown in the failure-detail
    * modal. Present on error rows only; null for success and for legacy records saved
-   * before the reason was recorded.
+   * before the reason was recorded. Hidden from a viewer of the admin view mode.
    */
-  readonly failureReason: string | null
+  readonly failureReason: Hideable<string | null>
   /**
    * Whether the archive carries a checksum, and how it last verified. The digest
    * itself never leaves the server — the list only ever shows this state.
@@ -102,8 +108,11 @@ export interface HilosBackupRow {
    * never left the machine.
    */
   readonly shippedAt: string | null
-  /** Why the last copy attempt failed, or null when none has. */
-  readonly shipError: string | null
+  /**
+   * Why the last copy attempt failed, or null when none has; hidden from a viewer of
+   * the admin view mode.
+   */
+  readonly shipError: Hideable<string | null>
   /**
    * Phase of the restore of THIS archive, or null when it was never restored. Only
    * one row in the list ever carries these: the restore runtime row is a singleton
@@ -114,8 +123,11 @@ export interface HilosBackupRow {
   readonly restoreOutcome: string | null
   /** ISO-8601 instant that restore ended, or null while it runs or never ran. */
   readonly restoreFinishedAt: string | null
-  /** Why that restore failed, or null when it succeeded or never ran. */
-  readonly restoreFailureReason: string | null
+  /**
+   * Why that restore failed, or null when it succeeded or never ran; hidden from a
+   * viewer of the admin view mode.
+   */
+  readonly restoreFailureReason: Hideable<string | null>
   /**
    * Whether a failed restore of this archive had already begun replacing the
    * database. It rides the row rather than only the live frame because it is the
@@ -139,9 +151,10 @@ export interface HilosBackupRow {
    * to say: one line per connection joined by newlines where the archive is allowed,
    * and the gate's single refusal sentence where it is not — that one names the
    * connections that are ahead inside itself. The same sentences the CLI preflight
-   * prints, so the two never word one verdict differently.
+   * prints, so the two never word one verdict differently. Hidden from a viewer of
+   * the admin view mode.
    */
-  readonly restoreMigrationNotice: string | null
+  readonly restoreMigrationNotice: Hideable<string | null>
   /**
    * Cluster node whose disk holds this archive, named only when the backup agent runs
    * elsewhere and cannot reach it; null otherwise. One key and not a flag beside it:
@@ -456,6 +469,20 @@ function toTextOrNull(value: unknown): string | null {
 }
 
 /**
+ * Narrow a raw free-text slot value a viewer of the admin view mode may be sent
+ * hidden: the one hidden value for the mark, the field's own narrowing otherwise.
+ *
+ * @param value The raw value from a payload slot.
+ * @param narrow The field's narrowing of a value that is not hidden.
+ */
+function hideableOr(
+  value: unknown,
+  narrow: (value: unknown) => string | null,
+): Hideable<string | null> {
+  return isHiddenValue(value) ? HIDDEN_VALUE : narrow(value)
+}
+
+/**
  * Resolve one raw backup table row into its view-model. The merged runtime fields
  * ride a single inline `backup` slot (no entity reference — a backup row is
  * page-scoped, keyed by its id), so this reads the slot as a plain record.
@@ -478,17 +505,21 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     keep: readBoolean(slot, BACKUP_KEEP_FIELD),
     status: readString(slot, BACKUP_STATUS_FIELD),
     finished: toFinished(slot[BACKUP_FINISHED_FIELD]),
-    failureReason: toFailureReason(slot[BACKUP_FAILURE_REASON_FIELD]),
+    failureReason: hideableOr(
+      slot[BACKUP_FAILURE_REASON_FIELD],
+      toFailureReason,
+    ),
     checksumState: toChecksumState(slot[BACKUP_CHECKSUM_STATE_FIELD]),
     verifiedAt: toVerifiedAt(slot[BACKUP_VERIFIED_AT_FIELD]),
     shipState: toShipState(slot[BACKUP_SHIP_STATE_FIELD]),
     shippedAt: toTextOrNull(slot[BACKUP_SHIPPED_AT_FIELD]),
-    shipError: toTextOrNull(slot[BACKUP_SHIP_ERROR_FIELD]),
+    shipError: hideableOr(slot[BACKUP_SHIP_ERROR_FIELD], toTextOrNull),
     restorePhase: toTextOrNull(slot[BACKUP_RESTORE_PHASE_FIELD]),
     restoreOutcome: toTextOrNull(slot[BACKUP_RESTORE_OUTCOME_FIELD]),
     restoreFinishedAt: toTextOrNull(slot[BACKUP_RESTORE_FINISHED_AT_FIELD]),
-    restoreFailureReason: toTextOrNull(
+    restoreFailureReason: hideableOr(
       slot[BACKUP_RESTORE_FAILURE_REASON_FIELD],
+      toTextOrNull,
     ),
     restoreDatabaseTouched: readBoolean(
       slot,
@@ -502,7 +533,7 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
       slot,
       BACKUP_RESTORE_MIGRATION_BEHIND_FIELD,
     ),
-    restoreMigrationNotice: readStringOrNull(
+    restoreMigrationNotice: readHideableStringOrNull(
       slot,
       BACKUP_RESTORE_MIGRATION_NOTICE_FIELD,
     ),
@@ -873,7 +904,9 @@ export function isBackupKeepable(row: HilosBackupRow): boolean {
  * A failed backup that carries a recorded reason — the only kind that shows a
  * failure-detail button. The single source the three views share, so the button's
  * visibility cannot drift between them. A failure without a stored reason (a legacy
- * record) shows nothing, since there is nothing to open.
+ * record) shows nothing, since there is nothing to open. A hidden reason is not "no
+ * reason": the server hides the field whatever it holds, so the button stands and
+ * the modal shows a viewer of the admin view mode the hidden mark.
  */
 export function hasBackupFailureDetail(row: HilosBackupRow): boolean {
   return row.finished === null && row.failureReason !== null
@@ -934,11 +967,17 @@ export function backupMigrationBehind(row: HilosBackupRow): number | null {
  * note, not a note that says nothing. A refusal arrives as one sentence rather than
  * one line per connection: the gate words the connections that are ahead into it, and
  * it uses `;` inside that sentence, so there is nothing here safe to split it on.
+ * A hidden notice stays hidden — one mark, not one line per hidden note.
  */
-export function backupMigrationNotes(row: HilosBackupRow): readonly string[] {
-  return (row.restoreMigrationNotice ?? '')
-    .split('\n')
-    .filter((line) => line !== '')
+export function backupMigrationNotes(
+  row: HilosBackupRow,
+): Hideable<readonly string[]> {
+  const notice = row.restoreMigrationNotice
+  if (isHiddenValue(notice)) {
+    return HIDDEN_VALUE
+  }
+
+  return (notice ?? '').split('\n').filter((line) => line !== '')
 }
 
 /**

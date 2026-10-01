@@ -56,6 +56,9 @@ import {
   createHilosUserRename,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   hilosPasswordFateChoices,
+  hiddenAsWord,
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
@@ -64,6 +67,7 @@ import {
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosAccountMerge,
   HilosAccountStanding,
   HilosMergeCandidateIdentity,
@@ -109,9 +113,12 @@ function focusWindow(body: HTMLElement | undefined): void {
   }
 }
 
-/** The one field the modal edits: the display name. */
+/**
+ * The one field the modal edits: the display name — hidden for a viewer of the
+ * admin view mode, and then the modal says so in place of the input.
+ */
 interface UserEditFields {
-  name: string
+  name: Hideable<string>
 }
 
 /** The one line the modal says about the other side, for what the helper found. */
@@ -120,7 +127,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return `Changed elsewhere to "${live.fields.name.incoming}".`
+      return `Changed elsewhere to "${hiddenAsWord(live.fields.name.incoming)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -151,9 +158,9 @@ function noticeText(live: RowEditState<UserEditFields>): string {
       @if (detail(); as detail) {
         <div class="card" data-id="hilos-user-detail">
           <div class="card-header d-flex align-items-center gap-2">
-            <hilos-avatar [name]="detail.name" size="md" />
+            <hilos-avatar [name]="avatarName()" size="md" />
             <span class="h5 mb-0" data-id="hilos-user-name">{{
-              detail.name
+              hiddenAsWord(detail.name)
             }}</span>
             <span class="badge text-bg-secondary">{{ detail.presence }}</span>
             @if (standingBadge(); as badge) {
@@ -341,23 +348,28 @@ function noticeText(live: RowEditState<UserEditFields>): string {
           dataId="hilos-user-rename-error"
         />
         <form (submit)="submit($event)">
-          <label class="form-label" for="hilos-user-name-field">
-            Display name
-          </label>
-          <input
-            id="hilos-user-name-field"
-            type="text"
-            class="form-control"
-            [attr.minlength]="nameMin"
-            [attr.maxlength]="nameMax"
-            data-id="hilos-user-name-input"
-            data-autofocus
-            [value]="draft()"
-            (input)="onDraftInput($event)"
-          />
-          <div class="form-text">
-            Between {{ nameMin }} and {{ nameMax }} characters.
-          </div>
+          @if (draftHidden()) {
+            <div class="form-label">Display name</div>
+            <div>{{ hiddenWord }}</div>
+          } @else {
+            <label class="form-label" for="hilos-user-name-field">
+              Display name
+            </label>
+            <input
+              id="hilos-user-name-field"
+              type="text"
+              class="form-control"
+              [attr.minlength]="nameMin"
+              [attr.maxlength]="nameMax"
+              data-id="hilos-user-name-input"
+              data-autofocus
+              [value]="draftText()"
+              (input)="onDraftInput($event)"
+            />
+            <div class="form-text">
+              Between {{ nameMin }} and {{ nameMax }} characters.
+            </div>
+          }
           <hilos-edit-notice
             [kind]="editNotice()"
             [text]="editNoticeText()"
@@ -495,7 +507,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
           mergeProof() !== 'skip'
             ? stepUpCopy.title
             : detail()
-              ? 'Merge an account into ' + detail()!.name
+              ? 'Merge an account into ' + hiddenAsWord(detail()!.name)
               : 'Merge an account'
         "
         [confirmOnClose]="selectedCandidateId() !== null"
@@ -582,7 +594,11 @@ function noticeText(live: RowEditState<UserEditFields>): string {
           <p data-id="hilos-user-merge-summary">
             <strong>{{ candidate.name }} (#{{ candidate.id }})</strong>
             will be merged into
-            <strong>{{ detail()?.name }} (#{{ detail()?.id }})</strong>.
+            <strong
+              >{{ detail() ? hiddenAsWord(detail()!.name) : '' }} (#{{
+                detail()?.id
+              }})</strong
+            >.
           </p>
           <ul>
             <li>
@@ -714,6 +730,8 @@ export class HilosUserPage {
   protected readonly nameMin = 2
   protected readonly nameMax = 64
   protected readonly passwordCopy = HILOS_ACCOUNT_MERGE_PASSWORD_COPY
+  protected readonly hiddenWord = HILOS_VIEW_MODE_COPY.hidden
+  protected readonly hiddenAsWord = hiddenAsWord
 
   // Mirrored from the core selectors, which derive from the context input.
   protected readonly detail = signal<HilosUserDetailRow | undefined>(undefined)
@@ -820,7 +838,21 @@ export class HilosUserPage {
   )
 
   protected readonly editing = signal(false)
-  protected readonly draft = signal('')
+  // A hidden name stays the one hidden value, so the row-edit helper sees it
+  // unchanged and the modal is never dirty; the input edits only a name.
+  protected readonly draft = signal<Hideable<string>>('')
+  protected readonly draftHidden = computed(() => isHiddenValue(this.draft()))
+  protected readonly draftText = computed(() => {
+    const draft = this.draft()
+
+    return isHiddenValue(draft) ? '' : draft
+  })
+  // A hidden name draws the person icon, as a name without initials does.
+  protected readonly avatarName = computed(() => {
+    const name = this.detail()?.name ?? ''
+
+    return isHiddenValue(name) ? '' : name
+  })
   protected readonly loading = signal(false)
   // The name the rename in flight sent — what the success effect waits for;
   // null while nothing is in flight.
@@ -829,7 +861,11 @@ export class HilosUserPage {
     openRowEdit<UserEditFields>({ name: '' }),
   )
   protected readonly valid = computed(() => {
-    const trimmed = this.draft().trim()
+    const draft = this.draft()
+    if (isHiddenValue(draft)) {
+      return false
+    }
+    const trimmed = draft.trim()
 
     return trimmed.length >= this.nameMin && trimmed.length <= this.nameMax
   })
@@ -837,18 +873,19 @@ export class HilosUserPage {
   // once the card has no row any more.
   protected readonly live = computed(() => {
     const current = this.detail()
+    const draft = this.draft()
 
     return resolveRowEdit(
       current ? { name: current.name } : undefined,
       this.editBaseline(),
-      { name: this.draft().trim() },
+      { name: isHiddenValue(draft) ? draft : draft.trim() },
     )
   })
   protected readonly dirty = computed(() => this.live().dirty)
   protected readonly editTitle = computed(() => {
     const current = this.detail()
 
-    return current ? `Rename · ${current.name}` : 'Rename user'
+    return current ? `Rename · ${hiddenAsWord(current.name)}` : 'Rename user'
   })
   protected readonly editNotice = computed(
     () => this.live().notice?.kind ?? null,
@@ -1105,7 +1142,14 @@ export class HilosUserPage {
   protected submit(event?: Event): void {
     event?.preventDefault()
     const current = this.detail()
-    if (!current || !this.valid() || this.loading() || this.live().gone) {
+    const draft = this.draft()
+    if (
+      !current ||
+      isHiddenValue(draft) ||
+      !this.valid() ||
+      this.loading() ||
+      this.live().gone
+    ) {
       return
     }
     // No change: close without a round-trip (also keeps the state-driven success
@@ -1116,7 +1160,7 @@ export class HilosUserPage {
       return
     }
 
-    const name = this.draft().trim()
+    const name = draft.trim()
     const sent = this.rename?.submitRename(current.id, name) ?? false
     this.loading.set(sent)
     this.sentName.set(sent ? name : null)

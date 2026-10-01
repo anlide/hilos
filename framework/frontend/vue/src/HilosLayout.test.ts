@@ -931,13 +931,14 @@ function reconsentHandshake(
  * A router standing on one page.
  *
  * @param page The page key of the current route.
+ * @param admin Whether the route is an admin one.
  */
-function routerOn(page: string): HilosRouter {
+function routerOn(page: string, admin = false): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page,
       params: {},
-      admin: false,
+      admin,
     }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
@@ -1079,5 +1080,159 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
     expect(wrapper.find('[data-id="legal-reconsent-icon"]').exists()).toBe(
       false,
     )
+  })
+})
+
+describe('HilosLayout view-mode strip (HIL-1260)', () => {
+  let unbind: (() => void) | undefined
+  let mounted: ReturnType<typeof mount> | undefined
+
+  afterEach(() => {
+    mounted?.unmount()
+    mounted = undefined
+    unbind?.()
+    unbind = undefined
+  })
+
+  /**
+   * One handshake: Bob, an admin or not, on a node with the admin view mode on
+   * or off, with the facts of his standing.
+   *
+   * @param admin Whether Bob is an admin.
+   * @param viewMode The node's admin view mode.
+   * @param deletionEffectiveAt When Bob's own account is deleted, or null.
+   */
+  function viewerHandshake(
+    admin: boolean,
+    viewMode: boolean,
+    deletionEffectiveAt: number | null = null,
+  ): Record<string, unknown> {
+    const standing = standingHandshake(
+      deletionEffectiveAt === null ? 'none' : 'deletion_scheduled',
+      false,
+      deletionEffectiveAt,
+    )
+
+    return {
+      data: {
+        ...(standing['data'] as Record<string, unknown>),
+        adminViewMode: viewMode,
+      },
+      entities: { currentUser: { id: 2, name: 'Bob', admin } },
+    }
+  }
+
+  /**
+   * Mount the shell on one route.
+   *
+   * @param admin Whether the route is an admin one.
+   * @param connection The shell's connection.
+   * @param banner The project's own strip, if any.
+   */
+  function mountOn(
+    admin: boolean,
+    connection: HilosConnection = shellConnection(),
+    banner?: string,
+  ) {
+    mounted = mount(HilosLayout, {
+      props: { connection },
+      slots: {
+        default: '<p data-id="page-body">Page</p>',
+        ...(banner === undefined ? {} : { banner }),
+      },
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: routerOn(
+            admin ? HilosPages.DASHBOARD : HilosPages.PROFILE_DATA,
+            admin,
+          ),
+        },
+      },
+    })
+
+    return mounted
+  }
+
+  it('tells a viewer on an admin route that the screen may be looked at and not changed', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(false, true))
+
+    const strip = mountOn(true).get('[data-id="view-mode-banner"]')
+
+    expect(strip.classes()).toEqual(
+      expect.arrayContaining(['alert', 'alert-secondary', 'border-0']),
+    )
+    expect(strip.find('.bi-eye').attributes('aria-hidden')).toBe('true')
+    const text = strip.get('#hilos-view-mode-strip-text')
+    expect(text.get('strong').text()).toBe('View mode')
+    expect(text.text()).toBe(
+      'View mode · You can look around, but not change anything.',
+    )
+  })
+
+  it('stands after the session strips and before the project strip', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(false, true, NOW + 3 * DAY_MS))
+
+    const wrapper = mountOn(
+      true,
+      shellConnection(ADMITTED),
+      '<p data-id="test-banner">A trial notice</p>',
+    )
+
+    const order = Array.from(
+      wrapper.find('[data-id="app-banner"]').element.children,
+    ).map((child) => child.getAttribute('data-id'))
+    expect(order).toEqual([
+      'protected-mode-banner',
+      'account-deletion-strip',
+      'view-mode-banner',
+      'test-banner',
+    ])
+  })
+
+  it.each([
+    ['on a route outside the admin section', false, true, false],
+    ['for an admin', true, true, true],
+    ['on a node without the view mode', false, false, true],
+  ])('draws no strip %s', (_case, admin, viewMode, adminRoute) => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(admin, viewMode))
+
+    expect(
+      mountOn(adminRoute).find('[data-id="view-mode-banner"]').exists(),
+    ).toBe(false)
+  })
+
+  it('draws no strip under the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(false, true))
+
+    expect(
+      mountOn(true, shellConnection(FROZEN))
+        .find('[data-id="view-mode-banner"]')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('leaves on a grant and comes back on a revoke, live', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(false, true))
+    const wrapper = mountOn(true)
+    const shown = () => wrapper.find('[data-id="view-mode-banner"]').exists()
+    expect(shown()).toBe(true)
+
+    session.handshake(viewerHandshake(true, true))
+    await flushPromises()
+    expect(shown()).toBe(false)
+
+    session.handshake(viewerHandshake(false, true))
+    await flushPromises()
+    expect(shown()).toBe(true)
   })
 })

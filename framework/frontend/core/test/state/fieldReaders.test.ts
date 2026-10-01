@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   readBoolean,
+  readHideableString,
+  readHideableStringOrNull,
   readNumber,
   readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../../src/state/fieldReaders.js'
+import { HIDDEN_VALUE } from '../../src/state/hiddenValue.js'
 
 describe('field readers', () => {
   it('readString returns the string, or empty when absent or non-string', () => {
@@ -18,6 +21,24 @@ describe('field readers', () => {
     expect(readStringOrNull({ note: 'hi' }, 'note')).toBe('hi')
     expect(readStringOrNull({}, 'note')).toBeNull()
     expect(readStringOrNull({ note: 7 }, 'note')).toBeNull()
+  })
+
+  it('readHideableString hands the one hidden value out for the mark, else reads as readString', () => {
+    expect(readHideableString({ name: { _hidden: true } }, 'name')).toBe(
+      HIDDEN_VALUE,
+    )
+    expect(readHideableString({ name: 'Iris' }, 'name')).toBe('Iris')
+    expect(readHideableString({}, 'name')).toBe('')
+    expect(readHideableString({ name: { _hidden: false } }, 'name')).toBe('')
+  })
+
+  it('readHideableStringOrNull hands the one hidden value out for the mark, else reads as readStringOrNull', () => {
+    expect(readHideableStringOrNull({ note: { _hidden: true } }, 'note')).toBe(
+      HIDDEN_VALUE,
+    )
+    expect(readHideableStringOrNull({ note: 'hi' }, 'note')).toBe('hi')
+    expect(readHideableStringOrNull({ note: null }, 'note')).toBeNull()
+    expect(readHideableStringOrNull({}, 'note')).toBeNull()
   })
 
   it('readNumber returns the number, or zero when absent or non-numeric', () => {

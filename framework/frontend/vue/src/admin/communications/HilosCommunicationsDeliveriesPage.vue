@@ -20,12 +20,15 @@ import {
   createHilosDeliveriesTable,
   HilosPages,
   isDeliveryRetryable,
+  isHiddenValue,
   type HilosDeliveriesContext,
   type HilosDeliveryRow,
 } from '@hilos/core'
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -71,13 +74,16 @@ function statusClass(status: string): string {
 }
 
 // The recipient label: the resolved display name, its user id, both, or a dash.
+// A hidden name is not this text: the template draws the mark beside the id.
 function recipientLabel(row: HilosDeliveryRow): string {
   if (row.userId === null) {
     return '—'
   }
   const id = `#${row.userId}`
 
-  return row.userLabel ? `${row.userLabel} (${id})` : id
+  return typeof row.userLabel === 'string' && row.userLabel !== ''
+    ? `${row.userLabel} (${id})`
+    : id
 }
 
 // Retry: a per-row tracked action on a failed delivery. The re-queued row arrives
@@ -122,7 +128,14 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
       <template #cell-deliveredAt="{ row }">{{
         row.deliveredAt || '—'
       }}</template>
-      <template #cell-userLabel="{ row }">{{ recipientLabel(row) }}</template>
+      <template #cell-userLabel="{ row }">
+        <template v-if="isHiddenValue(row.userLabel)"
+          ><HilosHiddenMark /><template v-if="row.userId !== null">
+            (#{{ row.userId }})</template
+          ></template
+        >
+        <template v-else>{{ recipientLabel(row) }}</template>
+      </template>
       <template #cell-actions="{ row }">
         <LoadingButton
           v-if="isDeliveryRetryable(row)"
@@ -136,13 +149,19 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
         </LoadingButton>
       </template>
       <template #detail-notificationTitle="{ row }">
-        <div class="fw-semibold">{{ row.notificationTitle || '—' }}</div>
+        <div class="fw-semibold">
+          <HilosHideable v-slot="{ value }" :value="row.notificationTitle">{{
+            value || '—'
+          }}</HilosHideable>
+        </div>
         <code class="small text-body-secondary">{{
           row.notificationType
         }}</code>
       </template>
       <template #detail-lastError="{ row }">
-        {{ row.lastError || '—' }}
+        <HilosHideable v-slot="{ value }" :value="row.lastError">{{
+          value || '—'
+        }}</HilosHideable>
       </template>
     </HilosViewportTable>
   </HilosAdminPage>

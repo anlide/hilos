@@ -6,6 +6,7 @@ import {
   describeHilosLegalCheck,
   hilosLegalDocumentLabel,
   hilosLegalLapsedHref,
+  hilosLegalLapsedLabel,
   HilosLegalSettingKey,
   HilosPages,
   LEGAL_CATALOG_REFUSAL_SECTION,
@@ -28,11 +29,11 @@ const refusal = useSignal(
 const settingsRows = useSignal(settings.controller.rows)
 const documentRows = useSignal(documents.controller.rows)
 const lapsedLabel = computed(() =>
-  settingsRows.value.find(
-    ({ row }) => row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
-  )?.row?.value === 'remind'
-    ? 'Past deadline'
-    : 'Frozen',
+  hilosLegalLapsedLabel(
+    settingsRows.value.find(
+      ({ row }) => row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
+    )?.row?.value,
+  ),
 )
 onMounted(() => {
   documents.start()

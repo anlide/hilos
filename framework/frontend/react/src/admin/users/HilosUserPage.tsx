@@ -35,7 +35,10 @@ import {
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   HILOS_TABLE_ACTIONS_KEY,
+  HILOS_VIEW_MODE_COPY,
   HilosPages,
+  hiddenAsWord,
+  isHiddenValue,
   USER_IDENTITIES_FIELD,
   createHilosAccountMerge,
   createHilosMergeCandidates,
@@ -50,6 +53,7 @@ import {
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosMergeCandidateIdentity,
   HilosMergeCandidateRow,
   HilosPasswordFate,
@@ -82,9 +86,12 @@ export interface HilosUserPageProps {
 const NAME_MIN = 2
 const NAME_MAX = 64
 
-/** The one field the modal edits: the display name. */
+/**
+ * The one field the modal edits: the display name — hidden for a viewer of the
+ * admin view mode, and then the modal says so in place of the input.
+ */
 interface UserEditFields {
-  name: string
+  name: Hideable<string>
 }
 
 /** The one line the modal says about the other side, for what the helper found. */
@@ -93,7 +100,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return `Changed elsewhere to "${live.fields.name.incoming}".`
+      return `Changed elsewhere to "${hiddenAsWord(live.fields.name.incoming)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -315,7 +322,9 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   }, [candidateRows, mergeStep, selectedCandidateId, selectedCandidate])
 
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
+  // A hidden name stays the one hidden value, so the row-edit helper sees it
+  // unchanged and the modal is never dirty.
+  const [draft, setDraft] = useState<Hideable<string>>('')
   const [loading, setLoading] = useState(false)
   // The name the rename in flight sent — what the success effect waits for;
   // null while nothing is in flight.
@@ -324,17 +333,21 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     RowEditBaseline<UserEditFields>
   >(() => openRowEdit<UserEditFields>({ name: '' }))
 
-  const trimmed = draft.trim()
-  const valid = trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX
+  const draftHidden = isHiddenValue(draft)
+  const trimmed = draftHidden ? '' : draft.trim()
+  const valid =
+    !draftHidden && trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX
   // The live row is the card's own detail row, projected onto the name; gone
   // once the card has no row any more.
   const live = resolveRowEdit(
     detail ? { name: detail.name } : undefined,
     editBaseline,
-    { name: trimmed },
+    { name: draftHidden ? draft : trimmed },
   )
   const dirty = live.dirty
-  const editTitle = detail ? `Rename · ${detail.name}` : 'Rename user'
+  const editTitle = detail
+    ? `Rename · ${hiddenAsWord(detail.name)}`
+    : 'Rename user'
   const editNotice = live.notice?.kind ?? null
   const editNoticeText = noticeText(live)
   const saveLabel = live.gone ? 'Deleted' : 'Save'
@@ -520,9 +533,12 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
         <>
           <div className="card" data-id="hilos-user-detail">
             <div className="card-header d-flex align-items-center gap-2">
-              <HilosAvatar name={detail.name} size="md" />
+              <HilosAvatar
+                name={isHiddenValue(detail.name) ? '' : detail.name}
+                size="md"
+              />
               <span className="h5 mb-0" data-id="hilos-user-name">
-                {detail.name}
+                {hiddenAsWord(detail.name)}
               </span>
               <span className="badge text-bg-secondary">{detail.presence}</span>
               {standingBadge !== null && (
@@ -826,23 +842,32 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             submit()
           }}
         >
-          <label className="form-label" htmlFor="hilos-user-name-field">
-            Display name
-          </label>
-          <input
-            id="hilos-user-name-field"
-            type="text"
-            className="form-control"
-            minLength={NAME_MIN}
-            maxLength={NAME_MAX}
-            data-id="hilos-user-name-input"
-            data-autofocus
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <div className="form-text">
-            Between {NAME_MIN} and {NAME_MAX} characters.
-          </div>
+          {draftHidden ? (
+            <>
+              <div className="form-label">Display name</div>
+              <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+            </>
+          ) : (
+            <>
+              <label className="form-label" htmlFor="hilos-user-name-field">
+                Display name
+              </label>
+              <input
+                id="hilos-user-name-field"
+                type="text"
+                className="form-control"
+                minLength={NAME_MIN}
+                maxLength={NAME_MAX}
+                data-id="hilos-user-name-input"
+                data-autofocus
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+              />
+              <div className="form-text">
+                Between {NAME_MIN} and {NAME_MAX} characters.
+              </div>
+            </>
+          )}
           <HilosEditNotice
             kind={editNotice}
             text={editNoticeText}
@@ -857,7 +882,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           mergeProof !== 'skip'
             ? HILOS_STEP_UP_COPY.title
             : detail
-              ? `Merge an account into ${detail.name}`
+              ? `Merge an account into ${hiddenAsWord(detail.name)}`
               : 'Merge an account'
         }
         confirmOnClose={selectedCandidateId !== null}
@@ -1003,7 +1028,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               </strong>{' '}
               will be merged into{' '}
               <strong>
-                {detail?.name} (#{detail?.id})
+                {detail ? hiddenAsWord(detail.name) : ''} (#{detail?.id})
               </strong>
               .
             </p>

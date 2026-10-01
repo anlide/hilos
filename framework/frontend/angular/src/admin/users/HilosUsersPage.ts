@@ -26,6 +26,7 @@ import {
   HilosPages,
   createHilosImpersonate,
   createHilosUsersTable,
+  hiddenAsWord,
   subscribeSignal,
 } from '@hilos/core'
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
@@ -62,7 +63,9 @@ export interface UsersRowActionsContext {
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="users().controller">
         <ng-template hilosTableCell="id" let-row>{{ row.id }}</ng-template>
-        <ng-template hilosTableCell="name" let-row>{{ row.name }}</ng-template>
+        <ng-template hilosTableCell="name" let-row>{{
+          hiddenAsWord(row.name)
+        }}</ng-template>
         <ng-template hilosTableCell="presence" let-row>
           <span
             [class]="
@@ -116,8 +119,8 @@ export interface UsersRowActionsContext {
         />
         @if (impersonateRow(); as row) {
           <p class="mb-0">
-            Become <strong>{{ row.name }}</strong> and see the app as they do?
-            You can stop from the banner at any time.
+            Become <strong>{{ hiddenAsWord(row.name) }}</strong> and see the app
+            as they do? You can stop from the banner at any time.
           </p>
         }
         <ng-template #modalActions let-requestClose="requestClose">
@@ -150,6 +153,7 @@ export class HilosUsersPage {
   readonly context = input.required<HilosUsersContext>()
 
   protected readonly page = HilosPages.USERS
+  protected readonly hiddenAsWord = hiddenAsWord
   // The lapsed filter is read from the address the page opened on and written
   // back as it changes; mounted without a navigator, the list opens whole and
   // leaves the address alone.
@@ -175,7 +179,7 @@ export class HilosUsersPage {
   protected readonly impersonateTitle = computed(() => {
     const row = this.impersonateRow()
 
-    return row ? `Impersonate · ${row.name}` : 'Impersonate user'
+    return row ? `Impersonate · ${hiddenAsWord(row.name)}` : 'Impersonate user'
   })
 
   constructor() {

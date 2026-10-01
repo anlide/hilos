@@ -62,6 +62,9 @@ import {
   isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
+  hiddenAsWord,
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
   offersBackupRestore,
   subscribeSignal,
 } from '@hilos/core'
@@ -239,7 +242,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         <ng-template hilosTableCell="shipState" let-row>
           <span [class.text-body-secondary]="isOutOfReach(row)">
             <span [class]="shippingClass(row)">{{ formatShipping(row) }}</span>
-            @if (isShipFailed(row) && row.shipError) {
+            @if (isShipFailed(row) && row.shipError !== null) {
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary ms-1"
@@ -482,7 +485,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
       >
         <hilos-long-text
           kind="prose"
-          [text]="detailsRow()?.failureReason ?? ''"
+          [text]="hiddenAsWord(detailsRow()?.failureReason ?? '')"
           dataId="hilos-backup-details-text"
         />
         <ng-template #modalActions let-requestClose="requestClose">
@@ -527,7 +530,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
       >
         <hilos-long-text
           kind="prose"
-          [text]="shipErrorRow()?.shipError ?? ''"
+          [text]="hiddenAsWord(shipErrorRow()?.shipError ?? '')"
           dataId="hilos-backup-ship-error-text"
         />
         <ng-template #modalActions let-requestClose="requestClose">
@@ -672,7 +675,11 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         }
         <hilos-long-text
           kind="prose"
-          [text]="outcomeRow()?.restoreFailureReason || 'No failure recorded.'"
+          [text]="
+            hiddenAsWord(
+              outcomeRow()?.restoreFailureReason || 'No failure recorded.'
+            )
+          "
           dataId="hilos-backup-restore-outcome-text"
         />
         <ng-template #modalActions let-requestClose="requestClose">
@@ -745,6 +752,7 @@ export class HilosBackupPage {
   protected readonly isKeepable = isBackupKeepable
   protected readonly isDeletable = isBackupDeletable
   protected readonly hasFailureDetail = hasBackupFailureDetail
+  protected readonly hiddenAsWord = hiddenAsWord
   protected readonly hasRestoreOutcome = hasRestoreOutcome
   protected readonly offersRestore = offersBackupRestore
   protected readonly isShipFailed = isBackupShipFailed
@@ -1085,7 +1093,7 @@ export class HilosBackupPage {
     // doing right now: waiting for the current run would not make this one restorable.
     if (this.isMigrationRefused(row)) {
       return (
-        row.restoreMigrationNotice ??
+        hiddenAsWord(row.restoreMigrationNotice) ??
         'This archive was taken on newer code; there is no downgrade path'
       )
     }
@@ -1110,9 +1118,16 @@ export class HilosBackupPage {
     return backupMigrationBehind(row)
   }
 
-  /** This archive's per-connection migration lines, one per rendered row. */
+  /**
+   * This archive's per-connection migration lines, one per rendered row; a notice
+   * hidden from a viewer of the admin view mode is the one line "Hidden".
+   *
+   * @param row The backup row.
+   */
   protected migrationNotes(row: HilosBackupRow): readonly string[] {
-    return backupMigrationNotes(row)
+    const notes = backupMigrationNotes(row)
+
+    return isHiddenValue(notes) ? [HILOS_VIEW_MODE_COPY.hidden] : notes
   }
 
   /**

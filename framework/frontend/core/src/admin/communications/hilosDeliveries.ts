@@ -24,10 +24,13 @@ import {
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
+  readHideableString,
+  readHideableStringOrNull,
   readNumber,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
+import { type Hideable } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
@@ -53,16 +56,25 @@ export interface HilosDeliveryRow {
   readonly attempts: number
   /** ISO-8601 delivered timestamp, or empty string when not sent. */
   readonly deliveredAt: string
-  /** Last failure detail (a domain phrase), or empty string when none. */
-  readonly lastError: string
+  /**
+   * Last failure detail (a domain phrase), or empty string when none; hidden from a
+   * viewer of the admin view mode.
+   */
+  readonly lastError: Hideable<string>
   /** Recipient user id, or null when the notification is gone. */
   readonly userId: number | null
-  /** Recipient display label (empty when the project resolves none). */
-  readonly userLabel: string | null
+  /**
+   * Recipient display label (empty when the project resolves none); hidden from a
+   * viewer of the admin view mode.
+   */
+  readonly userLabel: Hideable<string | null>
   /** Notification machine type. */
   readonly notificationType: string | null
-  /** Notification title (the body is never shown — it may carry personal detail). */
-  readonly notificationTitle: string | null
+  /**
+   * Notification title (the body is never shown — it may carry personal detail);
+   * hidden from a viewer of the admin view mode.
+   */
+  readonly notificationTitle: Hideable<string | null>
 }
 
 /** Row payload key of the recipient user id. */
@@ -199,11 +211,11 @@ export function resolveHilosDeliveryRow(row: TableRow): HilosDeliveryRow {
     status: readString(slot, DELIVERY_STATUS_FIELD),
     attempts: readNumber(slot, DELIVERY_ATTEMPTS_FIELD),
     deliveredAt: readString(slot, DELIVERY_DELIVERED_AT_FIELD),
-    lastError: readString(slot, DELIVERY_LAST_ERROR_FIELD),
+    lastError: readHideableString(slot, DELIVERY_LAST_ERROR_FIELD),
     userId: readUserId(slot),
-    userLabel: readStringOrNull(slot, DELIVERY_USER_LABEL_FIELD),
+    userLabel: readHideableStringOrNull(slot, DELIVERY_USER_LABEL_FIELD),
     notificationType: readStringOrNull(slot, DELIVERY_NOTIFICATION_TYPE_FIELD),
-    notificationTitle: readStringOrNull(
+    notificationTitle: readHideableStringOrNull(
       slot,
       DELIVERY_NOTIFICATION_TITLE_FIELD,
     ),

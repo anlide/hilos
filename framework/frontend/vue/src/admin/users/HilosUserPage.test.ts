@@ -733,6 +733,36 @@ describe('HilosUserPage rename modal', () => {
   })
 })
 
+describe('HilosUserPage name hidden from a viewer of the admin view mode (HIL-1260)', () => {
+  it('draws the mark and the person icon, and a rename window with the mark in place of the field', async () => {
+    const { context } = userContext()
+    context.scopes
+      .page()!
+      .entities.upsert({ type: 'user', id: 1 }, { name: { _hidden: true } })
+    await openModal(context)
+
+    expect(
+      modalEl('hilos-user-name')
+        ?.querySelector('[data-id="hilos-hidden"]')
+        ?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(modalEl('hilos-avatar')?.querySelector('.bi-person')).not.toBeNull()
+    expect(modalEl('modal')?.querySelector('.modal-title')?.textContent).toBe(
+      'Rename · Hidden',
+    )
+    expect(nameInput()).toBeNull()
+    expect(
+      modalEl('modal')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+    expect(saveButton().disabled).toBe(true)
+
+    modalEl('hilos-user-cancel')?.click()
+    await nextTick()
+    expect(modalEl('modal-confirm-discard')).toBeNull()
+    expect(modalEl('modal')).toBeNull()
+  })
+})
+
 describe('HilosUserPage lifecycle', () => {
   it('keeps own-account controls disabled with reasons and follows live rights', async () => {
     const { context } = userContext()

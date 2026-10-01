@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { createHilosLegalSettingEdit } from '../../../src/admin/legal/hilosLegalSettingsEdit.js'
 import { createHilosLegalSettingsTable } from '../../../src/admin/legal/hilosLegal.js'
 import { type HilosLegalContext } from '../../../src/legal/legalAgreements.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 
-function harness() {
+function harness(initial: unknown = 'checkbox') {
   const focus: string[] = []
   const context = {
     connection: {
@@ -13,7 +14,7 @@ function harness() {
   } as unknown as HilosLegalContext
   const table = createHilosLegalSettingsTable(context)
   const editor = createHilosLegalSettingEdit(table.controller)
-  const window = (value: string) =>
+  const window = (value: unknown) =>
     table.controller.ingestWindow(
       [
         {
@@ -27,13 +28,26 @@ function harness() {
       null,
       25,
     )
-  window('checkbox')
+  window(initial)
   editor.start()
   editor.open('legal.consent_form')
   return { editor, table, window, focus }
 }
 
 describe('legal setting edit sessions', () => {
+  it('opens a value hidden from a viewer as the one hidden value, never dirty (HIL-1260)', () => {
+    const h = harness({ _hidden: true })
+    expect(h.editor.value.get()).toBe(HIDDEN_VALUE)
+    expect(h.editor.state.get().dirty).toBe(false)
+
+    // The next window sends the mark again: still the same value, nothing to say.
+    h.window({ _hidden: true })
+    expect(h.editor.state.get().dirty).toBe(false)
+    expect(h.editor.state.get().notice).toBeNull()
+    expect(h.editor.noticeText.get()).toBe('')
+    h.editor.dispose()
+  })
+
   it('freezes the baseline, keeps drafts out of the row, and releases focus on close', () => {
     const h = harness()
     expect(h.editor.value.get()).toBe('checkbox')

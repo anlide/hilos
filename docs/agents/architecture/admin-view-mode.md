@@ -233,11 +233,25 @@ nobody is asked*).
 - For a viewer the server writes the hidden mark in place of every field that
   is personal, or about which nothing says whether it is; an admin receives
   exactly what they receive today. The hidden mark is the object
-  `{"_hidden": true}` in place of the value (`HiddenValue`); the word the
-  screen shows is HIL-1260's. It lives in the value itself, not in a side list
-  of hidden names, because the frontend files a fragment that carries an id
-  into its entity store by (type, id) and a side list would not survive that;
-  the leading underscore is a reserved name, like the entity's `_standalone`.
+  `{"_hidden": true}` in place of the value (`HiddenValue`). It lives in the
+  value itself, not in a side list of hidden names, because the frontend files
+  a fragment that carries an id into its entity store by (type, id) and a side
+  list would not survive that; the leading underscore is a reserved name, like
+  the entity's `_standalone`.
+- The core reads the mark once (HIL-1260), and only for the fields that stay
+  hidden after the marking and reach a viewer's screen — the personal ones.
+  `isHiddenValue` recognizes it (the mirror of `HiddenValue::isMark`), and the
+  readers hand out the one frozen `HIDDEN_VALUE` as a third state of the field,
+  beside the value and null, typed `Hideable<T>`: `readHideableString` and
+  `readHideableStringOrNull` beside `readString`, and for a field of an entity
+  whose typed shape stays plain — a person's name, read by the chat and the
+  profile where it is never hidden — the collection's
+  `EntityCollection.hidden(target, field)`. One instance and not the object off
+  the wire, because the row-edit helper compares by `Object.is`: a hidden field
+  is then unchanged to it, and an edit window opened on one is never dirty. A
+  hidden null is not told from a hidden value — the server hides the field
+  whole. Every other field reads as before, the mark folded into the empty
+  string or null until its screen needs the third state.
 - The source is the marking that already exists: `_pii` and `_piiNotPersonal`
   on an Entity, collected by `PiiRegistry` — the same verdict a restore
   anonymizes by ([backup-anonymization.md](backup-anonymization.md)). There is
@@ -378,20 +392,37 @@ nobody is asked*).
   would be half a movement
   ([../signals/screen-invalidation.md](../signals/screen-invalidation.md)).
 - The mode banner stands on every admin screen — framework and project,
-  Dashboard included — in the shell's banner strip, beside the protected-mode
-  and replacement banners (not in the code yet — HIL-1260).
+  Dashboard included — in the shell's banner strip (`data-id="view-mode-banner"`),
+  for a viewer (`hilosAdminAccess` is `view`) on an admin route and not under
+  maintenance: after the session's strips (replacement, deletion), before the
+  project's slot, grey (`alert-secondary` — yellow, blue and red already mean
+  "not well", frozen and blocked there), with an eye. A grant takes it down live
+  and a revoke brings it back. The words of the banner are the core's —
+  `HILOS_VIEW_MODE_COPY.mark` and `.explanation` (HIL-1261), one set for the
+  three frontends — and its text carries the id `HILOS_VIEW_MODE_STRIP_TEXT_ID`.
 - The hidden mark looks the same on every screen and in every cell — one
-  component (not in the code yet — HIL-1260). The words of the banner are the
-  core's — `HILOS_VIEW_MODE_COPY.mark` and `.explanation` (HIL-1261), one set
-  for the three frontends — and its text carries the id
-  `HILOS_VIEW_MODE_STRIP_TEXT_ID`; the words of the hidden mark and the
-  component's name are HIL-1260's.
+  component, `HilosHiddenMark`: a soft grey pill with a struck-out eye and the
+  word `HILOS_VIEW_MODE_COPY.hidden` ("Hidden"; variant B, agreed by the owner
+  on 30.09.2026). A value that may be hidden is drawn through `HilosHideable`,
+  which hands a value to its slot narrowed and draws the mark for the hidden
+  one. A string with no markup — a modal title, an aria-label — says the word
+  through `hiddenAsWord`: "Rename · Hidden". A label chosen by a hidden value
+  takes the wording true for every value (the legal root's lapsed count reads
+  "Past deadline", `hilosLegalLapsedLabel`), a fallback that says "there is
+  none" is said only when there truly is none ("No verified email"), and a
+  button that opens a hidden text stays — the window says "Hidden".
+- An edit window over a hidden field (F1): the field is replaced by the mark —
+  no input, no list — and the draft holds the one hidden value, so the window is
+  not dirty, raises no notice, and Cancel or Esc closes it without "Discard
+  changes?"; Save is disabled by the mode. React and Angular draw neither the
+  banner nor the mark yet and say the word "Hidden" where a field became
+  hideable (not in the code yet — HIL-1271, HIL-1272).
 - The controls of the mode: inside an admin page a viewer finds the action
   button (`LoadingButton`), the switch (`HilosSwitch`), the Save of an edit
   form (`ConflictActions`, the default button and the slotted one alike) and a
   table's bulk operations plainly disabled — their own color and size, paler,
-  and no words. The explanation stands on the screen once, in the mode banner
-  (not in the code yet — HIL-1260), and every control the mode disabled points
+  and no words. The explanation stands on the screen once, in the mode banner,
+  and every control the mode disabled points
   at its text with `aria-describedby` — beside the description it already had.
   A disabled element shows no tooltip, so the reason is visible text and not a
   `title` ([../frontend/accessibility.md](../frontend/accessibility.md), rule

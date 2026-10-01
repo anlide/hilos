@@ -16,9 +16,13 @@ import {
   HILOS_LEGAL_SETTING_PREVIEWS,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
+  HILOS_VIEW_MODE_COPY,
+  hiddenAsWord,
+  isHiddenValue,
   openRowEdit,
   resolveRowEdit,
   subscribeSignal,
+  type Hideable,
   type RowEditState,
   type HilosLegalContext,
   type HilosLegalSettingRow,
@@ -64,11 +68,11 @@ let inputSequence = 0
         >
         <ng-template [hilosTableCell]="keys.value" let-setting
           ><span [attr.data-id]="'legal-setting-value-' + setting.rowKey">{{
-            valueCopy[setting.value] ?? setting.value
+            valueLabel(setting.value)
           }}</span>
           <div class="small text-body-secondary">
             Default:
-            {{ valueCopy[setting.defaultValue] ?? setting.defaultValue }}
+            {{ valueLabel(setting.defaultValue) }}
           </div></ng-template
         >
         <ng-template [hilosTableCell]="actionsKey" let-setting
@@ -149,27 +153,34 @@ let inputSequence = 0
         />
         @if (row(); as setting) {
           <form (submit)="save($event)">
-            <label class="form-label" [for]="inputId">{{
-              copy[setting.rowKey]?.label ?? setting.rowKey
-            }}</label>
-            <select
-              [id]="inputId"
-              class="form-select"
-              data-id="legal-setting-input"
-              data-autofocus
-              [value]="value()"
-              (change)="setValue($event)"
-              [disabled]="action.busy()"
-            >
-              @for (
-                option of copy[setting.rowKey]?.values ?? [];
-                track option
-              ) {
-                <option [value]="option" [selected]="option === value()">
-                  {{ valueCopy[option] ?? option }}
-                </option>
-              }
-            </select>
+            @if (valueHidden()) {
+              <div class="form-label">
+                {{ copy[setting.rowKey]?.label ?? setting.rowKey }}
+              </div>
+              <div>{{ hiddenWord }}</div>
+            } @else {
+              <label class="form-label" [for]="inputId">{{
+                copy[setting.rowKey]?.label ?? setting.rowKey
+              }}</label>
+              <select
+                [id]="inputId"
+                class="form-select"
+                data-id="legal-setting-input"
+                data-autofocus
+                [value]="value()"
+                (change)="setValue($event)"
+                [disabled]="action.busy()"
+              >
+                @for (
+                  option of copy[setting.rowKey]?.values ?? [];
+                  track option
+                ) {
+                  <option [value]="option" [selected]="option === value()">
+                    {{ valueCopy[option] ?? option }}
+                  </option>
+                }
+              </select>
+            }
             <hilos-edit-notice
               [kind]="state().notice?.kind ?? null"
               [text]="noticeText()"
@@ -224,6 +235,7 @@ export class HilosLegalSettingsPage {
   protected readonly copy = HILOS_LEGAL_SETTING_COPY
   protected readonly valueCopy = HILOS_LEGAL_VALUE_COPY
   protected readonly previews = HILOS_LEGAL_SETTING_PREVIEWS
+  protected readonly hiddenWord = HILOS_VIEW_MODE_COPY.hidden
   protected readonly inputId = `legal-setting-input-${++inputSequence}`
   protected readonly table = computed(() =>
     createHilosLegalSettingsTable(this.context()),
@@ -236,9 +248,16 @@ export class HilosLegalSettingsPage {
   )
   protected readonly action = createHilosTrackedAction({ toast: false })
   protected readonly row = signal<HilosLegalSettingRow | null>(null)
-  protected readonly value = signal('')
-  protected readonly state = signal<RowEditState<{ value: string }>>(
-    resolveRowEdit(undefined, openRowEdit({ value: '' }), { value: '' }),
+  // A value hidden from a viewer of the admin view mode stays the one hidden
+  // value: the draft is never dirty, and the modal says so in place of the list.
+  protected readonly value = signal<Hideable<string>>('')
+  protected readonly valueHidden = computed(() => isHiddenValue(this.value()))
+  protected readonly state = signal<RowEditState<{ value: Hideable<string> }>>(
+    resolveRowEdit(
+      undefined,
+      openRowEdit<{ value: Hideable<string> }>({ value: '' }),
+      { value: '' },
+    ),
   )
   protected readonly noticeText = signal('')
   protected readonly title = computed(() => {
@@ -277,24 +296,39 @@ export class HilosLegalSettingsPage {
     this.action.clearError()
     this.editor().open(key)
   }
+  /**
+   * A setting value in words: its label, the value itself when it has none, or
+   * "Hidden" for a value hidden from a viewer of the admin view mode.
+   *
+   * @param value The value, or the hidden mark in its place.
+   */
+  protected valueLabel(value: Hideable<string>): string {
+    const said = hiddenAsWord(value)
+
+    return this.valueCopy[said] ?? said
+  }
+
   protected setValue(event: Event): void {
     this.editor().setValue((event.target as HTMLSelectElement).value)
   }
   protected async save(event?: Event): Promise<void> {
     event?.preventDefault()
     const row = this.row(),
-      state = this.state()
-    if (row === null || this.action.busy() || state.gone || state.conflict)
+      state = this.state(),
+      value = this.value()
+    if (
+      row === null ||
+      isHiddenValue(value) ||
+      this.action.busy() ||
+      state.gone ||
+      state.conflict
+    )
       return
     if (!state.dirty) {
       this.editor().close()
       return
     }
-    if (
-      await this.action.run(
-        this.actions().sendSettingSet(row.rowKey, this.value()),
-      )
-    )
+    if (await this.action.run(this.actions().sendSettingSet(row.rowKey, value)))
       this.editor().close()
   }
 }

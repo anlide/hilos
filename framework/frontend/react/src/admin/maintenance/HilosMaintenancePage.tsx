@@ -10,6 +10,9 @@ import {
   createHilosMaintenanceCircleTable,
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HilosPages,
+  hiddenAsWord,
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
   type HilosMaintenanceCircleRow,
@@ -49,6 +52,18 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
     reads: [MAINTENANCE_CIRCLE_IDENTIFIER_FIELD],
   },
 ]
+
+/**
+ * What tells a circle row apart in its data-ids: the address, or the membership
+ * id while the address is hidden — every hidden row would share one otherwise.
+ *
+ * @param row The circle row.
+ */
+function circleKey(row: HilosMaintenanceCircleRow): string {
+  return isHiddenValue(row.identifier)
+    ? `member-${row.memberId}`
+    : row.identifier
+}
 
 /**
  * The verifier circle, with dialogs that close only on the server's answer.
@@ -169,16 +184,16 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
               row={(row) => (
                 <>
                   <td
-                    data-id={`hilos-maintenance-circle-row-${row.identifier}`}
+                    data-id={`hilos-maintenance-circle-row-${circleKey(row)}`}
                   >
-                    {row.identifier}
+                    {hiddenAsWord(row.identifier)}
                   </td>
                   <td>
                     <span
                       className={
                         row.online ? 'text-success' : 'text-body-secondary'
                       }
-                      data-id={`hilos-maintenance-circle-online-${row.identifier}`}
+                      data-id={`hilos-maintenance-circle-online-${circleKey(row)}`}
                     >
                       {row.online
                         ? HILOS_MAINTENANCE_CIRCLE_COPY.online
@@ -191,7 +206,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
                       className="btn btn-sm btn-outline-danger"
                       title={HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle}
                       aria-label={HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle}
-                      data-id={`hilos-maintenance-circle-remove-${row.identifier}`}
+                      data-id={`hilos-maintenance-circle-remove-${circleKey(row)}`}
                       onClick={() => openCircleRemove(row)}
                     >
                       <i className="bi bi-trash" aria-hidden="true" />
@@ -299,7 +314,11 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
         {removeShown ? (
           <p className="mb-0">
             {HILOS_MAINTENANCE_CIRCLE_COPY.removeAskBefore}{' '}
-            <code>{removeShown.identifier}</code>{' '}
+            {isHiddenValue(removeShown.identifier) ? (
+              HILOS_VIEW_MODE_COPY.hidden
+            ) : (
+              <code>{removeShown.identifier}</code>
+            )}{' '}
             {HILOS_MAINTENANCE_CIRCLE_COPY.removeAskAfter}
           </p>
         ) : null}

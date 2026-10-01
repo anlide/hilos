@@ -7,6 +7,7 @@ import {
   type HilosDeliveriesContext,
 } from '../../../src/admin/communications/hilosDeliveries.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 /** Build a delivery-journal row whose inline `delivery` slot carries the given fields. */
@@ -67,6 +68,23 @@ describe('resolveHilosDeliveryRow', () => {
     expect(row.deliveredAt).toBe('')
     expect(row.lastError).toBe('')
     expect(row.userId).toBeNull()
+  })
+
+  it('reads the recipient, the title and the error sent hidden as the one hidden value (HIL-1260)', () => {
+    const row = resolveHilosDeliveryRow(
+      deliveryRow('8', {
+        status: 'failed',
+        lastError: { _hidden: true },
+        userId: 7,
+        userLabel: { _hidden: true },
+        notificationTitle: { _hidden: true },
+      }),
+    )
+
+    expect(row.lastError).toBe(HIDDEN_VALUE)
+    expect(row.userLabel).toBe(HIDDEN_VALUE)
+    expect(row.notificationTitle).toBe(HIDDEN_VALUE)
+    expect(row.userId).toBe(7)
   })
 })
 

@@ -55,7 +55,9 @@ import {
   isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
+  isHiddenValue,
   offersBackupRestore,
+  type Hideable,
   type HilosBackupRow,
   type HilosBackupsContext,
 } from '@hilos/core'
@@ -63,6 +65,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
@@ -134,7 +138,9 @@ onUnmounted(() => {
 })
 
 /**
- * Why an archive cannot be restored right now, or null when it can. The button
+ * Why an archive cannot be restored right now, or null when it can; the hidden
+ * value when the reason is the migration gate's notice and a viewer of the admin
+ * view mode is sent it hidden — the dialog then shows the mark. The button
  * stays visible and a live "why" button beside it opens this sentence, so the
  * answer arrives before the click rather than as a toast after it. It is not the
  * button's title: a disabled button gets no mouse events, so its title never shows
@@ -142,7 +148,7 @@ onUnmounted(() => {
  *
  * @param row The backup row the button belongs to.
  */
-function restoreBlockedReason(row: HilosBackupRow): string | null {
+function restoreBlockedReason(row: HilosBackupRow): Hideable<string> | null {
   // An archive on another node's disk is out of reach whatever else is true of it.
   const outOfReach = formatBackupOutOfReach(row)
   if (outOfReach !== null) {
@@ -295,6 +301,10 @@ async function submitDelete(): Promise<void> {
 // wrong one rather than clicking the wrong button.
 const restoreOpen = ref(false)
 const restoreRow = ref<HilosBackupRow | null>(null)
+// The migration notes the confirmation lists — one mark when they are hidden.
+const restoreNotes = computed(() =>
+  restoreRow.value ? backupMigrationNotes(restoreRow.value) : [],
+)
 const restoreTyped = ref('')
 const restoreAction = useTrackedAction()
 const {
@@ -361,6 +371,10 @@ async function submitReopen(): Promise<void> {
 // CLI instruction dialog: what the production surface offers instead of a button.
 const cliOpen = ref(false)
 const cliRow = ref<HilosBackupRow | null>(null)
+// The migration notes the command dialog lists — one mark when they are hidden.
+const cliNotes = computed(() =>
+  cliRow.value ? backupMigrationNotes(cliRow.value) : [],
+)
 
 function openCli(row: HilosBackupRow): void {
   cliRow.value = row
@@ -525,7 +539,7 @@ function openOutcome(row: HilosBackupRow): void {
             >{{ formatBackupShipping(row) }}</span
           >
           <button
-            v-if="isBackupShipFailed(row) && row.shipError"
+            v-if="isBackupShipFailed(row) && row.shipError !== null"
             type="button"
             class="btn btn-sm btn-outline-secondary ms-1"
             title="Why the copy failed"
@@ -753,11 +767,16 @@ function openOutcome(row: HilosBackupRow): void {
       :title="detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'"
       initial-focus="dialog"
     >
-      <HilosLongText
-        kind="prose"
-        :text="detailsRow?.failureReason ?? ''"
-        data-id="hilos-backup-details-text"
-      />
+      <HilosHideable
+        v-slot="{ value }"
+        :value="detailsRow?.failureReason ?? ''"
+      >
+        <HilosLongText
+          kind="prose"
+          :text="value"
+          data-id="hilos-backup-details-text"
+        />
+      </HilosHideable>
       <template #actions="{ requestClose }">
         <button
           type="button"
@@ -777,11 +796,16 @@ function openOutcome(row: HilosBackupRow): void {
       "
       initial-focus="dialog"
     >
-      <HilosLongText
-        kind="prose"
-        :text="blockedRow ? (restoreBlockedReason(blockedRow) ?? '') : ''"
-        data-id="hilos-backup-blocked-reason-text"
-      />
+      <HilosHideable
+        v-slot="{ value }"
+        :value="blockedRow ? (restoreBlockedReason(blockedRow) ?? '') : ''"
+      >
+        <HilosLongText
+          kind="prose"
+          :text="value"
+          data-id="hilos-backup-blocked-reason-text"
+        />
+      </HilosHideable>
       <template #actions="{ requestClose }">
         <button type="button" class="btn btn-secondary" @click="requestClose">
           Close
@@ -794,11 +818,13 @@ function openOutcome(row: HilosBackupRow): void {
       :title="shipErrorRow ? `Copy failed · ${shipErrorRow.id}` : 'Copy failed'"
       initial-focus="dialog"
     >
-      <HilosLongText
-        kind="prose"
-        :text="shipErrorRow?.shipError ?? ''"
-        data-id="hilos-backup-ship-error-text"
-      />
+      <HilosHideable v-slot="{ value }" :value="shipErrorRow?.shipError ?? ''">
+        <HilosLongText
+          kind="prose"
+          :text="value"
+          data-id="hilos-backup-ship-error-text"
+        />
+      </HilosHideable>
       <template #actions="{ requestClose }">
         <button type="button" class="btn btn-secondary" @click="requestClose">
           Close
@@ -828,12 +854,19 @@ function openOutcome(row: HilosBackupRow): void {
         <code>{{ restoreRow.env || 'an unnamed environment' }}</code> → this
         installation is <code>{{ restoreGate.targetEnv || 'unnamed' }}</code>
       </p>
+      <p
+        v-if="isHiddenValue(restoreNotes)"
+        class="mb-2"
+        data-id="hilos-backup-migration-notes"
+      >
+        <HilosHiddenMark />
+      </p>
       <ul
-        v-if="restoreRow && backupMigrationNotes(restoreRow).length > 0"
+        v-else-if="restoreNotes.length > 0"
         class="mb-2 ps-3 text-body-secondary"
         data-id="hilos-backup-migration-notes"
       >
-        <li v-for="note in backupMigrationNotes(restoreRow)" :key="note">
+        <li v-for="note in restoreNotes" :key="note">
           {{ note }}
         </li>
       </ul>
@@ -891,12 +924,19 @@ function openOutcome(row: HilosBackupRow): void {
       <!-- What the "why" dialog of a dark restore button says where there is a
       button: an operator on production learns of an incompatible archive here, not
       from the command refusing after they have walked to the terminal. -->
+      <p
+        v-if="isHiddenValue(cliNotes)"
+        class="mt-2 mb-0"
+        data-id="hilos-backup-migration-cli-notes"
+      >
+        <HilosHiddenMark />
+      </p>
       <ul
-        v-if="cliRow && backupMigrationNotes(cliRow).length > 0"
+        v-else-if="cliNotes.length > 0"
         class="mt-2 mb-0 ps-3 text-body-secondary"
         data-id="hilos-backup-migration-cli-notes"
       >
-        <li v-for="note in backupMigrationNotes(cliRow)" :key="note">
+        <li v-for="note in cliNotes" :key="note">
           {{ note }}
         </li>
       </ul>
@@ -921,11 +961,16 @@ function openOutcome(row: HilosBackupRow): void {
       <p v-if="outcomeRow?.restoreDatabaseTouched" class="mb-2">
         The database was already being replaced when this run ended.
       </p>
-      <HilosLongText
-        kind="prose"
-        :text="outcomeRow?.restoreFailureReason || 'No failure recorded.'"
-        data-id="hilos-backup-restore-outcome-text"
-      />
+      <HilosHideable
+        v-slot="{ value }"
+        :value="outcomeRow?.restoreFailureReason || 'No failure recorded.'"
+      >
+        <HilosLongText
+          kind="prose"
+          :text="value"
+          data-id="hilos-backup-restore-outcome-text"
+        />
+      </HilosHideable>
       <template #actions="{ requestClose }">
         <button type="button" class="btn btn-secondary" @click="requestClose">
           Close

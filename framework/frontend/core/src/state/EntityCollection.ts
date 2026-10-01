@@ -13,6 +13,7 @@
 import { computedSignal, type ReadonlySignal } from './signal.js'
 import { type EntityId, type EntityRef } from './EntityStore.js'
 import { type Entity } from './entity.js'
+import { isHiddenValue } from './hiddenValue.js'
 import { type ScopeManager } from './ScopeManager.js'
 
 /** The typed access point for one entity type. */
@@ -34,6 +35,18 @@ export interface EntityCollection<E extends Entity> {
    * @param target The entity's id, or a full reference to it.
    */
   signal(target: EntityId | EntityRef): ReadonlySignal<E | undefined>
+
+  /**
+   * Whether one field of the entity arrived hidden — the mark a viewer of the
+   * admin view mode is sent in place of a value (hiddenValue.ts): `false` until
+   * the entity streams, then every committed change. The typed entity keeps its
+   * own field types, because most readers of a field are not on a screen where
+   * it is ever hidden; the screen that is asks here.
+   *
+   * @param target The entity's id, or a full reference to it.
+   * @param field The raw field name, as the server writes it.
+   */
+  hidden(target: EntityId | EntityRef, field: string): ReadonlySignal<boolean>
 }
 
 /**
@@ -63,6 +76,13 @@ export function entityCollection<E extends Entity>(
 
         return snapshot ? project(snapshot.fields) : undefined
       })
+    },
+    hidden(target, field) {
+      const entityRef = typeof target === 'object' ? target : ref(target)
+
+      return computedSignal(() =>
+        isHiddenValue(scopes.entitySignal(entityRef).get()?.fields[field]),
+      )
     },
   }
 }

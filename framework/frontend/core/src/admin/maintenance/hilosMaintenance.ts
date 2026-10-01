@@ -21,7 +21,12 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readBoolean, readString } from '../../state/fieldReaders.js'
+import {
+  readBoolean,
+  readHideableString,
+  readString,
+} from '../../state/fieldReaders.js'
+import { type Hideable } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -96,8 +101,11 @@ export interface HilosMaintenanceCircleRow {
   readonly memberId: number
   /** The identity type the person was named under. */
   readonly identityType: string
-  /** The address the person was named by. */
-  readonly identifier: string
+  /**
+   * The address the person was named by, or `HIDDEN_VALUE` for a viewer of the
+   * admin view mode, who is sent it hidden.
+   */
+  readonly identifier: Hideable<string>
   /** Whether that person holds a live connection right now. */
   readonly online: boolean
 }
@@ -189,7 +197,7 @@ export function resolveHilosMaintenanceCircleRow(
   return {
     memberId: Number(row.rowKey),
     identityType: readString(slot, MAINTENANCE_CIRCLE_IDENTITY_TYPE_FIELD),
-    identifier: readString(slot, MAINTENANCE_CIRCLE_IDENTIFIER_FIELD),
+    identifier: readHideableString(slot, MAINTENANCE_CIRCLE_IDENTIFIER_FIELD),
     online: readBoolean(slot, MAINTENANCE_CIRCLE_ONLINE_FIELD),
   }
 }

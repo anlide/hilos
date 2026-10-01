@@ -28,7 +28,10 @@ import {
   computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
+  hiddenAsWord,
+  HILOS_VIEW_MODE_COPY,
   isDeliveryRetryable,
+  isHiddenValue,
 } from '@hilos/core'
 import type { HilosDeliveriesContext, HilosDeliveryRow } from '@hilos/core'
 
@@ -57,11 +60,17 @@ function statusClass(status: string): string {
 }
 
 // The recipient label: the resolved display name, its user id, both, or a dash.
+// A hidden name is the word "Hidden", beside the id when there is one.
 function recipientLabel(row: HilosDeliveryRow): string {
-  if (row.userId === null) {
+  const id = row.userId === null ? null : `#${row.userId}`
+  if (isHiddenValue(row.userLabel)) {
+    const word = HILOS_VIEW_MODE_COPY.hidden
+
+    return id === null ? word : `${word} (${id})`
+  }
+  if (id === null) {
     return '—'
   }
-  const id = `#${row.userId}`
 
   return row.userLabel ? `${row.userLabel} (${id})` : id
 }
@@ -168,13 +177,16 @@ export function HilosCommunicationsDeliveriesPage({
         details={{
           [DELIVERY_NOTIFICATION_TITLE_FIELD]: (row) => (
             <>
-              <div className="fw-semibold">{row.notificationTitle || '—'}</div>
+              <div className="fw-semibold">
+                {hiddenAsWord(row.notificationTitle) || '—'}
+              </div>
               <code className="small text-body-secondary">
                 {row.notificationType}
               </code>
             </>
           ),
-          [DELIVERY_LAST_ERROR_FIELD]: (row) => row.lastError || '—',
+          [DELIVERY_LAST_ERROR_FIELD]: (row) =>
+            hiddenAsWord(row.lastError) || '—',
         }}
       />
     </HilosAdminPage>

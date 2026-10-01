@@ -19,6 +19,7 @@ import {
   USER_PRESENCE_FIELD,
   createHilosImpersonate,
   createHilosUsersTable,
+  hiddenAsWord,
 } from '@hilos/core'
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
 
@@ -103,7 +104,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
         controller={users.controller}
         cells={{
           id: (row) => row.id,
-          name: (row) => row.name,
+          name: (row) => hiddenAsWord(row.name),
           [USER_PRESENCE_FIELD]: (row) => (
             <span
               className={`badge ${
@@ -141,7 +142,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
         open={impersonateOpen}
         title={
           impersonateRow
-            ? `Impersonate · ${impersonateRow.name}`
+            ? `Impersonate · ${hiddenAsWord(impersonateRow.name)}`
             : 'Impersonate user'
         }
         closeOnBackdrop={!takeover.busy}
@@ -177,8 +178,8 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
         />
         {impersonateRow ? (
           <p className="mb-0">
-            Become <strong>{impersonateRow.name}</strong> and see the app as
-            they do? You can stop from the banner at any time.
+            Become <strong>{hiddenAsWord(impersonateRow.name)}</strong> and see
+            the app as they do? You can stop from the banner at any time.
           </p>
         ) : null}
       </HilosModal>

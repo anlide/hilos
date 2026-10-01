@@ -8,6 +8,7 @@ import {
 } from '@hilos/core'
 import { onMounted, onUnmounted } from 'vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 const props = defineProps<{ context: HilosLegalContext }>()
@@ -21,9 +22,11 @@ onUnmounted(() => table.dispose())
       <HilosViewportTable :controller="table.controller">
         <template #cell-name="{ row }"
           ><div data-id="legal-acceptance-row" :data-record="row.rowKey">
-            <strong>{{ row.name }}</strong>
+            <strong><HilosHideable :value="row.name" /></strong>
             <div class="small text-body-secondary">
-              {{ row.email ?? 'No verified email' }}
+              <HilosHideable v-slot="{ value: email }" :value="row.email">{{
+                email ?? 'No verified email'
+              }}</HilosHideable>
             </div>
           </div></template
         >

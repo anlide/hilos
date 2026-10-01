@@ -6,6 +6,11 @@
 // needed here: the wire payload is already validated at the signal parse
 // boundary and the normalizer only stores object records — these readers just
 // re-type a known key out of that `unknown`-valued record.
+//
+// The hideable readers keep the one field shape the plain readers fold away:
+// the hidden mark a viewer of the admin view mode is sent (hiddenValue.ts).
+
+import { HIDDEN_VALUE, type Hideable, isHiddenValue } from './hiddenValue.js'
 
 /**
  * Read a string field, or the empty string when absent or non-string.
@@ -35,6 +40,38 @@ export function readStringOrNull(
   const value = fields[key]
 
   return typeof value === 'string' ? value : null
+}
+
+/**
+ * Read a string field a viewer of the admin view mode may be sent hidden:
+ * {@link HIDDEN_VALUE} for the hidden mark, otherwise as {@link readString}.
+ *
+ * @param fields The raw committed fields record.
+ * @param key The field name to read.
+ */
+export function readHideableString(
+  fields: Readonly<Record<string, unknown>>,
+  key: string,
+): Hideable<string> {
+  return isHiddenValue(fields[key]) ? HIDDEN_VALUE : readString(fields, key)
+}
+
+/**
+ * Read a nullable string field a viewer of the admin view mode may be sent
+ * hidden: {@link HIDDEN_VALUE} for the hidden mark, otherwise as
+ * {@link readStringOrNull}. A hidden null is hidden too — the server hides the
+ * whole field, whatever it holds.
+ *
+ * @param fields The raw committed fields record.
+ * @param key The field name to read.
+ */
+export function readHideableStringOrNull(
+  fields: Readonly<Record<string, unknown>>,
+  key: string,
+): Hideable<string | null> {
+  return isHiddenValue(fields[key])
+    ? HIDDEN_VALUE
+    : readStringOrNull(fields, key)
 }
 
 /**

@@ -121,6 +121,71 @@ describe('legal admin views', () => {
     view.unmount()
   })
 
+  it('says "Past deadline" beside the count while the refusal setting is hidden (HIL-1260)', async () => {
+    const h = harness()
+    const windows: Array<(frame: never) => void> = []
+    ;(
+      h.context.connection as unknown as {
+        on: (event: string, listener: (frame: never) => void) => () => void
+      }
+    ).on = (event, listener) => {
+      if (event === 'tableWindow') windows.push(listener)
+      return () => {}
+    }
+    const rows = [
+      {
+        rowKey: 'terms',
+        declared: true,
+        revision,
+        covered: 1,
+        window: 0,
+        lapsed: 2,
+      },
+    ]
+    const documentTable = {
+      setup: () => ({ rows }),
+      template: `<div><template v-if="$slots['cell-lapsed']"><div v-for="row in rows" :key="row.rowKey" :data-row="row.rowKey"><slot name="cell-lapsed" :row="row" /></div></template></div>`,
+    }
+    const view = mount(HilosLegalPage, {
+      props: { context: h.context },
+      global: {
+        ...h.global,
+        stubs: { ...h.global.stubs, HilosViewportTable: documentTable },
+      },
+    })
+    const label = () =>
+      view.find('[data-row="terms"] .small.text-body-secondary').text()
+    expect(label()).toBe('Frozen')
+
+    for (const listener of windows)
+      listener({
+        data: {
+          page: 'hilos_legal',
+          tableKey: 'hilosLegalSettings',
+          rows: [
+            {
+              rowKey: 'legal.refusal_after_deadline',
+              slots: {
+                setting: {
+                  value: { _hidden: true },
+                  defaultValue: { _hidden: true },
+                },
+              },
+            },
+          ],
+          totalCount: 1,
+          totalExact: true,
+          firstAnchor: null,
+          lastAnchor: null,
+          limit: 25,
+        },
+      } as never)
+    await nextTick()
+
+    expect(label()).toBe('Past deadline')
+    view.unmount()
+  })
+
   it('renders the adopted set and the reason for each deviation', () => {
     const h = harness()
     h.scope.data.set('legalDocument', {

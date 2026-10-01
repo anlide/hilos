@@ -9,7 +9,8 @@ carrying, in this order, the framework's own protected-mode strip, its
 impersonation strip (drawn from the session, with a Stop that waits for the
 server's answer, colored by the standing of the person taken over), its account
 deletion strip (the session's own scheduled deletion, with a "Keep my account"
-that waits the same way, HIL-945), and the app-wide status strip a project
+that waits the same way, HIL-945), its view-mode strip (a viewer of the admin view
+mode on an admin route, HIL-1260), and the app-wide status strip a project
 fills (e.g. a trial notice) through the #banner slot — one live region for all,
 empty and zero-height while none is up — the
 routed page content in the default slot, and a footer of the public framework pages
@@ -49,6 +50,8 @@ import {
   HILOS_FOOTER_LINKS,
   HILOS_FROZEN_OPEN_PAGES,
   HILOS_PAGE_ROUTES,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   hilosAccountBlocked,
   hilosAccountStanding,
@@ -275,6 +278,23 @@ const pageTitle = router ? useSignal(router.currentTitle) : undefined
 // round — a missing field is fixed by typing the admin url, a field shown where
 // it should not be is the defect this closes.
 const currentRoute = router ? useSignal(router.currentRoute) : undefined
+
+// The fourth framework strip (HIL-1260): a viewer of the admin view mode, on an
+// admin route — the framework's and a project's alike, the dashboard included —
+// is told once that the screen may be looked at and not changed. Its text
+// carries the id every control the mode disables names in aria-describedby
+// (HIL-1261), so the reason is said in one place. It is grey because yellow,
+// blue and red already mean "not well", frozen and blocked in this region, and
+// it is last of the framework's strips: it is about the screen one stands on,
+// so it sits nearest to it. A grant takes it down live and a revoke brings it
+// back, both through the access the session derives; under maintenance there is
+// no admin screen to speak of.
+const viewModeStrip = computed(
+  () =>
+    adminAccess.value === 'view' &&
+    (currentRoute?.value.admin ?? false) &&
+    !underMaintenance.value,
+)
 
 // The freeze screen stands on every page but those the freeze leaves open
 // (HIL-945): the person's data, their agreements, their history and the four
@@ -528,6 +548,21 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
           >
             {{ ACCOUNT_STANDING_STRIP_COPY.keep }}
           </LoadingButton>
+        </div>
+      </div>
+      <div
+        v-if="viewModeStrip"
+        class="alert alert-secondary border-0 rounded-0 mb-0 py-2"
+        data-id="view-mode-banner"
+      >
+        <div
+          class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
+        >
+          <span :id="HILOS_VIEW_MODE_STRIP_TEXT_ID">
+            <i class="bi bi-eye me-1" aria-hidden="true"></i>
+            <strong>{{ HILOS_VIEW_MODE_COPY.mark }}</strong> ·
+            {{ HILOS_VIEW_MODE_COPY.explanation }}
+          </span>
         </div>
       </div>
       <slot name="banner" />

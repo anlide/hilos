@@ -10,19 +10,27 @@ import {
   createSignal,
   subscribeSignal,
 } from '../../state/signal.js'
+import { type Hideable } from '../../state/hiddenValue.js'
 import { type TableViewportController } from '../../table/TableViewportController.js'
+import { hiddenAsWord } from '../viewMode.js'
 import {
   HILOS_LEGAL_VALUE_COPY,
   type HilosLegalSettingRow,
 } from './hilosLegal.js'
 
-/** Modal-owned legal setting draft, shared by the three view adapters. */
+/**
+ * Modal-owned legal setting draft, shared by the three view adapters. A value
+ * hidden from a viewer of the admin view mode opens as the one hidden value, so
+ * the draft is never dirty and the modal shows the mark in place of the choice.
+ */
 export function createHilosLegalSettingEdit(
   controller: TableViewportController<HilosLegalSettingRow>,
 ) {
   const row = createSignal<HilosLegalSettingRow | null>(null)
-  const value = createSignal('')
-  const baseline = createSignal(openRowEdit({ value: '' }))
+  const value = createSignal<Hideable<string>>('')
+  const baseline = createSignal(
+    openRowEdit<{ value: Hideable<string> }>({ value: '' }),
+  )
   const state = computedSignal(() => {
     const focused = controller.focusedRow.get()
     return resolveRowEdit(
@@ -38,8 +46,11 @@ export function createHilosLegalSettingEdit(
     switch (live.notice?.kind) {
       case 'deleted':
         return 'Deleted elsewhere — your choice stays visible.'
-      case 'conflict':
-        return `Changed elsewhere to "${HILOS_LEGAL_VALUE_COPY[live.fields.value.incoming] ?? live.fields.value.incoming}".`
+      case 'conflict': {
+        const incoming = hiddenAsWord(live.fields.value.incoming)
+
+        return `Changed elsewhere to "${HILOS_LEGAL_VALUE_COPY[incoming] ?? incoming}".`
+      }
       case 'updated':
         return 'Updated just now'
       default:
@@ -48,7 +59,7 @@ export function createHilosLegalSettingEdit(
   })
   let stop: (() => void) | null = null
 
-  function apply(step: RowEditStep<{ value: string }>): void {
+  function apply(step: RowEditStep<{ value: Hideable<string> }>): void {
     baseline.set(step.baseline)
     if (step.take.value !== undefined) value.set(step.take.value)
   }

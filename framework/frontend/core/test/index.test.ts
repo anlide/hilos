@@ -24,9 +24,15 @@ import {
   hilosAdminAccess,
   type HilosAdminAccess,
   actionFailureReason,
+  hiddenAsWord,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   VIEW_MODE_ERROR_CODE,
+  HIDDEN_VALUE,
+  isHiddenValue,
+  readHideableString,
+  readHideableStringOrNull,
+  type Hideable,
   SESSION_SIGNAL_SCHEMAS,
   applyServerTime,
   offsetMs,
@@ -64,6 +70,8 @@ import {
   hilosUserFrozenRow,
   hilosUsersPath,
   hilosLegalLapsedHref,
+  hilosLegalLapsedLabel,
+  HILOS_LEGAL_LAPSED_COPY,
   SIGNAL_ACCOUNT_STANDING_STATE,
   bindUploads,
   cancelUpload,
@@ -99,6 +107,11 @@ it('exports the @hilos/core public surface', () => {
   expect(HILOS_VIEW_MODE_COPY.refusal).toBeTypeOf('string')
   expect(HILOS_VIEW_MODE_STRIP_TEXT_ID).toBeTypeOf('string')
   expect(VIEW_MODE_ERROR_CODE).toBeTypeOf('string')
+  expect(hiddenAsWord).toBeTypeOf('function')
+  const hidden: Hideable<string> = HIDDEN_VALUE
+  expect(isHiddenValue(hidden)).toBe(true)
+  expect(readHideableString).toBeTypeOf('function')
+  expect(readHideableStringOrNull).toBeTypeOf('function')
   expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
   expect(applyServerTime).toBeTypeOf('function')
   expect(offsetMs).toBeTypeOf('function')
@@ -136,6 +149,7 @@ it('exports the @hilos/core public surface', () => {
   expect(hilosUserFrozenRow(null)).toBeNull()
   expect(hilosUsersPath('privacy')).toBe('/hilos/users/privacy')
   expect(hilosLegalLapsedHref('terms')).toBe('/hilos/users/terms')
+  expect(hilosLegalLapsedLabel(undefined)).toBe(HILOS_LEGAL_LAPSED_COPY.freeze)
   expect(SIGNAL_ACCOUNT_STANDING_STATE).toBe('hilos_account_standing_state')
   expect(bindUploads).toBeTypeOf('function')
   expect(uploadFile).toBeTypeOf('function')

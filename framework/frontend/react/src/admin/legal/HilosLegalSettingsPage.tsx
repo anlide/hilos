@@ -9,6 +9,10 @@ import {
   HILOS_LEGAL_SETTING_PREVIEWS,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
+  HILOS_VIEW_MODE_COPY,
+  hiddenAsWord,
+  isHiddenValue,
+  type Hideable,
   type HilosLegalContext,
 } from '@hilos/core'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -20,6 +24,18 @@ import { ConflictActions } from '../../ConflictActions.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+
+/**
+ * A setting value in words: its label, the value itself when it has none, or
+ * "Hidden" for a value hidden from a viewer of the admin view mode.
+ *
+ * @param value The value, or the hidden mark in its place.
+ */
+function legalValueLabel(value: Hideable<string>): string {
+  const said = hiddenAsWord(value)
+
+  return HILOS_LEGAL_VALUE_COPY[said] ?? said
+}
 
 /** Two legal settings edited through a modal-owned row merge and tracked writes. */
 export function HilosLegalSettingsPage({
@@ -56,7 +72,14 @@ export function HilosLegalSettingsPage({
     editor.open(key)
   }
   async function save(): Promise<void> {
-    if (row === null || action.busy || state.gone || state.conflict) return
+    if (
+      row === null ||
+      isHiddenValue(value) ||
+      action.busy ||
+      state.gone ||
+      state.conflict
+    )
+      return
     if (!state.dirty) {
       editor.close()
       return
@@ -87,12 +110,10 @@ export function HilosLegalSettingsPage({
           [HilosLegalRowKey.value]: (setting) => (
             <>
               <span data-id={`legal-setting-value-${setting.rowKey}`}>
-                {HILOS_LEGAL_VALUE_COPY[setting.value] ?? setting.value}
+                {legalValueLabel(setting.value)}
               </span>
               <div className="small text-body-secondary">
-                Default:{' '}
-                {HILOS_LEGAL_VALUE_COPY[setting.defaultValue] ??
-                  setting.defaultValue}
+                Default: {legalValueLabel(setting.defaultValue)}
               </div>
             </>
           ),
@@ -210,26 +231,37 @@ export function HilosLegalSettingsPage({
               void save()
             }}
           >
-            <label className="form-label" htmlFor={inputId}>
-              {HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey}
-            </label>
-            <select
-              id={inputId}
-              value={value}
-              onChange={(event) => editor.setValue(event.target.value)}
-              className="form-select"
-              data-id="legal-setting-input"
-              data-autofocus
-              disabled={action.busy}
-            >
-              {(HILOS_LEGAL_SETTING_COPY[row.rowKey]?.values ?? []).map(
-                (option) => (
-                  <option key={option} value={option}>
-                    {HILOS_LEGAL_VALUE_COPY[option] ?? option}
-                  </option>
-                ),
-              )}
-            </select>
+            {isHiddenValue(value) ? (
+              <>
+                <div className="form-label">
+                  {HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey}
+                </div>
+                <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+              </>
+            ) : (
+              <>
+                <label className="form-label" htmlFor={inputId}>
+                  {HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey}
+                </label>
+                <select
+                  id={inputId}
+                  value={value}
+                  onChange={(event) => editor.setValue(event.target.value)}
+                  className="form-select"
+                  data-id="legal-setting-input"
+                  data-autofocus
+                  disabled={action.busy}
+                >
+                  {(HILOS_LEGAL_SETTING_COPY[row.rowKey]?.values ?? []).map(
+                    (option) => (
+                      <option key={option} value={option}>
+                        {HILOS_LEGAL_VALUE_COPY[option] ?? option}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </>
+            )}
             <HilosEditNotice
               kind={state.notice?.kind ?? null}
               text={noticeText}

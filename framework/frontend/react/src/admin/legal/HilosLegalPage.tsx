@@ -11,6 +11,7 @@ import {
   describeHilosLegalCheck,
   hilosLegalDocumentLabel,
   hilosLegalLapsedHref,
+  hilosLegalLapsedLabel,
   resolveHilosPath,
   type HilosLegalContext,
 } from '@hilos/core'
@@ -35,12 +36,11 @@ export function HilosLegalPage({ context }: { context: HilosLegalContext }) {
   )
   const settingRows = useSignal(settings.controller.rows)
   const documentRows = useSignal(documents.controller.rows)
-  const lapsedLabel =
+  const lapsedLabel = hilosLegalLapsedLabel(
     settingRows.find(
       ({ row }) => row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
-    )?.row?.value === 'remind'
-      ? 'Past deadline'
-      : 'Frozen'
+    )?.row?.value,
+  )
   useEffect(() => {
     documents.start()
     checks.start()

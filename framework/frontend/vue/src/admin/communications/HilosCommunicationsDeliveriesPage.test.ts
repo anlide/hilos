@@ -66,7 +66,7 @@ const FAILED_DELIVERY = {
 
 type Listener = (signal: Record<string, unknown>) => void
 
-function seededContext(): {
+function seededContext(delivery: Record<string, unknown> = FAILED_DELIVERY): {
   context: HilosDeliveriesContext
   viewportRequests: () => number
   answer: (requestId: string) => void
@@ -84,7 +84,7 @@ function seededContext(): {
     const data = {
       page: HilosPages.COMMUNICATIONS_DELIVERIES,
       tableKey: TABLE,
-      rows: [{ rowKey: '57', slots: { delivery: FAILED_DELIVERY } }],
+      rows: [{ rowKey: '57', slots: { delivery } }],
       totalCount: 1,
       totalExact: true,
       firstAnchor: null,
@@ -221,6 +221,40 @@ describe('HilosCommunicationsDeliveriesPage retry', () => {
     // The button is free again, so the answer was taken - and it asked for nothing.
     expect((retryButton() as HTMLButtonElement).disabled).toBe(false)
     expect(viewportRequests()).toBe(requestsBeforeRetry)
+  })
+})
+
+describe('HilosCommunicationsDeliveriesPage with personal texts hidden (HIL-1260)', () => {
+  const HIDDEN = { _hidden: true }
+
+  it('draws the mark beside the recipient id, and in place of the title and the error', async () => {
+    const { context } = seededContext({
+      ...FAILED_DELIVERY,
+      userLabel: HIDDEN,
+      notificationTitle: HIDDEN,
+      lastError: HIDDEN,
+    })
+    await mountPage(context)
+
+    // The only cell of the row the mark stands in is the recipient's: the title and
+    // the error live in the row's details, closed until it is expanded.
+    const cells = Array.from(
+      document.querySelectorAll('table [data-id="hilos-table-row-57"] td'),
+    ).filter((cell) => cell.querySelector('[data-id="hilos-hidden"]') !== null)
+    expect(cells).toHaveLength(1)
+    expect(cells[0]?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Hidden (#3)',
+    )
+    ;(
+      document.querySelector(
+        'table [data-id="hilos-table-expand-57"]',
+      ) as HTMLElement
+    ).click()
+    await nextTick()
+
+    const marks = document.querySelectorAll('table dd [data-id="hilos-hidden"]')
+    expect(marks).toHaveLength(2)
+    expect(document.querySelector('table dd')?.textContent).not.toContain('—')
   })
 })
 

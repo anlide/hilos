@@ -27,7 +27,10 @@ import {
   computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
+  hiddenAsWord,
+  HILOS_VIEW_MODE_COPY,
   isDeliveryRetryable,
+  isHiddenValue,
 } from '@hilos/core'
 import type { HilosDeliveriesContext, HilosDeliveryRow } from '@hilos/core'
 
@@ -96,13 +99,15 @@ const STATUS_CLASS: Record<string, string> = {
           recipientLabel(row)
         }}</ng-template>
         <ng-template hilosTableDetail="notificationTitle" let-row>
-          <div class="fw-semibold">{{ row.notificationTitle || '—' }}</div>
+          <div class="fw-semibold">
+            {{ hiddenAsWord(row.notificationTitle) || '—' }}
+          </div>
           <code class="small text-body-secondary">{{
             row.notificationType
           }}</code>
         </ng-template>
         <ng-template hilosTableDetail="lastError" let-row>{{
-          row.lastError || '—'
+          hiddenAsWord(row.lastError) || '—'
         }}</ng-template>
         <ng-template hilosTableCell="actions" let-row>
           @if (isRetryable(row)) {
@@ -127,6 +132,7 @@ export class HilosCommunicationsDeliveriesPage {
   readonly context = input.required<HilosDeliveriesContext>()
 
   protected readonly page = HilosPages.COMMUNICATIONS_DELIVERIES
+  protected readonly hiddenAsWord = hiddenAsWord
   protected readonly isRetryable = isDeliveryRetryable
 
   private readonly router = inject(HILOS_ROUTER, { optional: true })
@@ -182,12 +188,22 @@ export class HilosCommunicationsDeliveriesPage {
     return STATUS_CLASS[status] ?? 'text-bg-secondary'
   }
 
-  /** The recipient label: the resolved display name, its user id, both, or a dash. */
+  /**
+   * The recipient label: the resolved display name, its user id, both, or a dash.
+   * A hidden name is the word "Hidden", beside the id when there is one.
+   *
+   * @param row The delivery row.
+   */
   protected recipientLabel(row: HilosDeliveryRow): string {
-    if (row.userId === null) {
+    const id = row.userId === null ? null : `#${row.userId}`
+    if (isHiddenValue(row.userLabel)) {
+      const word = HILOS_VIEW_MODE_COPY.hidden
+
+      return id === null ? word : `${word} (${id})`
+    }
+    if (id === null) {
       return '—'
     }
-    const id = `#${row.userId}`
 
     return row.userLabel ? `${row.userLabel} (${id})` : id
   }

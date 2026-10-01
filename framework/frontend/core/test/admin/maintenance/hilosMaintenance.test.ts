@@ -8,6 +8,7 @@ import {
 } from '../../../src/admin/maintenance/hilosMaintenance.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
@@ -43,6 +44,18 @@ describe('resolveHilosMaintenanceCircleRow', () => {
     expect(row.memberId).toBe(12)
     expect(row.identifier).toBe('')
     expect(row.online).toBe(false)
+  })
+
+  it('reads an address sent hidden as the one hidden value (HIL-1260)', () => {
+    const row = resolveHilosMaintenanceCircleRow(
+      circleRow('3', {
+        identityType: 'password',
+        identifier: { _hidden: true },
+      }),
+    )
+
+    expect(row.identifier).toBe(HIDDEN_VALUE)
+    expect(row.memberId).toBe(3)
   })
 })
 

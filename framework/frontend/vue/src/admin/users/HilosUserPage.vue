@@ -50,11 +50,14 @@ import {
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   hilosPasswordFateChoices,
   HilosPages,
+  hiddenAsWord,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   sessionUserId,
   takeTheirsRowEdit,
+  type Hideable,
   type HilosMergeCandidateIdentity,
   type HilosMergeCandidateRow,
   type HilosPasswordFate,
@@ -72,6 +75,8 @@ import HilosActionError from '../../HilosActionError.vue'
 import HilosAvatar from '../../HilosAvatar.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -86,9 +91,12 @@ const props = defineProps<{
 const NAME_MIN = 2
 const NAME_MAX = 64
 
-/** The one field the modal edits: the display name. */
+/**
+ * The one field the modal edits: the display name — hidden for a viewer of the
+ * admin view mode, and then the modal shows the mark in place of the input (F1).
+ */
 interface UserEditFields {
-  name: string
+  name: Hideable<string>
 }
 
 /** The one line the modal says about the other side, for what the helper found. */
@@ -97,7 +105,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return `Changed elsewhere to "${live.fields.name.incoming}".`
+      return `Changed elsewhere to "${hiddenAsWord(live.fields.name.incoming)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -368,7 +376,16 @@ async function submitMerge(): Promise<void> {
 }
 
 const editing = ref(false)
-const draft = ref('')
+// The draft holds the name as the card has it: a hidden one stays the one hidden
+// value, so the row-edit helper sees it unchanged and the modal is never dirty.
+const draft = ref<Hideable<string>>('')
+// The input edits the draft only while it is a name; a hidden one has no input.
+const draftText = computed({
+  get: () => (isHiddenValue(draft.value) ? '' : draft.value),
+  set: (next: string) => {
+    draft.value = next
+  },
+})
 const loading = ref(false)
 // The name the rename in flight sent — what the success watch waits for; null
 // while nothing is in flight.
@@ -378,6 +395,9 @@ const editBaseline = ref<RowEditBaseline<UserEditFields>>(
 )
 
 const valid = computed(() => {
+  if (isHiddenValue(draft.value)) {
+    return false
+  }
   const trimmed = draft.value.trim()
 
   return trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX
@@ -388,12 +408,12 @@ const live = computed(() =>
   resolveRowEdit(
     detail.value ? { name: detail.value.name } : undefined,
     editBaseline.value,
-    { name: draft.value.trim() },
+    { name: isHiddenValue(draft.value) ? draft.value : draft.value.trim() },
   ),
 )
 const dirty = computed(() => live.value.dirty)
 const editTitle = computed(() =>
-  detail.value ? `Rename · ${detail.value.name}` : 'Rename user',
+  detail.value ? `Rename · ${hiddenAsWord(detail.value.name)}` : 'Rename user',
 )
 const editNotice = computed(() => live.value.notice?.kind ?? null)
 const editNoticeText = computed(() => noticeText(live.value))
@@ -448,7 +468,14 @@ function closeEdit(): void {
 
 function submit(): void {
   const current = detail.value
-  if (!current || !valid.value || loading.value || live.value.gone) {
+  const typed = draft.value
+  if (
+    !current ||
+    isHiddenValue(typed) ||
+    !valid.value ||
+    loading.value ||
+    live.value.gone
+  ) {
     return
   }
   // No change: close without a round-trip (also keeps the state-driven success
@@ -459,7 +486,7 @@ function submit(): void {
     return
   }
 
-  const name = draft.value.trim()
+  const name = typed.trim()
   loading.value = rename.submitRename(current.id, name)
   sentName.value = loading.value ? name : null
 }
@@ -494,10 +521,13 @@ watch(error, (reason) => {
     <template v-if="detail">
       <div class="card" data-id="hilos-user-detail">
         <div class="card-header d-flex align-items-center gap-2">
-          <HilosAvatar :name="detail.name" size="md" />
-          <span class="h5 mb-0" data-id="hilos-user-name">{{
-            detail.name
-          }}</span>
+          <HilosAvatar
+            :name="isHiddenValue(detail.name) ? '' : detail.name"
+            size="md"
+          />
+          <span class="h5 mb-0" data-id="hilos-user-name"
+            ><HilosHideable :value="detail.name"
+          /></span>
           <span class="badge text-bg-secondary">{{ detail.presence }}</span>
           <span
             v-if="standingBadge !== null"
@@ -735,22 +765,28 @@ watch(error, (reason) => {
       </div>
       <HilosFormError :message="error" data-id="hilos-user-rename-error" />
       <form @submit.prevent="submit">
-        <label class="form-label" for="hilos-user-name-field">
-          Display name
-        </label>
-        <input
-          id="hilos-user-name-field"
-          v-model="draft"
-          type="text"
-          class="form-control"
-          :minlength="NAME_MIN"
-          :maxlength="NAME_MAX"
-          data-id="hilos-user-name-input"
-          data-autofocus
-        />
-        <div class="form-text">
-          Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
-        </div>
+        <template v-if="isHiddenValue(draft)">
+          <div class="form-label">Display name</div>
+          <HilosHiddenMark />
+        </template>
+        <template v-else>
+          <label class="form-label" for="hilos-user-name-field">
+            Display name
+          </label>
+          <input
+            id="hilos-user-name-field"
+            v-model="draftText"
+            type="text"
+            class="form-control"
+            :minlength="NAME_MIN"
+            :maxlength="NAME_MAX"
+            data-id="hilos-user-name-input"
+            data-autofocus
+          />
+          <div class="form-text">
+            Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
+          </div>
+        </template>
         <HilosEditNotice
           :kind="editNotice"
           :text="editNoticeText"
@@ -798,7 +834,7 @@ watch(error, (reason) => {
         mergeProof !== 'skip'
           ? HILOS_STEP_UP_COPY.title
           : detail
-            ? `Merge an account into ${detail.name}`
+            ? `Merge an account into ${hiddenAsWord(detail.name)}`
             : 'Merge an account'
       "
       :confirm-on-close="selectedCandidateId !== null"
@@ -887,7 +923,11 @@ watch(error, (reason) => {
             }})</strong
           >
           will be merged into
-          <strong>{{ detail?.name }} (#{{ detail?.id }})</strong>.
+          <strong
+            >{{ detail ? hiddenAsWord(detail.name) : '' }} (#{{
+              detail?.id
+            }})</strong
+          >.
         </p>
         <ul>
           <li>

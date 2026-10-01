@@ -63,6 +63,7 @@ import {
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
+import { HIDDEN_VALUE, type Hideable } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import {
   computedSignal,
@@ -78,6 +79,7 @@ import {
 } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
+import { hiddenAsWord } from '../viewMode.js'
 
 /** A user's connection presence; a string union so a third state extends it. */
 export type HilosPresence = 'online' | 'offline'
@@ -99,8 +101,11 @@ export function toHilosPresence(value: unknown): HilosPresence {
 export interface HilosUserRow {
   /** User id; also the table row key. */
   readonly id: number
-  /** Display name (from the `users` entity slot, so a rename fans out for free). */
-  readonly name: string
+  /**
+   * Display name (from the `users` entity slot, so a rename fans out for free), or
+   * {@link HIDDEN_VALUE} for a viewer of the admin view mode, who is sent it hidden.
+   */
+  readonly name: Hideable<string>
   /** Last activity timestamp, or null when never recorded. */
   readonly lastActivity: string | null
   /** Live connection presence (from the inline `connections` slot). */
@@ -179,6 +184,8 @@ const MERGE_CANDIDATES_TABLE = 'mergeCandidates'
 // Row slots: the user entity (typed `user` via pageEntityTypes) and the inline
 // runtime connection summary a project fills on its backend.
 const USER_SLOT = 'users'
+/** Field of the user entity carrying the display name (`userFromFields`). */
+const USER_NAME_FIELD = 'name'
 const USER_IDENTITIES_SLOT = 'identities'
 const USER_DELETION_SLOT = 'accountDeletions'
 /** Row payload key of the standing deletion request's erasure time. */
@@ -357,9 +364,13 @@ export function resolveHilosUserRow<TUser extends User>(
   const user = ref ? users.signal(ref).get() : undefined
   const connection = recordSlot(row.slots[USER_CONNECTIONS_SLOT])
 
+  // The typed person keeps a string name for every reader outside the admin
+  // section; the row asks the collection whether it arrived hidden.
+  const nameHidden = ref ? users.hidden(ref, USER_NAME_FIELD).get() : false
+
   return {
     id: Number(user?.id ?? row.rowKey),
-    name: user?.name ?? '',
+    name: nameHidden ? HIDDEN_VALUE : (user?.name ?? ''),
     lastActivity: user?.lastActivity ?? null,
     presence: toHilosPresence(connection?.[USER_PRESENCE_FIELD]),
     onlineSessionCount: connection
@@ -1397,7 +1408,7 @@ export function hilosUserLifecyclePrompt(
   return {
     userId: detail.id,
     choice,
-    title: `${copy.title} · ${detail.name}`,
+    title: `${copy.title} · ${hiddenAsWord(detail.name)}`,
     paragraphs: copy.paragraphs.map((line) =>
       line.replace(
         '{graceDays}',

@@ -66,7 +66,7 @@ function harness() {
     context,
     router,
     calls,
-    push(value: string) {
+    push(value: unknown) {
       for (const listener of listeners)
         listener({
           data: {
@@ -144,6 +144,42 @@ describe('legal setting Vue modal', () => {
     } finally {
       view.unmount()
     }
+  })
+})
+
+describe('legal setting Vue modal with the value hidden (HIL-1260)', () => {
+  it('draws the mark in the cell and in the modal, with no list and nothing to discard', async () => {
+    const h = harness()
+    const view = mount(HilosLegalSettingsPage, {
+      props: { context: h.context },
+      global: { provide: { [hilosRouterKey as symbol]: h.router } },
+      attachTo: document.body,
+    })
+    h.push({ _hidden: true })
+    await flushPromises()
+
+    const cell = view.get('[data-id="legal-setting-value-legal.consent_form"]')
+    expect(cell.find('[data-id="hilos-hidden"]').text()).toBe('Hidden')
+
+    await view
+      .get('[data-id="legal-setting-edit-legal.consent_form"]')
+      .trigger('click')
+    await flushPromises()
+    expect(input()).toBeNull()
+    const modal = document.querySelector('[data-id="modal"]')
+    expect(
+      modal?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(save().disabled).toBe(true)
+    ;(
+      document.querySelector('[data-id="legal-setting-cancel"]') as HTMLElement
+    ).click()
+    await flushPromises()
+    expect(
+      document.querySelector('[data-id="modal-confirm-discard"]'),
+    ).toBeNull()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    view.unmount()
   })
 })
 

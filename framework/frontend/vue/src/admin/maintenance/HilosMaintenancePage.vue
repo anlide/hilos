@@ -18,6 +18,7 @@ import {
   createHilosMaintenanceCircleTable,
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HilosPages,
+  isHiddenValue,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
   type HilosMaintenanceCircleRow,
@@ -29,6 +30,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -120,6 +123,18 @@ const removeGone = computed(
     removeLive.value === undefined,
 )
 
+/**
+ * What tells a circle row apart in its data-ids: the address, or the membership
+ * id while the address is hidden — every hidden row would share one otherwise.
+ *
+ * @param row The circle row.
+ */
+function circleKey(row: HilosMaintenanceCircleRow): string {
+  return isHiddenValue(row.identifier)
+    ? `member-${row.memberId}`
+    : row.identifier
+}
+
 function openCircleRemove(row: HilosMaintenanceCircleRow): void {
   // Flush pending and take the row into focus; a row already taken out by someone
   // else does not open the dialog.
@@ -203,13 +218,13 @@ const circleColumns: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
             :empty-text="HILOS_MAINTENANCE_CIRCLE_COPY.empty"
           >
             <template #row="{ row }">
-              <td :data-id="`hilos-maintenance-circle-row-${row.identifier}`">
-                {{ row.identifier }}
+              <td :data-id="`hilos-maintenance-circle-row-${circleKey(row)}`">
+                <HilosHideable :value="row.identifier" />
               </td>
               <td>
                 <span
                   :class="row.online ? 'text-success' : 'text-body-secondary'"
-                  :data-id="`hilos-maintenance-circle-online-${row.identifier}`"
+                  :data-id="`hilos-maintenance-circle-online-${circleKey(row)}`"
                   >{{
                     row.online
                       ? HILOS_MAINTENANCE_CIRCLE_COPY.online
@@ -223,7 +238,7 @@ const circleColumns: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
                   class="btn btn-sm btn-outline-danger"
                   :title="HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle"
                   :aria-label="HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle"
-                  :data-id="`hilos-maintenance-circle-remove-${row.identifier}`"
+                  :data-id="`hilos-maintenance-circle-remove-${circleKey(row)}`"
                   @click="openCircleRemove(row)"
                 >
                   <i class="bi bi-trash" aria-hidden="true"></i>
@@ -299,7 +314,8 @@ const circleColumns: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
       />
       <p v-if="removeShown" class="mb-0">
         {{ HILOS_MAINTENANCE_CIRCLE_COPY.removeAskBefore }}
-        <code>{{ removeShown.identifier }}</code>
+        <HilosHiddenMark v-if="isHiddenValue(removeShown.identifier)" />
+        <code v-else>{{ removeShown.identifier }}</code>
         {{ HILOS_MAINTENANCE_CIRCLE_COPY.removeAskAfter }}
       </p>
       <p class="mb-0 mt-2 text-body-secondary">

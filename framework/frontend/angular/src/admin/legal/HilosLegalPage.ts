@@ -13,11 +13,13 @@ import {
   HilosPages,
   HilosLegalRowKey,
   HilosLegalSettingKey,
+  HILOS_LEGAL_LAPSED_COPY,
   HILOS_TABLE_ACTIONS_KEY,
   LEGAL_CATALOG_REFUSAL_SECTION,
   describeHilosLegalCheck,
   hilosLegalDocumentLabel,
   hilosLegalLapsedHref,
+  hilosLegalLapsedLabel,
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalContext,
@@ -165,7 +167,9 @@ export class HilosLegalPage {
   protected readonly lapsedHref = hilosLegalLapsedHref
   protected readonly describeCheck = describeHilosLegalCheck
   protected readonly refusal = signal<string | null>(null)
-  protected readonly lapsedLabel = signal('Frozen')
+  protected readonly lapsedLabel = signal<string>(
+    HILOS_LEGAL_LAPSED_COPY.freeze,
+  )
   protected readonly hasDocuments = signal(false)
   protected readonly documents = computed(() =>
     createHilosLegalDocumentsTable(this.context()),
@@ -191,14 +195,14 @@ export class HilosLegalPage {
       }
       const updateSettings = () =>
         this.lapsedLabel.set(
-          settings.controller.rows
-            .get()
-            .find(
-              ({ row }) =>
-                row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
-            )?.row?.value === 'remind'
-            ? 'Past deadline'
-            : 'Frozen',
+          hilosLegalLapsedLabel(
+            settings.controller.rows
+              .get()
+              .find(
+                ({ row }) =>
+                  row?.rowKey === HilosLegalSettingKey.refusalAfterDeadline,
+              )?.row?.value,
+          ),
         )
       const updateDocuments = () =>
         this.hasDocuments.set(documents.controller.rows.get().length > 0)

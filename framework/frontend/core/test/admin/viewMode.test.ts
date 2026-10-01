@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   actionFailureReason,
+  hiddenAsWord,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   VIEW_MODE_ERROR_CODE,
 } from '../../src/admin/viewMode.js'
+import { HIDDEN_VALUE } from '../../src/state/hiddenValue.js'
 
 describe('admin view mode words', () => {
   it('reads a view-mode refusal as the mode sentence', () => {
@@ -28,8 +30,15 @@ describe('admin view mode words', () => {
     expect(HILOS_VIEW_MODE_COPY).toEqual({
       mark: 'View mode',
       explanation: 'You can look around, but not change anything.',
+      hidden: 'Hidden',
       refusal: 'View mode: you can look around, but not change anything.',
     })
     expect(HILOS_VIEW_MODE_STRIP_TEXT_ID).toBe('hilos-view-mode-strip-text')
+  })
+
+  it('says a hidden value as the word, and any other as itself', () => {
+    expect(hiddenAsWord(HIDDEN_VALUE)).toBe('Hidden')
+    expect(hiddenAsWord('Olena')).toBe('Olena')
+    expect(hiddenAsWord<string | null>(null)).toBeNull()
   })
 })

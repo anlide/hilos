@@ -220,19 +220,24 @@ test("unknown legal documents and revisions are not-found subscription refusals"
 test.describe("in the admin view mode", () => {
   test.afterEach(() => setAdminViewMode(false));
 
-  test("a guest opens a legal setting and has nothing to save it with", async ({
+  // The value of a setting is kept from a viewer (HIL-1258), so the window shows
+  // the hidden mark in place of the list and holds no draft (HIL-1260).
+  test("a guest opens a legal setting, reads its value as hidden and has nothing to save it with", async ({
     page,
   }) => {
     await setAdminViewMode(true);
     await gotoPage(page, "/hilos/legal/settings", PAGE_READY);
+    await expect(
+      shownByTestId(page, "legal-setting-value-legal.consent_form").getByTestId(
+        "hilos-hidden",
+      ),
+    ).toHaveText("Hidden");
     await clickSubmit(
       shownByTestId(page, "legal-setting-edit-legal.consent_form"),
     );
-    const input = page.getByTestId("legal-setting-input");
-    await expect(input).toBeEnabled();
-    const nextOption =
-      (await input.inputValue()) === "line" ? "checkbox" : "line";
-    await input.selectOption(nextOption);
+    const dialog = page.getByTestId("modal");
+    await expect(dialog.getByTestId("hilos-hidden")).toHaveText("Hidden");
+    await expect(page.getByTestId("legal-setting-input")).toHaveCount(0);
     const save = page.getByTestId("legal-setting-save");
     await expect(save).toBeDisabled();
     await expect(save).toHaveAttribute(
@@ -240,7 +245,7 @@ test.describe("in the admin view mode", () => {
       /(^| )hilos-view-mode-strip-text( |$)/,
     );
     await clickSubmit(page.getByTestId("legal-setting-cancel"));
-    await expect(input).toBeHidden();
+    await expect(dialog).toBeHidden();
   });
 });
 

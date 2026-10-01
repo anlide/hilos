@@ -7,6 +7,7 @@ import {
   HILOS_LEGAL_SETTING_COPY,
   HILOS_LEGAL_VALUE_COPY,
   HILOS_LEGAL_SETTING_PREVIEWS,
+  isHiddenValue,
   type HilosLegalContext,
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted, useId } from 'vue'
@@ -15,6 +16,8 @@ import HilosViewportTable from '../../HilosViewportTable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import ConflictActions from '../../ConflictActions.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
@@ -36,8 +39,10 @@ const opened = computed({
     if (!next) editor.close()
   },
 })
+// The list edits the draft only while it is a value: a value hidden from a viewer
+// of the admin view mode has no list, and the modal shows the mark instead.
 const draft = computed({
-  get: () => value.value,
+  get: () => (isHiddenValue(value.value) ? '' : value.value),
   set: (next: string) => editor.setValue(next),
 })
 onMounted(() => {
@@ -54,8 +59,10 @@ function open(key: string): void {
   editor.open(key)
 }
 async function save(): Promise<void> {
+  const chosen = value.value
   if (
     row.value === null ||
+    isHiddenValue(chosen) ||
     busy.value ||
     state.value.gone ||
     state.value.conflict
@@ -65,7 +72,7 @@ async function save(): Promise<void> {
     editor.close()
     return
   }
-  if (await run(actions.sendSettingSet(row.value.rowKey, value.value)))
+  if (await run(actions.sendSettingSet(row.value.rowKey, chosen)))
     editor.close()
 }
 </script>
@@ -85,14 +92,18 @@ async function save(): Promise<void> {
         </div></template
       >
       <template #cell-value="{ row: setting }"
-        ><span :data-id="`legal-setting-value-${setting.rowKey}`">{{
-          HILOS_LEGAL_VALUE_COPY[setting.value] ?? setting.value
-        }}</span>
+        ><span :data-id="`legal-setting-value-${setting.rowKey}`"
+          ><HilosHideable v-slot="{ value: shown }" :value="setting.value">{{
+            HILOS_LEGAL_VALUE_COPY[shown] ?? shown
+          }}</HilosHideable></span
+        >
         <div class="small text-body-secondary">
           Default:
-          {{
-            HILOS_LEGAL_VALUE_COPY[setting.defaultValue] ?? setting.defaultValue
-          }}
+          <HilosHideable
+            v-slot="{ value: shown }"
+            :value="setting.defaultValue"
+            >{{ HILOS_LEGAL_VALUE_COPY[shown] ?? shown }}</HilosHideable
+          >
         </div></template
       >
       <template #cell-actions="{ row: setting }"
@@ -176,25 +187,34 @@ async function save(): Promise<void> {
         details-title="Couldn't save the legal setting"
       />
       <form v-if="row" @submit.prevent="save">
-        <label class="form-label" :for="inputId">{{
-          HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey
-        }}</label>
-        <select
-          :id="inputId"
-          v-model="draft"
-          class="form-select"
-          data-id="legal-setting-input"
-          data-autofocus
-          :disabled="busy"
-        >
-          <option
-            v-for="option in HILOS_LEGAL_SETTING_COPY[row.rowKey]?.values ?? []"
-            :key="option"
-            :value="option"
+        <template v-if="isHiddenValue(value)">
+          <div class="form-label">
+            {{ HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey }}
+          </div>
+          <HilosHiddenMark />
+        </template>
+        <template v-else>
+          <label class="form-label" :for="inputId">{{
+            HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey
+          }}</label>
+          <select
+            :id="inputId"
+            v-model="draft"
+            class="form-select"
+            data-id="legal-setting-input"
+            data-autofocus
+            :disabled="busy"
           >
-            {{ HILOS_LEGAL_VALUE_COPY[option] ?? option }}
-          </option>
-        </select>
+            <option
+              v-for="option in HILOS_LEGAL_SETTING_COPY[row.rowKey]?.values ??
+              []"
+              :key="option"
+              :value="option"
+            >
+              {{ HILOS_LEGAL_VALUE_COPY[option] ?? option }}
+            </option>
+          </select>
+        </template>
         <HilosEditNotice
           :kind="state.notice?.kind ?? null"
           :text="noticeText"

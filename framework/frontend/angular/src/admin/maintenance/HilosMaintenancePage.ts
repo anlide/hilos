@@ -17,6 +17,9 @@ import {
   createHilosMaintenanceCircleTable,
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HilosPages,
+  hiddenAsWord,
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
   subscribeSignal,
@@ -97,10 +100,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
               <ng-template #row let-row>
                 <td
                   [attr.data-id]="
-                    'hilos-maintenance-circle-row-' + row.identifier
+                    'hilos-maintenance-circle-row-' + circleKey(row)
                   "
                 >
-                  {{ row.identifier }}
+                  {{ hiddenAsWord(row.identifier) }}
                 </td>
                 <td>
                   <span
@@ -108,7 +111,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
                       row.online ? 'text-success' : 'text-body-secondary'
                     "
                     [attr.data-id]="
-                      'hilos-maintenance-circle-online-' + row.identifier
+                      'hilos-maintenance-circle-online-' + circleKey(row)
                     "
                     >{{
                       row.online ? circleCopy.online : circleCopy.offline
@@ -122,7 +125,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
                     [title]="circleCopy.removeTitle"
                     [attr.aria-label]="circleCopy.removeTitle"
                     [attr.data-id]="
-                      'hilos-maintenance-circle-remove-' + row.identifier
+                      'hilos-maintenance-circle-remove-' + circleKey(row)
                     "
                     (click)="openCircleRemove(row)"
                   >
@@ -200,7 +203,11 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
         @if (removeShown(); as member) {
           <p class="mb-0">
             {{ circleCopy.removeAskBefore }}
-            <code>{{ member.identifier }}</code>
+            @if (isHiddenValue(member.identifier)) {
+              {{ hiddenWord }}
+            } @else {
+              <code>{{ member.identifier }}</code>
+            }
             {{ circleCopy.removeAskAfter }}
           </p>
         }
@@ -244,6 +251,9 @@ export class HilosMaintenancePage {
   readonly context = input.required<HilosMaintenanceContext>()
 
   protected readonly page = HilosPages.MAINTENANCE
+  protected readonly hiddenAsWord = hiddenAsWord
+  protected readonly hiddenWord = HILOS_VIEW_MODE_COPY.hidden
+  protected readonly isHiddenValue = isHiddenValue
   protected readonly circleColumns = CIRCLE_COLUMNS
   protected readonly circleCopy = HILOS_MAINTENANCE_CIRCLE_COPY
   protected readonly circle = computed(() =>
@@ -315,6 +325,18 @@ export class HilosMaintenancePage {
     ) {
       this.circleAddOpen.set(false)
     }
+  }
+
+  /**
+   * What tells a circle row apart in its data-ids: the address, or the membership
+   * id while the address is hidden — every hidden row would share one otherwise.
+   *
+   * @param row The circle row.
+   */
+  protected circleKey(row: HilosMaintenanceCircleRow): string {
+    return isHiddenValue(row.identifier)
+      ? `member-${row.memberId}`
+      : row.identifier
   }
 
   protected openCircleRemove(row: HilosMaintenanceCircleRow): void {

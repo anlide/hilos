@@ -61,11 +61,19 @@ export {
 } from './state/EntityCollection.js'
 export {
   readBoolean,
+  readHideableString,
+  readHideableStringOrNull,
   readNumber,
   readNumberOrNull,
   readString,
   readStringOrNull,
 } from './state/fieldReaders.js'
+export {
+  HIDDEN_VALUE,
+  isHiddenValue,
+  type HiddenValue,
+  type Hideable,
+} from './state/hiddenValue.js'
 export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
 export { DataStore } from './state/DataStore.js'
 export { ListStore, type ListItem } from './state/ListStore.js'
@@ -351,6 +359,7 @@ export {
 } from './session/adminAccess.js'
 export {
   actionFailureReason,
+  hiddenAsWord,
   HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   VIEW_MODE_ERROR_CODE,
@@ -1521,6 +1530,7 @@ export {
   HILOS_LEGAL_REFUSAL_VALUES,
   HILOS_LEGAL_SETTING_COPY,
   HILOS_LEGAL_SETTING_PREVIEWS,
+  HILOS_LEGAL_LAPSED_COPY,
   HILOS_LEGAL_VALUE_COPY,
   legalStandardSetSchema,
   legalDeviationSchema,
@@ -1544,6 +1554,7 @@ export {
   createHilosLegalAcceptancesTable,
   createHilosLegalSettingsActions,
   hilosLegalLapsedHref,
+  hilosLegalLapsedLabel,
   type HilosLegalAdminDocument,
   type HilosLegalAdminRevision,
   type HilosLegalAcceptanceFilters,

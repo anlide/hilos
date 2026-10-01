@@ -14,6 +14,7 @@ Bootstrap classes only (styling-rules.md). -->
 import {
   createHilosImpersonate,
   createHilosUsersTable,
+  hiddenAsWord,
   HilosPages,
   type HilosUserRow,
   type HilosUsersContext,
@@ -22,6 +23,7 @@ import { inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -96,7 +98,9 @@ async function submitImpersonate(): Promise<void> {
   <HilosAdminPage :page="HilosPages.USERS">
     <HilosViewportTable :controller="usersTable">
       <template #cell-id="{ row }">{{ row.id }}</template>
-      <template #cell-name="{ row }">{{ row.name }}</template>
+      <template #cell-name="{ row }"
+        ><HilosHideable :value="row.name"
+      /></template>
       <template #cell-presence="{ row }">
         <span
           class="badge"
@@ -132,7 +136,7 @@ async function submitImpersonate(): Promise<void> {
       v-model="impersonateOpen"
       :title="
         impersonateRow
-          ? `Impersonate · ${impersonateRow.name}`
+          ? `Impersonate · ${hiddenAsWord(impersonateRow.name)}`
           : 'Impersonate user'
       "
       initial-focus="dialog"
@@ -143,8 +147,8 @@ async function submitImpersonate(): Promise<void> {
         details-title="Couldn't sign in as this user"
       />
       <p v-if="impersonateRow" class="mb-0">
-        Become <strong>{{ impersonateRow.name }}</strong> and see the app as
-        they do? You can stop from the banner at any time.
+        Become <strong><HilosHideable :value="impersonateRow.name" /></strong>
+        and see the app as they do? You can stop from the banner at any time.
       </p>
       <template #actions="{ requestClose }">
         <button

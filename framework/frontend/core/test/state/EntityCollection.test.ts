@@ -59,4 +59,23 @@ describe('entityCollection', () => {
     page.entities.upsert({ type: 'bot', id: 1 }, { name: 'Renamed' })
     expect(names).toEqual(['One', 'Renamed'])
   })
+
+  it('says whether a field arrived hidden, and follows the entity as it changes', () => {
+    const manager = new ScopeManager()
+    const bots = entityCollection<Bot>(manager, 'bot', botFromFields)
+    const page = manager.openPage('main')
+    const hidden = bots.hidden(bots.ref(5), 'name')
+    expect(hidden.get()).toBe(false)
+
+    page.entities.upsert(
+      { type: 'bot', id: 5 },
+      { id: 5, name: { _hidden: true }, active: true },
+    )
+    expect(hidden.get()).toBe(true)
+    expect(bots.hidden(5, 'active').get()).toBe(false)
+    expect(bots.signal(5).get()?.name).toBe('')
+
+    page.entities.upsert({ type: 'bot', id: 5 }, { name: 'Iris' })
+    expect(hidden.get()).toBe(false)
+  })
 })

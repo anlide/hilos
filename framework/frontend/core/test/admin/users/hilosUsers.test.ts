@@ -14,7 +14,9 @@ import {
   hilosPasswordFateChoices,
   HILOS_USER_CARD_STEP_UP_OPERATIONS,
   hilosUserLifecycleSections,
+  hilosUserLifecyclePrompt,
   resolveHilosMergeCandidateRow,
+  resolveHilosUserRow,
   type HilosUserCardWindow,
   type HilosUserDetailRow,
   type HilosUsersContext,
@@ -34,6 +36,7 @@ import {
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
 import { entityCollection } from '../../../src/state/EntityCollection.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { USER_ENTITY_TYPE, userFromFields } from '../../../src/state/entity.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { applyServerTime } from '../../../src/session/serverClock.js'
@@ -233,6 +236,41 @@ describe('createHilosUserDetail', () => {
       identities: { hasPassword: true },
     })
     expect(detail.get()?.unverifiedPasswordAddress).toBeNull()
+  })
+})
+
+describe('a name hidden from a viewer of the admin view mode (HIL-1260)', () => {
+  it('resolves the row name to the one hidden value, and back to the name', () => {
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const ref = { type: 'user', id: 4 }
+    page.entities.upsert(ref, { id: 4, name: { _hidden: true } })
+    page.tables.upsert('hilosUsers', 4, { users: ref })
+    const rows = scopes.pageTableSignal('hilosUsers')
+    const row = (): TableRow => rows.get()[0]
+
+    expect(resolveHilosUserRow(row(), users).name).toBe(HIDDEN_VALUE)
+    expect(users.signal(4).get()?.name).toBe('')
+
+    page.entities.upsert(ref, { name: 'Olena' })
+    expect(resolveHilosUserRow(row(), users).name).toBe('Olena')
+  })
+
+  it('names the hidden person "Hidden" in the confirmation title', () => {
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const ref = { type: 'user', id: 4 }
+    page.entities.upsert(ref, { id: 4, name: { _hidden: true } })
+    page.tables.upsert('userDetail', 4, { users: ref })
+    const detail = createHilosUserDetail({
+      scopes,
+      users,
+    } as HilosUsersContext).get()!
+
+    expect(detail.name).toBe(HIDDEN_VALUE)
+    expect(hilosUserLifecyclePrompt(detail, 'block', null).title).toMatch(
+      / · Hidden$/,
+    )
   })
 })
 

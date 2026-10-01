@@ -14,10 +14,12 @@ import {
   resolveHilosLegalDocumentRow,
   resolveHilosLegalRevisionRow,
   resolveHilosLegalSettingRow,
+  hilosLegalLapsedLabel,
   type HilosLegalAcceptanceFilters,
 } from '../../../src/admin/legal/hilosLegal.js'
 import { type HilosLegalContext } from '../../../src/legal/legalAgreements.js'
 import { type TableViewportDescriptor } from '../../../src/connection/HilosConnection.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
 
@@ -172,6 +174,52 @@ describe('legal administration rows and sections', () => {
       defaultValue: 'checkbox',
     })
   })
+
+  it('reads the personal fields sent hidden as the one hidden value (HIL-1260)', () => {
+    const acceptance = resolveHilosLegalAcceptanceRow({
+      rowKey: '43',
+      slots: {
+        acceptance: {
+          userId: 9,
+          name: { _hidden: true },
+          email: { _hidden: true },
+          document: 'terms',
+          revisionId: 'old',
+          declared: true,
+          acceptedAt: '2026-09-27 12:00:00',
+        },
+      },
+    })
+    expect(acceptance.name).toBe(HIDDEN_VALUE)
+    expect(acceptance.email).toBe(HIDDEN_VALUE)
+
+    const setting = resolveHilosLegalSettingRow({
+      rowKey: 'legal.refusal_after_deadline',
+      slots: {
+        setting: { value: { _hidden: true }, defaultValue: { _hidden: true } },
+      },
+    })
+    expect(setting.value).toBe(HIDDEN_VALUE)
+    expect(setting.defaultValue).toBe(HIDDEN_VALUE)
+  })
+
+  it.each([
+    ['remind', 'Past deadline'],
+    ['hidden', 'Past deadline'],
+    ['freeze', 'Frozen'],
+    ['unread', 'Frozen'],
+  ] as const)(
+    'labels the lapsed count under a %s refusal setting "%s" (HIL-1260)',
+    (refusal, label) => {
+      const value =
+        refusal === 'hidden'
+          ? HIDDEN_VALUE
+          : refusal === 'unread'
+            ? undefined
+            : refusal
+      expect(hilosLegalLapsedLabel(value)).toBe(label)
+    },
+  )
 
   it.each([true, false, null])(
     'preserves declared=%s for acceptance records',

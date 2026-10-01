@@ -54,7 +54,8 @@ function router(): HilosRouter {
 interface CircleMember {
   memberId: number
   identityType: string
-  identifier: string
+  /** The address, or the hidden mark a viewer of the admin view mode is sent. */
+  identifier: string | { readonly _hidden: true }
   online: boolean
 }
 
@@ -598,6 +599,53 @@ describe('HilosMaintenancePage', () => {
     expect(document.body.textContent).not.toContain(
       'Nobody has proven this address',
     )
+  })
+})
+
+describe('HilosMaintenancePage with the addresses hidden (HIL-1260)', () => {
+  const HIDDEN = { _hidden: true } as const
+
+  it('draws the mark for each address and keys the rows by the membership', async () => {
+    const { context } = seededContext([
+      {
+        memberId: 1,
+        identityType: 'password',
+        identifier: HIDDEN,
+        online: true,
+      },
+      { memberId: 2, identityType: 'sms', identifier: HIDDEN, online: false },
+    ])
+    await mountPage(context)
+
+    const cell = document.querySelector(
+      'table [data-id="hilos-maintenance-circle-row-member-1"]',
+    )
+    expect(
+      cell?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(mark('member-1')?.textContent).toBe(
+      HILOS_MAINTENANCE_CIRCLE_COPY.online,
+    )
+    expect(mark('member-2')?.textContent).toBe(
+      HILOS_MAINTENANCE_CIRCLE_COPY.offline,
+    )
+  })
+
+  it('names the hidden address in the remove dialog by the mark', async () => {
+    const { context, focus } = seededContext([
+      { memberId: 2, identityType: 'sms', identifier: HIDDEN, online: false },
+    ])
+    await mountPage(context)
+
+    trash('member-2').click()
+    await nextTick()
+
+    expect(focus).toEqual(['2'])
+    const modal = document.querySelector('[data-id="modal"]')
+    expect(modal?.querySelector('code')).toBeNull()
+    expect(
+      modal?.querySelector('[data-id="hilos-hidden"]')?.textContent?.trim(),
+    ).toBe('Hidden')
   })
 })
 

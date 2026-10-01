@@ -12,10 +12,13 @@ import { HilosPages } from '../../routing/hilosPages.js'
 import { hilosUsersPath } from '../users/hilosUsers.js'
 import {
   readBoolean,
+  readHideableString,
+  readHideableStringOrNull,
   readNumber,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
+import { type Hideable, isHiddenValue } from '../../state/hiddenValue.js'
 import {
   createSignal,
   computedSignal,
@@ -109,6 +112,32 @@ export const HILOS_LEGAL_VALUE_COPY: Readonly<Partial<Record<string, string>>> =
     freeze: 'Freeze access',
     remind: 'Keep reminding',
   }
+
+/**
+ * The words of the count of people past a deadline on the legal root: `remind` —
+ * the setting keeps reminding them, `freeze` — it freezes them.
+ */
+export const HILOS_LEGAL_LAPSED_COPY = {
+  remind: 'Past deadline',
+  freeze: 'Frozen',
+} as const
+
+/**
+ * The label of the count of people past a deadline, chosen by the value of
+ * `legal.refusal_after_deadline`: "Past deadline" under `remind` and while the
+ * value is hidden from a viewer of the admin view mode — the one wording true
+ * whatever the value is — and "Frozen" otherwise, an unread value included. One
+ * label for the three frontends.
+ *
+ * @param refusal The setting's value, hidden, or undefined before its row arrives.
+ */
+export function hilosLegalLapsedLabel(
+  refusal: Hideable<string> | undefined,
+): string {
+  return refusal === 'remind' || isHiddenValue(refusal)
+    ? HILOS_LEGAL_LAPSED_COPY.remind
+    : HILOS_LEGAL_LAPSED_COPY.freeze
+}
 
 /** Static illustrations of the two choices; they perform no account action. */
 export const HILOS_LEGAL_SETTING_PREVIEWS = [
@@ -227,8 +256,10 @@ export interface HilosLegalRevisionRow {
 export interface HilosLegalAcceptanceRow {
   readonly rowKey: number
   readonly userId: number
-  readonly name: string
-  readonly email: string | null
+  /** The person's name; hidden from a viewer of the admin view mode. */
+  readonly name: Hideable<string>
+  /** The person's verified email, or null; hidden from a viewer of the admin view mode. */
+  readonly email: Hideable<string | null>
   readonly document: string
   readonly revisionId: string
   readonly declared: boolean | null
@@ -236,8 +267,10 @@ export interface HilosLegalAcceptanceRow {
 }
 export interface HilosLegalSettingRow {
   readonly rowKey: string
-  readonly value: string
-  readonly defaultValue: string
+  /** The value in force; hidden from a viewer of the admin view mode. */
+  readonly value: Hideable<string>
+  /** The catalog default; hidden from a viewer of the admin view mode. */
+  readonly defaultValue: Hideable<string>
 }
 export interface HilosLegalTable<R> {
   readonly controller: TableViewportController<R>
@@ -312,8 +345,8 @@ export function resolveHilosLegalAcceptanceRow(
   return {
     rowKey: Number(row.rowKey),
     userId: readNumber(slot, HilosLegalRowKey.userId),
-    name: readString(slot, HilosLegalRowKey.name),
-    email: readStringOrNull(slot, HilosLegalRowKey.email),
+    name: readHideableString(slot, HilosLegalRowKey.name),
+    email: readHideableStringOrNull(slot, HilosLegalRowKey.email),
     document: readString(slot, HilosLegalRowKey.document),
     revisionId: readString(slot, HilosLegalRowKey.revisionId),
     declared: typeof declared === 'boolean' ? declared : null,
@@ -328,8 +361,8 @@ export function resolveHilosLegalSettingRow(
   const slot = slotOf(row, 'setting')
   return {
     rowKey: String(row.rowKey),
-    value: readString(slot, HilosLegalRowKey.value),
-    defaultValue: readString(slot, HilosLegalRowKey.defaultValue),
+    value: readHideableString(slot, HilosLegalRowKey.value),
+    defaultValue: readHideableString(slot, HilosLegalRowKey.defaultValue),
   }
 }
 

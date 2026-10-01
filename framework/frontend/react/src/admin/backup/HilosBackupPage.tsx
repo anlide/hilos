@@ -66,6 +66,9 @@ import {
   isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
+  hiddenAsWord,
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
   offersBackupRestore,
 } from '@hilos/core'
 import type {
@@ -345,6 +348,8 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
   // wrong one rather than clicking the wrong button.
   const [restoreOpen, setRestoreOpen] = useState(false)
   const [restoreRow, setRestoreRow] = useState<HilosBackupRow | null>(null)
+  // The migration notes the confirmation lists — one word when they are hidden.
+  const restoreNotes = restoreRow ? backupMigrationNotes(restoreRow) : []
   const [restoreTyped, setRestoreTyped] = useState('')
   const restore = useTrackedAction()
   const restoreConfirmed = restoreRow !== null && restoreTyped === restoreRow.id
@@ -391,7 +396,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     // doing right now: waiting for the current run would not make this one restorable.
     if (isBackupMigrationRefused(row)) {
       return (
-        row.restoreMigrationNotice ??
+        hiddenAsWord(row.restoreMigrationNotice) ??
         'This archive was taken on newer code; there is no downgrade path'
       )
     }
@@ -409,6 +414,8 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
   // CLI instruction dialog: what the production surface offers instead of a button.
   const [cliOpen, setCliOpen] = useState(false)
   const [cliRow, setCliRow] = useState<HilosBackupRow | null>(null)
+  // The migration notes the command dialog lists — one word when they are hidden.
+  const cliNotes = cliRow ? backupMigrationNotes(cliRow) : []
 
   function openCli(row: HilosBackupRow): void {
     setCliRow(row)
@@ -580,7 +587,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               >
                 {formatBackupShipping(row)}
               </span>
-              {isBackupShipFailed(row) && row.shipError ? (
+              {isBackupShipFailed(row) && row.shipError !== null ? (
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary ms-1"
@@ -844,7 +851,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       >
         <HilosLongText
           kind="prose"
-          text={detailsRow?.failureReason ?? ''}
+          text={hiddenAsWord(detailsRow?.failureReason ?? '')}
           dataId="hilos-backup-details-text"
         />
       </HilosModal>
@@ -892,7 +899,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       >
         <HilosLongText
           kind="prose"
-          text={shipErrorRow?.shipError ?? ''}
+          text={hiddenAsWord(shipErrorRow?.shipError ?? '')}
           dataId="hilos-backup-ship-error-text"
         />
       </HilosModal>
@@ -942,12 +949,16 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             installation is <code>{restoreGate.targetEnv || 'unnamed'}</code>
           </p>
         ) : null}
-        {restoreRow && backupMigrationNotes(restoreRow).length > 0 ? (
+        {isHiddenValue(restoreNotes) ? (
+          <p className="mb-2" data-id="hilos-backup-migration-notes">
+            {HILOS_VIEW_MODE_COPY.hidden}
+          </p>
+        ) : restoreNotes.length > 0 ? (
           <ul
             className="mb-2 ps-3 text-body-secondary"
             data-id="hilos-backup-migration-notes"
           >
-            {backupMigrationNotes(restoreRow).map((note) => (
+            {restoreNotes.map((note) => (
               <li key={note}>{note}</li>
             ))}
           </ul>
@@ -997,12 +1008,16 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         {/* What the "why" dialog of a dark restore button says where there is a
         button: an operator on production learns of an incompatible archive here, not
         from the command refusing after they have walked to the terminal. */}
-        {cliRow && backupMigrationNotes(cliRow).length > 0 ? (
+        {isHiddenValue(cliNotes) ? (
+          <p className="mt-2 mb-0" data-id="hilos-backup-migration-cli-notes">
+            {HILOS_VIEW_MODE_COPY.hidden}
+          </p>
+        ) : cliNotes.length > 0 ? (
           <ul
             className="mt-2 mb-0 ps-3 text-body-secondary"
             data-id="hilos-backup-migration-cli-notes"
           >
-            {backupMigrationNotes(cliRow).map((note) => (
+            {cliNotes.map((note) => (
               <li key={note}>{note}</li>
             ))}
           </ul>
@@ -1037,7 +1052,9 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         ) : null}
         <HilosLongText
           kind="prose"
-          text={outcomeRow?.restoreFailureReason || 'No failure recorded.'}
+          text={hiddenAsWord(
+            outcomeRow?.restoreFailureReason || 'No failure recorded.',
+          )}
           dataId="hilos-backup-restore-outcome-text"
         />
       </HilosModal>

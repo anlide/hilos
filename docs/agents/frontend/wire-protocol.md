@@ -335,8 +335,9 @@ key. The frame of a page with a subscriber set of
 its own keeps its signal name and its shape, with the same object in place of a
 hidden value. A viewer's window may be served without the order or the search it
 asked for — neither runs over a field hidden from them — and the window section
-of the answer names the order that was served. Reading the object and drawing it
-is HIL-1260's.
+of the answer names the order that was served. The core recognizes the object with
+`isHiddenValue` and hands the one `HIDDEN_VALUE` out for a field a viewer's screen
+draws as hidden (`readHideableString`, `EntityCollection.hidden`).
 
 **Every accepted subscription is answered exactly once**, and the answer is the
 last frame the subscription produces: a page that contributes no payload sends

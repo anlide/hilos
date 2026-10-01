@@ -36,6 +36,7 @@ import {
   type HilosRestoreStatus,
 } from '../../src/admin/backup/hilosBackups.js'
 import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
+import { HIDDEN_VALUE, isHiddenValue } from '../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import { type HilosTableProgress } from '../../src/table/tableProgress.js'
@@ -229,6 +230,22 @@ describe('resolveHilosBackupRow', () => {
     expect(resolved.shipState).toBe('failed')
     expect(resolved.shippedAt).toBe('2026-08-15T06:07:08+00:00')
     expect(resolved.shipError).toBe('ssh: connect timed out')
+  })
+
+  it('reads the four free texts sent hidden as the one hidden value (HIL-1260)', () => {
+    const resolved = resolveHilosBackupRow(
+      backupTableRow('b1', {
+        failureReason: { _hidden: true },
+        shipError: { _hidden: true },
+        restoreFailureReason: { _hidden: true },
+        restoreMigrationNotice: { _hidden: true },
+      }),
+    )
+
+    expect(resolved.failureReason).toBe(HIDDEN_VALUE)
+    expect(resolved.shipError).toBe(HIDDEN_VALUE)
+    expect(resolved.restoreFailureReason).toBe(HIDDEN_VALUE)
+    expect(resolved.restoreMigrationNotice).toBe(HIDDEN_VALUE)
   })
 
   it('reads an unknown or absent copy state as none', () => {
@@ -625,9 +642,18 @@ describe('backupMigrationNotes', () => {
 
     // The gate's own refusal carries a semicolon inside one sentence, which is why the
     // wire joins on a newline and this splits on one.
+    if (isHiddenValue(notes)) {
+      throw new Error('the notes are not hidden')
+    }
     expect(notes).toHaveLength(2)
     expect(notes[0]).toContain('8 migration(s) will be applied')
     expect(notes[1]).toContain('sidecar predates the field')
+  })
+
+  it('keeps a hidden notice hidden — one mark, not a line per note (HIL-1260)', () => {
+    expect(
+      backupMigrationNotes(row({ restoreMigrationNotice: HIDDEN_VALUE })),
+    ).toBe(HIDDEN_VALUE)
   })
 
   it('is empty for an archive with nothing to say, so the block is not rendered', () => {
@@ -874,6 +900,14 @@ describe('hasBackupFailureDetail', () => {
 
   it('is false for a successful backup', () => {
     expect(hasBackupFailureDetail(row({ finished: true }))).toBe(false)
+  })
+
+  it('is true for a failure whose reason is hidden: the window says "Hidden" (HIL-1260)', () => {
+    expect(
+      hasBackupFailureDetail(
+        row({ finished: null, status: 'error', failureReason: HIDDEN_VALUE }),
+      ),
+    ).toBe(true)
   })
 })
 
