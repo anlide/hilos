@@ -14,8 +14,9 @@ use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
  * Its three flags define how the cluster treats it:
  * - NOT monopolistic: fleet members share the node's regular workers, so a node
  *   hosts as many as the leader gives it without pre-forking a process per member;
- * - NOT a cluster-singleton: it is a per-node/data-plane agent the leader places
- *   remotely, so it must be startable on a node that is not the leader;
+ * - NOT a cluster-singleton: it is an agent the leader places by policy on any node
+ *   advertising the tag, itself last, so it must be startable on a node that is not the
+ *   leader;
  * - capability-gated: it runs only on a node advertising the WORKER capability,
  *   which the leader hard-checks before placing it.
  */

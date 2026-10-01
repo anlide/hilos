@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Cluster\Probe;
 
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementState;
@@ -22,13 +23,17 @@ use ReflectionProperty;
  * The leader's pass over the cluster probe fleet (HIL-1211).
  *
  * The framework's policy sweep leaves indexed pools to whoever declared them, and this pool is
- * the framework's: once the settle window after an election has run out, the supervisor keeps
- * every member placed, leaves a tracked one alone, re-places a failed one once per interval, and
- * does nothing at all where the fleet is not listed or no probe may start.
+ * the framework's: on every tick of the leader the supervisor keeps every member placed, leaves a
+ * tracked one alone, re-places a failed one once per interval, and does nothing at all where the
+ * fleet is not listed or no probe may start. A fresh leader's wait for its rebuild is the
+ * placement coordinator's (HIL-1217), so the supervisor holds no window of its own.
  */
 final class ProbeFleetSupervisorTest extends TestCase
 {
     private const string SELF = 'leader';
+
+    /** @var string A node online beside this one that declares nothing, so it is never a fit */
+    private const string PEER = 'peer';
 
     private const string FAILED_INDEX = '4';
 
@@ -65,41 +70,35 @@ final class ProbeFleetSupervisorTest extends TestCase
         parent::tearDown();
     }
 
-    public function testEveryMemberIsPlacedOnceTheWindowHasRunOut(): void
+    public function testEveryMemberIsPlacedOnTheLeadersTick(): void
     {
         $executor = $this->installPlacement();
 
-        $this->settledSupervisor()->tick();
+        new ProbeFleetSupervisor()->tick();
 
         $this->assertSame(self::fleet(), $executor->executed);
     }
 
-    public function testNothingIsPlacedWhileTheWindowRuns(): void
+    public function testNothingIsPlacedUntilTheFreshLeadersRebuildSettles(): void
     {
-        $executor = $this->installPlacement();
+        $executor = $this->installPlacement([self::SELF, self::PEER]);
+        $placement = Hilos::$cluster?->placement();
+        $this->assertNotNull($placement);
+        $placement->onBecameLeader(microtime(true));
         $supervisor = new ProbeFleetSupervisor();
-        $this->armWindow($supervisor, microtime(true) + 60.0);
 
         $supervisor->tick();
-
         $this->assertSame([], $executor->executed, 'A fresh leader first adopts what the mesh already runs');
-    }
 
-    public function testALostLeadershipDisarmsTheWindow(): void
-    {
-        $executor = $this->installPlacement();
-        $supervisor = $this->settledSupervisor();
-
-        $supervisor->onLostLeadership();
+        $placement->onPlacementReport(self::PEER, new PeerPlacementReportDTO([]));
         $supervisor->tick();
-
-        $this->assertSame([], $executor->executed, 'A demoted node never drives placement');
+        $this->assertSame(self::fleet(), $executor->executed, 'Every member is placed once every node has reported');
     }
 
     public function testATrackedMemberIsLeftAlone(): void
     {
         $executor = $this->installPlacement();
-        $supervisor = $this->settledSupervisor();
+        $supervisor = new ProbeFleetSupervisor();
 
         $supervisor->tick();
         $supervisor->tick();
@@ -110,7 +109,7 @@ final class ProbeFleetSupervisorTest extends TestCase
     public function testAFailedMemberIsRetriedOncePerInterval(): void
     {
         $executor = $this->installPlacement();
-        $supervisor = $this->settledSupervisor();
+        $supervisor = new ProbeFleetSupervisor();
         $supervisor->tick();
         $executor->executed = [];
 
@@ -133,7 +132,7 @@ final class ProbeFleetSupervisorTest extends TestCase
         putenv('APP_ENV=prod');
         Hilos::$env = new EnvAccessor();
 
-        $this->settledSupervisor()->tick();
+        new ProbeFleetSupervisor()->tick();
 
         $this->assertSame([], $executor->executed);
     }
@@ -143,7 +142,7 @@ final class ProbeFleetSupervisorTest extends TestCase
         $executor = $this->installPlacement();
         $this->bindAppClass(NoFleetTestHilos::class);
 
-        $this->settledSupervisor()->tick();
+        new ProbeFleetSupervisor()->tick();
 
         $this->assertSame([], $executor->executed);
     }
@@ -162,40 +161,21 @@ final class ProbeFleetSupervisorTest extends TestCase
     }
 
     /**
-     * @return ProbeFleetSupervisor Supervisor whose settle window has already run out
-     */
-    private function settledSupervisor(): ProbeFleetSupervisor
-    {
-        $supervisor = new ProbeFleetSupervisor();
-        $this->armWindow($supervisor, microtime(true) - 1.0);
-
-        return $supervisor;
-    }
-
-    /**
-     * @param ProbeFleetSupervisor $supervisor Supervisor to arm
-     * @param float $deadline Microtime the placement view counts as settled
-     */
-    private function armWindow(ProbeFleetSupervisor $supervisor, float $deadline): void
-    {
-        new ReflectionProperty(ProbeFleetSupervisor::class, 'placeSettleDeadline')->setValue($supervisor, $deadline);
-    }
-
-    /**
      * Mounts a cluster context holding a real placement coordinator over fake ports.
      *
-     * The local node is the only online one and advertises the worker capability, so best-fit
-     * picks it and the placement runs the local start path - which is the executor this returns.
+     * The local node is the only one that advertises the worker capability, so best-fit picks it
+     * and the placement runs the local start path - which is the executor this returns.
      *
+     * @param list<string> $online Node ids the mesh reports online
      * @return FakePlacementExecutor Executor recording what the placement path launched
      */
-    private function installPlacement(): FakePlacementExecutor
+    private function installPlacement(array $online = [self::SELF]): FakePlacementExecutor
     {
         $executor = new FakePlacementExecutor([ClusterProbe::CAPABILITY_WORKER]);
         $context = new ClusterContext();
         $context->registerPlacement(new ClusterPlacement(
             self::SELF,
-            new FakePlacementMesh([self::SELF => [ClusterProbe::CAPABILITY_WORKER, 'slots=10']], online: [self::SELF]),
+            new FakePlacementMesh([self::SELF => [ClusterProbe::CAPABILITY_WORKER, 'slots=10']], online: $online),
             $executor,
         ));
         Hilos::$cluster = $context;

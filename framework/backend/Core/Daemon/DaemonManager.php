@@ -6291,7 +6291,10 @@ abstract class DaemonManager extends BaseManager implements
      * per-tick re-check such an agent would never come up. A tracked record in any state
      * suppresses placement, so this never fights failover or double-places — except a record
      * left {@see PlacementState::Failed}, which nothing else retries and this pass re-places
-     * once per {@see POLICY_PLACEMENT_RETRY_SEC}.
+     * once per {@see POLICY_PLACEMENT_RETRY_SEC}. Nor does it race a term: a fresh leader places
+     * nothing it has no record of until its rebuild is settled (HIL-1217), so a policy agent
+     * still running on a node that has not reported yet is adopted rather than placed a second
+     * time.
      *
      * With cluster mode off there is no placement view and no other node: the single node is
      * its own leader and its own data plane, so the same declaration lands the agent here,
@@ -6543,13 +6546,13 @@ abstract class DaemonManager extends BaseManager implements
      * loop, so it must stay non-blocking.
      *
      * @param int $term Election term in which leadership was won
-     * @throws EnvException When the heartbeat-interval env value cannot be read
      * @throws HilosException Whatever the project's own leadership duties raise
      */
     public function onBecameLeader(int $term): void
     {
-        // Placement tracking is soft-state: a fresh leader rebuilds its view from the mesh.
-        Hilos::$cluster?->placement()?->onBecameLeader();
+        // Placement tracking is soft-state: a fresh leader rebuilds its view from the mesh, and
+        // places nothing it has no record of until that rebuild is settled (HIL-1217).
+        Hilos::$cluster?->placement()?->onBecameLeader(microtime(true));
 
         // So is the map of who owns which RT state, and on the same terms (HIL-696): the term
         // that ended took its picture with it, and the nodes are asked to draw a new one. The
@@ -6560,9 +6563,6 @@ abstract class DaemonManager extends BaseManager implements
 
         // The new leader takes up the protected-mode freeze orchestration.
         Hilos::$cluster?->protectedModeLeadership()?->onBecameLeader();
-
-        // And arms the settle window before it places the cluster probe fleet itself.
-        $this->probeFleetSupervisor->onBecameLeader();
     }
 
     /**
@@ -6597,9 +6597,6 @@ abstract class DaemonManager extends BaseManager implements
         // And the cluster-wide map of RT ownership, which was this node's answer to a question it
         // no longer owns; the next leader rebuilds it from the mesh (HIL-696).
         $this->rtClaimRegistry->clear();
-
-        // A demoted node never drives the probe fleet's placement.
-        $this->probeFleetSupervisor->onLostLeadership();
     }
 
     /**
@@ -6622,9 +6619,14 @@ abstract class DaemonManager extends BaseManager implements
      * returns, so a split cluster never runs the same work on both sides. A project may
      * override to add its own reaction, calling parent::onQuorumLost() first. Runs on the
      * daemon master loop, so overrides must stay non-blocking.
+     *
+     * A master hosting placed work arms its self-fence here whatever leader it answered to - a
+     * minority has no leader to take the work over; a former leader's placed work was left
+     * running before (HIL-1217).
      */
     public function onQuorumLost(): void
     {
+        Hilos::$cluster?->placement()?->noteQuorumLost(microtime(true));
         $this->onClusterWorkStop();
     }
 

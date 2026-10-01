@@ -48,8 +48,9 @@ final class ClusterProbe
      *
      * A capability tag is the hard placement gate: the leader refuses to place an agent on a node
      * whose advertised capabilities (CLUSTER_NODE_CAPABILITIES) do not include every tag the agent
-     * requires. Data-plane nodes of a cluster stand advertise it; master (coordination) nodes do
-     * not, so the fleet is only ever placed on a data-plane node.
+     * requires. A node that carries placed work advertises it - the slaves of binance-btc-tracker
+     * and ecommerce-shop, the masters of online-testing - so the fleet is placed only where a
+     * stand means its work to run.
      */
     public const string CAPABILITY_WORKER = 'worker';
 
@@ -59,7 +60,7 @@ final class ClusterProbe
      * A key=value token in CLUSTER_NODE_CAPABILITIES is a stock of the named resource, and the
      * leader subtracts the cost of every agent it places on the node from it. A stand's slaves
      * declare different amounts, so a scenario can show work landing in proportion to what each
-     * node declares; its masters declare none and take no placed work at all.
+     * node declares; a stand whose masters take no placed work leaves their capabilities empty.
      */
     public const string RESOURCE_RAM = 'ram';
 

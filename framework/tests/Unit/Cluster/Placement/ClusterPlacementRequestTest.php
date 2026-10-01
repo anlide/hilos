@@ -53,8 +53,7 @@ final class ClusterPlacementRequestTest extends TestCase
     public function testTheLeaderPlacesAnAddressedAgentItself(): void
     {
         $mesh = $this->mesh();
-        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onBecameLeader();
+        $placement = $this->settledLeader($mesh);
 
         $placement->requirePlacement('render', '9');
 
@@ -135,8 +134,7 @@ final class ClusterPlacementRequestTest extends TestCase
     public function testTheLeaderPlacesWhatAnotherNodeAsksFor(): void
     {
         $mesh = $this->mesh();
-        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onBecameLeader();
+        $placement = $this->settledLeader($mesh);
 
         $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
 
@@ -153,7 +151,7 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->incapableMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $mesh->sent = [];
 
         $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
@@ -173,8 +171,7 @@ final class ClusterPlacementRequestTest extends TestCase
     public function testANodeThatAsksTwiceGetsOneVerdict(): void
     {
         $mesh = $this->mesh();
-        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onBecameLeader();
+        $placement = $this->settledLeader($mesh);
 
         $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
         $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
@@ -202,7 +199,7 @@ final class ClusterPlacementRequestTest extends TestCase
         Hilos::$cluster = $context;
 
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $mesh->sent = [];
 
         $placement->requirePlacement('render', '9');
@@ -221,8 +218,7 @@ final class ClusterPlacementRequestTest extends TestCase
     public function testLostLeadershipForgetsPlacementAskers(): void
     {
         $mesh = $this->mesh();
-        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onBecameLeader();
+        $placement = $this->settledLeader($mesh);
         $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
         $placement->onLostLeadership();
         $mesh->sent = [];
@@ -240,8 +236,7 @@ final class ClusterPlacementRequestTest extends TestCase
     public function testAnAgentTheLeaderAlreadyPlacesIsNotPlacedAgain(): void
     {
         $mesh = $this->mesh();
-        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onBecameLeader();
+        $placement = $this->settledLeader($mesh);
         $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
         $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
@@ -318,7 +313,7 @@ final class ClusterPlacementRequestTest extends TestCase
             online: [self::SELF],
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $placement->placeAgentOnNode('render', '9', self::SELF);
 
         $placement->noteAgentStopped('render', '9');
@@ -369,6 +364,27 @@ final class ClusterPlacementRequestTest extends TestCase
             linked: [],
             online: [self::SELF],
         );
+    }
+
+    /**
+     * Builds a coordinator that won a term and heard from every other node online, so its rebuild
+     * no longer holds an agent it has no record of (HIL-1217).
+     *
+     * @param FakePlacementMesh $mesh Mesh the coordinator sends through
+     * @return ClusterPlacement Coordinator under test
+     */
+    private function settledLeader(FakePlacementMesh $mesh): ClusterPlacement
+    {
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+        $placement->onBecameLeader(1000.0);
+        foreach ($mesh->online as $nodeId) {
+            if ($nodeId !== self::SELF) {
+                $placement->onPlacementReport($nodeId, new PeerPlacementReportDTO([]));
+            }
+        }
+        $placement->tick(1000.0);
+
+        return $placement;
     }
 
     /**

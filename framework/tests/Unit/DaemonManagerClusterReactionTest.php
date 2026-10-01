@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -18,6 +20,9 @@ use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementExecutor;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementMesh;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -45,6 +50,7 @@ final class DaemonManagerClusterReactionTest extends TestCase
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
         putenv('CLUSTER_ENABLED');
+        Logger::resetLogFile();
 
         parent::tearDown();
     }
@@ -56,6 +62,32 @@ final class DaemonManagerClusterReactionTest extends TestCase
         $manager->onQuorumLost();
 
         $this->assertSame(1, $manager->workStopCount, 'A minority-partition node halts business work at once');
+    }
+
+    /**
+     * A master hosting placed work arms its self-fence on a lost quorum, and does so before the
+     * project's broad work-stop runs (HIL-1217): whatever that hook does, the placed work is
+     * already on its way down.
+     */
+    public function testQuorumLossArmsThePlacementFenceBeforeTheWorkStop(): void
+    {
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-quorum-fence-log');
+        Logger::setLogFile($logFile);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('master', new FakePlacementMesh([], linked: ['leader']), $executor, null, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $context = new ClusterContext();
+        $context->registerPlacement($placement);
+        Hilos::$cluster = $context;
+        $manager = new DaemonManagerClusterReactionTestManager();
+        $manager->logFile = $logFile;
+
+        $manager->onQuorumLost();
+        unlink($logFile);
+
+        $this->assertTrue($manager->fenceArmedAtWorkStop, 'The fence is armed before the project hook runs');
+        $placement->tick(microtime(true) + 1.0);
+        $this->assertSame([['render', '9']], $executor->revoked, 'The placed work stops once the grace has run out');
     }
 
     public function testLostLeadershipReArmsTheSingletonEnsureOnce(): void
@@ -152,6 +184,12 @@ final class DaemonManagerClusterReactionTestManager extends DaemonManager
     /** @var bool Whether the work-stop hook refuses, the way a project's persistence can */
     public bool $workStopRefuses = false;
 
+    /** @var ?string Log file the work-stop hook reads for the placement's quorum fence, or null to read nothing */
+    public ?string $logFile = null;
+
+    /** @var bool Whether the placement's quorum fence was in the log when the work-stop hook ran */
+    public bool $fenceArmedAtWorkStop = false;
+
     protected function createSignalRouter(): SignalRouter
     {
         return new SignalRouter();
@@ -168,6 +206,9 @@ final class DaemonManagerClusterReactionTestManager extends DaemonManager
     public function onClusterWorkStop(): void
     {
         $this->workStopCount++;
+        if ($this->logFile !== null) {
+            $this->fenceArmedAtWorkStop = str_contains((string)file_get_contents($this->logFile), 'Self-fence armed: quorum lost');
+        }
 
         if ($this->workStopRefuses) {
             throw new RuntimeException('the project could not persist its work');

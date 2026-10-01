@@ -73,11 +73,12 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 ## Scenario matrix (the shared harness, `framework/docker/cluster/scenarios.py`)
 
 The stand names the scenarios it carries in the `x-hilos-cluster` block of its
-compose file; this one carries 3, 4, 6, 9, 11, 12, 14, 15, 16, 18, 19, 21 and
-22.
+compose file; this one carries 3, 4, 6, 9, 12, 14, 16, 18 and 19.
 Scenarios 1, 2, 5, 7, 8, 10, 13, 17, 20 and 23 run on the cluster stand of
 binance-btc-tracker ([its README](../binance-btc-tracker/README.md), section
-"Cluster stand"). The list below is the harness's whole matrix.
+"Cluster stand"); 11, 15, 21, 22 and 24 run on the cluster stand of
+online-testing ([its README](../online-testing/README.md), section "Cluster
+stand"). The list below is the harness's whole matrix.
 
 1. master-slave mesh — exactly one leader, slaves follow
 2. master-master — one leader among masters, slaves never lead
@@ -134,6 +135,11 @@ binance-btc-tracker ([its README](../binance-btc-tracker/README.md), section
    master's freeze row holds the photographed circle through the verification
    window, and none does once the system opens (HIL-1125). It runs last, because
    the freeze stops the agents of every master
+24. cut-off leader stops its work — on masters that carry the work themselves, a
+   leader that holds fleet members is cut off from the network: it fences them on
+   losing its quorum, and the majority's new leader starts each of them again only
+   after that fence fired (HIL-1217). It runs right after 21, because it needs the
+   fleet as the first placement laid it
 
 They run in the order the harness lists them, which is not the order they are
 numbered: the RT scenarios and scenario 19 go right after placement, while the

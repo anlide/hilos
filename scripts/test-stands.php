@@ -128,6 +128,16 @@ return [
         'holdsDatabase' => true,
     ],
     [
+        'id' => 'online-testing-cluster',
+        'cwd' => 'demo/online-testing',
+        'composeFile' => 'docker/docker-compose.cluster.yml',
+        'project' => 'hilos-online-testing-cluster',
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
+    [
         'id' => 'cluster',
         'cwd' => 'demo/cluster',
         'composeFile' => 'docker/docker-compose.cluster.yml',

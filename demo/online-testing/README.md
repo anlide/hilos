@@ -139,6 +139,81 @@ pointed at a subset.
 | `composer run test:e2e-down` | tear the e2e stack down |
 | `composer run test:e2e-full` | build → install → check → up → test → down; `-- <spec>` or `-- --grep "…"` points the same clean cycle at a subset |
 
+## Cluster stand
+
+`docker/docker-compose.cluster.yml` raises this demo as a Hilos cluster of
+three equal masters, `m1`–`m3`, each declaring `worker,ram=10`: every master is
+the consensus and the data plane at once and carries placed work itself, and
+the leader is still last among them, so the work lives on the two that do not
+lead until a re-election hands the leader what it carried. All three share one
+MariaDB and one schema, on the subnet 10.223, and nothing is published on the
+host. It is a compose project of its own, `hilos-online-testing-cluster`,
+because the e2e steps take their whole project down when they start.
+
+Nothing here drives the stand: the framework's shared cluster harness
+(`framework/docker/cluster/`) reads the nodes out of the compose file and runs
+the scenarios it names — 21 schema rolled out once, 24 cut-off leader stops its
+work, 11 cross-node db fact, 15 db interest addressing and 22 other database
+refused (`docs/agents/testing.md`, "The cluster stands — three demos, three
+shapes"). The framework's probe fleet and database probe are in this demo's
+`AGENTS`, and they start only here: on one node, on the Playwright stand and in
+production the rows are carried and nothing is run.
+
+| Command | What it does |
+|---|---|
+| `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
+| `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
+| `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 24` runs only the ones named |
+| `composer run test:cluster:down-volumes` | take the stand down, database included |
+| `composer run test:cluster:down` | take the stand down the way the test runner does |
+
+The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`
+and the rest — are called on the module directly, from `demo/online-testing`:
+
+```bash
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
+```
+
+### TLS fixtures
+
+`docker/tls/` holds the certificates of this stand, and they are **stand
+fixtures only**: the authority behind them signs nothing else, its key is not
+in the repository, and it is not the authority of any other stand on the same
+machine. Nothing here is a template for a real cluster — issue your own.
+
+| File | What it is | Used by |
+|---|---|---|
+| `ca.pem` | the stand authority's certificate, no key | `CLUSTER_TLS_CA_FILE` of the three nodes |
+| `m1.pem` … `m3.pem` | a node certificate (CN = node id) followed by its key | `CLUSTER_TLS_CERT_FILE` of that node |
+
+Reissuing means a new set in full: the old authority's key is gone, so no
+single file can be replaced alone. The commands run in the image of the
+stand's cli container, which exists after the first
+`composer -d demo/online-testing run test:cluster:up` (or `docker compose -f
+demo/online-testing/docker/docker-compose.cluster.yml --profile cli build
+online-testing-cluster-cli`). The framework's own commands print PEM to stdout
+and the host shell writes the files, so they come out owned by you rather than
+root. Keep the authority file (`cluster-ca.pem`) outside the repository and
+delete it when done — from the repository root:
+
+```bash
+cli() {  # one framework CLI command in a throwaway container, no network needed
+  docker run --rm --network none --user "$(id -u):$(id -g)" \
+    -v "$PWD/demo/online-testing":/app:ro -v "$PWD/composer.json":/hilos/composer.json:ro \
+    -v "$PWD/composer.lock":/hilos/composer.lock:ro -v "$PWD/framework":/hilos/framework:ro \
+    -v /tmp/cluster-ca:/ca:ro -w /app -e APP_ENV=dev \
+    hilos-online-testing-cluster-online-testing-cluster-cli:latest php backend/Bootstrap/cli.php "$@"
+}
+mkdir -p /tmp/cluster-ca && t=demo/online-testing/docker/tls
+cli cluster:tls:ca > /tmp/cluster-ca/cluster-ca.pem
+cli cluster:tls:trust /ca/cluster-ca.pem > $t/ca.pem
+for n in m1 m2 m3; do cli cluster:tls:issue $n /ca/cluster-ca.pem > $t/$n.pem; done
+rm -r /tmp/cluster-ca
+```
+
+The node certificates are valid for ten years (the authority's lifetime); a
+node warns in its log from 30 days before the end.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file in the root of the Hilos framework for details.

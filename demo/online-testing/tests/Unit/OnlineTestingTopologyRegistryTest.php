@@ -25,6 +25,7 @@ use Demo\OnlineTesting\Pages\Hilos\TermsPage;
 use Demo\OnlineTesting\Pages\MainPage;
 use Demo\OnlineTesting\Runtime\View\Context\OnlineTestingRtContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -113,7 +114,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testAgentRegistryIsTheAppTheIndexAndSignIn(): void
+    public function testAgentRegistryIsTheAppTheIndexSignInAndTheClusterProbes(): void
     {
         $this->assertSame([
             AgentType::ONLINE_TESTING,
@@ -123,7 +124,18 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_MAIL,
             HilosAgentType::HILOS_AUTH_THROTTLE,
+            HilosAgentType::HILOS_PROBE_FLEET,
+            HilosAgentType::HILOS_PROBE_DB,
         ], array_keys(Hilos::AGENTS));
+    }
+
+    public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void
+    {
+        // The rows are the framework's records, not this demo's copy of them: the flags every
+        // cluster scenario stands on are pinned once, in the framework's own registry test.
+        foreach ([HilosAgentType::HILOS_PROBE_FLEET, HilosAgentType::HILOS_PROBE_DB] as $agentType) {
+            $this->assertSame(ClusterProbe::AGENTS[$agentType], Hilos::AGENTS[$agentType], "{$agentType} is listed as the framework wrote it");
+        }
     }
 
     public function testPageSubscriptionOwnersAreDeclaredByPageClasses(): void

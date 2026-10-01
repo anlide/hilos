@@ -174,7 +174,7 @@ registry of taken host ports:
 | ecommerce-shop cluster (not in the code yet — HIL-1216) | — | — | — | — | — | — | 10.222 |
 | online-testing local | 33071 | 8150/8151/8152 | 8159 | 8160 | https 8156 | 5178 | 10.203 |
 | online-testing test | 33072 | 8153/8154/8155 | — | — | http 8157 / https 8158 | — | 10.213 |
-| online-testing cluster (not in the code yet — HIL-1217) | — | — | — | — | — | — | 10.223 |
+| online-testing cluster | — | — | — | — | — | — | 10.223 |
 | demo/cluster — retires, and 10.185 stays unassigned (not in the code yet — HIL-1218) | — | — | — | — | — | — | 10.185 |
 
 Every number comes from the stack's own compose file — the `${…:-N}` defaults
@@ -233,7 +233,7 @@ not pin it: the warm-up is paid on every node start, one worker a second, and a
 number that grows with the agent roster is exactly what a new feature used to
 have to remember. The cluster stands pin it by what a node carries, not by its
 rank — 1 on a node with placed work, 0 on a node without; on online-testing the
-masters carry work and take the 1 (not in the code yet — HIL-1217) — because
+masters carry work and take the 1 — because
 there it says what a node is for, not how big a pool is.
 
 The pool grows by one bound: **a monopolistic agent may not be per-instance.** A

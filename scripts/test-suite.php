@@ -61,9 +61,9 @@ declare(strict_types=1);
  * be cut by area across stands of its own (hilos-ops/proposals, P-452) — not the
  * order of the steps and not the lane count.
  *
- * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `cluster` and
- * `binance-btc-tracker-cluster` today, those of ecommerce-shop and online-testing
- * once HIL-1216 and HIL-1217 add their steps — may run beside any e2e step. Neither an edge nor the order keeps
+ * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `cluster`,
+ * `binance-btc-tracker-cluster` and `online-testing-cluster` today, ecommerce-shop's
+ * once HIL-1216 adds its step — may run beside any e2e step. Neither an edge nor the order keeps
  * them apart, and a fleet leaves with its own step (`downsStand`), which is hygiene
  * rather than separation. Decided by the owner on 2026-09-29 on 43 full runs on
  * nova-de (27–29.09), where cluster overlapped chat-e2e for 1.5–6 minutes and
@@ -148,10 +148,11 @@ $steps = [
     // chat-e2e in 43 full runs (27–29.09.2026). The red this step produced for three
     // weeks was a cluster defect (HIL-746 roster liveness, HIL-747 hand-over scope),
     // not a busy box, so do not reach for lanes when it goes red again. The seconds
-    // below are measured in run 0684 (2026-09-30), beside binance-btc-tracker-cluster,
-    // with scenarios 16 and 19 parked (P-441, HIL-1216) and with 1, 2, 5, 7, 8, 10, 13,
-    // 17 and 20 run on binance-btc-tracker-cluster instead; returning or moving one
-    // moves the number.
+    // below are its matrix measured on the step run alone on nova-de (2026-10-01,
+    // HIL-1217) plus its unit suite, with scenarios 16 and 19 parked (P-441, HIL-1216),
+    // with 1, 2, 5, 7, 8, 10, 13, 17, 20 and 23 run on binance-btc-tracker-cluster and
+    // 11, 15, 21 and 22 on online-testing-cluster instead; returning or moving one moves
+    // the number.
     [
         'id' => 'cluster',
         'command' => 'composer run test:cluster:all',
@@ -160,7 +161,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 162,
+        'seconds' => 150,
         // Takes its stand down with it, at any outcome. This is hygiene: a fleet has no reason
         // to outlive its step, and one that was FORGOTTEN kept eating cores for the rest of the
         // run — on nova-lt that turned chat-e2e into 16m10s against 9m36s with fourteen failures
@@ -186,6 +187,22 @@ $steps = [
         'group' => null,
         'tags' => ['cluster', 'backend'],
         'seconds' => 105,
+        'downsStand' => true,
+    ],
+    // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,
+    // the whole demo on one database. Beside the other fleets and any e2e step, no group and no
+    // edge (the head of this file); takes its stand down with it, at any outcome, for the reason
+    // `cluster` does. The demo's unit suite runs in online-testing-php. The seconds are measured
+    // on the step run alone on nova-de (2026-10-01, HIL-1217).
+    [
+        'id' => 'online-testing-cluster',
+        'command' => 'composer run test:cluster:scenarios',
+        'cwd' => 'demo/online-testing',
+        'stand' => 'online-testing-cluster',
+        'deps' => [],
+        'group' => null,
+        'tags' => ['cluster', 'backend'],
+        'seconds' => 80,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

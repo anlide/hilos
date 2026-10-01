@@ -63,12 +63,14 @@ Plus scenarios beyond that matrix:
  20 rt set width across nodes  every node owns its set of one collection: a node writes its own
                                set, is refused another's, and a node cut off while a set was
                                written gets the row by the hand-over of that set (HIL-1116)
- 21 schema rolled out once     five nodes starting together on an empty database: one applies,
-                               the rest wait (HIL-1228)
+ 21 schema rolled out once     every node of the stand starting together on an empty database:
+                               one applies, the rest wait (HIL-1228)
  22 other database refused    a node reading another database marker is admitted by nobody
                                (HIL-1206)
  23 verifier circle on every   the circle photographed at a freeze is on every master's row
     master                     through the window and gone once the system opens (HIL-1125)
+ 24 cut-off leader stops its   a leader carrying work and cut off fences it before the majority
+    work                       starts any of it again (HIL-1217)
 
 run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
@@ -78,6 +80,7 @@ import os
 import re
 import time
 from collections import namedtuple
+from datetime import datetime
 
 import control
 
@@ -590,6 +593,13 @@ class ScenarioTimeout(AssertionError):
     """A convergence poll hit its cap. A subclass of AssertionError so existing
     handlers still catch it, but distinct so the runner can retry a pure timeout
     (transient, env-driven) while failing hard invariant assertions immediately."""
+
+
+class ScenarioPreconditionLost(ScenarioTimeout):
+    """The stand moved away from the shape a scenario arranged before the scenario could act on
+    it - a re-election of the stand's own, its links flapping once as late seed dials land
+    (P-459), moved the work the scenario had laid out. That says nothing about the behaviour under
+    test, so it is retried like a timeout and printed with the retries rather than failed."""
 
 
 def wait_until(predicate, timeout, desc, nodes=None, local=False):
@@ -1424,7 +1434,9 @@ def scenario_15_db_interest_addressing():
     the row id names a row that exists nowhere, so no node's copy of either collection is
     disturbed and the counters below move for the announcement alone.
     """
-    read_key, unread_key = "settings", "verifications"
+    # The unread half is the image variants: online-testing, the stand that carries this, reads
+    # 'verifications' since it signs people in, and no node of it runs the images agent.
+    read_key, unread_key = "settings", "fileVariants"
     sender, row_id = MASTERS[0], "999999"
     receivers = [n for n in ALL_NODES if n != sender]
     wait_converge(ALL_NODES)
@@ -1850,12 +1862,13 @@ WAITING_FOR_CLAIM = "Waiting for the schema rollout claim"
 
 
 def scenario_21_schema_rolled_out_once():
-    """Five nodes started together on an empty database roll the schema out once (HIL-1228).
+    """Every node of the stand, started together on an empty database, rolls the schema out once
+    (HIL-1228).
 
-    `cluster scenarios` gives this its setting: it wipes the database volume and starts all five
-    nodes at once, with no schema step of the stand in front of them. Each node's watchdog runs
-    the migrations under the rollout claim in the database, so exactly one applies them and the
-    rest find the level already there - and all five then converge.
+    `cluster scenarios` gives this its setting: it wipes the database volume and starts every
+    node of the stand at once, with no schema step of the stand in front of them. Each node's
+    watchdog runs the migrations under the rollout claim in the database, so exactly one applies
+    them and the rest find the level already there - and all of them then converge.
 
     What this proves is the outcome, not the race: whether the starts overlap is up to timing,
     and with this demo's few quick migrations they often do not - a node arriving after the
@@ -2059,9 +2072,241 @@ def scenario_23_verifier_circle_on_every_master():
             f"through the window and gone from each once the system opened")
 
 
-class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes", defaults=(0, 0, False, False, 0))):
+# What a master writes when it loses its quorum while it carries placed work, when it arms its fence
+# and when the fence fires (ClusterPlacement::noteQuorumLost() and selfFence(),
+# framework/backend/Cluster/Placement/ClusterPlacement.php, HIL-1217); the fired line carries its
+# time in the prefix every log line has (TimeHelper::getTimestampWithMs(),
+# framework/backend/Utils/Helpers/TimeHelper.php).
+QUORUM_FENCE_ARMED = re.compile(r"Self-fence armed: quorum lost, (\d+) placed agent\(s\)")
+QUORUM_FENCE_FIRED = re.compile(r"^\[([^\]]+)\].*Self-fence: quorum lost, stopping (\d+) placed agent\(s\)", re.M)
+CONSENSUS_WON_TERM = re.compile(r"^\[([^\]]+)\].*Consensus: won term \d+ with ", re.M)
+LOG_LINE_TIME = "%Y-%m-%d %H:%M:%S.%f"
+
+
+def log_time(stamp):
+    """The moment a daemon log line was written, read off its `[Y-m-d H:i:s.mmm]` prefix."""
+    return datetime.strptime(stamp, LOG_LINE_TIME)
+
+
+def started_on_worker_at(text, agent_id):
+    """The moments one agent was started on a worker in a piece of a node's log, oldest first."""
+    pattern = re.compile(rf"^\[([^\]]+)\].*Agent '{re.escape(agent_id)}' started on worker #\d+", re.M)
+    return [log_time(stamp) for stamp in pattern.findall(text)]
+
+
+def placed_on_node_at(text, agent_id):
+    """Where and when a leader placed one agent in a piece of its log, as (moment, node), oldest first."""
+    pattern = re.compile(rf"^\[([^\]]+)\].*Placing agent '{re.escape(agent_id)}' on node '([^']+)'", re.M)
+    return [(log_time(stamp), node) for stamp, node in pattern.findall(text)]
+
+
+def assert_leader_took_no_new_member(views):
+    """The leader carries no fleet member it did not hold before it won its term (HIL-445, rule 3).
+
+    Last among equals is a rule about NEW work: a master that carried members and then won a term
+    keeps them, and a stand raised a moment ago can re-elect on its own (P-459). So a member on
+    the leader is a failure only when the leader started it after its own last won term.
+    """
+    leader = leaders(views)[0]
+    on_leader = hosted_by(views, leader)
+    if not on_leader:
+        return
+    log = node_log(leader)
+    won = CONSENSUS_WON_TERM.findall(log)
+    assert won, f"{leader} leads, but its log has no won-term line (read {node_log_path(leader)})"
+    won_at = log_time(won[-1])
+    taken = sorted(member for member in on_leader if any(t > won_at for t in started_on_worker_at(log, member)))
+    assert not taken, (f"leader {leader} took fleet member(s) {taken} after it won its term while "
+                       f"{[n for n in MASTERS if n != leader]} could carry them: the leader is last among "
+                       "equal masters (HIL-445)")
+    print(f"    leader {leader} carries {len(on_leader)} member(s) it held before it won its term (P-459)")
+
+
+def spread_fleet_over(carriers, views):
+    """Make both masters that do not lead carry fleet members, and answer the views that show it.
+
+    One of them carries none only when it was not there for the first placement. One worker of the
+    other is killed, and the leader places the members it hosted again - on the empty master,
+    which runs the fewest agents, and the leader stays last.
+    """
+    empty = [node for node in carriers if not hosted_by(views, node)]
+    if not empty:
+        return views
+    full = next(node for node in carriers if node not in empty)
+    by_worker = fleet_workers_on(full, hosted_by(views, full))
+    assert by_worker, f"{full} carries {sorted(hosted_by(views, full))} but its log names none of their workers"
+    worker_index, lost = max(by_worker.items(), key=lambda item: len(item[1]))
+    print(f"    {empty[0]} carries no fleet member; killing worker #{worker_index} of {full} "
+          f"with {sorted(lost)} so the leader places them again")
+    out = ctl_out("kill-worker", full, str(worker_index))
+    assert "SIGKILLed" in out, f"the worker kill did not report success: {out}"
+    return wait_until(lambda v: fleet_started(v) and all(hosted_by(v, node) for node in carriers),
+                      FAILOVER_TIMEOUT, f"both {carriers} carry fleet members")
+
+
+def scenario_24_cut_off_leader_stops_its_work():
+    """A leader that carries work and is cut off stops it before the majority runs it (HIL-1217).
+
+    On a stand of equal masters that carry the work themselves the leader takes none while another
+    master can (HIL-445, rule 3), so it holds work only by inheritance: the leader dies and a
+    master carrying members wins the next term, keeping them, while its neighbours' members keep
+    writing past the fence window of the leader that placed them (as in scenario 5). One worker is
+    killed first when only one of the masters that do not lead carries any, so whichever of the
+    two wins carries members.
+
+    That leader is then cut off. Without a quorum it leads nobody and nobody can take its work
+    over, so it fences the work itself; and the majority's fresh leader places nothing it has no
+    record of until every node has reported or been away for a failover grace. Both halves are
+    asserted on the logs, read from the host since the partitioned node cannot be asked: the
+    cut-off leader wrote that it armed and fired a fence for at least its fleet members; the
+    majority placed none of them anywhere before that fence fired - a leader that did not wait
+    places them back onto the cut-off node, still online to it, and only the link timeout keeps
+    that from being a copy; and each of them came up on its new host only after the fence fired -
+    an earlier start is two copies running at once. The cut-off leader is recreated, as in
+    scenario 8.
+    """
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the leader moves")
+    assert_leader_took_no_new_member(views)
+    old_leader = leaders(views)[0]
+    carriers = [n for n in MASTERS if n != old_leader]
+    spread_fleet_over(carriers, views)
+
+    print(f"    killing leader {old_leader}; whichever of {carriers} wins carries fleet members")
+    ctl("kill", old_leader)
+    try:
+        def carrier_leads(v):
+            ls = [n for n in carriers if is_leader(v.get(n))]
+            return len(ls) == 1 and v[ls[0]].get("hasQuorum") is True
+        views = wait_until(carrier_leads, ELECTION_TIMEOUT, "a carrier leads with quorum", nodes=carriers)
+        heir = next(n for n in carriers if is_leader(views.get(n)))
+
+        def carriers_saw_old_leader_offline(v):
+            for carrier in carriers:
+                old = next((node for node in (v.get(carrier) or {}).get("nodes", [])
+                            if node.get("nodeId") == old_leader), None)
+                if old is None or old.get("online") is not False:
+                    return False
+            return True
+
+        wait_until(carriers_saw_old_leader_offline, CONVERGE_TIMEOUT,
+                   f"both carriers see {old_leader} offline", nodes=carriers)
+        fenced_by = int(time.time() + SLAVE_WORK_GRACE_SEC)
+
+        def fleet_wrote_past_fence(v):
+            updates = newest_row_updates(v)
+            return (fleet_started(v)
+                    and all(updates.get(str(index), 0) > fenced_by for index in range(WORKER_FLEET_SIZE)))
+
+        try:
+            wait_until(fleet_wrote_past_fence,
+                       SLAVE_WORK_GRACE_SEC + 3 * WORKER_REPORT_INTERVAL_SEC * TIMEOUT_SCALE + FAILOVER_TIMEOUT,
+                       f"the fleet {heir} leads writes past the fence window of {old_leader}", nodes=carriers)
+        except ScenarioTimeout as error:
+            updates = newest_row_updates(inspect_all(carriers))
+            silent = [f"{WORKER_AGENT_TYPE}:{index}" for index in range(WORKER_FLEET_SIZE)
+                      if updates.get(str(index), 0) <= fenced_by]
+            if not silent:
+                raise
+            raise AssertionError(
+                f"fleet member(s) {silent} stopped writing after {heir} took them over from {old_leader}: "
+                "fenced by a carrier after the new leader took it over"
+            ) from error
+    finally:
+        ctl("start", old_leader)
+        wait_converge(ALL_NODES)
+
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started under one leader")
+    cut_off = leaders(views)[0]
+    members = hosted_by(views, cut_off)
+    if not members:
+        raise ScenarioPreconditionLost(
+            f"{cut_off} leads after {heir} took over from {old_leader}, and carries no fleet member: the "
+            "fleet moved under a re-election of the stand's own before this one (P-459)")
+    majority = [n for n in MASTERS if n != cut_off]
+    marks = {n: node_log_mark(n) for n in MASTERS}
+    print(f"    cutting {cut_off} off the network with {len(members)} fleet member(s): {sorted(members)}")
+    ctl("partition", cut_off)
+    try:
+        def majority_leads(v):
+            ls = [n for n in majority if is_leader(v.get(n))]
+            return len(ls) == 1 and v[ls[0]].get("hasQuorum") is True
+        views = wait_until(majority_leads, ELECTION_TIMEOUT, "the majority elects a leader with quorum",
+                           nodes=majority)
+        new_leader = next(n for n in majority if is_leader(views.get(n)))
+
+        def fence_fired(_views):
+            return QUORUM_FENCE_FIRED.search(node_log_since(cut_off, marks[cut_off])) is not None
+
+        try:
+            wait_until(fence_fired, CONVERGE_TIMEOUT, f"{cut_off} fences its work", nodes=majority)
+        except ScenarioTimeout as error:
+            raise AssertionError(
+                f"{cut_off} led with {len(members)} fleet member(s) and was cut off, yet never fenced them: "
+                f"no \"Self-fence: quorum lost\" line in {node_log_path(cut_off)}"
+            ) from error
+        tail = node_log_since(cut_off, marks[cut_off])
+        armed = QUORUM_FENCE_ARMED.search(tail)
+        assert armed, f"{cut_off} fired a quorum fence it never armed (read {node_log_path(cut_off)})"
+        fired_stamp, fired_count = QUORUM_FENCE_FIRED.findall(tail)[0]
+        for count, said in ((int(armed.group(1)), "armed"), (int(fired_count), "fired")):
+            assert count >= len(members), (f"{cut_off} {said} its quorum fence for {count} placed agent(s), "
+                                           f"fewer than its {len(members)} fleet members")
+        fired_at = log_time(fired_stamp)
+
+        def fleet_moved_off(v):
+            rows = worker_placements(v)
+            return fleet_started(v) and all(rows[member].get("nodeId") != cut_off for member in members)
+
+        views = wait_until(fleet_moved_off, CONVERGE_TIMEOUT,
+                           f"the whole fleet started in the majority, none of it on {cut_off}", nodes=majority)
+        rows = worker_placements(views)
+        # The new leader placing a member at all before the fence fired is the rebuild not waiting:
+        # a member placed back onto the cut-off node, which still looks online to it, starts no
+        # copy only for as long as the link takes to time out.
+        for member in sorted(members):
+            for node in majority:
+                early = [(at, target) for at, target in placed_on_node_at(node_log_since(node, marks[node]), member)
+                         if at <= fired_at]
+                assert not early, (f"{node} placed {member} on {early[0][1]} at {early[0][0]} while {cut_off} "
+                                   f"stopped its copy only at {fired_at}: the rebuild did not wait for {cut_off}")
+
+        def started_since_cut():
+            hosts_of = {member: rows[member]["nodeId"] for member in members}
+            return {member: started_on_worker_at(node_log_since(host, marks[host]), member)
+                    for member, host in hosts_of.items()}
+
+        # The leader writes a member started as soon as its host takes the placement, and the host
+        # logs the start a moment later, once its worker reports the agent up: wait for those lines.
+        try:
+            wait_until(lambda _views: all(started_since_cut().values()), CONVERGE_TIMEOUT,
+                       "every moved member's start in its new host's log", nodes=majority)
+        except ScenarioTimeout:
+            pass
+        started = started_since_cut()
+        first_up = None
+        hosts = set()
+        for member in sorted(members):
+            host = rows[member]["nodeId"]
+            hosts.add(host)
+            starts = started[member]
+            assert starts, (f"{member} runs on {host} by the leader's table, but {host}'s log has not "
+                            "started it since the cut")
+            assert starts[0] > fired_at, (f"{member} came up on {host} at {starts[0]} while {cut_off} stopped its "
+                                          f"copy only at {fired_at}: two copies ran at once")
+            first_up = starts[0] if first_up is None else min(first_up, starts[0])
+        gap = (first_up - fired_at).total_seconds()
+        return (f"{cut_off} led with {len(members)} fleet member(s) and was cut off: it stopped them {gap:.1f}s "
+                f"before the first came up on {', '.join(sorted(hosts))}; {new_leader} leads the rest")
+    finally:
+        ctl("recreate", cut_off)
+        wait_converge(ALL_NODES)
+
+
+class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram",
+                      defaults=(0, 0, False, False, 0, False))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
-    slaves, a stranger, a slave that declares ram, and at least `nodes` members in all. What a
+    slaves, a stranger, a slave that declares ram, at least `nodes` members in all, and every
+    master declaring ram - masters that carry placed work themselves. What a
     scenario names by role - the third master, the second slave - is what it needs."""
 
 
@@ -2080,6 +2325,10 @@ SCENARIOS = [
     # First, because it reads the container logs of the stand `cluster scenarios` has just
     # raised: 9 and 16 kill and recreate nodes, and a recreated container starts a new log.
     Scenario("21 schema rolled out once", scenario_21_schema_rolled_out_once, Need(nodes=2)),
+    # Right after 21 because it needs the fleet as the first placement laid it; every later
+    # scenario that kills or recreates a node reshuffles it.
+    Scenario("24 cut-off leader stops its work", scenario_24_cut_off_leader_stops_its_work,
+             Need(masters=3, master_ram=True)),
     Scenario("1 master-slave mesh", scenario_1_master_slave_mesh, Need(masters=1, slaves=1)),
     Scenario("2 master-master", scenario_2_master_master, Need(masters=1)),
     Scenario("3 placement", scenario_3_placement, Need(slaves=1)),
@@ -2214,6 +2463,10 @@ def unmet_need(stand, scenario):
         return "it needs a stranger, the stand has none"
     if need.slave_ram and not any(stand.members[s].ram for s in stand.slaves):
         return "it needs a slave that declares ram, the stand has none"
+    if need.master_ram:
+        bare = next((m for m in stand.masters if not stand.members[m].ram), None)
+        if bare is not None:
+            return f"it needs every master to declare ram, {bare} declares none"
     return None
 
 

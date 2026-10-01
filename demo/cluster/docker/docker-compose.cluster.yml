@@ -17,7 +17,7 @@ name: hilos-cluster
 x-hilos-cluster:
   cli: cluster-cli
   stranger: x1
-  scenarios: [3, 4, 6, 9, 11, 12, 14, 15, 16, 18, 19, 21, 22]
+  scenarios: [3, 4, 6, 9, 12, 14, 16, 18, 19]
 
 x-node-base: &node-base
   build: .

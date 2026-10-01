@@ -676,6 +676,20 @@ Coordination state is **not** persisted (MySQL is kept out of coordination). A n
 leader rebuilds membership/placement by re-querying the mesh; singleton agents are
 launched fresh (the previous leader's were killed — see HIL-341 below).
 
+Until that rebuild is settled the new leader places nothing it has no record of
+(HIL-1217): new work waits until every node online to it has reported, and every node
+that went away less than `CLUSTER_FAILOVER_GRACE_MS` ago has been away for that grace —
+a leader cut off from the majority stops its work only a self-fence grace after it lost
+its quorum (*Quorum-loss reaction* below), so a copy started sooner would run beside the
+one it still runs. A node that goes away while awaited is waited out from that moment; one
+that comes back is waited for by its report again. The wait holds the policy pass, the
+probe fleet, a project's own pool and an addressed agent alike — the addressed one is
+held, not refused, and placed with its verdict once the rebuild settles. Failover and
+every record the leader knows are not held: a dead node's agents, a re-placement after a
+report, the retry of an unplaced agent. The leader logs `Placement rebuild: N node(s) to
+account for their agents …` when it starts waiting and `Placement rebuild settled …`
+when it stops; on a stand whose leader has nothing to wait for it logs neither.
+
 ## Who may carry placed work (HIL-445)
 
 Recorded because on 26.07.2026 a master's work was expected to be picked up by a
@@ -695,7 +709,7 @@ statements; the mechanism they govern is built by HIL-447 and HIL-448.
    `WorkerServer::startAgent()` lets it through), and scenario 11 —
    `scenario_11_cross_node_db_fact` writes on m1 and reads on m2 — runs the
    `db_probe` replica on two masters that carry placed work as well, on the
-   online-testing stand (not in the code yet — HIL-1217). A replica is not
+   online-testing stand. A replica is not
    placed by the policy and needs no declared capacity. The masters of
    binance-btc-tracker and ecommerce-shop take no placed work, and by rule 4:
    they declare no capacity (not in the code yet — HIL-1218).
@@ -707,7 +721,10 @@ statements; the mechanism they govern is built by HIL-447 and HIL-448.
    cluster with no slaves must still place its work. It is a ranking rule in the
    tiebreak chain of `BestFitPlacementPolicy::selectNode()`, not a gate. It sits right
    after the load after placement and before the head count: behind the head count the
-   leader would take every N-th free agent as soon as the other nodes caught up.
+   leader would take every N-th free agent as soon as the other nodes caught up. On a
+   stand whose masters carry work the leader holds placed work only by inheritance — a
+   master carrying work that wins a term keeps it — and what follows when it is cut off
+   is in *Quorum-loss reaction* below (HIL-1217).
 4. **Acceptance of placed work must be declared.** A node that declares no capacity is
    not a candidate; the declaration is the capacity model (see *Consumable capacity and
    agent cost* below), and the refusal that names its absence is the machine-readable one
@@ -793,6 +810,23 @@ survivors keep working under the new leader.
   node's cluster-singleton agents (`WorkerServer::onLostSingletonHost()`, the mirror of
   `onBecameSingletonHost()`) and clears `singletonsStarted`, so a truth source never
   outlives its term and a later promotion re-runs the start.
+- **Placed work in a minority (HIL-1217).** Before the project hook runs, `onQuorumLost()`
+  arms the self-fence of a master hosting placed work (`ClusterPlacement::noteQuorumLost()`),
+  whatever leader it answered to — a minority has no leader to take the work over. The
+  leader it answered to is forgotten, so that leader's return calls nothing off; a leader
+  that takes the placements over (`peer_placement_query`, or a placement onto the node)
+  or the node winning a term again does. Otherwise the work stops after
+  `CLUSTER_SLAVE_WORK_GRACE_MS` (`Self-fence armed: quorum lost, …` then `Self-fence:
+  quorum lost, stopping N placed agent(s)`), and the majority's fresh leader outwaits it
+  before it starts any of it again (the rebuild above). A fence that fires reports the
+  emptied node to every node still linked, so a leader that adopted the work from the
+  report of a link that came back meanwhile places it again rather than calling it started.
+  Before this, a leader cut off with
+  placed work kept it running, and the majority ran a second copy — the one double-run
+  the slave self-fence below did not cover, because a leader answers to nobody. Scenario
+  24 on the online-testing stand proves both halves on the logs. A slave knows nothing of
+  a quorum and is unchanged: a slave left in a minority together with a former leader
+  still runs its work (P-461).
 - **Resume.** No new hook — the project resurrects through the existing
   `onQuorumGained()` / `onBecameSingletonHost()` (leader) and the slave work-grant.
 - **Graceful-leave.** A planned stop broadcasts a `PeerNodeLeavingDTO` on the peer mesh
@@ -867,10 +901,12 @@ alone, so a fleet of equal free agents does not pile onto one node.
   pair of nodes). Deadlines are derived by sweeping the registry each `tick()` rather than armed
   where the registry is written, because eight paths write it and one that forgot to arm would
   leave its record waiting forever.
-- **Slave self-fence (no double-run).** A slave that loses the link to the leader it answers
-  to — the one that placed its work, or the one that took it over with a
-  `peer_placement_query` after a re-election (HIL-440) — stops those agents after
-  `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects via the existing peer dial. The self-fence
+- **Self-fence (no double-run).** A node that does not lead — a slave, or a master carrying
+  placed work — that loses the link to the leader it answers to — the one that placed its
+  work, or the one that took it over with a `peer_placement_query` after a re-election
+  (HIL-440) — stops those agents after `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects via the
+  existing peer dial; a master that loses its quorum fences the same way whatever it answered
+  to (*Placed work in a minority* above). The self-fence
   grace is held **at or below** the failover
   grace, so the old copy of a truth source is stopped before the leader starts a new one.
   On rejoin the node reports what it still hosts (`PeerPlacementReportDTO`) and the leader

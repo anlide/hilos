@@ -28,6 +28,8 @@ use Demo\OnlineTesting\Pages\MainPage;
 use Demo\OnlineTesting\Runtime\View\Context\OnlineTestingRtContext;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -51,6 +53,9 @@ use Hilos\Runtime\View\Context\RtContext;
  * The smallest complete shape of a project: sign-in by password, an empty home, the empty
  * admin dashboard and the four public footer pages. No admin section is activated yet - each
  * arrives with the leaf that moves its e2e onto this demo.
+ *
+ * Its cluster stand (docker/docker-compose.cluster.yml) runs the framework's fleet and
+ * database probes.
  *
  * Usage:
  * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string()
@@ -125,6 +130,13 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
+        // The probes of this demo's cluster stand - scenario 24 reads the fleet, scenario 11
+        // writes and reads through the database probe. A probe starts only on a clustered node of
+        // a non-production environment, so this demo on one node, on its Playwright stand and in
+        // production carries the rows and runs none of them (docs/agents/testing.md, "The cluster
+        // stands").
+        HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
+        HilosAgentType::HILOS_PROBE_DB => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],
     ];
 
     /**

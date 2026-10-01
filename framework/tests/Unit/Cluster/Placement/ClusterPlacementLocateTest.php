@@ -160,7 +160,7 @@ final class ClusterPlacementLocateTest extends TestCase
     public function testTheLeaderAnswersAPolicyPlacementFromItsOwnRegistry(): void
     {
         $placement = $this->follower(leaderId: self::SELF);
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('library', null, 1));
 
         $this->assertSame('node-b', $placement->locate('library', null)->nodeId);

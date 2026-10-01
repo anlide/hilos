@@ -146,7 +146,7 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
         $placement->onPlacementView('other', $this->view(['node-c' => [['render', '9']]], 'other'));
@@ -158,7 +158,7 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
         $placement->tick(1.0);
@@ -178,7 +178,7 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
         $placement->tick(1.0);
         $published = count($this->views($mesh));
@@ -197,7 +197,7 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
         $placement->tick(1.0);
 
@@ -216,7 +216,7 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
-        $placement->onBecameLeader();
+        $placement->onBecameLeader(1000.0);
         $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
         $placement->onPeerHandshaked('node-c');
@@ -311,7 +311,7 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $leaderMesh = new PlacementViewTestMesh();
         $leader = new ClusterPlacement('leader', $leaderMesh, new PlacementViewTestExecutor());
-        $leader->onBecameLeader();
+        $leader->onBecameLeader(1000.0);
         $leader->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
         $mesh = new PlacementViewTestMesh();
         $placement = $this->hosting($mesh, ['render', '9']);
@@ -340,7 +340,7 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $leaderMesh = new PlacementViewTestMesh();
         $leader = new ClusterPlacement('leader', $leaderMesh, new PlacementViewTestExecutor());
-        $leader->onBecameLeader();
+        $leader->onBecameLeader(1000.0);
         $leader->onAgentStatus(self::SELF, PeerAgentStatusDTO::started('render', '9', 1));
         $mesh = new PlacementViewTestMesh();
         $placement = $this->hosting($mesh, ['render', '9']);

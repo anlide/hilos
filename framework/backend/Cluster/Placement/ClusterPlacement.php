@@ -74,9 +74,13 @@ use Throwable;
  * `CLUSTER_FAILOVER_GRACE_MS`, degrading an agent to {@see PlacementState::Unplaced} (and
  * notifying the {@see PlacementObserver}) when no capable node is online; a node isolated
  * from the leader it answers to — the one that placed its work or took it over with a rebuild
- * query (HIL-440) — self-fences those agents after
+ * query (HIL-440) — and a master that loses its quorum while hosting placed work, whatever it
+ * answered to (HIL-1217), self-fence those agents after
  * `CLUSTER_SLAVE_WORK_GRACE_MS` (held at or below the failover grace, so the old copy stops
- * before the leader starts a new one). On rejoin a node reports what it still hosts
+ * before the leader starts a new one). A fresh leader places nothing it has no record of until
+ * its rebuild is settled — every node has reported or been away for the failover grace — so
+ * a copy still running on a node it has not heard from is adopted rather than started twice
+ * (HIL-1217). On rejoin a node reports what it still hosts
  * ({@see onPeerHandshaked()}) and the leader reconciles against its view (leader = truth),
  * stopping anything already re-placed elsewhere. A node that hosts an agent the published view
  * gives to another node reports the same snapshot at once, without waiting for a relink
@@ -143,6 +147,36 @@ final class ClusterPlacement implements WorkerPlacement
     private array $failoverDeadlines = [];
 
     /**
+     * The nodes a fresh leader's rebuild still waits for, by node id: null while it waits for the
+     * node's placement report, a microtime while it waits out the failover grace of a node that
+     * went away. Empty when nothing is awaited, which is when the rebuild is settled and new work
+     * may be placed (HIL-1217).
+     *
+     * @var array<string, ?float>
+     */
+    private array $rebuildAwaited = [];
+
+    /** @var bool True from a term's first awaited node until the rebuild of that term settles */
+    private bool $rebuildPending = false;
+
+    /**
+     * When each node this node sees offline went away, by node id: kept on every node, not only
+     * on the leader, because a node that wins a term has to know which of its neighbours left
+     * less than a failover grace ago.
+     *
+     * @var array<string, float>
+     */
+    private array $offlineSince = [];
+
+    /**
+     * Addressed agents a leader held while its rebuild was not settled, by agent id: placed, and
+     * the nodes that asked answered, once it settles.
+     *
+     * @var array<string, array{agentType: string, agentIndex: ?string}>
+     */
+    private array $heldOnDemand = [];
+
+    /**
      * Deadline per agent id awaiting a placement acknowledgement, with the node it was armed
      * for and whether that node has already been asked: by the time it elapses the record may
      * name another node, and only the armed node tells the leader whether the deadline still
@@ -161,8 +195,8 @@ final class ClusterPlacement implements WorkerPlacement
 
     /**
      * Node id of the leader this node answers to: the one that placed its hosted agents or took
-     * them over with a rebuild query; null on a leader and after a self-fence. Stop reports go
-     * to it, and the self-fence is armed against it.
+     * them over with a rebuild query; null on a leader, after a self-fence and after a lost
+     * quorum. Stop reports go to it, and the self-fence is armed against it.
      *
      * @var ?string
      */
@@ -170,6 +204,9 @@ final class ClusterPlacement implements WorkerPlacement
 
     /** @var ?float Self-fence deadline (microtime) after the placing leader was lost, or null when not isolated */
     private ?float $selfFenceDeadline = null;
+
+    /** @var bool True when the armed self-fence was armed by a lost quorum rather than by the placing leader's loss */
+    private bool $selfFenceOnQuorum = false;
 
     /** @var array<string, float> Deadline (microtime) an agent's placement counts as already asked for until */
     private array $placementAsks = [];
@@ -322,6 +359,38 @@ final class ClusterPlacement implements WorkerPlacement
      * caller can retry on the next capable join rather than fail. A heavy worker thus lands where
      * it is the smaller share of the free capacity, a free one wherever fewest agents run.
      *
+     * A fresh leader whose rebuild is not settled yet places nothing it has no record of, and
+     * answers null as if no node were a fit (HIL-1217): such an agent may still run on a node that
+     * has not reported, and the policy pass, the fleet supervisor or a project's pool asks again
+     * on its next tick. An agent the leader does know - a record in any state - is not held.
+     *
+     * @param string $agentType Agent type to launch
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return ?string Chosen node id the agent was placed on, or null when no node is a fit or the rebuild holds it
+     * @throws PlacementCapabilityException When the chosen node no longer clears the hard gate
+     * @throws LogicException When the agent, or one already placed, declares a negative cost
+     * @throws AgentDaemonCreationFailedException When a local placement's daemon cannot be built
+     * @throws NoSuitableWorkerException When a local placement has no worker to host it
+     * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
+     * @throws HilosException Whatever the project's agent-daemon factory raises
+     */
+    public function placeAgentOnBestNode(string $agentType, ?string $agentIndex): ?string
+    {
+        if ($this->rebuildHolds($agentType, $agentIndex)) {
+            return null;
+        }
+
+        return $this->placeOnBestFitNode($agentType, $agentIndex);
+    }
+
+    /**
+     * Places an agent on the best-fit node, past the rebuild a fresh leader may still wait for.
+     *
+     * The body of {@see placeAgentOnBestNode()}, called on its own where the leader knew the agent
+     * a line earlier: {@see reconcileMissingAgents()} forgets the record of an agent its node no
+     * longer hosts and places it again at once, and holding it there would leave it unplaced
+     * until that node's next report.
+     *
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @return ?string Chosen node id the agent was placed on, or null when no node is a fit
@@ -332,7 +401,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function placeAgentOnBestNode(string $agentType, ?string $agentIndex): ?string
+    private function placeOnBestFitNode(string $agentType, ?string $agentIndex): ?string
     {
         $required = $this->executor->requiredCapabilities($agentType, $agentIndex);
         $cost = $this->executor->placementProfile($agentType, $agentIndex);
@@ -824,6 +893,9 @@ final class ClusterPlacement implements WorkerPlacement
      * agent ONTO this node, and the pass that follows must not take away what the pass before it
      * just granted. Ignored on a non-leader, whose placement view is inert.
      *
+     * Any report, whichever of those sources sent it, also accounts for the node in a rebuild
+     * the leader still waits on (HIL-1217): from here on what the node runs is in the registry.
+     *
      * @param string $fromNodeId Id of the node that reported
      * @param PeerPlacementReportDTO $frame Received placement report
      */
@@ -832,6 +904,8 @@ final class ClusterPlacement implements WorkerPlacement
         if (!$this->isLeader) {
             return;
         }
+
+        unset($this->rebuildAwaited[$fromNodeId]);
 
         foreach ($frame->agents as $entry) {
             $agentId = $this->agentId($entry->agentType, $entry->agentIndex);
@@ -1007,15 +1081,26 @@ final class ClusterPlacement implements WorkerPlacement
      * the view with its own hosted agents, then broadcasts a rebuild query so every other
      * node reports the placements it is running. Called from the leadership transition.
      *
-     * A winning node answers to nobody. Any self-fence armed against its former leader is
-     * canceled before this method records the hosted agents as started in the new registry.
+     * A winning node answers to nobody. Any self-fence armed against its former leader, or by a
+     * quorum it has since regained, is canceled before this method records the hosted agents as
+     * started in the new registry.
+     *
+     * Until the rebuild is settled the leader places nothing it has no record of (HIL-1217): it
+     * waits for the report of every node online to it, and out the failover grace of every node
+     * that went away less than that grace ago - a leader cut off from the majority stops its work
+     * only that long after it lost its quorum, so a copy placed sooner would run beside the one it
+     * still runs. Failover and every other record the leader knows are not held
+     * ({@see placeAgentOnBestNode()}, {@see placeOnDemand()}).
+     *
+     * @param float $now Current microtime
      */
-    public function onBecameLeader(): void
+    public function onBecameLeader(float $now): void
     {
         $this->isLeader = true;
         if ($this->selfFenceDeadline !== null) {
             Logger::info('Self-fence called off: this node leads now');
             $this->selfFenceDeadline = null;
+            $this->selfFenceOnQuorum = false;
         }
         $this->placingLeaderId = null;
         $this->registry->clear();
@@ -1028,6 +1113,37 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->mesh->broadcastToNodes(new PeerPlacementQueryDTO());
+        $this->awaitRebuild($now);
+    }
+
+    /**
+     * Lists what a fresh leader's rebuild waits for: the report of every node online to it, and
+     * the failover grace of every node that went away less than that grace ago.
+     *
+     * @param float $now Current microtime
+     */
+    private function awaitRebuild(float $now): void
+    {
+        $this->rebuildAwaited = [];
+        foreach ($this->mesh->onlineNodeIds() as $nodeId) {
+            if ($nodeId !== $this->selfNodeId) {
+                $this->rebuildAwaited[$nodeId] = null;
+            }
+        }
+
+        foreach ($this->offlineSince as $nodeId => $since) {
+            if ($nodeId !== $this->selfNodeId
+                && !array_key_exists($nodeId, $this->rebuildAwaited)
+                && $now < $since + $this->failoverGraceSec) {
+                $this->rebuildAwaited[$nodeId] = $since + $this->failoverGraceSec;
+            }
+        }
+
+        $this->rebuildPending = $this->rebuildAwaited !== [];
+        if ($this->rebuildPending) {
+            Logger::info('Placement rebuild: ' . count($this->rebuildAwaited) . ' node(s) to account for their agents'
+                . ' before new work is placed: ' . implode(', ', array_keys($this->rebuildAwaited)));
+        }
     }
 
     /**
@@ -1035,9 +1151,10 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * The node keeps hosting the agents it was placed with — they are data-plane and run
      * on regardless of who leads — but it no longer owns the cluster-wide view, which the
-     * next leader rebuilds from the mesh. Any pending failover timers, placement-ack waits, and
-     * placement-ask waiters drop with the view; the next leader re-derives them from its own
-     * rebuilt placements.
+     * next leader rebuilds from the mesh. Any pending failover timers, placement-ack waits,
+     * placement-ask waiters and the rebuild with what it held drop with the view; the next leader
+     * re-derives them from its own rebuilt placements. When each node went away is kept: it is
+     * what this node needs should it win the next term.
      */
     public function onLostLeadership(): void
     {
@@ -1046,6 +1163,10 @@ final class ClusterPlacement implements WorkerPlacement
         $this->failoverDeadlines = [];
         $this->placementAckDeadlines = [];
         $this->placementVerdictWaiters = [];
+        // The rebuild was this term's; the next leader lists its own.
+        $this->rebuildAwaited = [];
+        $this->rebuildPending = false;
+        $this->heldOnDemand = [];
         // Publishing is the leader's duty, so this node stops; what it published stays true
         // until the next leader publishes its own, which it does within a tick of winning.
         $this->publishedViewFingerprint = null;
@@ -1061,11 +1182,20 @@ final class ClusterPlacement implements WorkerPlacement
      * deadline so those agents stop before the leader could start copies elsewhere.
      * Both are idempotent: a deadline already armed is left as it stands.
      *
+     * Every node remembers when the node went away, so that winning a term later it knows whose
+     * failover grace its rebuild has to wait out; a leader whose rebuild waits for this node's
+     * report waits out that grace instead, from now (HIL-1217).
+     *
      * @param string $nodeId Node id the transport just marked offline
      * @param float $now Current microtime
      */
     public function noteNodeOffline(string $nodeId, float $now): void
     {
+        $this->offlineSince[$nodeId] ??= $now;
+        if ($this->isLeader && array_key_exists($nodeId, $this->rebuildAwaited) && $this->rebuildAwaited[$nodeId] === null) {
+            $this->rebuildAwaited[$nodeId] = $now + $this->failoverGraceSec;
+        }
+
         if ($this->isLeader) {
             foreach ($this->registry->all() as $record) {
                 if ($record->nodeId === $nodeId
@@ -1081,13 +1211,65 @@ final class ClusterPlacement implements WorkerPlacement
 
         if (!$this->isLeader
             && $nodeId === $this->placingLeaderId
-            && ($this->hosted !== [] || $this->deferredPlacementAnswers !== [])
+            && $this->hostsPlacedWork()
             && $this->selfFenceDeadline === null) {
             $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
-            $placedCount = count($this->hosted) + count($this->deferredPlacementAnswers);
-            Logger::info("Self-fence armed: placing leader '{$nodeId}' went offline, {$placedCount}"
+            Logger::info("Self-fence armed: placing leader '{$nodeId}' went offline, {$this->placedCount()}"
                 . ' placed agent(s) stop in ' . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless it returns');
         }
+    }
+
+    /**
+     * Reacts to this node losing its quorum: arms the self-fence over the placed work it hosts.
+     *
+     * In a minority nobody leads, so nobody can take this node's placements over, whatever it
+     * answered to - the leader that placed its work, or nobody when it led itself. A former
+     * leader's placed work used to be left running here, and the majority started copies of it
+     * (HIL-1217). So the leader it answered to is forgotten - its return says nothing about a
+     * quorum - and the fence is called off only by a leader that takes the placements over
+     * ({@see answerTo()}) or by this node leading again ({@see onBecameLeader()}); otherwise the
+     * work stops after `CLUSTER_SLAVE_WORK_GRACE_MS`, which the majority's fresh leader outwaits
+     * before it starts any of it again.
+     *
+     * A node hosting nothing arms nothing, and a deadline already armed is not moved.
+     *
+     * @param float $now Current microtime
+     */
+    public function noteQuorumLost(float $now): void
+    {
+        if (!$this->hostsPlacedWork()) {
+            return;
+        }
+
+        $this->placingLeaderId = null;
+        $this->selfFenceOnQuorum = true;
+        if ($this->selfFenceDeadline !== null) {
+            return;
+        }
+
+        $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
+        Logger::info("Self-fence armed: quorum lost, {$this->placedCount()} placed agent(s) stop in "
+            . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless a leader takes them over');
+    }
+
+    /**
+     * Tells whether this node hosts placed work, seated or still waiting for a worker.
+     *
+     * @return bool True when anything placed here would have to stop on a self-fence
+     */
+    private function hostsPlacedWork(): bool
+    {
+        return $this->hosted !== [] || $this->deferredPlacementAnswers !== [];
+    }
+
+    /**
+     * Counts the placed agents this node hosts, seated or still waiting for a worker.
+     *
+     * @return int Placed agents a self-fence would stop
+     */
+    private function placedCount(): int
+    {
+        return count($this->hosted) + count($this->deferredPlacementAnswers);
     }
 
     /**
@@ -1097,12 +1279,19 @@ final class ClusterPlacement implements WorkerPlacement
      * self-fence is disarmed. Leader side — a flapped node back before its grace keeps its
      * agents, so its pending failover is canceled; and since a capable node may now be
      * available, every agent failover had to leave {@see PlacementState::Unplaced} is retried.
+     * A node a fresh leader's rebuild waited out the grace of is waited for by its report again,
+     * which it sends on the link that brought it back (HIL-1217).
      *
      * @param string $nodeId Node id the transport just marked online
      * @param float $now Current microtime
      */
     public function noteNodeOnline(string $nodeId, float $now): void
     {
+        unset($this->offlineSince[$nodeId]);
+        if (array_key_exists($nodeId, $this->rebuildAwaited)) {
+            $this->rebuildAwaited[$nodeId] = null;
+        }
+
         $this->callOffLossOf($nodeId);
 
         if ($this->isLeader) {
@@ -1125,6 +1314,7 @@ final class ClusterPlacement implements WorkerPlacement
                 Logger::info("Self-fence disarmed: placing leader '{$nodeId}' is back before the grace elapsed");
             }
             $this->selfFenceDeadline = null;
+            $this->selfFenceOnQuorum = false;
         }
 
         if (!$this->isLeader) {
@@ -1149,7 +1339,9 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * A leader owns that picture by placing work here or rebuilding it from this node. Taking
      * over from another leader ends the isolation the old leader's loss armed, because this node
-     * is no longer cut off from the leader responsible for its placements (HIL-440).
+     * is no longer cut off from the leader responsible for its placements (HIL-440); taking over
+     * from nobody ends the fence a lost quorum armed, because a leader holds the work again
+     * (HIL-1217).
      *
      * @param string $leaderNodeId Id of the leader that owns this node's placement picture
      */
@@ -1160,19 +1352,18 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         if ($this->selfFenceDeadline !== null) {
-            Logger::info(
-                "Self-fence called off: leader '{$leaderNodeId}' took over this node's placements"
-                . " from '{$this->placingLeaderId}'",
-            );
+            Logger::info("Self-fence called off: leader '{$leaderNodeId}' took over this node's placements"
+                . ($this->placingLeaderId === null ? '' : " from '{$this->placingLeaderId}'"));
             $this->selfFenceDeadline = null;
+            $this->selfFenceOnQuorum = false;
         }
 
         $this->placingLeaderId = $leaderNodeId;
     }
 
     /**
-     * Fires any failover, placement-ack timeout or self-fence whose grace has elapsed. Driven
-     * each daemon tick.
+     * Fires any failover, placement-ack timeout or self-fence whose grace has elapsed, and settles
+     * a fresh leader's rebuild once nothing is left to wait for. Driven each daemon tick.
      *
      * @param float $now Current microtime
      */
@@ -1185,6 +1376,10 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
+        // After failover, which the rebuild never held, and before the ack sweep, so a placement
+        // the settling makes is given its deadline in this same tick.
+        $this->settleRebuild($now);
+
         // After failover, not before: a failover re-places a record out of `Placing` onto
         // another node, and arming on the far side of it means arming for the node the record
         // actually names now.
@@ -1193,9 +1388,56 @@ final class ClusterPlacement implements WorkerPlacement
         if ($this->selfFenceDeadline !== null && $now >= $this->selfFenceDeadline) {
             $this->selfFenceDeadline = null;
             $this->selfFence();
+            $this->selfFenceOnQuorum = false;
         }
 
         $this->publishPlacementView();
+    }
+
+    /**
+     * Strikes the failover graces a fresh leader's rebuild has waited out, and once nothing is
+     * left to wait for, says so and places the addressed agents it held meanwhile (HIL-1217).
+     *
+     * The held agents go through {@see placeOnDemand()}, so the nodes that asked for them are
+     * answered from there, exactly as they would have been had the rebuild not held them.
+     *
+     * @param float $now Current microtime
+     */
+    private function settleRebuild(float $now): void
+    {
+        foreach ($this->rebuildAwaited as $nodeId => $deadline) {
+            if ($deadline !== null && $now >= $deadline) {
+                unset($this->rebuildAwaited[$nodeId]);
+            }
+        }
+
+        if (!$this->rebuildPending || $this->rebuildAwaited !== []) {
+            return;
+        }
+
+        $this->rebuildPending = false;
+        Logger::info('Placement rebuild settled: every node accounted for its agents');
+        $held = $this->heldOnDemand;
+        $this->heldOnDemand = [];
+        foreach ($held as ['agentType' => $agentType, 'agentIndex' => $agentIndex]) {
+            $this->placeOnDemand($agentType, $agentIndex);
+        }
+    }
+
+    /**
+     * Tells whether a fresh leader's unsettled rebuild holds back the placement of an agent.
+     *
+     * It holds only an agent the leader has no record of: one with a record in any state is
+     * work the leader knows where it stands with, and failover, reconciliation and the retry of
+     * an unplaced agent act on exactly those (HIL-1217).
+     *
+     * @param string $agentType Agent type to place
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return bool True when the agent has to wait for the rebuild to settle
+     */
+    private function rebuildHolds(string $agentType, ?string $agentIndex): bool
+    {
+        return $this->rebuildAwaited !== [] && $this->registry->get($this->agentId($agentType, $agentIndex)) === null;
     }
 
     /**
@@ -1509,7 +1751,7 @@ final class ClusterPlacement implements WorkerPlacement
             $this->registry->forget($agentId);
 
             try {
-                if ($this->placeAgentOnBestNode($record->agentType, $record->agentIndex) !== null) {
+                if ($this->placeOnBestFitNode($record->agentType, $record->agentIndex) !== null) {
                     continue;
                 }
             } catch (Throwable $e) {
@@ -1671,22 +1913,34 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Node side: stops every agent this node hosts when isolated from the leader it answers to.
+     * Node side: stops every agent this node hosts when isolated from the leader it answers to,
+     * or left without a quorum.
      *
      * Prevents a double-run: an isolated node stops its (possibly truth-source) agents before
-     * the leader's failover could start copies elsewhere. Reconnect is left to the existing
-     * peer dial retry; on rejoin the node re-adopts nothing on its own.
+     * the leader's failover could start copies elsewhere, and a node in a minority before the
+     * majority's leader could (HIL-1217). Reconnect is left to the existing peer dial retry; on
+     * rejoin the node re-adopts nothing on its own.
+     *
+     * The emptied set is then reported to every node still linked, the same complete snapshot a
+     * new link carries. Nobody hears it from a node still cut off; it matters to a node whose
+     * links came back while the grace ran - a quorum fence is no longer called off by the return
+     * of the leader it answered to, and that leader may have adopted the work from this node's
+     * report on the new link. Without the snapshot it would keep calling the stopped agents
+     * started; with it, it places them again ({@see reconcileMissingAgents()}).
      */
     private function selfFence(): void
     {
-        if ($this->hosted === [] && $this->deferredPlacementAnswers === []) {
+        if (!$this->hostsPlacedWork()) {
             return;
         }
 
-        $placedCount = count($this->hosted) + count($this->deferredPlacementAnswers);
-        Logger::warning(
-            "Self-fence: isolated from placing leader '{$this->placingLeaderId}', stopping {$placedCount} placed agent(s)",
-        );
+        if ($this->selfFenceOnQuorum) {
+            Logger::warning("Self-fence: quorum lost, stopping {$this->placedCount()} placed agent(s)");
+        } else {
+            Logger::warning(
+                "Self-fence: isolated from placing leader '{$this->placingLeaderId}', stopping {$this->placedCount()} placed agent(s)",
+            );
+        }
         foreach ($this->hosted as $record) {
             $this->executor->revokePlacement($record->agentType, $record->agentIndex);
         }
@@ -1698,6 +1952,8 @@ final class ClusterPlacement implements WorkerPlacement
         foreach ($deferredAnswers as $deferred) {
             $this->executor->revokePlacement($deferred['agentType'], $deferred['agentIndex']);
         }
+
+        $this->mesh->broadcastToNodes(new PeerPlacementReportDTO([]));
     }
 
     /**
@@ -1770,7 +2026,8 @@ final class ClusterPlacement implements WorkerPlacement
      * run is the same non-event as one no capable node fits. Either way the nodes that asked are
      * answered with a {@see PeerPlacementVerdictDTO} — immediately when the record is already
      * started or refused, when no node fits, or when the attempt throws; later when a placing
-     * record fails.
+     * record fails, or when a fresh leader's rebuild that held an agent it had no record of
+     * settles ({@see settleRebuild()}, HIL-1217).
      *
      * @param string $agentType Agent type to place
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -1801,6 +2058,13 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
         if ($record !== null && $record->state === PlacementState::Placing) {
+            return;
+        }
+        if ($this->rebuildHolds($agentType, $agentIndex)) {
+            // Held, not refused: the agent may still run on a node that has not reported, and a
+            // not-placed verdict now would fail the frame that addressed it (HIL-1217).
+            $this->heldOnDemand[$agentId] = ['agentType' => $agentType, 'agentIndex' => $agentIndex];
+
             return;
         }
 
