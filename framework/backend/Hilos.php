@@ -1141,6 +1141,7 @@ abstract class Hilos implements TruthSourceOwner
             static::refuseUploadsWithoutTmp();
             static::refuseFilesWithoutDirectory();
             static::refuseDataExportWithoutDirectory();
+            static::refuseAnalyticsWithoutJournalDirectory();
             static::refuseMisdeclaredDirectories();
         }
 
@@ -1285,6 +1286,29 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['HilosFeature::AUTH keeps data-export archives in the data_export directory, but the FS context registers none'],
+        );
+    }
+
+    /**
+     * Refuses a project that declares ANALYTICS and registers no directory for the node journal (HIL-1154).
+     *
+     * The journal agent keeps every event a process handed it in that directory until the writer
+     * has it in the database; without one the first batch would find nowhere to go, at the first
+     * request rather than at the start.
+     *
+     * @throws IncompleteFeatureActivationException When ANALYTICS is declared and no analytics_journal directory is registered
+     */
+    protected static function refuseAnalyticsWithoutJournalDirectory(): void
+    {
+        if (!in_array(HilosFeature::ANALYTICS, static::FEATURES, true)
+            || static::$fs?->hasDirectory(FsContext::ANALYTICS_JOURNAL) === true
+        ) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            ['HilosFeature::ANALYTICS keeps the node journal in the analytics_journal directory, but the FS context registers none'],
         );
     }
 
@@ -1434,10 +1458,22 @@ abstract class Hilos implements TruthSourceOwner
     /**
      * Initializes the analytics collector.
      *
+     * The framework calls it in every process of a project that declares
+     * {@see HilosFeature::ANALYTICS}, right after the entrypoint prelude, and refuses it to a project
+     * that does not: a collector without the journal agents would hand its batches to nobody.
+     *
      * @param ?AnalyticsCollector $analyticsCollector Analytics collector instance
+     * @throws IncompleteFeatureActivationException When the project does not declare ANALYTICS
      */
     public static function initAnalytics(?AnalyticsCollector $analyticsCollector = null): void
     {
+        if (!static::hasFeature(HilosFeature::ANALYTICS)) {
+            throw IncompleteFeatureActivationException::forErrors(
+                static::class,
+                ['Hilos::initAnalytics() needs HilosFeature::ANALYTICS: without the journal agents nobody takes what it collects'],
+            );
+        }
+
         static::$ac = $analyticsCollector ?? new AnalyticsCollector();
     }
 

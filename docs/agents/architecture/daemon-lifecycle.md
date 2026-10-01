@@ -908,6 +908,11 @@ alone, so a fleet of equal free agents does not pile onto one node.
 - SIGTERM/SIGINT → `shouldExit = true`
 - `initiateShutdown()` → fires `onClusterWorkStop()` (cluster mode only), then calls
   `prepareShutdown()` on all servers (the `PeerServer` broadcasts the `NodeLeaving` frame)
+- `WorkerServer::stop()` sends SIGTERM to every worker but the ones hosting an agent whose
+  daemon stops after the other workers (`stopsAfterOtherWorkers()`, the analytics journal
+  agent, HIL-1154); those go in a second wave once the others are gone and their last frames
+  were dispatched — `agent_stop` over the connection first, SIGTERM a pass later
+  ([worker-lifecycle.md](worker-lifecycle.md), "Graceful shutdown")
 - Loop continues until all servers report `isReadyToShutdown()` or `shutdownTimeout` (20s) expires
 - `run()` returns a `DaemonDeparture` saying why the node left, and `DaemonApplication`
   turns it into the process code: `0` for an ordinary stop, `ExitCode::ERROR` when there

@@ -48,6 +48,19 @@ interface AgentDaemonInterface
     public function requiresMonopolisticProcess(): bool;
 
     /**
+     * Whether the node stops this agent's worker only once its other workers are gone (HIL-1154).
+     *
+     * The node's analytics journal is the one case today: every other worker hands it its last
+     * batch on the way out, so it has to be the last to leave. On a stop the node sends SIGTERM to
+     * every worker but the ones hosting such an agent; once those are gone and their last frames
+     * were dispatched, it stops the agent over its connection - behind every frame sent to it
+     * before - and then its worker.
+     *
+     * @return bool True when the agent's worker stops after the others
+     */
+    public function stopsAfterOtherWorkers(): bool;
+
+    /**
      * Capability tags a node must advertise to host this agent.
      *
      * The cluster hard-constraint for placement: the leader refuses to place the agent on

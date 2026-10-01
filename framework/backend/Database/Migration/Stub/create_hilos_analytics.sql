@@ -173,23 +173,27 @@ CREATE TABLE `hilos_analytics_page_session` (
 
 CREATE TABLE `hilos_analytics_worker_session` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `session_key` BINARY(16) DEFAULT NULL,
     `worker_index` INT UNSIGNED NOT NULL,
     `is_monopolistic` TINYINT(1) NOT NULL DEFAULT 0,
     `started_ts` BIGINT UNSIGNED NOT NULL,
     `stopped_ts` BIGINT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_ha_worker_session_key` (`session_key`),
     KEY `idx_ha_worker_index_started` (`worker_index`, `started_ts`),
     KEY `idx_ha_worker_started_ts` (`started_ts`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `hilos_analytics_agent_session` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `session_key` BINARY(16) DEFAULT NULL,
     `worker_session_id` BIGINT UNSIGNED NOT NULL,
     `agent_type` VARCHAR(50) NOT NULL,
     `agent_index` VARCHAR(50) DEFAULT NULL,
     `started_ts` BIGINT UNSIGNED NOT NULL,
     `stopped_ts` BIGINT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_ha_agent_session_key` (`session_key`),
     KEY `idx_ha_agent_worker` (`worker_session_id`),
     KEY `idx_ha_agent_type_index` (`agent_type`, `agent_index`),
     KEY `idx_ha_agent_started_ts` (`started_ts`),
@@ -311,4 +315,15 @@ CREATE TABLE `hilos_analytics_api_agent_action` (
     CONSTRAINT `fk_ha_api_agent_action_agent` FOREIGN KEY (`agent_session_id`) REFERENCES `hilos_analytics_agent_session` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_ha_api_agent_action_signal` FOREIGN KEY (`signal_name_id`) REFERENCES `hilos_analytics_signal_name` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_ha_api_agent_action_payload` FOREIGN KEY (`payload_json_id`) REFERENCES `hilos_analytics_payload_json` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `hilos_analytics_journal_file` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `node_id` VARCHAR(64) NOT NULL,
+    `file_name` VARCHAR(100) NOT NULL,
+    `record_count` INT UNSIGNED NOT NULL,
+    `loaded_ts` BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_ha_journal_file` (`node_id`, `file_name`),
+    KEY `idx_ha_journal_file_loaded_ts` (`loaded_ts`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

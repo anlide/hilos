@@ -47,6 +47,13 @@ use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
+use Hilos\Core\Analytics\AnalyticsJournalAgent;
+use Hilos\Core\Analytics\AnalyticsJournalRecord;
+use Hilos\Core\Analytics\AnalyticsWriterAgent;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
@@ -2002,6 +2009,45 @@ final class HilosSignalConstants
      * frame leaves rows of nobody, with no retry. Carried by {@see NotificationForgetUserSignalData}.
      */
     public const string HILOS_NOTIFICATION_FORGET_USER = 'hilos_notification_forget_user';
+
+    // ── Hilos analytics journal: processes → the node's journal agent ↔ the cluster writer (agent signal) ──
+    /**
+     * Any process but the master → the {@see AnalyticsJournalAgent} of its own node: append these lines (HIL-1154).
+     *
+     * A batch of journal records ({@see AnalyticsJournalRecord}), sent once a second, at 64 KiB
+     * and at the end of the process. The batch carries the descriptions of every session its
+     * records name, so a batch lost on the way loses its own events and orphans nothing after it.
+     * There is no acknowledgement: a frame that went into the socket of a journal process that
+     * then fell is lost, by the owner's decision (docs/agents/architecture/analytics.md).
+     * Carried by {@see AnalyticsJournalAppendSignalData}; always the sender's own node.
+     */
+    public const string ANALYTICS_JOURNAL_APPEND = 'analytics_journal_append';
+
+    /**
+     * {@see AnalyticsWriterAgent} → the {@see AnalyticsJournalAgent} of a named node: a portion of a ready file (HIL-1154).
+     *
+     * Asks for the next portion of whole lines from the offset, or with no file named for the
+     * oldest ready file of that node. Carried by {@see AnalyticsJournalReadSignalData}; its node
+     * id is the {@see AgentSignalConfigKey::NODE_FIELD} the read is routed by.
+     */
+    public const string ANALYTICS_JOURNAL_READ = 'analytics_journal_read';
+
+    /**
+     * {@see AnalyticsJournalAgent} → {@see AnalyticsWriterAgent}: the portion asked for (HIL-1154).
+     *
+     * Whole lines of the file from the offset asked, the offset to ask next, and whether the file
+     * ends here; a file that is no longer there, or no ready file at all, says so instead.
+     * Carried by {@see AnalyticsJournalPortionSignalData}.
+     */
+    public const string ANALYTICS_JOURNAL_PORTION = 'analytics_journal_portion';
+
+    /**
+     * {@see AnalyticsWriterAgent} → the {@see AnalyticsJournalAgent} of a named node: this file is in the database (HIL-1154).
+     *
+     * The journal agent deletes the ready file; a second confirmation of the same file is no
+     * error. Carried by {@see AnalyticsJournalLoadedSignalData}, routed by its node id like the read.
+     */
+    public const string ANALYTICS_JOURNAL_LOADED = 'analytics_journal_loaded';
 
     // ── Hilos logs admin: the node that owns the files → the cluster log aggregator (agent signal) ──
     /**

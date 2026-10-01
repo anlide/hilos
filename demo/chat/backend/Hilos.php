@@ -181,6 +181,10 @@ use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Analytics\AnalyticsJournalAgent;
+use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
+use Hilos\Core\Analytics\AnalyticsWriterAgent;
+use Hilos\Core\Analytics\AnalyticsWriterAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -295,6 +299,7 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::CODE_CHANNELS,
         HilosFeature::FILES,
+        HilosFeature::ANALYTICS,
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -505,6 +510,11 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
+        AnalyticsJournalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AnalyticsJournalAgent::class,
+            AgentRegistryKey::DAEMON => AnalyticsJournalAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
         LogCarrierAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogCarrierAgent::class,
             AgentRegistryKey::DAEMON => LogCarrierAgentDaemon::class,
@@ -513,6 +523,11 @@ final class Hilos extends HilosFacade
         LogAggregatorAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogAggregatorAgent::class,
             AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        AnalyticsWriterAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AnalyticsWriterAgent::class,
+            AgentRegistryKey::DAEMON => AnalyticsWriterAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         AuthThrottleAgent::AGENT_TYPE => [

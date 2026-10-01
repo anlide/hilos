@@ -201,7 +201,10 @@ topology does not route keeps its name in the user-action and agent-reaction
 records and loses its payload, since nobody declared what in it is secret; under
 an HTTP request an unknown name is a system, cron or agent signal rather than an
 action, and its payload is written as it came. Whoever moves the recording
-elsewhere keeps the mask at these three entries.
+elsewhere keeps the mask at these three entries. Since HIL-1154 the two worker
+entries record into the analytics journal rather than the database, and the mask
+is still applied at the source, before the record is built: the journal file on
+the node's disk is storage too ([../architecture/analytics.md](../architecture/analytics.md)).
 
 ## Outbound server→client WebSocket signals (decision)
 

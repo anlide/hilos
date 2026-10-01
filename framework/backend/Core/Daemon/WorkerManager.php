@@ -3020,6 +3020,11 @@ abstract class WorkerManager extends BaseManager
             $this->agentManager->removeAgent($agentId);
         }
 
+        // The last analytics batch goes out with the same dispatch as the stop hooks' frames
+        // (HIL-1154): closed after the transport, it would have nowhere to go.
+        Hilos::$ac?->closeWorkerSession();
+        Hilos::$ac?->shutdown();
+
         // What the stop hooks queued goes out before the transport does (HIL-1136): an attempt,
         // not a guarantee - worker-lifecycle.md, "Graceful shutdown".
         if ($this->daemonClient !== null) {
@@ -3051,9 +3056,6 @@ abstract class WorkerManager extends BaseManager
             }
             $this->daemonClient = null;
         }
-
-        Hilos::$ac?->closeWorkerSession();
-        Hilos::$ac?->shutdown();
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Core\Feature\Definition\AnalyticsFeature;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Feature\Definition\CodeChannelsFeature;
@@ -100,6 +101,7 @@ class FeatureRegistry
             new FilesFeature(),
             new UploadsFeature(),
             new ImagesFeature(),
+            new AnalyticsFeature(),
         ];
     }
 }

@@ -30,14 +30,18 @@ name through the directory's ArrayAccess
 (`framework/backend/Fs/FsDirectory.php`), and a temporary file by the 32-hex
 index that `create()` returns (`framework/backend/Fs/FsTmpDirectory.php`).
 
-The framework reserves three names: `tmp` (`FsContext::TMP`), `files`
-(`FsContext::FILES`, HIL-336) and `data_export` (`FsContext::DATA_EXPORT`,
-HIL-303). The start refuses `UPLOADS` without tmp, `FILES` without `files` and
-`AUTH` without `data_export` (`refuseUploadsWithoutTmp()`,
-`refuseFilesWithoutDirectory()` and `refuseDataExportWithoutDirectory()` in
-`framework/backend/Hilos.php`). A fourth refusal,
-`refuseMisdeclaredDirectories()`, throws `InvalidTopologyException` when
-`files` or `data_export` is declared `NODE`, or when one path is declared by
+The framework reserves four names: `tmp` (`FsContext::TMP`), `files`
+(`FsContext::FILES`, HIL-336), `data_export` (`FsContext::DATA_EXPORT`,
+HIL-303) and `analytics_journal` (`FsContext::ANALYTICS_JOURNAL`, HIL-1154, a
+node directory whose one owner is the node's journal agent —
+[analytics.md](analytics.md)). The start refuses `UPLOADS` without tmp, `FILES`
+without `files`, `AUTH` without `data_export` and `ANALYTICS` without
+`analytics_journal` (`refuseUploadsWithoutTmp()`,
+`refuseFilesWithoutDirectory()`, `refuseDataExportWithoutDirectory()` and
+`refuseAnalyticsWithoutJournalDirectory()` in `framework/backend/Hilos.php`). A
+fifth refusal, `refuseMisdeclaredDirectories()`, throws
+`InvalidTopologyException` when `files` or `data_export` is declared `NODE`,
+when `analytics_journal` is declared `CLUSTER`, or when one path is declared by
 two owners; the rules live in `FsContext::declarationErrors()`, which a
 project's unit test can call on its own context.
 

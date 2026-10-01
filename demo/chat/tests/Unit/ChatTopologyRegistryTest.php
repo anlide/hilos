@@ -163,6 +163,10 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -354,10 +358,12 @@ final class ChatTopologyRegistryTest extends TestCase
             }
         }
 
-        // Node-local state, so one replica per node: the log directory itself, the carrier that
-        // moves its rotated batches into the archive, throttle counters, the code pool.
+        // Node-local state, so one replica per node: the log directory itself, the analytics
+        // journal of the node, the carrier that moves rotated log batches into the archive,
+        // throttle counters, the code pool.
         $this->assertSame([
             HilosAgentType::HILOS_LOG_STORE,
+            HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             HilosAgentType::HILOS_LOG_CARRIER,
             AgentType::HILOS_AUTH_THROTTLE,
             AgentType::HILOS_AUTH_CODE,
@@ -373,7 +379,8 @@ final class ChatTopologyRegistryTest extends TestCase
         // agent owns a directory on one node's disk, so it has to stay with it: following
         // leadership would move it on every master restart to a node whose directory holds none
         // of its archives. The aggregator is placed so that one holder of the merged log picture
-        // survives a re-election instead of dying with the term.
+        // survives a re-election instead of dying with the term, and the analytics writer so that
+        // one loader of the journals does, wherever it stands.
         $this->assertSame([
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_USERS_LIBRARY,
@@ -386,6 +393,7 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_SMS,
             AgentType::HILOS_PUSH,
             HilosAgentType::HILOS_LOG_AGGREGATOR,
+            HilosAgentType::HILOS_ANALYTICS_WRITER,
         ], $policyPlaced);
     }
 
@@ -667,8 +675,12 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => HilosAgentType::HILOS_LOG_STORE,
             HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM => HilosAgentType::HILOS_LOG_STORE,
             HilosSignalConstants::LOGS_AGENT_TAKEOUT_UNDO => HilosAgentType::HILOS_LOG_STORE,
+            HilosSignalConstants::ANALYTICS_JOURNAL_APPEND => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+            HilosSignalConstants::ANALYTICS_JOURNAL_READ => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+            HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
+            HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AgentType::HILOS_AUTH_CODE,
@@ -743,6 +755,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => LogsFollowStopActionDTO::nodeId,
             HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM => LogsTakeoutConfirmActionDTO::nodeId,
             HilosSignalConstants::LOGS_AGENT_TAKEOUT_UNDO => LogsTakeoutUndoActionDTO::nodeId,
+            HilosSignalConstants::ANALYTICS_JOURNAL_READ => AnalyticsJournalReadSignalData::nodeId,
+            HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => AnalyticsJournalLoadedSignalData::nodeId,
         ], Hilos::getAgentSignalNodeFields());
     }
 
@@ -836,8 +850,12 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => LogsFollowStopSignalData::class,
             HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM => LogsTakeoutConfirmSignalData::class,
             HilosSignalConstants::LOGS_AGENT_TAKEOUT_UNDO => LogsTakeoutUndoSignalData::class,
+            HilosSignalConstants::ANALYTICS_JOURNAL_APPEND => AnalyticsJournalAppendSignalData::class,
+            HilosSignalConstants::ANALYTICS_JOURNAL_READ => AnalyticsJournalReadSignalData::class,
+            HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => AnalyticsJournalLoadedSignalData::class,
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => NodeLogIndexSignalData::class,
             HilosSignalConstants::LOGS_INDEX_WATCH => LogsIndexWatchSignalData::class,
+            HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => AnalyticsJournalPortionSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => ThrottleSuccessSignalData::class,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AuthCodeSendSignalData::class,

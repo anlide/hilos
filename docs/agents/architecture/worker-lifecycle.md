@@ -76,8 +76,20 @@ Set via `$isMonopolistic` property in `WorkerManager` subclass.
 A worker leaves through one door, `WorkerManager::cleanup()`, whatever made it leave: SIGTERM from
 the master stopping the node, an error or an exception that ends the loop, a lost daemon connection,
 or an orphaned worker. On the way out it runs the ordinary stop flow for every agent — `onStop()`,
-truth sources taken back, the release of its RT sources reported — then sends the master what the
-stop hooks queued, writes its buffer out until it is empty, and only then disconnects (HIL-1136).
+truth sources taken back, the release of its RT sources reported — then records its own analytics
+session stopped and hands the last analytics batch over (HIL-1154), then sends the master what the
+stop hooks queued together with that batch, writes its buffer out until it is empty, and only then
+disconnects (HIL-1136).
+
+A node stops its workers in two waves when one of its agents asks for it
+(`AgentDaemonInterface::stopsAfterOtherWorkers()`, today the analytics journal agent of the node —
+[analytics.md](analytics.md)). The first wave is SIGTERM to every other worker. Once their processes
+have exited and their connections are closed — the master reads a connection a buffer at a time, so
+an exited worker's last batch may still sit in its socket — the pass that saw it dispatches their
+last frames; the next pass stops the held
+agent with an ordinary `agent_stop` over its connection — behind every frame sent to it before —
+and the pass after that sends its worker SIGTERM. The master's shutdown ceiling covers both waves.
+A node with no such agent stops in one wave, as before.
 
 Sending those frames is an attempt, not a guarantee:
 

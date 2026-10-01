@@ -82,6 +82,12 @@ final class HilosAgentType
     /** @var string Hilos log aggregator agent (cluster-wide owner of the merged log index across nodes) */
     public const string HILOS_LOG_AGGREGATOR = 'hilos_log_aggregator';
 
+    /** @var string Hilos analytics journal agent (per-node monopolistic owner of the node's analytics journal files) */
+    public const string HILOS_ANALYTICS_JOURNAL = 'hilos_analytics_journal';
+
+    /** @var string Hilos analytics writer agent (cluster-wide monopolistic loader of journal files into the analytics tables) */
+    public const string HILOS_ANALYTICS_WRITER = 'hilos_analytics_writer';
+
     /** @var string Cluster probe: member of the placed fleet of synthetic workers, one row of the fleet statuses each */
     public const string HILOS_PROBE_FLEET = 'hilos_probe_fleet';
 

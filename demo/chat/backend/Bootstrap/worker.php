@@ -25,7 +25,6 @@ WorkerApplication::run(
     workerClass: ChatWorkerManager::class,
     persistenceInit: static function (): void {
         Database::initialize();
-        Hilos::initAnalytics();
     },
     argv: $argv,
 );

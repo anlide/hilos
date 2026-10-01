@@ -1,5 +1,6 @@
 -- Migration Rollback: Drop Hilos analytics tables (stub/reference)
 
+DROP TABLE IF EXISTS `hilos_analytics_journal_file`;
 DROP TABLE IF EXISTS `hilos_analytics_api_agent_action`;
 DROP TABLE IF EXISTS `hilos_analytics_api_request`;
 DROP TABLE IF EXISTS `hilos_analytics_worker_system_signal`;

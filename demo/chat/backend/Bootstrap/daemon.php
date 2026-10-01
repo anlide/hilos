@@ -27,6 +27,5 @@ DaemonApplication::run(
     daemonClass: ChatDaemonManager::class,
     persistenceInit: static function (): void {
         Database::initialize();
-        Hilos::initAnalytics();
     },
 );

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Exception\DatabaseConnectionException;
@@ -13,6 +14,7 @@ use Hilos\Database\Exception\DatabaseException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * Integration coverage for a WebSocket connection finding its browser session (HIL-580).
@@ -22,7 +24,8 @@ use Hilos\Hilos;
  * attaches the session afterwards from the handshake signal. Nothing but the accept key
  * crosses that boundary, so the join is only as good as the key - which is why it is played
  * here against the real schema, with a separate collector standing in for each process so
- * neither can quietly answer from the other's cache.
+ * neither can quietly answer from the other's cache. The worker's half goes the way it goes
+ * in production since HIL-1154: a record in the journal, loaded into the tables by the writer.
  *
  * What used to happen instead is worth naming: the master fed analytics a header no browser
  * can send, so every connection row was written ownerless and stayed that way.
@@ -45,7 +48,7 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
     private const int RIVAL_SEEN_TS = 1_760_000_000_000;
 
     /**
-     * @throws DatabaseException When reading back the recorded rows fails
+     * @throws HilosException When reading back the recorded rows or loading the journal fails
      */
     public function testTheWorkerGivesTheConnectionTheSessionTheMasterCouldNotResolve(): void
     {
@@ -56,12 +59,14 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
         // The master writes what it can afford to write, and no more.
         $this->assertNull($this->browserSessionIdOf($opened));
 
-        new AnalyticsCollector()->attachWsConnectionToBrowserSession(
+        $worker = new AnalyticsCollector();
+        $worker->attachWsConnectionToBrowserSession(
             self::ACCEPT_KEY,
             self::SESSION_TOKEN,
             self::USER_AGENT,
             self::ACCEPT_LANGUAGE,
         );
+        $this->loadJournal($worker);
 
         $attached = $this->browserSessionIdOf($opened);
         $this->assertNotNull($attached);
@@ -70,7 +75,7 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
     }
 
     /**
-     * @throws DatabaseException When reading back the recorded rows fails
+     * @throws HilosException When reading back the recorded rows or loading the journal fails
      */
     public function testTheAttachTouchesOnlyTheConnectionItWasHandshakenFor(): void
     {
@@ -80,26 +85,30 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
         $this->assertNotNull($mine);
         $this->assertNotNull($other);
 
-        new AnalyticsCollector()->attachWsConnectionToBrowserSession(
+        $worker = new AnalyticsCollector();
+        $worker->attachWsConnectionToBrowserSession(
             self::ACCEPT_KEY,
             self::SESSION_TOKEN,
             null,
             null,
         );
+        $this->loadJournal($worker);
 
         $this->assertNotNull($this->browserSessionIdOf($mine));
         $this->assertNull($this->browserSessionIdOf($other));
     }
 
     /**
-     * @throws DatabaseException When reading back the recorded rows fails
+     * @throws HilosException When reading back the recorded rows or loading the journal fails
      */
     public function testAHandshakeWithoutATokenLeavesTheConnectionUnowned(): void
     {
         $opened = new AnalyticsCollector()->openWsConnection(self::ACCEPT_KEY, null);
         $this->assertNotNull($opened);
 
-        new AnalyticsCollector()->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, '', null, null);
+        $worker = new AnalyticsCollector();
+        $worker->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, '', null, null);
+        $this->loadJournal($worker);
 
         $this->assertNull($this->browserSessionIdOf($opened));
         $this->assertSame([], $this->browserSessionIds());
@@ -110,10 +119,10 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
      * same token - a visitor whose tabs each got their own session would be counted twice and
      * joined to their account only once.
      *
-     * The two collectors stand in for two worker processes, so neither can find the session in
-     * the other's cache: the only thing that keeps them on one row is the table.
+     * The two collectors stand in for two worker processes; both batches land in one file, and
+     * what keeps them on one row is the unique token the writer upserts by.
      *
-     * @throws DatabaseException When reading back the recorded rows fails
+     * @throws HilosException When reading back the recorded rows or loading the journal fails
      */
     public function testTwoWorkersSeeingTheSameVisitorEndUpOnOneSession(): void
     {
@@ -132,6 +141,8 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
             self::USER_AGENT,
             null,
         );
+        $firstTab->flush();
+        $this->loadJournal($secondTab);
 
         $sessions = $this->browserSessionIds();
         $this->assertCount(1, $sessions);
@@ -144,9 +155,8 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
      *
      * The worker that reads the table a moment before the other writes it finds nothing, and
      * then inserts into a unique key that is no longer free. Losing that race must cost the
-     * loser nothing: the collector turns itself off on any exception, so an unhandled
-     * duplicate would not lose one session row, it would end collection in that worker until
-     * the process restarts. The loser is expected to come out holding the winner's session.
+     * loser nothing: an unhandled duplicate would refuse the whole journal file the writer is
+     * loading, over and over. The loser is expected to come out holding the winner's session.
      *
      * The interleaving is real rather than simulated: the reading worker takes its snapshot
      * before the writing one commits, so its own read genuinely cannot see the row its insert
@@ -159,7 +169,7 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
      */
     public function testTheLoserOfTheRaceIsHandedTheWinnersSession(): void
     {
-        $loser = new AnalyticsCollector();
+        $loser = new AnalyticsStore();
 
         Database::transactionStart();
         // Pins this connection's snapshot to a moment when the session does not exist yet.
@@ -167,7 +177,7 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
 
         $winner = $this->insertRivalBrowserSession();
 
-        $joined = $loser->ensureBrowserSession(self::SESSION_TOKEN, self::USER_AGENT, null);
+        $joined = $loser->ensureBrowserSession(self::SESSION_TOKEN, self::USER_AGENT, null, self::RIVAL_SEEN_TS + 1);
         Database::transactionCommit();
 
         $this->assertSame($winner, $joined);
@@ -175,7 +185,7 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
     }
 
     /**
-     * @throws DatabaseException When reading back the recorded rows fails
+     * @throws HilosException When reading back the recorded rows or loading the journal fails
      */
     public function testTwoVisitorsKeepTheirOwnSessions(): void
     {
@@ -187,6 +197,7 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
 
         $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null, null);
         $collector->attachWsConnectionToBrowserSession('accept-key-of-a-stranger', self::OTHER_TOKEN, null, null);
+        $this->loadJournal($collector);
 
         $this->assertCount(2, $this->browserSessionIds());
         $this->assertNotSame($this->browserSessionIdOf($mine), $this->browserSessionIdOf($theirs));

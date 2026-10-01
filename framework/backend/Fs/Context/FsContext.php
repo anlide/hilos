@@ -25,6 +25,7 @@ use Hilos\Hilos;
  *
  * @property-read FsTmpDirectory $tmp Built-in temporary directory
  * @property-read FsDirectory $files Published files of the files registry, where the project registers it
+ * @property-read FsDirectory $analytics_journal The node's analytics journal, where the project registers it
  */
 abstract class FsContext
 {
@@ -46,6 +47,16 @@ abstract class FsContext
      * A cluster directory: registered as DirectoryScope::CLUSTER, the start refuses it declared NODE.
      */
     public const string DATA_EXPORT = 'data_export';
+
+    /**
+     * The node's analytics journal; its one owner is the journal agent of that node (HIL-1154).
+     *
+     * A project declaring {@see HilosFeature::ANALYTICS} registers it in configure(); startup refuses
+     * the project that declares the feature and registers no such directory. A node directory:
+     * registered as DirectoryScope::NODE, the start refuses it declared CLUSTER - every node keeps
+     * its own journal, and a shared volume would hand one node's files to another node's owner.
+     */
+    public const string ANALYTICS_JOURNAL = 'analytics_journal';
 
     /** Trailing characters a path is compared without: "/x" and "/x/" name one directory. */
     private const string PATH_SEPARATORS = '/\\';
@@ -139,7 +150,8 @@ abstract class FsContext
      * What the registrations declare wrong; every fault is collected, none stops the walk.
      *
      * Two rules. The reserved files and data_export are the cluster's whatever features the
-     * project declares, so either declared NODE is a fault. One path is one directory with one
+     * project declares, so either declared NODE is a fault, and the reserved analytics_journal is
+     * the node's, so it declared CLUSTER is one. One path is one directory with one
      * owner, so names registered on one path with different owners are a fault, tmp counted under
      * its reserved name. Paths are compared as written, less trailing separators: a directory is
      * created on first use and may not exist at start, so there is nothing to resolve yet.
@@ -153,6 +165,12 @@ abstract class FsContext
             if ($this->hasDirectory($reserved) && $this->_directories[$reserved]->getScope() === DirectoryScope::NODE) {
                 $errors[] = "FS directory [{$reserved}] is the cluster's: register it with DirectoryScope::CLUSTER";
             }
+        }
+        if (
+            $this->hasDirectory(self::ANALYTICS_JOURNAL)
+            && $this->_directories[self::ANALYTICS_JOURNAL]->getScope() === DirectoryScope::CLUSTER
+        ) {
+            $errors[] = 'FS directory [' . self::ANALYTICS_JOURNAL . "] is the node's: register it with DirectoryScope::NODE";
         }
 
         /** @var array<string, array<string, DirectoryScope>> $scopesByPath */

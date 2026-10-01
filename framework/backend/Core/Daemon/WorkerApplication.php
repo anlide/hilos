@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Daemon\Exception\InvalidWorkerIdException;
 use Hilos\Hilos;
 use Hilos\Log\LogWriteLevelApplier;
@@ -48,6 +49,11 @@ final class WorkerApplication
 
         try {
             EntrypointPrelude::run($hilosClass, $projectRoot, $persistenceInit);
+            // Every process of a project with analytics collects, the master included until HIL-1156;
+            // the framework starts the collector so the project's bootstrap has nothing to forget.
+            if ($hilosClass::hasFeature(HilosFeature::ANALYTICS)) {
+                $hilosClass::initAnalytics();
+            }
 
             // Both, and in this order: the environment answers long before the database does,
             // and the worker writes its first lines before the settings are reachable at all.

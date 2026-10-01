@@ -149,6 +149,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             'hilos_analytics_worker_system_signal' => [],
             'hilos_analytics_api_request' => [],
             'hilos_analytics_api_agent_action' => [],
+            'hilos_analytics_journal_file' => [],
         ];
     }
 
@@ -233,8 +234,10 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'opened_ts',
                 'closed_ts',
             ],
+            // `session_key` is a random name a process drew in memory for its own session, nothing more.
             'hilos_analytics_worker_session' => [
                 'id',
+                'session_key',
                 'worker_index',
                 'is_monopolistic',
                 'started_ts',
@@ -242,6 +245,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             ],
             'hilos_analytics_agent_session' => [
                 'id',
+                'session_key',
                 'worker_session_id',
                 'agent_type',
                 'agent_index',
@@ -306,6 +310,8 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'payload_json_id',
                 'created_ts',
             ],
+            // `node_id` names the machine a journal file came from, not a person.
+            'hilos_analytics_journal_file' => ['id', 'node_id', 'file_name', 'record_count', 'loaded_ts'],
         ];
     }
 }

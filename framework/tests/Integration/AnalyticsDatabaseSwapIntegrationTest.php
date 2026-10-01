@@ -8,6 +8,7 @@ use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Logger;
@@ -27,6 +28,12 @@ use PHPUnit\Framework\Attributes\DataProvider;
  * does not have, rejected by a foreign key, which switched collection off until a restart.
  * The unlucky one is quiet - a restored row takes a number the cache holds for another
  * value, and facts land under the wrong name.
+ *
+ * Since HIL-1154 the two halves answer it differently. The master still writes and caches
+ * numbers, so it forgets them. A worker writes nothing: it records into a batch for the
+ * journal, throws the batch away under the freeze, and names its sessions by keys whose
+ * descriptions travel with every batch - the writer, restarted after the freeze, inserts them
+ * into the restored database.
  */
 final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrationTestCase
 {
@@ -135,50 +142,57 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
     }
 
     /**
-     * What the process owns lived through the swap and is opened anew; what a browser owns is not.
+     * What the process owns lived through the swap and comes back by its description; what a
+     * browser owns does not.
      *
-     * @throws DatabaseException When the schema cannot be rebuilt or the rows read back
+     * The writer is stopped by the freeze and starts again with nothing in memory, so the second
+     * file is loaded by a fresh loader - and the first event of the agent after the swap carries
+     * the descriptions of its worker and of itself (HIL-1154).
+     *
+     * @throws HilosException When the schema cannot be rebuilt, the journal loaded or the rows read back
      */
-    public function testTheWorkerAndItsAgentAreOpenedAgainButTheConnectionIsNot(): void
+    public function testTheWorkerAndItsAgentComeBackByTheirDescriptionsButTheConnectionDoesNot(): void
     {
         $collector = new AnalyticsCollector();
         $collector->openWorkerSession(self::WORKER_INDEX, false);
         $collector->openAgentSession(self::AGENT_TYPE, self::AGENT_INDEX);
         $collector->openWsConnection(self::ACCEPT_KEY, null);
+        $this->loadJournal($collector);
 
         $this->rebuildAnalyticsSchema();
         $collector->forgetReplacedDatabase();
-        $collector->tick();
+        $collector->logAgentSystemSignal(self::AGENT_TYPE, self::AGENT_INDEX, self::SIGNAL_NAME, null);
+        $this->loadJournal($collector);
 
         $workers = $this->rowsOf('SELECT `id`, `worker_index` FROM `hilos_analytics_worker_session`');
         $this->assertCount(1, $workers);
         $this->assertSame(self::WORKER_INDEX, (int)$workers[0]['worker_index']);
 
-        $agents = $this->rowsOf('SELECT `worker_session_id`, `agent_type`, `agent_index` FROM `hilos_analytics_agent_session`');
+        $agents = $this->rowsOf('SELECT `id`, `worker_session_id`, `agent_type`, `agent_index` FROM `hilos_analytics_agent_session`');
         $this->assertCount(1, $agents);
         $this->assertSame((int)$workers[0]['id'], (int)$agents[0]['worker_session_id']);
         $this->assertSame(self::AGENT_TYPE, $agents[0]['agent_type']);
         $this->assertSame(self::AGENT_INDEX, $agents[0]['agent_index']);
+        $signals = $this->rowsOf('SELECT `agent_session_id` FROM `hilos_analytics_agent_system_signal`');
+        $this->assertSame([(int)$agents[0]['id']], array_map(static fn(array $row): int => (int)$row['agent_session_id'], $signals));
 
         $this->assertNull($collector->logUserAction(self::ACCEPT_KEY, self::ACTION_SEND, null));
         $this->assertSame([], $this->rowsOf('SELECT `id` FROM `hilos_analytics_user_action`'));
     }
 
     /**
-     * While the operation may replace the database the collector writes nothing, the flush of
-     * a buffer filled before the freeze included; once the phase moves on, that buffer goes out.
+     * While the operation may replace the database the collector records nothing and throws away
+     * the batch it had gathered: what was recorded before the freeze belongs to a database that
+     * may not be there any more. Once the phase moves on, recording resumes.
      *
      * Activating holds as well as active (HIL-1060): a follower never reaches active in the
      * first operation, and the database may change under it while its row reads activating.
      *
-     * The flush is called directly rather than through a due tick: the interval is five
-     * seconds of wall clock, and the tick only decides whether to call the same flush.
-     *
      * @param string $phase Freeze phase that must hold the collector
-     * @throws DatabaseException When the rows cannot be read back
+     * @throws HilosException When the journal cannot be loaded or the rows read back
      */
     #[DataProvider('silencingPhases')]
-    public function testNothingIsWrittenWhileTheFreezeSilencesTheCollector(string $phase): void
+    public function testNothingIsRecordedWhileTheFreezeSilencesTheCollector(string $phase): void
     {
         $collector = new AnalyticsCollector();
         $collector->openWorkerSession(self::WORKER_INDEX, false);
@@ -189,14 +203,16 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
         $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
         $collector->flush();
 
+        $this->assertSame([], $this->queuedJournalLines());
         $this->assertSame([], $this->rowsOf('SELECT `id` FROM `hilos_analytics_ws_connection`'));
-        $this->assertSame([], $this->rowsOf('SELECT `id` FROM `hilos_analytics_worker_system_signal`'));
 
         $this->freeze(ProtectedModeRuntime::PHASE_VERIFYING);
-        $collector->flush();
+        $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
+        $this->loadJournal($collector);
 
-        // The signal recorded before the freeze, and not the one dropped under it.
+        // The signal recorded after the freeze, and neither the one thrown away nor the one dropped under it.
         $this->assertCount(1, $this->rowsOf('SELECT `id` FROM `hilos_analytics_worker_system_signal`'));
+        $this->assertCount(1, $this->rowsOf('SELECT `id` FROM `hilos_analytics_worker_session`'));
     }
 
     /**
@@ -212,25 +228,29 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
 
     /**
      * A freeze that ends with no swap leaves the old rows standing, and the stop that happened
-     * under it is a true fact of that database - stamped with its own moment.
+     * under it is a true fact of that database - handed over once the freeze lets go, stamped
+     * with its own moment.
      *
-     * @throws DatabaseException When the rows cannot be read back
+     * @throws HilosException When the journal cannot be loaded or the rows read back
      */
     public function testAnAgentStoppedUnderTheFreezeIsStampedWithTheMomentItStopped(): void
     {
         $collector = new AnalyticsCollector();
         $collector->openWorkerSession(self::WORKER_INDEX, false);
         $collector->openAgentSession(self::AGENT_TYPE, self::AGENT_INDEX);
+        $this->loadJournal($collector);
 
         $this->freeze(ProtectedModeRuntime::PHASE_ACTIVE);
         $before = $this->nowMs();
         $collector->closeAgentSession(self::AGENT_TYPE, self::AGENT_INDEX);
         $after = $this->nowMs();
-        $this->assertNull($this->rowsOf('SELECT `stopped_ts` FROM `hilos_analytics_agent_session`')[0]['stopped_ts']);
+        $collector->flush();
+        $this->assertSame([], $this->queuedJournalLines());
 
         usleep(self::HELD_SPAN_MICROSECONDS);
         $this->freeze(ProtectedModeRuntime::PHASE_VERIFYING);
         $collector->tick();
+        $this->loadJournal($collector);
 
         $agents = $this->rowsOf('SELECT `stopped_ts` FROM `hilos_analytics_agent_session`');
         $this->assertCount(1, $agents);
@@ -239,7 +259,7 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
     }
 
     /**
-     * The swap is a fresh start, as a restart would be: a collector an error switched off
+     * The swap is a fresh start, as a restart would be: a master's half an error switched off
      * comes back on, and says so.
      *
      * @throws DatabaseException When the table cannot be dropped, the schema rebuilt or the rows read back
@@ -247,11 +267,10 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
     public function testACollectorSwitchedOffByAnErrorIsBackOnAfterTheSwap(): void
     {
         $collector = new AnalyticsCollector();
-        $collector->openWorkerSession(self::WORKER_INDEX, false);
-        Database::sql('DROP TABLE `hilos_analytics_worker_system_signal`');
-        $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
-        $collector->flush();
-        $this->assertNull($collector->openWsConnection(self::ACCEPT_KEY, null));
+        $this->assertNotNull($collector->openWsConnection(self::ACCEPT_KEY, '203.0.113.7'));
+        Database::sql('DROP TABLE `hilos_analytics_ws_connection_ipv4_change`');
+        $collector->trackWsConnectionIpChange(self::ACCEPT_KEY, '203.0.113.8');
+        $this->assertNull($collector->openWsConnection(self::ACCEPT_KEY_OF_ANOTHER_PROCESS, null));
 
         $this->rebuildAnalyticsSchema();
         $collector->forgetReplacedDatabase();

@@ -64,6 +64,16 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
+     * Default implementation - the agent's worker stops with all the others.
+     *
+     * @return bool False: the worker is in the first wave of a node's stop
+     */
+    public function stopsAfterOtherWorkers(): bool
+    {
+        return false;
+    }
+
+    /**
      * Default implementation - consumes nothing.
      *
      * Returns the empty profile so the agent reserves no capacity on the node it lands on, and

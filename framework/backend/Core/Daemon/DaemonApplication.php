@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\DatabaseGuaranteeStartupGuard;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\SetOwnershipGuard;
@@ -66,6 +67,11 @@ final class DaemonApplication
     ): void {
         try {
             EntrypointPrelude::run($hilosClass, $projectRoot, $persistenceInit);
+            // Every process of a project with analytics collects, the master included until HIL-1156;
+            // the framework starts the collector so the project's bootstrap has nothing to forget.
+            if ($hilosClass::hasFeature(HilosFeature::ANALYTICS)) {
+                $hilosClass::initAnalytics();
+            }
 
             // First of the daemon's own reads, the prelude's persistence init having already
             // connected on the DB_* values. A read-by-touch failure names one variable per

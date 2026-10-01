@@ -15,7 +15,10 @@ use Hilos\Fs\FsTmpDirectory;
  * Chat-project filesystem context: quarantine, published, files, and tmp directories.
  *
  * Tmp is the node's - only the connection's process touches it; the other four are the cluster's,
- * quarantine among them because ChatAgent, one per cluster and on any node, empties it.
+ * quarantine among them because ChatAgent, one per cluster and on any node, empties it. The
+ * analytics journal is the node's as well: each node's journal agent keeps its own files there
+ * (HIL-1154), under a subdirectory of the environment and the node, so the environments that
+ * mount this one data directory never see each other's.
  *
  * @property-read FsTmpDirectory $tmp
  * @property-read FsDirectory $quarantine
@@ -62,6 +65,11 @@ final class ChatFsContext extends FsContext
             FsContext::DATA_EXPORT,
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/data_export',
             DirectoryScope::CLUSTER,
+        );
+        $this->registerDirectory(
+            FsContext::ANALYTICS_JOURNAL,
+            dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/analytics_journal',
+            DirectoryScope::NODE,
         );
     }
 }

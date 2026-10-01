@@ -58,6 +58,8 @@ final class RandomSourceRule implements CodeStyleRule
     private const array ALLOWED_PATHS = [
         'API/Router/HttpRouter.php',
         'Core/Agent/Hilos/AbstractHilosGuardianAgent.php',
+        'Core/Analytics/AnalyticsCollector.php',
+        'Core/Analytics/AnalyticsJournalDirectory.php',
         'Core/CLI/Commands/ClusterNodesCommand.php',
         'Core/CLI/Commands/ClusterReloadCommand.php',
         'Core/CLI/Commands/ClusterTestInspectCommand.php',

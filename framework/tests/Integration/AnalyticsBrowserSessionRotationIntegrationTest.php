@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseException;
+use Hilos\HilosException;
 
 /**
  * Integration coverage for the browser session surviving a token rotation (HIL-582).
@@ -16,7 +17,8 @@ use Hilos\Database\Exception\DatabaseException;
  * the login - its page views, WebSocket connections and user-agent history - hanging off
  * a token nobody presents again, while the identify that follows opened a second session
  * for the same person. Joining a visitor to the account they just created is the one thing
- * this table exists for, so the rename is played here end to end against the real schema.
+ * this table exists for, so the rename is played here end to end against the real schema:
+ * the master opens the connection, the worker's records go through the journal (HIL-1154).
  */
 final class AnalyticsBrowserSessionRotationIntegrationTest extends AnalyticsSchemaIntegrationTestCase
 {
@@ -24,49 +26,62 @@ final class AnalyticsBrowserSessionRotationIntegrationTest extends AnalyticsSche
 
     private const string NEW_TOKEN = 'fedcba9876543210fedcba9876543210';
 
+    private const string ACCEPT_KEY = 'hil-582-accept-key';
+
     private const int USER_ID = 7;
 
     /**
-     * @throws DatabaseException When reading back the recorded sessions fails
+     * @throws HilosException When the journal cannot be loaded
      */
     public function testTheVisitBeforeTheLoginFollowsTheSessionOntoItsNewToken(): void
     {
         $collector = new AnalyticsCollector();
-        $opened = $collector->ensureBrowserSession(self::OLD_TOKEN, 'UA/1.0', 'en');
-        $this->assertNotNull($opened);
+        $collector->openWsConnection(self::ACCEPT_KEY, null);
+        $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::OLD_TOKEN, 'UA/1.0', 'en');
+        $this->loadJournal($collector);
+        $opened = $this->browserSessionIds();
+        $this->assertCount(1, $opened);
 
         $collector->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
         $collector->identifyBrowserSessionUser(self::NEW_TOKEN, self::USER_ID);
+        $this->loadJournal($collector);
 
         // One row, still the one the visit accumulated on, now named by the new token and
         // carrying the user it turned out to belong to.
-        $this->assertSame([$opened], $this->browserSessionIds());
-        $this->assertSame(self::NEW_TOKEN, $this->tokenOf($opened));
-        $this->assertSame((string)self::USER_ID, $this->identityValueOf($opened));
+        $this->assertSame($opened, $this->browserSessionIds());
+        $this->assertSame(self::NEW_TOKEN, $this->tokenOf($opened[0]));
+        $this->assertSame((string)self::USER_ID, $this->identityValueOf($opened[0]));
     }
 
     /**
-     * @throws DatabaseException When reading back the recorded sessions fails
+     * Two files, two writers: the second knows nothing in memory, so the rename has only the
+     * table to go on - as a writer that moved, or the login served long after the handshake.
+     *
+     * @throws HilosException When the journal cannot be loaded
      */
     public function testTheRenameFindsTheSessionAgainAfterTheCacheIsGone(): void
     {
-        $opening = new AnalyticsCollector();
-        $opened = $opening->ensureBrowserSession(self::OLD_TOKEN, null, null);
-        $this->assertNotNull($opened);
+        $collector = new AnalyticsCollector();
+        $collector->openWsConnection(self::ACCEPT_KEY, null);
+        $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::OLD_TOKEN, null, null);
+        $this->loadJournal($collector);
+        $opened = $this->browserSessionIds();
+        $this->assertCount(1, $opened);
 
-        // The login is served by a worker that never saw this visitor's handshake, so the
-        // rename has only the table to go on.
-        new AnalyticsCollector()->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
+        $collector->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
+        $this->loadJournal($collector);
 
-        $this->assertSame(self::NEW_TOKEN, $this->tokenOf($opened));
+        $this->assertSame(self::NEW_TOKEN, $this->tokenOf($opened[0]));
     }
 
     /**
-     * @throws DatabaseException When reading back the recorded sessions fails
+     * @throws HilosException When the journal cannot be loaded
      */
     public function testRenamingATokenThatCollectedNothingOpensNoSession(): void
     {
-        new AnalyticsCollector()->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
+        $collector = new AnalyticsCollector();
+        $collector->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
+        $this->loadJournal($collector);
 
         $this->assertSame([], $this->browserSessionIds());
     }

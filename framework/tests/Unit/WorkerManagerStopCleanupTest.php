@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsJournalRecord;
 use Hilos\Core\Daemon\BaseManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Constants\AgentConstants;
@@ -32,6 +35,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Hilos;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use ErrorException;
 use PHPUnit\Framework\TestCase;
@@ -145,6 +149,36 @@ final class WorkerManagerStopCleanupTest extends TestCase
         $goodbye = WorkerDTO::factoryWorkerDTO((string)json_encode($goodbyes[0]));
         $this->assertInstanceOf(WorkerAgentMessageDTO::class, $goodbye);
         $this->assertSame(WorkerManagerStopCleanupTestAgent::GOODBYE_SIGNAL, $goodbye->signal->signalName->getName());
+    }
+
+    /**
+     * The worker's last analytics - the stops of its agents and of itself, and whatever the batch
+     * still held - leave with the same dispatch as the stop hooks' frames, before the connection
+     * closes (HIL-1154); called after the close, they had nowhere to go.
+     */
+    public function testCleanupSendsTheLastAnalyticsBatchBeforeItClosesTheTransport(): void
+    {
+        $previousCollector = Hilos::$ac;
+        Hilos::$ac = new AnalyticsCollector();
+        try {
+            $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
+            $manager = new WorkerManagerStopCleanupTestManager($agent);
+            $manager->attachClient($this->connectedClient($daemonEnd));
+            Hilos::$ac->openWorkerSession(1, false);
+            $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+
+            $manager->runCleanup();
+
+            $batches = array_values(array_filter(
+                array_map(static fn(array $frame): string => (string)json_encode($frame), $this->framesAt($daemonEnd)),
+                static fn(string $frame): bool => str_contains($frame, HilosSignalConstants::ANALYTICS_JOURNAL_APPEND),
+            ));
+            $this->assertCount(1, $batches);
+            $this->assertStringContainsString(AnalyticsJournalRecord::TYPE_AGENT_SESSION_STOP, $batches[0]);
+            $this->assertStringContainsString(AnalyticsJournalRecord::TYPE_WORKER_SESSION_STOP, $batches[0]);
+        } finally {
+            Hilos::$ac = $previousCollector;
+        }
     }
 
     /**

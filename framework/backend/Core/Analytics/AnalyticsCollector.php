@@ -4,37 +4,47 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Analytics;
 
+use Closure;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\DTO\SignalDTO;
-use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
 use Throwable;
 
 /**
- * Collects raw analytics data into normalized SQL tables.
+ * Collects raw analytics data - the facade every process reaches as `Hilos::$ac`.
  *
- * This subsystem deliberately bypasses the Hilos ORM and issues raw
- * `Database::sql()` statements. It is high-frequency telemetry whose shape the
- * row-oriented ORM does not serve well: dictionary tables deduplicated by SHA-1
- * hash via `INSERT IGNORE`, and event rows accumulated in memory then written in
- * batched multi-row inserts on a timer or size threshold. Failures are
- * contained - any error disables the collector until the process restarts or
- * the database is replaced, instead of propagating into application code, so
- * the public methods never throw.
+ * Two halves, by who calls them (HIL-1154):
  *
- * The collector lives in every process and is in no agent roster, so the
- * protected-mode freeze cannot stop it; it answers the freeze itself (HIL-910).
- * While this node's freeze silences the writers the roster walk leaves running
- * (activating or active) it records and writes nothing. At the
- * swap announcement it forgets every id of the replaced database
- * ({@see self::forgetReplacedDatabase()}), and once the freeze lets the system
- * back it re-opens only what the process owns - its worker session and the
- * sessions of the agents alive on it.
+ * - The events of a worker - its session and the sessions of its agents, the signals delivered to
+ *   them, a connection joined to its browser session, a session renamed or identified - become
+ *   records of the analytics journal ({@see AnalyticsJournalRecord}). They gather in
+ *   {@see AnalyticsJournalOutbox} and go to the journal agent of the node in batches; one writer
+ *   per cluster loads them into the tables. These methods touch no database, so they cannot fail
+ *   on one.
+ * - The master process still writes its own facts - connections, pages, user actions, HTTP
+ *   requests - synchronously through {@see AnalyticsStore}, until HIL-1156 hands them to the
+ *   journal too; the row numbers it gets travel to the workers in the meta of the signal.
  *
- * Insert buffers are intentionally array-shaped (raw DB rows keyed by column
- * name); internal session caches use typed value objects instead of arrays.
+ * Every statement lives in {@see AnalyticsStore}. A failure of the master's half disables that
+ * half until the process restarts or the database is replaced, instead of propagating into
+ * application code, so the public methods never throw.
+ *
+ * A worker session and an agent session are named by a key the process draws in memory
+ * (`RandomHelper::hex()`, the tolerant axis: the key only has to not collide, nobody guesses it),
+ * and the writer gives the row its number. The sessions of the two analytics agents and the
+ * signals delivered to them are not recorded: the journal does not write about itself.
+ *
+ * The collector lives in every process and is in no agent roster, so the protected-mode freeze
+ * cannot stop it; it answers the freeze itself (HIL-910). While this node's freeze silences the
+ * writers the roster walk leaves running (activating or active) it records nothing and throws
+ * the gathered batch away; an agent that stops meanwhile is remembered and its stop handed over,
+ * with its own moment, once the freeze lets go. Nothing is re-opened after a swap: the
+ * descriptions of the sessions travel in every batch that names them.
  */
 final class AnalyticsCollector
 {
@@ -43,62 +53,30 @@ final class AnalyticsCollector
 
     private const string IDENTITY_TYPE_USER_ID = 'user_id';
 
-    private const int BUFFER_SIZE = 100;
-    private const int FLUSH_INTERVAL_MS = 5000;
+    /** @var int Random bytes of a session key; its hex is twice as long */
+    private const int SESSION_KEY_BYTES = 16;
 
-    /** @var bool Whether collector is enabled */
-    private bool $enabled = true;
-
-    /** @var int Timestamp of last buffer flush in milliseconds */
-    private int $lastFlushTs;
-
-    /** @var array<string, list<array<string, int|string|null>>> */
-    private array $buffers = [
-        'hilos_analytics_agent_user_action' => [],
-        'hilos_analytics_agent_system_signal' => [],
-        'hilos_analytics_agent_cron_signal' => [],
-        'hilos_analytics_worker_system_signal' => [],
-        'hilos_analytics_api_agent_action' => [],
+    /** @var list<string> Agents the journal does not record: its own two */
+    private const array UNRECORDED_AGENT_TYPES = [
+        HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+        HilosAgentType::HILOS_ANALYTICS_WRITER,
     ];
 
-    /** @var array<string, int> */
-    private array $userAgentIds = [];
+    private readonly AnalyticsStore $store;
 
-    /** @var array<string, int> */
-    private array $acceptLanguageIds = [];
+    private readonly AnalyticsJournalOutbox $outbox;
 
-    /** @var array<string, int> */
-    private array $pageIds = [];
+    /** @var bool Whether the master's half is enabled */
+    private bool $enabled = true;
 
-    /** @var array<string, int> */
-    private array $pageParamsIds = [];
+    /** @var ?AnalyticsJournalSession The worker session of this process, null while none is live */
+    private ?AnalyticsJournalSession $workerSession = null;
 
-    /** @var array<string, int> */
-    private array $actionNameIds = [];
-
-    /** @var array<string, int> */
-    private array $signalNameIds = [];
-
-    /** @var array<string, int> */
-    private array $cronNameIds = [];
-
-    /** @var array<string, int> */
-    private array $payloadIds = [];
-
-    /** @var array<string, BrowserSessionState> Map of session token to cached browser session state */
-    private array $browserSessions = [];
-
-    /** @var array<string, WsConnectionState> Map of accept key to cached WS connection state */
-    private array $wsConnections = [];
-
-    /** @var array<string, int> */
-    private array $pageSessions = [];
-
-    /** @var ?int Current worker session ID */
-    private ?int $workerSessionId = null;
-
-    /** @var array<string, int> */
+    /** @var array<string, AnalyticsJournalSession> Agents alive in this process, keyed by {@see self::buildAgentKey()} */
     private array $agentSessions = [];
+
+    /** @var list<AnalyticsHeldRecord> Agent stops the freeze kept back, in the order they happened */
+    private array $heldStops = [];
 
     /** @var ?int Active API request ID for signal correlation */
     private ?int $activeApiRequestId = null;
@@ -106,110 +84,17 @@ final class AnalyticsCollector
     /** @var ?int Active user action ID for signal correlation */
     private ?int $activeUserActionId = null;
 
-    /** @var ?int Index of the worker this process is, kept through a database swap; null when no worker session is live */
-    private ?int $liveWorkerIndex = null;
-
-    /** @var bool Whether the live worker runs monopolistic agents */
-    private bool $liveWorkerMonopolistic = false;
-
-    /** @var array<string, AgentId> Agents alive in this process, keyed by {@see self::buildAgentKey()}, kept through a swap */
-    private array $liveAgents = [];
-
-    /** @var array<string, int> Agent key to the moment in milliseconds the agent stopped while the freeze held the collector */
-    private array $heldAgentStops = [];
-
     /**
-     * Initializes the flush timer baseline.
+     * @param ?AnalyticsStore $store Store the master's half writes through; a fresh one when null
      */
-    public function __construct()
+    public function __construct(?AnalyticsStore $store = null)
     {
-        $this->lastFlushTs = $this->nowTs();
+        $this->store = $store ?? new AnalyticsStore();
+        $this->outbox = new AnalyticsJournalOutbox($this->nowTs());
     }
 
     /**
-     * Creates or refreshes the browser session for the token and returns its id.
-     *
-     * On an existing session, records user-agent and accept-language changes in
-     * their history tables and updates the cached current values.
-     *
-     * @param ?string $sessionToken Browser session token; null/empty yields null
-     * @param ?string $userAgent Raw User-Agent header, or null
-     * @param ?string $acceptLanguage Raw Accept-Language header, or null
-     * @return ?int Browser session id, or null when the token is empty or collection is disabled
-     */
-    public function ensureBrowserSession(?string $sessionToken, ?string $userAgent, ?string $acceptLanguage): ?int
-    {
-        if ($sessionToken === null || $sessionToken === '') {
-            return null;
-        }
-
-        return $this->runSafely(function () use ($sessionToken, $userAgent, $acceptLanguage): ?int {
-            $existing = $this->browserSessions[$sessionToken] ?? $this->loadBrowserSession($sessionToken);
-            $userAgentId = $this->ensureUserAgent($userAgent);
-            $acceptLanguageId = $this->ensureAcceptLanguage($acceptLanguage);
-            $nowTs = $this->nowTs();
-
-            if ($existing === null) {
-                // Two handshakes of the same visitor can land in different workers at once,
-                // and the token is unique, so the loser of that race must be handed the row
-                // the winner created instead of an error: an exception here would disable
-                // collection for the rest of the process. LAST_INSERT_ID(`id`) is what makes
-                // lastInsertId() answer with the existing id on the duplicate branch.
-                Database::sql(
-                    'INSERT INTO `hilos_analytics_browser_session`
-                        (`session_token`, `user_identity_type`, `user_identity_value`,
-                         `current_user_agent_id`, `current_accept_language_id`, `first_seen_ts`, `last_seen_ts`)
-                     VALUES (?, NULL, NULL, ?, ?, ?, ?)
-                     ON DUPLICATE KEY UPDATE `id` = LAST_INSERT_ID(`id`), `last_seen_ts` = VALUES(`last_seen_ts`)',
-                    [$sessionToken, $userAgentId, $acceptLanguageId, $nowTs, $nowTs],
-                );
-
-                $id = Database::lastInsertId();
-                $this->browserSessions[$sessionToken] = new BrowserSessionState($id, $userAgentId, $acceptLanguageId);
-
-                return $id;
-            }
-
-            $updates = ['`last_seen_ts` = ?'];
-            $params = [$nowTs];
-
-            if ($existing->currentUserAgentId !== $userAgentId && $userAgentId !== null) {
-                Database::sql(
-                    'INSERT INTO `hilos_analytics_browser_session_user_agent_change`
-                        (`browser_session_id`, `old_user_agent_id`, `new_user_agent_id`, `changed_ts`)
-                     VALUES (?, ?, ?, ?)',
-                    [$existing->id, $existing->currentUserAgentId, $userAgentId, $nowTs],
-                );
-                $updates[] = '`current_user_agent_id` = ?';
-                $params[] = $userAgentId;
-                $existing->currentUserAgentId = $userAgentId;
-            }
-
-            if ($existing->currentAcceptLanguageId !== $acceptLanguageId && $acceptLanguageId !== null) {
-                Database::sql(
-                    'INSERT INTO `hilos_analytics_browser_session_accept_language_change`
-                        (`browser_session_id`, `old_accept_language_id`, `new_accept_language_id`, `changed_ts`)
-                     VALUES (?, ?, ?, ?)',
-                    [$existing->id, $existing->currentAcceptLanguageId, $acceptLanguageId, $nowTs],
-                );
-                $updates[] = '`current_accept_language_id` = ?';
-                $params[] = $acceptLanguageId;
-                $existing->currentAcceptLanguageId = $acceptLanguageId;
-            }
-
-            $params[] = $existing->id;
-            Database::sql(
-                'UPDATE `hilos_analytics_browser_session` SET ' . implode(', ', $updates) . ' WHERE `id` = ?',
-                $params,
-            );
-
-            $this->browserSessions[$sessionToken] = $existing;
-            return $existing->id;
-        });
-    }
-
-    /**
-     * Persists an external identity (type/value) on the browser session.
+     * Records the identity a browser session signed in with.
      *
      * @param string $sessionToken Browser session token; empty is ignored
      * @param string $type Identity type tag; empty is ignored
@@ -221,19 +106,7 @@ final class AnalyticsCollector
             return;
         }
 
-        $this->runSafely(function () use ($sessionToken, $type, $value): void {
-            $browserSessionId = $this->ensureBrowserSession($sessionToken, null, null);
-            if ($browserSessionId === null) {
-                return;
-            }
-
-            Database::sql(
-                'UPDATE `hilos_analytics_browser_session`
-                 SET `user_identity_type` = ?, `user_identity_value` = ?, `last_seen_ts` = ?
-                 WHERE `id` = ?',
-                [$type, $value, $this->nowTs(), $browserSessionId],
-            );
-        });
+        $this->record(AnalyticsJournalRecord::browserSessionIdentity($sessionToken, $type, $value, $this->nowTs()), null);
     }
 
     /**
@@ -246,8 +119,14 @@ final class AnalyticsCollector
      * open a second session for the same person. The rename keeps one visit whole across
      * the moment it is most worth being whole across.
      *
-     * A token whose session was never opened is nothing to rename: the row is created
-     * lazily on first use, so a login without prior collection stays a no-op.
+     * A token whose session was never opened is nothing to rename, and a token already
+     * taken by another session leaves the visit split: the writer decides both
+     * ({@see AnalyticsStore::renameBrowserSession()}).
+     *
+     * The batch leaves at once rather than within the second: the browser learns the new token
+     * from the same dispatch, and a reconnect served by another worker records the new token
+     * next. Sent together with the answer, the rename reaches the journal first; held back, it
+     * could arrive behind that record and find its token taken.
      *
      * @param string $oldToken Token the session answered to before the rotation
      * @param string $newToken Token the session answers to now
@@ -258,22 +137,8 @@ final class AnalyticsCollector
             return;
         }
 
-        $this->runSafely(function () use ($oldToken, $newToken): void {
-            $session = $this->browserSessions[$oldToken] ?? $this->loadBrowserSession($oldToken);
-            if ($session === null) {
-                return;
-            }
-
-            Database::sql(
-                'UPDATE `hilos_analytics_browser_session`
-                 SET `session_token` = ?, `last_seen_ts` = ?
-                 WHERE `id` = ?',
-                [$newToken, $this->nowTs(), $session->id],
-            );
-
-            unset($this->browserSessions[$oldToken]);
-            $this->browserSessions[$newToken] = $session;
-        });
+        $this->record(AnalyticsJournalRecord::browserSessionRename($oldToken, $newToken, $this->nowTs()), null);
+        $this->flush();
     }
 
     /**
@@ -310,21 +175,7 @@ final class AnalyticsCollector
             return null;
         }
 
-        return $this->runSafely(function () use ($acceptKey, $clientIp): ?int {
-            $ip = $clientIp !== null ? $this->parseIp($clientIp) : new ParsedIp(null, null);
-
-            Database::sql(
-                'INSERT INTO `hilos_analytics_ws_connection`
-                    (`browser_session_id`, `accept_key`, `opened_ipv4`, `opened_ipv6`, `opened_ts`, `closed_ts`)
-                 VALUES (NULL, ?, ?, UNHEX(?), ?, NULL)',
-                [$acceptKey, $ip->ipv4, $ip->ipv6Hex, $this->nowTs()],
-            );
-
-            $id = Database::lastInsertId();
-            $this->wsConnections[$acceptKey] = new WsConnectionState($id, $ip->ipv4, $ip->ipv6Hex);
-
-            return $id;
-        });
+        return $this->runSafely(fn(): int => $this->store->openWsConnection($acceptKey, $clientIp, $this->nowTs()));
     }
 
     /**
@@ -332,12 +183,8 @@ final class AnalyticsCollector
      *
      * This is the worker half of the handshake: the master wrote the connection row without
      * an owner, and the handshake signal carries the session token it resolved there, so the
-     * two are joined here, off the accept loop. Called before the agent's handshake hook, so
-     * the session the hook may identify a user on already exists.
-     *
-     * The connection is found by its accept key rather than by the cached id, because the
-     * cache belongs to the master process and this runs in a worker. The key is unique in
-     * the table, so the update needs no id.
+     * two are joined by the writer, off the accept loop. The writer applies a file in order, so
+     * the identify an agent's handshake hook may record after this finds the session.
      *
      * @param string $acceptKey WebSocket accept key; empty is ignored
      * @param string $sessionToken Browser session token resolved on the handshake; empty is ignored
@@ -354,17 +201,10 @@ final class AnalyticsCollector
             return;
         }
 
-        $this->runSafely(function () use ($acceptKey, $sessionToken, $userAgent, $acceptLanguage): void {
-            $browserSessionId = $this->ensureBrowserSession($sessionToken, $userAgent, $acceptLanguage);
-            if ($browserSessionId === null) {
-                return;
-            }
-
-            Database::sql(
-                'UPDATE `hilos_analytics_ws_connection` SET `browser_session_id` = ? WHERE `accept_key` = ?',
-                [$browserSessionId, $acceptKey],
-            );
-        });
+        $this->record(
+            AnalyticsJournalRecord::wsConnectionAttach($acceptKey, $sessionToken, $userAgent, $acceptLanguage, $this->nowTs()),
+            null,
+        );
     }
 
     /**
@@ -388,35 +228,7 @@ final class AnalyticsCollector
         }
 
         $this->runSafely(function () use ($acceptKey, $clientIp): void {
-            $connection = $this->wsConnections[$acceptKey] ?? null;
-            if ($connection === null) {
-                return;
-            }
-
-            $parsed = $this->parseIp($clientIp);
-            $nowTs = $this->nowTs();
-
-            if ($connection->currentIpv4 !== $parsed->ipv4) {
-                Database::sql(
-                    'INSERT INTO `hilos_analytics_ws_connection_ipv4_change`
-                        (`ws_connection_id`, `old_ipv4`, `new_ipv4`, `changed_ts`)
-                     VALUES (?, ?, ?, ?)',
-                    [$connection->id, $connection->currentIpv4, $parsed->ipv4, $nowTs],
-                );
-                $connection->currentIpv4 = $parsed->ipv4;
-            }
-
-            if ($connection->currentIpv6Hex !== $parsed->ipv6Hex) {
-                Database::sql(
-                    'INSERT INTO `hilos_analytics_ws_connection_ipv6_change`
-                        (`ws_connection_id`, `old_ipv6`, `new_ipv6`, `changed_ts`)
-                     VALUES (?, UNHEX(?), UNHEX(?), ?)',
-                    [$connection->id, $connection->currentIpv6Hex, $parsed->ipv6Hex, $nowTs],
-                );
-                $connection->currentIpv6Hex = $parsed->ipv6Hex;
-            }
-
-            $this->wsConnections[$acceptKey] = $connection;
+            $this->store->trackWsConnectionIpChange($acceptKey, $clientIp, $this->nowTs());
         });
     }
 
@@ -432,15 +244,7 @@ final class AnalyticsCollector
         }
 
         $this->runSafely(function () use ($acceptKey): void {
-            $connection = $this->wsConnections[$acceptKey] ?? null;
-            if ($connection === null) {
-                return;
-            }
-
-            Database::sql(
-                'UPDATE `hilos_analytics_ws_connection` SET `closed_ts` = ? WHERE `id` = ?',
-                [$this->nowTs(), $connection->id],
-            );
+            $this->store->closeWsConnection($acceptKey, $this->nowTs());
         });
     }
 
@@ -458,29 +262,7 @@ final class AnalyticsCollector
             return null;
         }
 
-        return $this->runSafely(function () use ($acceptKey, $pageName, $params): ?int {
-            $connection = $this->wsConnections[$acceptKey] ?? null;
-            if ($connection === null) {
-                return null;
-            }
-
-            $this->closePageSession($acceptKey);
-
-            $pageId = $this->ensurePage($pageName);
-            $pageParamsId = $this->ensurePageParams($params);
-
-            Database::sql(
-                'INSERT INTO `hilos_analytics_page_session`
-                    (`ws_connection_id`, `page_id`, `page_params_id`, `opened_ts`, `closed_ts`)
-                 VALUES (?, ?, ?, ?, NULL)',
-                [$connection->id, $pageId, $pageParamsId, $this->nowTs()],
-            );
-
-            $id = Database::lastInsertId();
-            $this->pageSessions[$acceptKey] = $id;
-
-            return $id;
-        });
+        return $this->runSafely(fn(): ?int => $this->store->openPageSession($acceptKey, $pageName, $params, $this->nowTs()));
     }
 
     /**
@@ -496,15 +278,7 @@ final class AnalyticsCollector
         }
 
         $this->runSafely(function () use ($acceptKey, $params): void {
-            $pageSessionId = $this->pageSessions[$acceptKey] ?? null;
-            if ($pageSessionId === null) {
-                return;
-            }
-
-            Database::sql(
-                'UPDATE `hilos_analytics_page_session` SET `page_params_id` = ? WHERE `id` = ?',
-                [$this->ensurePageParams($params), $pageSessionId],
-            );
+            $this->store->updatePageSession($acceptKey, $params, $this->nowTs());
         });
     }
 
@@ -520,133 +294,102 @@ final class AnalyticsCollector
         }
 
         $this->runSafely(function () use ($acceptKey): void {
-            $pageSessionId = $this->pageSessions[$acceptKey] ?? null;
-            if ($pageSessionId === null) {
-                return;
-            }
-
-            Database::sql(
-                'UPDATE `hilos_analytics_page_session` SET `closed_ts` = ? WHERE `id` = ?',
-                [$this->nowTs(), $pageSessionId],
-            );
-
-            unset($this->pageSessions[$acceptKey]);
+            $this->store->closePageSession($acceptKey, $this->nowTs());
         });
     }
 
     /**
-     * Opens a worker session row and stores it as the active worker session.
+     * Opens the worker session of this process under a fresh key and describes it to the next batch.
      *
      * @param int $workerIndex Worker index within the daemon
      * @param bool $isMonopolistic Whether the worker runs monopolistic agents
-     * @return ?int Worker session id, or null when collection is disabled
      */
-    public function openWorkerSession(int $workerIndex, bool $isMonopolistic): ?int
+    public function openWorkerSession(int $workerIndex, bool $isMonopolistic): void
     {
-        // Known before the gate, so a worker that starts while the freeze holds still gets its row at resume.
-        $this->liveWorkerIndex = $workerIndex;
-        $this->liveWorkerMonopolistic = $isMonopolistic;
+        $key = RandomHelper::hex(self::SESSION_KEY_BYTES);
+        $this->workerSession = new AnalyticsJournalSession(
+            $key,
+            AnalyticsJournalRecord::workerSession($key, $workerIndex, $isMonopolistic, $this->nowTs()),
+        );
 
-        return $this->runSafely(function (): ?int {
-            // The resume that runs ahead of this callback has already opened the row when none was open.
-            if ($this->workerSessionId === null) {
-                $this->insertWorkerSessionRow();
-            }
-
-            return $this->workerSessionId;
-        });
+        if ($this->recordable()) {
+            $this->toOutbox(fn() => $this->outbox->describe($this->sessionsNamedBy(null), $this->nowTs()));
+        }
     }
 
     /**
-     * Marks the active worker session stopped; no-op when none is open.
+     * Records the worker session stopped; nothing when none is open.
      *
-     * A worker that shuts down while the freeze holds the collector leaves its row open.
+     * A worker that shuts down while the freeze holds the collector leaves its session open.
      */
     public function closeWorkerSession(): void
     {
-        $this->liveWorkerIndex = null;
-        $this->liveWorkerMonopolistic = false;
-
-        $this->runSafely(function (): void {
-            if ($this->workerSessionId === null) {
-                return;
-            }
-
-            Database::sql(
-                'UPDATE `hilos_analytics_worker_session` SET `stopped_ts` = ? WHERE `id` = ?',
-                [$this->nowTs(), $this->workerSessionId],
-            );
-        });
-    }
-
-    /**
-     * Opens an agent session under the active worker session and caches it.
-     *
-     * The agent is remembered as alive before the gate, so an agent that starts while the
-     * freeze holds the collector gets its row at resume.
-     *
-     * @param string $agentType Agent type identifier; empty yields null
-     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
-     * @return ?int Agent session id, or null when there is no worker session, the freeze holds the collector,
-     *     or collection is disabled
-     */
-    public function openAgentSession(string $agentType, ?string $agentIndex): ?int
-    {
-        if ($agentType === '') {
-            return null;
+        $session = $this->workerSession;
+        if ($session === null) {
+            return;
         }
 
-        $key = $this->buildAgentKey($agentType, $agentIndex);
-        $this->liveAgents[$key] = new AgentId($agentType, $agentIndex);
-
-        return $this->runSafely(function () use ($key): ?int {
-            if ($this->workerSessionId === null) {
-                return null;
-            }
-
-            // The resume that runs ahead of this callback has already opened the row under a live worker session.
-            return $this->agentSessions[$key] ?? $this->insertAgentSessionRow($this->liveAgents[$key]);
-        });
+        $this->record(AnalyticsJournalRecord::workerSessionStop($session->key, $this->nowTs()), null, $this->sessionsNamedBy(null));
+        $this->workerSession = null;
     }
 
     /**
-     * Marks an agent session stopped and drops it from the cache.
+     * Opens an agent session under the worker session, under a fresh key, and describes it to the next batch.
+     *
+     * Nothing for an agent with no worker session under it, and nothing for the two analytics agents.
+     *
+     * @param string $agentType Agent type identifier; empty is ignored
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     */
+    public function openAgentSession(string $agentType, ?string $agentIndex): void
+    {
+        if ($agentType === '' || $this->workerSession === null || in_array($agentType, self::UNRECORDED_AGENT_TYPES, true)) {
+            return;
+        }
+
+        $key = RandomHelper::hex(self::SESSION_KEY_BYTES);
+        $session = new AnalyticsJournalSession(
+            $key,
+            AnalyticsJournalRecord::agentSession($key, $this->workerSession->key, $agentType, $agentIndex, $this->nowTs()),
+        );
+        $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] = $session;
+
+        if ($this->recordable()) {
+            $this->toOutbox(fn() => $this->outbox->describe($this->sessionsNamedBy($session), $this->nowTs()));
+        }
+    }
+
+    /**
+     * Records an agent session stopped and forgets it.
+     *
+     * Under the freeze the stop is kept back with its own moment and handed over once the freeze
+     * lets the collector go.
      *
      * @param string $agentType Agent type identifier; empty is ignored
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
      */
     public function closeAgentSession(string $agentType, ?string $agentIndex): void
     {
-        if ($agentType === '') {
+        $agentKey = $this->buildAgentKey($agentType, $agentIndex);
+        $session = $this->agentSessions[$agentKey] ?? null;
+        if ($session === null) {
             return;
         }
 
-        $key = $this->buildAgentKey($agentType, $agentIndex);
-        unset($this->liveAgents[$key]);
+        unset($this->agentSessions[$agentKey]);
+        $stop = new AnalyticsHeldRecord(
+            AnalyticsJournalRecord::agentSessionStop($session->key, $this->nowTs()),
+            $this->sessionsNamedBy($session),
+        );
 
         if ($this->isHeld()) {
-            // The stop is a true fact of the database under the freeze: stamped with its own moment at resume,
-            // forgotten with the row when a swap comes first.
-            if (isset($this->agentSessions[$key])) {
-                $this->heldAgentStops[$key] = $this->nowTs();
-            }
+            $this->outbox->clear();
+            $this->heldStops[] = $stop;
 
             return;
         }
 
-        $this->runSafely(function () use ($key): void {
-            $agentSessionId = $this->agentSessions[$key] ?? null;
-            if ($agentSessionId === null) {
-                return;
-            }
-
-            Database::sql(
-                'UPDATE `hilos_analytics_agent_session` SET `stopped_ts` = ? WHERE `id` = ?',
-                [$this->nowTs(), $agentSessionId],
-            );
-
-            unset($this->agentSessions[$key]);
-        });
+        $this->record($stop->record, null, $stop->sessions);
     }
 
     /**
@@ -667,35 +410,20 @@ final class AnalyticsCollector
             return null;
         }
 
-        return $this->runSafely(function () use ($acceptKey, $actionName, $payload): ?int {
-            $connection = $this->wsConnections[$acceptKey] ?? null;
-            if ($connection === null) {
-                return null;
-            }
-
-            Database::sql(
-                'INSERT INTO `hilos_analytics_user_action`
-                    (`ws_connection_id`, `page_session_id`, `action_name_id`, `payload_json_id`, `created_ts`)
-                 VALUES (?, ?, ?, ?, ?)',
-                [
-                    $connection->id,
-                    $this->pageSessions[$acceptKey] ?? null,
-                    $this->ensureActionName($actionName),
-                    $this->ensurePayloadJson($this->maskActionPayload($actionName, $payload)),
-                    $this->nowTs(),
-                ],
-            );
-
-            return Database::lastInsertId();
-        });
+        return $this->runSafely(fn(): ?int => $this->store->insertUserAction(
+            $acceptKey,
+            $actionName,
+            $this->maskActionPayload($actionName, $payload),
+            $this->nowTs(),
+        ));
     }
 
     /**
-     * Buffers an agent reaction to a user action for the next flush.
+     * Records an agent reaction to a user action.
      *
-     * The payload is masked here, before anything stores it, by the same rule as
-     * {@see self::logUserAction()}: the signal name is the action's name, and the action lies
-     * under `data` of the envelope, where the mask looks too.
+     * The payload is masked here, before anything stores it - the journal file is storage too -
+     * by the same rule as {@see self::logUserAction()}: the signal name is the action's name, and
+     * the action lies under `data` of the envelope, where the mask looks too.
      *
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
@@ -705,28 +433,22 @@ final class AnalyticsCollector
      */
     public function logAgentUserAction(string $agentType, ?string $agentIndex, ?int $userActionId, string $signalName, ?array $payload): void
     {
-        if ($signalName === '') {
+        $session = $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] ?? null;
+        if ($signalName === '' || $session === null) {
             return;
         }
 
-        $this->runSafely(function () use ($agentType, $agentIndex, $userActionId, $signalName, $payload): void {
-            $agentSessionId = $this->getAgentSessionId($agentType, $agentIndex);
-            if ($agentSessionId === null) {
-                return;
-            }
-
-            $this->queueBufferedInsert('hilos_analytics_agent_user_action', [
-                'agent_session_id' => $agentSessionId,
-                'user_action_id' => $userActionId,
-                'signal_name_id' => $this->ensureSignalName($signalName),
-                'payload_json_id' => $this->ensurePayloadJson($this->maskActionPayload($signalName, $payload)),
-                'created_ts' => $this->nowTs(),
-            ]);
-        });
+        $this->record(AnalyticsJournalRecord::agentUserAction(
+            $session->key,
+            $userActionId,
+            $signalName,
+            $this->maskActionPayload($signalName, $payload),
+            $this->nowTs(),
+        ), $session);
     }
 
     /**
-     * Buffers an agent system-signal event for the next flush.
+     * Records a system signal delivered to an agent.
      *
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
@@ -735,27 +457,16 @@ final class AnalyticsCollector
      */
     public function logAgentSystemSignal(string $agentType, ?string $agentIndex, string $signalName, ?array $payload): void
     {
-        if ($signalName === '') {
+        $session = $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] ?? null;
+        if ($signalName === '' || $session === null) {
             return;
         }
 
-        $this->runSafely(function () use ($agentType, $agentIndex, $signalName, $payload): void {
-            $agentSessionId = $this->getAgentSessionId($agentType, $agentIndex);
-            if ($agentSessionId === null) {
-                return;
-            }
-
-            $this->queueBufferedInsert('hilos_analytics_agent_system_signal', [
-                'agent_session_id' => $agentSessionId,
-                'signal_name_id' => $this->ensureSignalName($signalName),
-                'payload_json_id' => $this->ensurePayloadJson($payload),
-                'created_ts' => $this->nowTs(),
-            ]);
-        });
+        $this->record(AnalyticsJournalRecord::agentSystemSignal($session->key, $signalName, $payload, $this->nowTs()), $session);
     }
 
     /**
-     * Buffers an agent cron-signal event for the next flush.
+     * Records a cron signal delivered to an agent.
      *
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
@@ -764,49 +475,31 @@ final class AnalyticsCollector
      */
     public function logAgentCronSignal(string $agentType, ?string $agentIndex, string $cronName, ?array $payload): void
     {
-        if ($cronName === '') {
+        $session = $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] ?? null;
+        if ($cronName === '' || $session === null) {
             return;
         }
 
-        $this->runSafely(function () use ($agentType, $agentIndex, $cronName, $payload): void {
-            $agentSessionId = $this->getAgentSessionId($agentType, $agentIndex);
-            if ($agentSessionId === null) {
-                return;
-            }
-
-            $this->queueBufferedInsert('hilos_analytics_agent_cron_signal', [
-                'agent_session_id' => $agentSessionId,
-                'cron_name_id' => $this->ensureCronName($cronName),
-                'payload_json_id' => $this->ensurePayloadJson($payload),
-                'created_ts' => $this->nowTs(),
-            ]);
-        });
+        $this->record(AnalyticsJournalRecord::agentCronSignal($session->key, $cronName, $payload, $this->nowTs()), $session);
     }
 
     /**
-     * Buffers a worker system-signal event for the next flush.
+     * Records a system signal delivered to the worker itself.
      *
      * @param string $signalName System signal name; empty is ignored
      * @param ?array<string, mixed> $payload Signal payload, or null
      */
     public function logWorkerSystemSignal(string $signalName, ?array $payload): void
     {
-        if ($signalName === '') {
+        if ($signalName === '' || $this->workerSession === null) {
             return;
         }
 
-        $this->runSafely(function () use ($signalName, $payload): void {
-            if ($this->workerSessionId === null) {
-                return;
-            }
-
-            $this->queueBufferedInsert('hilos_analytics_worker_system_signal', [
-                'worker_session_id' => $this->workerSessionId,
-                'signal_name_id' => $this->ensureSignalName($signalName),
-                'payload_json_id' => $this->ensurePayloadJson($payload),
-                'created_ts' => $this->nowTs(),
-            ]);
-        });
+        $this->record(
+            AnalyticsJournalRecord::workerSystemSignal($this->workerSession->key, $signalName, $payload, $this->nowTs()),
+            null,
+            $this->sessionsNamedBy(null),
+        );
     }
 
     /**
@@ -828,17 +521,17 @@ final class AnalyticsCollector
         ?string $userAgent,
         ?string $acceptLanguage,
     ): ?int {
-        return $this->runSafely(function () use ($sessionToken, $method, $path, $params, $userAgent, $acceptLanguage): ?int {
-            $browserSessionId = $this->ensureBrowserSession($sessionToken, $userAgent, $acceptLanguage);
-
-            Database::sql(
-                'INSERT INTO `hilos_analytics_api_request`
-                    (`browser_session_id`, `method`, `path`, `params_json_id`, `status_code`, `duration_ms`, `started_ts`, `finished_ts`)
-                 VALUES (?, ?, ?, ?, NULL, NULL, ?, NULL)',
-                [$browserSessionId, $method, $path, $this->ensurePageParams($params), $this->nowTs()],
+        return $this->runSafely(function () use ($sessionToken, $method, $path, $params, $userAgent, $acceptLanguage): int {
+            $this->activeApiRequestId = $this->store->startApiRequest(
+                $sessionToken,
+                $method,
+                $path,
+                $params,
+                $userAgent,
+                $acceptLanguage,
+                $this->nowTs(),
             );
 
-            $this->activeApiRequestId = Database::lastInsertId();
             return $this->activeApiRequestId;
         });
     }
@@ -857,12 +550,7 @@ final class AnalyticsCollector
         }
 
         $this->runSafely(function () use ($apiRequestId, $statusCode, $durationMs): void {
-            Database::sql(
-                'UPDATE `hilos_analytics_api_request`
-                 SET `status_code` = ?, `duration_ms` = ?, `finished_ts` = ?
-                 WHERE `id` = ?',
-                [$statusCode, $durationMs, $this->nowTs(), $apiRequestId],
-            );
+            $this->store->finishApiRequest($apiRequestId, $statusCode, $durationMs, $this->nowTs());
 
             if ($this->activeApiRequestId === $apiRequestId) {
                 $this->activeApiRequestId = null;
@@ -871,7 +559,7 @@ final class AnalyticsCollector
     }
 
     /**
-     * Buffers an agent action triggered by an API request for the next flush.
+     * Records an agent action triggered by an API request.
      *
      * The payload is masked here, before anything stores it, when the signal name is an action
      * the topology knows. System, cron and agent signals pass this way too; theirs is no action,
@@ -885,148 +573,18 @@ final class AnalyticsCollector
      */
     public function logApiAgentAction(int $apiRequestId, string $agentType, ?string $agentIndex, string $signalName, ?array $payload): void
     {
-        if ($signalName === '') {
+        $session = $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] ?? null;
+        if ($signalName === '' || $session === null) {
             return;
         }
 
-        $this->runSafely(function () use ($apiRequestId, $agentType, $agentIndex, $signalName, $payload): void {
-            $agentSessionId = $this->getAgentSessionId($agentType, $agentIndex);
-            if ($agentSessionId === null) {
-                return;
-            }
-
-            $this->queueBufferedInsert('hilos_analytics_api_agent_action', [
-                'api_request_id' => $apiRequestId,
-                'agent_session_id' => $agentSessionId,
-                'signal_name_id' => $this->ensureSignalName($signalName),
-                'payload_json_id' => $this->ensurePayloadJson($this->maskSignalPayload($signalName, $payload)),
-                'created_ts' => $this->nowTs(),
-            ]);
-        });
-    }
-
-    /**
-     * Returns the dictionary id for a User-Agent value, inserting it on first use.
-     *
-     * @param ?string $value Raw User-Agent header; null/empty yields null
-     * @return ?int Dictionary id, or null when empty or collection is disabled
-     */
-    public function ensureUserAgent(?string $value): ?int
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return $this->ensureHashedDictionaryValue(
-            'hilos_analytics_user_agent',
-            'value',
-            $value,
-            $this->userAgentIds,
-        );
-    }
-
-    /**
-     * Returns the dictionary id for an Accept-Language value, inserting it on first use.
-     *
-     * @param ?string $value Raw Accept-Language header; null/empty yields null
-     * @return ?int Dictionary id, or null when empty or collection is disabled
-     */
-    public function ensureAcceptLanguage(?string $value): ?int
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return $this->ensureHashedDictionaryValue(
-            'hilos_analytics_accept_language',
-            'value',
-            $value,
-            $this->acceptLanguageIds,
-        );
-    }
-
-    /**
-     * Returns the dictionary id for a page name, inserting it on first use.
-     *
-     * @param string $pageName Page name
-     * @return int Dictionary id (0 when collection is disabled)
-     */
-    public function ensurePage(string $pageName): int
-    {
-        if (isset($this->pageIds[$pageName])) {
-            return $this->pageIds[$pageName];
-        }
-
-        return $this->runSafely(function () use ($pageName): int {
-            Database::sql(
-                'INSERT IGNORE INTO `hilos_analytics_page` (`page_name`, `created_ts`) VALUES (?, ?)',
-                [$pageName, $this->nowTs()],
-            );
-
-            Database::sql(
-                'SELECT `id` FROM `hilos_analytics_page` WHERE `page_name` = ? LIMIT 1',
-                [$pageName],
-            );
-
-            $id = (int)Database::field('id');
-            $this->pageIds[$pageName] = $id;
-            return $id;
-        }, 0);
-    }
-
-    /**
-     * Returns the dictionary id for normalized page params, inserting it on first use.
-     *
-     * @param ?array<string, mixed> $params Page route params; null/empty yields null
-     * @return ?int Dictionary id, or null when empty or collection is disabled
-     */
-    public function ensurePageParams(?array $params): ?int
-    {
-        return $this->ensureJsonDictionaryValue($params, 'hilos_analytics_page_params', 'params_json', $this->pageParamsIds);
-    }
-
-    /**
-     * Returns the dictionary id for an action name, inserting it on first use.
-     *
-     * @param string $name Action name
-     * @return int Dictionary id (0 when collection is disabled)
-     */
-    public function ensureActionName(string $name): int
-    {
-        return $this->ensureNamedDictionaryValue($name, 'hilos_analytics_action_name', $this->actionNameIds);
-    }
-
-    /**
-     * Returns the dictionary id for a signal name, inserting it on first use.
-     *
-     * @param string $name Signal name
-     * @return int Dictionary id (0 when collection is disabled)
-     */
-    public function ensureSignalName(string $name): int
-    {
-        return $this->ensureNamedDictionaryValue($name, 'hilos_analytics_signal_name', $this->signalNameIds);
-    }
-
-    /**
-     * Returns the dictionary id for a cron name, inserting it on first use.
-     *
-     * @param string $name Cron job name
-     * @return int Dictionary id (0 when collection is disabled)
-     */
-    public function ensureCronName(string $name): int
-    {
-        return $this->ensureNamedDictionaryValue($name, 'hilos_analytics_cron_name', $this->cronNameIds);
-    }
-
-    /**
-     * Returns the dictionary id for a normalized JSON payload, inserting it on first use.
-     *
-     * @param ?array<string, mixed> $payload Payload; null/empty yields null
-     * @return ?int Dictionary id, or null when empty or collection is disabled
-     */
-    public function ensurePayloadJson(?array $payload): ?int
-    {
-        return $this->ensureJsonDictionaryValue($payload, 'hilos_analytics_payload_json', 'payload_json', $this->payloadIds);
+        $this->record(AnalyticsJournalRecord::apiAgentAction(
+            $apiRequestId,
+            $session->key,
+            $signalName,
+            $this->maskSignalPayload($signalName, $payload),
+            $this->nowTs(),
+        ), $session);
     }
 
     /**
@@ -1085,41 +643,34 @@ final class AnalyticsCollector
     }
 
     /**
-     * Flushes buffered rows when the flush interval has elapsed.
+     * Sends the gathered batch once a second.
      *
-     * Runs under the gate even when nothing is due, so recording owed after a freeze is
-     * paid on the first tick.
+     * Runs under the gate even when nothing is due, so the stops the freeze kept back are
+     * handed over on the first tick after it.
      */
     public function tick(): void
     {
-        $this->runSafely(function (): void {
-            if (($this->nowTs() - $this->lastFlushTs) >= self::FLUSH_INTERVAL_MS) {
-                $this->flush();
-            }
-        });
+        if (!$this->recordable()) {
+            return;
+        }
+
+        $this->toOutbox(fn() => $this->outbox->flushIfDue($this->nowTs()));
     }
 
     /**
-     * Writes all buffered rows in batched inserts and resets the flush timer.
+     * Sends what was gathered now.
      */
     public function flush(): void
     {
-        $this->runSafely(function (): void {
-            foreach ($this->buffers as $table => $rows) {
-                if ($rows === []) {
-                    continue;
-                }
+        if (!$this->recordable()) {
+            return;
+        }
 
-                $this->bulkInsert($table, $rows);
-                $this->buffers[$table] = [];
-            }
-
-            $this->lastFlushTs = $this->nowTs();
-        });
+        $this->toOutbox(fn() => $this->outbox->flush($this->nowTs()));
     }
 
     /**
-     * Flushes remaining rows and clears active correlation ids.
+     * Sends the last batch and clears active correlation ids: the end of the process.
      */
     public function shutdown(): void
     {
@@ -1132,42 +683,26 @@ final class AnalyticsCollector
      * Forgets every id of the database the collector wrote into, because that database was replaced.
      *
      * Called by each process at its answer to the re-hydrate round a protected operation
-     * announces after it swapped the database. The ids go because a row of the restored
-     * database may take a number the cache still holds for another value: a stale id then
-     * files facts under the wrong name with no error at all, and the foreign-key failure that
-     * switched the collector off on 05.09 was the lucky variant of the same thing. The buffer
-     * goes with them, since its rows reference those ids.
+     * announces after it swapped the database. The master's ids go because a row of the
+     * restored database may take a number the cache still holds for another value: a stale id
+     * then files facts under the wrong name with no error at all. The batch gathered so far
+     * goes too - the freeze has kept it empty anyway, and its records belong to the replaced
+     * database.
      *
-     * What is alive in the process - the worker and its agents - is kept: they lived through
-     * the swap and are opened anew in the restored database at resume. Connections and pages
-     * are not: the lift reloads every browser, which then connects anew.
+     * What is alive in the process - the worker and its agents - is kept, with the stops the
+     * freeze kept back: their descriptions travel with the next batch that names them, and the
+     * writer inserts them into the restored database. Connections and pages are not: the lift
+     * reloads every browser, which then connects anew.
      *
      * The swap is a fresh start, as a restart would be, so a collector switched off by an
      * error is switched back on. Memory only; cannot fail.
      */
     public function forgetReplacedDatabase(): void
     {
-        $this->userAgentIds = [];
-        $this->acceptLanguageIds = [];
-        $this->pageIds = [];
-        $this->pageParamsIds = [];
-        $this->actionNameIds = [];
-        $this->signalNameIds = [];
-        $this->cronNameIds = [];
-        $this->payloadIds = [];
-        $this->browserSessions = [];
-        $this->wsConnections = [];
-        $this->pageSessions = [];
-        $this->agentSessions = [];
-        $this->heldAgentStops = [];
-        foreach (array_keys($this->buffers) as $table) {
-            $this->buffers[$table] = [];
-        }
-
-        $this->workerSessionId = null;
+        $this->store->forgetAll();
+        $this->outbox->clear();
         $this->activeApiRequestId = null;
         $this->activeUserActionId = null;
-        $this->lastFlushTs = $this->nowTs();
 
         if (!$this->enabled) {
             $this->enabled = true;
@@ -1176,158 +711,77 @@ final class AnalyticsCollector
     }
 
     /**
-     * Returns the cached or inserted id for a name-keyed dictionary table.
+     * Adds a record to the batch, with the sessions it names; nothing while the freeze holds.
      *
-     * @param string $name Lookup name
-     * @param string $table Dictionary table name
-     * @param array<string, int> $cache By-name id cache, updated in place
-     * @return int Dictionary id (0 when collection is disabled)
+     * @param array<string, mixed> $record Record built by {@see AnalyticsJournalRecord}
+     * @param ?AnalyticsJournalSession $agentSession Agent session the record names, null for none
+     * @param ?array<string, array<string, mixed>> $sessions Sessions the record names, when not derived from the agent session
      */
-    private function ensureNamedDictionaryValue(string $name, string $table, array &$cache): int
+    private function record(array $record, ?AnalyticsJournalSession $agentSession, ?array $sessions = null): void
     {
-        if (isset($cache[$name])) {
-            return $cache[$name];
+        if (!$this->recordable()) {
+            return;
         }
 
-        return $this->runSafely(function () use ($name, $table, &$cache): int {
-            Database::sql(
-                "INSERT IGNORE INTO `{$table}` (`name`, `created_ts`) VALUES (?, ?)",
-                [$name, $this->nowTs()],
-            );
-            Database::sql(
-                "SELECT `id` FROM `{$table}` WHERE `name` = ? LIMIT 1",
-                [$name],
-            );
-
-            $id = (int)Database::field('id');
-            $cache[$name] = $id;
-
-            return $id;
-        }, 0);
+        $named = $sessions ?? ($agentSession === null ? [] : $this->sessionsNamedBy($agentSession));
+        $this->toOutbox(fn() => $this->outbox->add($record, $named, $this->nowTs()));
     }
 
     /**
-     * Returns the cached or inserted id for a SHA-1-deduplicated dictionary table.
+     * Whether a record may be gathered now; under the freeze the gathered batch is thrown away.
      *
-     * @param string $table Dictionary table name
-     * @param string $valueColumn Column holding the raw value
-     * @param string $value Raw value deduplicated by hash
-     * @param array<string, int> $cache By-value id cache, updated in place
-     * @return ?int Dictionary id, or null when collection is disabled
+     * The first call after the freeze hands over the stops it kept back.
+     *
+     * @return bool True when the freeze does not hold the collector
      */
-    private function ensureHashedDictionaryValue(string $table, string $valueColumn, string $value, array &$cache): ?int
+    private function recordable(): bool
     {
-        if (isset($cache[$value])) {
-            return $cache[$value];
+        if ($this->isHeld()) {
+            $this->outbox->clear();
+
+            return false;
         }
 
-        return $this->runSafely(function () use ($table, $valueColumn, $value, &$cache): ?int {
-            $hash = sha1($value);
+        $held = $this->heldStops;
+        $this->heldStops = [];
+        foreach ($held as $stop) {
+            $this->toOutbox(fn() => $this->outbox->add($stop->record, $stop->sessions, $this->nowTs()));
+        }
 
-            Database::sql(
-                "INSERT IGNORE INTO `{$table}` (`sha1_hash`, `{$valueColumn}`, `created_ts`) VALUES (UNHEX(?), ?, ?)",
-                [$hash, $value, $this->nowTs()],
-            );
-            Database::sql(
-                "SELECT `id` FROM `{$table}` WHERE `sha1_hash` = UNHEX(?) LIMIT 1",
-                [$hash],
-            );
-
-            $id = Database::field('id');
-            if ($id === null) {
-                return null;
-            }
-
-            $cache[$value] = (int)$id;
-            return (int)$id;
-        });
+        return true;
     }
 
     /**
-     * Returns the cached or inserted id for a SHA-1-deduplicated JSON dictionary table.
+     * The descriptions a record naming the agent session - or only the worker - carries with it, the worker first.
      *
-     * @param ?array<string, mixed> $value Value to normalize and store; null/empty yields null
-     * @param string $table Dictionary table name
-     * @param string $column Column holding the JSON text
-     * @param array<string, int> $cache By-JSON id cache, updated in place
-     * @return ?int Dictionary id, or null when empty or collection is disabled
+     * @param ?AnalyticsJournalSession $agentSession Agent session named, or null for the worker alone
+     * @return array<string, array<string, mixed>> Session key to its description
      */
-    private function ensureJsonDictionaryValue(?array $value, string $table, string $column, array &$cache): ?int
+    private function sessionsNamedBy(?AnalyticsJournalSession $agentSession): array
     {
-        $json = $this->normalizeJson($value);
-        if ($json === null) {
-            return null;
+        $sessions = [];
+        if ($this->workerSession !== null) {
+            $sessions[$this->workerSession->key] = $this->workerSession->description;
+        }
+        if ($agentSession !== null) {
+            $sessions[$agentSession->key] = $agentSession->description;
         }
 
-        if (isset($cache[$json])) {
-            return $cache[$json];
-        }
-
-        return $this->runSafely(function () use ($json, $table, $column, &$cache): ?int {
-            $hash = sha1($json);
-
-            Database::sql(
-                "INSERT IGNORE INTO `{$table}` (`sha1_hash`, `{$column}`, `created_ts`) VALUES (UNHEX(?), ?, ?)",
-                [$hash, $json, $this->nowTs()],
-            );
-            Database::sql(
-                "SELECT `id` FROM `{$table}` WHERE `sha1_hash` = UNHEX(?) LIMIT 1",
-                [$hash],
-            );
-
-            $id = Database::field('id');
-            if ($id === null) {
-                return null;
-            }
-
-            $cache[$json] = (int)$id;
-            return (int)$id;
-        });
+        return $sessions;
     }
 
     /**
-     * Loads and caches the browser session row for a token.
+     * Runs a change of the outbox, containing the one failure it can raise.
      *
-     * @param string $sessionToken Session token
-     * @return ?BrowserSessionState Cached state, or null when absent or collection is disabled
+     * @param Closure(): void $change The change
      */
-    private function loadBrowserSession(string $sessionToken): ?BrowserSessionState
+    private function toOutbox(Closure $change): void
     {
-        return $this->runSafely(function () use ($sessionToken): ?BrowserSessionState {
-            Database::sql(
-                'SELECT `id`, `current_user_agent_id`, `current_accept_language_id`
-                 FROM `hilos_analytics_browser_session`
-                 WHERE `session_token` = ?
-                 LIMIT 1',
-                [$sessionToken],
-            );
-
-            $row = Database::row();
-            if ($row === null) {
-                return null;
-            }
-
-            $session = new BrowserSessionState(
-                (int)$row['id'],
-                isset($row['current_user_agent_id']) ? (int)$row['current_user_agent_id'] : null,
-                isset($row['current_accept_language_id']) ? (int)$row['current_accept_language_id'] : null,
-            );
-            $this->browserSessions[$sessionToken] = $session;
-
-            return $session;
-        });
-    }
-
-    /**
-     * Returns the cached agent session id for a type/index pair, or null.
-     *
-     * @param string $agentType Agent type identifier
-     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
-     * @return ?int Cached agent session id, or null when not open
-     */
-    private function getAgentSessionId(string $agentType, ?string $agentIndex): ?int
-    {
-        return $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] ?? null;
+        try {
+            $change();
+        } catch (InvalidArgumentException $failure) {
+            Logger::error('Analytics batch could not be queued for the journal: ' . $failure->getMessage());
+        }
     }
 
     /**
@@ -1336,9 +790,9 @@ final class AnalyticsCollector
      * A singleton agent keys apart from an agent whose index happens to be empty:
      * collapsed onto one key, the second {@see self::openAgentSession()} would
      * overwrite the first entry, every later `logAgent*` of both agents would land
-     * under one `agent_session_id`, and the first to stop would stamp the other's
-     * row and clear the key — leaving the survivor logging nothing at all for the
-     * rest of its life, and the first agent's row open forever.
+     * under one session, and the first to stop would stop the other's session and
+     * clear the key — leaving the survivor logging nothing at all for the rest of its
+     * life, and the first agent's session open forever.
      *
      * Keying the singleton by its bare type reads the two apart on the assumption
      * the whole repository already runs on — that an agent type carries no
@@ -1390,100 +844,6 @@ final class AnalyticsCollector
     }
 
     /**
-     * Appends a row to a table buffer and flushes when the size threshold is hit.
-     *
-     * @param string $table Target analytics table name
-     * @param array<string, int|string|null> $row Column-keyed row payload
-     */
-    private function queueBufferedInsert(string $table, array $row): void
-    {
-        $this->buffers[$table][] = $row;
-
-        if ($this->getBufferedRowsCount() >= self::BUFFER_SIZE) {
-            $this->flush();
-        }
-    }
-
-    /**
-     * Returns the total number of rows currently buffered across all tables.
-     *
-     * @return int Buffered row count
-     */
-    private function getBufferedRowsCount(): int
-    {
-        $count = 0;
-        foreach ($this->buffers as $rows) {
-            $count += count($rows);
-        }
-        return $count;
-    }
-
-    /**
-     * Writes buffered rows for one table in a single multi-row insert.
-     *
-     * @param string $table Target analytics table name
-     * @param list<array<string, int|string|null>> $rows Column-keyed rows to insert
-     */
-    private function bulkInsert(string $table, array $rows): void
-    {
-        if ($rows === []) {
-            return;
-        }
-
-        $columns = array_keys($rows[0]);
-        $placeholders = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
-        $valuesSql = implode(', ', array_fill(0, count($rows), $placeholders));
-
-        $params = [];
-        foreach ($rows as $row) {
-            foreach ($columns as $column) {
-                $params[] = $row[$column] ?? null;
-            }
-        }
-
-        $quotedColumns = implode(', ', array_map(
-            static fn(string $column): string => "`{$column}`",
-            $columns,
-        ));
-
-        Database::sql(
-            "INSERT INTO `{$table}` ({$quotedColumns}) VALUES {$valuesSql}",
-            $params,
-        );
-    }
-
-    /**
-     * Parses an IP address into its IPv4 or IPv6 representation.
-     *
-     * @param string $ip IP address string; empty or invalid yields a null/null result
-     * @return ParsedIp Parsed components (exactly one set for a valid address)
-     */
-    private function parseIp(string $ip): ParsedIp
-    {
-        if ($ip === '') {
-            return new ParsedIp(null, null);
-        }
-
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            $ipv4 = ip2long($ip);
-            return new ParsedIp(
-                $ipv4 === false ? null : (int)sprintf('%u', $ipv4),
-                null,
-            );
-        }
-
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $binary = inet_pton($ip);
-            return new ParsedIp(
-                null,
-                $binary === false ? null : bin2hex($binary),
-            );
-        }
-
-        return new ParsedIp(null, null);
-    }
-
-    /**
      * Returns the current timestamp in milliseconds.
      *
      * @return int Current Unix time in milliseconds
@@ -1494,59 +854,13 @@ final class AnalyticsCollector
     }
 
     /**
-     * Normalizes an array to canonical JSON for stable hashing.
-     *
-     * Recursively sorts associative keys so equivalent payloads hash identically.
-     *
-     * @param ?array<string, mixed> $value Value to encode; null/empty yields null
-     * @return ?string Canonical JSON, or null when empty or not encodable
-     */
-    private function normalizeJson(?array $value): ?string
-    {
-        if ($value === null || $value === []) {
-            return null;
-        }
-
-        $normalized = $this->sortRecursive($value);
-        $json = json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-        return $json === false ? null : $json;
-    }
-
-    /**
-     * Recursively sorts associative arrays by key, leaving lists in order.
-     *
-     * @param mixed $value Value to sort
-     * @return mixed Value with associative arrays key-sorted
-     */
-    private function sortRecursive(mixed $value): mixed
-    {
-        if (!is_array($value)) {
-            return $value;
-        }
-
-        foreach ($value as $key => $item) {
-            $value[$key] = $this->sortRecursive($item);
-        }
-
-        if (!array_is_list($value)) {
-            ksort($value);
-        }
-
-        return $value;
-    }
-
-    /**
      * Whether this node's protected-mode freeze holds the collector.
      *
      * The freeze row answers it ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}), the
      * same question the mail pool's durable half asks (HIL-1060): activating or active. Active
      * is where the initiator may replace the database on the leader or a single node; a
      * follower never reaches active in the first operation, so on a follower the database may
-     * change under it while its row reads activating. The leader's stop walk loses nothing to
-     * the wider span: stops under the gate are stamped after a freeze without a swap, and with a
-     * swap the rows written in activating would be gone anyway. No freeze row mounted means
-     * nothing holds.
+     * change under it while its row reads activating. No freeze row mounted means nothing holds.
      *
      * @return bool True while the freeze silences the unstopped writers
      */
@@ -1556,84 +870,12 @@ final class AnalyticsCollector
     }
 
     /**
-     * Pays what the freeze left owed, once it no longer holds the collector.
+     * Runs an operation of the master's half, containing any failure.
      *
-     * Stamps the agent stops remembered under the freeze, then opens a row for the live
-     * worker when it has none, then for every live agent that has none under it. Writes
-     * through the private insert helpers only - the public open methods would enter
-     * {@see self::runSafely()} again.
-     */
-    private function resumeOwedRecording(): void
-    {
-        foreach ($this->heldAgentStops as $key => $stoppedTs) {
-            $agentSessionId = $this->agentSessions[$key] ?? null;
-            if ($agentSessionId !== null) {
-                Database::sql(
-                    'UPDATE `hilos_analytics_agent_session` SET `stopped_ts` = ? WHERE `id` = ?',
-                    [$stoppedTs, $agentSessionId],
-                );
-            }
-
-            unset($this->heldAgentStops[$key], $this->agentSessions[$key]);
-        }
-
-        if ($this->liveWorkerIndex !== null && $this->workerSessionId === null) {
-            $this->insertWorkerSessionRow();
-        }
-
-        if ($this->workerSessionId === null) {
-            return;
-        }
-
-        foreach (array_diff_key($this->liveAgents, $this->agentSessions) as $agent) {
-            $this->insertAgentSessionRow($agent);
-        }
-    }
-
-    /**
-     * Inserts the worker session row of the live worker and stores it as the active one.
-     */
-    private function insertWorkerSessionRow(): void
-    {
-        Database::sql(
-            'INSERT INTO `hilos_analytics_worker_session`
-                (`worker_index`, `is_monopolistic`, `started_ts`, `stopped_ts`)
-             VALUES (?, ?, ?, NULL)',
-            [$this->liveWorkerIndex, $this->liveWorkerMonopolistic ? 1 : 0, $this->nowTs()],
-        );
-
-        $this->workerSessionId = Database::lastInsertId();
-    }
-
-    /**
-     * Inserts an agent session row under the active worker session and caches it.
-     *
-     * @param AgentId $agent Agent the row is opened for
-     * @return int Agent session id
-     */
-    private function insertAgentSessionRow(AgentId $agent): int
-    {
-        Database::sql(
-            'INSERT INTO `hilos_analytics_agent_session`
-                (`worker_session_id`, `agent_type`, `agent_index`, `started_ts`, `stopped_ts`)
-             VALUES (?, ?, ?, ?, NULL)',
-            [$this->workerSessionId, $agent->type, $agent->index, $this->nowTs()],
-        );
-
-        $id = Database::lastInsertId();
-        $this->agentSessions[$this->buildAgentKey($agent->type, $agent->index)] = $id;
-
-        return $id;
-    }
-
-    /**
-     * Runs a collector operation, containing any failure.
-     *
-     * Returns the default immediately when the collector is disabled or while the
-     * freeze holds it, touching nothing. Otherwise pays what a past freeze left owed,
-     * then runs the operation. On any throwable, disables the collector until the
-     * process restarts or the database is replaced, logs the error, and returns the
-     * default instead of propagating.
+     * Returns the default immediately when that half is disabled or while the freeze holds the
+     * collector, touching nothing. On any throwable, disables the half until the process
+     * restarts or the database is replaced, logs the error, and returns the default instead of
+     * propagating.
      *
      * @param callable $callback Operation to run
      * @param mixed $default Value returned when disabled or on failure
@@ -1646,7 +888,6 @@ final class AnalyticsCollector
         }
 
         try {
-            $this->resumeOwedRecording();
             return $callback();
         } catch (Throwable $throwable) {
             $this->enabled = false;

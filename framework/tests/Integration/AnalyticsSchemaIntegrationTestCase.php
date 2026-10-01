@@ -4,8 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsJournalLoader;
+use Hilos\Core\Analytics\AnalyticsJournalLoadOutcome;
+use Hilos\Core\Analytics\AnalyticsStore;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseException;
+use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * Base class for integration tests that write into the analytics tables.
@@ -16,9 +26,17 @@ use Hilos\Database\Exception\DatabaseException;
  * and the drift is exactly what these tests are here to catch.
  *
  * Each test method gets the schema empty and leaves nothing behind.
+ *
+ * A worker's events reach the tables through the journal (HIL-1154), so a case that records them
+ * plays the whole way with {@see self::loadJournal()}: the batches the collector queued are taken
+ * off a router of the case's own and loaded the way the writer loads a file.
  */
 abstract class AnalyticsSchemaIntegrationTestCase extends FrameworkIntegrationTestCase
 {
+    private ?SignalRouter $previousRouter = null;
+
+    private int $journalFiles = 0;
+
     /**
      * @throws DatabaseException When the stub schema cannot be built
      */
@@ -26,6 +44,8 @@ abstract class AnalyticsSchemaIntegrationTestCase extends FrameworkIntegrationTe
     {
         parent::setUp();
 
+        $this->previousRouter = Hilos::$sr;
+        Hilos::$sr = new SignalRouter();
         $this->rebuildAnalyticsSchema();
     }
 
@@ -35,8 +55,50 @@ abstract class AnalyticsSchemaIntegrationTestCase extends FrameworkIntegrationTe
     protected function tearDown(): void
     {
         $this->dropAnalyticsSchema();
+        Hilos::$sr = $this->previousRouter;
 
         parent::tearDown();
+    }
+
+    /**
+     * Sends what the collector gathered and loads every batch queued so far as one journal file.
+     *
+     * @param AnalyticsCollector $collector Collector whose batch is due
+     * @param ?AnalyticsJournalLoader $loader Writer's loader, kept across files; a fresh one when null
+     * @return AnalyticsJournalLoadOutcome What the load did
+     * @throws HilosException When the load fails
+     */
+    protected function loadJournal(AnalyticsCollector $collector, ?AnalyticsJournalLoader $loader = null): AnalyticsJournalLoadOutcome
+    {
+        $collector->flush();
+        $this->journalFiles++;
+
+        return ($loader ?? new AnalyticsJournalLoader(new AnalyticsStore()))->load(
+            '',
+            sprintf('%012d-0000000000000000.jsonl', $this->journalFiles),
+            $this->queuedJournalLines(),
+        );
+    }
+
+    /**
+     * Takes every batch queued for the journal off the router.
+     *
+     * @return list<string> Their lines, in the order the batches were queued
+     */
+    protected function queuedJournalLines(): array
+    {
+        $lines = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $batch = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
+            if (
+                $signal->signalName->getName() === HilosSignalConstants::ANALYTICS_JOURNAL_APPEND
+                && $batch instanceof AnalyticsJournalAppendSignalData
+            ) {
+                array_push($lines, ...$batch->lines);
+            }
+        }
+
+        return $lines;
     }
 
     /**

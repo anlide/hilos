@@ -8,9 +8,14 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsJournalLoader;
+use Hilos\Core\Analytics\AnalyticsStore;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Analytics\SecretPayloadMask;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseException;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Utils\Helpers\RandomHelper;
 use JsonException;
@@ -37,7 +42,7 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
 
     private string $acceptKey;
 
-    private ?int $workerSessionId = null;
+    private int $journalFiles = 0;
 
     private AnalyticsCollector $collector;
 
@@ -57,9 +62,8 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
     protected function tearDown(): void
     {
         Database::sql('DELETE FROM `hilos_analytics_ws_connection` WHERE `accept_key` = ?', [$this->acceptKey]);
-        if ($this->workerSessionId !== null) {
-            Database::sql('DELETE FROM `hilos_analytics_worker_session` WHERE `id` = ?', [$this->workerSessionId]);
-        }
+        Database::sql('DELETE FROM `hilos_analytics_worker_session` WHERE `worker_index` = ?', [self::WORKER_INDEX]);
+        Database::sql('DELETE FROM `hilos_analytics_journal_file` WHERE `file_name` LIKE ?', [$this->acceptKey . '%']);
         Hilos::$sr = null;
 
         parent::tearDown();
@@ -88,7 +92,10 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
     }
 
     /**
-     * @throws DatabaseException When the recorded payload cannot be read
+     * The worker's half masks before the journal: the file on the node's disk is storage too, so
+     * the secret is gone from the journal line already, and from the row the writer loads it into.
+     *
+     * @throws HilosException When the journal cannot be loaded or the recorded payload read
      * @throws JsonException When the recorded payload is not JSON
      */
     public function testAgentReactionIsRecordedWithTheCodeAndPasswordMaskedInsideData(): void
@@ -107,7 +114,11 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
             $envelope->toArray(),
         );
-        $this->collector->flush();
+        $lines = $this->journalLines();
+        $journal = implode("\n", $lines);
+        $this->assertStringNotContainsString('123456', $journal);
+        $this->assertStringNotContainsString('hil-1187-new', $journal);
+        $this->loadJournal($lines);
 
         Database::sql(
             'SELECT p.`payload_json` FROM `hilos_analytics_agent_user_action` a
@@ -146,7 +157,7 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
     }
 
     /**
-     * @throws DatabaseException When a row cannot be written or read, or the migration fails
+     * @throws HilosException When a row cannot be written or read, the journal loaded, or the migration fails
      * @throws JsonException When a payload is not JSON
      */
     public function testMigrationMasksWhatWasWrittenBeforeAndChangesNothingTheSecondTime(): void
@@ -162,12 +173,12 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
         Database::sql(
             'INSERT INTO `hilos_analytics_user_action` (`ws_connection_id`, `action_name_id`, `payload_json_id`, `created_ts`)
              SELECT `id`, ?, ?, 0 FROM `hilos_analytics_ws_connection` WHERE `accept_key` = ?',
-            [$this->collector->ensureActionName(HilosSignalConstants::HILOS_LOGIN), $signInId, $this->acceptKey],
+            [$this->namedDictionaryId('hilos_analytics_action_name', HilosSignalConstants::HILOS_LOGIN), $signInId, $this->acceptKey],
         );
         Database::sql(
             'INSERT INTO `hilos_analytics_agent_user_action` (`agent_session_id`, `signal_name_id`, `payload_json_id`, `created_ts`)
              VALUES (?, ?, ?, 0)',
-            [$agentSessionId, $this->collector->ensureSignalName(HilosSignalConstants::HILOS_STEP_UP_CONFIRM), $stepUpId],
+            [$agentSessionId, $this->namedDictionaryId('hilos_analytics_signal_name', HilosSignalConstants::HILOS_STEP_UP_CONFIRM), $stepUpId],
         );
 
         $this->runMigration();
@@ -194,15 +205,60 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
     }
 
     /**
-     * @return int Agent session id the collector opened for this case
+     * Opens a worker and an agent session the way a worker does, and loads them through the journal.
+     *
+     * @return int Agent session id the writer gave the agent of this case
+     * @throws HilosException When the journal cannot be loaded or the session read back
      */
     private function openAgentSession(): int
     {
-        $this->workerSessionId = $this->collector->openWorkerSession(self::WORKER_INDEX, false);
-        $agentSessionId = $this->collector->openAgentSession(self::AGENT_TYPE, null);
+        $this->collector->openWorkerSession(self::WORKER_INDEX, false);
+        $this->collector->openAgentSession(self::AGENT_TYPE, null);
+        $this->loadJournal($this->journalLines());
+
+        Database::sql(
+            'SELECT a.`id` FROM `hilos_analytics_agent_session` a
+             JOIN `hilos_analytics_worker_session` w ON w.`id` = a.`worker_session_id`
+             WHERE w.`worker_index` = ? AND a.`agent_type` = ?',
+            [self::WORKER_INDEX, self::AGENT_TYPE],
+        );
+        $agentSessionId = Database::field('id');
         $this->assertNotNull($agentSessionId);
 
-        return $agentSessionId;
+        return (int)$agentSessionId;
+    }
+
+    /**
+     * Sends what the collector gathered and takes the batches it queued for the journal.
+     *
+     * @return list<string> Lines of every queued batch, in order
+     */
+    private function journalLines(): array
+    {
+        $this->collector->flush();
+
+        $lines = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $batch = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
+            if ($batch instanceof AnalyticsJournalAppendSignalData) {
+                array_push($lines, ...$batch->lines);
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Loads journal lines into the chat database the way the writer loads a file.
+     *
+     * @param list<string> $lines Lines of the file
+     * @throws HilosException When the load fails
+     */
+    private function loadJournal(array $lines): void
+    {
+        $this->journalFiles++;
+        $outcome = new AnalyticsJournalLoader(new AnalyticsStore())->load('', $this->acceptKey . '-' . $this->journalFiles, $lines);
+        $this->assertSame([], $outcome->skipped);
     }
 
     /**
@@ -221,6 +277,22 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
         $json = Database::field('payload_json');
 
         return $json === null ? null : (string)$json;
+    }
+
+    /**
+     * Returns the row of a name in a name dictionary, writing it first when the name is new.
+     *
+     * @param string $table Name dictionary table
+     * @param string $name Name to look up
+     * @return int Dictionary row id
+     * @throws DatabaseException When the insert or the lookup fails
+     */
+    private function namedDictionaryId(string $table, string $name): int
+    {
+        Database::sql("INSERT IGNORE INTO `{$table}` (`name`, `created_ts`) VALUES (?, 0)", [$name]);
+        Database::sql("SELECT `id` FROM `{$table}` WHERE `name` = ?", [$name]);
+
+        return (int)Database::field('id');
     }
 
     /**

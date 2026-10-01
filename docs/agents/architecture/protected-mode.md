@@ -270,11 +270,22 @@ the first operation — and at the swap it owes forgetting every id of the
 replaced database, before its process answers the re-hydrate round. A cached id
 that the restored database lacks fails on a foreign key, which is the lucky case;
 one that the restored database gives to another value files facts under the
-wrong name with no error at all. The analytics collector is the worked example:
-`AnalyticsCollector::runSafely()` answers nothing while the row silences it,
-`forgetReplacedDatabase()` is called first in `WorkerManager::handleDbReHydrateMessage()`
-and `DaemonManager::applyReHydrateContained()` — on the failed re-read too — and
-what the process owns (its worker and agent sessions) is opened again at resume.
+wrong name with no error at all. The analytics collector is the worked example,
+in its two halves since HIL-1154. In every process it is still outside every
+roster, so it answers the freeze itself: while the row silences it, it records
+nothing and throws away the batch it had gathered for the journal, and an agent
+that stops meanwhile is remembered and its stop handed over, with its own moment,
+once the row lets go. `forgetReplacedDatabase()` is called first in
+`WorkerManager::handleDbReHydrateMessage()` and
+`DaemonManager::applyReHydrateContained()` — on the failed re-read too — and the
+numbers it forgets are the master's (until HIL-1156 moves that half onto the
+journal as well). Nothing is opened again at resume: a worker names its sessions
+by keys, and their descriptions travel with every batch, so the writer inserts
+them into the restored database from the first batch that names them. The two
+agents of the journal are in the roster and the freeze stops them like any other:
+the node's journal agent, stopped under the freeze, throws the node's journal
+away — what was not loaded by then is lost, by the owner's decision
+([analytics.md](analytics.md)) — and the writer starts again with empty caches.
 The re-read after a peer link does not forget: the database there is the same one.
 The durable half of the mail pool is the second example, and the forgetting in its
 strongest form: it keeps nothing across the freeze at all.
@@ -708,7 +719,8 @@ project" — activation is not declarative, so there is nothing to ask:
 | `DaemonProtectedModeExecutor::runtimeView()` | where do I write the phase? |
 | `WorkerServer::protectedModeRefusesStart()` | may this agent start during a freeze? |
 | `AbstractDeliveryChannelAgent::freezeSilencesDeliveries()` | must the durable deliveries go quiet? |
-| `AnalyticsCollector::isHeld()` | must the collector record nothing? |
+| `AnalyticsCollector::isHeld()` | must the collector record nothing and throw its batch away? |
+| `AnalyticsJournalAgent::onStop()` | is this stop the freeze's, so the node's journal goes? |
 
 The two entries read the same row as their guard (`StandaloneProtectedMode` and
 `ClusterProtectedMode`, each with its own `runtimeView()`).
@@ -758,16 +770,20 @@ Refuse loudly and before any trace of entry, as above.
   (`ProtectedModeSnapshotTest`), the agent driver
   (`ProtectedModeTestDriverTest`), the four verdicts and the alarm's repetition
   (`ProtectedModeWatchdogTest`, `ProtectedModeAlertMailTest`), the freeze left
-  on disk (`ProtectedModeFreezeStoreTest`), and the analytics collector told to
+  on disk (`ProtectedModeFreezeStoreTest`), the analytics collector told to
   forget by the round answer and not by the peer-link re-read
   (`WorkerManagerDbReHydrateAckTest`, `DaemonManagerDbReHydrateBarrierTest`),
+  silent under the freeze with its stops handed over after it
+  (`AnalyticsJournalOutboxTest`), the journal agent throwing the node's journal
+  away when the freeze stops it (`AnalyticsJournalAgentTest`),
   the phases that silence the unstopped writers (`ProtectedModeContractTest`), and
   the mail pool dropping and refusing its durable deliveries while its raw half
   keeps sending (`MailDeliveryChannelAgentTest`).
 - `composer run test:framework:integration` — covers the carry-over across a real
   database swap (`SessionCarrierIntegrationTest`, `SessionsActionsCarryOverTest`)
-  and the analytics collector held by the freeze and forgetting the swapped
-  schema (`AnalyticsDatabaseSwapIntegrationTest`, under `activating` and `active`).
+  and the analytics collector held by the freeze, forgetting the swapped schema,
+  and its worker's sessions coming back by their descriptions
+  (`AnalyticsDatabaseSwapIntegrationTest`, under `activating` and `active`).
 - `demo/chat` integration `MailPoolFreezeIntegrationTest` — a mail delivery in
   flight when the freeze begins is cut and its row written no more.
 - `demo/binance-btc-tracker` e2e `protected-mode.spec.ts` — drives the mode from a

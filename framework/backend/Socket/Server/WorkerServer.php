@@ -88,6 +88,15 @@ abstract class WorkerServer extends AbstractServer implements
     ProtectedModeInitiatorRelay,
     ProtectedModeAgentFreezer
 {
+    /** Second wave of a stop: the first wave still has workers running. */
+    private const int SECOND_WAVE_WAITING = 0;
+
+    /** Second wave: the first wave is gone, and this pass's dispatch carries its last frames. */
+    private const int SECOND_WAVE_FIRST_GONE = 1;
+
+    /** Second wave: the held agents were stopped over their connection; their workers go next. */
+    private const int SECOND_WAVE_AGENTS_STOPPED = 2;
+
     /**
      * @var array<string, array<string, Process|string|int>> Workers indexed by key (format:
      *     "type:index"), values: WorkerConstants::FIELD_WORKER_*
@@ -96,6 +105,15 @@ abstract class WorkerServer extends AbstractServer implements
 
     /** @var array<int> Available worker indices (sorted, can be reused) */
     private array $availableIndices = [];
+
+    /**
+     * @var array<string, list<string>> Second wave of a stop: worker key to the ids of the agents on it that stop
+     *     after the other workers (HIL-1154); empty while no stop holds a worker back
+     */
+    private array $secondStopWave = [];
+
+    /** @var int Step of the second wave, one of the SECOND_WAVE_* constants */
+    private int $secondStopWaveStep = self::SECOND_WAVE_WAITING;
 
     /** @var int Next worker index to assign if no available */
     private int $nextWorkerIndex = 1;
@@ -522,6 +540,9 @@ abstract class WorkerServer extends AbstractServer implements
             // Tick all worker processes
             $this->tickWorkerProcesses();
 
+            // The workers a stop held back go once the others are gone (HIL-1154).
+            $this->advanceSecondStopWave();
+
             // Ensure minimum number of workers are running
             try {
                 $this->ensureMinWorkers();
@@ -947,18 +968,28 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Stop all worker processes with graceful shutdown
+     * Stop all worker processes with graceful shutdown - in two waves when an agent asks for it.
      *
-     * Sends SIGTERM to all workers with shutdown timeout.
-     * Actual termination will happen asynchronously in tick() method via Process::tick().
-     * Does NOT close socket or worker client connections - workers need to disconnect themselves.
+     * The first wave is SIGTERM to every worker but the ones hosting an agent whose daemon answers
+     * {@see AgentDaemonInterface::stopsAfterOtherWorkers()} - the node's analytics journal, which
+     * the others hand their last batch to on the way out (HIL-1154). Those are held for the second
+     * wave, {@see self::advanceSecondStopWave()}, and with no such agent the stop is one wave, as
+     * it always was. The master's shutdown ceiling covers both waves.
      */
     public function stop(): void
     {
+        $this->secondStopWave = $this->workersStoppingLast();
+        $this->secondStopWaveStep = self::SECOND_WAVE_WAITING;
+
         foreach ($this->workers as $key => $worker) {
             $process = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
             $index = $worker[WorkerConstants::FIELD_WORKER_INDEX];
             $type = $worker[WorkerConstants::FIELD_WORKER_TYPE];
+
+            if (isset($this->secondStopWave[$key])) {
+                Logger::debug("Holding {$type} worker #{$index} for the second wave of the stop");
+                continue;
+            }
 
             try {
                 $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
@@ -973,6 +1004,116 @@ abstract class WorkerServer extends AbstractServer implements
         // Note: Do NOT call parent::stop() here - we don't want to close worker client connections.
         // Workers need to complete their work and disconnect themselves gracefully.
         // Socket will be closed when daemon stops, but worker connections should remain until workers disconnect.
+    }
+
+    /**
+     * Moves the second wave of a stop one step on, once per pass; nothing while no stop holds a worker.
+     *
+     * Three passes, because each step needs the one before it to have reached the wire. The first
+     * wave is gone when its processes are gone AND their connections are closed: the master reads a
+     * connection a buffer at a time, so the last batch of a worker that has exited may still be in
+     * its socket for a few passes. The pass that sees the first wave gone only notes it: what the
+     * last of it sent is read on this pass and dispatched at its end, into the connection of the
+     * held worker. The next pass stops every held agent with an ordinary agent_stop over that
+     * connection, which carries frames in order - so the stop lands behind everything sent to the
+     * agent before it. The pass after that, once the stop has been written, sends SIGTERM to the
+     * held workers.
+     */
+    protected function advanceSecondStopWave(): void
+    {
+        if ($this->secondStopWave === []) {
+            return;
+        }
+
+        if (array_diff_key($this->workers, $this->secondStopWave) !== [] || $this->firstStopWaveConnected()) {
+            $this->secondStopWaveStep = self::SECOND_WAVE_WAITING;
+
+            return;
+        }
+
+        if ($this->secondStopWaveStep === self::SECOND_WAVE_WAITING) {
+            $this->secondStopWaveStep = self::SECOND_WAVE_FIRST_GONE;
+
+            return;
+        }
+
+        if ($this->secondStopWaveStep === self::SECOND_WAVE_FIRST_GONE) {
+            foreach ($this->secondStopWave as $agentIds) {
+                foreach ($agentIds as $agentId) {
+                    $agent = $this->parseAgentId($agentId);
+                    $this->stopAgent($agent->type, $agent->index);
+                }
+            }
+            $this->secondStopWaveStep = self::SECOND_WAVE_AGENTS_STOPPED;
+
+            return;
+        }
+
+        $held = $this->secondStopWave;
+        $this->secondStopWave = [];
+        foreach (array_keys($held) as $key) {
+            $worker = $this->workers[$key] ?? null;
+            if ($worker === null) {
+                continue;
+            }
+
+            try {
+                $worker[WorkerConstants::FIELD_WORKER_PROCESS]->stop($this->shutdownTimeout);
+                Logger::debug("Sent stop signal to {$worker[WorkerConstants::FIELD_WORKER_TYPE]} worker "
+                    . "#{$worker[WorkerConstants::FIELD_WORKER_INDEX]} in the second wave");
+            } catch (Throwable $e) {
+                Logger::error("Failed to stop {$worker[WorkerConstants::FIELD_WORKER_TYPE]} worker "
+                    . "#{$worker[WorkerConstants::FIELD_WORKER_INDEX]}: " . $e->getMessage());
+                unset($this->workers[$key]);
+            }
+        }
+    }
+
+    /**
+     * Whether a worker of the first wave of a stop still has its connection open, with what it sent unread.
+     *
+     * @return bool True while such a connection is open
+     */
+    private function firstStopWaveConnected(): bool
+    {
+        foreach ($this->clients as $client) {
+            if (!$client instanceof WorkerClient || $client->getWorkerIndex() === 0) {
+                continue;
+            }
+
+            if (!isset($this->secondStopWave[$this->buildWorkerKey($client->isMonopolistic(), $client->getWorkerIndex())])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The workers hosting an agent whose daemon stops after the other workers, with those agents.
+     *
+     * @return array<string, list<string>> Worker key to the ids of its agents that stop last
+     */
+    private function workersStoppingLast(): array
+    {
+        $held = [];
+        foreach ($this->agentManager->getAgents() as $agentId => $agentDaemon) {
+            if (!$agentDaemon->stopsAfterOtherWorkers()) {
+                continue;
+            }
+
+            $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
+            if ($workerInfo === null) {
+                continue;
+            }
+
+            $key = $this->buildWorkerKey($workerInfo->isMonopolistic, $workerInfo->workerIndex);
+            if (isset($this->workers[$key])) {
+                $held[$key][] = $agentId;
+            }
+        }
+
+        return $held;
     }
 
     /**
