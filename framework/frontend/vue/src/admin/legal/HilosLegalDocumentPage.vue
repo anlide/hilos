@@ -3,11 +3,13 @@ import {
   computedSignal,
   createHilosLegalRevisionsTable,
   createHilosLegalConsentPreview,
+  createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
   LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_DOCUMENT_SECTION,
+  LEGAL_RECONSENT_COPY,
   legalAdminDocumentSchema,
   resolveHilosPath,
   type HilosLegalContext,
@@ -18,6 +20,7 @@ import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosLegalConsent from '../../legal/HilosLegalConsent.vue'
+import HilosLegalReconsent from '../../legal/HilosLegalReconsent.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -53,10 +56,22 @@ function openPreview(): void {
   reading.value = null
   void preview.open()
 }
+// The "the terms have changed" screen as whoever held the previous revision
+// sees it today (HIL-500): the same component in a read-only modal.
+const reconsent = createHilosLegalReconsentPreview(props.context)
+const reconsentOpen = useSignal(reconsent.opened)
+const reconsentPreview = useSignal(reconsent.preview)
+const reconsentLoading = useSignal(reconsent.loading)
+const reconsentError = useSignal(reconsent.error)
+const reconsentView = useSignal(reconsent.view)
+function openReconsent(): void {
+  if (details.value) void reconsent.open(details.value.document)
+}
 onMounted(() => revisions.start())
 onUnmounted(() => {
   revisions.dispose()
   preview.close()
+  reconsent.close()
 })
 </script>
 
@@ -157,6 +172,15 @@ onUnmounted(() => {
         >
           <i class="bi bi-eye me-1" aria-hidden="true" />Consent screen at
           registration
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-secondary ms-2"
+          data-id="legal-preview-reconsent"
+          @click="openReconsent"
+        >
+          <i class="bi bi-arrow-repeat me-1" aria-hidden="true" />Re-consent
+          screen
         </button>
       </section>
       <HilosViewportTable :controller="revisions.controller">
@@ -271,6 +295,38 @@ onUnmounted(() => {
           @click="preview.close"
         >
           Close
+        </button>
+      </template>
+    </HilosModal>
+    <HilosModal
+      :model-value="reconsentOpen"
+      title="Re-consent screen"
+      initial-focus="dialog"
+      @update:model-value="
+        (value) => {
+          if (!value) reconsent.close()
+        }
+      "
+    >
+      <div data-id="legal-reconsent-preview">
+        <HilosLegalReconsent
+          variant="preview"
+          :content="reconsentPreview"
+          :view="reconsentView"
+          :loading="reconsentLoading"
+          :error="reconsentError"
+          @retry="openReconsent"
+          @show="reconsent.show"
+        />
+      </div>
+      <template #actions>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-id="legal-reconsent-preview-close"
+          @click="reconsent.close"
+        >
+          {{ LEGAL_RECONSENT_COPY.close }}
         </button>
       </template>
     </HilosModal>

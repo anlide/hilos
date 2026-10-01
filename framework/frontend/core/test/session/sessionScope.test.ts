@@ -516,6 +516,12 @@ describe('sessionScope', () => {
               { document: 'cookies', deadline: '2026-09-01' },
               { document: 'privacy', deadline: null },
             ],
+            // The documents still inside their window are read the same way (HIL-500).
+            window: [
+              { document: 'privacy', deadline: '2026-11-10' },
+              { document: 'cookies', deadline: '2026-11-10' },
+              'garbage',
+            ],
           },
         },
       })
@@ -525,6 +531,7 @@ describe('sessionScope', () => {
         frozen: true,
         deletionEffectiveAt: LOCAL_NOW + 86_400_000,
         lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+        window: [{ document: 'privacy', deadline: '2026-11-10' }],
       })
 
       // A hidden mark, or any shape that is not a standing, reads as none.
@@ -540,6 +547,7 @@ describe('sessionScope', () => {
             frozen: false,
             deletionEffectiveAt: null,
             lapsed: [],
+            window: [],
           },
         },
       })

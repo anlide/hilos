@@ -30,7 +30,13 @@
 // a reload into a frozen node never flashes the ordinary layout. While the
 // session holds a blocked account the routed content gives way to the "Access
 // closed" card (HilosAccountBlocked, HIL-289) — the header and footer stay,
-// maintenance still comes first. Styling is Bootstrap classes only and the
+// maintenance still comes first. The "the terms have changed" screen is the
+// shell's too (HIL-500): a yellow document icon right after the user region
+// while a document waits for a decision, the window it opens (raised by itself
+// on a sign-in in this tab), and, once the deadline has passed and the account
+// is frozen, the same screen in the content's place on every page the freeze
+// does not leave open — after the "Access closed" card, before the content.
+// Styling is Bootstrap classes only and the
 // shell carries no CSS of its own (styling-rules.md); the status and admin
 // icons are Bootstrap Icons (`bi-*`).
 import {
@@ -53,14 +59,25 @@ import type {
 import {
   ACCOUNT_DELETION_TICK_MS,
   ACCOUNT_STANDING_STRIP_COPY,
+  closeLegalReconsent,
   formatHilosDeletionStrip,
+  formatHilosLegalReconsentBadge,
   HILOS_FOOTER_LINKS,
+  HILOS_FROZEN_OPEN_PAGES,
   HILOS_PAGE_ROUTES,
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
   HilosPages,
   hilosAccountBlocked,
+  hilosAccountStanding,
   hilosDeletionStrip,
+  hilosFrozenScreen,
+  hilosLegalReconsent,
+  hilosLegalReconsentDue,
+  hilosLegalReconsentOpen,
+  hilosLegalReconsentPerson,
+  LEGAL_RECONSENT_COPY,
+  openLegalReconsent,
   hilosImpersonation,
   hilosSignedIn,
   IMPERSONATION_STRIP_COPY,
@@ -80,6 +97,8 @@ import { LoadingButton } from './LoadingButton.js'
 import { HilosToastHost } from './HilosToastHost.js'
 import type { HilosToastCorner } from './hilosToastCorner.js'
 import { HilosOAuthWaitModal } from './auth/HilosOAuthWaitModal.js'
+import { HilosModal } from './HilosModal.js'
+import { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'
 import { createHilosTrackedAction } from './hilosTrackedAction.js'
@@ -108,8 +127,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAccountBlocked,
+    HilosLegalReconsent,
     HilosLink,
     HilosMaintenance,
+    HilosModal,
     HilosOAuthWaitModal,
     HilosToastHost,
     LoadingButton,
@@ -160,6 +181,18 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             <div class="d-flex align-items-center gap-3">
               @if (!underMaintenance()) {
                 <ng-content select="[user]" />
+                @if (reconsentDue() !== null) {
+                  <button
+                    type="button"
+                    class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 text-warning"
+                    data-id="legal-reconsent-icon"
+                    [attr.title]="reconsentBadge()"
+                    (click)="openReconsent()"
+                  >
+                    <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                    <span class="visually-hidden">{{ reconsentBadge() }}</span>
+                  </button>
+                }
                 @if (isAdmin()) {
                   <a
                     [hilosLink]="adminHref"
@@ -298,6 +331,35 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             />
           } @else if (accountBlocked(); as notice) {
             <hilos-account-blocked [notice]="notice" />
+          } @else if (frozenShown()) {
+            <div
+              class="row justify-content-center"
+              data-id="legal-frozen-screen"
+            >
+              <div class="col-12 col-md-10 col-lg-8">
+                <div class="text-center mb-3">
+                  <span
+                    class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
+                  >
+                    <i class="bi bi-snow" aria-hidden="true"></i>
+                  </span>
+                </div>
+                <hilos-legal-reconsent
+                  variant="frozen"
+                  [content]="reconsentContent()"
+                  [view]="reconsentView()"
+                  [loading]="reconsentLoading()"
+                  [error]="reconsentError()"
+                  [busy]="reconsentBusy()"
+                  [person]="reconsentPerson()"
+                  [deletionScheduled]="deletionScheduled()"
+                  [now]="reconsentNow()"
+                  (accept)="onReconsentAccept()"
+                  (retry)="onReconsentRetry()"
+                  (show)="reconsent.show($event)"
+                />
+              </div>
+            </div>
           } @else {
             <ng-content />
           }
@@ -328,6 +390,34 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
         the wait belongs to the shell too: the page underneath stays subscribed and
         alive, and no project mounts anything (HIL-633). -->
         <hilos-oauth-wait-modal />
+        <!-- The "the terms have changed" window (HIL-500): over the page, never
+        over work in progress — the core raises it on a sign-in in this tab
+        only; after that the icon in the header is the way back to it. Focus
+        lands on the dialog, not on Accept, so Enter never accepts the terms by
+        accident. -->
+        <hilos-modal
+          [open]="reconsentOpen() && !underMaintenance()"
+          [ariaLabel]="reconsentCopy.heading"
+          initialFocus="dialog"
+          (openChange)="$event ? undefined : onReconsentLater()"
+        >
+          <div data-id="legal-reconsent-modal">
+            <hilos-legal-reconsent
+              variant="window"
+              [content]="reconsentContent()"
+              [view]="reconsentView()"
+              [loading]="reconsentLoading()"
+              [error]="reconsentError()"
+              [busy]="reconsentBusy()"
+              [person]="reconsentPerson()"
+              [now]="reconsentNow()"
+              (accept)="onReconsentAccept()"
+              (later)="onReconsentLater()"
+              (retry)="onReconsentRetry()"
+              (show)="reconsent.show($event)"
+            />
+          </div>
+        </hilos-modal>
       </div>
     }
   `,
@@ -499,6 +589,44 @@ export class HilosLayout {
     : signal<PageRouteMatch>({ page: '', params: {}, admin: false })
   protected readonly adminSurface = computed(() => this.currentRoute().admin)
 
+  // The "the terms have changed" screen (HIL-500). The core decides everything
+  // from the session: whether something is due (the icon), whether the window
+  // stands (raised by a sign-in in this tab, or by the icon), and whether the
+  // account is frozen (the screen in the content's place, on every page the
+  // freeze does not leave open). The window and the freeze screen draw one
+  // store; the days of the icon are counted again once a minute while it
+  // stands, like the deletion strip's.
+  protected readonly reconsent = hilosLegalReconsent
+  protected readonly reconsentCopy = LEGAL_RECONSENT_COPY
+  protected readonly reconsentDue = hilosSignal(hilosLegalReconsentDue)
+  protected readonly reconsentOpen = hilosSignal(hilosLegalReconsentOpen)
+  protected readonly reconsentPerson = hilosSignal(hilosLegalReconsentPerson)
+  protected readonly reconsentContent = hilosSignal(hilosLegalReconsent.content)
+  protected readonly reconsentLoading = hilosSignal(hilosLegalReconsent.loading)
+  protected readonly reconsentError = hilosSignal(hilosLegalReconsent.error)
+  protected readonly reconsentBusy = hilosSignal(hilosLegalReconsent.busy)
+  protected readonly reconsentView = hilosSignal(hilosLegalReconsent.view)
+  private readonly frozen = hilosSignal(hilosFrozenScreen)
+  private readonly standing = hilosSignal(hilosAccountStanding)
+  protected readonly deletionScheduled = computed(
+    () => this.standing()?.deletionEffectiveAt != null,
+  )
+  protected readonly reconsentNow = signal(Date.now())
+  private readonly reconsentCounting = computed(
+    () => this.reconsentDue() !== null || this.frozen(),
+  )
+  protected readonly reconsentBadge = computed(() => {
+    const due = this.reconsentDue()
+    return due === null
+      ? ''
+      : formatHilosLegalReconsentBadge(due, this.reconsentNow())
+  })
+  protected readonly frozenShown = computed(
+    () =>
+      this.frozen() &&
+      !HILOS_FROZEN_OPEN_PAGES.includes(this.currentRoute().page),
+  )
+
   constructor() {
     // Read the connection input once it is bound and mirror its machine state;
     // the effect's cleanup releases the listener when the shell is destroyed.
@@ -579,6 +707,26 @@ export class HilosLayout {
       onCleanup(() => clearInterval(tick))
     })
 
+    // Count the re-consent icon's days again once a minute while something is
+    // due, and read the freeze screen's content afresh each time it rises.
+    effect((onCleanup) => {
+      const counting = this.reconsentCounting()
+      untracked(() => this.reconsentNow.set(Date.now()))
+      if (!counting) {
+        return
+      }
+      const tick = setInterval(
+        () => this.reconsentNow.set(Date.now()),
+        ACCOUNT_DELETION_TICK_MS,
+      )
+      onCleanup(() => clearInterval(tick))
+    })
+    effect(() => {
+      if (this.frozenShown()) {
+        untracked(() => void hilosLegalReconsent.load())
+      }
+    })
+
     // Track the page title onto the document title across no-refresh navigation.
     effect(() => {
       const title = this.pageTitle()
@@ -602,6 +750,26 @@ export class HilosLayout {
       return
     }
     void this.keepAccount.run(keepMyAccount())
+  }
+
+  /** Open the re-consent window from the header icon. */
+  protected openReconsent(): void {
+    openLegalReconsent()
+  }
+
+  /** Close the re-consent window: Later, Esc, the cross. */
+  protected onReconsentLater(): void {
+    closeLegalReconsent()
+  }
+
+  /** Accept the terms the screen shows; the store keeps its own busy flag. */
+  protected onReconsentAccept(): void {
+    void hilosLegalReconsent.accept()
+  }
+
+  /** Read the screen's content again after a failed read. */
+  protected onReconsentRetry(): void {
+    void hilosLegalReconsent.load()
   }
 
   /** Sign out through the tracked driver; a second press while busy is dropped. */

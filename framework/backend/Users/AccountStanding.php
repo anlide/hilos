@@ -15,6 +15,10 @@ use Hilos\Legal\LegalDocumentStanding;
  * ({@see AccountStandingKind}). Composed in exactly one place, {@see AccountStandingResolver},
  * and read by the session frame, the page guard and the admin card alike.
  *
+ * The documents still inside their window ride along (HIL-500): they take nothing away and play no
+ * part in the verdict, but they are what the "the terms have changed" screen and its reminder in
+ * the header are drawn from, and the session frame is where a tab learns them without asking.
+ *
  * It travels in one shape everywhere ({@see self::toArray()}) and nobody sends it back, so there is
  * no reader from the wire.
  */
@@ -25,6 +29,7 @@ final readonly class AccountStanding
     public const string frozen = 'frozen';
     public const string deletionEffectiveAt = 'deletionEffectiveAt';
     public const string lapsed = 'lapsed';
+    public const string window = 'window';
     public const string document = 'document';
     public const string deadline = 'deadline';
 
@@ -34,6 +39,7 @@ final readonly class AccountStanding
      * @param bool $frozen Whether a lapsed acceptance freezes the account under the refusal setting
      * @param ?int $deletionEffectiveAt Moment the scheduled erasure falls due, milliseconds since the epoch, or null
      * @param list<LegalDocumentStanding> $lapsed Documents whose deadline has passed, whatever the refusal setting says
+     * @param list<LegalDocumentStanding> $window Documents whose deadline is still ahead, whatever the refusal setting says
      */
     public function __construct(
         public AccountStandingKind $shown,
@@ -41,6 +47,7 @@ final readonly class AccountStanding
         public bool $frozen,
         public ?int $deletionEffectiveAt,
         public array $lapsed,
+        public array $window,
     ) {
     }
 
@@ -48,7 +55,8 @@ final readonly class AccountStanding
      * The shape the session frame, the admin card and its live frame carry.
      *
      * @return array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
-     *     lapsed: list<array{document: string, deadline: ?string}>} Wire form of the verdict
+     *     lapsed: list<array{document: string, deadline: ?string}>,
+     *     window: list<array{document: string, deadline: ?string}>} Wire form of the verdict
      */
     public function toArray(): array
     {
@@ -57,13 +65,25 @@ final readonly class AccountStanding
             self::blocked => $this->blocked,
             self::frozen => $this->frozen,
             self::deletionEffectiveAt => $this->deletionEffectiveAt,
-            self::lapsed => array_map(
-                static fn (LegalDocumentStanding $standing): array => [
-                    self::document => $standing->document->value,
-                    self::deadline => $standing->deadline,
-                ],
-                $this->lapsed,
-            ),
+            self::lapsed => self::documentsToArray($this->lapsed),
+            self::window => self::documentsToArray($this->window),
         ];
+    }
+
+    /**
+     * Wire form of one list of documents: the document and its deadline, nothing else.
+     *
+     * @param list<LegalDocumentStanding> $documents Documents of one standing
+     * @return list<array{document: string, deadline: ?string}> The list as it travels
+     */
+    private static function documentsToArray(array $documents): array
+    {
+        return array_map(
+            static fn (LegalDocumentStanding $standing): array => [
+                self::document => $standing->document->value,
+                self::deadline => $standing->deadline,
+            ],
+            $documents,
+        );
     }
 }

@@ -3,6 +3,7 @@ import {
   computedSignal,
   createHilosLegalRevisionsTable,
   createHilosLegalConsentPreview,
+  createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
   LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
@@ -10,6 +11,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_DOCUMENT_SECTION,
+  LEGAL_RECONSENT_COPY,
   legalAdminDocumentSchema,
   resolveHilosPath,
   type HilosLegalContext,
@@ -19,6 +21,7 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosLegalConsent } from '../../legal/HilosLegalConsent.js'
+import { HilosLegalReconsent } from '../../legal/HilosLegalReconsent.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
@@ -66,6 +69,21 @@ export function HilosLegalDocumentPage({
   )
   const parsed = legalAdminDocumentSchema.safeParse(raw)
   const details = parsed.success ? parsed.data : null
+  // The "the terms have changed" screen as whoever held the previous revision
+  // sees it today (HIL-500): the same component in a read-only modal.
+  const reconsent = useMemo(
+    () => createHilosLegalReconsentPreview(context),
+    [context],
+  )
+  const reconsentOpen = useSignal(reconsent.opened)
+  const reconsentPreview = useSignal(reconsent.preview)
+  const reconsentLoading = useSignal(reconsent.loading)
+  const reconsentError = useSignal(reconsent.error)
+  const reconsentView = useSignal(reconsent.view)
+  useEffect(() => () => reconsent.close(), [reconsent])
+  function openReconsent(): void {
+    if (details) void reconsent.open(details.document)
+  }
   useEffect(() => {
     revisions.start()
     return () => revisions.dispose()
@@ -173,6 +191,15 @@ export function HilosLegalDocumentPage({
               >
                 <i className="bi bi-eye me-1" aria-hidden="true" />
                 Consent screen at registration
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-secondary ms-2"
+                data-id="legal-preview-reconsent"
+                onClick={openReconsent}
+              >
+                <i className="bi bi-arrow-repeat me-1" aria-hidden="true" />
+                Re-consent screen
               </button>
             </section>
             <HilosViewportTable
@@ -301,6 +328,34 @@ export function HilosLegalDocumentPage({
           <HilosFormError
             message={previewError}
             dataId="legal-consent-preview-error"
+          />
+        </div>
+      </HilosModal>
+      <HilosModal
+        open={reconsentOpen}
+        title="Re-consent screen"
+        initialFocus="dialog"
+        onClose={() => reconsent.close()}
+        actions={() => (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            data-id="legal-reconsent-preview-close"
+            onClick={() => reconsent.close()}
+          >
+            {LEGAL_RECONSENT_COPY.close}
+          </button>
+        )}
+      >
+        <div data-id="legal-reconsent-preview">
+          <HilosLegalReconsent
+            variant="preview"
+            content={reconsentPreview}
+            view={reconsentView}
+            loading={reconsentLoading}
+            error={reconsentError}
+            onRetry={openReconsent}
+            onShow={reconsent.show}
           />
         </div>
       </HilosModal>

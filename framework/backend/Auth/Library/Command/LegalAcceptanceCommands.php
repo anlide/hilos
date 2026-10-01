@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Library\DTO\LegalReconsentReplyDTO;
+use Hilos\Auth\StepUp\StepUpGate;
+use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Database;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\Exception\LegalException;
@@ -17,6 +21,8 @@ use Hilos\Legal\LegalAgreementsProjector;
 use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalDocumentStanding;
+use Hilos\Legal\LegalReconsentProjector;
+use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalStandingResolver;
 
 /**
@@ -24,7 +30,7 @@ use Hilos\Legal\LegalStandingResolver;
  * A test holds a person on a named revision with hold() (test:legal:hold, HIL-324).
  *
  * Registration calls record() inside its account transaction.
- * TODO(HIL-500): re-consent calls accept().
+ * Re-consent calls acceptCurrent(), which checks the revisions are current and calls accept().
  */
 final class LegalAcceptanceCommands extends AbstractLibraryCommands
 {
@@ -68,6 +74,62 @@ final class LegalAcceptanceCommands extends AbstractLibraryCommands
             throw $e;
         }
         $this->publishState($userId);
+    }
+
+    /**
+     * What the "the terms have changed" screen shows the person on this connection (HIL-500).
+     *
+     * @param string $acceptKey Accept key the action arrived on
+     * @return LegalReconsentReplyDTO The refusal setting and every document waiting for the person's decision
+     * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
+     * @throws SettingException When the refusal setting is invalid
+     * @throws HilosException When the session lookup, the setting or the acceptance records cannot be read
+     */
+    public function reconsent(string $acceptKey): LegalReconsentReplyDTO
+    {
+        return new LegalReconsentReplyDTO(
+            LegalSettings::refusal(),
+            LegalReconsentProjector::documents($this->actingUser($acceptKey)->userId, LegalStandingResolver::today()),
+        );
+    }
+
+    /**
+     * The person on this connection accepts the revisions in force of the documents the screen showed (HIL-500).
+     *
+     * Only the person accepts: under impersonation the acceptance would be a forged record of their
+     * consent, so it is refused the way cancelling their deletion is. A revision that is no longer the
+     * one in force - a new catalog landed while they read - is refused with the words that send them
+     * back to the differences; nothing is written until every document named passes.
+     *
+     * @param string $acceptKey Accept key the action arrived on
+     * @param array<string, string> $revisionIdsByDocument Boundary map of document values to the revisions the screen showed
+     * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
+     * @throws ValidationException When impersonated, the set is empty, a document is not declared, or a revision is not the one in force
+     * @throws LegalException When the catalog declaration is faulty
+     * @throws HilosException When the session lookup, the write, the transaction or the state publication fails
+     */
+    public function acceptCurrent(string $acceptKey, array $revisionIdsByDocument): void
+    {
+        $acting = $this->actingUser($acceptKey);
+        if (StepUpGate::isImpersonated($acting->sessionToken)) {
+            throw new ValidationException(StepUpMessages::IMPERSONATED);
+        }
+        if ($revisionIdsByDocument === []) {
+            throw new ValidationException('Name at least one document to accept');
+        }
+
+        $declared = LegalCatalogResolver::documents();
+        foreach ($revisionIdsByDocument as $key => $revisionId) {
+            $document = LegalDocument::tryFrom((string) $key);
+            if ($document === null || !in_array($document, $declared, true)) {
+                throw new ValidationException("Legal document {$key} is not declared in this installation");
+            }
+            if ($revisionId !== LegalCatalogResolver::latestRevision($document)->id) {
+                throw new ValidationException(AuthMessages::CONSENT_REVISED);
+            }
+        }
+
+        $this->accept($acting->userId, $revisionIdsByDocument);
     }
 
     /**

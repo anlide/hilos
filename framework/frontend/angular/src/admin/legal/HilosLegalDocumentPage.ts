@@ -11,6 +11,7 @@ import {
   computedSignal,
   createHilosLegalRevisionsTable,
   createHilosLegalConsentPreview,
+  createHilosLegalReconsentPreview,
   hilosLegalDocumentLabel,
   LEGAL_TERMS_UNPUBLISHED_MESSAGE,
   HilosPages,
@@ -18,6 +19,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   LEGAL_CATALOG_REFUSAL_SECTION,
   LEGAL_DOCUMENT_SECTION,
+  LEGAL_RECONSENT_COPY,
   legalAdminDocumentSchema,
   resolveHilosPath,
   subscribeSignal,
@@ -25,11 +27,14 @@ import {
   type HilosLegalConsentTerms,
   type HilosLegalDocumentKey,
   type HilosLegalAdminDocument,
+  type HilosLegalReconsentPreview,
+  type HilosLegalReconsentView,
 } from '@hilos/core'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosLegalConsent } from '../../legal/HilosLegalConsent.js'
+import { HilosLegalReconsent } from '../../legal/HilosLegalReconsent.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -47,6 +52,7 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
     HilosModal,
     HilosFormError,
     HilosLegalConsent,
+    HilosLegalReconsent,
   ],
   template: `
     <hilos-admin-page [page]="page">
@@ -138,6 +144,15 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
           >
             <i class="bi bi-eye me-1" aria-hidden="true"></i>Consent screen at
             registration
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-secondary ms-2"
+            data-id="legal-preview-reconsent"
+            (click)="openReconsent()"
+          >
+            <i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>Re-consent
+            screen
           </button>
         </section>
         <hilos-viewport-table [controller]="revisions().controller">
@@ -267,6 +282,34 @@ import { HILOS_ROUTER } from '../../hilosRouterToken.js'
           </button>
         </ng-template>
       </hilos-modal>
+      <hilos-modal
+        [open]="reconsentOpen()"
+        title="Re-consent screen"
+        initialFocus="dialog"
+        (openChange)="$event ? undefined : reconsent().close()"
+      >
+        <div data-id="legal-reconsent-preview">
+          <hilos-legal-reconsent
+            variant="preview"
+            [content]="reconsentPreview()"
+            [view]="reconsentView()"
+            [loading]="reconsentLoading()"
+            [error]="reconsentError()"
+            (retry)="openReconsent()"
+            (show)="reconsent().show($event)"
+          />
+        </div>
+        <ng-template #modalActions>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-id="legal-reconsent-preview-close"
+            (click)="reconsent().close()"
+          >
+            {{ reconsentCopy.close }}
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -286,6 +329,20 @@ export class HilosLegalDocumentPage {
   protected readonly previewTerms = signal<HilosLegalConsentTerms | null>(null)
   protected readonly previewLoading = signal(false)
   protected readonly previewError = signal<string | null>(null)
+  // The "the terms have changed" screen as whoever held the previous revision
+  // sees it today (HIL-500): the same component in a read-only modal.
+  protected readonly reconsent = computed(() =>
+    createHilosLegalReconsentPreview(this.context()),
+  )
+  protected readonly reconsentOpen = signal(false)
+  protected readonly reconsentPreview =
+    signal<HilosLegalReconsentPreview | null>(null)
+  protected readonly reconsentLoading = signal(false)
+  protected readonly reconsentError = signal<string | null>(null)
+  protected readonly reconsentView = signal<HilosLegalReconsentView>({
+    kind: 'changes',
+  })
+  protected readonly reconsentCopy = LEGAL_RECONSENT_COPY
   protected readonly accepted = signal(false)
   protected readonly reading = signal<HilosLegalDocumentKey | null>(null)
   protected readonly documentLabel = hilosLegalDocumentLabel
@@ -331,11 +388,35 @@ export class HilosLegalDocumentPage {
         subscribeSignal(source, read),
         subscribeSignal(refusal, readRefusal),
       ]
+      const reconsent = this.reconsent()
+      this.reconsentOpen.set(reconsent.opened.get())
+      this.reconsentPreview.set(reconsent.preview.get())
+      this.reconsentLoading.set(reconsent.loading.get())
+      this.reconsentError.set(reconsent.error.get())
+      this.reconsentView.set(reconsent.view.get())
+      off.push(
+        subscribeSignal(reconsent.opened, (value) =>
+          this.reconsentOpen.set(value),
+        ),
+        subscribeSignal(reconsent.preview, (value) =>
+          this.reconsentPreview.set(value),
+        ),
+        subscribeSignal(reconsent.loading, (value) =>
+          this.reconsentLoading.set(value),
+        ),
+        subscribeSignal(reconsent.error, (value) =>
+          this.reconsentError.set(value),
+        ),
+        subscribeSignal(reconsent.view, (value) =>
+          this.reconsentView.set(value),
+        ),
+      )
       revisions.start()
       onCleanup(() => {
         for (const stop of off) stop()
         revisions.dispose()
         preview.close()
+        reconsent.close()
       })
     })
   }
@@ -343,5 +424,9 @@ export class HilosLegalDocumentPage {
     this.accepted.set(false)
     this.reading.set(null)
     void this.preview().open()
+  }
+  protected openReconsent(): void {
+    const details = this.details()
+    if (details) void this.reconsent().open(details.document)
   }
 }

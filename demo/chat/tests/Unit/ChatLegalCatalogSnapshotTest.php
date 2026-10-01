@@ -53,7 +53,7 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
 
         self::assertSame(
             [
-                LegalDocument::TERMS->value => ['2026-09-17' => 1, '2026-09-27' => 1],
+                LegalDocument::TERMS->value => ['2026-09-17' => 1, '2026-09-27' => 1, '2026-10-01' => 1],
                 LegalDocument::PRIVACY->value => ['2026-09-17' => 1],
             ],
             $published,
@@ -62,7 +62,7 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
     }
 
     /**
-     * The chat is the demo that deviates: three clauses harsher than the standard, one kinder.
+     * The chat is the demo that deviates: four clauses harsher than the standard, one kinder.
      */
     public function testTheLatestRevisionsCarryTheChatDeviations(): void
     {
@@ -72,6 +72,7 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
                     StandardSetCatalog::CLAUSE_FILE_ACCESS => DeviationDirection::STRICTER,
                     StandardSetCatalog::CLAUSE_RETENTION => DeviationDirection::STRICTER,
                     StandardSetCatalog::CLAUSE_MODERATION => DeviationDirection::STRICTER,
+                    StandardSetCatalog::CLAUSE_AVAILABILITY => DeviationDirection::STRICTER,
                 ],
                 LegalDocument::PRIVACY->value => [
                     StandardSetCatalog::CLAUSE_ACCESS_LOG => DeviationDirection::LOOSER,

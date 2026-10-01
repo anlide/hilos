@@ -33,6 +33,7 @@ import {
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
 import { bindAccountBlocked } from '../session/accountBlocked.js'
 import { bindAccountStanding } from '../session/accountStanding.js'
+import { bindLegalReconsent } from '../legal/legalReconsent.js'
 import { bindAdminAccess } from '../session/adminAccess.js'
 import { bindImpersonation } from '../session/impersonation.js'
 import { bindSignOut } from '../session/signOut.js'
@@ -147,6 +148,12 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // behavior, no option: an account with nothing standing against it draws
   // nothing.
   bindAccountStanding(config.scopes, config.actions, config.session)
+  // The "the terms have changed" screen (HIL-500) is the shell's as well: the
+  // window rises on a sign-in in this tab while a document waits for a
+  // decision, the header's reminder holds it afterwards, and the freeze screen
+  // takes the content's place once the deadline has passed. One behavior, no
+  // option: a project whose people hold the revisions in force draws nothing.
+  bindLegalReconsent(config.scopes, config.actions, config.session)
   // The sign-out control (HIL-1063) is the shell's, drawn in every SDK while a
   // person stands behind the session, on the application's own lifecycle. One
   // behavior, no option: a project without sign-in never has a person behind

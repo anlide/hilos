@@ -284,3 +284,7 @@ export { HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAcceptancesPa
 export { HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.js'
 
 export { HilosLegalConsent } from './legal/HilosLegalConsent.js'
+export {
+  HilosLegalReconsent,
+  type HilosLegalReconsentProps,
+} from './legal/HilosLegalReconsent.js'

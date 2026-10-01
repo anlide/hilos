@@ -126,7 +126,8 @@ own directory a move of the agent wipes every ready copy. A node whose
 
 ## What Is Not Here
 
-The frozen-screen link is HIL-500. Notification-menu entries are not clickable;
+The freeze screen links here ("Download a copy of your data", HIL-500).
+Notification-menu entries are not clickable;
 the notice text names the profile section. Access journal records are added by
 HIL-1174. Cross-node archive transport and exports ordered by administrators for
 another person are not part of this mechanism.

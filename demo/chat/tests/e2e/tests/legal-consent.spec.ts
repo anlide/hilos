@@ -31,14 +31,17 @@ test("reads the current documents before registration and records both accepted 
   await expect(page.getByTestId("legal-consent-standard-toggle")).toHaveText(
     "Standard Hilos terms · 13 clauses",
   );
-  await expect(page.getByTestId("legal-consent-deviation")).toHaveCount(4);
+  // The third terms revision adds the demo's own availability clause (HIL-500).
+  await expect(page.getByTestId("legal-consent-deviation")).toHaveCount(5);
   await expect(page.getByTestId("legal-consent-direction")).toHaveText([
+    "stricter",
     "stricter",
     "stricter",
     "stricter",
     "looser",
   ]);
   await expect(page.getByTestId("legal-consent-deviation")).toContainText([
+    "Hilos standard:",
     "Hilos standard:",
     "Hilos standard:",
     "Hilos standard:",
@@ -54,7 +57,7 @@ test("reads the current documents before registration and records both accepted 
   await expect(page.getByTestId("legal-consent-reading")).toBeVisible();
   await expect(page.getByTestId("legal-revision-clause")).toHaveCount(6);
   await expect(page.getByTestId("legal-revision-clause-deviation")).toHaveCount(
-    3,
+    4,
   );
   await page.setViewportSize({ width: 375, height: 812 });
   expect(await sidewaysOverflow(page)).toEqual([0, 0]);
@@ -81,7 +84,7 @@ test("previews the same complete consent body from a legal document", async ({
   await clickSubmit(page.getByTestId("legal-preview-consent"));
   const preview = page.getByTestId("legal-consent-preview");
   await expect(preview).toBeVisible();
-  await expect(preview.getByTestId("legal-consent-deviation")).toHaveCount(4);
+  await expect(preview.getByTestId("legal-consent-deviation")).toHaveCount(5);
   await expect(preview.getByTestId("auth-consent-accept")).not.toBeChecked();
   await preview.getByTestId("auth-consent-accept").check();
   await expect(preview.getByTestId("auth-submit")).toHaveCount(0);

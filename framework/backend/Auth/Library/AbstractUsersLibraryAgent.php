@@ -54,11 +54,18 @@ use Hilos\Auth\Library\DTO\ConfirmPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
+use Hilos\Auth\Library\DTO\LegalAcceptActionDTO;
 use Hilos\Auth\Library\DTO\LegalConsentActionDTO;
 use Hilos\Auth\Library\DTO\LegalConsentReplyDTO;
+use Hilos\Auth\Library\DTO\LegalReconsentActionDTO;
+use Hilos\Auth\Library\DTO\LegalReconsentPreviewActionDTO;
+use Hilos\Auth\Library\DTO\LegalReconsentPreviewReplyDTO;
 use Hilos\Legal\LegalConsentProjector;
+use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalHoldCommandConstants;
+use Hilos\Legal\LegalReconsentProjector;
 use Hilos\Legal\LegalSettings;
+use Hilos\Legal\LegalStandingResolver;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
 use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
@@ -273,6 +280,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
         HilosSignalConstants::HILOS_LEGAL_CONSENT => LegalConsentActionDTO::class,
+        HilosSignalConstants::HILOS_LEGAL_RECONSENT => LegalReconsentActionDTO::class,
+        HilosSignalConstants::HILOS_LEGAL_ACCEPT => LegalAcceptActionDTO::class,
+        HilosSignalConstants::HILOS_LEGAL_RECONSENT_PREVIEW => LegalReconsentPreviewActionDTO::class,
         HilosSignalConstants::HILOS_LOGIN => LoginActionDTO::class,
         HilosSignalConstants::HILOS_REGISTER => RegisterActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
@@ -417,7 +427,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * actingPerson also admits a blocked card for an operation that declares that entrance (HIL-303).
      * The profile's own ways in and the email change are here whole (HIL-1137): each reads its person
      * from the acting session, which an anonymous one has none of. So are the four submits of
-     * account deletion (HIL-302) and password change (HIL-300), for the same reason.
+     * account deletion (HIL-302) and password change (HIL-300), for the same reason, and the
+     * re-consent read and the acceptance (HIL-500): both are about the documents the person holds.
      */
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
@@ -449,15 +460,20 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_START,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
+        HilosSignalConstants::HILOS_LEGAL_RECONSENT,
+        HilosSignalConstants::HILOS_LEGAL_ACCEPT,
     ];
 
     /**
-     * The one command of this library a frozen person still runs (HIL-945): calling off their own
-     * deletion. Closing it would build a trap - to keep the account one would first have to accept
-     * the terms of an account one is leaving.
+     * The commands of this library a frozen person still runs (HIL-945). Calling off their own
+     * deletion: closing it would build a trap - to keep the account one would first have to accept
+     * the terms of an account one is leaving. And reading the new terms and accepting them - the
+     * exit that lifts the freeze (HIL-500).
      */
     public const array FROZEN_EXIT_ACTIONS = [
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
+        HilosSignalConstants::HILOS_LEGAL_RECONSENT,
+        HilosSignalConstants::HILOS_LEGAL_ACCEPT,
     ];
 
     /**
@@ -1373,6 +1389,28 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
             case HilosSignalConstants::HILOS_LEGAL_CONSENT:
                 return new LegalConsentReplyDTO(LegalSettings::consentForm(), LegalConsentProjector::documents());
+
+            case HilosSignalConstants::HILOS_LEGAL_RECONSENT:
+                return $this->legalAcceptanceCommands()->reconsent($acceptKey);
+
+            case HilosSignalConstants::HILOS_LEGAL_ACCEPT:
+                if (!$dto instanceof LegalAcceptActionDTO) {
+                    throw new InvalidActionPayloadException($action, LegalAcceptActionDTO::class, $dto);
+                }
+                $this->legalAcceptanceCommands()->acceptCurrent($acceptKey, $dto->acceptedRevisions);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_LEGAL_RECONSENT_PREVIEW:
+                if (!$dto instanceof LegalReconsentPreviewActionDTO) {
+                    throw new InvalidActionPayloadException($action, LegalReconsentPreviewActionDTO::class, $dto);
+                }
+                $document = LegalDocument::tryFrom($dto->document);
+                if ($document === null) {
+                    throw new ValidationException('No such legal document');
+                }
+
+                return new LegalReconsentPreviewReplyDTO(...LegalReconsentProjector::preview($document, LegalStandingResolver::today()));
 
             case HilosSignalConstants::HILOS_LOGIN:
                 if (!$dto instanceof LoginActionDTO) {

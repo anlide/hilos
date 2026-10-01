@@ -45,6 +45,10 @@ use Hilos\Utils\Helpers\TimeHelper;
  * everyone for the author's mistake is not the answer - the fault is shown in red on the root of
  * the legal section instead. A project without a catalog declares no documents, so nobody lapses
  * there either. People who never accepted anything are not lapsed ({@see LegalStanding::NONE}).
+ *
+ * The same pass over the documents also tells which of them are still inside their window
+ * ({@see LegalStanding::WINDOW}). That fact is for the re-consent screen and its reminder in the
+ * header (HIL-500) and has no part in the verdict: a window takes nothing away.
  */
 final class AccountStandingResolver
 {
@@ -100,15 +104,23 @@ final class AccountStandingResolver
      * Composes the verdict out of the three facts - the only composition there is.
      *
      * Shown is the fact that takes the most away: blocked, then frozen, then deletion scheduled.
+     * The documents inside their window are carried through untouched: they are the fact the
+     * re-consent screen is drawn from (HIL-500), not a part of the verdict.
      *
      * @param bool $blocked Whether an administrator blocked the account
      * @param ?int $deletionEffectiveAt Moment the scheduled erasure falls due in milliseconds, or null when none is scheduled
      * @param list<LegalDocumentStanding> $lapsed Documents past their deadline for this person
+     * @param list<LegalDocumentStanding> $window Documents whose deadline is still ahead for this person
      * @param string $refusal Treatment of a refusal after the deadline ({@see LegalSettings::refusal()})
      * @return AccountStanding The verdict
      */
-    public static function compose(bool $blocked, ?int $deletionEffectiveAt, array $lapsed, string $refusal): AccountStanding
-    {
+    public static function compose(
+        bool $blocked,
+        ?int $deletionEffectiveAt,
+        array $lapsed,
+        array $window,
+        string $refusal,
+    ): AccountStanding {
         $frozen = $lapsed !== [] && $refusal === LegalSettings::REFUSAL_FREEZE;
 
         return new AccountStanding(
@@ -122,6 +134,7 @@ final class AccountStandingResolver
             $frozen,
             $deletionEffectiveAt,
             $lapsed,
+            $window,
         );
     }
 
@@ -201,32 +214,34 @@ final class AccountStandingResolver
     {
         $db = Hilos::$db;
         if ($db === null) {
-            return self::compose(false, null, [], $refusal);
+            return self::compose(false, null, [], [], $refusal);
         }
 
         $deletion = $db->accountDeletions->liveOf($userId);
+        $documents = self::documentsOf($db, $userId, $today);
 
         return self::compose(
             ($db->users[$userId] ?? null)?->block === true,
             $deletion === null ? null : TimeHelper::sqlToMs($deletion->effectiveAt),
-            self::lapsedOf($db, $userId, $today),
+            self::inStanding($documents, LegalStanding::LAPSED),
+            self::inStanding($documents, LegalStanding::WINDOW),
             $refusal,
         );
     }
 
     /**
-     * The documents one person is past the deadline of on the given date.
+     * The standing of one person on every declared document on the given date - one pass for both lists.
      *
      * @param HilosDbContext $db Database layer the acceptance records are read from
      * @param int $userId Person judged
      * @param string $today Server's calendar date, YYYY-MM-DD
-     * @return list<LegalDocumentStanding> Lapsed documents in declaration order; none under a faulty catalog
+     * @return list<LegalDocumentStanding> Every declared document in declaration order; none under a faulty catalog
      * @throws DatabaseException When the acceptance records cannot be read
      * @throws InvalidArgumentException When a loaded object does not match its collection or the query is invalid
      * @throws LogicException When the acceptance collection is not configured
      * @throws ObjectGetIdStringNotImplementedException When a loaded row lacks its primary key
      */
-    private static function lapsedOf(HilosDbContext $db, int $userId, string $today): array
+    private static function documentsOf(HilosDbContext $db, int $userId, string $today): array
     {
         try {
             $documents = LegalCatalogResolver::documents();
@@ -241,19 +256,31 @@ final class AccountStandingResolver
         foreach ($db->legalAcceptances->ofUser($userId) as $acceptance) {
             $accepted[$acceptance->document][] = $acceptance->revisionId;
         }
-        $lapsed = [];
+        $standings = [];
         try {
             foreach ($documents as $document) {
-                $standing = LegalStandingResolver::standingOf($document, $accepted[$document->value] ?? [], $today);
-                if ($standing->standing === LegalStanding::LAPSED) {
-                    $lapsed[] = $standing;
-                }
+                $standings[] = LegalStandingResolver::standingOf($document, $accepted[$document->value] ?? [], $today);
             }
         } catch (LegalException) {
             return [];
         }
 
-        return $lapsed;
+        return $standings;
+    }
+
+    /**
+     * The documents of one standing, in the order they came.
+     *
+     * @param list<LegalDocumentStanding> $documents Standings of one person on every declared document
+     * @param LegalStanding $standing Standing kept
+     * @return list<LegalDocumentStanding> Documents in that standing
+     */
+    private static function inStanding(array $documents, LegalStanding $standing): array
+    {
+        return array_values(array_filter(
+            $documents,
+            static fn (LegalDocumentStanding $document): bool => $document->standing === $standing,
+        ));
     }
 
     /**

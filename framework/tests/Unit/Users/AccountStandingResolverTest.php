@@ -49,15 +49,15 @@ final class AccountStandingResolverTest extends TestCase
         $lapsed = [$this->lapsedTerms()];
         $freeze = LegalSettings::REFUSAL_FREEZE;
 
-        self::assertSame(AccountStandingKind::BLOCKED, AccountStandingResolver::compose(true, 1000, $lapsed, $freeze)->shown);
-        self::assertSame(AccountStandingKind::FROZEN, AccountStandingResolver::compose(false, 1000, $lapsed, $freeze)->shown);
-        self::assertSame(AccountStandingKind::DELETION_SCHEDULED, AccountStandingResolver::compose(false, 1000, [], $freeze)->shown);
-        self::assertSame(AccountStandingKind::NONE, AccountStandingResolver::compose(false, null, [], $freeze)->shown);
+        self::assertSame(AccountStandingKind::BLOCKED, AccountStandingResolver::compose(true, 1000, $lapsed, [], $freeze)->shown);
+        self::assertSame(AccountStandingKind::FROZEN, AccountStandingResolver::compose(false, 1000, $lapsed, [], $freeze)->shown);
+        self::assertSame(AccountStandingKind::DELETION_SCHEDULED, AccountStandingResolver::compose(false, 1000, [], [], $freeze)->shown);
+        self::assertSame(AccountStandingKind::NONE, AccountStandingResolver::compose(false, null, [], [], $freeze)->shown);
     }
 
     public function testEveryFactIsNamedWhateverIsShown(): void
     {
-        $standing = AccountStandingResolver::compose(true, 1000, [$this->lapsedTerms()], LegalSettings::REFUSAL_FREEZE);
+        $standing = AccountStandingResolver::compose(true, 1000, [$this->lapsedTerms()], [], LegalSettings::REFUSAL_FREEZE);
 
         self::assertTrue($standing->blocked);
         self::assertTrue($standing->frozen);
@@ -67,18 +67,18 @@ final class AccountStandingResolverTest extends TestCase
 
     public function testALapseFreezesOnlyUnderTheFreezeSetting(): void
     {
-        $remind = AccountStandingResolver::compose(false, null, [$this->lapsedTerms()], LegalSettings::REFUSAL_REMIND);
+        $remind = AccountStandingResolver::compose(false, null, [$this->lapsedTerms()], [], LegalSettings::REFUSAL_REMIND);
 
         self::assertFalse($remind->frozen);
         self::assertSame(AccountStandingKind::NONE, $remind->shown);
         // The card still says the deadline passed: the lapse is named under either setting.
         self::assertCount(1, $remind->lapsed);
-        self::assertFalse(AccountStandingResolver::compose(false, null, [], LegalSettings::REFUSAL_FREEZE)->frozen);
+        self::assertFalse(AccountStandingResolver::compose(false, null, [], [], LegalSettings::REFUSAL_FREEZE)->frozen);
     }
 
     public function testTheVerdictTravelsInOneShape(): void
     {
-        $standing = AccountStandingResolver::compose(false, 1767225600000, [$this->lapsedTerms()], LegalSettings::REFUSAL_FREEZE);
+        $standing = AccountStandingResolver::compose(false, 1767225600000, [$this->lapsedTerms()], [], LegalSettings::REFUSAL_FREEZE);
 
         self::assertSame([
             'shown' => 'frozen',
@@ -86,7 +86,18 @@ final class AccountStandingResolverTest extends TestCase
             'frozen' => true,
             'deletionEffectiveAt' => 1767225600000,
             'lapsed' => [['document' => 'terms', 'deadline' => '2026-03-01']],
+            'window' => [],
         ], $standing->toArray());
+    }
+
+    public function testTheDocumentsInsideTheirWindowRideAlongAndTakeNothingAway(): void
+    {
+        $standing = AccountStandingResolver::compose(false, null, [], [$this->termsInWindow()], LegalSettings::REFUSAL_FREEZE);
+
+        self::assertFalse($standing->frozen);
+        self::assertSame(AccountStandingKind::NONE, $standing->shown);
+        self::assertSame([], $standing->toArray()['lapsed']);
+        self::assertSame([['document' => 'terms', 'deadline' => '2026-11-10']], $standing->toArray()['window']);
     }
 
     public function testAProcessWithoutADatabaseHoldsNothingAgainstAnyone(): void
@@ -111,6 +122,19 @@ final class AccountStandingResolverTest extends TestCase
             LegalStanding::LAPSED,
             new LegalRevision(LegalDocument::TERMS, 'first', '2026-01-01', 1, LegalSignificance::SUBSTANTIAL, '2026-01-01', []),
             '2026-03-01',
+        );
+    }
+
+    /**
+     * @return LegalDocumentStanding Terms held at their first revision, the second's deadline still ahead
+     */
+    private function termsInWindow(): LegalDocumentStanding
+    {
+        return new LegalDocumentStanding(
+            LegalDocument::TERMS,
+            LegalStanding::WINDOW,
+            new LegalRevision(LegalDocument::TERMS, 'first', '2026-01-01', 1, LegalSignificance::SUBSTANTIAL, '2026-01-01', []),
+            '2026-11-10',
         );
     }
 }

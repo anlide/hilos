@@ -313,11 +313,14 @@ export type HilosAccountStandingKind =
   | 'frozen'
   | 'deletion_scheduled'
 
-/** One legal document whose acceptance deadline has passed (HIL-945). */
+/**
+ * One legal document with an outstanding acceptance deadline: past it in
+ * `lapsed` (HIL-945), still ahead of it in `window` (HIL-500).
+ */
 export interface HilosAccountStandingLapse {
-  /** The document the person has not accepted in time. */
+  /** The document the person has not accepted yet. */
   readonly document: HilosLegalDocumentKey
-  /** The calendar day the deadline fell on, `YYYY-MM-DD`. */
+  /** The calendar day the deadline falls on, `YYYY-MM-DD`. */
   readonly deadline: string
 }
 
@@ -337,13 +340,20 @@ export interface HilosAccountStanding {
   readonly deletionEffectiveAt: number | null
   /** Documents whose deadline has passed, whatever the refusal setting says. */
   readonly lapsed: readonly HilosAccountStandingLapse[]
+  /**
+   * Documents whose deadline is still ahead, whatever the refusal setting says
+   * (HIL-500). They take nothing away; the "the terms have changed" window and
+   * its reminder in the header are drawn from them.
+   */
+  readonly window: readonly HilosAccountStandingLapse[]
 }
 
 /**
  * The standing as the wire carries it (PHP `AccountStanding::toArray()`); the
- * erasure moment is SERVER epoch ms here. The lapsed documents are read one by
- * one ({@link readHilosAccountStanding}), so a document this client does not
- * know drops out alone instead of taking the whole standing with it.
+ * erasure moment is SERVER epoch ms here. The lapsed documents and those inside
+ * their window are read one by one ({@link readHilosAccountStanding}), so a
+ * document this client does not know drops out alone instead of taking the whole
+ * standing with it.
  */
 export const accountStandingSchema = z.looseObject({
   shown: z.enum(['none', 'blocked', 'frozen', 'deletion_scheduled']),
@@ -351,9 +361,10 @@ export const accountStandingSchema = z.looseObject({
   frozen: z.boolean(),
   deletionEffectiveAt: z.number().nullable(),
   lapsed: z.array(z.unknown()),
+  window: z.array(z.unknown()),
 })
 
-/** One lapsed document as the wire carries it. */
+/** One lapsed document, or one inside its window, as the wire carries it. */
 const accountStandingLapseSchema = z.looseObject({
   document: legalDocumentSchema,
   deadline: z.string(),
@@ -1023,16 +1034,6 @@ export function readHilosAccountStanding(
   if (!parsed.success) {
     return null
   }
-  const lapsed: HilosAccountStandingLapse[] = []
-  for (const entry of parsed.data.lapsed) {
-    const lapse = accountStandingLapseSchema.safeParse(entry)
-    if (lapse.success) {
-      lapsed.push({
-        document: lapse.data.document,
-        deadline: lapse.data.deadline,
-      })
-    }
-  }
   const deletionEffectiveAt = parsed.data.deletionEffectiveAt
 
   return {
@@ -1041,8 +1042,52 @@ export function readHilosAccountStanding(
     frozen: parsed.data.frozen,
     deletionEffectiveAt:
       deletionEffectiveAt === null ? null : toLocal(deletionEffectiveAt),
-    lapsed,
+    lapsed: readStandingDocuments(parsed.data.lapsed),
+    window: readStandingDocuments(parsed.data.window),
   }
+}
+
+/**
+ * Read one list of documents of a standing entry by entry, dropping what this
+ * client cannot read.
+ *
+ * @param entries The list as the wire carried it.
+ */
+function readStandingDocuments(
+  entries: readonly unknown[],
+): HilosAccountStandingLapse[] {
+  const documents: HilosAccountStandingLapse[] = []
+  for (const entry of entries) {
+    const document = accountStandingLapseSchema.safeParse(entry)
+    if (document.success) {
+      documents.push({
+        document: document.data.document,
+        deadline: document.data.deadline,
+      })
+    }
+  }
+
+  return documents
+}
+
+/**
+ * Whether this tab has heard a handshake yet (HIL-500): false until the first
+ * response lands, true from then on, whoever it named. The backend stamps the
+ * standing on every handshake - `null` for an anonymous session - so the key
+ * standing in the scope at all is the mark of a frame heard.
+ *
+ * The re-consent window reads it to tell a sign-in in this tab from the first
+ * frame of a tab opened on a live sign-in: both move the session from nobody to
+ * a person, and only the first is an entrance.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionHandshakeHeard(
+  scopes: ScopeManager,
+): ReadonlySignal<boolean> {
+  const slot = scopes.session.data.signal(ACCOUNT_STANDING_KEY)
+
+  return computedSignal(() => slot.get() !== undefined)
 }
 
 /**

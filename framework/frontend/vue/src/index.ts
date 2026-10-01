@@ -126,3 +126,4 @@ export { default as HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAc
 export { default as HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.vue'
 
 export { default as HilosLegalConsent } from './legal/HilosLegalConsent.vue'
+export { default as HilosLegalReconsent } from './legal/HilosLegalReconsent.vue'

@@ -29,7 +29,12 @@ the shell then renders only the hidden hilos-boot-state marker, so a reload into
 frozen node never flashes the ordinary layout. While the session holds a blocked
 account the routed content gives way to the "Access closed" card
 (HilosAccountBlocked, HIL-289) — the header and footer stay, maintenance still
-comes first. Styling is Bootstrap classes only
+comes first. The "the terms have changed" screen is the shell's too (HIL-500):
+a yellow document icon right after the user slot while a document waits for a
+decision, the window it opens (raised by itself on a sign-in in this tab), and,
+once the deadline has passed and the account is frozen, the same screen in the
+content's place on every page the freeze does not leave open — after the
+"Access closed" card, before the content. Styling is Bootstrap classes only
 and the shell carries no CSS of its own (styling-rules.md); the status and admin
 icons are Bootstrap Icons (`bi-*`), shipped with the view layer (src/index.ts)
 like Bootstrap. -->
@@ -39,10 +44,21 @@ import {
   ACCOUNT_DELETION_TICK_MS,
   ACCOUNT_STANDING_STRIP_COPY,
   formatHilosDeletionStrip,
+  closeLegalReconsent,
+  formatHilosLegalReconsentBadge,
   HILOS_FOOTER_LINKS,
+  HILOS_FROZEN_OPEN_PAGES,
   HILOS_PAGE_ROUTES,
   HilosPages,
   hilosAccountBlocked,
+  hilosAccountStanding,
+  hilosFrozenScreen,
+  hilosLegalReconsent,
+  hilosLegalReconsentDue,
+  hilosLegalReconsentOpen,
+  hilosLegalReconsentPerson,
+  LEGAL_RECONSENT_COPY,
+  openLegalReconsent,
   hilosAdminAccess,
   hilosDeletionStrip,
   hilosImpersonation,
@@ -65,6 +81,8 @@ import HilosMaintenance from './HilosMaintenance.vue'
 import HilosToastHost from './HilosToastHost.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'
 import HilosOAuthWaitModal from './auth/HilosOAuthWaitModal.vue'
+import HilosModal from './HilosModal.vue'
+import HilosLegalReconsent from './legal/HilosLegalReconsent.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useFirstFrameHold } from './useFirstFrameHold.js'
@@ -173,6 +191,51 @@ const onKeepAccount = (): void => {
 
 const signedIn = useSignal(hilosSignedIn)
 
+// The "the terms have changed" screen (HIL-500). The core decides everything
+// from the session: whether something is due (the icon), whether the window
+// stands (raised by a sign-in in this tab, or by the icon), and whether the
+// account is frozen (the screen in the content's place). The window and the
+// freeze screen draw one store; the days of the icon are counted again once a
+// minute while it stands, like the deletion strip's.
+const reconsentDue = useSignal(hilosLegalReconsentDue)
+const reconsentOpen = useSignal(hilosLegalReconsentOpen)
+const reconsentPerson = useSignal(hilosLegalReconsentPerson)
+const reconsentContent = useSignal(hilosLegalReconsent.content)
+const reconsentLoading = useSignal(hilosLegalReconsent.loading)
+const reconsentError = useSignal(hilosLegalReconsent.error)
+const reconsentBusy = useSignal(hilosLegalReconsent.busy)
+const reconsentView = useSignal(hilosLegalReconsent.view)
+const frozen = useSignal(hilosFrozenScreen)
+const standing = useSignal(hilosAccountStanding)
+const reconsentNow = ref(Date.now())
+let reconsentTick: ReturnType<typeof setInterval> | undefined
+watch(
+  () => reconsentDue.value !== null || frozen.value,
+  (counting) => {
+    clearInterval(reconsentTick)
+    reconsentTick = undefined
+    reconsentNow.value = Date.now()
+    if (counting) {
+      reconsentTick = setInterval(() => {
+        reconsentNow.value = Date.now()
+      }, ACCOUNT_DELETION_TICK_MS)
+    }
+  },
+  { immediate: true },
+)
+onUnmounted(() => clearInterval(reconsentTick))
+const reconsentBadge = computed(() =>
+  reconsentDue.value === null
+    ? ''
+    : formatHilosLegalReconsentBadge(reconsentDue.value, reconsentNow.value),
+)
+const onReconsentAccept = (): void => {
+  void hilosLegalReconsent.accept()
+}
+const onReconsentRetry = (): void => {
+  void hilosLegalReconsent.load()
+}
+
 // The admin gear (HIL-1253): drawn for an admin and, on a node in the admin view
 // mode, for a viewer who may look and not act; the core derives which from the
 // session's admin flag and the node's mode, so the project feeds it nothing. It
@@ -212,6 +275,24 @@ const pageTitle = router ? useSignal(router.currentTitle) : undefined
 // round — a missing field is fixed by typing the admin url, a field shown where
 // it should not be is the defect this closes.
 const currentRoute = router ? useSignal(router.currentRoute) : undefined
+
+// The freeze screen stands on every page but those the freeze leaves open
+// (HIL-945): the person's data, their agreements, their history and the four
+// public pages. It reads its content afresh each time it rises.
+const frozenShown = computed(
+  () =>
+    frozen.value &&
+    !HILOS_FROZEN_OPEN_PAGES.includes(currentRoute?.value.page ?? ''),
+)
+watch(
+  frozenShown,
+  (shown) => {
+    if (shown) {
+      void hilosLegalReconsent.load()
+    }
+  },
+  { immediate: true },
+)
 watch(
   () => pageTitle?.value,
   (title) => {
@@ -328,6 +409,17 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         <div class="d-flex align-items-center gap-3">
           <template v-if="!underMaintenance">
             <slot name="user" />
+            <button
+              v-if="reconsentDue !== null"
+              type="button"
+              class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 text-warning"
+              data-id="legal-reconsent-icon"
+              :title="reconsentBadge"
+              @click="openLegalReconsent"
+            >
+              <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+              <span class="visually-hidden">{{ reconsentBadge }}</span>
+            </button>
             <HilosLink
               v-if="adminAccess !== 'none'"
               class="nav-link d-inline-flex align-items-center p-0 fs-5"
@@ -456,6 +548,35 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         v-else-if="accountBlocked !== null"
         :notice="accountBlocked"
       />
+      <div
+        v-else-if="frozenShown"
+        class="row justify-content-center"
+        data-id="legal-frozen-screen"
+      >
+        <div class="col-12 col-md-10 col-lg-8">
+          <div class="text-center mb-3">
+            <span
+              class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
+            >
+              <i class="bi bi-snow" aria-hidden="true"></i>
+            </span>
+          </div>
+          <HilosLegalReconsent
+            variant="frozen"
+            :content="reconsentContent"
+            :view="reconsentView"
+            :loading="reconsentLoading"
+            :error="reconsentError"
+            :busy="reconsentBusy"
+            :person="reconsentPerson"
+            :deletion-scheduled="standing?.deletionEffectiveAt != null"
+            :now="reconsentNow"
+            @accept="onReconsentAccept"
+            @retry="onReconsentRetry"
+            @show="hilosLegalReconsent.show"
+          />
+        </div>
+      </div>
       <slot v-else />
     </main>
     <footer
@@ -484,5 +605,36 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
     wait belongs to the shell too: the page underneath stays subscribed and alive,
     and no project mounts anything (HIL-633). -->
     <HilosOAuthWaitModal />
+    <!-- The "the terms have changed" window (HIL-500): over the page, never over
+    work in progress — the core raises it on a sign-in in this tab only; after
+    that the icon in the header is the way back to it. Focus lands on the dialog,
+    not on Accept, so Enter never accepts the terms by accident. -->
+    <HilosModal
+      :model-value="reconsentOpen && !underMaintenance"
+      :aria-label="LEGAL_RECONSENT_COPY.heading"
+      initial-focus="dialog"
+      @update:model-value="
+        (value) => {
+          if (!value) closeLegalReconsent()
+        }
+      "
+    >
+      <div data-id="legal-reconsent-modal">
+        <HilosLegalReconsent
+          variant="window"
+          :content="reconsentContent"
+          :view="reconsentView"
+          :loading="reconsentLoading"
+          :error="reconsentError"
+          :busy="reconsentBusy"
+          :person="reconsentPerson"
+          :now="reconsentNow"
+          @accept="onReconsentAccept"
+          @later="closeLegalReconsent"
+          @retry="onReconsentRetry"
+          @show="hilosLegalReconsent.show"
+        />
+      </div>
+    </HilosModal>
   </div>
 </template>

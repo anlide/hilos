@@ -66,8 +66,8 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
     private const string TEST_AGENT = 'admin-view-mode-legal-test';
 
     private const string TERMS_DOCUMENT = LegalDocument::TERMS->value;
-    private const string TEST_REVISION_ID = '2026-09-27';
-    private const string TEST_TIMESTAMP = '2026-09-27 12:00:00';
+    private const string TEST_REVISION_ID = '2026-10-01';
+    private const string TEST_TIMESTAMP = '2026-10-01 12:00:00';
     private const string TEST_USER_NAME = 'Olena Kovalenko';
     private const string TEST_USER_EMAIL = 'olena.kovalenko@example.com';
     private const string TEST_PASSWORD = 'a long enough passphrase';
@@ -215,7 +215,7 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             $document = $pageData[AbstractHilosLegalDocumentPage::SECTION];
             self::assertFalse(HiddenValue::isMark($document));
             self::assertSame(1, $document['set']['version']);
-            self::assertCount(3, $document['deviations']);
+            self::assertCount(4, $document['deviations']);
 
             $revRows = $this->window($frames, ChatTableContext::hilosLegalRevisions)[TableWindowSignalData::rows];
             self::assertNotEmpty($revRows);

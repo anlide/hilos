@@ -18,14 +18,14 @@ test("reads personal agreements and compares published revisions on wide and nar
     '[data-id="legal-agreement-row"][data-document="terms"]',
   );
   await expect(terms.getByTestId("legal-agreement-state")).toHaveText(
-    /^Revision of 27 September 2026 · accepted /,
+    /^Revision of 1 October 2026 · accepted /,
   );
   await clickSubmit(terms.getByTestId("legal-agreement-open"));
   const text = page.getByTestId("legal-revision-text-modal");
   await expect(text).toBeVisible();
   await expect(text.getByTestId("legal-revision-clause")).toHaveCount(6);
   await expect(text.getByTestId("legal-revision-clause-deviation")).toHaveCount(
-    3,
+    4,
   );
   await clickSubmit(page.getByTestId("legal-text-close"));
   await expect(text).toBeHidden();
@@ -46,8 +46,12 @@ test("reads personal agreements and compares published revisions on wide and nar
   const history = page.locator(
     '[data-id="legal-history-document"][data-document="terms"]',
   );
-  await expect(history.getByTestId("legal-history-revision")).toHaveCount(2);
+  // The third terms revision says the demo's data may be wiped (HIL-500).
+  await expect(history.getByTestId("legal-history-revision")).toHaveCount(3);
   const current = history.locator(
+    '[data-id="legal-history-revision"][data-revision="2026-10-01"]',
+  );
+  const wording = history.locator(
     '[data-id="legal-history-revision"][data-revision="2026-09-27"]',
   );
   const first = history.locator(
@@ -56,8 +60,11 @@ test("reads personal agreements and compares published revisions on wide and nar
   await expect(current.getByTestId("legal-history-current")).toHaveText(
     "current",
   );
-  await expect(current).toContainText("27 September 2026");
+  await expect(current).toContainText("1 October 2026");
   await expect(current).toContainText(
+    "Substantial change · took effect 1 October 2026 · changed by the project",
+  );
+  await expect(wording).toContainText(
     "Editorial change · changed by the project",
   );
   await expect(first).toContainText("First revision · Hilos standard 1");
@@ -77,20 +84,18 @@ test("reads personal agreements and compares published revisions on wide and nar
   await expect(wide).toBeVisible();
   await expect(wide.getByTestId("legal-change-row")).toHaveCount(1);
   await expect(wide.getByTestId("legal-change-kind")).toHaveText("changed");
-  await expect(wide).toContainText("standard.retention");
+  await expect(wide).toContainText("standard.availability");
+  await expect(wide).toContainText("Hilos standard text");
   await expect(wide).toContainText("Project deviation");
-  await expect(wide).toContainText(
-    "a message is not deleted by the passage of time",
-  );
-  await expect(wide).toContainText("messages have no time limit");
+  await expect(wide).toContainText("This is a demo: its data may be wiped");
 
   await page.setViewportSize({ width: 375, height: 812 });
   const narrow = comparison.getByTestId("legal-changes-narrow");
   await expect(narrow).toBeVisible();
   await expect(wide).toBeHidden();
   await expect(narrow.getByTestId("legal-change-row")).toHaveCount(1);
-  await expect(narrow).toContainText("Before — revision 17 September 2026");
-  await expect(narrow).toContainText("After — revision 27 September 2026");
+  await expect(narrow).toContainText("Before — revision 27 September 2026");
+  await expect(narrow).toContainText("After — revision 1 October 2026");
   expect(await sidewaysOverflow(page)).toEqual([0, 0]);
   await clickSubmit(page.getByTestId("legal-history-close"));
   await expect(comparison).toBeHidden();

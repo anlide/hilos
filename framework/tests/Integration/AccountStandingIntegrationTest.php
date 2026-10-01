@@ -390,6 +390,35 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
     }
 
+    public function testAFrozenPersonReadsTheNewTermsAndAcceptsThemPastTheGate(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        self::accept(self::USER_ID, 'privacy', 'privacy');
+        $router = $this->pageRouter(new StandingTestPageFactory($this->library));
+
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO(self::ACCEPT_KEY, HilosSignalConstants::HILOS_LEGAL_RECONSENT, [], 'req-read'),
+            SignalSource::WEBSOCKET,
+        );
+        $read = $this->queued(SignalConstants::ACTION_SUCCESS);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $read);
+        self::assertSame('req-read', $read->requestId);
+
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::HILOS_LEGAL_ACCEPT,
+                ['acceptedRevisions' => ['terms' => 'second']],
+                'req-accept',
+            ),
+            SignalSource::WEBSOCKET,
+        );
+        $accepted = $this->queued(SignalConstants::ACTION_SUCCESS);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $accepted);
+        self::assertSame('req-accept', $accepted->requestId);
+        self::assertFalse(AccountStandingResolver::isFrozen(self::USER_ID));
+    }
+
     public function testATickTellsEverySessionOfAPersonWhoseStandingMovedAndReDecidesTheirPages(): void
     {
         self::accept(self::USER_ID, 'terms', 'first');

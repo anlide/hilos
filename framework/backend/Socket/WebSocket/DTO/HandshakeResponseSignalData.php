@@ -511,12 +511,13 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * Reads the standing of the person the session acts as back into its declared shape (HIL-945).
      *
      * Shared with {@see SessionStateSignalData}, which carries the same node under the same key. A
-     * present node comes back with all five members: the verdict names every fact, not only the one
-     * it shows.
+     * present node comes back with all six members: the verdict names every fact, not only the one
+     * it shows, and the documents still inside their window ride beside the lapsed ones (HIL-500).
      *
      * @param array<string, mixed> $section Map holding the node under `accountStanding`
      * @return ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
-     *     lapsed: list<array{document: string, deadline: ?string}>} Node, or null for an anonymous session
+     *     lapsed: list<array{document: string, deadline: ?string}>,
+     *     window: list<array{document: string, deadline: ?string}>} Node, or null for an anonymous session
      * @throws InvalidFormatException When the node or one of its members is not of the declared type
      */
     public static function readAccountStanding(array $section): ?array
@@ -526,24 +527,38 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             return null;
         }
 
-        $lapsed = [];
-        foreach (self::requireArray($node, AccountStanding::lapsed) as $document) {
-            if (!is_array($document)) {
-                throw new InvalidFormatException('A lapsed document of the account standing is not an object');
-            }
-            $lapsed[] = [
-                AccountStanding::document => self::requireString($document, AccountStanding::document),
-                AccountStanding::deadline => self::optionalString($document, AccountStanding::deadline),
-            ];
-        }
-
         return [
             AccountStanding::shown => self::requireString($node, AccountStanding::shown),
             AccountStanding::blocked => self::requireBool($node, AccountStanding::blocked),
             AccountStanding::frozen => self::requireBool($node, AccountStanding::frozen),
             AccountStanding::deletionEffectiveAt => self::optionalInt($node, AccountStanding::deletionEffectiveAt),
-            AccountStanding::lapsed => $lapsed,
+            AccountStanding::lapsed => self::readStandingDocuments($node, AccountStanding::lapsed),
+            AccountStanding::window => self::readStandingDocuments($node, AccountStanding::window),
         ];
+    }
+
+    /**
+     * Reads one list of documents of the account standing - the lapsed ones or those inside their window.
+     *
+     * @param array<string, mixed> $node The account standing node
+     * @param string $key Member holding the list
+     * @return list<array{document: string, deadline: ?string}> The documents, in the order they came
+     * @throws InvalidFormatException When the list or one of its documents is not of the declared type
+     */
+    private static function readStandingDocuments(array $node, string $key): array
+    {
+        $documents = [];
+        foreach (self::requireArray($node, $key) as $document) {
+            if (!is_array($document)) {
+                throw new InvalidFormatException('A document of the account standing is not an object');
+            }
+            $documents[] = [
+                AccountStanding::document => self::requireString($document, AccountStanding::document),
+                AccountStanding::deadline => self::optionalString($document, AccountStanding::deadline),
+            ];
+        }
+
+        return $documents;
     }
 
     /**

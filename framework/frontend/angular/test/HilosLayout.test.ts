@@ -34,7 +34,10 @@ import {
   bindAccountBlocked,
   bindAccountStanding,
   bindImpersonation,
+  bindLegalReconsent,
+  createSignal,
   formatCalendarDate,
+  HilosPages,
   bindSessionScope,
   bindSignOut,
   hilosToasts,
@@ -47,6 +50,8 @@ import {
   type ActionSuccessSignal,
   type ConnectionState,
   type HilosConnection,
+  type HilosRouter,
+  type PageRouteMatch,
   type ProjectSignal,
   type ProtectedModeStatus,
   type RtStalenessStatus,
@@ -54,6 +59,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosLayout } from '../src/HilosLayout.js'
+import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 /**
  * The five values the shell reads off a connection, and nothing else: it takes
@@ -318,6 +324,7 @@ function bindSession() {
   const unbindCard = bindAccountBlocked(scopes, actions, handshakes)
   const unbindStanding = bindAccountStanding(scopes, actions)
   const unbindSignOut = bindSignOut(scopes, actions)
+  const unbindReconsent = bindLegalReconsent(scopes, actions)
 
   return {
     source,
@@ -326,6 +333,7 @@ function bindSession() {
       unbindCard()
       unbindStanding()
       unbindSignOut()
+      unbindReconsent()
     },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
@@ -537,6 +545,7 @@ function standingHandshake(
         frozen: shown === 'frozen',
         deletionEffectiveAt,
         lapsed: [],
+        window: [],
       },
     },
     entities: {
@@ -1003,5 +1012,195 @@ describe('HilosLayout account blocked card', () => {
     const root = mountShell(FROZEN).nativeElement as HTMLElement
 
     expect(root.querySelector('[data-id="account-blocked"]')).toBeNull()
+  })
+})
+
+/**
+ * A handshake of Bob's session with documents waiting for his decision, or of
+ * an anonymous session.
+ *
+ * @param facts The standing's facts beside a plain account, or null for nobody.
+ */
+function reconsentHandshake(
+  facts: Record<string, unknown> | null,
+): Record<string, unknown> {
+  return {
+    data: {
+      accountStanding:
+        facts === null
+          ? null
+          : {
+              shown: facts['frozen'] === true ? 'frozen' : 'none',
+              blocked: false,
+              frozen: false,
+              deletionEffectiveAt: null,
+              lapsed: [],
+              window: [],
+              ...facts,
+            },
+    },
+    entities: {
+      currentUser: facts === null ? null : { id: 2, name: 'Bob' },
+      impersonatedBy: null,
+    },
+  }
+}
+
+/**
+ * A router standing on one page.
+ *
+ * @param page The page key of the current route.
+ */
+function routerOn(page: string): HilosRouter {
+  return {
+    currentRoute: createSignal<PageRouteMatch>({
+      page,
+      params: {},
+      admin: false,
+    }),
+    currentPath: createSignal(''),
+    currentTitle: createSignal(''),
+    pageError: createSignal(null),
+    pageLoading: createSignal(false),
+    pageIdentity: createSignal(undefined),
+    dashboardSections: createSignal(undefined),
+    resolvePath: () => undefined,
+    clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
+    navigate: () => {},
+    replacePath: () => {},
+    start: () => {},
+    stop: () => {},
+  }
+}
+
+describe('HilosLayout "the terms have changed" (HIL-500)', () => {
+  let unbind: (() => void) | undefined
+  const inWindow = { window: [{ document: 'terms', deadline: '2026-11-10' }] }
+  const lapsed = { lapsed: [{ document: 'terms', deadline: '2026-09-01' }] }
+  const windowShown = (): boolean =>
+    document.body.querySelector('[data-id="legal-reconsent-modal"]') !== null
+  const find = (id: string): HTMLElement | null =>
+    document.body.querySelector(`[data-id="${id}"]`)
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+    vi.useRealTimers()
+  })
+
+  it('draws the yellow document icon after the user region with the days left', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.UTC(2026, 10, 1))
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(inWindow))
+
+    const fixture = mountShell()
+    const root = fixture.nativeElement as HTMLElement
+
+    const icon = root.querySelector('[data-id="legal-reconsent-icon"]')
+    expect(icon?.classList.contains('text-warning')).toBe(true)
+    expect(icon?.querySelector('.bi-file-earmark-text')).not.toBeNull()
+    expect(icon?.getAttribute('title')).toBe(
+      'The terms have changed — 9 days left to decide',
+    )
+    expect(windowShown()).toBe(false)
+    fixture.destroy()
+  })
+
+  it('says "please review them" for a lapsed document under the remind setting', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(lapsed))
+
+    const fixture = mountShell()
+    const root = fixture.nativeElement as HTMLElement
+
+    expect(
+      root
+        .querySelector('[data-id="legal-reconsent-icon"]')
+        ?.getAttribute('title'),
+    ).toBe('The terms have changed — please review them')
+    expect(root.querySelector('[data-id="legal-frozen-screen"]')).toBeNull()
+    fixture.destroy()
+  })
+
+  it('raises the window on a sign-in in this tab and opens it from the icon after Later', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(null))
+    const fixture = mountShell()
+    const root = fixture.nativeElement as HTMLElement
+    expect(root.querySelector('[data-id="legal-reconsent-icon"]')).toBeNull()
+
+    session.handshake(reconsentHandshake(inWindow))
+    fixture.detectChanges()
+    await fixture.whenStable()
+
+    expect(windowShown()).toBe(true)
+    expect(session.source.sent.at(-1)?.action).toBe('hilos_legal_reconsent')
+    find('legal-reconsent-later')!.click()
+    fixture.detectChanges()
+    expect(windowShown()).toBe(false)
+    ;(
+      root.querySelector('[data-id="legal-reconsent-icon"]') as HTMLElement
+    ).click()
+    fixture.detectChanges()
+    expect(windowShown()).toBe(true)
+    fixture.destroy()
+  })
+
+  it('puts the freeze screen in place of the content with no icon', async () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake({ ...lapsed, frozen: true }))
+
+    const fixture = mountShell()
+    await fixture.whenStable()
+    fixture.detectChanges()
+    const root = fixture.nativeElement as HTMLElement
+
+    const screen = root.querySelector('[data-id="legal-frozen-screen"]')
+    expect(screen?.querySelector('.bi-snow')).not.toBeNull()
+    expect(
+      screen
+        ?.querySelector('[data-id="legal-reconsent"]')
+        ?.getAttribute('data-variant'),
+    ).toBe('frozen')
+    expect(root.querySelector('[data-id="app-footer"]')).not.toBeNull()
+    expect(root.querySelector('[data-id="legal-reconsent-icon"]')).toBeNull()
+    expect(session.source.sent.at(-1)?.action).toBe('hilos_legal_reconsent')
+    fixture.destroy()
+  })
+
+  it('leaves the pages the freeze keeps open to their content', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake({ ...lapsed, frozen: true }))
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HILOS_ROUTER, useValue: routerOn(HilosPages.PROFILE_DATA) },
+      ],
+    })
+
+    const fixture = mountShell()
+    const root = fixture.nativeElement as HTMLElement
+
+    expect(root.querySelector('[data-id="legal-frozen-screen"]')).toBeNull()
+    fixture.destroy()
+  })
+
+  it('draws no icon under the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(reconsentHandshake(inWindow))
+
+    const fixture = mountShell(FROZEN)
+    const root = fixture.nativeElement as HTMLElement
+
+    expect(root.querySelector('[data-id="legal-reconsent-icon"]')).toBeNull()
+    fixture.destroy()
   })
 })

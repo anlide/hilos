@@ -43,11 +43,12 @@ test("reads the legal catalog, deviations and revision comparison at desktop and
   await expect(page.getByTestId("legal-set")).toContainText(
     "Hilos standard set 1",
   );
-  await expect(page.getByTestId("legal-deviation-row")).toHaveCount(3);
-  await expect(shownByTestId(page, "legal-revision-row")).toHaveCount(2);
+  // The third terms revision adds the demo's availability clause (HIL-500).
+  await expect(page.getByTestId("legal-deviation-row")).toHaveCount(4);
+  await expect(shownByTestId(page, "legal-revision-row")).toHaveCount(3);
   await clickSubmit(
     shownByTestId(page, "legal-revision-open").and(
-      page.locator('[data-revision="2026-09-27"]'),
+      page.locator('[data-revision="2026-10-01"]'),
     ),
   );
   await expect(page.getByTestId("legal-revision-text")).toBeVisible();
@@ -65,7 +66,7 @@ test("reads the legal catalog, deviations and revision comparison at desktop and
   expect(await sidewaysOverflow(page)).toEqual([0, 0]);
   await gotoPage(page, "/hilos/legal/terms");
   await expect(page.getByTestId("legal-set")).toBeVisible();
-  await expect(shownByTestId(page, "legal-revision-row")).toHaveCount(2);
+  await expect(shownByTestId(page, "legal-revision-row")).toHaveCount(3);
   expect(await sidewaysOverflow(page)).toEqual([0, 0]);
   await gotoPage(page, "/hilos/legal");
   await expect(shownByTestId(page, "legal-document-row")).toHaveCount(2);
@@ -115,7 +116,7 @@ test("offers complete acceptance filters and merges legal setting changes across
   await clickSubmit(revisionFilter.getByTestId("hilos-dropdown-toggle"));
   await expect(
     revisionFilter.getByTestId("hilos-dropdown-option-0"),
-  ).toContainText("2026-09-27");
+  ).toContainText("2026-10-01");
   await clickSubmit(revisionFilter.getByTestId("hilos-dropdown-toggle"));
 
   const other = await page.context().newPage();
@@ -162,6 +163,42 @@ test("offers complete acceptance filters and merges legal setting changes across
       await other.close();
     }
   }
+});
+
+test("previews the re-consent screen through the previous revision's holder", async ({
+  page,
+}) => {
+  await signUpAdmin(page);
+  await gotoPage(page, "/hilos/legal/terms");
+  await clickSubmit(page.getByTestId("legal-preview-reconsent"));
+  const preview = page.getByTestId("legal-reconsent-preview");
+  await expect(preview).toBeVisible();
+  // The third terms revision took effect the day it was published: no window (HIL-500).
+  await expect(preview.getByTestId("legal-reconsent-badge")).toHaveText(
+    /No window · in force since 1 October 2026/,
+  );
+  const change = preview.getByTestId("legal-reconsent-change");
+  await expect(change).toHaveCount(1);
+  await expect(change).toHaveAttribute("data-clause", "standard.availability");
+  await expect(change.getByTestId("legal-reconsent-change-kind")).toHaveText(
+    "Changed",
+  );
+  await expect(change).toContainText(
+    "This is a demo: its data may be wiped at any time",
+  );
+  await expect(preview.getByTestId("legal-reconsent-accept")).toBeDisabled();
+  await expect(preview.getByTestId("legal-reconsent-later")).toBeDisabled();
+  await clickSubmit(page.getByTestId("legal-reconsent-preview-close"));
+  await expect(preview).toBeHidden();
+
+  await gotoPage(page, "/hilos/legal/privacy");
+  await clickSubmit(page.getByTestId("legal-preview-reconsent"));
+  await expect(
+    page
+      .getByTestId("legal-reconsent-preview")
+      .getByTestId("legal-reconsent-preview-first"),
+  ).toBeVisible();
+  await clickSubmit(page.getByTestId("legal-reconsent-preview-close"));
 });
 
 test("unknown legal documents and revisions are not-found subscription refusals", async ({

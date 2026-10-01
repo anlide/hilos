@@ -55,13 +55,17 @@ final class HandshakeResponseSignalDataTest extends TestCase
     /** The passkey policy as the stamp hands it - a yes, so it cannot pass for the unstamped null or the default no. */
     private const bool PASSKEY_ALLOWS_UNPROVEN = true;
 
-    /** A frozen person with a deletion scheduled: every fact named, the freeze shown (HIL-945). */
+    /**
+     * A frozen person with a deletion scheduled: every fact named, the freeze shown (HIL-945), and the
+     * privacy policy still inside its window beside the lapsed terms (HIL-500).
+     */
     private const array STANDING = [
         'shown' => 'frozen',
         'blocked' => false,
         'frozen' => true,
         'deletionEffectiveAt' => 1_767_225_600_000,
         'lapsed' => [['document' => 'terms', 'deadline' => '2026-03-01']],
+        'window' => [['document' => 'privacy', 'deadline' => '2026-11-10']],
     ];
 
     public function testPendingRegistrationConsentSurvivesTheTransportRoundtrip(): void

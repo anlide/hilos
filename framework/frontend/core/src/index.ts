@@ -273,6 +273,7 @@ export {
   sessionPasskeyAllowsUnproven,
   sessionAccountBlocked,
   sessionAccountStanding,
+  sessionHandshakeHeard,
   readHilosAccountStanding,
   accountStandingSchema,
   sessionSecondFactorPolicy,
@@ -1552,3 +1553,4 @@ export {
 export { createHilosLegalSettingEdit } from './admin/legal/hilosLegalSettingsEdit.js'
 
 export * from './legal/legalConsent.js'
+export * from './legal/legalReconsent.js'

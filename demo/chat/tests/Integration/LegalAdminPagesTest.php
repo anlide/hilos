@@ -80,16 +80,17 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         self::assertNull($root->payload->data['legalCatalogRefusal']);
         $documents = Hilos::$table->hilosLegalDocuments->getFullSnapshot();
         self::assertSame(['terms', 'privacy'], array_column($documents->rows, 'rowKey'));
-        self::assertSame(1, $documents->rows[0]->covered);
+        // The third terms revision is substantial, so a holder of the first is no longer covered (HIL-500).
+        self::assertSame(0, $documents->rows[0]->covered);
         self::assertCount(4, Hilos::$table->hilosLegalChecks->getFullSnapshot()->rows);
         $document = $this->response($this->subscribe(LegalDocumentPage::class, ['documentKey' => 'terms']));
         self::assertSame(1, $document->payload->data['legalDocument']['set']['version']);
-        self::assertCount(3, $document->payload->data['legalDocument']['deviations']);
+        self::assertCount(4, $document->payload->data['legalDocument']['deviations']);
         $revision = $this->response($this->subscribe(LegalRevisionPage::class, ['documentKey' => 'terms', 'revisionId' => '2026-09-27']));
         self::assertCount(6, $revision->payload->data['legalRevision']['clauses']);
         self::assertCount(1, $revision->payload->data['legalRevision']['changes']);
         $rows = Hilos::$table->hilosLegalRevisions->getPage(new TableQueryDTO(filter: ['document' => 'terms']))->rows;
-        self::assertSame([0, 1], array_column($rows, 'heldCount'));
+        self::assertSame([0, 0, 1], array_column($rows, 'heldCount'));
         self::assertSame(1, (int) Database::sql('SELECT COUNT(*) AS total FROM hilos_legal_acceptance')->firstRow()['total']);
     }
 

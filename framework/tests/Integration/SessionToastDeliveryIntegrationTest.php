@@ -50,9 +50,11 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
 {
     /**
      * @var list<string> Framework tables the handshake case needs. `hilos_setting` is the one
-     *     framework collection loaded eagerly, so mounting the context reaches for it.
+     *     framework collection loaded eagerly, so mounting the context reaches for it. The tick
+     *     tells each signed-in person's standing, which reads their row and their deletion
+     *     request - without those two the case leaned on a verdict an earlier case left in memory.
      */
-    private const array TABLES = ['hilos_session', 'hilos_setting'];
+    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_user', 'hilos_account_deletion'];
 
     private const string SESSION_TOKEN = '0123456789abcdef0123456789abcdef';
 

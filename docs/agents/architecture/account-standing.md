@@ -109,7 +109,8 @@ page refuses a non-admin 403 `forbidden`; anything else allows
   page's actions (as `ActionAccountFrozenException`, 403 `account_frozen`) and
   the re-decision of an open page.
 - A `PUBLIC` page is not refused: a guest sees it too. What a frozen person sees
-  there is the shell's freeze screen (HIL-500).
+  there is the shell's freeze screen ([legal-documents.md](legal-documents.md),
+  Re-consent).
 
 **Actions.** `PageSignalRouter::assertActionAuthorized()` refuses a frozen person
 every action its host lists in `AUTH_ACTIONS` — page or agent — with
@@ -137,8 +138,10 @@ Open without a declaration, because no list closes them: the actions outside
 every `AUTH_ACTIONS` — sign-out (`hilos_logout`), dismissing the "Access closed"
 card (`hilos_dismiss_account_blocked`), the step-up start and confirmation
 (`hilos_step_up_start`, `hilos_step_up_confirm`) — and the four public footer
-pages (About, Terms, Privacy, License). The acceptance action that lifts a freeze
-is HIL-500's, and is declared an exit there.
+pages (About, Terms, Privacy, License). Reading the new terms and accepting them
+— `hilos_legal_reconsent` and `hilos_legal_accept` — are the users library's
+declared exits beside the cancel of one's own deletion: the acceptance is what
+lifts a freeze ([legal-documents.md](legal-documents.md), Re-consent).
 
 - Declare an exit on the class that owns the page or the action, next to it:
   `OPEN_WHILE_FROZEN` for a page (all its actions go with it), the owner's
@@ -154,7 +157,11 @@ is HIL-500's, and is declared an exit there.
 ## The Wire
 
 One shape everywhere: `{shown, blocked, frozen, deletionEffectiveAt, lapsed:
-[{document, deadline}]}` (`AccountStanding::toArray()`); nobody sends it back.
+[{document, deadline}], window: [{document, deadline}]}`
+(`AccountStanding::toArray()`); nobody sends it back. `window` names the
+documents whose deadline is still ahead, whatever the refusal setting says: it
+takes nothing away and plays no part in the verdict, but it is what the
+re-consent window and its icon in the header are drawn from (HIL-500).
 
 - **Session.** `accountStanding` on every `hilos_session_state` frame
   (`SessionStateSignalData`) and in the `data` section of the handshake response
@@ -221,11 +228,13 @@ The core binds the session's standing once, in `bootHilos`
   frozen row between the block and the deletion rows, with no button
   (`hilosUserFrozenRow()`).
 - A block and a freeze get no strip and no mark. A block puts the "Access
-  closed" card in place of the shell (HIL-289). The freeze screen in place of the
-  content, with its window and the acceptance, is HIL-500's; it reads the
-  standing from the session, the pages it leaves open from
-  `HILOS_FROZEN_OPEN_PAGES` and the refusal by `ACCOUNT_FROZEN_ERROR_CODE`. Until
-  it lands, a refused page is drawn by the ordinary error page of its 403 status.
+  closed" card in place of the shell (HIL-289). A freeze puts the "the terms have
+  changed" screen in place of the content on every page but those
+  `HILOS_FROZEN_OPEN_PAGES` names, after the card and before the content; it
+  reads the standing from the session and offers the acceptance
+  ([legal-documents.md](legal-documents.md), Re-consent). A page refused under
+  `ACCOUNT_FROZEN_ERROR_CODE` is therefore never on screen: the freeze screen
+  stands in its place.
 
 ## Validation
 
@@ -236,10 +245,12 @@ The core binds the session's standing once, in `bootHilos`
   the wire and the holder's tick:
   `framework/tests/Integration/AccountStandingIntegrationTest.php`.
 - The card and the lapsed list: `demo/chat/tests/Integration/AccountStandingCardTest.php`.
-- No demo catalog carries a second substantial revision, so a browser cannot
-  reach a freeze; chat's e2e covers the deletion strip and the mark
-  (`account-deletion.spec.ts`), the card's badge and the takeover tone
-  (`users.spec.ts`), and the lapsed count without a link (`legal-admin.spec.ts`).
-  When a catalog receives a second substantial revision (HIL-500), a test puts a person
-  on the former revision with the `test:legal:hold` command; its path is guarded by
-  `AccountStandingIntegrationTest`.
+- Chat's third terms revision is substantial and in force the day it was
+  published, so a person the `test:legal:hold` command puts on the second is
+  frozen at once: `legal-reconsent.spec.ts` covers the freeze screen and the
+  window with its icon under `remind`. Chat's e2e also covers the deletion strip
+  and the mark (`account-deletion.spec.ts`), the card's badge and the takeover
+  tone (`users.spec.ts`), and the lapsed count without a link
+  (`legal-admin.spec.ts`). The count of days left has no browser case — there
+  is no shared clock to move — and is held by the SDK unit tests and
+  `LegalReconsentIntegrationTest`.

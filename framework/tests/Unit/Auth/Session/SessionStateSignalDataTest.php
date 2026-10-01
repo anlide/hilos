@@ -62,6 +62,7 @@ final class SessionStateSignalDataTest extends TestCase
             'frozen' => false,
             'deletionEffectiveAt' => 1_767_225_600_000,
             'lapsed' => [],
+            'window' => [],
         ];
         $frame = new SessionStateSignalData('token', 17, 41, ['accept-key'])
             ->withAccountStanding($standing)

@@ -5,6 +5,7 @@ import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type NavigationEnvironment } from '../../src/routing/HilosRouter.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
 import { hilosAccountStanding } from '../../src/session/accountStanding.js'
+import { hilosFrozenScreen } from '../../src/legal/legalReconsent.js'
 import { hilosImpersonation } from '../../src/session/impersonation.js'
 import { hilosSignedIn } from '../../src/session/signOut.js'
 import { hilosAdminAccess } from '../../src/session/adminAccess.js'
@@ -271,11 +272,14 @@ describe('bootHilos', () => {
           frozen: true,
           deletionEffectiveAt: null,
           lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+          window: [],
         },
       },
       entities: { currentUser: { id: 1, name: 'Ada' } },
     })
     expect(hilosAccountStanding.get()?.shown).toBe('frozen')
+    // The re-consent screen follows the same handshake (HIL-500).
+    expect(hilosFrozenScreen.get()).toBe(true)
 
     connection.emitProjectSignal('handshake_response', {
       data: { accountStanding: null },

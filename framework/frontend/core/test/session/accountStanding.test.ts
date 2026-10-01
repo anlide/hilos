@@ -93,6 +93,7 @@ function standing(
     frozen: false,
     deletionEffectiveAt: null,
     lapsed: [],
+    window: [],
     ...facts,
   }
 }
@@ -181,6 +182,7 @@ describe('the session standing (HIL-945)', () => {
       frozen: false,
       deletionEffectiveAt: null,
       lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
+      window: [],
     })
     expect(hilosDeletionStrip.get()).toBeNull()
     expect(hilosSessionAvatarMark.get()).toBeNull()

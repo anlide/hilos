@@ -703,6 +703,33 @@ final class HilosSignalConstants
     /** Client → server: read registration consent (public); reply contains form and current documents. */
     public const string HILOS_LEGAL_CONSENT = 'hilos_legal_consent';
 
+    /**
+     * Client → server: read what the "the terms have changed" screen shows (signed in, open while frozen, HIL-500).
+     *
+     * Payload `{}`; reply `{refusal: 'freeze'|'remind', documents: [{document, standing: 'window'|'lapsed',
+     * deadline, held, current, changes, clauses}]}` - every declared document the person has to decide on, in
+     * declaration order, with the revision held, the one in force, the changes between them and the clauses in force.
+     */
+    public const string HILOS_LEGAL_RECONSENT = 'hilos_legal_reconsent';
+
+    /**
+     * Client → server: accept the revisions in force the screen showed (signed in, open while frozen, HIL-500).
+     *
+     * Payload `{acceptedRevisions: {terms?: revisionId, privacy?: revisionId}}`; a tracked reply without a body.
+     * Refused under impersonation, for an empty set or an unknown document, and for a revision that is no longer
+     * the one in force. The standing catches up by itself - no signal of its own.
+     */
+    public const string HILOS_LEGAL_ACCEPT = 'hilos_legal_accept';
+
+    /**
+     * Client → server: preview the "the terms have changed" screen of one document (public, like the consent, HIL-500).
+     *
+     * Payload `{document}`; reply `{document, standing, deadline, held, current, changes, clauses}` - the screen
+     * as a holder of the previous revision sees it today, with the standing and the held revision null for a
+     * first revision.
+     */
+    public const string HILOS_LEGAL_RECONSENT_PREVIEW = 'hilos_legal_reconsent_preview';
+
     /** Client → server: email+password login (public, anonymous-reachable). */
     public const string HILOS_LOGIN = 'hilos_login';
 

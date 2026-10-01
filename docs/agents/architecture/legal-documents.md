@@ -42,7 +42,8 @@ The deadline is the minimum outstanding substantial effective date. Publishing
 another revision does not extend an earlier deadline. This calculation reports
 coverage only; enforcement, re-consent, and the treatment of accounts without
 acceptances belong to their consuming flows. The enforcement — the freeze of a
-person past a deadline — is [account-standing.md](account-standing.md).
+person past a deadline — is [account-standing.md](account-standing.md); the
+screen that asks the person to decide is [Re-consent](#re-consent) below.
 
 ## Recording an acceptance
 
@@ -54,6 +55,9 @@ is the single orchestration entry for registration and re-consent:
   transaction. It neither starts nor commits one, and publishes no state.
 - `accept($userId, $revisionIdsByDocument)` owns a transaction for the entire
   document-to-revision map, rolls back on a Hilos failure, then publishes state.
+- `acceptCurrent($acceptKey, $revisionIdsByDocument)` is re-consent's entry: it
+  checks that the named revisions are the ones in force and calls `accept()`
+  ([Re-consent](#re-consent)).
 - `publishState($userId)` sends the committed projection to
   `hilos_legal_agreements:<userId>`. A caller of `record()` publishes only after
   its outer transaction commits.
@@ -125,6 +129,78 @@ a reconnect refreshes the revisions while keeping the form choice of this
 visit. Replies from an abandoned step or closed preview are ignored. The
 checkbox is never preselected and is not rendered before its text arrives.
 
+## Re-consent
+
+A person holding a revision a substantial one has followed decides on it on
+one screen (HIL-500): a document whose standing is `window` or `lapsed`. A
+person with no acceptance (`none`) is never asked; an editorial revision keeps
+coverage and so never raises the screen. Both documents that moved share one
+screen, a section each, and one acceptance takes them all.
+
+**What a tab knows without asking.** The account standing carries `window` —
+`[{document, deadline}]`, the documents whose deadline is still ahead, whatever
+the refusal setting says — beside `lapsed` of the same shape
+([account-standing.md](account-standing.md)). The shell decides the rest from
+those two lists and the freeze flag: something is due while a document is in
+its window or lapsed and the person is not frozen, not blocked and not under a
+takeover; lapsed and not frozen is the `remind` setting at work.
+
+**When the screen stands.**
+
+- The window rises by itself on a sign-in in this tab only: the session moving
+  from nobody to a person after the tab's first frame. The first frame of a tab
+  opened on a live sign-in is where counting starts, a takeover starting or
+  stopping is no entrance, and nothing that changes mid-work raises it. A
+  registration accepts the revisions in force and so never has anything due.
+- A yellow document icon sits right after the shell's user region while
+  something is due; it names the days left to the nearest deadline ("The terms
+  have changed — 9 days left to decide", whole days rounded up and never below
+  one) or asks to review when only lapsed documents wait, and opens the window.
+- Frozen, the same screen stands in the content's place on every page but those
+  the freeze leaves open (`HILOS_FROZEN_OPEN_PAGES`), after the "Access closed"
+  card and before the content.
+
+**The three buttons.** Accept records the revisions in force of every document
+shown. Later closes the window and records nothing — the icon stays. "I do not
+accept" records nothing either: it opens a step saying what follows (under
+`freeze` the day the product closes, under `remind` that nothing changes) with
+the ways to the data copy and to account deletion. A refusal is recorded
+nowhere, and silence is never acceptance. The freeze screen offers Accept only,
+with the exits as actions: the data copy, "Keep my account" while a deletion is
+scheduled, and sign-out. Under a takeover the window and the icon are absent,
+the freeze screen stands without Accept and "Keep my account", and says that
+only the person can accept.
+
+**The three actions** — all users-library `AGENT_ACTIONS`:
+
+| Action | Payload → reply | Reach |
+|---|---|---|
+| `hilos_legal_reconsent` | `{}` → `{refusal, documents: [{document, standing, deadline, held, current, changes, clauses}]}` — every document in its window or lapsed, in declaration order | signed in (`AUTH_ACTIONS`), open while frozen (`FROZEN_EXIT_ACTIONS`) |
+| `hilos_legal_accept` | `{acceptedRevisions: {document: revisionId}}` → tracked reply without a body | signed in, open while frozen |
+| `hilos_legal_reconsent_preview` | `{document}` → `{document, standing, deadline, held, current, changes, clauses}` | public, like the consent read |
+
+`LegalReconsentProjector` builds both replies: `held`, `current` and `changes`
+are the `LegalWire` revision and change shapes, `clauses` the composed clauses
+of the revision in force. A faulty catalog answers with no documents, the verdict
+the standing gives it.
+
+`LegalAcceptanceCommands::acceptCurrent()` refuses under impersonation
+(`StepUpMessages::IMPERSONATED` — an acceptance in someone else's hands is a
+forged record of consent), for an empty set, for a document the installation
+does not declare, and for a revision that is no longer the one in force
+(`AuthMessages::CONSENT_REVISED`: the screen reads its content again and asks
+once more). Nothing is written until every document passes. No signal of its
+own follows: the acceptance's write drops the remembered verdict in every
+process, and the sessions library's tick sends the new frame and re-decides the
+open pages when the freeze moved ([account-standing.md](account-standing.md)).
+
+**The preview.** The document page of the admin section opens the same screen
+read-only, as a holder of the previous revision sees it today: the standing
+(`window`, `lapsed`, or `covered` when the revision in force is editorial) and
+the changes previous → in force. The first revision has nothing before it: the
+standing and `held` are null, and the preview shows a line instead of the
+screen.
+
 ## Comparison and provenance
 
 `LegalRevisionComparison::between()` compares an earlier declaration with a
@@ -161,7 +237,7 @@ Records naming undeclared revisions are omitted from the public projection.
 A project with no catalog receives `documents: []`.
 
 The two profile routes are `/profile/agreements` and
-`/profile/agreements/history`. This feature supplies no browser action to
+`/profile/agreements/history`. The profile supplies no browser action to
 accept a revision; registration and re-consent call the command entry above.
 
 ## Admin section
@@ -298,5 +374,5 @@ The consent-form value is consumed by registration. The refusal policy is
 consumed by access enforcement, which freezes a person past a deadline under
 `freeze` ([account-standing.md](account-standing.md)), and by this section, which
 names the lapsed count with it. Re-consent — the freeze screen and its
-acceptance — consumes it too (not in the code yet — HIL-500). Neither setting
+acceptance — consumes it too ([Re-consent](#re-consent)). Neither setting
 changes a revision's text or effective date.

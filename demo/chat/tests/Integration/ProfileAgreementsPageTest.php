@@ -97,7 +97,7 @@ final class ProfileAgreementsPageTest extends IntegrationTestCase
         self::assertSame($pageClass::PAGE, $answers[0][PageResponseSignalData::page]);
         $sections = $answers[0][PageResponseSignalData::payload][PagePayload::data];
         self::assertSame(['none', 'none'], array_column($sections[LegalAgreementsProjector::SECTION]['documents'], 'standing'));
-        self::assertSame('2026-09-27', $sections[LegalAgreementsProjector::SECTION]['documents'][0]['current']['revisionId']);
+        self::assertSame('2026-10-01', $sections[LegalAgreementsProjector::SECTION]['documents'][0]['current']['revisionId']);
         if ($extraSection !== null) {
             self::assertCount(2, $sections[$extraSection]['documents']);
         }
@@ -106,7 +106,8 @@ final class ProfileAgreementsPageTest extends IntegrationTestCase
         }
         if ($extraSection === LegalAgreementsProjector::REVISIONS_SECTION) {
             self::assertSame(
-                ['2026-09-17', '2026-09-27'], array_column($sections[$extraSection]['documents'][0]['revisions'], 'revisionId'),
+                ['2026-09-17', '2026-09-27', '2026-10-01'],
+                array_column($sections[$extraSection]['documents'][0]['revisions'], 'revisionId'),
             );
             self::assertArrayNotHasKey(LegalAgreementsProjector::TEXTS_SECTION, $sections);
         }

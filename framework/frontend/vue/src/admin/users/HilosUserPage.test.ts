@@ -938,6 +938,7 @@ describe('HilosUserPage standing (HIL-945)', () => {
       frozen: false,
       deletionEffectiveAt: null,
       lapsed: [],
+      window: [],
       ...facts,
     }
   }

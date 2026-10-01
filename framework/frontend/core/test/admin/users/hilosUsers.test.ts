@@ -326,6 +326,7 @@ function wireStanding(
     frozen: false,
     deletionEffectiveAt: null,
     lapsed: [],
+    window: [],
     ...facts,
   }
 }
@@ -344,6 +345,7 @@ function readStanding(
     frozen: false,
     deletionEffectiveAt: null,
     lapsed: [],
+    window: [],
     ...facts,
   }
 }
