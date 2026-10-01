@@ -90,10 +90,11 @@ the commands on `AbstractAgent` would hand a test-drive of the freeze to every a
 of every project. The carrier is one, `AbstractHilosIndexAgent`, so chat, tasks and
 polls get it by inheritance. The framework's cluster probe fleet
 (`FleetProbeAgent`) does not carry it: in a full demo the index agent declares the
-same commands, and a command declared by two agents refuses the start. The
-clustered entry path — the leader's quiesce round and a follower's fail-closed
-refusal — is carried on a multi-node stand by the index agents of the demos that
-own the cluster stands.
+same commands, and a command declared by two agents refuses the start. On a
+multi-node stand the clustered entry path is driven by the index agent of
+binance-btc-tracker: scenario 23 of its cluster stand enters the freeze, opens
+the verification window and lifts it, and reads the row of every master at
+each step. A follower's fail-closed refusal is not exercised on a live stand.
 
 Two properties are worth keeping when this code is touched:
 
@@ -478,10 +479,18 @@ and sends the result under the initiator's name on the `PROTECTED_MODE_CIRCLE`
 frame — the twin of `PROTECTED_MODE_PASS`, whole rather than one entry at a time,
 because there is exactly one moment when the list is knowable. No agent sends the
 circle itself. Only hashes and a count travel; no address of anybody named
-reaches the master. In a cluster the photograph stays on the row of the node that
-froze and is fanned nowhere, exactly as the initiator's own session hash is: a
-browser is attached to the node it connected to, and a member who reached another
-node meets the stub there.
+reaches the master. In a cluster the photograph is fanned to every master the
+way a code is: the initiator's node sends it to the leader on the
+`peer_protected_mode_circle` frame, and the leader writes its own row and sends
+it on to every follower master. A member's tab connects to whichever node the
+balancer hands it, and each node decides admission against its own copy of the
+row. A follower initiator writes its own row before it sends, so with no leader
+known that row still holds it and the rest of the cluster lets the circle in by
+code alone. An initiator on a slave has no freeze row to write — the freeze
+frames reach masters only — and sends the photograph to the leader all the same:
+the leader authorizes it by the node that initiated the operation, as it does
+every frame of the window. Neither half checks the phase, since a follower stands
+on `activating` for the whole freeze.
 
 Whatever the operation, the photograph is taken for the initiator of the
 freeze, on the freeze's own ready path; a restore is today's only destructive

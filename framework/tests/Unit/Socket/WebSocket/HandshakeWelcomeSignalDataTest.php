@@ -14,8 +14,8 @@ use PHPUnit\Framework\TestCase;
  * Pins the wire shape the master sends behind the 101 response: the build timestamp plus the
  * nested protectedMode block the frontend reads to learn it is locked out by a cluster freeze -
  * the active flag and, since HIL-268, the words to say so. The master's runtime read that fills
- * the block is exercised at e2e in demo/cluster; here we lock the serialized shape so the frame
- * never drifts.
+ * the block is exercised by the Playwright protected-mode specs, on one node; the cluster stands
+ * do not read the block. Here we lock the serialized shape so the frame never drifts.
  */
 final class HandshakeWelcomeSignalDataTest extends TestCase
 {

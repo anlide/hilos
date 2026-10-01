@@ -34,6 +34,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeCircleDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
@@ -95,6 +96,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\ProtectedModeCoordinator;
 use Hilos\ProtectedMode\ProtectedModeMesh;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Client\ClientInterface;
@@ -1408,6 +1410,22 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * Routes a received protected-mode circle frame to the local handler.
+     *
+     * @param PeerLink $link Link the frame arrived on
+     * @param PeerProtectedModeCircleDTO $frame Received protected-mode circle frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onProtectedModeCircleReceived(PeerLink $link, PeerProtectedModeCircleDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onCircle($from, $frame->snapshot);
+        }
+    }
+
+    /**
      * Routes a received protected-mode refreeze frame to the local handler.
      *
      * @param PeerLink $link Link the frame arrived on
@@ -1598,6 +1616,27 @@ final class PeerServer extends AbstractTlsServer implements
     public function broadcastPass(string $passHash): void
     {
         $this->broadcastToMasters(new PeerProtectedModePassDTO($passHash));
+    }
+
+    /**
+     * Forwards the circle photographed on this initiator node to the leader over the peer channel.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     * @param VerifierCircleSnapshot $snapshot The circle as this node photographed it
+     */
+    public function sendCircle(string $leaderNodeId, VerifierCircleSnapshot $snapshot): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModeCircleDTO($snapshot));
+    }
+
+    /**
+     * Broadcasts the photographed circle to every follower master.
+     *
+     * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
+     */
+    public function broadcastCircle(VerifierCircleSnapshot $snapshot): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModeCircleDTO($snapshot));
     }
 
     /**

@@ -17,6 +17,7 @@ use Hilos\ProtectedMode\ProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeMesh;
 use Hilos\ProtectedMode\ProtectedModeRefusalCopy;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -751,14 +752,14 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->mesh->calls);
     }
 
-    public function testTheCircleStaysOnTheNodeThatFrozeAndIsFannedNowhere(): void
+    public function testTheLeaderWritesTheCircleAndFansItToEveryMaster(): void
     {
-        // The one request on this seam that is never routed: it names browsers, and a browser is
-        // attached to the node it connected to. Broadcasting it would admit a session hash on a
-        // node that session was never on.
+        // A member's tab connects to whichever node the balancer hands it, and each node decides
+        // admission against its own copy of the row - so the photograph has to be on every master,
+        // the leader's own among them.
         $this->mesh->followers = [];
         $this->coordinator->onBecameLeader();
-        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->coordinator->onEnable(self::SELF, $this->enableDataFrom(self::SELF));
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->mesh->calls = [];
 
@@ -766,14 +767,29 @@ final class ClusterProtectedModeTest extends TestCase
 
         $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
         $this->assertSame(1, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([['broadcastCircle', '1']], $this->mesh->calls);
     }
 
     public function testAFollowerWritesTheCircleOnItsOwnRowWithoutWaitingForActive(): void
     {
         // An initiator hosted on a follower reads `activating` for the whole freeze - `active` is
         // the leader-local marker - so a phase gate here would drop the circle on exactly the
-        // topology that has one. What is checked instead is that this node is frozen at all.
+        // topology that has one. The own row is written before the leader is asked to fan it, so
+        // the node the initiator sits on does not wait on a round trip.
+        $this->mesh->leader = 'node-x';
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-a'));
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->requestCircle($this->circleData()));
+
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame([['sendCircle', 'node-x']], $this->mesh->calls);
+    }
+
+    public function testAFollowerThatKnowsNoLeaderKeepsTheCircleOnItsOwnRow(): void
+    {
+        // Nobody to fan it: the rest of the cluster lets the circle in by code alone, but the node
+        // the initiator sits on still recognizes the members already attached to it.
         $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-a'));
         $this->mesh->calls = [];
 
@@ -783,10 +799,80 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->mesh->calls);
     }
 
-    public function testACircleOfferedUnderNoFreezeIsDropped(): void
+    public function testANodeHoldingNoFreezeSendsTheCircleToTheLeaderAndWritesNothing(): void
+    {
+        // A slave: no freeze frame reaches it, so it holds no freeze row to write, while the leader
+        // authorizes the photograph by the node that initiated the operation. Run without the truth
+        // source on purpose: reaching the row here would throw.
+        $this->mesh->leader = 'node-x';
+
+        $this->coordinator->requestCircle($this->circleData());
+
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame([['sendCircle', 'node-x']], $this->mesh->calls);
+    }
+
+    public function testACircleOfferedUnderNoFreezeWithNoKnownLeaderIsDropped(): void
     {
         // Run without the truth source on purpose: reaching the row here would throw.
         $this->coordinator->requestCircle($this->circleData());
+
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testAFollowerWritesTheCircleItsFreezingLeaderFansAndPassesItNowhere(): void
+    {
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-x', $this->circleSnapshot()));
+
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(1, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testTheLeaderWritesAndFansTheCircleOfTheNodeThatInitiatedTheFreeze(): void
+    {
+        // The initiator sent it from a follower or from a slave; the leader treats both alike, and
+        // the sender gets the same photograph back - a rewrite of what it already holds.
+        $this->mesh->followers = ['node-b', 'node-c'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->mesh->calls = [];
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-b', $this->circleSnapshot()));
+
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame([['broadcastCircle', '1']], $this->mesh->calls);
+    }
+
+    public function testTheLeaderDropsACircleFromANodeThatDidNotInitiateTheFreeze(): void
+    {
+        // The same authorization every frame of the window is given. Run without the truth source
+        // on purpose: reaching the row here would throw.
+        $this->mesh->followers = ['node-b', 'node-c'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->mesh->calls = [];
+
+        $this->coordinator->onCircle('node-c', $this->circleSnapshot());
+
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testACircleArrivingAfterTheLiftIsRecordedNowhere(): void
+    {
+        // A frame that outlived its freeze: this node is no longer frozen and leads nothing. Run
+        // without the truth source on purpose: reaching the row here would throw.
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onLift('node-x');
+        $this->mesh->calls = [];
+
+        $this->coordinator->onCircle('node-x', $this->circleSnapshot());
 
         $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
         $this->assertSame([], $this->mesh->calls);
@@ -1094,6 +1180,11 @@ final class ClusterProtectedModeTest extends TestCase
         );
     }
 
+    private function circleSnapshot(): VerifierCircleSnapshot
+    {
+        return new VerifierCircleSnapshot(1, ['hash-a']);
+    }
+
     private function progressData(): ProtectedModeProgressSignalData
     {
         return new ProtectedModeProgressSignalData(
@@ -1222,6 +1313,16 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
     public function broadcastPass(string $passHash): void
     {
         $this->calls[] = ['broadcastPass', $passHash];
+    }
+
+    public function sendCircle(string $leaderNodeId, VerifierCircleSnapshot $snapshot): void
+    {
+        $this->calls[] = ['sendCircle', $leaderNodeId];
+    }
+
+    public function broadcastCircle(VerifierCircleSnapshot $snapshot): void
+    {
+        $this->calls[] = ['broadcastCircle', (string)$snapshot->namedCount];
     }
 
     public function sendRefreeze(string $leaderNodeId): void

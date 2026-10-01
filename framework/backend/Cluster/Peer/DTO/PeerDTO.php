@@ -45,8 +45,11 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * {@see PeerProtectedModeDisableDTO}) carry the initiator↔leader freeze hand-off that the
  * agent-signal fabric cannot deliver to a leader daemon, and their cluster-wide mirror
  * ({@see PeerProtectedModeQuiesceDTO}, {@see PeerProtectedModeQuiescedDTO},
- * {@see PeerProtectedModeLiftDTO}) carries the leader↔follower freeze the leader drives; the
- * liveness frames
+ * {@see PeerProtectedModeLiftDTO}) carries the leader↔follower freeze the leader drives, and the
+ * verification frames ({@see PeerProtectedModeVerifyDTO}, {@see PeerProtectedModePassDTO},
+ * {@see PeerProtectedModeCircleDTO}, {@see PeerProtectedModeRefreezeDTO}) travel both ways — the
+ * initiator's node to the leader, the leader to every follower — so each node holds the same
+ * window, the same passes and the same photographed circle; the liveness frames
  * ({@see PeerPingDTO}, {@see PeerPongDTO}) keep a quiet link proven alive.
  * All extend this base directly.
  */
@@ -123,6 +126,7 @@ abstract class PeerDTO extends BaseDTO
             PeerProtectedModeVerifyDTO::MESSAGE_TYPE => PeerProtectedModeVerifyDTO::fromArray($data),
             PeerProtectedModeProgressDTO::MESSAGE_TYPE => PeerProtectedModeProgressDTO::fromArray($data),
             PeerProtectedModePassDTO::MESSAGE_TYPE => PeerProtectedModePassDTO::fromArray($data),
+            PeerProtectedModeCircleDTO::MESSAGE_TYPE => PeerProtectedModeCircleDTO::fromArray($data),
             PeerProtectedModeRefreezeDTO::MESSAGE_TYPE => PeerProtectedModeRefreezeDTO::fromArray($data),
             PeerPingDTO::MESSAGE_TYPE => PeerPingDTO::fromArray($data),
             PeerPongDTO::MESSAGE_TYPE => PeerPongDTO::fromArray($data),

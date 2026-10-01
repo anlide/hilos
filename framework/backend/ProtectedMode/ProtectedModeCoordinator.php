@@ -152,6 +152,20 @@ interface ProtectedModeCoordinator
     public function onPass(string $fromNodeId, string $passHash): void;
 
     /**
+     * Handles the verifier circle photographed at the freeze, either sent by the initiator's node
+     * or fanned out by the leader.
+     *
+     * The photograph replaces whatever circle the row held, so a repeat - the sender receiving its
+     * own photograph back from the leader - writes the same thing twice and changes nothing.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onCircle(string $fromNodeId, VerifierCircleSnapshot $snapshot): void;
+
+    /**
      * Handles the close-back out of the verification window, in either direction.
      *
      * @param string $fromNodeId Node id the frame came from

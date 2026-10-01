@@ -67,6 +67,8 @@ Plus scenarios beyond that matrix:
                                the rest wait (HIL-1228)
  22 other database refused    a node reading another database marker is admitted by nobody
                                (HIL-1206)
+ 23 verifier circle on every   the circle photographed at a freeze is on every master's row
+    master                     through the window and gone once the system opens (HIL-1125)
 
 run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
@@ -1944,6 +1946,119 @@ def scenario_22_other_database_refused():
             f"the rest converged; with the marker back it rejoined")
 
 
+# The address scenario 23 names to the verifier circle. No user holds it, on purpose: the
+# photograph counts a named member whether or not anybody is signed in under the address
+# (VerifierCircleSnapshot::capture()), and the worker sends it once at least one is named
+# (WorkerManager::photographVerifierCircle()) - so a count of one reaches every master with no
+# session to seed.
+CIRCLE_ADDRESS = "circle-23@example.test"
+# The operation the scenario freezes the stand for; any name does, the test drive protects none.
+CIRCLE_OPERATION = "cluster-circle"
+
+
+def protected_mode(node):
+    """One node's protected-mode:inspect reply as a dict, or None when it did not answer.
+
+    Answered by the node's master itself rather than by an agent, so it can be asked of every
+    master: under the freeze every agent but the initiator is stopped.
+    """
+    out = client_out(node, "protected-mode:inspect")
+    if out is None:
+        return None
+    brace = out.find("{")
+    if brace < 0:
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(out[brace:])
+        return obj
+    except json.JSONDecodeError:
+        return None
+
+
+def wait_protected_mode(predicate, desc, nodes=None):
+    """Poll protected-mode:inspect on every master until predicate(reply) holds for each of them.
+
+    The masters only, because the freeze frames reach masters only: a slave holds no freeze row
+    and stays inactive through the whole freeze. Raises ScenarioTimeout, so a pure convergence
+    timeout stays retryable, naming the nodes whose reply was still wrong.
+    """
+    nodes = MASTERS if nodes is None else nodes
+    deadline = time.time() + CONVERGE_TIMEOUT
+    replies = {}
+    while time.time() < deadline:
+        replies = {n: protected_mode(n) for n in nodes}
+        if all(reply is not None and predicate(reply) for reply in replies.values()):
+            return replies
+        time.sleep(POLL_INTERVAL)
+    wrong = {n: (None if r is None else {k: r.get(k) for k in ("phase", "circleSize", "circleAdmitted")})
+             for n, r in replies.items() if r is None or not predicate(r)}
+    raise ScenarioTimeout(f"timed out after {CONVERGE_TIMEOUT:.0f}s waiting for: {desc}\n"
+                          f"masters still not there: {wrong}")
+
+
+def scenario_23_verifier_circle_on_every_master():
+    """The verifier circle photographed at a freeze lands on every master's row (HIL-1125).
+
+    A member of the circle is let into the verification window by the session its tab already
+    carries, and a tab connects to whichever node the balancer hands it - so each node decides
+    that admission against its own copy of the freeze row, and the photograph has to be on all of
+    them. One address is named to the circle, the stand is frozen through the test drive of the
+    index agent, and every master is asked for its circle: one named, nobody online. The window
+    opens and every master still holds it; the system opens and every master has dropped it.
+
+    Headless, so what is proved is the photograph on the rows, not a browser walking in: a
+    signed-in tab let in through a node that does not host the initiator is HIL-1232's. Slaves
+    are not asked: the freeze frames reach masters only.
+
+    The drive commands go to the leader, because that is where the index agent runs, and a reply
+    to a command answered by an agent on another node never makes it back to the node that asked.
+    So the initiator here is the leader; a follower or a slave initiating is covered by the unit
+    tests of ClusterProtectedMode.
+
+    Leadership must not move while the freeze holds. The index agent follows leadership, while the
+    freeze stays authorized by the node that asked for it, so a re-election strands the freeze:
+    the agent answers on the new leader, and the new leader refuses its lift as coming from the
+    wrong node. A stand raised a moment ago can re-elect on its own - its links flap once as late
+    seed dials land (P-459) - which is why this runs last in the matrix rather than first. When
+    it happens anyway, the failure says so instead of leaving only a timeout to read.
+    """
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    term = views[leader].get("term")
+    db_sql(f"INSERT INTO hilos_verifier_circle (identity_type, identifier) VALUES ('password', '{CIRCLE_ADDRESS}')")
+    named = db_sql(f"SELECT COUNT(*) FROM hilos_verifier_circle WHERE identifier = '{CIRCLE_ADDRESS}'")
+    assert named == "1", f"the circle row was not written: {named!r}"
+    try:
+        entered = client_out(leader, "test:protected-mode:enter", CIRCLE_OPERATION)
+        assert entered is not None, f"the index agent on {leader} refused or never answered the enter"
+
+        frozen = wait_protected_mode(lambda r: r.get("circleSize") == 1 and r.get("circleAdmitted") == 0,
+                                     "every master holding a circle of one named, nobody online")
+        initiator = frozen[leader].get("initiatorNodeId")
+
+        assert client(leader, "test:protected-mode:leave"), f"the index agent on {leader} did not open the window"
+        wait_protected_mode(lambda r: r.get("phase") == "verifying" and r.get("circleSize") == 1,
+                            "every master in the verification window, the circle still held")
+
+        assert client(leader, "test:protected-mode:open"), f"the index agent on {leader} did not open the system"
+        wait_protected_mode(lambda r: r.get("phase") == "inactive" and r.get("circleSize") == 0,
+                            "every master open again, the circle dropped")
+    finally:
+        now = inspect_all(MASTERS)
+        moved = [n for n in leaders(now) if n != leader or now[n].get("term") != term]
+        if moved:
+            print(f"  leadership moved from {leader} (term {term}) to {moved[0]} "
+                  f"(term {now[moved[0]].get('term')}) under the freeze; its lift is refused there (P-459)")
+        replies = {n: protected_mode(n) for n in MASTERS}
+        if any(r is None or r.get("phase") != "inactive" for r in replies.values()):
+            client(leader, "test:protected-mode:open")
+        db_sql(f"DELETE FROM hilos_verifier_circle WHERE identifier = '{CIRCLE_ADDRESS}'")
+        wait_converge(ALL_NODES)
+
+    return (f"frozen from {initiator}; the circle was on all {in_words(len(MASTERS))} masters "
+            f"through the window and gone from each once the system opened")
+
+
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes", defaults=(0, 0, False, False, 0))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, and at least `nodes` members in all. What a
@@ -1992,6 +2107,9 @@ SCENARIOS = [
     Scenario("22 other database refused", scenario_22_other_database_refused, Need(nodes=3)),
     Scenario("18 capacity is consumed", scenario_18_capacity_is_consumed,
              Need(masters=1, slaves=1, slave_ram=True)),
+    # Last, because the freeze stops the agents of every master: a lift that fails here must not
+    # leave its neighbours in the matrix running against a frozen stand.
+    Scenario("23 verifier circle on every master", scenario_23_verifier_circle_on_every_master, Need(masters=2)),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

@@ -43,7 +43,8 @@ use Hilos\Utils\Logger;
  *   {@see onBecameLeader()} / {@see onLostLeadership()}.
  * - Follower side: {@see onQuiesce()} freezes this node and, once its roster has stopped
  *   ({@see onRosterStopped()}), reports quiesced; {@see onLift()} releases it. The initiator's own
- *   node relays the leader's {@see onReady()} to its agent.
+ *   node relays the leader's {@see onReady()} to its agent. The verifier circle photographed at the
+ *   freeze is written on a follower's row from the leader's frame ({@see onCircle()}), as a pass is.
  *
  * A single-node cluster has no followers, so the leader activates the moment its own roster has
  * stopped. An installation with cluster mode off has no coordinator at all and freezes through
@@ -328,35 +329,59 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Entry point on the initiator's own node: writes the photographed circle on this node's row.
+     * Entry point on the initiator's own node: routes the photographed circle to every master.
      *
-     * The one request here that is never routed anywhere. Its siblings travel to the leader because
-     * they move a phase the whole cluster shares; the circle names browsers, and a browser is
-     * attached to the node it connected to. So the photograph stays on the row of the node that
-     * froze - exactly where the initiator's own session hash stays and for the same reason
-     * ({@see onQuiesce()}) - and a member of the circle who reached another node of the cluster
-     * meets the stub there, as the initiator does today.
+     * The photograph is fanned the way a pass is - this node to the leader, the leader to every
+     * follower master - and for the reason the pass is: a member's tab connects to whichever node
+     * the balancer hands it, and each node decides admission against its own copy of the row. The
+     * leader takes the photograph through the same door a frame from another node does
+     * ({@see onCircle()}). A follower writes its own row first and then sends, so the node the
+     * initiator sits on does not wait on a round trip to recognize a member already attached to it;
+     * with no leader known that row is all there is, and the rest of the cluster lets the circle in
+     * by code alone.
      *
-     * Refused when this node holds no freeze at all: on a leader that is `activeFreeze`, on a
-     * follower the leader that ordered the quiesce. The phase is deliberately not checked, unlike
-     * the pass - an initiator sitting on a follower stays on `activating` for the whole freeze by
-     * design, and gating on `active` would drop the circle on exactly the topology that has one.
+     * A node holding no freeze of its own still sends: that is a slave, which no freeze frame reaches
+     * at all - they go to masters only - so there is no row of its own to write, while the leader
+     * authorizes the photograph by the node that initiated the operation, exactly as it authorizes
+     * every other frame of the window. With no leader known as well, the photograph is dropped.
+     *
+     * The phase is deliberately not checked, unlike the pass - an initiator sitting on a follower
+     * stays on `activating` for the whole freeze by design, and gating on `active` would drop the
+     * circle on exactly the topology that has one.
      *
      * @param ProtectedModeCircleSignalData $data Initiator identity and the circle photographed for it
+     * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestCircle(ProtectedModeCircleSignalData $data): void
     {
-        if ($this->activeFreeze === null && $this->freezingLeaderId === null) {
-            Logger::warning("Protected mode: dropping circle from agent '{$data->initiatorAgentType}'"
-                . " — node '{$this->selfNodeId}' holds no freeze");
+        $snapshot = new VerifierCircleSnapshot($data->namedCount, $data->sessionTokenHashes);
+        if ($this->isLeader) {
+            $this->onCircle($this->selfNodeId, $snapshot);
             return;
         }
 
-        $this->runtimeView()?->actions->admitCircle(
-            new VerifierCircleSnapshot($data->namedCount, $data->sessionTokenHashes),
-        );
+        $leaderNodeId = $this->mesh->leaderNodeId();
+        if ($this->freezingLeaderId !== null) {
+            $this->runtimeView()?->actions->admitCircle($snapshot);
+            if ($leaderNodeId === null) {
+                Logger::warning("Protected mode: the circle from agent '{$data->initiatorAgentType}'"
+                    . " stays on node '{$this->selfNodeId}' — no leader is known");
+                return;
+            }
+
+            $this->mesh->sendCircle($leaderNodeId, $snapshot);
+            return;
+        }
+
+        if ($leaderNodeId === null) {
+            Logger::warning("Protected mode: dropping circle from agent '{$data->initiatorAgentType}'"
+                . " — node '{$this->selfNodeId}' holds no freeze and no leader is known");
+            return;
+        }
+
+        $this->mesh->sendCircle($leaderNodeId, $snapshot);
     }
 
     /**
@@ -748,6 +773,34 @@ final class ClusterProtectedMode implements
     }
 
     /**
+     * Records the photographed circle on this node's row, and on the leader fans it to every master.
+     *
+     * The phase is checked on neither half. A follower stands on `activating` for the whole freeze,
+     * as {@see requestCircle()} says, and the leader has nothing a phase would add: the photograph is
+     * taken at ready, the one moment it is both final and true, and {@see leadsFreezeFor()} has
+     * already said that the freeze it belongs to is the one being led here.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onCircle(string $fromNodeId, VerifierCircleSnapshot $snapshot): void
+    {
+        if ($this->frozenByThisLeader($fromNodeId)) {
+            $this->runtimeView()?->actions->admitCircle($snapshot);
+            return;
+        }
+
+        if (!$this->leadsFreezeFor($fromNodeId, 'circle')) {
+            return;
+        }
+
+        $this->runtimeView()?->actions->admitCircle($snapshot);
+        $this->mesh->broadcastCircle($snapshot);
+    }
+
+    /**
      * @param string $fromNodeId Node id the frame came from
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -892,7 +945,7 @@ final class ClusterProtectedMode implements
     /**
      * Whether this node is a follower frozen by the peer that sent the frame.
      *
-     * The three verification frames travel in both directions under one name, so the receiving
+     * The verification frames travel in both directions under one name, so the receiving
      * node decides which half it is playing from what it already knows about itself. Being frozen
      * by the sender is checked first and settles it: a leader never records a freezing leader for
      * itself, so the two halves cannot both match.

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeCircleDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
@@ -14,6 +15,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -212,5 +214,60 @@ final class ProtectedModePeerFrameTest extends TestCase
         $parsed = PeerDTO::fromWire(new PeerProtectedModeLiftDTO()->toJson());
 
         $this->assertInstanceOf(PeerProtectedModeLiftDTO::class, $parsed);
+    }
+
+    public function testCircleFrameRoundTripsThroughTheWire(): void
+    {
+        $frame = new PeerProtectedModeCircleDTO(new VerifierCircleSnapshot(3, ['hash-a', 'hash-b']));
+
+        $restored = PeerProtectedModeCircleDTO::fromJson($frame->toJson());
+
+        $this->assertSame(PeerProtectedModeCircleDTO::MESSAGE_TYPE, $restored->getType());
+        $this->assertSame(3, $restored->snapshot->namedCount);
+        $this->assertSame(['hash-a', 'hash-b'], $restored->snapshot->sessionTokenHashes);
+    }
+
+    public function testCircleFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        // Named but nobody online: the count alone still travels, so a node can tell "nobody was
+        // named" from "nobody named was online".
+        $frame = new PeerProtectedModeCircleDTO(new VerifierCircleSnapshot(1, []));
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeCircleDTO::class, $parsed);
+        $this->assertSame(1, $parsed->snapshot->namedCount);
+        $this->assertSame([], $parsed->snapshot->sessionTokenHashes);
+    }
+
+    public function testCircleFrameRejectsANonIntegerCount(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerProtectedModeCircleDTO::fromArray([
+            PeerProtectedModeCircleDTO::FIELD_NAMED_COUNT => '1',
+            PeerProtectedModeCircleDTO::FIELD_SESSION_TOKEN_HASHES => [],
+        ]);
+    }
+
+    public function testCircleFrameRejectsAHashListThatIsNotAList(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerProtectedModeCircleDTO::fromArray([
+            PeerProtectedModeCircleDTO::FIELD_NAMED_COUNT => 1,
+            PeerProtectedModeCircleDTO::FIELD_SESSION_TOKEN_HASHES => 'hash-a',
+        ]);
+    }
+
+    public function testCircleFrameRefusesTheWholeListOverOneMalformedHash(): void
+    {
+        // Thinning the list would lock out a person the photograph named.
+        $this->expectException(PeerTransportException::class);
+
+        PeerProtectedModeCircleDTO::fromArray([
+            PeerProtectedModeCircleDTO::FIELD_NAMED_COUNT => 2,
+            PeerProtectedModeCircleDTO::FIELD_SESSION_TOKEN_HASHES => ['hash-a', 7],
+        ]);
     }
 }

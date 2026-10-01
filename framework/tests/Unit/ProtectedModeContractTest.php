@@ -20,8 +20,9 @@ use PHPUnit\Framework\TestCase;
  *
  * Pins the runtime row shape and the enable/ready/disable signal payloads that the leader
  * orchestration and the master welcome path (later slices) build on. The freeze behavior
- * itself is cluster-wide and exercised at e2e in demo/cluster; here we lock the serialized
- * shape so the writer seam and the wire never drift from the approved contract-gate.
+ * itself is cluster-wide: it is entered, verified and lifted on every master by scenario 23 of
+ * the binance-btc-tracker cluster stand; here we lock the serialized shape so the writer seam
+ * and the wire never drift from the approved contract-gate.
  */
 final class ProtectedModeContractTest extends TestCase
 {

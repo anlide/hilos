@@ -16,8 +16,10 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
  * roster reads the coordinator relies on, so the coordinator stays pure logic and is unit-testable
  * with a fake. An initiator that does not lead forwards enable and disable to the current leader
  * (addressed via {@see leaderNodeId()}); the leader broadcasts quiesce and lift to its followers
- * and signals ready to the initiator; a follower reports quiesced back to the leader. The concrete
- * port is wired at daemon start by the leader-orchestration slice.
+ * and signals ready to the initiator; a follower reports quiesced back to the leader. The circle
+ * photographed at the freeze rides the same way a pass does - the initiator's node to the leader,
+ * the leader to every follower master. The concrete port is wired at daemon start by the
+ * leader-orchestration slice.
  */
 interface ProtectedModeMesh
 {
@@ -122,6 +124,24 @@ interface ProtectedModeMesh
      * @param string $passHash SHA-256 of the minted pass
      */
     public function broadcastPass(string $passHash): void;
+
+    /**
+     * Forwards the circle photographed on this initiator node to the leader.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     * @param VerifierCircleSnapshot $snapshot The circle as this node photographed it
+     */
+    public function sendCircle(string $leaderNodeId, VerifierCircleSnapshot $snapshot): void;
+
+    /**
+     * Broadcasts the photographed circle to every follower master.
+     *
+     * Every master, for the reason {@see broadcastVerify()} names: a member of the circle may land
+     * on any of them, and each decides admission against its own copy of the row.
+     *
+     * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
+     */
+    public function broadcastCircle(VerifierCircleSnapshot $snapshot): void;
 
     /**
      * Forwards this initiator node's request to close back out of the window to the leader.

@@ -173,9 +173,9 @@ $steps = [
     // and a stranger scenario 17 raises. It may run beside `cluster` and beside any e2e step - no
     // group and no edge keep it apart from them (the head of this file). Takes its stand down
     // with it, at any outcome, for the reason `cluster` does. The demo's unit suite is not run
-    // here but in binance-btc-tracker-php. The seconds are measured in run 0684 (2026-09-30),
-    // beside `cluster`, with scenarios 13 and 20 parked (P-169, P-456); returning one moves
-    // the number.
+    // here but in binance-btc-tracker-php. Scenario 23 freezes the masters last (HIL-1125). The
+    // seconds are measured on the step run alone on nova-de (2026-10-01, HIL-1125), with
+    // scenarios 13 and 20 parked (P-169, P-456); returning one moves the number.
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -184,7 +184,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 91,
+        'seconds' => 105,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

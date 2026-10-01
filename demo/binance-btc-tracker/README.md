@@ -163,8 +163,8 @@ Nothing here drives the stand: the framework's shared cluster harness
 the scenarios it names — 1 master-slave mesh, 2 master-master, 5 leader-kill
 re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser,
 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate
-refused and 20 rt set width across nodes (parked, P-456)
-(`docs/agents/testing.md`, "The cluster stands — three demos, three shapes").
+refused, 20 rt set width across nodes (parked, P-456) and 23 verifier circle on
+every master (`docs/agents/testing.md`, "The cluster stands — three demos, three shapes").
 The framework's probe fleet and runtime-set probe are in this demo's `AGENTS`,
 and they start only here: on one node, on the Playwright stand and in
 production the rows are carried and nothing is run.

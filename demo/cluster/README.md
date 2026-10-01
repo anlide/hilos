@@ -75,7 +75,7 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 The stand names the scenarios it carries in the `x-hilos-cluster` block of its
 compose file; this one carries 3, 4, 6, 9, 11, 12, 14, 15, 16, 18, 19, 21 and
 22.
-Scenarios 1, 2, 5, 7, 8, 10, 13, 17 and 20 run on the cluster stand of
+Scenarios 1, 2, 5, 7, 8, 10, 13, 17, 20 and 23 run on the cluster stand of
 binance-btc-tracker ([its README](../binance-btc-tracker/README.md), section
 "Cluster stand"). The list below is the harness's whole matrix.
 
@@ -129,6 +129,11 @@ binance-btc-tracker ([its README](../binance-btc-tracker/README.md), section
    while the rest converge; with the marker back it rejoins (HIL-1206). The first
    convergence of the matrix already proves the first write: five nodes starting
    together on an empty database converge only if they all read one marker
+23. verifier circle on every master — one address is named to the verifier
+   circle and the stand is frozen through the index agent's test drive: every
+   master's freeze row holds the photographed circle through the verification
+   window, and none does once the system opens (HIL-1125). It runs last, because
+   the freeze stops the agents of every master
 
 They run in the order the harness lists them, which is not the order they are
 numbered: the RT scenarios and scenario 19 go right after placement, while the

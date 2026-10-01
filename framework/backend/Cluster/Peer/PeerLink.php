@@ -26,6 +26,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerPongDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeCircleDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
@@ -393,6 +394,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeVerifyDTO => $this->onProtectedModeVerify($frame),
             $frame instanceof PeerProtectedModeProgressDTO => $this->onProtectedModeProgress($frame),
             $frame instanceof PeerProtectedModePassDTO => $this->onProtectedModePass($frame),
+            $frame instanceof PeerProtectedModeCircleDTO => $this->onProtectedModeCircle($frame),
             $frame instanceof PeerProtectedModeRefreezeDTO => $this->onProtectedModeRefreeze($frame),
             $frame instanceof PeerPingDTO => $this->onPing($frame),
             $frame instanceof PeerPongDTO => $this->onPong(),
@@ -949,6 +951,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode pass');
         $this->server->onProtectedModePassReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode circle frame to the server for this node to record.
+     *
+     * @param PeerProtectedModeCircleDTO $frame Incoming protected-mode circle frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeCircle(PeerProtectedModeCircleDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode circle');
+        $this->server->onProtectedModeCircleReceived($this, $frame);
     }
 
     /**
