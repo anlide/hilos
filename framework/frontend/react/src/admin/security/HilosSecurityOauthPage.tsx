@@ -363,7 +363,7 @@ export function HilosSecurityOauthPage({
       <HilosModal
         open={editOpen}
         confirmOnClose={live.dirty}
-        ariaLabel="Edit · Return address"
+        aria-label="Edit · Return address"
         onClose={closeEdit}
         header={
           <ConflictHeader

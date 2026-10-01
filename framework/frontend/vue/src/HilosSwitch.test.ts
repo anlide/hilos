@@ -88,7 +88,11 @@ describe('HilosSwitch', () => {
 describe('HilosSwitch in the admin view mode', () => {
   it('stands disabled where the server put it, described by the strip too', () => {
     const wrapper = mount(HilosSwitch, {
-      props: { checked: true, dataId: 'setting-toggle', describedBy: 'hint' },
+      props: {
+        checked: true,
+        dataId: 'setting-toggle',
+        ariaDescribedby: 'hint',
+      },
       global: { provide: { [hilosAdminViewModeKey as symbol]: ref(true) } },
     })
 
@@ -112,7 +116,11 @@ describe('HilosSwitch in the admin view mode', () => {
 
   it('is untouched outside the mode', () => {
     const wrapper = mount(HilosSwitch, {
-      props: { checked: false, dataId: 'setting-toggle', describedBy: 'hint' },
+      props: {
+        checked: false,
+        dataId: 'setting-toggle',
+        ariaDescribedby: 'hint',
+      },
       global: { provide: { [hilosAdminViewModeKey as symbol]: ref(false) } },
     })
 

@@ -77,17 +77,17 @@ export interface HilosModalProps {
    * name of the dialog still has to say what it is for. Ignored when `title` is
    * set: a visible title names the dialog already.
    */
-  ariaLabel?: string
+  'aria-label'?: string
   /**
    * The id of the node that carries the dialog's name, when that name is
    * written somewhere else — the heading a surface draws in the body. The
    * accessible name is then the very text a sighted person reads, and it
    * follows that text when it changes. Ignored when `title` is set, for the
-   * same reason `ariaLabel` is. Given together with `ariaLabel`, this wins
-   * while the node exists, and `ariaLabel` stays as the fallback name for a
+   * same reason `aria-label` is. Given together with `aria-label`, this wins
+   * while the node exists, and `aria-label` stays as the fallback name for a
    * surface that carries no such heading.
    */
-  ariaLabelledby?: string
+  'aria-labelledby'?: string
   /**
    * Where focus lands when the dialog opens. Empty (the default) means a
    * `[data-autofocus]` mark lives in this file; `'dialog'` lands on the
@@ -140,8 +140,8 @@ export interface HilosModalProps {
 export function HilosModal({
   open,
   title = '',
-  ariaLabel = '',
-  ariaLabelledby = '',
+  'aria-label': ariaLabel = '',
+  'aria-labelledby': ariaLabelledby = '',
   initialFocus = '',
   size = '',
   closeOnEsc = true,

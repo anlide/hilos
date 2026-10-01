@@ -180,7 +180,7 @@ export function HilosSecuritySignInMethodsPage({
             busy={passkeyPending}
             disabled={toggle.busy}
             aria-label="Allow passkey without a confirmed address"
-            describedBy={passkeyHintId}
+            aria-describedby={passkeyHintId}
             dataId="hilos-sign-in-passkey-unproven"
             onToggle={(next) => void togglePasskeyUnproven(next)}
           />

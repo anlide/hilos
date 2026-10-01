@@ -149,7 +149,7 @@ async function togglePasskeyUnproven(next: boolean): Promise<void> {
         :busy="passkeyPending"
         :disabled="switchBusy"
         aria-label="Allow passkey without a confirmed address"
-        :described-by="passkeyHintId"
+        :aria-describedby="passkeyHintId"
         data-id="hilos-sign-in-passkey-unproven"
         @toggle="togglePasskeyUnproven"
       />

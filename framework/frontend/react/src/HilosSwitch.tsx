@@ -26,7 +26,7 @@ export interface HilosSwitchProps extends Omit<
   /** The accessible name when no visible label is drawn. */
   'aria-label'?: string
   /** The id of the hint describing the switch. */
-  describedBy?: string
+  'aria-describedby'?: string
   /** Milliseconds to wait before showing the busy spinner. */
   spinnerDelay?: number
   /** Called with the position requested by the user. */
@@ -46,7 +46,7 @@ export function HilosSwitch({
   dataId,
   label,
   'aria-label': ariaLabel,
-  describedBy,
+  'aria-describedby': ariaDescribedby,
   spinnerDelay = DEFAULT_SPINNER_DELAY_MS,
   onToggle,
   className,
@@ -86,7 +86,7 @@ export function HilosSwitch({
         disabled={isDisabled}
         aria-busy={busy || undefined}
         aria-label={ariaLabel}
-        aria-describedby={describedBy}
+        aria-describedby={ariaDescribedby}
         data-id={dataId}
         onClick={onClick}
       />

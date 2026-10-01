@@ -249,7 +249,7 @@ function noticeText(
         [open]="editOpen()"
         (openChange)="$event ? editOpen.set(true) : closeEdit()"
         [confirmOnClose]="live().dirty"
-        [ariaLabel]="editTitle()"
+        [aria-label]="editTitle()"
       >
         <h5
           hilosConflictHeader

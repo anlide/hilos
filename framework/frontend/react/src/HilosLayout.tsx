@@ -627,7 +627,7 @@ export function HilosLayout({
           terms by accident. */}
           <HilosModal
             open={reconsentOpen && !underMaintenance}
-            ariaLabel={LEGAL_RECONSENT_COPY.heading}
+            aria-label={LEGAL_RECONSENT_COPY.heading}
             initialFocus="dialog"
             onClose={closeLegalReconsent}
           >

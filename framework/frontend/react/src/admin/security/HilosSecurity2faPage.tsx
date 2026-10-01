@@ -299,7 +299,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
       <HilosModal
         open={editOpen}
         confirmOnClose={live.dirty}
-        ariaLabel={editTitle}
+        aria-label={editTitle}
         onClose={closeEdit}
         header={<ConflictHeader title={editTitle} conflict={live.conflict} />}
         actions={({ requestClose }) => (

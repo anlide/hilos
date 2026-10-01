@@ -85,7 +85,7 @@ The sign-in screen is the worked example. The surface is identifier-first, so it
 heading changes with the step (`Confirm your email`, `Choose a new password`,
 `Your account is ready`), and the modal `HilosView` shows it in has no title of
 its own. The heading carries `AUTH_SURFACE_HEADING_ID` (`@hilos/core`), the modal
-gets it as `ariaLabelledby`, and the announced name is the very text on screen —
+gets it as `aria-labelledby`, and the announced name is the very text on screen —
 on every step, with no second place to keep in sync.
 
 Two things come with that shape:

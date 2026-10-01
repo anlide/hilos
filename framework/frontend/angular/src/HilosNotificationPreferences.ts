@@ -74,7 +74,7 @@ let preferencesSeq = 0
               [busy]="isPending(row.channel)"
               [disabled]="!row.hasAddress"
               [label]="row.label"
-              [describedBy]="
+              [aria-describedby]="
                 row.hasAddress ? undefined : rowId(row.channel) + '-hint'
               "
               [dataId]="'hilos-notification-preference-toggle-' + row.channel"

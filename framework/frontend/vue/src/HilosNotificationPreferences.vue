@@ -107,7 +107,7 @@ function toggle(row: HilosNotificationChannelState, enabled: boolean): void {
           :busy="pending.has(row.channel)"
           :disabled="!row.hasAddress"
           :label="row.label"
-          :described-by="
+          :aria-describedby="
             row.hasAddress ? undefined : `${rowId(row.channel)}-hint`
           "
           :data-id="`hilos-notification-preference-toggle-${row.channel}`"

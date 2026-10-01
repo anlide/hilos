@@ -79,6 +79,14 @@ describe('HilosSwitch', () => {
     }
   })
 
+  it('puts aria-describedby on the checkbox', () => {
+    const fixture = mount()
+    fixture.componentRef.setInput('aria-describedby', 'hint')
+    fixture.detectChanges()
+
+    expect(input(fixture).getAttribute('aria-describedby')).toBe('hint')
+  })
+
   it('gives each instance an id and points its label at its own input', () => {
     const first = mount()
     first.componentRef.setInput('label', 'First')

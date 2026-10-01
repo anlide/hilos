@@ -215,7 +215,7 @@ function noticeText(
         [open]="editOpen()"
         (openChange)="$event ? editOpen.set(true) : closeEdit()"
         [confirmOnClose]="live().dirty"
-        ariaLabel="Edit · Return address"
+        [aria-label]="'Edit · Return address'"
       >
         <h5
           hilosConflictHeader

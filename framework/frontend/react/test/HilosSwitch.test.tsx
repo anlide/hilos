@@ -106,6 +106,23 @@ describe('HilosSwitch', () => {
     }
   })
 
+  it('puts aria-describedby on the checkbox, not the wrapper', () => {
+    const { container } = render(
+      <HilosSwitch
+        checked={false}
+        dataId="setting-toggle"
+        aria-label="Enable setting"
+        aria-describedby="hint"
+        onToggle={() => undefined}
+      />,
+    )
+    const checkbox = container.querySelector('input')
+    const wrapper = container.querySelector('.form-switch')
+
+    expect(checkbox?.getAttribute('aria-describedby')).toBe('hint')
+    expect(wrapper?.hasAttribute('aria-describedby')).toBe(false)
+  })
+
   it('gives each instance an id and points its label at its own input', () => {
     const { container } = render(
       <>

@@ -120,7 +120,7 @@ let passkeyHintSeq = 0
             [busy]="passkeyPending()"
             [disabled]="toggle.busy()"
             [aria-label]="'Allow passkey without a confirmed address'"
-            [describedBy]="passkeyHintId"
+            [aria-describedby]="passkeyHintId"
             dataId="hilos-sign-in-passkey-unproven"
             (toggle)="onTogglePasskeyUnproven($event)"
           />

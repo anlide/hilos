@@ -147,7 +147,7 @@ export function HilosView({
           role=dialog + aria-modal + an accessible name — and it takes that name
           from the very heading the surface draws (HIL-832), so the name a
           screen reader announces is the text a sighted person reads, on every
-          step. The fixed ariaLabel stays behind it as the fallback:
+          step. The fixed aria-label stays behind it as the fallback:
           authSurface is a public extension point, and a project surface that
           carries no such heading has to degrade to a dialog named "Sign in",
           not to a dialog named nothing.
@@ -161,8 +161,8 @@ export function HilosView({
       {AuthSurface && authGate && !showAuthInPlace ? (
         <HilosModal
           open={modalOpen}
-          ariaLabel="Sign in"
-          ariaLabelledby={AUTH_SURFACE_HEADING_ID}
+          aria-label="Sign in"
+          aria-labelledby={AUTH_SURFACE_HEADING_ID}
           initialFocus="inner"
           onClose={() => authGate.dismiss()}
         >

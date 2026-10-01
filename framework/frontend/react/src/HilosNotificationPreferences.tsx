@@ -122,7 +122,7 @@ export function HilosNotificationPreferences({
               busy={isPending}
               disabled={!row.hasAddress}
               label={row.label}
-              describedBy={row.hasAddress ? undefined : `${id}-hint`}
+              aria-describedby={row.hasAddress ? undefined : `${id}-hint`}
               dataId={`hilos-notification-preference-toggle-${row.channel}`}
               onToggle={(next) => toggle(row, next)}
             />

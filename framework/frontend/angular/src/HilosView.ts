@@ -91,7 +91,7 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
     every modal expose role=dialog + aria-modal + an accessible name — and it
     takes that name from the very heading the surface draws (HIL-832), so the
     name a screen reader announces is the text a sighted person reads, on every
-    step. The fixed ariaLabel stays behind it as the fallback: authSurface is a
+    step. The fixed aria-label stays behind it as the fallback: authSurface is a
     public extension point, and a project surface that carries no such heading
     has to degrade to a dialog named "Sign in", not to a dialog named nothing.
 
@@ -103,8 +103,8 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
     @if (authSurfaceType() && authGate() && !showAuthInPlace()) {
       <hilos-modal
         [open]="modalOpen()"
-        [ariaLabel]="'Sign in'"
-        [ariaLabelledby]="headingId"
+        [aria-label]="'Sign in'"
+        [aria-labelledby]="headingId"
         initialFocus="inner"
         (cancel)="onModalDismiss()"
       >

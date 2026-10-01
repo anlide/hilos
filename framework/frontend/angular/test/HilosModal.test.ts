@@ -57,6 +57,37 @@ class MarkedHost {}
 })
 class DialogFocusHost {}
 
+/**
+ * A host that names the dialog through the attribute inputs, with no title of
+ * its own.
+ */
+@Component({
+  selector: 'test-modal-aria-name-host',
+  imports: [HilosModal],
+  template: `
+    <hilos-modal
+      [open]="true"
+      [aria-label]="'Sign in'"
+      [aria-labelledby]="'body-heading'"
+    />
+  `,
+})
+class AriaNameHost {}
+
+/** A host whose visible title names the dialog, beside a labelledby input. */
+@Component({
+  selector: 'test-modal-titled-name-host',
+  imports: [HilosModal],
+  template: `
+    <hilos-modal
+      [open]="true"
+      [title]="'Edit'"
+      [aria-labelledby]="'body-heading'"
+    />
+  `,
+})
+class TitledNameHost {}
+
 /** A host whose close is guarded, so the discard-confirm step can appear. */
 @Component({
   selector: 'test-modal-confirm-focus-host',
@@ -327,6 +358,27 @@ describe('HilosModal', () => {
     expect(document.activeElement).toBe(
       document.querySelector('[data-id="modal"]'),
     )
+  })
+
+  it('names the dialog from aria-labelledby and keeps aria-label off the host tag', () => {
+    const fixture = TestBed.createComponent(AriaNameHost)
+    fixture.detectChanges()
+    const dialog = document.querySelector('[data-id="modal"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('body-heading')
+    expect(dialog?.getAttribute('aria-label')).toBe('Sign in')
+    expect(
+      fixture.nativeElement
+        .querySelector('hilos-modal')
+        ?.hasAttribute('aria-label'),
+    ).toBe(false)
+  })
+
+  it('drops aria-labelledby when the dialog has a visible title', () => {
+    const fixture = TestBed.createComponent(TitledNameHost)
+    fixture.detectChanges()
+    const dialog = document.querySelector('[data-id="modal"]')
+    expect(dialog?.getAttribute('aria-labelledby')).toBeNull()
+    expect(dialog?.getAttribute('aria-label')).toBe('Edit')
   })
 
   it('focuses the confirm dialog, not Discard, on the discard-confirm step', () => {

@@ -397,7 +397,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
         accident. -->
         <hilos-modal
           [open]="reconsentOpen() && !underMaintenance()"
-          [ariaLabel]="reconsentCopy.heading"
+          [aria-label]="reconsentCopy.heading"
           initialFocus="dialog"
           (openChange)="$event ? undefined : onReconsentLater()"
         >

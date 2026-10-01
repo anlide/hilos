@@ -342,14 +342,14 @@ describe('HilosModal', () => {
     expect(closes).toBe(1)
   })
 
-  it('names the dialog from ariaLabel when it carries no visible title', () => {
-    render(<HilosModal open ariaLabel="Sign in" />)
+  it('names the dialog from aria-label when it carries no visible title', () => {
+    render(<HilosModal open aria-label="Sign in" />)
     expect(byId('modal')?.getAttribute('aria-label')).toBe('Sign in')
   })
 
-  it('names the dialog from ariaLabelledby when it carries no visible title', () => {
+  it('names the dialog from aria-labelledby when it carries no visible title', () => {
     render(
-      <HilosModal open ariaLabel="Sign in" ariaLabelledby="body-heading" />,
+      <HilosModal open aria-label="Sign in" aria-labelledby="body-heading" />,
     )
     expect(byId('modal')?.getAttribute('aria-labelledby')).toBe('body-heading')
     // The fallback name stays put: a surface carrying no such heading leaves
@@ -357,8 +357,8 @@ describe('HilosModal', () => {
     expect(byId('modal')?.getAttribute('aria-label')).toBe('Sign in')
   })
 
-  it('drops ariaLabelledby when the dialog has a visible title', () => {
-    render(<HilosModal open title="Edit" ariaLabelledby="body-heading" />)
+  it('drops aria-labelledby when the dialog has a visible title', () => {
+    render(<HilosModal open title="Edit" aria-labelledby="body-heading" />)
     expect(byId('modal')?.getAttribute('aria-labelledby')).toBeNull()
     expect(byId('modal')?.getAttribute('aria-label')).toBe('Edit')
   })
@@ -366,7 +366,7 @@ describe('HilosModal', () => {
   it('renders no modal-title heading when there is no title', () => {
     // An empty heading is a heading in the accessibility tree that names
     // nothing (docs/agents/frontend/accessibility.md).
-    render(<HilosModal open ariaLabel="Sign in" />)
+    render(<HilosModal open aria-label="Sign in" />)
     expect(document.querySelector('.modal-title')).toBeNull()
   })
 

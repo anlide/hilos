@@ -36,7 +36,7 @@ let switchSeq = 0
       [disabled]="isDisabled()"
       [attr.aria-busy]="busy() || null"
       [attr.aria-label]="ariaLabel() || null"
-      [attr.aria-describedby]="describedBy() || null"
+      [attr.aria-describedby]="ariaDescribedby() || null"
       [attr.data-id]="dataId()"
       (click)="onClick($event)"
     />
@@ -69,7 +69,9 @@ export class HilosSwitch {
   /** The accessible name when no visible label is drawn. */
   readonly ariaLabel = input<string>(undefined, { alias: 'aria-label' })
   /** The id of the hint describing the switch. */
-  readonly describedBy = input<string>()
+  readonly ariaDescribedby = input<string>(undefined, {
+    alias: 'aria-describedby',
+  })
   /** Milliseconds to wait before showing the busy spinner. */
   readonly spinnerDelay = input(DEFAULT_SPINNER_DELAY_MS)
   /** The position requested by the user. */

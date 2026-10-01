@@ -30,7 +30,7 @@ const props = withDefaults(
     /** The accessible name when no visible label is drawn. */
     ariaLabel?: string
     /** The id of the hint describing the switch. */
-    describedBy?: string
+    ariaDescribedby?: string
     /** Milliseconds to wait before showing the busy spinner. */
     spinnerDelay?: number
   }>(),
@@ -39,7 +39,7 @@ const props = withDefaults(
     disabled: false,
     label: undefined,
     ariaLabel: undefined,
-    describedBy: undefined,
+    ariaDescribedby: undefined,
     spinnerDelay: DEFAULT_SPINNER_DELAY_MS,
   },
 )
@@ -62,14 +62,14 @@ const isDisabled = computed(
   () => props.disabled || props.busy || viewMode.value,
 )
 
-const ariaDescribedBy = computed(() => {
+const describingIds = computed(() => {
   if (!viewMode.value) {
-    return props.describedBy
+    return props.ariaDescribedby
   }
 
-  return props.describedBy === undefined
+  return props.ariaDescribedby === undefined
     ? HILOS_VIEW_MODE_STRIP_TEXT_ID
-    : `${props.describedBy} ${HILOS_VIEW_MODE_STRIP_TEXT_ID}`
+    : `${props.ariaDescribedby} ${HILOS_VIEW_MODE_STRIP_TEXT_ID}`
 })
 
 function onClick(event: MouseEvent): void {
@@ -89,7 +89,7 @@ function onClick(event: MouseEvent): void {
       :disabled="isDisabled"
       :aria-busy="busy || undefined"
       :aria-label="ariaLabel"
-      :aria-describedby="ariaDescribedBy"
+      :aria-describedby="describingIds"
       :data-id="dataId"
       @click="onClick"
     />
