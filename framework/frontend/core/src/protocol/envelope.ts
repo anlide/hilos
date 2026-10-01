@@ -401,7 +401,7 @@ export type TableBulkReportSignalData = z.infer<
  * PHP `TableViewportAppendDTO`): the addressed live row to add at the tail of one
  * table's window, plus the new counts. Sent only when the window is the last page
  * with room, so the frontend applies it immediately. The row rides the
- * `{rowKey, slots}` shape.
+ * `{rowKey, slots}` shape. Both boundary anchors describe the window after the append.
  *
  * The row arrives whatever the counts say; `pageCount` is absent when `totalExact` is
  * false, exactly as it is on the count signal.
@@ -413,6 +413,8 @@ export const tableViewportAppendSignalDataSchema = z.looseObject({
   totalCount: z.number().int(),
   totalExact: z.boolean(),
   pageCount: z.number().int().optional(),
+  firstAnchor: z.record(z.string(), z.unknown()).nullable(),
+  lastAnchor: z.record(z.string(), z.unknown()).nullable(),
 })
 
 export type TableViewportAppendSignalData = z.infer<
@@ -426,6 +428,7 @@ export type TableViewportAppendSignalData = z.infer<
  * receiver's window, and the new counts. `requestId` names the action that
  * created it, so a surface can tell which of its own presses this answers; it is
  * absent when the write was not tracked. The row rides the `{rowKey, slots}` shape.
+ * Both boundary anchors describe the re-selected window.
  *
  * The counts follow the window's rule: `pageCount` is absent when `totalExact` is false.
  */
@@ -437,6 +440,8 @@ export const tableViewportOwnCreateSignalDataSchema = z.looseObject({
   totalCount: z.number().int(),
   totalExact: z.boolean(),
   pageCount: z.number().int().optional(),
+  firstAnchor: z.record(z.string(), z.unknown()).nullable(),
+  lastAnchor: z.record(z.string(), z.unknown()).nullable(),
   requestId: z.string().nullish(),
 })
 

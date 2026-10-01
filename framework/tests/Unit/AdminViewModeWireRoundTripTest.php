@@ -73,8 +73,8 @@ final class AdminViewModeWireRoundTripTest extends TestCase
                 false,
                 $row,
             )],
-            'append' => [new TableViewportAppendDTO('users', 'hilosUsers', $row, 2, true, 1)],
-            'own create' => [new TableViewportOwnCreateDTO('users', 'hilosUsers', $row, 0, 2, true, 1, 'req-1')],
+            'append' => [new TableViewportAppendDTO('users', 'hilosUsers', $row, 2, true, 1, null, null)],
+            'own create' => [new TableViewportOwnCreateDTO('users', 'hilosUsers', $row, 0, 2, true, 1, null, null, 'req-1')],
             'progress' => [TableProgressSignalData::fromProgress('backup', 'hilosBackupHistory', new TableProgressDTO(
                 TableProgressScope::Table,
                 'run',

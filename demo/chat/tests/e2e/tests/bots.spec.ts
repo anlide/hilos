@@ -1022,3 +1022,115 @@ test.describe('in the admin view mode', () => {
     await expect(name).toBeHidden()
   })
 })
+
+test('Next starts after the rows another tab appended to a last page with room', async ({
+  page,
+}) => {
+  // Filling a last page and then removing every bot takes more round trips than a single write.
+  test.slow()
+  await signUpAdmin(page)
+  await openBots(page)
+  const base = await tableTotal(page)
+  const stamp = Date.now()
+  const createdNames: string[] = []
+  let sequence = 0
+  const nextName = () => {
+    const name = `ZZ ${stamp} ${String(sequence).padStart(3, '0')}`
+    sequence += 1
+    createdNames.push(name)
+    return name
+  }
+
+  // B must open with a partial last page, even if an earlier failed attempt left bots behind.
+  const setupCount =
+    base % WINDOW === 0 ? 1 : base % WINDOW === WINDOW - 1 ? 2 : 0
+  for (let index = 0; index < setupCount; index += 1) {
+    await createBot(page, nextName())
+  }
+
+  const tabB = await page.context().newPage()
+  await openBots(tabB)
+  await goToLastPage(tabB)
+  let keys = await tableRowKeys(tabB)
+  expect(keys.length).toBeLessThan(WINDOW)
+
+  // Every next name is greater than the last, so these frames must be tail appends.
+  while (keys.length < WINDOW) {
+    const name = nextName()
+    await createBot(page, name)
+    const key = await tableRowKeyByText(tabB, name)
+    await expect.poll(() => tableRowKeys(tabB)).toEqual([...keys, key])
+    keys = [...keys, key]
+  }
+
+  const extraName = nextName()
+  await createBot(page, extraName)
+  await expectTableTotal(tabB, base + createdNames.length)
+  const next = tabB.getByTestId('hilos-table-next')
+  await expect(next).toBeEnabled()
+  await next.click()
+  const extraKey = await tableRowKeyByText(tabB, extraName)
+  expect(await tableRowKeys(tabB)).toEqual([extraKey])
+  await tabB.close()
+
+  // Remove in descending order: the next bot to erase remains on the last page.
+  for (const name of createdNames.reverse()) {
+    await openBots(page)
+    await goToLastPage(page)
+    await deleteBot(page, await tableRowKeyByText(page, name))
+  }
+})
+
+test('Next retrieves the row an own create pushed below the first page', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await openBots(page)
+  const base = await tableTotal(page)
+  const keysBefore = await tableRowKeys(page)
+  expect(keysBefore).toHaveLength(WINDOW)
+  const lastKey = keysBefore.at(-1)
+  const name = `Dave ${Date.now()}`
+
+  await createBot(page, name)
+  await expectTableTotal(page, base + 1)
+  const key = await tableRowKeyByText(page, name)
+  expect(await tableRowKeys(page)).not.toContain(lastKey)
+
+  await page.getByTestId('hilos-table-next').click()
+  await expect.poll(async () => (await tableRowKeys(page))[0]).toBe(lastKey)
+  await pageBackOnce(page)
+  await deleteBot(page, key)
+})
+
+test('an own create on a Back window pushes its first row above and Back retrieves it', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await openBots(page)
+  const base = await tableTotal(page)
+  const firstPageKeys = await tableRowKeys(page)
+  expect(firstPageKeys).toHaveLength(WINDOW)
+  const topKey = firstPageKeys[0]
+
+  await page.getByTestId('hilos-table-next').click()
+  await expect.poll(async () => (await tableRowKeys(page))[0]).not.toBe(topKey)
+  await pageBackOnce(page)
+  expect(await tableRowKeys(page)).toEqual(firstPageKeys)
+
+  const name = `Dave ${Date.now()}`
+  await createBot(page, name)
+  await expectTableTotal(page, base + 1)
+  const key = await tableRowKeyByText(page, name)
+  const dashaKey = await tableRowKeyByText(page, 'Dasha')
+  const davidKey = await tableRowKeyByText(page, 'David')
+  const after = await tableRowKeys(page)
+  expect(after).not.toContain(topKey)
+  expect(after.indexOf(key)).toBe(after.indexOf(dashaKey) + 1)
+  expect(after.indexOf(davidKey)).toBe(after.indexOf(key) + 1)
+  await expect(page.getByTestId('hilos-table-prev')).toBeEnabled()
+
+  await pageBackOnce(page)
+  expect((await tableRowKeys(page))[0]).toBe(topKey)
+  await deleteBot(page, key)
+})

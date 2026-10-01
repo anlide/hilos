@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
@@ -18,7 +19,7 @@ final class TableViewportAppendDTOTest extends TestCase
     {
         $row = ['rowKey' => 'a', 'slots' => ['settings' => ['key' => 'a']]];
         $restored = TableViewportAppendDTO::fromArray(
-            new TableViewportAppendDTO('hilos_settings', 'settings', $row, 91, true, 1)->toArray(),
+            new TableViewportAppendDTO('hilos_settings', 'settings', $row, 91, true, 1, new TableAnchorDTO(['key' => 'a']), null)->toArray(),
         );
 
         $this->assertSame('hilos_settings', $restored->page);
@@ -27,6 +28,8 @@ final class TableViewportAppendDTOTest extends TestCase
         $this->assertSame(91, $restored->totalCount);
         $this->assertTrue($restored->totalExact);
         $this->assertSame(1, $restored->pageCount);
+        $this->assertSame(['key' => 'a'], $restored->firstAnchor?->toArray());
+        $this->assertNull($restored->lastAnchor);
     }
 
     public function testTheRowStillTravelsWhenTheCountStoppedAtItsCeiling(): void
@@ -39,9 +42,13 @@ final class TableViewportAppendDTOTest extends TestCase
             TableConstants::COUNT_CEILING,
             false,
             null,
+            null,
+            null,
         )->toArray();
 
         $this->assertArrayNotHasKey(TableViewportAppendDTO::pageCount, $wire);
+        $this->assertArrayHasKey(TableViewportAppendDTO::firstAnchor, $wire);
+        $this->assertArrayHasKey(TableViewportAppendDTO::lastAnchor, $wire);
 
         $restored = TableViewportAppendDTO::fromArray($wire);
 

@@ -212,6 +212,8 @@ export function bindTableViewport(
       normalizeTableRow(scope, data.row, options),
       data.totalCount,
       data.totalExact,
+      data.firstAnchor,
+      data.lastAnchor,
     )
   })
 
@@ -231,6 +233,8 @@ export function bindTableViewport(
         data.position,
         data.totalCount,
         data.totalExact,
+        data.firstAnchor,
+        data.lastAnchor,
         data.requestId,
       )
     },

@@ -431,7 +431,7 @@ describe('parseSignal', () => {
 
   it('parses a table_viewport_append frame', () => {
     const result = parseSignal(
-      '{"type":"table_viewport_append","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"totalCount":4,"totalExact":true,"pageCount":1}}',
+      '{"type":"table_viewport_append","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"totalCount":4,"totalExact":true,"pageCount":1,"firstAnchor":{"key":"a"},"lastAnchor":{"key":"x"}}}',
     )
     expect(result.ok).toBe(true)
     if (result.ok && result.signal.kind === 'tableViewportAppend') {
@@ -440,13 +440,15 @@ describe('parseSignal', () => {
         totalCount: 4,
         totalExact: true,
         pageCount: 1,
+        firstAnchor: { key: 'a' },
+        lastAnchor: { key: 'x' },
       })
     }
   })
 
   it('parses a table_viewport_own_create frame', () => {
     const result = parseSignal(
-      '{"type":"table_viewport_own_create","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"position":2,"totalCount":4,"totalExact":true,"pageCount":1,"requestId":"req-1"}}',
+      '{"type":"table_viewport_own_create","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"position":2,"totalCount":4,"totalExact":true,"pageCount":1,"firstAnchor":{"key":"a"},"lastAnchor":{"key":"x"},"requestId":"req-1"}}',
     )
     expect(result.ok).toBe(true)
     if (result.ok && result.signal.kind === 'tableViewportOwnCreate') {
@@ -456,6 +458,8 @@ describe('parseSignal', () => {
         totalCount: 4,
         totalExact: true,
         pageCount: 1,
+        firstAnchor: { key: 'a' },
+        lastAnchor: { key: 'x' },
         requestId: 'req-1',
       })
     }
@@ -463,13 +467,45 @@ describe('parseSignal', () => {
 
   it('parses a table_viewport_own_create frame whose write was not tracked', () => {
     const result = parseSignal(
-      '{"type":"table_viewport_own_create","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"position":0,"totalCount":1,"totalExact":true,"pageCount":1,"requestId":null}}',
+      '{"type":"table_viewport_own_create","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"position":0,"totalCount":1,"totalExact":true,"pageCount":1,"firstAnchor":null,"lastAnchor":null,"requestId":null}}',
     )
     expect(result.ok).toBe(true)
     if (result.ok && result.signal.kind === 'tableViewportOwnCreate') {
       expect(result.signal.data.requestId).toBeNull()
+      expect(result.signal.data.firstAnchor).toBeNull()
+      expect(result.signal.data.lastAnchor).toBeNull()
     }
   })
+
+  it('parses an append frame with null boundaries', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_append","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"totalCount":1,"totalExact":true,"firstAnchor":null,"lastAnchor":null}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableViewportAppend') {
+      expect(result.signal.data.firstAnchor).toBeNull()
+      expect(result.signal.data.lastAnchor).toBeNull()
+    }
+  })
+
+  it.each(['table_viewport_append', 'table_viewport_own_create'])(
+    'rejects a %s frame without boundary keys',
+    (type) => {
+      const data = {
+        page: 'p',
+        tableKey: 't',
+        row: { rowKey: 'x', slots: {} },
+        totalCount: 1,
+        totalExact: true,
+        ...(type === 'table_viewport_own_create' ? { position: 0 } : {}),
+      }
+      const result = parseSignal(JSON.stringify({ type, data }))
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.failure.kind).toBe('invalid-signal-data')
+      }
+    },
+  )
 
   it('parses a table_viewport_announce frame', () => {
     const result = parseSignal(

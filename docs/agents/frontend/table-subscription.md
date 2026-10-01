@@ -125,8 +125,10 @@ another, and what it answers instead, is
 
 The subscription remembers **two** things and needs both:
 
-- the **boundary keys** of the window it delivered (`firstAnchor`, `lastAnchor`)
-  — without them there is nothing to judge an arriving row against;
+- the **boundary keys** of the window it holds (`firstAnchor`, `lastAnchor`):
+  a build sets them, a tail append moves the last, and an own create replaces both
+  from the re-selected window — without them there is nothing to judge an arriving
+  row against;
 - the **rows it actually rendered** — without them there is nothing to compare a
   change against, and a delta would be about the entity instead of the screen.
 
@@ -538,7 +540,8 @@ core marks the row before the action (`expectOwnChange`) and applies the echo in
 place when it returns (`applyOwnDelta`); a failed action drops the mark. That
 correlation is by a row key the client knew *before* the action, so it does not
 cover a create whose key the server mints — that one rides its own frame,
-`table_viewport_own_create`, which carries the place the row takes.
+`table_viewport_own_create`, which carries the place the row takes and the boundaries
+of the re-selected window.
 
 **There is no second exception, and no mechanism for one.** A backend used to be
 able to declare an ordinary mutation *live* and have it step around the gate; the
@@ -645,15 +648,21 @@ rows.
   nothing it never happens (HIL-1026).
 
 **A live frame does not move the place.** A row announced above the window, a
-count that moved, a row appended at the tail — none of them rewrite `rowsBefore`,
-exactly as none of them rewrite the boundary anchors. Otherwise the footer would
-travel under a reader who pressed nothing. The next window is what makes the
-place true again. **Next reads the server's word on the edge**, not that delivered
+count that moved, a row appended at the tail — none of them rewrite `rowsBefore`.
+An announcement or count does not move the boundary anchors either; an append and
+an own create do move them, and none of these frames moves the delivered place.
+Otherwise the footer would travel under a reader who pressed nothing. The next
+window is what makes the place true again. **Next reads the server's word on the edge**, not that delivered
 place against a live count (HIL-1153): those numbers describe different moments.
 An exact, nonempty, bounded, ordered window establishes `hasRowsAfter` from its
 own `rowsBefore + rows.length < totalCount`. A live count replaces it only when
 it carries the key. An announcement above or inside, an append, and an in-window
-delete leave it alone; an own create that pushes a row out sets it to true.
+delete leave it alone; an own create that pushes a row out below the window sets it
+to true. An own create on a full Back window instead pushes its top row out, leaves Next alone,
+and enables Back to reach that row while the delivered place stays put. This is
+the same side Show uses for a window taken before a key.
+Both live row frames carry `firstAnchor` and `lastAnchor` after the change; the
+keys are present even when their values are null.
 An inexact total clears it, whichever frame carried the total, as do a refusal,
 convergence to an empty set, and resetting the address. With no edge known, Next
 uses the page count, or the full-window rule when the count is inexact. An
@@ -1287,9 +1296,9 @@ addressed to the one connection it concerns:
 | `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`) |
 | `table_viewport_frozen` | server → client, live | `page`, `tableKey`, `since` (server ms of the first failure) — sent once per freeze |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row` (on `row_removed` only for the row the tab holds in focus, and only while it is alive), `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
-| `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |
+| `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` — sent **only** when the row's place is the end of the window and the window has room; the anchors name the window after the append |
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount`, `hasRowsAfter` (absent when the count is inexact or the server did not settle the edge; a frame may carry an unchanged total when only this word changed) |
-| `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `requestId` — the row takes the place the sort gives it, not the tail |
+| `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `requestId` — the row takes the place the sort gives it, not the tail; the anchors name the re-selected window |
 | `table_viewport_announce` | server → client, live | `page`, `tableKey`, `rowKey`, `placement` (`above` / `inside`), `totalCount`, `totalExact`, `pageCount` |
 | `table_viewport_unannounce` | server → client, live | `page`, `tableKey`, `rowKey` |
 | `table_progress` | server → client, live | `page`, `tableKey`, `scope` (`row` / `table` / `bulk`), `progressKey`, `rowKey` (`scope: row` only), `current`, `total`, `ended`, `detail` — work already running when a tab subscribes arrives instead in the `progress` key of the `windows` section |

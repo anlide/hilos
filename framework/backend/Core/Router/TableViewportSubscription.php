@@ -39,7 +39,8 @@ use Hilos\Core\Table\TableConstants;
  *
  * The descriptor is immutable; the delivered rows, the total count with the word on how exact
  * it is, the word on whether rows stand after the window, the two places the window sits
- * between and the two framing it are updated as windows are served and as rows leave the set.
+ * between and the two framing it are updated as windows are served and as rows leave the set;
+ * a tail append also moves the last boundary.
  */
 final class TableViewportSubscription
 {
@@ -63,10 +64,10 @@ final class TableViewportSubscription
     /** Rows the last window build delivered, which the edges of the set are read off when no frame was reported. */
     private int $builtRowCount = 0;
 
-    /** Place the first row of the last served window sits at, or null when that window was empty. */
+    /** Place the first row held by the window sits at, or null when it is empty. */
     private ?TableAnchorDTO $firstAnchor = null;
 
-    /** Place the last row of the last served window sits at, or null when that window was empty. */
+    /** Place the last row held by the window sits at, or null when it is empty. */
     private ?TableAnchorDTO $lastAnchor = null;
 
     /** Places standing right outside the last served window, or null when its source did not report them. */
@@ -167,6 +168,22 @@ final class TableViewportSubscription
             $this->renderedDigests[$rowKey] = $this->renderedDigest($wireRow);
         }
         $this->rowAnchors[$rowKey] = $anchor;
+    }
+
+    /**
+     * Records a row appended at the tail and advances the window's boundary when its place is known.
+     *
+     * @param string $rowKey Row-id key
+     * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row delivered for that key
+     * @param ?TableAnchorDTO $anchor Place that row stands at, or null when the table could not say
+     */
+    public function recordTailRow(string $rowKey, array $wireRow, ?TableAnchorDTO $anchor): void
+    {
+        $this->recordRow($rowKey, $wireRow, $anchor);
+        if ($anchor !== null) {
+            $this->lastAnchor = $anchor;
+            $this->firstAnchor ??= $anchor;
+        }
     }
 
     /**
@@ -404,7 +421,7 @@ final class TableViewportSubscription
     }
 
     /**
-     * Place the first row of the last served window sits at.
+     * Place the first row held by the window sits at.
      *
      * The server reads it for itself: an arriving row is above the window when it places above
      * this boundary, which is how a create is judged before anything is sent (HIL-791). The
@@ -419,7 +436,7 @@ final class TableViewportSubscription
     }
 
     /**
-     * Place the last row of the last served window sits at.
+     * Place the last row held by the window sits at.
      *
      * Read together with {@see firstAnchor()} — the pair is what a window sits between, and one
      * of them alone answers nothing: a row not above the first boundary is inside the window

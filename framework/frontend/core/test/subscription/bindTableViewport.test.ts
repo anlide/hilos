@@ -267,12 +267,20 @@ function fakeSink(): TableWindowSink & {
     totalExact: boolean
     hasRowsAfter?: boolean
   }>
-  appends: Array<{ row: TableRow; totalCount: number; totalExact: boolean }>
+  appends: Array<{
+    row: TableRow
+    totalCount: number
+    totalExact: boolean
+    firstAnchor: TableAnchor | null
+    lastAnchor: TableAnchor | null
+  }>
   ownCreates: Array<{
     row: TableRow
     position: number
     totalCount: number
     totalExact: boolean
+    firstAnchor: TableAnchor | null
+    lastAnchor: TableAnchor | null
     requestId?: string | null
   }>
   announcements: Array<{
@@ -308,12 +316,16 @@ function fakeSink(): TableWindowSink & {
     row: TableRow
     totalCount: number
     totalExact: boolean
+    firstAnchor: TableAnchor | null
+    lastAnchor: TableAnchor | null
   }> = []
   const ownCreates: Array<{
     row: TableRow
     position: number
     totalCount: number
     totalExact: boolean
+    firstAnchor: TableAnchor | null
+    lastAnchor: TableAnchor | null
     requestId?: string | null
   }> = []
   const announcements: Array<{
@@ -393,11 +405,27 @@ function fakeSink(): TableWindowSink & {
     ingestCount(totalCount, totalExact, hasRowsAfter): void {
       counts.push({ totalCount, totalExact, hasRowsAfter })
     },
-    ingestAppend(row, totalCount, totalExact): void {
-      appends.push({ row, totalCount, totalExact })
+    ingestAppend(row, totalCount, totalExact, firstAnchor, lastAnchor): void {
+      appends.push({ row, totalCount, totalExact, firstAnchor, lastAnchor })
     },
-    ingestOwnCreate(row, position, totalCount, totalExact, requestId): void {
-      ownCreates.push({ row, position, totalCount, totalExact, requestId })
+    ingestOwnCreate(
+      row,
+      position,
+      totalCount,
+      totalExact,
+      firstAnchor,
+      lastAnchor,
+      requestId,
+    ): void {
+      ownCreates.push({
+        row,
+        position,
+        totalCount,
+        totalExact,
+        firstAnchor,
+        lastAnchor,
+        requestId,
+      })
     },
     ingestAnnounce(rowKey, placement, totalCount, totalExact): void {
       announcements.push({ rowKey, placement, totalCount, totalExact })
@@ -1017,6 +1045,8 @@ describe('bindTableViewport', () => {
       totalCount: 1,
       totalExact: true,
       pageCount: 1,
+      firstAnchor: null,
+      lastAnchor: null,
     })
 
     expect(sink.windows).toHaveLength(0)
@@ -1442,6 +1472,8 @@ describe('bindTableViewport', () => {
       totalCount: 13,
       totalExact: true,
       pageCount: 2,
+      firstAnchor: { key: 'alpha' },
+      lastAnchor: { key: 'gamma' },
       requestId: 'req-1',
     })
 
@@ -1449,6 +1481,8 @@ describe('bindTableViewport', () => {
     expect(sink.ownCreates[0]?.position).toBe(2)
     expect(sink.ownCreates[0]?.totalCount).toBe(13)
     expect(sink.ownCreates[0]?.requestId).toBe('req-1')
+    expect(sink.ownCreates[0]?.firstAnchor).toEqual({ key: 'alpha' })
+    expect(sink.ownCreates[0]?.lastAnchor).toEqual({ key: 'gamma' })
     expect(sink.ownCreates[0]?.row).toEqual({
       rowKey: 'a',
       slots: { user: { type: 'user', id: 7 } },
@@ -1470,6 +1504,8 @@ describe('bindTableViewport', () => {
       totalCount: 1,
       totalExact: true,
       pageCount: 1,
+      firstAnchor: null,
+      lastAnchor: null,
       requestId: null,
     })
 
@@ -1490,10 +1526,14 @@ describe('bindTableViewport', () => {
       totalCount: 13,
       totalExact: true,
       pageCount: 2,
+      firstAnchor: { key: 'alpha' },
+      lastAnchor: { key: 'beta' },
     })
 
     expect(sink.appends).toHaveLength(1)
     expect(sink.appends[0]?.totalCount).toBe(13)
+    expect(sink.appends[0]?.firstAnchor).toEqual({ key: 'alpha' })
+    expect(sink.appends[0]?.lastAnchor).toEqual({ key: 'beta' })
     expect(sink.appends[0]?.row).toEqual({
       rowKey: 'a',
       slots: { user: { type: 'user', id: 7 } },

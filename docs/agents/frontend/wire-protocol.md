@@ -484,7 +484,8 @@ listing the exact fields, signals, DTOs, and routes that change:
 - the client-minted `requestId` echoed on `::success` / `::fail`, and since
   HIL-792 living on to the echo of the record the action writes;
 - the addressed `table_viewport_own_create` signal: the author's own new row with
-  the index it takes in that author's window, the new counts, and the `requestId`
+  the index it takes in that author's window, the new counts, the current boundary
+  anchors, and the `requestId`
   of the press behind it;
 - the page key carried on every page signal;
 - the build timestamp carried in the `handshake` welcome frame;

@@ -1369,7 +1369,7 @@ describe('TableViewportController', () => {
     controller.ingestCount(0, true)
     controller.apply()
 
-    controller.ingestAppend({ rowKey: 'b', slots: {} }, 1, true)
+    controller.ingestAppend({ rowKey: 'b', slots: {} }, 1, true, null, null)
 
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['b'])
     expect(controller.rows.get()[0]?.placeholder).toBe(false)
@@ -1510,7 +1510,7 @@ describe('TableViewportController', () => {
   it('appends a live tail row at once and bumps the total', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
-    controller.ingestAppend({ rowKey: 'b', slots: {} }, 2, true)
+    controller.ingestAppend({ rowKey: 'b', slots: {} }, 2, true, null, null)
 
     const rows = controller.rows.get()
     expect(rows.map((row) => row.rowKey)).toEqual(['a', 'b'])
@@ -1530,7 +1530,15 @@ describe('TableViewportController', () => {
       null,
       null,
     )
-    controller.ingestOwnCreate({ rowKey: 'b', slots: {} }, 1, 3, true, 'req-1')
+    controller.ingestOwnCreate(
+      { rowKey: 'b', slots: {} },
+      1,
+      3,
+      true,
+      null,
+      null,
+      'req-1',
+    )
 
     const rows = controller.rows.get()
     expect(rows.map((row) => row.rowKey)).toEqual(['a', 'b', 'c'])
@@ -1551,7 +1559,14 @@ describe('TableViewportController', () => {
       null,
       null,
     )
-    controller.ingestOwnCreate({ rowKey: 'b', slots: {} }, 1, 3, true)
+    controller.ingestOwnCreate(
+      { rowKey: 'b', slots: {} },
+      1,
+      3,
+      true,
+      null,
+      null,
+    )
 
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
     expect(controller.totalCount.get()).toBe(3)
@@ -1576,7 +1591,14 @@ describe('TableViewportController', () => {
     })
     expect(controller.pendingCount.get()).toBe(1)
 
-    controller.ingestOwnCreate({ rowKey: 'b', slots: {} }, 1, 3, true)
+    controller.ingestOwnCreate(
+      { rowKey: 'b', slots: {} },
+      1,
+      3,
+      true,
+      null,
+      null,
+    )
 
     // 'c' left the window, so the change waiting on it is no longer anyone's to apply.
     expect(controller.pendingCount.get()).toBe(0)
@@ -1611,6 +1633,8 @@ describe('TableViewportController', () => {
       1,
       2,
       true,
+      null,
+      null,
     )
 
     const rows = controller.rows.get()
@@ -1622,7 +1646,15 @@ describe('TableViewportController', () => {
   it('an own create with no action behind it reports no request id', () => {
     const { controller, open } = makeController()
     open([], 0, true, null, null)
-    controller.ingestOwnCreate({ rowKey: 'a', slots: {} }, 0, 1, true, null)
+    controller.ingestOwnCreate(
+      { rowKey: 'a', slots: {} },
+      0,
+      1,
+      true,
+      null,
+      null,
+      null,
+    )
 
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
     expect(controller.ownCreateRequestId.get()).toBeNull()
@@ -1733,6 +1765,8 @@ describe('TableViewportController', () => {
       { rowKey: 'srv-1', slots: { name: 'fresh' } },
       1,
       true,
+      null,
+      null,
     )
     // A follow-up own edit to that minted key still applies at once via the server tag.
     controller.ingestDelta({
@@ -1870,8 +1904,15 @@ describe('TableViewportController', () => {
     controller.ingestCount(9, true)
     controller.ingestAnnounce('b', 'above', 9, true)
     controller.ingestUnannounce('b')
-    controller.ingestAppend({ rowKey: 'c', slots: {} }, 2, true)
-    controller.ingestOwnCreate({ rowKey: 'd', slots: {} }, 0, 2, true)
+    controller.ingestAppend({ rowKey: 'c', slots: {} }, 2, true, null, null)
+    controller.ingestOwnCreate(
+      { rowKey: 'd', slots: {} },
+      0,
+      2,
+      true,
+      null,
+      null,
+    )
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
@@ -2715,7 +2756,14 @@ describe('TableViewportController window place', () => {
     open(tail(), 21, 11, { id: 12 }, { id: 21 })
     expect(controller.hasNextPage.get()).toBe(false)
 
-    controller.ingestOwnCreate({ rowKey: 'new', slots: {} }, 0, 22, true)
+    controller.ingestOwnCreate(
+      { rowKey: 'new', slots: {} },
+      0,
+      22,
+      true,
+      null,
+      null,
+    )
 
     expect(controller.hasNextPage.get()).toBe(true)
   })
@@ -2724,9 +2772,227 @@ describe('TableViewportController window place', () => {
     const { controller, open } = makePlaced()
     open(tail().slice(0, 5), 16, 11, { id: 12 }, { id: 16 })
 
-    controller.ingestAppend({ rowKey: 'new', slots: {} }, 17, true)
+    controller.ingestAppend({ rowKey: 'new', slots: {} }, 17, true, null, null)
 
     expect(controller.hasNextPage.get()).toBe(false)
+  })
+
+  it('pages after the last appended row when more rows arrive', () => {
+    const { controller, sent, open } = makePlaced()
+    open(tail().slice(0, 5), 16, 11, { id: 12 }, { id: 16 })
+
+    controller.ingestAppend(
+      { rowKey: 'row-17', slots: {} },
+      17,
+      true,
+      { id: 12 },
+      { id: 17 },
+    )
+    controller.ingestCount(18, true, true)
+    controller.nextPage()
+
+    expect(sent.at(-1)).toMatchObject({
+      anchor: { id: 17 },
+      anchorDirection: 'after',
+    })
+  })
+
+  it('pages from the new last row after an own create pushes the old last row down', () => {
+    const { controller, sent, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+
+    controller.ingestOwnCreate(
+      { rowKey: 'new', slots: {} },
+      0,
+      22,
+      true,
+      { id: 11 },
+      { id: 20 },
+    )
+    controller.nextPage()
+
+    expect(sent.at(-1)).toMatchObject({
+      anchor: { id: 20 },
+      anchorDirection: 'after',
+    })
+  })
+
+  it('pages back from the new first row after an own create at an after-anchor window', () => {
+    const { controller, sent, open } = makePlaced()
+    open(tail(), 31, 11, { id: 12 }, { id: 21 })
+    controller.nextPage()
+    const nextRows = Array.from({ length: PAGE_SIZE }, (_, index) => ({
+      rowKey: `row-${index + 22}`,
+      slots: {},
+    }))
+    controller.ingestWindow(
+      nextRows,
+      31,
+      true,
+      { id: 22 },
+      { id: 31 },
+      PAGE_SIZE,
+      21,
+    )
+
+    controller.ingestOwnCreate(
+      { rowKey: 'new', slots: {} },
+      0,
+      32,
+      true,
+      { id: 21 },
+      { id: 30 },
+    )
+    controller.prevPage()
+
+    expect(sent.at(-1)).toMatchObject({
+      anchor: { id: 21 },
+      anchorDirection: 'before',
+    })
+  })
+
+  it('pushes the top row out of a full Back window and makes Back find it', () => {
+    const { controller, sent, open } = makePlaced()
+    const secondPage = Array.from({ length: PAGE_SIZE }, (_, index) => ({
+      rowKey: `row-${index + 11}`,
+      slots: {},
+    }))
+    open(secondPage, 20, 10, { id: 11 }, { id: 20 })
+    controller.prevPage()
+    const firstPage = Array.from({ length: PAGE_SIZE }, (_, index) => ({
+      rowKey: `row-${index + 1}`,
+      slots: {},
+    }))
+    controller.ingestWindow(
+      firstPage,
+      20,
+      true,
+      { id: 1 },
+      { id: 10 },
+      PAGE_SIZE,
+      0,
+    )
+    expect(controller.hasPreviousPage.get()).toBe(false)
+    expect(controller.hasNextPage.get()).toBe(true)
+
+    controller.ingestOwnCreate(
+      { rowKey: 'new', slots: {} },
+      4,
+      21,
+      true,
+      { id: 2 },
+      { id: 10 },
+    )
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'row-2',
+      'row-3',
+      'row-4',
+      'row-5',
+      'new',
+      'row-6',
+      'row-7',
+      'row-8',
+      'row-9',
+      'row-10',
+    ])
+    expect(controller.hasNextPage.get()).toBe(true)
+    expect(controller.hasPreviousPage.get()).toBe(true)
+    expect(controller.rowsBefore.get()).toBe(0)
+    controller.prevPage()
+    expect(sent.at(-1)).toMatchObject({
+      anchor: null,
+      anchorDirection: 'after',
+    })
+  })
+
+  it('does not evict a row from a short Back window', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+    controller.prevPage()
+    controller.ingestWindow(
+      tail().slice(0, 5),
+      16,
+      true,
+      { id: 7 },
+      { id: 11 },
+      PAGE_SIZE,
+      6,
+    )
+
+    controller.ingestOwnCreate(
+      { rowKey: 'new', slots: {} },
+      2,
+      17,
+      true,
+      { id: 7 },
+      { id: 11 },
+    )
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'row-12',
+      'row-13',
+      'new',
+      'row-14',
+      'row-15',
+      'row-16',
+    ])
+    expect(controller.rowsBefore.get()).toBe(6)
+  })
+
+  it('clears a top eviction when a new window arrives, the table refuses, or the address resets', () => {
+    const firstPage = Array.from({ length: PAGE_SIZE }, (_, index) => ({
+      rowKey: `row-${index + 1}`,
+      slots: {},
+    }))
+    const secondPage = Array.from({ length: PAGE_SIZE }, (_, index) => ({
+      rowKey: `row-${index + 11}`,
+      slots: {},
+    }))
+    const createPushed = () => {
+      const { controller, open } = makePlaced()
+      open(secondPage, 20, 10, { id: 11 }, { id: 20 })
+      controller.prevPage()
+      controller.ingestWindow(
+        firstPage,
+        20,
+        true,
+        { id: 1 },
+        { id: 10 },
+        PAGE_SIZE,
+        0,
+      )
+      controller.ingestOwnCreate(
+        { rowKey: 'new', slots: {} },
+        1,
+        21,
+        true,
+        { id: 2 },
+        { id: 10 },
+      )
+      expect(controller.hasPreviousPage.get()).toBe(true)
+      return controller
+    }
+
+    const afterWindow = createPushed()
+    afterWindow.ingestWindow(
+      firstPage,
+      20,
+      true,
+      { id: 1 },
+      { id: 10 },
+      PAGE_SIZE,
+      0,
+    )
+    expect(afterWindow.hasPreviousPage.get()).toBe(false)
+
+    const afterRefusal = createPushed()
+    afterRefusal.ingestRefusal('table_not_served')
+    expect(afterRefusal.hasPreviousPage.get()).toBe(false)
+
+    const afterReset = createPushed()
+    afterReset.setSort('id')
+    expect(afterReset.hasPreviousPage.get()).toBe(false)
   })
 
   it('forgets the edge when a count becomes inexact and uses the full-window rule', () => {
@@ -2748,13 +3014,26 @@ describe('TableViewportController window place', () => {
   it('forgets the edge when an arrival carries an inexact count', () => {
     const { controller, open } = makePlaced()
     open(tail().slice(0, 9), 20, 11, { id: 12 }, { id: 20 })
-    controller.ingestAppend({ rowKey: 'new', slots: {} }, 500, false)
+    controller.ingestAppend(
+      { rowKey: 'new', slots: {} },
+      500,
+      false,
+      null,
+      null,
+    )
     expect(controller.hasNextPage.get()).toBe(true)
 
     // A partial window used to have rows after it; an inexact own-create frame must
     // drop that word too, so the short-window rule takes over.
     open(tail().slice(0, 5), 30, 11, { id: 12 }, { id: 16 })
-    controller.ingestOwnCreate({ rowKey: 'own', slots: {} }, 0, 500, false)
+    controller.ingestOwnCreate(
+      { rowKey: 'own', slots: {} },
+      0,
+      500,
+      false,
+      null,
+      null,
+    )
     expect(controller.hasNextPage.get()).toBe(false)
   })
 
@@ -3098,7 +3377,7 @@ describe('TableViewportController focus', () => {
     controller.apply()
 
     const back: TableRow = { rowKey: 'b', slots: { v: 23 } }
-    controller.ingestAppend(back, 2, true)
+    controller.ingestAppend(back, 2, true, null, null)
 
     expect(controller.focusedRow.get()).toEqual(back)
   })

@@ -21,7 +21,8 @@ use Hilos\Core\Table\TableConstants;
  * place cannot be read at all, travels as a count instead. The frontend applies the append
  * immediately instead of queuing a pending change and sets the carried counts
  * authoritatively. The row rides the same `{rowKey, slots}` wire fragment as the window
- * snapshot. Addressed per accept key.
+ * snapshot. The frame also carries the window's boundaries after the append.
+ * Addressed per accept key.
  *
  * The row arrives whatever the counts say: delivery does not depend on how well the set is
  * counted. The page count, though, travels only while the total is exact — past
@@ -36,6 +37,8 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
     public const string totalCount = 'totalCount';
     public const string totalExact = 'totalExact';
     public const string pageCount = 'pageCount';
+    public const string firstAnchor = 'firstAnchor';
+    public const string lastAnchor = 'lastAnchor';
 
     /**
      * Creates a table viewport append payload.
@@ -46,6 +49,8 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
      * @param int $totalCount Total rows matching the filter
      * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
      * @param ?int $pageCount Page count under the window size, or null when the total is not exact
+     * @param ?TableAnchorDTO $firstAnchor Place the first row held by the window sits at
+     * @param ?TableAnchorDTO $lastAnchor Place the last row held by the window sits at after the append
      */
     public function __construct(
         public readonly string $page,
@@ -54,6 +59,8 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
         public readonly int $totalCount,
         public readonly bool $totalExact,
         public readonly ?int $pageCount,
+        public readonly ?TableAnchorDTO $firstAnchor,
+        public readonly ?TableAnchorDTO $lastAnchor,
     ) {
     }
 
@@ -70,6 +77,8 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
             self::row => $this->row,
             self::totalCount => $this->totalCount,
             self::totalExact => $this->totalExact,
+            self::firstAnchor => $this->firstAnchor?->toArray(),
+            self::lastAnchor => $this->lastAnchor?->toArray(),
         ];
         if ($this->pageCount !== null) {
             $payload[self::pageCount] = $this->pageCount;
@@ -94,6 +103,8 @@ final class TableViewportAppendDTO extends BaseDTO implements SignalDataInterfac
             totalCount: self::requireInt($data, self::totalCount),
             totalExact: self::requireBool($data, self::totalExact),
             pageCount: self::optionalInt($data, self::pageCount),
+            firstAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, self::firstAnchor)),
+            lastAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, self::lastAnchor)),
         );
     }
 }

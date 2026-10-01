@@ -3620,6 +3620,8 @@ abstract class BrowserContext
                 $snapshot->totalCount,
                 $snapshot->totalExact,
                 $this->pageCount($snapshot->totalCount, $viewport->limit, $snapshot->totalExact),
+                $snapshot->firstAnchor,
+                $snapshot->lastAnchor,
                 $requestId,
             ),
             $acceptKey,
@@ -3807,7 +3809,7 @@ abstract class BrowserContext
         $totalExact = $counted[TableConstants::RESULT_KEY_TOTAL_EXACT];
         $wireRow = $this->browserRowToWire($table->browserRow($mutation->row), $this->viewerTableOf($page, $acceptKey, $table));
         $viewport->recordTotal($totalCount, $totalExact);
-        $viewport->recordRow((string) $mutation->rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
+        $viewport->recordTailRow((string) $mutation->rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_APPEND,
@@ -3818,6 +3820,8 @@ abstract class BrowserContext
                 $totalCount,
                 $totalExact,
                 $this->pageCount($totalCount, $viewport->limit, $totalExact),
+                $viewport->firstAnchor(),
+                $viewport->lastAnchor(),
             ),
             $acceptKey,
         );
@@ -3915,8 +3919,8 @@ abstract class BrowserContext
      * The answer is the same for a created row and for one an edit moved: either way the row
      * stands where it stands now, and the window is judged by its boundaries, not by the row's past.
      *
-     * The place is read off the two boundaries the window was served with, in the order that
-     * window asked for, and the table does the comparing because the boundaries are written in
+     * The place is read off the two boundaries the window holds, in the order that window asked
+     * for: a build sets them and a tail append moves the last. The table does the comparing because the boundaries are written in
      * its own names ({@see ViewportTable::placeRowAgainst()}). Nothing here asks the row source
      * where the row goes: this runs once per window per foreign write, and every window of every
      * connection watching the table runs it.
@@ -4630,9 +4634,9 @@ abstract class BrowserContext
     /**
      * Recounts the set and, for a window with an edge, whether unheld rows follow it.
      *
-     * The query starts after the last anchor of the build and asks for one more row than the
-     * window holds. Appended rows lie after that anchor too, so only a row the window does not
-     * hold proves there is another page. One query answers both the total and the edge.
+     * The query starts after the last anchor the window holds and asks for one more row than the
+     * window holds. A tail append moves that anchor, so only a row the window does not hold
+     * lies after it and proves there is another page. One query answers both the total and the edge.
      * A handmade snapshot without rowsBefore has not honored the address and cannot answer it.
      *
      * @param ViewportTable $table Viewport table the window is on

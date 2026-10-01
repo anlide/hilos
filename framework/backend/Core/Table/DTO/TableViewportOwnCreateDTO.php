@@ -17,9 +17,11 @@ use Hilos\Core\Table\TableConstants;
  * {@see TableViewportAppendDTO} the position is computed rather than assumed: the
  * server re-selects the window and reports where the row actually sits under the
  * live filter, sort and page, so the author sees what a reload would show. The
- * window keeps its size, so the client drops whatever the insert pushes past the
- * end. The row rides the same `{rowKey, slots}` wire fragment as the window
- * snapshot. Addressed per accept key.
+ * window keeps its size: an after-anchor or page-number window drops its last row,
+ * while a before-anchor window drops its first row. The row rides the same
+ * `{rowKey, slots}` wire fragment as the window
+ * snapshot. The frame also carries the re-selected window's boundaries.
+ * Addressed per accept key.
  *
  * The two signals are separate names rather than one name with an optional
  * position, because they carry different rules — "at the end whatever the sort"
@@ -39,6 +41,8 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
     public const string totalCount = 'totalCount';
     public const string totalExact = 'totalExact';
     public const string pageCount = 'pageCount';
+    public const string firstAnchor = 'firstAnchor';
+    public const string lastAnchor = 'lastAnchor';
     public const string requestId = 'requestId';
 
     /**
@@ -51,6 +55,8 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
      * @param int $totalCount Total rows matching the filter
      * @param bool $totalExact Whether that total is the size of the set rather than the ceiling the count stopped at
      * @param ?int $pageCount Page count under the window size, or null when the total is not exact
+     * @param ?TableAnchorDTO $firstAnchor Place the first row in the re-selected window sits at
+     * @param ?TableAnchorDTO $lastAnchor Place the last row in the re-selected window sits at
      * @param ?string $requestId Request id of the action that created the row, or null when it was not tracked
      */
     public function __construct(
@@ -61,6 +67,8 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
         public readonly int $totalCount,
         public readonly bool $totalExact,
         public readonly ?int $pageCount,
+        public readonly ?TableAnchorDTO $firstAnchor,
+        public readonly ?TableAnchorDTO $lastAnchor,
         public readonly ?string $requestId = null,
     ) {
     }
@@ -79,6 +87,8 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
             self::position => $this->position,
             self::totalCount => $this->totalCount,
             self::totalExact => $this->totalExact,
+            self::firstAnchor => $this->firstAnchor?->toArray(),
+            self::lastAnchor => $this->lastAnchor?->toArray(),
         ];
         if ($this->pageCount !== null) {
             $payload[self::pageCount] = $this->pageCount;
@@ -105,6 +115,8 @@ final class TableViewportOwnCreateDTO extends BaseDTO implements SignalDataInter
             totalCount: self::requireInt($data, self::totalCount),
             totalExact: self::requireBool($data, self::totalExact),
             pageCount: self::optionalInt($data, self::pageCount),
+            firstAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, self::firstAnchor)),
+            lastAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, self::lastAnchor)),
             requestId: self::optionalString($data, self::requestId),
         );
     }

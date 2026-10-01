@@ -358,12 +358,20 @@ export interface TableWindowSink {
     hasRowsAfter?: boolean,
   ): void
   ingestFacetCounts(facets: TableFacetCountsByFilter): void
-  ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void
+  ingestAppend(
+    row: TableRow,
+    totalCount: number,
+    totalExact: boolean,
+    firstAnchor: TableAnchor | null,
+    lastAnchor: TableAnchor | null,
+  ): void
   ingestOwnCreate(
     row: TableRow,
     position: number,
     totalCount: number,
     totalExact: boolean,
+    firstAnchor: TableAnchor | null,
+    lastAnchor: TableAnchor | null,
     requestId?: string | null,
   ): void
   ingestAnnounce(
@@ -518,6 +526,9 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   private readonly hasRowsAfterSignal = createSignal<boolean | null>(null)
 
+  /** An own create pushed a row above the window; its delivered place stays, but Back must find that row. */
+  private readonly pushedAboveSignal = createSignal(false)
+
   /** Place the window is asked from, or null for the edge {@link anchorDirection} points away from. */
   private anchor: TableAnchor | null = null
 
@@ -527,10 +538,10 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Page a jump asks for, or null while the window is paged by anchor. */
   private pageIndex: number | null = null
 
-  /** Place the first row of the delivered window sits at, or null while it is empty. */
+  /** Place the first row held by the window sits at, or null while it is empty. */
   private firstAnchor: TableAnchor | null = null
 
-  /** Place the last row of the delivered window sits at, or null while it is empty. */
+  /** Place the last row held by the window sits at, or null while it is empty. */
   private lastAnchor: TableAnchor | null = null
 
   private readonly windowSignal = createSignal<readonly TableRow[]>([])
@@ -943,7 +954,10 @@ export class TableViewportController<R> implements TableWindowSink {
     this.hasPreviousPage = computedSignal(() => {
       const rowsBefore = this.rowsBeforeSignal.get()
 
-      return rowsBefore === null ? this.pageSignal.get() > 0 : rowsBefore > 0
+      return (
+        this.pushedAboveSignal.get() ||
+        (rowsBefore === null ? this.pageSignal.get() > 0 : rowsBefore > 0)
+      )
     })
     this.paginated = computedSignal(() => {
       const pageCount = this.pageCount.get()
@@ -1562,6 +1576,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.lastAnchor = null
     this.rowsBeforeSignal.set(null)
     this.hasRowsAfterSignal.set(null)
+    this.pushedAboveSignal.set(false)
     this.placeholdersSignal.set(new Map())
     this.loadedSignal.set(true)
     this.clearWindowPending()
@@ -1647,6 +1662,7 @@ export class TableViewportController<R> implements TableWindowSink {
         ? rowsBefore + rows.length < totalCount
         : null,
     )
+    this.pushedAboveSignal.set(false)
     this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
     this.placeholdersSignal.set(new Map())
     this.loadedSignal.set(true)
@@ -1973,14 +1989,24 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param row The new row to append, in reference form.
    * @param totalCount Total rows matching the filter.
    * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
+   * @param firstAnchor Place the first row held by the window sits at after the append.
+   * @param lastAnchor Place the last row held by the window sits at after the append.
    */
-  ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void {
+  ingestAppend(
+    row: TableRow,
+    totalCount: number,
+    totalExact: boolean,
+    firstAnchor: TableAnchor | null,
+    lastAnchor: TableAnchor | null,
+  ): void {
     if (this.refusalSignal.get() !== null) {
       return
     }
     this.windowSignal.set([...this.windowSignal.get(), row])
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+    this.firstAnchor = firstAnchor
+    this.lastAnchor = lastAnchor
     if (!totalExact) {
       this.hasRowsAfterSignal.set(null)
     }
@@ -1994,8 +2020,8 @@ export class TableViewportController<R> implements TableWindowSink {
    * applies at once — the author is looking at the result of its own press and has
    * nothing to gate against.
    *
-   * The window keeps its size: an insert pushes the last row past the end, exactly
-   * as a reload would, and that row leaves with whatever was queued against it -
+   * The window keeps its size: an insert pushes a row past the edge its address
+   * reads from, exactly as a reload would, and that row leaves with whatever was queued against it -
    * a pending change nobody can apply any more, or a placeholder standing where a
    * row used to be. The row is already normalized to refs.
    *
@@ -2015,6 +2041,8 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param position Zero-based index the row takes in the window.
    * @param totalCount Total rows matching the filter.
    * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
+   * @param firstAnchor Place the first row held by the re-selected window sits at.
+   * @param lastAnchor Place the last row held by the re-selected window sits at.
    * @param requestId Request id of the action that created the row, when it was tracked.
    */
   ingestOwnCreate(
@@ -2022,28 +2050,46 @@ export class TableViewportController<R> implements TableWindowSink {
     position: number,
     totalCount: number,
     totalExact: boolean,
+    firstAnchor: TableAnchor | null,
+    lastAnchor: TableAnchor | null,
     requestId?: string | null,
   ): void {
     if (this.refusalSignal.get() !== null) {
       return
     }
     this.ownCreateRequestIdSignal.set(requestId ?? null)
+    const fromTop = this.pageIndex === null && this.anchorDirection === 'before'
     const rows = this.windowSignal
       .get()
       .filter((shown) => shown.rowKey !== row.rowKey)
+    const leaving = Math.max(0, rows.length + 1 - this.pageSizeSignal.get())
     rows.splice(
-      Math.min(Math.max(0, Math.trunc(position)), rows.length),
+      Math.min(
+        Math.max(0, Math.trunc(position)) + (fromTop ? leaving : 0),
+        rows.length,
+      ),
       0,
       row,
     )
-    const evicted = rows.splice(this.pageSizeSignal.get())
+    const evicted = fromTop
+      ? rows.splice(0, leaving)
+      : rows.splice(this.pageSizeSignal.get())
     this.windowSignal.set(rows)
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+    this.firstAnchor = firstAnchor
+    this.lastAnchor = lastAnchor
     if (!totalExact) {
       this.hasRowsAfterSignal.set(null)
-    } else if (evicted.length > 0 && this.hasRowsAfterSignal.get() !== null) {
+    } else if (
+      !fromTop &&
+      evicted.length > 0 &&
+      this.hasRowsAfterSignal.get() !== null
+    ) {
       this.hasRowsAfterSignal.set(true)
+    }
+    if (fromTop && evicted.length > 0) {
+      this.pushedAboveSignal.set(true)
     }
     this.takeFocusBody(row)
 
@@ -2816,6 +2862,7 @@ export class TableViewportController<R> implements TableWindowSink {
       this.rowsBeforeSignal.set(0)
     }
     this.hasRowsAfterSignal.set(null)
+    this.pushedAboveSignal.set(false)
     this.clearHighlights()
     this.clearPending()
     this.clearAnnounced()
@@ -2906,6 +2953,7 @@ export class TableViewportController<R> implements TableWindowSink {
     // belongs to a set nobody is looking at any more. The answer replaces it a moment later.
     this.rowsBeforeSignal.set(0)
     this.hasRowsAfterSignal.set(null)
+    this.pushedAboveSignal.set(false)
   }
 
   private send(): void {

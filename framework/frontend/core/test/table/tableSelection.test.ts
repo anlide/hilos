@@ -245,7 +245,7 @@ describe('TableViewportController selection', () => {
     open(['a', 'b'])
     controller.selectWindow(true)
 
-    controller.ingestOwnCreate(row('c'), 0, 3, true)
+    controller.ingestOwnCreate(row('c'), 0, 3, true, null, null)
 
     expect(controller.rows.get().map((shown) => shown.rowKey)).toEqual([
       'c',
@@ -262,7 +262,7 @@ describe('TableViewportController selection', () => {
     open(['a', 'b'])
     controller.selectRow('b', true)
 
-    controller.ingestOwnCreate(row('b'), 0, 2, true)
+    controller.ingestOwnCreate(row('b'), 0, 2, true, null, null)
 
     expect(controller.rows.get().map((shown) => shown.rowKey)).toEqual([
       'b',

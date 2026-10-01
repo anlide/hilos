@@ -199,7 +199,7 @@ describe('TableViewportController expansion', () => {
     open(['a', 'b'])
     controller.expandRow('b', true)
 
-    controller.ingestOwnCreate(row('c'), 0, 3, true)
+    controller.ingestOwnCreate(row('c'), 0, 3, true, null, null)
 
     expect(controller.rows.get().map((shown) => shown.rowKey)).toEqual([
       'c',

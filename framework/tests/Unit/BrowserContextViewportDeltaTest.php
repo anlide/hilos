@@ -1059,7 +1059,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->flushToSignalRouter();
         $this->assertSame(5, $this->nextAppend()->totalCount);
         $this->assertTrue($viewport->hasRow('echo'));
-        $this->assertEquals(self::anchorAt('delta'), $viewport->lastAnchor());
+        $this->assertEquals(self::anchorAt('echo'), $viewport->lastAnchor());
 
         self::replaceRows([self::row('bravo', 'Bravo'), self::row('charlie', 'Charlie'),
             self::row('delta', 'Delta'), self::row('echo', 'Echo')]);
@@ -1221,6 +1221,9 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $append = $this->nextAppend();
         $this->assertSame(2, $append->totalCount);
         $this->assertSame(1, $append->pageCount);
+        $this->assertSame(['key' => 'alpha'], $append->firstAnchor?->toArray());
+        $this->assertSame(['key' => 'beta'], $append->lastAnchor?->toArray());
+        $this->assertSame(['key' => 'beta'], $viewport->lastAnchor()?->toArray());
         $this->assertSame(
             [
                 PagePayload::rowKey => 'beta',
@@ -1231,6 +1234,57 @@ final class BrowserContextViewportDeltaTest extends TestCase
             $append->row,
         );
         $this->assertTrue($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnAppendSetsBothBoundariesOfAnEmptyWindow(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow([], 0, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('beta', 'Beta')], $viewport);
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        $append = $this->nextAppend();
+        $this->assertSame(['key' => 'beta'], $append->firstAnchor?->toArray());
+        $this->assertSame(['key' => 'beta'], $append->lastAnchor?->toArray());
+        $this->assertSame(['key' => 'beta'], $viewport->firstAnchor()?->toArray());
+        $this->assertSame(['key' => 'beta'], $viewport->lastAnchor()?->toArray());
+    }
+
+    public function testARowBetweenTheBuildAndTheAppendedTailIsAnnounced(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, self::anchorAt('alpha'), self::anchorAt('alpha'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('alpha', 'Alpha'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'gamma', ['key' => 'gamma', 'label' => 'Gamma']));
+        $context->flushToSignalRouter();
+        $this->nextAppend();
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Inside, $announce->placement);
+        $this->assertSame('beta', $announce->rowKey);
+        $this->assertFalse($viewport->hasRow('beta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -1265,6 +1319,8 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertSame(3, $ownCreate->totalCount);
         $this->assertSame(1, $ownCreate->pageCount);
         $this->assertSame('req-1', $ownCreate->requestId);
+        $this->assertSame(['key' => 'alpha'], $ownCreate->firstAnchor?->toArray());
+        $this->assertSame(['key' => 'gamma'], $ownCreate->lastAnchor?->toArray());
         $this->assertSame(
             [
                 PagePayload::rowKey => 'beta',
