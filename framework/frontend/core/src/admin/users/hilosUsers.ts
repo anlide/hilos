@@ -1217,7 +1217,7 @@ export const HILOS_USER_LIFECYCLE_COPY = {
       title: 'Lift the block',
       paragraphs: [
         'This person can sign in again immediately, without waiting or receiving a message.',
-        'Their previous sessions do not return. They must sign in again.',
+        'Browsers still showing them "Access closed" come back signed in, without signing in again.',
       ],
       confirm: 'Lift the block',
       danger: false,

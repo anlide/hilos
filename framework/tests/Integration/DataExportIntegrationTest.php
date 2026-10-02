@@ -184,7 +184,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     {
         self::seedSession('owner', 7, '2026-01-01 00:00:00', null);
         self::seedSession('blocked', null, '2026-01-01 00:00:00', null);
-        Hilos::$db->sessions->findByToken('blocked')->actions->holdBlockedNotice(7);
+        Hilos::$db->sessions->findByToken('blocked')->actions->holdBlockedNotice(7, true);
         self::seedSession('guest', null, '2026-01-01 00:00:00', null);
         self::seedSession('other', 8, '2026-01-01 00:00:00', null);
         self::seedSession('impersonated', 7, '2026-01-01 00:00:00', null, 8);

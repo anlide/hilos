@@ -5,15 +5,13 @@ import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import {
   clickSubmit,
-  login,
-  openSignIn,
   PASSWORD,
   signUpPerson,
   typeInto,
 } from '../helpers/session'
 
 // Two independent browsers prove the card's writes reach the affected person.
-test('blocks an account from its card and restores sign-in when the block is lifted', async ({
+test('blocks an account from its card and signs the person back in when the block is lifted', async ({
   browser,
   page,
 }) => {
@@ -50,13 +48,47 @@ test('blocks an account from its card and restores sign-in when the block is lif
     await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(personPage.getByTestId('account-blocked')).toHaveCount(0)
-    // The block ended the person's session, so they are a guest again and sign
-    // in through the shell's button.
-    await openSignIn(personPage)
-    await login(personPage, person.email, PASSWORD)
+    // The tab that showed the card comes back signed in without signing in
+    // again (HIL-1188): it trades a ticket for the new cookie and reconnects.
     await expect(personPage.getByTestId('self-user-id')).toHaveText(
       String(person.userId),
     )
+  } finally {
+    await personContext.close()
+  }
+})
+
+test('keeps a person who signed out on the card a guest when the block is lifted', async ({
+  browser,
+  page,
+}) => {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const personContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+  })
+  const personPage = await personContext.newPage()
+  try {
+    await signUpAdmin(page)
+    const person = await signUpPerson(personPage)
+    await gotoPage(page, `/hilos/user/${person.userId}`)
+    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(personPage.getByTestId('account-blocked')).toBeVisible()
+    await clickSubmit(personPage.getByTestId('account-blocked-sign-out'))
+    await expect(personPage.getByTestId('account-blocked')).toHaveCount(0)
+
+    await dismissToasts(page)
+    await clickSubmit(page.getByTestId('hilos-user-block-open'))
+    await clickSubmit(page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(page.getByTestId('hilos-user-block-open')).toHaveText('Block')
+    // Opened again after the lift, the browser goes through the handshake door,
+    // which would sign it in had the card's Sign out left anything to return.
+    await gotoPage(personPage, '/')
+    await expect(personPage.getByTestId('self-anonymous')).toBeVisible()
+    await expect(personPage.getByTestId('nav-signin')).toBeVisible()
   } finally {
     await personContext.close()
   }

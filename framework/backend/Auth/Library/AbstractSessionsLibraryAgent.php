@@ -213,7 +213,8 @@ use Throwable;
  * resume an authenticated identity, and a cookie naming no session is replaced rather than
  * adopted (HIL-1126). The same door drops the session of a blocked person and
  * leaves the "Access closed" card on it (HIL-289), catching a tab the block's own sign-out could
- * not reach. A session row is removed only by this library's sweep,
+ * not reach, and signs a browser whose block was lifted while it was away back in (HIL-1188).
+ * A session row is removed only by this library's sweep,
  * after its cookie lifetime ends or after an anonymous browser never returns.
  */
 abstract class AbstractSessionsLibraryAgent extends AbstractAgent
@@ -1363,6 +1364,39 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Names the person an "Access closed" card can give its browser back to, or null when it can give it to nobody (HIL-1188).
+     *
+     * The card is about an account that is no longer blocked by the time this is asked. It still
+     * gives nothing back when the account is gone, when it is blocked again - a merged loser stays
+     * blocked for good, {@see applyAccountBlock()} refuses to lift it - when somebody is already
+     * signed in on the row, or when the row has outlived its own expiry: the limit of a return is
+     * the life of the session, not the length of the block.
+     *
+     * @param Session $session Session holding the card
+     * @return ?int Person to sign back in, or null when the card can only be lowered
+     * @throws HilosException When the account cannot be read
+     */
+    private function returningBlockedUserId(Session $session): ?int
+    {
+        $blockedUserId = $session->blockedUserId;
+        if ($blockedUserId === null || $session->userId !== null) {
+            return null;
+        }
+
+        $user = Hilos::$db->users[$blockedUserId] ?? null;
+        if ($user === null || $user->block === true) {
+            return null;
+        }
+
+        $expiresAt = $session->expiresAt;
+        if ($expiresAt !== null && $expiresAt <= TimeHelper::getSqlDateTime()) {
+            return null;
+        }
+
+        return $blockedUserId;
+    }
+
+    /**
      * Reads the announcement one session still owes its person (HIL-875).
      *
      * One field off the session row, asked exactly as {@see pendingAuthStepFor()} asks for the
@@ -2063,7 +2097,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * A session whose person at the keyboard is blocked is marked with the account and
      * dropped to anonymous the same way (HIL-289), and a mark whose account has been
-     * unblocked since is lowered - both only in a project that enforces blocks.
+     * unblocked since gives the browser back to its person at a handshake (HIL-1188): signed in
+     * on a new token whose ticket rides this frame, or held on the second-factor step. An operator,
+     * or a mark that can give nothing back, only lowers it - all only in a project that enforces blocks.
      *
      * A presented cookie naming no row is replaced (HIL-1126). A handshake carrying a
      * ticket cookie is exempt: a lost or raced ticket must not trigger another rotation
@@ -2079,6 +2115,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @return HandshakeSession Resolved session and any ticket owed to the connecting socket
      * @throws InvalidFormatException When a new token is not a 32-character hex string
      * @throws DuplicateValueException When a concurrent create already claimed the token
+     * @throws InvalidArgumentException When a state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
     private function resolveSession(string $sessionToken, bool $cookieReplaceable, bool $atHandshake): HandshakeSession
@@ -2133,7 +2170,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // somebody else is.
             $atKeyboard = $session->userAtKeyboard();
             if ($atKeyboard !== null && Hilos::$db->users[$atKeyboard]?->block === true) {
-                $session->actions->holdBlockedNotice($atKeyboard);
+                $session->actions->holdBlockedNotice($atKeyboard, true);
                 $this->logAgentInfo('account_block_enforced ' . json_encode([
                     'event' => 'account_block_enforced',
                     'user' => $atKeyboard,
@@ -2144,8 +2181,25 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return $resolved;
             } elseif ($session->blockedUserId !== null && Hilos::$db->users[$session->blockedUserId]?->block !== true) {
-                // The account was unblocked while this browser was away: the card has nothing left to say.
-                $session->actions->releaseBlockedNotice();
+                // The account was unblocked while this browser was away (HIL-1188). A handshake gives it
+                // back to its person the way the unblock frame would have: in at once, or through the
+                // second-factor step. An operator names the session to bind its own person right after,
+                // so there the card is only lowered - as is a card that can give nothing back.
+                $returning = $atHandshake ? $this->returningBlockedUserId($session) : null;
+                if ($returning === null) {
+                    $session->actions->releaseBlockedNotice();
+                } else {
+                    $verdict = $session->blockedSignedIn
+                        ? SecondFactorGate::PASS
+                        : $this->secondFactorVerdict($session, $returning);
+                    if ($verdict === SecondFactorGate::PASS) {
+                        return $this->returnAtHandshake($session, $sessionToken, $returning);
+                    }
+
+                    $session->actions->releaseBlockedNotice();
+                    $this->holdSecondFactorWait($session, $returning, $verdict, null, null, null, null);
+                    $this->logAccountBlockLifted($returning, [], [$session->id], []);
+                }
             }
         }
 
@@ -2209,6 +2263,51 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             ));
         }
         $this->registerRotation($ticket, $newToken, $liveKeys);
+
+        return new HandshakeSession(Hilos::$db->sessions->findByToken($newToken) ?? $session, $ticket);
+    }
+
+    /**
+     * Signs a browser whose block was lifted while it was away back in at its handshake (HIL-1188).
+     *
+     * The mirror of {@see vacateSession()}: the row moves onto a new token bound to the person, and
+     * the ticket rides this connection's handshake frame - a second frame answering the same tab
+     * would give it two states at once. The token rotates for the reason a sign-in rotates it
+     * (HIL-582): the card may have been raised by a refused sign-in on a planted cookie. Live
+     * siblings on the old token are dropped after the exchange and come back signed in. A failed
+     * mint keeps the card and the old token - a sign-in on a token that was never rotated is not
+     * allowed - and the next handshake tries again.
+     *
+     * @param Session $session Anonymous session holding the card
+     * @param string $sessionToken Token the browser presented
+     * @param int $userId Person to sign back in
+     * @return HandshakeSession Signed-in session and the ticket owed to the connecting socket
+     * @throws InvalidArgumentException When the throttle signal cannot be named
+     * @throws HilosException On database or runtime failure
+     */
+    private function returnAtHandshake(Session $session, string $sessionToken, int $userId): HandshakeSession
+    {
+        $liveKeys = $this->sessionConnectionKeys($sessionToken);
+        try {
+            $ticket = SessionRotationTicket::mint();
+            (new ThrottleGate())->reportAuthenticated($sessionToken);
+            $newToken = $this->rotateSessionToken($session, $userId);
+        } catch (SessionTokenExhaustedException | RandomException $e) {
+            $this->logAgentError('Unblock kept the Access closed card at the handshake: ' . $e->getMessage());
+            $session->actions->touch();
+
+            return new HandshakeSession($session, null);
+        }
+
+        $session->actions->releasePendingRegistration();
+        $session->actions->releaseBlockedNotice();
+        if ($session->pendingSecondFactorUserId !== null) {
+            $session->actions->releasePendingSecondFactor();
+        }
+        Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
+        Hilos::$ac?->identifyBrowserSessionUser($newToken, $userId);
+        $this->registerRotation($ticket, $newToken, $liveKeys);
+        $this->logAccountBlockLifted($userId, [$session->id], [], []);
 
         return new HandshakeSession(Hilos::$db->sessions->findByToken($newToken) ?? $session, $ticket);
     }
@@ -2792,6 +2891,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param string $actingSessionToken Session token of the connection that asked
      * @throws ValidationException When the acting session no longer names a signed-in user
+     * @throws InvalidArgumentException When a state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
     private function endOtherSessions(string $actingSessionToken): void
@@ -2833,9 +2933,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * that node hears about the row. That limit belongs to the seam and is not
      * recovery's to fix.
      *
+     * A browser waiting on the "Access closed" card to be given back to this person is one of
+     * the sessions that go (HIL-1188): an unblock signs it in, so a password changed after a
+     * break-in would otherwise let the intruder back in at the next handshake. Its card is
+     * lowered and its tabs are told they are guests; it was signed out already, so the count
+     * does not include it. The kept session keeps its own card.
+     *
      * @param int $userId User whose other sessions are dropped
      * @param string $keepSessionToken Session token that stays signed in
      * @return int Number of ordinary sessions reverted to anonymous
+     * @throws InvalidArgumentException When a state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
     private function deauthenticateOtherSessions(int $userId, string $keepSessionToken): int
@@ -2848,6 +2955,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
             $this->deauthenticateSession($session->token);
             $ended++;
+        }
+
+        foreach (Hilos::$db->sessions->findByBlockedUserId($userId) as $session) {
+            if ($session->token === $keepSessionToken) {
+                continue;
+            }
+
+            $session->actions->releaseBlockedNotice();
+            $this->publishBlockedCardState($session, null, null, null, null);
         }
 
         return $ended;
@@ -5004,8 +5120,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * own, and the ones where they take over somebody else - and each is marked with the account
      * BEFORE its sign-out, so the one frame the sign-out sends already carries the "Access closed"
      * card. A session where an administrator takes the blocked person over is not theirs to lose
-     * (HIL-304). Not blocked: every browser still holding a card about the account is told it is
-     * gone. Either way a second frame finds nothing left to do and writes nothing.
+     * (HIL-304). Either way a second frame finds nothing left to do and writes nothing.
+     *
+     * Not blocked: every browser still holding a card about the account is given back to the
+     * person it lost (HIL-1188). A card that can give nothing back ({@see returningBlockedUserId()})
+     * is lowered and its tabs are told, as before. A card with no live tab is left alone - a new
+     * cookie has nobody to go to, and a rotation without a ticket would kill the browser's cookie;
+     * the handshake door signs that browser in when it comes back. A browser that was inside when
+     * the block hit, or one refused at sign-in that the second-factor gate lets through, is signed
+     * in: the row rotates, the first live tab gets the ticket and its siblings follow after the
+     * exchange, as after a password. One refused at sign-in that the gate holds waits on its second
+     * factor, and every tab moves to that step. A failed token mint keeps the card; the door tries
+     * again at the next handshake.
      *
      * The sign-out reaches the tabs of this node; a tab of another node is caught at its next
      * handshake ({@see self::resolveSession()}). {@see self::killUserSessions()} is left
@@ -5023,9 +5149,40 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         if (Hilos::$db->users[$userId]?->block !== true) {
+            $returned = [];
+            $secondFactor = [];
+            $lowered = [];
             foreach (Hilos::$db->sessions->findByBlockedUserId($userId) as $session) {
-                $session->actions->releaseBlockedNotice();
-                $this->publishBlockedCardState($session, null, null, null, null);
+                if ($this->returningBlockedUserId($session) === null) {
+                    $session->actions->releaseBlockedNotice();
+                    $this->publishBlockedCardState($session, null, null, null, null);
+                    $lowered[] = $session->id;
+                    continue;
+                }
+
+                $liveKeys = $this->sessionConnectionKeys($session->token);
+                if ($liveKeys === []) {
+                    continue;
+                }
+
+                $verdict = $session->blockedSignedIn ? SecondFactorGate::PASS : $this->secondFactorVerdict($session, $userId);
+                if ($verdict !== SecondFactorGate::PASS) {
+                    $session->actions->releaseBlockedNotice();
+                    $this->holdSecondFactorWait($session, $userId, $verdict, null, null, null, null);
+                    $secondFactor[] = $session->id;
+                    continue;
+                }
+
+                try {
+                    $this->authenticateSession($session->token, $userId, $liveKeys[0]);
+                    $returned[] = $session->id;
+                } catch (SessionTokenExhaustedException | RandomException $e) {
+                    $this->logAgentError('Unblock kept the Access closed card on a session: ' . $e->getMessage());
+                }
+            }
+
+            if ($returned !== [] || $secondFactor !== [] || $lowered !== []) {
+                $this->logAccountBlockLifted($userId, $returned, $secondFactor, $lowered);
             }
 
             return 0;
@@ -5044,7 +5201,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $ended = [];
         foreach ($sessions as $session) {
-            $session->actions->holdBlockedNotice($userId);
+            $session->actions->holdBlockedNotice($userId, true);
             $this->deauthenticateSession($session->token);
             $ended[] = $session->id;
         }
@@ -5056,6 +5213,28 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ]));
 
         return count($ended);
+    }
+
+    /**
+     * Writes the one log line an unblock leaves, naming the sessions by what it did to them (HIL-1188).
+     *
+     * The mirror of `account_block_enforced`: the unblock frame writes it once for every card it
+     * found, the handshake door once for the one browser it met.
+     *
+     * @param int $userId Person whose block was lifted
+     * @param list<?int> $returned Sessions signed back in
+     * @param list<?int> $secondFactor Sessions sent to their second-factor step
+     * @param list<?int> $lowered Sessions whose card was only taken down
+     */
+    private function logAccountBlockLifted(int $userId, array $returned, array $secondFactor, array $lowered): void
+    {
+        $this->logAgentInfo('account_block_lifted ' . json_encode([
+            'event' => 'account_block_lifted',
+            'user' => $userId,
+            'returned' => $returned,
+            'secondFactor' => $secondFactor,
+            'lowered' => $lowered,
+        ]));
     }
 
     /**
@@ -5643,7 +5822,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return false;
         }
 
-        $session->actions->holdBlockedNotice($userId);
+        // A browser the block already threw out of this same account stays "was inside": proving the
+        // password again lowers nothing (HIL-1188). A card about another account is rewritten whole.
+        $session->actions->holdBlockedNotice($userId, $session->blockedUserId === $userId && $session->blockedSignedIn);
         if ($provenBy !== null && StepUpSettings::isEnabled(StepUpOperationKey::EXPORT_DATA)
             && (new StepUpMethodResolver())->resolve($userId)?->method === $provenBy
         ) {

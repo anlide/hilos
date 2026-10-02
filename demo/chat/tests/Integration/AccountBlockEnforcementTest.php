@@ -31,6 +31,7 @@ use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\OAuth\OAuthStateSigner;
 use Hilos\Auth\SecondFactor\Base32;
+use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
@@ -45,10 +46,12 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use JsonException;
 
 /**
  * Integration tests for block enforcement at the sessions library (HIL-289).
@@ -61,10 +64,17 @@ use Hilos\Utils\Helpers\RandomHelper;
  *
  * Coverage: the frame signs every session of the person out with the card on it, leaves an
  * administrator's takeover of the person alone and ends the blocked administrator's own
- * takeover; an unblock takes the cards down; a repeated frame writes and sends nothing; the
- * handshake door catches a session the frame could not reach and lowers a stale card; every
- * sign-in path refuses a blocked person ahead of the second factor; the card's Sign out is
- * always answered; a sign-in into another account lowers the card.
+ * takeover; a repeated frame writes and sends nothing; the handshake door catches a session the
+ * frame could not reach; every sign-in path refuses a blocked person ahead of the second factor;
+ * the card's Sign out is always answered; a sign-in into another account lowers the card.
+ *
+ * The unblock gives the browser back (HIL-1188): a live tab that was inside comes back signed in
+ * on a new token, and so does one refused at sign-in that no second factor holds; one the factor
+ * holds waits on the code step; a refused sign-in over a "was inside" card does not lower it; a
+ * browser with no live tab is signed back in at its next handshake, or sent to the code step
+ * there; a blocked administrator comes back as themselves; Sign out on the card, a sign-in into
+ * another account and an expired row return nobody; a recovered password cancels the return of
+ * every other browser; the unblock writes one `account_block_lifted` line.
  *
  * Requires the test DB reset before run (composer run test:db-reset).
  */
@@ -194,34 +204,180 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     }
 
     /**
-     * An unblock takes the card down, and a second frame of either kind finds nothing to do.
+     * A blocked administrator pulled out of somebody else's account comes back as themselves.
      *
      * @throws HilosException When setup or a frame fails
      */
-    public function testAnUnblockTakesTheCardDownAndRepeatsAreSilent(): void
+    public function testABlockedAdministratorComesBackAsThemselves(): void
+    {
+        $targetId = $this->registerUser($this->uniqueEmail());
+        $adminId = $this->registerAdmin();
+        $token = $this->signedInSession('back-admin-ak', $adminId);
+        $this->takeOver($token, $adminId, $targetId);
+        $this->block($adminId);
+        $this->sendBlockChanged($adminId);
+
+        $this->unblock($adminId);
+        $this->sendBlockChanged($adminId);
+
+        $session = $this->sessionOf('back-admin-ak');
+        $this->assertSame($adminId, $session?->userId);
+        $this->assertNull($session?->impersonatorUserId, 'The takeover does not come back on its own');
+        $this->assertNull($session?->blockedUserId);
+    }
+
+    /**
+     * A card on a row that outlived its own expiry is only lowered: the return ends with the session.
+     *
+     * @throws HilosException When setup or a frame fails
+     * @throws JsonException When the log line cannot be decoded
+     */
+    public function testAnExpiredCardIsOnlyLowered(): void
     {
         $userId = $this->registerUser($this->uniqueEmail());
-        $token = $this->signedInSession('unblock-ak', $userId);
+        $this->signedInSession('expired-ak', $userId);
         $this->block($userId);
         $this->sendBlockChanged($userId);
+        $card = $this->sessionOf('expired-ak');
+        $this->assertNotNull($card);
+        $cardId = $card->id;
+        $cardToken = $card->token;
+        $row = $card->actions->object;
+        $row->expiresAt = date('Y-m-d H:i:s', time() - 1);
+        $row->sync();
+
+        $this->unblock($userId);
+        $line = $this->liftedLogLine(fn () => $this->sendBlockChanged($userId));
+
+        $session = $this->sessionOf('expired-ak');
+        $this->assertSame($cardToken, $session?->token, 'Nothing rotated');
+        $this->assertNull($session?->userId);
+        $this->assertNull($session?->blockedUserId);
+        $this->assertSame([$cardId], $line['lowered'] ?? null);
+    }
+
+    /**
+     * An unblock signs a live tab back in on a new token, and a second frame of either kind finds nothing to do.
+     *
+     * @throws HilosException When setup or a frame fails
+     * @throws JsonException When the log line cannot be decoded
+     */
+    public function testAnUnblockSignsALiveTabBackInAndRepeatsAreSilent(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->signedInSession('unblock-ak', $userId);
+        $this->block($userId);
+        $this->sendBlockChanged($userId);
+        $card = $this->sessionOf('unblock-ak');
+        $this->assertNotNull($card);
+        $this->assertTrue($card->blockedSignedIn, 'The block threw a signed-in browser out');
+        $cardId = $card->id;
+        $cardToken = $card->token;
 
         $this->drainSignals();
         $this->sendBlockChanged($userId);
         $this->assertSame([], $this->stateFrames(), 'A repeated block frame sends nothing');
 
         $this->unblock($userId);
-        $this->sendBlockChanged($userId);
+        $line = $this->liftedLogLine(fn () => $this->sendBlockChanged($userId));
 
-        $this->assertNotNull($this->sessionOf('unblock-ak'));
-        $this->assertNotSame($token, $this->sessionOf('unblock-ak')->token);
-        $this->assertNull($this->sessionOf('unblock-ak')->blockedUserId);
+        $session = $this->sessionOf('unblock-ak');
+        $this->assertNotNull($session);
+        $this->assertSame($cardId, $session->id, 'The same row comes back');
+        $this->assertNotSame($cardToken, $session->token, 'on a new token');
+        $this->assertSame($userId, $session->userId);
+        $this->assertNull($session->blockedUserId);
+        $this->assertFalse($session->blockedSignedIn);
+        $this->assertNotNull($this->rotationOnto($session->token), 'The tab is handed the ticket for the new cookie');
         $response = $this->lastHandshakeResponseFor('unblock-ak');
         $this->assertNotNull($response);
+        $this->assertSame($userId, $response->selfId);
         $this->assertNull($response->accountBlocked);
-        self::assertNull(Hilos::$sr->groupSubscriptionName('unblock-ak', DataExportGroup::NAME));
+        self::assertSame(DataExportGroup::forUser($userId), Hilos::$sr->groupSubscriptionName('unblock-ak', DataExportGroup::NAME));
+        $this->assertSame([
+            'event' => 'account_block_lifted',
+            'user' => $userId,
+            'returned' => [$cardId],
+            'secondFactor' => [],
+            'lowered' => [],
+        ], $line);
 
         $this->sendBlockChanged($userId);
         $this->assertSame([], $this->stateFrames(), 'A repeated unblock frame sends nothing');
+    }
+
+    /**
+     * A browser refused at sign-in comes back signed in when no second factor holds it.
+     *
+     * @throws HilosException When setup or a frame fails
+     */
+    public function testAnUnblockSignsARefusedBrowserInWhenNoSecondFactorHoldsIt(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->block($userId);
+        $token = $this->anonymousSession('refused-ak');
+        $this->grant($token, $userId, 'refused-ak');
+        $this->assertFalse(Hilos::$db->sessions->findByToken($token)?->blockedSignedIn, 'A refused sign-in is not "was inside"');
+
+        $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+
+        $session = $this->sessionOf('refused-ak');
+        $this->assertSame($userId, $session?->userId);
+        $this->assertNotSame($token, $session?->token);
+        $this->assertNull($session?->blockedUserId);
+    }
+
+    /**
+     * A browser refused at sign-in waits on the code step when the person's second factor holds it.
+     *
+     * @throws HilosException When setup or a frame fails
+     */
+    public function testAnUnblockSendsARefusedBrowserToItsSecondFactor(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->enrolSecondFactor($userId);
+        $this->block($userId);
+        $token = $this->anonymousSession('held-ak');
+        $this->grant($token, $userId, 'held-ak');
+        $this->drainSignals();
+
+        $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+
+        $session = Hilos::$db->sessions->findByToken($token);
+        $this->assertNotNull($session, 'Nothing rotated: nobody was signed in');
+        $this->assertNull($session->userId);
+        $this->assertNull($session->blockedUserId);
+        $this->assertSame($userId, $session->pendingSecondFactorUserId);
+        $this->assertSame(SecondFactorPendingMode::VERIFY, $session->pendingSecondFactorMode);
+        $response = $this->lastHandshakeResponseFor('held-ak');
+        $this->assertNull($response?->accountBlocked);
+        $this->assertSame(AuthFlowStep::SECOND_FACTOR, $response?->pendingAuthStep['step'] ?? null);
+    }
+
+    /**
+     * A sign-in refused over a card the block raised on a signed-in browser keeps "was inside", so no code is asked.
+     *
+     * @throws HilosException When setup or a frame fails
+     */
+    public function testARefusedSignInOverAWasInsideCardDoesNotLowerIt(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->enrolSecondFactor($userId);
+        $this->signedInSession('inside-ak', $userId);
+        $this->block($userId);
+        $this->sendBlockChanged($userId);
+        $this->grant($this->sessionOf('inside-ak')->token, $userId, 'inside-ak');
+        $this->assertSame($userId, $this->sessionOf('inside-ak')?->blockedUserId);
+        $this->assertTrue($this->sessionOf('inside-ak')?->blockedSignedIn, 'Proving the password again lowers nothing');
+
+        $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+
+        $session = $this->sessionOf('inside-ak');
+        $this->assertSame($userId, $session?->userId);
+        $this->assertNull($session?->pendingSecondFactorUserId, 'A browser that was inside is not asked for a code');
     }
 
     /**
@@ -253,25 +409,70 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     }
 
     /**
-     * A card whose account was unblocked while the browser was away is lowered at the door.
+     * A browser that had no live tab when the block was lifted keeps its card, and is signed back in at the door.
      *
      * @throws HilosException When setup or a frame fails
      */
-    public function testTheHandshakeDoorLowersAStaleCard(): void
+    public function testTheHandshakeDoorSignsAnAbsentBrowserBackIn(): void
     {
         $userId = $this->registerUser($this->uniqueEmail());
-        $token = $this->signedInSession('stale-ak', $userId);
+        $this->signedInSession('away-ak', $userId);
         $this->block($userId);
         $this->sendBlockChanged($userId);
+        $card = $this->sessionOf('away-ak');
+        $this->assertNotNull($card);
+        $cardId = $card->id;
+        $cardToken = $card->token;
+        Hilos::$rt->connections['away-ak']->actions->unregister();
+
         $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+        $kept = Hilos::$db->sessions->findByToken($cardToken);
+        $this->assertSame($userId, $kept?->blockedUserId, 'With no tab to hand a cookie to, the frame leaves the row alone');
+        $this->assertNull($kept?->userId);
         $this->drainSignals();
 
-        $this->deliverHandshake($this->holder, $this->handshake('stale-ak-2', $this->sessionOf('stale-ak')->token));
+        $this->deliverHandshake($this->holder, $this->handshake('away-ak-2', $cardToken));
 
-        $this->assertNotNull($this->sessionOf('stale-ak-2'));
-        $this->assertNotSame($token, $this->sessionOf('stale-ak-2')->token);
-        $this->assertNull($this->sessionOf('stale-ak-2')->blockedUserId);
-        $this->assertNull($this->lastHandshakeResponseFor('stale-ak-2')?->accountBlocked);
+        $session = $this->sessionOf('away-ak-2');
+        $this->assertNotNull($session);
+        $this->assertSame($cardId, $session->id);
+        $this->assertNotSame($cardToken, $session->token);
+        $this->assertSame($userId, $session->userId);
+        $this->assertNull($session->blockedUserId);
+        $this->assertNotNull($this->rotationOnto($session->token), 'The ticket rides the handshake');
+        $response = $this->lastHandshakeResponseFor('away-ak-2');
+        $this->assertSame($userId, $response?->selfId);
+        $this->assertNull($response?->accountBlocked);
+    }
+
+    /**
+     * A browser refused at sign-in and away when the block was lifted meets its code step at the door.
+     *
+     * @throws HilosException When setup or a frame fails
+     */
+    public function testTheHandshakeDoorSendsARefusedBrowserToItsSecondFactor(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $this->enrolSecondFactor($userId);
+        $this->block($userId);
+        $token = $this->anonymousSession('away-held-ak');
+        $this->grant($token, $userId, 'away-held-ak');
+        Hilos::$rt->connections['away-held-ak']->actions->unregister();
+        $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+        $this->drainSignals();
+
+        $this->deliverHandshake($this->holder, $this->handshake('away-held-ak-2', $token));
+
+        $session = Hilos::$db->sessions->findByToken($token);
+        $this->assertNotNull($session);
+        $this->assertNull($session->userId);
+        $this->assertNull($session->blockedUserId);
+        $this->assertSame($userId, $session->pendingSecondFactorUserId);
+        $response = $this->lastHandshakeResponseFor('away-held-ak-2');
+        $this->assertNull($response?->accountBlocked);
+        $this->assertSame(AuthFlowStep::SECOND_FACTOR, $response?->pendingAuthStep['step'] ?? null);
     }
 
     /**
@@ -283,9 +484,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     {
         $email = $this->uniqueEmail();
         $userId = $this->registerUser($email);
-        Hilos::$db->secondFactors->actions
-            ->startEnrolment($userId, 'Phone', Base32::encode(self::SECRET_BYTES))
-            ->actions->confirm('Phone');
+        $this->enrolSecondFactor($userId);
         $this->block($userId);
         $token = $this->anonymousSession('grant-ak');
         $this->drainSignals();
@@ -381,6 +580,48 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     }
 
     /**
+     * A password recovered during the block cancels the return of every other browser, and the recovering one keeps its card.
+     *
+     * @throws HilosException When setup or a frame fails
+     */
+    public function testARecoveredPasswordCancelsTheReturnOfOtherBrowsers(): void
+    {
+        $email = $this->uniqueEmail();
+        $userId = $this->registerUser($email);
+        $this->signedInSession('left-behind-ak', $userId);
+        $this->block($userId);
+        $this->sendBlockChanged($userId);
+        $token = $this->anonymousSession('recovering-ak');
+        $this->drainSignals();
+
+        $library = $this->sessionsLibrary();
+        $this->underAgent($library, static fn () => $library->onSignalAgent(
+            new AgentSignalData(new AuthPasswordChangedSignalData(
+                userId: $userId,
+                sessionToken: $token,
+                acceptKey: 'recovering-ak',
+                identifier: $email,
+                requestId: self::REQUEST_ID,
+                action: HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
+            )),
+            '',
+            HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED,
+        ));
+        $this->deliverLibraryFrames($this->holder);
+
+        $this->assertNull($this->sessionOf('left-behind-ak')?->blockedUserId, 'The other browser can no longer come back');
+        $recovering = Hilos::$db->sessions->findByToken($token);
+        $this->assertSame($userId, $recovering?->blockedUserId);
+        $this->assertFalse($recovering?->blockedSignedIn);
+
+        $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+
+        $this->assertNull($this->sessionOf('left-behind-ak')?->userId);
+        $this->assertSame($userId, $this->sessionOf('recovering-ak')?->userId);
+    }
+
+    /**
      * Sign out on the card lowers it in every tab and is answered, and a second press is answered too.
      *
      * @throws HilosException When setup or a frame fails
@@ -405,6 +646,10 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertNotNull($this->sessionOf('dismiss-ak'));
         $this->assertNotSame($token, $this->sessionOf('dismiss-ak')->token);
         $this->assertNull($this->sessionOf('dismiss-ak')->blockedUserId);
+
+        $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+        $this->assertNull($this->sessionOf('dismiss-ak')?->userId, 'The person signed out on the card: nobody comes back');
     }
 
     /**
@@ -428,6 +673,10 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertSame($otherId, $session?->userId);
         $this->assertNull($session?->blockedUserId);
         $this->assertNull($this->lastHandshakeResponseFor('switch-ak')?->accountBlocked);
+
+        $this->unblock($blockedId);
+        $this->sendBlockChanged($blockedId);
+        $this->assertSame($otherId, $this->sessionOf('switch-ak')?->userId, 'The browser went elsewhere: nobody comes back');
     }
 
     /**
@@ -585,6 +834,59 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $user = Hilos::$db->users[$userId]->actions->object;
         $user->block = false;
         $user->sync();
+    }
+
+    /**
+     * Gives the person a confirmed authenticator, so the second-factor gate holds their sign-ins.
+     *
+     * @param int $userId Person to enrol
+     * @throws HilosException When the factor write fails
+     */
+    private function enrolSecondFactor(int $userId): void
+    {
+        Hilos::$db->secondFactors->actions
+            ->startEnrolment($userId, 'Phone', Base32::encode(self::SECRET_BYTES))
+            ->actions->confirm('Phone');
+    }
+
+    /**
+     * Runs one act and returns the `account_block_lifted` line it logged, decoded.
+     *
+     * @param callable(): mixed $act Act that may lift a block
+     * @return ?array<string, mixed> Logged fields, or null when the act logged no such line
+     * @throws JsonException When the logged fields are not JSON
+     */
+    private function liftedLogLine(callable $act): ?array
+    {
+        ob_start();
+        try {
+            $act();
+        } finally {
+            $output = (string) ob_get_clean();
+        }
+
+        if (preg_match('/account_block_lifted (\{.*\})/', $output, $match) !== 1) {
+            return null;
+        }
+
+        return json_decode($match[1], true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Finds the rotation that hands a browser the given session token, if one was announced.
+     *
+     * @param string $sessionToken Token the rotation moves the browser onto
+     * @return ?HilosSessionRotation Announced rotation, or null when none names the token
+     */
+    private function rotationOnto(string $sessionToken): ?HilosSessionRotation
+    {
+        foreach (Hilos::$rt->hilosSessionRotations as $rotation) {
+            if ($rotation->sessionToken === $sessionToken) {
+                return $rotation;
+            }
+        }
+
+        return null;
     }
 
     /**

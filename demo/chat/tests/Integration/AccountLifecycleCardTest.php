@@ -77,7 +77,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         parent::tearDown();
     }
 
-    public function testBlockEndsSessionsAndLiftingItReleasesTheirNotices(): void
+    public function testBlockEndsSessionsAndLiftingItSignsThemBackIn(): void
     {
         $first = $this->signIn('user-a', $this->userId);
         $second = $this->signIn('user-b', $this->userId);
@@ -102,7 +102,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         foreach (['user-a', 'user-b'] as $acceptKey) {
             self::assertNotNull($this->sessionOf($acceptKey));
             self::assertNull($this->sessionOf($acceptKey)->blockedUserId);
-            self::assertNull($this->sessionOf($acceptKey)->userId, 'Unblocking does not restore a login');
+            self::assertSame($this->userId, $this->sessionOf($acceptKey)->userId, 'Unblocking signs the browser back in');
         }
     }
 

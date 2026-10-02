@@ -75,6 +75,14 @@
 -- carries an index for the reverse lookup an unblock makes; `impersonator_user_id`
 -- gets one beside it for the impersonations a blocked administrator loses. Purged with
 -- the table like the rest, so the column needs no anonymization strategy of its own.
+--
+-- `blocked_signed_in` (HIL-1188) says how the browser got that card: 1 - it was inside
+-- the account when the block threw it out (the block itself or the handshake door);
+-- 0 - it was refused at sign-in, before the second-factor gate. An unblock signs the
+-- first back in at once and walks the second through the second-factor gate, so the
+-- default 0 treats a card raised before this column as refused at sign-in - the safe
+-- side. No index: it is read off the row already in hand. Purged with the table, so it
+-- needs no anonymization strategy of its own either.
 
 CREATE TABLE `hilos_session` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -94,6 +102,7 @@ CREATE TABLE `hilos_session` (
     `pending_second_factor_ack` VARCHAR(64) DEFAULT NULL,
     `device_name` VARCHAR(64) DEFAULT NULL,
     `blocked_user_id` INT UNSIGNED DEFAULT NULL,
+    `blocked_signed_in` TINYINT(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_session_token` (`token`),
     KEY `idx_session_user` (`user_id`),

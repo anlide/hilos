@@ -231,8 +231,12 @@ Follow the framework extension contract in
   sessions library `hilos_account_block_changed` {userId}; the library reads the
   flag itself, signs the person out, refuses their sign-in and leaves the
   "Access closed" card the shell draws (HIL-289). A missed frame is caught at
-  the next handshake. The admin card is the exception to sending that frame: the
-  sessions library calls `applyAccountBlock()` and enforces the flag directly.
+  the next handshake. Lifting the block signs a browser still on the card back
+  in on a new token, walking one refused before the second factor on to it, and
+  a browser away at that moment at its own handshake; a password change or "end
+  other sessions" cancels the return of the others (HIL-1188). The admin card
+  is the exception to sending that frame: the sessions library calls
+  `applyAccountBlock()` and enforces the flag directly.
 
 ## hilos-users base
 

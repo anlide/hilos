@@ -36,6 +36,7 @@ use Hilos\HilosException;
  * @property-read ?string $pendingSecondFactorAck Success ack to show once the step passes, or null when none is owed
  * @property-read ?string $deviceName Browser and platform label, or null when unrecognized
  * @property-read ?int $blockedUserId Blocked account this browser lost or was refused, or null when it holds no such card
+ * @property-read bool $blockedSignedIn Whether that card threw a signed-in browser out (true) or refused a sign-in (false)
  * @property-read SessionActions $actions Actions for write operations on this session
  */
 class Session extends DbItem
@@ -44,12 +45,12 @@ class Session extends DbItem
      * Property getter (read-only access).
      *
      * @param string $name Property name
-     * @return int|string|SessionActions|null Property value or actions
+     * @return int|string|bool|SessionActions|null Property value or actions
      * @throws ActionsClassException When the actions class for the session collection is not configured
      * @throws PropertyNotFoundException When the property is not exposed by the session item
      * @throws HilosException Whatever the inherited getter raises
      */
-    public function __get(string $name): int|string|SessionActions|null
+    public function __get(string $name): int|string|bool|SessionActions|null
     {
         return match ($name) {
             ObjectSession::id => $this->_object->id,
@@ -69,6 +70,7 @@ class Session extends DbItem
             ObjectSession::pendingSecondFactorAck => $this->_object->pendingSecondFactorAck,
             ObjectSession::deviceName => $this->_object->deviceName,
             ObjectSession::blockedUserId => $this->_object->blockedUserId,
+            ObjectSession::blockedSignedIn => $this->_object->blockedSignedIn,
             default => parent::__get($name),
         };
     }

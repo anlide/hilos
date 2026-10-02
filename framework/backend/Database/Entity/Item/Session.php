@@ -48,6 +48,9 @@ use Hilos\Database\PhpType;
  * `blocked_user_id` is the account this browser lost, or was refused, because that account is
  * blocked (HIL-289): the "Access closed" card is served from it on every handshake until the
  * card's Sign out, a sign-in or an unblock lowers it. Written only by the session holder.
+ * `blocked_signed_in` says how the card came (HIL-1188): set - the browser was inside when the
+ * block threw it out and an unblock signs it back in; clear - it was refused at sign-in and an
+ * unblock walks it through the second-factor gate.
  *
  * @method static EntitySessions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySessions getAll()
@@ -71,6 +74,7 @@ class Session extends Entity
     public const string pending_second_factor_ack = 'pending_second_factor_ack';
     public const string device_name = 'device_name';
     public const string blocked_user_id = 'blocked_user_id';
+    public const string blocked_signed_in = 'blocked_signed_in';
 
     public const string _table = 'hilos_session';
     public const string _primary = self::id;
@@ -92,6 +96,7 @@ class Session extends Entity
         self::pending_second_factor_ack,
         self::device_name,
         self::blocked_user_id,
+        self::blocked_signed_in,
     ];
 
     public const array _types = [
@@ -112,6 +117,7 @@ class Session extends Entity
         self::pending_second_factor_ack => PhpType::STRING->value,
         self::device_name => PhpType::STRING->value,
         self::blocked_user_id => PhpType::INTEGER->value,
+        self::blocked_signed_in => PhpType::BOOLEAN->value,
     ];
 
     public const array _indexes = [
@@ -157,4 +163,5 @@ class Session extends Entity
     public ?string $pending_second_factor_ack = null;
     public ?string $device_name = null;
     public ?int $blocked_user_id = null;
+    public bool $blocked_signed_in = false;
 }

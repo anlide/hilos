@@ -38,6 +38,7 @@ use Hilos\Database\SqlParamCollection;
  * @property ?string $pendingSecondFactorAck
  * @property ?string $deviceName
  * @property ?int $blockedUserId
+ * @property bool $blockedSignedIn
  */
 class Session extends Object_
 {
@@ -60,6 +61,7 @@ class Session extends Object_
     public const string pendingSecondFactorAck = 'pendingSecondFactorAck';
     public const string deviceName = 'deviceName';
     public const string blockedUserId = 'blockedUserId';
+    public const string blockedSignedIn = 'blockedSignedIn';
 
     /**
      * Returns the database collection key for this object type.
@@ -77,7 +79,7 @@ class Session extends Object_
      * @param string $property Property name (id, token, userId, impersonatorUserId, createdAt,
      *     lastSeenAt, expiresAt, pendingRegistrationIdentifier, pendingRegistrationSince, pendingAck,
      *     pendingSecondFactorUserId, pendingSecondFactorMode, pendingSecondFactorUntil,
-     *     pendingSecondFactorAttempts, pendingSecondFactorAck, deviceName, blockedUserId)
+     *     pendingSecondFactorAttempts, pendingSecondFactorAck, deviceName, blockedUserId, blockedSignedIn)
      * @return mixed Property value or parent method result
      * @throws DatabaseException If entity access fails
      */
@@ -101,6 +103,7 @@ class Session extends Object_
             self::pendingSecondFactorAck => $this->entity->pending_second_factor_ack,
             self::deviceName => $this->entity->device_name,
             self::blockedUserId => $this->entity->blocked_user_id,
+            self::blockedSignedIn => $this->entity->blocked_signed_in,
             default => parent::__get($property),
         };
     }
@@ -137,6 +140,7 @@ class Session extends Object_
                 = is_scalar($value) ? (string)$value : null,
             self::deviceName => $this->entity->device_name = is_scalar($value) ? (string)$value : null,
             self::blockedUserId => $this->entity->blocked_user_id = $value === null ? null : (int)$value,
+            self::blockedSignedIn => $this->entity->blocked_signed_in = (bool)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -145,11 +149,11 @@ class Session extends Object_
      * Converts the session object to an associative array with its non-marker fields.
      *
      * `impersonatorUserId`, the `pendingRegistration*` pair, `pendingAck`, the
-     * `pendingSecondFactor*` group and `blockedUserId` are intentionally excluded: all five are read-legal server-side (guards
-     * and the session host read them via {@see __get}) but are kept off the browser-sync projection — the
-     * impersonating state, the unfinished registration, the announcement the session
-     * still owes, the second-factor step it waits on and the blocked account it lost are surfaced to the frontend through the
-     * session state frame and the handshake response, not this row.
+     * `pendingSecondFactor*` group and the `blockedUserId`/`blockedSignedIn` pair are intentionally excluded: all five are
+     * read-legal server-side (guards and the session host read them via {@see __get}) but are kept off the browser-sync
+     * projection — the impersonating state, the unfinished registration, the announcement the session still owes, the
+     * second-factor step it waits on and the blocked account it lost (with how it lost it) are surfaced to the frontend
+     * through the session state frame and the handshake response, not this row.
      *
      * @return array<string, mixed> Key => value array
      */

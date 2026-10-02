@@ -297,11 +297,18 @@ class SessionActions extends DbActions
      * sign-out is exactly the moment it is raised, not the moment it ends. A second call over the
      * same account writes the same value.
      *
+     * The second half of the mark says how the browser got the card (HIL-1188), and an unblock
+     * reads it: a browser that was inside is signed back in at once, one refused at sign-in is
+     * walked through the second-factor gate. Both halves go in one write. The flag has no default
+     * on purpose - every place that raises a card says which of the two it is, because a silent
+     * "was inside" would let a later caller step past the second factor.
+     *
      * @param int $userId Blocked account this browser lost or was refused
+     * @param bool $signedIn True when the block threw a signed-in browser out, false when it refused a sign-in
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
      * @throws HilosException On database error
      */
-    public function holdBlockedNotice(int $userId): void
+    public function holdBlockedNotice(int $userId, bool $signedIn): void
     {
         $this->ensureCanWrite();
 
@@ -310,6 +317,7 @@ class SessionActions extends DbActions
         }
 
         $this->object->blockedUserId = $userId;
+        $this->object->blockedSignedIn = $signedIn;
         $this->object->sync();
     }
 
@@ -318,7 +326,8 @@ class SessionActions extends DbActions
      *
      * Written by the card's Sign out button, by a sign-in that gives the browser a person again
      * and by an unblock of the account. None of the three is implied by a bind: the sessions
-     * library lowers the mark explicitly where the browser gets its person back.
+     * library lowers the mark explicitly where the browser gets its person back. Both halves of
+     * the mark go down together (HIL-1188): how the card came means nothing without the card.
      *
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
      * @throws HilosException On database error
@@ -332,6 +341,7 @@ class SessionActions extends DbActions
         }
 
         $this->object->blockedUserId = null;
+        $this->object->blockedSignedIn = false;
         $this->object->sync();
     }
 
