@@ -79,7 +79,11 @@ The builder writes an uncompressed ZIP to a random `*.building.zip`, writes
 explicit JSON projections of framework records, calls the project's seam, adds
 `README.txt`, and renames the complete file before marking the request ready.
 Dates inside the archive are ISO 8601 UTC. Secrets, tokens and push endpoints
-are excluded. A project without push storage gets an empty push section.
+are excluded. A project without push storage gets an empty push section. Each
+session carries the network address it last connected from, and `access_log`
+lists the person's [access log](access-log.md) rows - `at`, `address`, `event`
+in the order they occurred; a privacy text that keeps no address or no log gives
+null and an empty list.
 
 `applyAccountExport(int $userId, DataExportWriter $writer)` must contribute the
 project's person row and all content belonging to that person, excluding other
@@ -131,6 +135,6 @@ own directory a move of the agent wipes every ready copy. A node whose
 
 The freeze screen links here ("Download a copy of your data", HIL-500).
 Notification-menu entries are not clickable;
-the notice text names the profile section. Access journal records are added by
-HIL-1174. Cross-node archive transport and exports ordered by administrators for
-another person are not part of this mechanism.
+the notice text names the profile section. Cross-node archive transport and
+exports ordered by administrators for another person are not part of this
+mechanism.

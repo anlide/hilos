@@ -1,0 +1,3 @@
+No access logs are kept at all.
+
+Here nothing is recorded about when your account is used or from which network address.

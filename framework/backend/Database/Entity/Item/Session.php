@@ -73,6 +73,7 @@ class Session extends Entity
     public const string pending_second_factor_attempts = 'pending_second_factor_attempts';
     public const string pending_second_factor_ack = 'pending_second_factor_ack';
     public const string device_name = 'device_name';
+    public const string ip_address = 'ip_address';
     public const string blocked_user_id = 'blocked_user_id';
     public const string blocked_signed_in = 'blocked_signed_in';
 
@@ -95,6 +96,7 @@ class Session extends Entity
         self::pending_second_factor_attempts,
         self::pending_second_factor_ack,
         self::device_name,
+        self::ip_address,
         self::blocked_user_id,
         self::blocked_signed_in,
     ];
@@ -116,6 +118,7 @@ class Session extends Entity
         self::pending_second_factor_attempts => PhpType::INTEGER->value,
         self::pending_second_factor_ack => PhpType::STRING->value,
         self::device_name => PhpType::STRING->value,
+        self::ip_address => PhpType::STRING->value,
         self::blocked_user_id => PhpType::INTEGER->value,
         self::blocked_signed_in => PhpType::BOOLEAN->value,
     ];
@@ -162,6 +165,7 @@ class Session extends Entity
     public int $pending_second_factor_attempts = 0;
     public ?string $pending_second_factor_ack = null;
     public ?string $device_name = null;
+    public ?string $ip_address = null;
     public ?int $blocked_user_id = null;
     public bool $blocked_signed_in = false;
 }

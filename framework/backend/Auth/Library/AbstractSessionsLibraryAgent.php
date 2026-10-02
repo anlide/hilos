@@ -11,6 +11,8 @@ use Hilos\DataExport\DataExportGroup;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpMethodResolver;
+use Hilos\Auth\AccessLog\AccessLogEvent;
+use Hilos\Auth\AccessLog\AccessLogPolicy;
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
 use Hilos\Auth\Impersonation\ImpersonationMessages;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
@@ -136,6 +138,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Files\HilosFiles;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Legal\Exception\LegalException;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
@@ -257,6 +260,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * erasure of a folded account removes it, and both run here. Unconditional for the reason the
      * identity entry is.
      *
+     * The access log (HIL-1174) is this library's whole too: a row is written where a session gets
+     * a person and where a signed-in session connects from a new address, swept here once past its
+     * life, removed with an erased account and moved to the survivor of a merge - all of it here.
+     * Unconditional for the reason the identity entry is.
+     *
      * The registration holds are NOT here. They are the users library's row and are claimed only
      * where a sign-in surface exists, which a class constant cannot ask - so the project subclass
      * that has one declares them itself, under the same condition that arms the hold sweep.
@@ -309,6 +317,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure.
         HilosDbContext::userRenames => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure (HIL-1200).
         HilosDbContext::userMerges => TruthSourceOperation::ALL,
+        HilosDbContext::accessLogEntries => TruthSourceOperation::ALL,
     ];
 
     /**
@@ -599,6 +608,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private const string ACCOUNT_DELETION_SWEEP_CRON = '* * * * *';
 
+    /** Name of the cron rule that removes access log rows past their life (HIL-1174). */
+    private const string ACCESS_LOG_SWEEP_RULE = 'hilos_access_log_expire';
+
+    /** Once an hour: a row is kept 12 months, and an hour more over that is not worth a tick a minute. */
+    private const string ACCESS_LOG_SWEEP_CRON = '0 * * * *';
+
+    /** Maximum access log rows removed by one tick. */
+    private const int ACCESS_LOG_SWEEP_BATCH = 500;
+
     /**
      * People whose standing one tick compares with what their tabs were sent (HIL-945). A pass over
      * everyone with a live tab spreads over as many ticks as it takes: a comparison costs nothing
@@ -622,8 +640,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var ?CronRule Schedule of the account erasure, or null when this project has no sign-in (HIL-302) */
     private ?CronRule $accountDeletionSweepRule = null;
 
+    /** @var ?CronRule Schedule of the access log sweep, or null when this project has no sign-in (HIL-1174) */
+    private ?CronRule $accessLogSweepRule = null;
+
     /** Whether a full sweep batch with removals asks the next tick to continue immediately */
     private bool $sessionSweepBacklog = false;
+
+    /** Whether a full access log batch asks the next tick to continue immediately */
+    private bool $accessLogSweepBacklog = false;
 
     /** @var array<int, AccountStanding> Standing last sent to every tab of each person with a live tab here (HIL-945) */
     private array $publishedStanding = [];
@@ -632,7 +656,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private array $standingQueue = [];
 
     /**
-     * Arms the three scheduled sweeps, and ends what a predecessor left open.
+     * Arms the scheduled sweeps, and ends what a predecessor left open.
      *
      * A restore's logins are not replayed here any more (HIL-846): they arrive as a frame from the
      * agent holding them ({@see carryOverHandedOverSessions()}), and they arrive after this hook has
@@ -656,6 +680,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->armReservationSweep();
         $this->armSessionSweep();
         $this->armAccountDeletionSweep();
+        $this->armAccessLogSweep();
         if ($this->hasSignInSurface()) {
             $this->endOpenSignIns(null);
         }
@@ -785,6 +810,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepProfileFlows();
         $this->sweepOAuthTrips();
         $this->sweepAccountDeletions();
+        $this->sweepAccessLog();
     }
 
     /**
@@ -1197,6 +1223,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($session->deviceName !== $deviceName) {
             $session->actions->setDeviceName($deviceName);
         }
+        $this->keepConnectionAddress($session, $data->clientIp);
         $this->parkPendingAuthStep($data->acceptKey, $session);
 
         $pendingAuthStep = $this->pendingAuthStepFor($session);
@@ -2298,6 +2325,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
             return new HandshakeSession($session, null);
         }
+        $this->logSignIn($session, $userId);
 
         $session->actions->releasePendingRegistration();
         $session->actions->releaseBlockedNotice();
@@ -2354,6 +2382,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * ago and stated it away. So one frame carries the identity and the sentence about it,
      * and the row behind it answers every tab this frame does not name.
      *
+     * The access log gets its sign-in row here, once the session holds the person ({@see logSignIn()}).
+     *
      * @param string $sessionToken Session cookie token to authenticate
      * @param int $userId Durable user id to bind the session to
      * @param ?string $initiatorAcceptKey Accept key of the connection that logged in, or null when there is none
@@ -2391,6 +2421,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $session->actions->bindUser($userId);
         }
         $liveToken = $rotated ?? $sessionToken;
+        $this->logSignIn($session, $userId);
 
         // This session belongs to somebody now, so whatever registration it left
         // half-finished is over - by having just completed, or by having been abandoned
@@ -2480,6 +2511,68 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ));
 
         return $liveToken;
+    }
+
+    /**
+     * Writes the access log row for a session that just got its person (HIL-1174).
+     *
+     * Every way in reaches this - {@see authenticateSession()} and the return of a browser whose
+     * block was lifted while it was away - so the log is written in one place for all of them,
+     * with the address the session has at that moment: the handshake of the tab signing in put
+     * it there. An impersonation is not the person's use of the account, and the marker the
+     * takeover writes before this keeps it out; an administrator's return to themselves has no
+     * marker left and is logged for them.
+     *
+     * @param Session $session Session that got the person
+     * @param int $userId Person the session is bound to now
+     * @throws LegalException When the legal catalog declaration is faulty or a text file it names is missing
+     * @throws HilosException On database or truth-source failure
+     */
+    private function logSignIn(Session $session, int $userId): void
+    {
+        if ($session->impersonatorUserId !== null || !AccessLogPolicy::keepsLog()) {
+            return;
+        }
+
+        Hilos::$db->accessLogEntries->actions->record(
+            $userId,
+            AccessLogEvent::SIGN_IN,
+            $session->ipAddress,
+            TimeHelper::getSqlDateTime(),
+        );
+    }
+
+    /**
+     * Keeps the address a session connected from, and logs a signed-in session's new one (HIL-1174).
+     *
+     * The session keeps the address of its last connection, rewritten as its device label is. A
+     * signed-in session acting as its own person that arrives from an address it did not have
+     * gives the access log a row; one signed in before addresses were kept gives it on its first
+     * handshake - the first thing known of its address. A transport that gave no address changes
+     * nothing, and a privacy text that deviates from standard.session_data keeps none.
+     *
+     * @param Session $session Session the handshake resolved
+     * @param ?string $clientIp Address the transport gave, or null when it gave none
+     * @throws LegalException When the legal catalog declaration is faulty or a text file it names is missing
+     * @throws HilosException On database or truth-source failure
+     */
+    private function keepConnectionAddress(Session $session, ?string $clientIp): void
+    {
+        if ($clientIp === null || $session->ipAddress === $clientIp || !AccessLogPolicy::keepsSessionAddress()) {
+            return;
+        }
+
+        $session->actions->setIpAddress($clientIp);
+        if ($session->userId === null || $session->impersonatorUserId !== null || !AccessLogPolicy::keepsLog()) {
+            return;
+        }
+
+        Hilos::$db->accessLogEntries->actions->record(
+            $session->userId,
+            AccessLogEvent::NEW_ADDRESS,
+            $clientIp,
+            TimeHelper::getSqlDateTime(),
+        );
     }
 
     /**
@@ -4956,6 +5049,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * (HIL-378).
      *
      * The survivor absorbs the loser's ways in, with the device keys that hang on them (HIL-1132),
+     * the loser's access log, which travels with the account as its device keys do (HIL-1174),
      * and the rows the project keeps for it, then the loser is tombstoned - a row of
      * `hilos_user_merge` and a closed sign-in (HIL-1199) - and its live sessions are signed out.
      * It runs here rather than in a project agent because of that last step: the sessions are this
@@ -4971,7 +5065,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * survives and the command keeps the shape it always had.
      *
      * The transfer is one explicit transaction so a half-merged account can never survive a
-     * mid-way failure: the identity re-point, the loser's device keys, everything the project
+     * mid-way failure: the identity re-point, the loser's device keys and access log, everything the project
      * moves and the tombstone either all commit or all roll back. The loser is tombstoned,
      * never deleted, so no foreign-key cascade can fire; the one order that matters is inside
      * the tombstone ({@see self::foldAccount()}).
@@ -5009,6 +5103,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         try {
             $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId, $passwordFate);
             Hilos::$db->passkeyCredentials->rePointToUser($loserId, $survivorId);
+            Hilos::$db->accessLogEntries->actions->rePointToUser($loserId, $survivorId);
             $rowsMoved = $this->applyAccountMerge($survivorId, $loserId);
             $this->foldAccount($survivorId, $loserId);
             Database::transactionCommit();
@@ -5347,6 +5442,46 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Arms the schedule of the access log sweep (HIL-1174).
+     *
+     * Only where a sign-in surface exists, as the account erasure is armed: the log is written by
+     * signing in, and a project without that surface owes no log table to sweep.
+     */
+    private function armAccessLogSweep(): void
+    {
+        if (!$this->hasSignInSurface()) {
+            return;
+        }
+
+        $this->accessLogSweepRule = new CronRule(self::ACCESS_LOG_SWEEP_RULE, self::ACCESS_LOG_SWEEP_CRON);
+    }
+
+    /**
+     * Removes one bounded batch of access log rows past their life (HIL-1174).
+     *
+     * A row lives {@see AccessLogPolicy::RETENTION_MONTHS} months. A privacy text that keeps no
+     * access log owes no row at all, so then every row goes, by the same steps - the log a project
+     * kept before its text changed is not kept on after it. A full batch asks the next tick to go
+     * on, as the session sweep does.
+     *
+     * @throws LegalException When the legal catalog declaration is faulty or a text file it names is missing
+     * @throws HilosException On database or truth-source failure
+     */
+    private function sweepAccessLog(): void
+    {
+        if (!$this->accessLogSweepBacklog && $this->accessLogSweepRule?->shouldRun() !== true) {
+            return;
+        }
+
+        $before = AccessLogPolicy::keepsLog() ? AccessLogPolicy::cutoff(time()) : TimeHelper::getSqlDateTime();
+        $removed = Hilos::$db->accessLogEntries->actions->deleteOlderThan($before, self::ACCESS_LOG_SWEEP_BATCH);
+        $this->accessLogSweepBacklog = $removed === self::ACCESS_LOG_SWEEP_BATCH;
+        if ($removed > 0) {
+            $this->logAgentInfo("Access log sweep: removed {$removed}");
+        }
+    }
+
+    /**
      * Ages and carries out one standing deletion request through the scheduled erasure core.
      *
      * @param int $userId User whose account is erased
@@ -5510,6 +5645,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
         Hilos::$db->stepUps->actions->deleteForUser($userId);
         Hilos::$db->legalAcceptances->actions->deleteForUser($userId);
+        Hilos::$db->accessLogEntries->actions->deleteForUser($userId);
         Hilos::$db->userMerges->actions->deleteForUser($userId);
         $erasure = $this->applyAccountErasure($userId);
         // Chat reads rename rows while deleting its feed events. Rows where this account

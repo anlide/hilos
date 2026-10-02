@@ -39,7 +39,9 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *     writes the journal with the name (HIL-1195); its keys hold hilos_user, so it comes
      *     after it and is dropped before it. Their merges join for the same two reasons
      *     (HIL-1199): the export writes both sides of a person's merges, and who the
-     *     administrators are leaves out a merged account.
+     *     administrators are leaves out a merged account. The access log joins because every
+     *     sign-in the holder grants writes a row of it, and every handshake of a signed-in
+     *     session from a new address does too (HIL-1174).
      */
     private const array TABLES = [
         'hilos_user',
@@ -58,6 +60,7 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
         'hilos_legal_acceptance',
         'hilos_account_deletion',
         'hilos_data_export',
+        'hilos_access_log',
     ];
 
     /** @var ?DbContext Database context to restore after the test */

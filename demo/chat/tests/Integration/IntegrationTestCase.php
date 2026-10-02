@@ -96,6 +96,7 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(HilosDbContext::notificationDeliveries, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::notificationPreferences, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::legalAcceptances, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::accessLogEntries, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::stepUps, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::userMerges, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // The registry rows a case attaches to a message, as the files library would have published them (HIL-144).

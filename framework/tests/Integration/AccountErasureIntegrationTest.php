@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\AccessLog\AccessLogEvent;
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\Base32;
@@ -98,6 +99,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         'hilos_second_factor_trust',
         'hilos_step_up',
         'hilos_legal_acceptance',
+        'hilos_access_log',
     ];
 
     private string $boundAppClass;
@@ -581,6 +583,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             StepUpOperationKey::DELETE_ACCOUNT,
             self::FUTURE,
         );
+        // Written now rather than at CREATED_AT: a row a year old is the hourly sweep's, not the erasure's.
+        Hilos::$db->accessLogEntries->actions->record($userId, AccessLogEvent::SIGN_IN, '203.0.113.7', TimeHelper::getSqlDateTime());
     }
 
     /**

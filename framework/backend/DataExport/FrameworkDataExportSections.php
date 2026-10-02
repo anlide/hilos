@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\DataExport;
 
+use Hilos\Auth\AccessLog\AccessLogPolicy;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
 use Hilos\Database\Schema\Schema;
@@ -76,6 +77,9 @@ final class FrameworkDataExportSections
         }
         $writer->section('passkeys', $passkeys);
 
+        // The privacy text is the switch of both below (HIL-1174): an address the text does not
+        // keep, or a log it does not keep, is not handed out even while a row still holds one.
+        $keepsSessionAddress = AccessLogPolicy::keepsSessionAddress();
         $sessions = [];
         foreach (Hilos::$db->sessions->findByUserId($userId) as $session) {
             if ($session->impersonatorUserId !== null) {
@@ -85,9 +89,22 @@ final class FrameworkDataExportSections
                 'startedAt' => DataExportTime::iso($session->createdAt),
                 'lastSeenAt' => DataExportTime::iso($session->lastSeenAt),
                 'device' => $session->deviceName,
+                'address' => $keepsSessionAddress ? $session->ipAddress : null,
             ];
         }
         $writer->section('sessions', $sessions);
+
+        $accessLog = [];
+        if (AccessLogPolicy::keepsLog()) {
+            foreach (Hilos::$db->accessLogEntries->ofUser($userId) as $entry) {
+                $accessLog[] = [
+                    'at' => DataExportTime::iso($entry->occurredAt),
+                    'address' => $entry->ipAddress,
+                    'event' => $entry->event,
+                ];
+            }
+        }
+        $writer->section('access_log', $accessLog);
 
         $since = null;
         $lastUsedAt = null;

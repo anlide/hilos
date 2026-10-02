@@ -35,6 +35,7 @@ use Hilos\HilosException;
  * @property-read int $pendingSecondFactorAttempts Wrong codes the wait has taken so far
  * @property-read ?string $pendingSecondFactorAck Success ack to show once the step passes, or null when none is owed
  * @property-read ?string $deviceName Browser and platform label, or null when unrecognized
+ * @property-read ?string $ipAddress Network address of the last connection, or null when unknown or not kept
  * @property-read ?int $blockedUserId Blocked account this browser lost or was refused, or null when it holds no such card
  * @property-read bool $blockedSignedIn Whether that card threw a signed-in browser out (true) or refused a sign-in (false)
  * @property-read SessionActions $actions Actions for write operations on this session
@@ -69,6 +70,7 @@ class Session extends DbItem
             ObjectSession::pendingSecondFactorAttempts => $this->_object->pendingSecondFactorAttempts,
             ObjectSession::pendingSecondFactorAck => $this->_object->pendingSecondFactorAck,
             ObjectSession::deviceName => $this->_object->deviceName,
+            ObjectSession::ipAddress => $this->_object->ipAddress,
             ObjectSession::blockedUserId => $this->_object->blockedUserId,
             ObjectSession::blockedSignedIn => $this->_object->blockedSignedIn,
             default => parent::__get($name),

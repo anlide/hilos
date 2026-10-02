@@ -68,6 +68,7 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(HilosDbContext::passkeyCredentials, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::authBlocks, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::legalAcceptances, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::accessLogEntries, TruthSourceKeys::all(), self::TEST_AGENT_ID);
     }
 
     /**

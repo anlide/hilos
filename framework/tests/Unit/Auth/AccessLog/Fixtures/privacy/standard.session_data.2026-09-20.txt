@@ -1,0 +1,3 @@
+A session records no network address.
+
+For each session the service records when it started, when it was last active and a description of the browser or device.

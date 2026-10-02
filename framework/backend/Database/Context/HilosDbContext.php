@@ -16,6 +16,7 @@ use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Database\View\Collection\AccessLogEntries as DbCollectionAccessLogEntries;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
@@ -45,6 +46,7 @@ use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AdminAudience;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
+use Hilos\Database\Actions\Collection\AccessLogEntriesActions;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
 use Hilos\Database\Actions\Collection\DataExportsActions;
 use Hilos\Database\Actions\Collection\LegalAcceptancesActions;
@@ -116,6 +118,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionSecondFactorResets $secondFactorResets
  * @property-read DbCollectionSecondFactorSettings $secondFactorSettings
  * @property-read DbCollectionStepUps $stepUps
+ * @property-read DbCollectionAccessLogEntries $accessLogEntries Account access log
  * @property-read DbCollectionDataExports $dataExports Data export requests
  * @property-read DbCollectionAccountDeletions $accountDeletions
  * @property-read DbCollectionLegalAcceptances $legalAcceptances
@@ -167,6 +170,8 @@ abstract class HilosDbContext extends DbContext
     public const string secondFactorSetting = 'secondFactorSetting';
     public const string stepUps = 'stepUps';
     public const string stepUp = 'stepUp';
+    public const string accessLogEntries = 'accessLogEntries';
+    public const string accessLogEntry = 'accessLogEntry';
     public const string accountDeletions = 'accountDeletions';
     public const string accountDeletion = 'accountDeletion';
     public const string legalAcceptances = 'legalAcceptances';
@@ -376,6 +381,12 @@ abstract class HilosDbContext extends DbContext
             Objects::LAZY_STRATEGY_KEY,
             DbCollectionStepUps::class,
             StepUpsActions::class,
+        );
+        $this->mountFramework(
+            self::accessLogEntries,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionAccessLogEntries::class,
+            AccessLogEntriesActions::class,
         );
         $this->mountFramework(
             self::legalAcceptances,

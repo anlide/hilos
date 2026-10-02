@@ -63,6 +63,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         HilosDbContext::accountDeletions,
         HilosDbContext::stepUps,
         HilosDbContext::userRenames,
+        HilosDbContext::accessLogEntries,
     ];
 
     public const array AGENT_ACTIONS = [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class];
@@ -446,7 +447,9 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             . "renames: each change of your name - from, to and when.\n"
             . "merges: accounts folded into yours, or yours into another - which, into which and when.\n"
             . "sign_in_methods: sign-in methods without secrets. passkeys: device names and dates.\n"
-            . "sessions: your sessions and devices. second_factor: status and remaining backup-code count.\n"
+            . "sessions: your sessions, devices and the network address each last connected from.\n"
+            . "access_log: each sign-in and each new address of a signed-in session - when, from where, which.\n"
+            . "second_factor: status and remaining backup-code count.\n"
             . "notifications and notification_preferences: your messages and channel choices, when enabled.\n"
             . "push_subscriptions: devices and dates without subscription addresses or keys.\n"
             . "account_deletion: your pending deletion request, or null.\n"

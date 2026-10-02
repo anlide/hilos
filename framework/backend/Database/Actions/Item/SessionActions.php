@@ -488,6 +488,28 @@ class SessionActions extends DbActions
     }
 
     /**
+     * Stores the network address this browser session last connected from (HIL-1174).
+     *
+     * @param ?string $ipAddress Network address as the transport gave it, or null when unknown
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function setIpAddress(?string $ipAddress): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for setIpAddress (id is null)');
+        }
+        if ($this->object->ipAddress === $ipAddress) {
+            return;
+        }
+
+        $this->object->ipAddress = $ipAddress;
+        $this->object->sync();
+    }
+
+    /**
      * Removes this session row and its in-memory object.
      *
      * @throws ItemNotFoundForDeleteException When the session is not persisted (id is null)

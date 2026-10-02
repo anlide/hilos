@@ -119,7 +119,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      *     `hilos_passkey_credential` comes right after `hilos_identity` and is dropped before it
      *     (HIL-1132). A browser merge asks the administrator's confirmation, so
      *     `hilos_step_up` is there too, and `hilos_second_factor` the gate reads to choose the
-     *     proof it would ask for (HIL-1275).
+     *     proof it would ask for (HIL-1275). The loser's access log moves to the survivor in the
+     *     same transaction, so `hilos_access_log` has to be there to be empty (HIL-1174).
      */
     private const array TABLES = [
         'hilos_user',
@@ -130,6 +131,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         'hilos_setting',
         'hilos_step_up',
         'hilos_second_factor',
+        'hilos_access_log',
     ];
 
     /** @var ?DbContext Database context to restore after the test */
@@ -277,6 +279,24 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::assertSame($credentialId, $survivorKeys[0]->credentialId);
         self::assertSame((string)self::SURVIVOR_USER_ID, $survivorKeys[0]->storedSetTop());
         self::assertSame([], Hilos::$db->passkeyCredentials->listByUser(self::LOSER_USER_ID));
+    }
+
+    /**
+     * A merge hands the loser's access log to the survivor, as it does the device keys (HIL-1174).
+     *
+     * @throws HilosException When a seed, the merge, or a read-back fails
+     */
+    public function testAMergeHandsTheLosersAccessLogToTheSurvivor(): void
+    {
+        self::seedAccessLogRow(self::LOSER_USER_ID, '198.51.100.1');
+        self::seedAccessLogRow(self::LOSER_USER_ID, '198.51.100.2');
+        self::seedAccessLogRow(self::SURVIVOR_USER_ID, '198.51.100.3');
+
+        $this->sendCommand(new AccountMergeRouteTestAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+
+        self::assertTrue($this->consumeReply()->isOk(), 'A wired merge answers ok');
+        self::assertSame(3, self::accessLogRowsOf(self::SURVIVOR_USER_ID));
+        self::assertSame(0, self::accessLogRowsOf(self::LOSER_USER_ID));
     }
 
     /**
@@ -490,6 +510,24 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
 
         self::assertSame('The project could not move its rows', $this->refusal());
         self::assertSame(self::LOSER_USER_ID, self::passkeyOwner($credentialId));
+    }
+
+    /**
+     * A project's row move that fails rolls the access log back with the ways in (HIL-1174).
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testAFailingRowMoveLeavesTheAccessLogWithTheLoser(): void
+    {
+        self::seedAccessLogRow(self::LOSER_USER_ID, '198.51.100.1');
+        $agent = new AccountMergeRouteTestAgent();
+        $agent->failTheRowMove = true;
+
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+
+        self::assertSame('The project could not move its rows', $this->refusal());
+        self::assertSame(1, self::accessLogRowsOf(self::LOSER_USER_ID));
+        self::assertSame(0, self::accessLogRowsOf(self::SURVIVOR_USER_ID));
     }
 
     /**
@@ -924,6 +962,35 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         $row = Database::row();
 
         return $row === null ? null : (int)$row['user_id'];
+    }
+
+    /**
+     * Writes one access log row of a person past every action, the way a sign-in left it.
+     *
+     * @param int $userId Person whose account was used
+     * @param string $ipAddress Address the use came from
+     * @throws DatabaseException When the insert fails
+     */
+    private static function seedAccessLogRow(int $userId, string $ipAddress): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_access_log` (`user_id`, `event`, `ip_address`, `occurred_at`) VALUES (?, ?, ?, NOW())',
+            [$userId, 'sign_in', $ipAddress],
+        );
+    }
+
+    /**
+     * Counts a person's access log rows, past every in-memory collection.
+     *
+     * @param int $userId Person
+     * @return int Rows naming the person
+     * @throws DatabaseException When the query fails
+     */
+    private static function accessLogRowsOf(int $userId): int
+    {
+        Database::sql('SELECT COUNT(*) AS `count` FROM `hilos_access_log` WHERE `user_id` = ?', [$userId]);
+
+        return (int)(Database::row()['count'] ?? 0);
     }
 
     /**

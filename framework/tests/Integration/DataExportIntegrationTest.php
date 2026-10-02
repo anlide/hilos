@@ -114,6 +114,11 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::seedSession('PERSON_SESSION_TOKEN', 7, '2026-01-01 00:00:00', null);
         self::seedSession('FOREIGN_SESSION_TOKEN', 8, '2026-01-01 00:00:00', null);
         self::seedSession('IMPERSONATED_SESSION_TOKEN', 7, '2026-01-01 00:00:00', null, 8);
+        Database::sqlRun("UPDATE hilos_session SET ip_address = '192.0.2.7' WHERE token = 'PERSON_SESSION_TOKEN'");
+        Database::sqlRun("UPDATE hilos_session SET ip_address = '192.0.2.8' WHERE token <> 'PERSON_SESSION_TOKEN'");
+        Database::sqlRun("INSERT INTO hilos_access_log (user_id, event, ip_address, occurred_at) VALUES "
+            . "(7, 'new_address', '2001:db8::7', '2026-01-02 00:00:00'), (7, 'sign_in', '192.0.2.7', '2026-01-01 00:00:00'), "
+            . "(8, 'sign_in', '192.0.2.8', '2026-01-01 00:00:00')");
         Database::sqlRun("INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at) "
             . "VALUES (7, 'My app', 'TOTP_SECRET', '2026-01-02 00:00:00')");
         Database::sqlRun("INSERT INTO hilos_second_factor_backup_code (user_id, code) VALUES (7, 'BACKUP_CODE')");
@@ -146,6 +151,14 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertCount(2, self::section($archive, 'sign_in_methods'));
         self::assertNull(self::section($archive, 'sign_in_methods')[0]['identifier']);
         self::assertCount(1, self::section($archive, 'sessions'));
+        self::assertSame('192.0.2.7', self::section($archive, 'sessions')[0]['address']);
+        self::assertSame(
+            [
+                ['at' => '2026-01-01T00:00:00Z', 'address' => '192.0.2.7', 'event' => 'sign_in'],
+                ['at' => '2026-01-02T00:00:00Z', 'address' => '2001:db8::7', 'event' => 'new_address'],
+            ],
+            self::section($archive, 'access_log'),
+        );
         self::assertSame(1, self::section($archive, 'second_factor')['backupCodesLeft']);
         self::assertTrue(self::section($archive, 'second_factor')['connected']);
         self::assertCount(1, self::section($archive, 'notifications'));

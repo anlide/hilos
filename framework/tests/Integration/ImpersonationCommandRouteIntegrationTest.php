@@ -102,7 +102,9 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
      *     frame the holder sends carries the standing of the person the session acts as, composed
      *     from the person's block and their scheduled deletion. Their merges join because the
      *     browser door asks who the administrators are (HIL-1170), which leaves out a merged
-     *     account; its keys hold hilos_user, so it comes after it and is dropped before it.
+     *     account; its keys hold hilos_user, so it comes after it and is dropped before it. The
+     *     access log joins because an administrator's return to themselves is a sign-in it
+     *     writes a row for (HIL-1174).
      */
     private const array TABLES = [
         'hilos_session',
@@ -111,6 +113,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         'hilos_user',
         'hilos_account_deletion',
         'hilos_user_merge',
+        'hilos_access_log',
     ];
 
     /** @var ?DbContext Database context to restore after the test */

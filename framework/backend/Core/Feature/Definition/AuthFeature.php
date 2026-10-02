@@ -10,6 +10,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Entity\Item\AccessLogEntry;
 use Hilos\Database\Entity\Item\AccountDeletion;
 use Hilos\Database\Entity\Item\LegalAcceptance;
 use Hilos\Database\Entity\Item\DataExport;
@@ -107,6 +108,7 @@ final class AuthFeature extends FeatureDefinition
                 SecondFactorReset::_table,
                 SecondFactorSetting::_table,
                 StepUp::_table,
+                AccessLogEntry::_table,
                 AccountDeletion::_table,
                 LegalAcceptance::_table,
                 DataExport::_table,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos;
 
+use Hilos\Auth\AccessLog\AccessLogPolicy;
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Auth\Method\AuthMethodDirectory;
 use Hilos\Auth\OAuth\OAuthProviderDirectory;
@@ -54,6 +55,7 @@ use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Pages\PageCatalogStub;
 use Hilos\Database\Settings\Preset\SettingPresetChangeSubscriber;
+use Hilos\Legal\Exception\LegalException;
 use Hilos\Legal\LegalAcceptanceChangeSubscriber;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
@@ -1073,6 +1075,7 @@ abstract class Hilos implements TruthSourceOwner
      * @throws IncompleteFeatureActivationException When a declared feature is not fully activated
      * @throws FeatureRuntimeOverwrittenException When the project re-mounts runtime state a feature owns
      * @throws StateCollectionNotFoundException When a feature represents a collection it did not mount
+     * @throws LegalException When the legal catalog of an AUTH project is faulty or names a missing text file
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
     public static function init(): void
@@ -1141,6 +1144,7 @@ abstract class Hilos implements TruthSourceOwner
             static::refuseUploadsWithoutTmp();
             static::refuseFilesWithoutDirectory();
             static::refuseDataExportWithoutDirectory();
+            static::refuseAccessLogWithoutSessionAddress();
             static::refuseAnalyticsWithoutJournalDirectory();
             static::refuseMisdeclaredDirectories();
         }
@@ -1286,6 +1290,35 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['HilosFeature::AUTH keeps data-export archives in the data_export directory, but the FS context registers none'],
+        );
+    }
+
+    /**
+     * Refuses an AUTH project whose privacy text keeps the access log but no address on a session (HIL-1174).
+     *
+     * The access log takes the address of a sign-in from the session, so a current privacy revision
+     * that deviates from standard.session_data and not from standard.access_log promises a log that
+     * has nowhere to take its addresses from. Reading the answer here is also the first read of the
+     * legal catalog, so a faulty catalog fails the start rather than the first handshake.
+     *
+     * @throws IncompleteFeatureActivationException When the text keeps the access log and keeps no session address
+     * @throws LegalException When the legal catalog declaration is faulty or a text file it names is missing
+     */
+    protected static function refuseAccessLogWithoutSessionAddress(): void
+    {
+        if (!in_array(HilosFeature::AUTH, static::FEATURES, true)
+            || !AccessLogPolicy::keepsLog()
+            || AccessLogPolicy::keepsSessionAddress()
+        ) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            [
+                'The privacy text keeps the standard access log, which takes its addresses from sessions,'
+                    . ' but deviates from standard.session_data, so sessions keep no address',
+            ],
         );
     }
 

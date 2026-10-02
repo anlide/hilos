@@ -67,6 +67,13 @@
 -- unrecognized. The table is purged as a whole by the framework anonymization verdict,
 -- so the new personal label needs no per-column strategy of its own.
 --
+-- `ip_address` (HIL-1174) is the network address of the session's last connection,
+-- as the transport gave it, rewritten on every handshake beside `device_name`. It is
+-- VARCHAR(45) so an IPv6 address fits as text. NULL means the address is not known
+-- yet or the project's privacy text deviates from standard.session_data, so the
+-- session keeps none. Personal, but purged with the table, so it needs no
+-- anonymization strategy of its own.
+--
 -- `blocked_user_id` (HIL-289) is the account this browser lost, or was refused, because
 -- that account is blocked. It is memory ABOUT this session by the same argument as the
 -- groups above: the "Access closed" card is served from it on every handshake, so it
@@ -101,6 +108,7 @@ CREATE TABLE `hilos_session` (
     `pending_second_factor_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `pending_second_factor_ack` VARCHAR(64) DEFAULT NULL,
     `device_name` VARCHAR(64) DEFAULT NULL,
+    `ip_address` VARCHAR(45) DEFAULT NULL,
     `blocked_user_id` INT UNSIGNED DEFAULT NULL,
     `blocked_signed_in` TINYINT(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),

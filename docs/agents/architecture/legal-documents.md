@@ -13,6 +13,10 @@ text files remain available: a stored acceptance names exactly one of them.
 `LegalCatalogResolver` validates the entire catalog on first access; an absent
 catalog publishes no documents.
 
+A deviation is also a switch of the framework's own recording: a current privacy
+revision deviating from `standard.access_log` or `standard.session_data` turns
+off the access log or the address a session keeps ([access-log.md](access-log.md)).
+
 ## Current text and deadlines
 
 The last declared revision is current as soon as it is published. Its

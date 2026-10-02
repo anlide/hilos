@@ -69,9 +69,10 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      *     the unfinished registration the handshake response asks about is a column on
      *     `hilos_session` since HIL-612 and needs no table of its own. The people and their
      *     deletion requests have to be there to be empty (HIL-945): every state frame the holder
-     *     sends carries the standing of the person the session acts as.
+     *     sends carries the standing of the person the session acts as. The access log joins
+     *     because the operator's sign-in writes a row of it (HIL-1174).
      */
-    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_user', 'hilos_account_deletion'];
+    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_user', 'hilos_account_deletion', 'hilos_access_log'];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;

@@ -80,8 +80,9 @@ in ONE transaction:
    touched;
 2. for each folded account, a live request of its own is marked carried out;
 3. for each account, the framework's rows go: device keys before ways in, codes,
-   the second factor whole, operation confirmations, legal acceptances, and the
-   account's merge row when it was folded into another one (HIL-1199);
+   the second factor whole, operation confirmations, legal acceptances, the
+   [access log](access-log.md) (HIL-1174), and the account's merge row when it
+   was folded into another one (HIL-1199);
 4. the project's seam `applyAccountErasure(int $userId): AccountErasure` deletes
    its rows for that account;
 5. the framework removes the account's rename journal rows, then its person row.
