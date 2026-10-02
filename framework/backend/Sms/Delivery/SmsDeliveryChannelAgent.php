@@ -57,8 +57,8 @@ use Hilos\Socket\SocketException;
  *
  * A permanent failure (HTTP 4xx, a provider rejection) fails fast; a transient one (HTTP 5xx,
  * timeout) retries with backoff up to {@see maxAttempts()}. Raw sends are not recovered across
- * a restart - they have no durable record. Crash recovery of pending input-A rows in onStart is
- * still deferred to a later slice.
+ * a restart - they have no durable record. Pending input-A rows are picked up by the base
+ * pipeline when the shard starts or a freeze lets it go (HIL-1135).
  */
 class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 {

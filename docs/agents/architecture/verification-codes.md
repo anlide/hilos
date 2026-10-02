@@ -210,8 +210,9 @@ them on every handshake, and the tab that ordered the code settles on the closin
 frame carrying its own `ticket` — there is no outcome signal addressed to one
 socket any more.
 
-**There is no timeout on a silent transport.** A dead mail agent leaves the line
-on `queued`, which is true: the letter IS queued. What ends the wait is the code
+**There is no timeout on a silent transport.** A dead mail shard leaves the line
+on `queued` though the letter died with it: a raw send has no durable record, and
+nothing here can tell that its shard is gone. What ends the wait is the code
 expiring or the person pressing resend. Inventing "probably not delivered" would
 lie exactly where nothing is known.
 

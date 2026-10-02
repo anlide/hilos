@@ -29,14 +29,14 @@ use Hilos\Utils\Helpers\RandomHelper;
 use RuntimeException;
 
 /**
- * Proves a mail delivery in flight when the freeze begins writes nothing to its row (HIL-1060).
+ * Proves a freeze abandons an attempt without writing, then the shard picks it up (HIL-1135).
  *
  * The freeze leaves the mail pool running for the watchdog's alarm, and the pool's durable half
  * silences itself instead: the attempt is cut, the queue forgotten, and the delivery row stays
  * exactly as the last write before the freeze left it. The unit cases of the pool see "writes
  * nothing" as a journal that throws when touched; this one needs the journal real, because only
  * an attempt already in flight - a row counted, a transport open - shows what the drop does to
- * a row it has started.
+ * a row it has started. The first tick after the freeze lifts opens a new attempt from that row.
  */
 final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
 {
@@ -53,7 +53,7 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
         parent::tearDown();
     }
 
-    public function testAnAttemptInFlightWhenTheFreezeBeginsWritesNothing(): void
+    public function testAnAttemptInFlightWritesNothingDuringFreezeThenResumes(): void
     {
         $this->deleteRecipientRows();
         // Emitted before the address exists, so the dispatch mints no row of its own and the
@@ -67,7 +67,8 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
         $this->deliveries()->createPending($notificationId, self::CHANNEL);
 
         $transport = new HeldMailTransport();
-        $agent = new FreezeProbeMailAgent([$transport]);
+        $resumedTransport = new HeldMailTransport();
+        $agent = new FreezeProbeMailAgent([$transport, $resumedTransport]);
         $agent->onSignalAgent(
             new AgentSignalData(new NotificationDeliverSignalData(notificationId: $notificationId, channel: self::CHANNEL, shardKey: 1)),
             'src',
@@ -90,11 +91,11 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
 
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE);
         $agent->onTick();
-        self::assertSame(1, $agent->createdCount);
+        self::assertSame(2, $agent->createdCount);
+        self::assertInstanceOf(EmailMessage::class, $resumedTransport->started);
         $after = $this->row($notificationId);
         self::assertSame(DeliveryStatus::PENDING, $after->status);
-        self::assertSame(1, $after->attempts);
-        self::assertSame($started->updated_at, $after->updated_at);
+        self::assertSame(2, $after->attempts);
     }
 
     /**

@@ -634,7 +634,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the rows outlive the worker - the master keeps them and hands them to the next one before
      * this hook runs - but the frames that could have ended them died with it. So every provider
      * sign-in with no ending and every code send not yet over and not carried by the mail queue is
-     * ended here with a refusal. The mail queue is spared because it survives a fall and sends again.
+     * ended here with a refusal. A mailed code is spared because this library cannot tell whether
+     * its mail shard is alive; the raw letter dies with that shard, and the wait ends when the code
+     * expires or the person asks to send it again (HIL-1135).
      *
      * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
      * @throws HilosException On runtime failure
@@ -6445,8 +6447,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * A provider sign-in goes through the OAuth agent, and a login also through the users library
      * that turns the answer into an account; a link settles in the OAuth agent alone. A code send
-     * not yet over is carried by the code agent - unless it is a letter, which the mail queue
-     * carries and sends again after a fall of its own, so a dead agent says nothing about it.
+     * not yet over is carried by the code agent - unless it is a letter carried by a mail shard.
+     * This library cannot tell whether that shard is alive, so it says nothing about the letter;
+     * if the shard died, the raw letter died with it and the wait ends at code expiry or resend
+     * (HIL-1135).
      *
      * Null stands for "all of them": the start of this library, which cannot tell what went with
      * its predecessor and knows only that nothing it left open will be answered.

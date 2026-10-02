@@ -7,6 +7,7 @@ namespace Hilos\Backup;
 use Closure;
 use Hilos\Backup\Anonymization\ArchiveSchemaReader;
 use Hilos\Backup\Anonymization\CatalogRestoreAnonymizer;
+use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Exception\BackupMetadataIncompleteException;
 use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
 use Hilos\Backup\Exception\RestoreFailedException;
@@ -18,6 +19,7 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Database\DatabaseMarkerRow;
+use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Environment\Exception\EnvException;
@@ -25,6 +27,7 @@ use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Notification\Delivery\RestoredDeliveries;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
@@ -227,6 +230,8 @@ final class BackupRestorer
                         );
                     }
                 }
+
+                $this->settleRestoredDeliveries($scope, $restoresPrimary);
             } catch (RestoreFailedException $e) {
                 throw RestoreFailedException::afterDestructive($e->getMessage(), $e);
             }
@@ -534,6 +539,40 @@ final class BackupRestorer
                 0,
                 $failure,
             );
+        }
+    }
+
+    /**
+     * Marks restored pending journal rows as failed after any anonymization pass.
+     *
+     * @param BackupScope $scope Scope the archive was captured under
+     * @param bool $restoresPrimary Whether the archive carried the primary connection
+     * @throws RestoreFailedException When the live schema or journal update fails
+     */
+    private function settleRestoredDeliveries(BackupScope $scope, bool $restoresPrimary): void
+    {
+        if (!$restoresPrimary || $scope === BackupScope::SCHEMA_ONLY) {
+            return;
+        }
+
+        $callerIndex = Database::getCurrentIndex();
+        try {
+            if (!isset(LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX)[EntityNotificationDelivery::_table])) {
+                return;
+            }
+
+            $settled = RestoredDeliveries::settlePending();
+            if ($settled > 0) {
+                Logger::info('Restore: pending deliveries settled as failed', ['count' => $settled]);
+            }
+        } catch (DatabaseException $failure) {
+            throw new RestoreFailedException(
+                'Failed to settle the pending deliveries of the restored journal: ' . $failure->getMessage(),
+                0,
+                $failure,
+            );
+        } finally {
+            Database::useConnection($callerIndex);
         }
     }
 

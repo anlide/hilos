@@ -63,7 +63,8 @@ use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
  * backoff up to {@see maxAttempts()}. Raw sends are not recovered across a restart — they
  * have no durable record; a caller of a critical mail resends.
  *
- * Crash recovery of pending input-A rows in onStart is still deferred to a later slice.
+ * Pending input-A rows are picked up by the base pipeline when the shard starts or a
+ * freeze lets it go (HIL-1135).
  */
 class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 {

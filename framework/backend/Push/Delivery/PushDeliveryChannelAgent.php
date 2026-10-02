@@ -50,8 +50,8 @@ use Hilos\Socket\SocketException;
  * each. And it has no raw-send intake (no Auth-code path), so the pool has a single route,
  * {@see HilosSignalConstants::HILOS_PUSH_DELIVER}, and no in-memory raw pool. The VAPID config is
  * resolved once and latched; an invalid or absent config settles each send as a permanent failure
- * rather than throwing out of the tick loop. Crash recovery of pending rows in onStart is deferred to a
- * later slice, as for the other channels.
+ * rather than throwing out of the tick loop. Pending rows are picked up by the base pipeline
+ * when the shard starts or a freeze lets it go (HIL-1135).
  */
 class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 {

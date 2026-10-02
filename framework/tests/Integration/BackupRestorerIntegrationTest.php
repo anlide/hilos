@@ -32,6 +32,7 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Database\DatabaseMarkerRow;
+use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
@@ -40,6 +41,8 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
 use Hilos\Notification\DeferredNotificationQueue;
+use Hilos\Notification\Delivery\DeliveryStatus;
+use Hilos\Notification\Delivery\RestoredDeliveries;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Users\AdminAudience;
@@ -124,6 +127,9 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 
     private bool $notificationTablesRaised = false;
 
+    /** Whether a restore fixture raised the delivery journal table. */
+    private bool $deliveryTableRaised = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -160,6 +166,9 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $this->removeTree($this->storeRoot);
         Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
         Database::sql('DROP TABLE IF EXISTS `' . self::TOKEN_TABLE . '`');
+        if ($this->deliveryTableRaised) {
+            Database::sql('DROP TABLE IF EXISTS `' . EntityNotificationDelivery::_table . '`');
+        }
         if ($this->notificationTablesRaised) {
             Hilos::$db = $this->previousDb;
             self::runNotificationStubs(down: true);
@@ -361,6 +370,67 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         } finally {
             DatabaseMarker::clear();
         }
+    }
+
+    public function testRestoreSettlesPendingDeliveriesButLeavesSentRowsAlone(): void
+    {
+        $this->publishFixtureBackup($this->deliveryDumpSql());
+        $this->deliveryTableRaised = true;
+
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+        $rows = $this->deliveryRows();
+        $this->assertSame(DeliveryStatus::FAILED, $rows[0][EntityNotificationDelivery::status]);
+        $this->assertSame(RestoredDeliveries::UNKNOWN_FATE, $rows[0][EntityNotificationDelivery::last_error]);
+        $this->assertSame(2, (int)$rows[0][EntityNotificationDelivery::attempts]);
+        $this->assertNull($rows[0][EntityNotificationDelivery::delivered_at]);
+        $this->assertNotSame('2026-08-08 11:59:00', $rows[0][EntityNotificationDelivery::updated_at]);
+        $this->assertSame(DeliveryStatus::SENT, $rows[1][EntityNotificationDelivery::status]);
+        $this->assertSame(1, (int)$rows[1][EntityNotificationDelivery::attempts]);
+        $this->assertNull($rows[1][EntityNotificationDelivery::last_error]);
+        $this->assertSame('2026-08-08 11:57:00', $rows[1][EntityNotificationDelivery::delivered_at]);
+    }
+
+    public function testRestoreWritesThePendingReasonAfterAnonymization(): void
+    {
+        $this->publishFixtureBackup($this->deliveryDumpSql());
+        $this->deliveryTableRaised = true;
+        $previousDb = Hilos::$db;
+        $db = new DeliveryPiiRestoreTestDbContext();
+        $db->configure();
+        Hilos::$db = $db;
+        try {
+            PiiRestoreTestHilos::initBrowser();
+            new BackupRestorer()->restore(
+                self::BACKUP_ID,
+                BackupScope::FULL,
+                RestoreEnvDecision::REQUIRE_ANONYMIZATION,
+            );
+
+            $rows = $this->deliveryRows();
+            $this->assertSame(DeliveryStatus::FAILED, $rows[0][EntityNotificationDelivery::status]);
+            $this->assertSame(RestoredDeliveries::UNKNOWN_FATE, $rows[0][EntityNotificationDelivery::last_error]);
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+    }
+
+    public function testSchemaOnlyRestoreDoesNotSettlePendingDeliveries(): void
+    {
+        // Rows in a schema-only fixture reveal whether the settle step ran despite its scope.
+        $this->publishFixtureBackup(
+            $this->deliveryDumpSql() . ArchiveMigrationMarker::statement(0),
+            0,
+            BackupScope::SCHEMA_ONLY,
+        );
+        $this->deliveryTableRaised = true;
+
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::SCHEMA_ONLY, RestoreEnvDecision::ALLOW);
+
+        $rows = $this->deliveryRows();
+        $this->assertSame(DeliveryStatus::PENDING, $rows[0][EntityNotificationDelivery::status]);
+        $this->assertSame('possibly sent', $rows[0][EntityNotificationDelivery::last_error]);
+        $this->assertSame(2, (int)$rows[0][EntityNotificationDelivery::attempts]);
     }
 
     public function testASchemaArchiveIsLeftAtTheLevelItsMarkerDeclares(): void
@@ -874,6 +944,33 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
+     * A dump of two journal rows, one whose fate is unknown and one already sent.
+     *
+     * @return string Dump SQL
+     */
+    private function deliveryDumpSql(): string
+    {
+        $stub = dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_hilos_notification_delivery.sql';
+
+        return 'DROP TABLE IF EXISTS `' . EntityNotificationDelivery::_table . "`;\n"
+            . (string)file_get_contents($stub)
+            . 'INSERT INTO `' . EntityNotificationDelivery::_table . '` (`id`, `notification_id`, `channel`, `status`,'
+            . ' `attempts`, `last_error`, `created_at`, `updated_at`, `delivered_at`) VALUES '
+            . "(1, 101, 'email', 'pending', 2, 'possibly sent', '2026-08-08 11:58:00', '2026-08-08 11:59:00', NULL),"
+            . " (2, 102, 'email', 'sent', 1, NULL, '2026-08-08 11:56:00', '2026-08-08 11:57:00', '2026-08-08 11:57:00');\n";
+    }
+
+    /**
+     * @return list<array<string, mixed>> Journal rows after import and settlement
+     */
+    private function deliveryRows(): array
+    {
+        return Database::sql(
+            'SELECT * FROM `' . EntityNotificationDelivery::_table . '` ORDER BY `' . EntityNotificationDelivery::id . '`',
+        )->rows();
+    }
+
+    /**
      * A dump carrying personal data, laid out the way mysqldump writes a schema pass.
      *
      * The multi-line `CREATE TABLE` shape is load-bearing here and not decoration: the
@@ -1169,6 +1266,11 @@ final class PiiRestoreTestDbContext extends HilosDbContext
     public function configure(): void
     {
     }
+}
+
+/** Mounts framework entities so their delivery verdicts enter the anonymization registry. */
+final class DeliveryPiiRestoreTestDbContext extends HilosDbContext
+{
 }
 
 /**

@@ -296,9 +296,11 @@ The durable half of the mail pool is the second example, and the forgetting in i
 strongest form: it keeps nothing across the freeze at all.
 `AbstractDeliveryChannelAgent` drops every delivery it holds on its first tick
 under the silence and refuses new ones until the row lets go; the rows stay
-`pending` (HIL-1060). The price is named: a freeze abandoned before the operation
-ran leaves those notifications unsent until the pool learns to pick up pending
-rows when it starts.
+`pending` (HIL-1060). The pool picks them up itself on its first tick the freeze
+no longer silences, as every new instance does on start (HIL-1135). A restore
+leaves nothing to pick up: the restore engine settles every pending row of the
+restored journal as failed, since whether it went out is not known, and a person
+decides with retry (`BackupRestorer`, `RestoredDeliveries`).
 
 ## Entry Is Fail-Closed In Both Branches
 

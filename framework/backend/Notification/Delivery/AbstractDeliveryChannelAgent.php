@@ -7,6 +7,7 @@ namespace Hilos\Notification\Delivery;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
@@ -14,11 +15,15 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
+use Hilos\Database\Schema\Schema;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Exception\MailBusyException;
@@ -61,6 +66,10 @@ use Hilos\Sms\Exception\SmsTemplateParamMissingException;
  * holds and refuses new deliveries, because nothing of a database being replaced may be acted
  * on in its successor; the rows stay pending. Only the mail pool meets this in practice - the
  * freeze stops the other channels outright (HIL-1060).
+ * The shard picks up its pending rows on the first tick the freeze no longer silences,
+ * and every new instance does the same after a worker death, daemon restart, or move to
+ * another node. This is at-least-once delivery: a process that dies after the provider
+ * accepts a send but before the row is settled can send it again (HIL-1135).
  */
 abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 {
@@ -109,6 +118,9 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 
     /** @var array<int, float> Earliest next-attempt time (ms) per op, for retry backoff. */
     private array $nextAttemptMs = [];
+
+    /** Whether this shard owes a read of its pending rows, from birth or after a silencing freeze (HIL-1135). */
+    private bool $rereadOwed = true;
 
     /**
      * Returns this agent's channel descriptor (identity, address, signal seams).
@@ -195,6 +207,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
             $this->logAgentWarning(
                 "delivery for notification {$data->data->notificationId} dropped: protected mode holds the node, its row stays pending",
             );
+            $this->rereadOwed = true;
 
             return;
         }
@@ -215,6 +228,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     {
         if ($this->freezeSilencesDeliveries()) {
             $dropped = $this->abandonDeliveries();
+            $this->rereadOwed = true;
             if ($dropped > 0) {
                 $this->logAgentWarning(
                     "protected mode holds the node: {$dropped} durable deliveries dropped, their rows stay pending",
@@ -222,6 +236,10 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
             }
 
             return;
+        }
+
+        if ($this->rereadOwed) {
+            $this->adoptPendingRows();
         }
 
         $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
@@ -271,6 +289,55 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         $this->nextAttemptMs = [];
 
         return $dropped;
+    }
+
+    /**
+     * Queues this shard's persisted pending rows without duplicating already signalled ops.
+     *
+     * A null shard belongs to index 1, so an orphan or an unresolved recipient can
+     * reach the existing terminal failure path instead of remaining pending forever.
+     * A project may mount the framework collection without activating its table;
+     * those raw-mail-only projects owe no journal read.
+     *
+     * @throws DatabaseException When the journal or shard dimension cannot be read
+     * @throws TableNotActivatedException When the project has not activated the journal
+     * @throws DbCollectionNotReadableException When the shard dimension is not readable here
+     * @throws EnvException When a pool width cannot be read
+     * @throws InvalidArgumentException When a shard lookup has invalid query order
+     */
+    private function adoptPendingRows(): void
+    {
+        if (Schema::getTable(EntityNotificationDelivery::_table) === null) {
+            $this->rereadOwed = false;
+
+            return;
+        }
+
+        $journal = Hilos::$db?->getObjectCollection(HilosDbContext::notificationDeliveries);
+        if (!$journal instanceof ObjectNotificationDeliveries) {
+            $this->rereadOwed = false;
+
+            return;
+        }
+
+        $channel = $this->channel();
+        $picked = 0;
+        foreach ($journal->pendingRecipients($channel->name()) as $notificationId => $userId) {
+            $shardKey = $userId === null ? null : $channel->shardKeyFor($userId, $notificationId);
+            $myRow = !$channel->isPooled()
+                || ($shardKey === null ? $this->agentIndex === '1' : (string)$shardKey === $this->agentIndex);
+            if (!$myRow || isset($this->ops[$notificationId])) {
+                continue;
+            }
+
+            $this->ops[$notificationId] = new NotificationDeliverSignalData($notificationId, $channel->name(), $shardKey);
+            $picked++;
+        }
+
+        $this->rereadOwed = false;
+        if ($picked > 0) {
+            $this->logAgentInfo("picked up {$picked} pending deliveries from the journal");
+        }
     }
 
     /**

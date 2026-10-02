@@ -9,6 +9,10 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
+use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
+use Hilos\Database\Schema\Schema;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -77,6 +81,58 @@ final class MailDeliveryChannelAgentTest extends TestCase
         // The op is dropped: no further transport is opened.
         $agent->onTick();
         self::assertSame(1, $agent->createdCount);
+    }
+
+    public function testFirstTickWithoutDatabaseStillDrivesTheRawPool(): void
+    {
+        $previousDb = Hilos::$db;
+        Hilos::$db = null;
+        try {
+            $transport = new ScriptedMailTransport(1, MailSendOutcome::delivered());
+            $agent = new TestableMailAgent([$transport]);
+            $this->rawSend($agent, new MailSendSignalData(
+                to: 'user@example.com',
+                shardKey: 1,
+                subject: 'Hi',
+                text: 'Body',
+            ));
+
+            $agent->onTick();
+            self::assertSame(1, $agent->createdCount);
+            self::assertInstanceOf(EmailMessage::class, $transport->started);
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+    }
+
+    public function testMountedJournalWithoutItsTableStillDrivesTheRawPool(): void
+    {
+        $previousDb = Hilos::$db;
+        $db = new MailWithoutJournalDbContext();
+        $db->configure();
+        Hilos::$db = $db;
+        try {
+            self::assertInstanceOf(
+                ObjectNotificationDeliveries::class,
+                $db->getObjectCollection(HilosDbContext::notificationDeliveries),
+            );
+            self::assertNull(Schema::getTable(EntityNotificationDelivery::_table));
+
+            $transport = new ScriptedMailTransport(1, MailSendOutcome::delivered());
+            $agent = new TestableMailAgent([$transport]);
+            $this->rawSend($agent, new MailSendSignalData(
+                to: 'user@example.com',
+                shardKey: 1,
+                subject: 'Hi',
+                text: 'Body',
+            ));
+
+            $agent->onTick();
+            self::assertSame(1, $agent->createdCount);
+            self::assertInstanceOf(EmailMessage::class, $transport->started);
+        } finally {
+            Hilos::$db = $previousDb;
+        }
     }
 
     public function testRawSendRendersFromTemplate(): void
@@ -553,6 +609,11 @@ final class MailFreezeTestRtContext extends RtContext
     public function configure(): void
     {
     }
+}
+
+/** Mounts the framework journal collection without an activated delivery table. */
+final class MailWithoutJournalDbContext extends HilosDbContext
+{
 }
 
 /**
