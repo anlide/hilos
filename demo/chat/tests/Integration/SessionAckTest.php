@@ -16,11 +16,15 @@ use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
+use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
@@ -387,6 +391,91 @@ final class SessionAckTest extends IntegrationTestCase
 
             $this->assertNull($this->sessionAckOf('ack-dismiss-a'));
             $this->assertNull($this->sessionAckOf('ack-dismiss-stranger'));
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A tracked dismiss answers only the connection that pressed while clearing the mark in every tab (HIL-1237).
+     *
+     * @throws HilosException When setup, dispatch, or frame delivery fails
+     */
+    public function testATrackedDismissAnswersOnlyThePressingSocketWhileClearingEverySocket(): void
+    {
+        $agent = $this->bootAgent();
+        $token = $this->openSession($agent, 'ack-tracked-a');
+        $this->openSession($agent, 'ack-tracked-b', $token);
+
+        try {
+            $this->sessionOf('ack-tracked-a')?->actions->holdPendingAck(SessionAck::SIGNED_IN);
+            $this->assertSame(SessionAck::SIGNED_IN, $this->sessionAckOf('ack-tracked-a'));
+            $this->assertSame(SessionAck::SIGNED_IN, $this->sessionAckOf('ack-tracked-b'));
+
+            $library = $this->sessionsLibrary();
+            $requestId = 'tracked-dismiss-req';
+            $library->beginActionDispatch($requestId);
+            try {
+                $library->onAgentAction(
+                    'ack-tracked-b',
+                    HilosSignalConstants::HILOS_DISMISS_SESSION_ACK,
+                    new DismissSessionAckActionDTO(),
+                );
+                $this->assertTrue($library->actionReplyDeferred(), 'The answer rides the state frame');
+            } finally {
+                $library->endActionDispatch();
+            }
+
+            $frames = [];
+            $queuedSignals = [];
+            while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+                $queuedSignals[] = $signal;
+                $payload = $signal->data;
+                if ($payload instanceof AgentSignalData && $payload->data instanceof SessionStateSignalData) {
+                    $frames[] = $payload->data;
+                }
+            }
+            foreach ($queuedSignals as $signal) {
+                Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+            }
+
+            $this->assertCount(2, $frames);
+            $answeredFrames = array_values(array_filter($frames, static fn (SessionStateSignalData $f): bool => $f->requestId !== null));
+            $siblingFrames = array_values(array_filter($frames, static fn (SessionStateSignalData $f): bool => $f->requestId === null));
+
+            $this->assertCount(1, $answeredFrames);
+            $this->assertSame(['ack-tracked-b'], $answeredFrames[0]->acceptKeys);
+            $this->assertSame(HilosSignalConstants::HILOS_DISMISS_SESSION_ACK, $answeredFrames[0]->action);
+            $this->assertSame($requestId, $answeredFrames[0]->requestId);
+            $this->assertNull($answeredFrames[0]->pendingAck);
+
+            $this->assertCount(1, $siblingFrames);
+            $this->assertSame(['ack-tracked-a'], $siblingFrames[0]->acceptKeys);
+            $this->assertNull($siblingFrames[0]->requestId);
+            $this->assertNull($siblingFrames[0]->action);
+            $this->assertNull($siblingFrames[0]->pendingAck);
+
+            $this->deliverLibraryFrames($agent);
+
+            $successReplies = [];
+            while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+                if ($signal->signalName->getName() !== SignalConstants::ACTION_SUCCESS) {
+                    continue;
+                }
+                if (
+                    $signal->data instanceof WebSocketSignalData
+                    && $signal->data->data instanceof PageActionSuccessSignalData
+                ) {
+                    $successReplies[] = $signal->data;
+                }
+            }
+
+            $this->assertCount(1, $successReplies);
+            $this->assertSame('ack-tracked-b', $successReplies[0]->targetAcceptKey);
+            $this->assertSame($requestId, $successReplies[0]->data->requestId);
+
+            $this->assertNull($this->sessionAckOf('ack-tracked-a'));
+            $this->assertNull($this->sessionAckOf('ack-tracked-b'));
         } finally {
             $this->cleanUp();
         }

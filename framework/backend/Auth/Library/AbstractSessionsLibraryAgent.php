@@ -543,8 +543,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         CliCommands::ACCOUNT_TEST_FORCE_PURGE,
     ];
 
-    /** @var int Times a rotation re-mints a token another session already holds before giving up */
-    private const int TOKEN_MINT_ATTEMPTS = 3;
+    /**
+     * Times a rotation re-mints a token another session already holds before giving up.
+     *
+     * Protected rather than private for the framework's test stands, which set 0 to reach
+     * the in-place sign-out fallback without mocking the random token minting.
+     *
+     * @var int
+     */
+    protected const int TOKEN_MINT_ATTEMPTS = 3;
 
     /**
      * @var int Byte length of a session toast's name; the name is these bytes in hex
@@ -2394,7 +2401,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function rotateSessionToken(Session $session, int $userId): string
     {
-        for ($attempt = 0; $attempt < self::TOKEN_MINT_ATTEMPTS; $attempt++) {
+        for ($attempt = 0; $attempt < static::TOKEN_MINT_ATTEMPTS; $attempt++) {
             $candidate = SessionToken::mint();
             try {
                 $session->actions->rotateTokenAndBindUser($candidate, $userId);
@@ -2406,7 +2413,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         throw new SessionTokenExhaustedException(
-            'Session token rotation failed: ' . self::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
+            'Session token rotation failed: ' . static::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
         );
     }
 
@@ -2423,7 +2430,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function rotateSessionTokenAndUnbindUser(Session $session): string
     {
-        for ($attempt = 0; $attempt < self::TOKEN_MINT_ATTEMPTS; $attempt++) {
+        for ($attempt = 0; $attempt < static::TOKEN_MINT_ATTEMPTS; $attempt++) {
             $candidate = SessionToken::mint();
             try {
                 $session->actions->rotateTokenAndUnbindUser($candidate);
@@ -2435,7 +2442,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         throw new SessionTokenExhaustedException(
-            'Session token rotation failed: ' . self::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
+            'Session token rotation failed: ' . static::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
         );
     }
 
@@ -2531,7 +2538,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $newToken = $this->rotateSessionTokenAndUnbindUser($session);
         } catch (SessionTokenExhaustedException | RandomException $e) {
             $this->logAgentError('Sign-out kept the old session token: ' . $e->getMessage());
-            $this->signOutInPlace($sessionToken, $requestId, $action);
+            $this->signOutInPlace($sessionToken, $requestId, $action, $holderAcceptKey);
 
             return $sessionToken;
         }
@@ -2586,12 +2593,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The pending ack (HIL-875) and impersonator marker (HIL-1061) leave with the person
      * in unbindUser(). The old toast stack is forgotten (HIL-916), the takeover end is
-     * logged without restoring anyone, and one state frame tells every live socket.
+     * logged without restoring anyone, and state frames tell every live socket: sibling
+     * tabs without an answer, and the pressing connection with one (HIL-1237).
      * An already anonymous session keeps its stack and publishes nothing.
      *
      * @param string $sessionToken Session cookie token to revert to anonymous
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name the state frame answers, or null when it answers none
+     * @param ?string $answeredAcceptKey Connection whose press is answered, or null when nobody waits
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
@@ -2599,6 +2608,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         string $sessionToken,
         ?string $requestId = null,
         ?string $action = null,
+        ?string $answeredAcceptKey = null,
     ): void {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null || $session->userId === null) {
@@ -2620,15 +2630,31 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             ]));
         }
 
-        $this->publishSessionState(new SessionStateSignalData(
-            sessionToken: $sessionToken,
-            sessionId: $session->id,
-            userId: null,
-            acceptKeys: $this->sessionConnectionKeys($sessionToken),
-            pendingAck: $this->sessionPendingAck($session),
-            requestId: $requestId,
-            action: $action,
+        $answered = $requestId !== null && $action !== null ? $answeredAcceptKey : null;
+        $others = array_values(array_filter(
+            $this->sessionConnectionKeys($sessionToken),
+            static fn (string $acceptKey): bool => $acceptKey !== $answered,
         ));
+        if ($others !== []) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $sessionToken,
+                sessionId: $session->id,
+                userId: null,
+                acceptKeys: $others,
+                pendingAck: $this->sessionPendingAck($session),
+            ));
+        }
+        if ($answered !== null) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $sessionToken,
+                sessionId: $session->id,
+                userId: null,
+                acceptKeys: [$answered],
+                pendingAck: $this->sessionPendingAck($session),
+                requestId: $requestId,
+                action: $action,
+            ));
+        }
     }
 
     /**
@@ -2711,7 +2737,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function mintAnonymousSession(): Session
     {
-        for ($attempt = 0; $attempt < self::TOKEN_MINT_ATTEMPTS; $attempt++) {
+        for ($attempt = 0; $attempt < static::TOKEN_MINT_ATTEMPTS; $attempt++) {
             $candidate = SessionToken::mint();
             try {
                 return Hilos::$db->sessions->actions->createAnonymous($candidate);
@@ -2721,7 +2747,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         throw new SessionTokenExhaustedException(
-            'Anonymous session mint failed: ' . self::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
+            'Anonymous session mint failed: ' . static::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
         );
     }
 
@@ -2834,16 +2860,23 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * disappears when the cleared mark comes back through the projection rather than on
      * the click — which is also what makes the second tab close its copy, and what makes
      * a double click harmless: the second one marks rows that already carry null.
+     * The mark is cleared for all sockets, and the answer is returned to the pressing
+     * connection as a dedicated frame (HIL-1237).
      *
      * @param string $sessionToken Session cookie token whose sockets are cleared
+     * @param string $acceptKey Accept key of the connection that pressed
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name the state frame answers, or null when it answers none
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    private function clearSessionAck(string $sessionToken, ?string $requestId = null, ?string $action = null): void
-    {
-        $this->republishSessionAck($sessionToken, null, $requestId, $action);
+    private function clearSessionAck(
+        string $sessionToken,
+        string $acceptKey,
+        ?string $requestId = null,
+        ?string $action = null,
+    ): void {
+        $this->republishSessionAck($sessionToken, null, $acceptKey, $requestId, $action);
     }
 
     /**
@@ -2878,13 +2911,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Writes one ack on the session row and states it in the frame that re-publishes it.
+     * Writes one ack on the session row and states it in the frames that re-publish it (HIL-1237).
      *
      * The write and the re-publish are one step on purpose: the frontend draws from the
      * projection alone, so a mark nobody published is a mark nobody sees, and the two
      * drifting apart is the only way this mechanism can fail silently. Since HIL-875 the row
      * being written is the session's, so a tab that was not on this frame is answered by the
-     * session the next time it asks.
+     * session the next time it asks. Sibling tabs receive the state frame without an answer,
+     * while the pressing connection receives the answer in its own frame.
      *
      * A token no session answers to is a no-op, the same guard {@see deauthenticateSession()}
      * takes and for a sharper reason: sockets CAN outlive their token. The login rotation
@@ -2898,6 +2932,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param string $sessionToken Session cookie token whose sockets are written
      * @param ?string $ack Ack kind to show (a {@see SessionAck} value), or null to clear it
+     * @param ?string $answeredAcceptKey Connection whose press is answered, or null when nobody waits
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name the state frame answers, or null when it answers none
      * @throws InvalidArgumentException When the state frame cannot be named
@@ -2906,6 +2941,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function republishSessionAck(
         string $sessionToken,
         ?string $ack,
+        ?string $answeredAcceptKey = null,
         ?string $requestId = null,
         ?string $action = null,
     ): void {
@@ -2920,16 +2956,34 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $session->actions->holdPendingAck($ack);
         }
 
-        $this->publishSessionState(new SessionStateSignalData(
-            sessionToken: $sessionToken,
-            sessionId: $session->id,
-            userId: $session->userId,
-            acceptKeys: $this->sessionConnectionKeys($sessionToken),
-            pendingAck: $ack,
-            pendingAuthStep: $this->pendingAuthStepFor($session),
-            requestId: $requestId,
-            action: $action,
+        $step = $this->pendingAuthStepFor($session);
+        $answered = $requestId !== null && $action !== null ? $answeredAcceptKey : null;
+        $others = array_values(array_filter(
+            $this->sessionConnectionKeys($sessionToken),
+            static fn (string $acceptKey): bool => $acceptKey !== $answered,
         ));
+        if ($others !== []) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $sessionToken,
+                sessionId: $session->id,
+                userId: $session->userId,
+                acceptKeys: $others,
+                pendingAck: $ack,
+                pendingAuthStep: $step,
+            ));
+        }
+        if ($answered !== null) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $sessionToken,
+                sessionId: $session->id,
+                userId: $session->userId,
+                acceptKeys: [$answered],
+                pendingAck: $ack,
+                pendingAuthStep: $step,
+                requestId: $requestId,
+                action: $action,
+            ));
+        }
     }
 
     /**
@@ -4231,7 +4285,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if (!$dto instanceof DismissSessionAckActionDTO) {
                     throw new InvalidActionPayloadException($action, DismissSessionAckActionDTO::class, $dto);
                 }
-                $this->clearSessionAck($sessionToken, $this->currentActionRequestId(), $action);
+                $this->clearSessionAck($sessionToken, $acceptKey, $this->currentActionRequestId(), $action);
 
                 return null;
 

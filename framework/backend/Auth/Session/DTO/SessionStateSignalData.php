@@ -9,6 +9,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\BaseDTO;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -31,7 +32,8 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  * A frame that carries a {@see self::$rotationTicket} or an answer to an action names
  * exactly ONE socket - the one that acted. Both are addressed to it: a one-time rotation
  * ticket has a single rightful holder, and an action is answered to the connection that
- * submitted it.
+ * submitted it. The constructor refuses a frame naming more than one socket with an answer
+ * or ticket (HIL-1237).
  *
  * {@see self::$pendingAuthStep} travels here rather than being read again by the
  * project: the unfinished authentication step is the library's knowledge, and a project
@@ -70,6 +72,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
      *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding Standing of the person
      *     the session acts as, or null when it is anonymous
+     * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -85,6 +88,15 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?array $accountBlocked = null,
         public readonly ?array $accountStanding = null,
     ) {
+        if (
+            count($acceptKeys) > 1
+            && ($rotationTicket !== null || $requestId !== null || $action !== null || $outcome !== null)
+        ) {
+            throw new InvalidArgumentException(
+                'A session state frame that answers an action or hands over a rotation ticket names one socket at most, this one names '
+                . count($acceptKeys)
+            );
+        }
     }
 
     /**
@@ -93,6 +105,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
      *     Blocked account the session lost, or null when it holds no card
      * @return self The same frame carrying that card
+     * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
      */
     public function withAccountBlocked(?array $accountBlocked): self
     {
@@ -119,6 +132,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
      *     Standing of the person the session acts as, or null when it is anonymous
      * @return self The same frame carrying that standing
+     * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
      */
     public function withAccountStanding(?array $accountStanding): self
     {
@@ -171,6 +185,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
      * @throws InvalidFormatException When the payload names no session, or a present field is not of its declared type
+     * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
      */
     public static function fromArray(array $data): static
     {
@@ -200,10 +215,10 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * Names the one socket a ticket or an answer is addressed to.
      *
-     * A frame carrying either is built with a single accept key by
-     * {@see AbstractSessionsLibraryAgent}, so this reads that key rather than choosing
-     * among several. A frame that somehow carries none answers null, and the project sends
-     * nothing - which is the honest outcome for an ending whose connection has gone.
+     * A frame carrying either cannot be built with more than one accept key, so this
+     * reads that key rather than choosing among several. A frame that somehow carries
+     * none answers null, and the project sends nothing - which is the honest outcome
+     * for an ending whose connection has gone.
      *
      * @return ?string Accept key of the connection that acted, or null when the frame names none
      */

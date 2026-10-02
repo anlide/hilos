@@ -227,6 +227,50 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
         $this->assertSame([self::TAB_A], $rotation->acceptKeysToDrop);
     }
 
+    /**
+     * When a token mint is exhausted, an in-place sign-out answers only its initiator after telling the sibling (HIL-1237).
+     *
+     * @throws HilosException When sign-in setup or the sign-out fails
+     */
+    public function testAnExhaustedMintSignOutAnswersOnlyItsInitiatorAfterTellingTheSibling(): void
+    {
+        $this->signIn();
+        $agent = new SessionToastDeliveryExhaustedMintAgent();
+        $this->drainSignals();
+        $agent->beginActionDispatch('logout-request');
+        try {
+            $agent->onAgentAction(self::TAB_B, HilosSignalConstants::HILOS_LOGOUT, LogoutActionDTO::fromArray([]));
+            $this->assertTrue($agent->actionReplyDeferred());
+        } finally {
+            $agent->endActionDispatch();
+        }
+
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof SessionStateSignalData) {
+                $frames[] = $signal->data->data;
+            }
+        }
+        $this->assertCount(2, $frames);
+        $this->assertSame([self::TAB_A], $frames[0]->acceptKeys);
+        $this->assertNull($frames[0]->userId);
+        $this->assertNull($frames[0]->rotationTicket);
+        $this->assertNull($frames[0]->requestId);
+        $this->assertNull($frames[0]->action);
+        $this->assertSame(self::SESSION_TOKEN, $frames[0]->sessionToken);
+        $this->assertSame([self::TAB_B], $frames[1]->acceptKeys);
+        $this->assertNull($frames[1]->userId);
+        $this->assertSame('logout-request', $frames[1]->requestId);
+        $this->assertSame(HilosSignalConstants::HILOS_LOGOUT, $frames[1]->action);
+        $this->assertSame(self::SESSION_TOKEN, $frames[1]->sessionToken);
+        $this->assertNull($frames[1]->rotationTicket);
+
+        $session = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN);
+        $this->assertNotNull($session);
+        $this->assertNull($session->userId);
+        $this->assertCount(0, Hilos::$rt->hilosSessionRotations);
+    }
+
     public function testARaiseForAPersonWhoHasSignedOutIsDroppedInSilence(): void
     {
         $this->signIn();
@@ -519,6 +563,18 @@ final class SessionToastDeliveryTestDbContext extends HilosDbContext
  */
 final class SessionToastDeliveryTestAgent extends AbstractSessionsLibraryAgent
 {
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * Sessions library with zero token mint attempts to trigger the fallback in-place sign-out (HIL-1237).
+ */
+final class SessionToastDeliveryExhaustedMintAgent extends AbstractSessionsLibraryAgent
+{
+    protected const int TOKEN_MINT_ATTEMPTS = 0;
+
     public function onStop(): void
     {
     }

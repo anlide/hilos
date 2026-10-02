@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\Session;
 
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 
@@ -84,5 +85,99 @@ final class SessionStateSignalDataTest extends TestCase
             'userId' => null,
             'acceptKeys' => ['accept-key'],
         ]);
+    }
+
+    public function testFrameWithAnAnswerAndMultipleSocketsIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: 41,
+            acceptKeys: ['socket-a', 'socket-b'],
+            requestId: 'req-1',
+            action: 'hilos_dismiss_session_ack',
+        );
+    }
+
+    public function testFrameWithARotationTicketAndMultipleSocketsIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: null,
+            acceptKeys: ['socket-a', 'socket-b'],
+            rotationTicket: 'ticket-1',
+        );
+    }
+
+    public function testFrameWithAnOutcomeAndMultipleSocketsIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: 41,
+            acceptKeys: ['socket-a', 'socket-b'],
+            outcome: ['status' => 'ok'],
+        );
+    }
+
+    public function testFrameWithAnAnswerAndOneSocketRoundtrips(): void
+    {
+        $frame = new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: 41,
+            acceptKeys: ['socket-a'],
+            requestId: 'req-1',
+            action: 'hilos_dismiss_session_ack',
+        );
+
+        self::assertEquals($frame, SessionStateSignalData::fromArray($frame->toArray()));
+    }
+
+    public function testFrameWithAnAnswerAndZeroSocketsRoundtrips(): void
+    {
+        $frame = new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: 41,
+            acceptKeys: [],
+            requestId: 'req-1',
+            action: 'hilos_dismiss_session_ack',
+        );
+
+        self::assertEquals($frame, SessionStateSignalData::fromArray($frame->toArray()));
+    }
+
+    public function testFromArrayWithAnAnswerAndMultipleSocketsIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        SessionStateSignalData::fromArray([
+            'sessionToken' => 'token',
+            'sessionId' => 17,
+            'userId' => 41,
+            'acceptKeys' => ['socket-a', 'socket-b'],
+            'requestId' => 'req-1',
+            'action' => 'hilos_dismiss_session_ack',
+        ]);
+    }
+
+    public function testFrameWithMultipleSocketsWithoutAnAnswerRoundtrips(): void
+    {
+        $frame = new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: 41,
+            acceptKeys: ['socket-a', 'socket-b', 'socket-c'],
+        );
+
+        self::assertEquals($frame, SessionStateSignalData::fromArray($frame->toArray()));
     }
 }
