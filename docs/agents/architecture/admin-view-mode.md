@@ -383,10 +383,10 @@ nobody is asked*).
   every screen, and a control reading it directly would lock that viewer's own
   profile and the shell's controls — the deletion strip's "Keep my account",
   the impersonation strip's Stop, which under a takeover of a non-admin
-  carries that person's identity. The Vue shell draws
+  carries that person's identity. The Vue and React shells draw
   the gear from it for `full` and `view`, marked `data-access`, and a project
-  passes nothing; in React (not in the code yet — HIL-1271) and Angular
-  (not in the code yet — HIL-1272) the gear is still drawn for an admin only.
+  passes nothing; in Angular (not in the code yet — HIL-1272) the gear is
+  still drawn for an admin only.
 - The admin routes do not refuse a viewer on the client, and a grant or a
   revoke moves the open tab between the full surface and the view live:
   `bindAccessReaction` takes the mode as a third input, and with it on a
@@ -424,9 +424,9 @@ nobody is asked*).
 - An edit window over a hidden field (F1): the field is replaced by the mark —
   no input, no list — and the draft holds the one hidden value, so the window is
   not dirty, raises no notice, and Cancel or Esc closes it without "Discard
-  changes?"; Save is disabled by the mode. React and Angular draw neither the
-  banner nor the mark yet and say the word "Hidden" where a field became
-  hideable (not in the code yet — HIL-1271, HIL-1272).
+  changes?"; Save is disabled by the mode. Angular draws neither the banner
+  nor the mark yet and says the word "Hidden" where a field became hideable
+  (not in the code yet — HIL-1272).
 - The controls of the mode: inside an admin page a viewer finds the action
   button (`LoadingButton`), the switch (`HilosSwitch`), the Save of an edit
   form (`ConflictActions`, the default button and the slotted one alike) and a
@@ -506,8 +506,8 @@ nobody is asked*).
 - The controls exist in all three frontends with full parity, as every
   primitive does
   ([../frontend/multiframework-core.md](../frontend/multiframework-core.md));
-  the React side (not in the code yet — HIL-1271) and the Angular side
-  (not in the code yet — HIL-1272) follow the Vue one.
+  the Angular side (not in the code yet — HIL-1272) follows the Vue and React
+  ones.
 
 ## What A New Admin Section Owes
 

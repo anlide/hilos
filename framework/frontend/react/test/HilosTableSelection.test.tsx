@@ -11,6 +11,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosTableSelection } from '../src/HilosTableSelection.js'
+import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 
 // The React port of vue/src/HilosTableSelection.test.ts, under the same case
 // names. The confirmation portals to <body>, so every query reads the document
@@ -262,5 +263,57 @@ describe('HilosTableSelection', () => {
     const group = byId('hilos-table-selection')
     expect(group?.getAttribute('role')).toBe('group')
     expect(group?.getAttribute('aria-label')).toBe('Selection')
+  })
+})
+
+describe('HilosTableSelection in the admin view mode', () => {
+  it('disables the operations and keeps the marks live', () => {
+    const asked: HilosTableSelectionTarget[] = []
+    const controller = makeController([deleteAction(asked)])
+    controller.selectRow('a', true)
+    render(
+      <HilosAdminViewModeContext.Provider value>
+        {panel(controller)}
+      </HilosAdminViewModeContext.Provider>,
+    )
+
+    const operation = byId('hilos-table-bulk-delete') as HTMLButtonElement
+    expect(operation.disabled).toBe(true)
+    expect(operation.getAttribute('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+
+    const selectAll = byId(
+      'hilos-table-select-all-filtered',
+    ) as HTMLButtonElement
+    const clear = byId('hilos-table-selection-clear') as HTMLButtonElement
+    expect(selectAll.disabled).toBe(false)
+    expect(clear.disabled).toBe(false)
+
+    fireEvent.click(selectAll)
+    expect(controller.selection.target.get()?.kind).toBe('filter')
+    fireEvent.click(clear)
+    expect(controller.selection.count.get()).toBe(0)
+    expect(asked).toEqual([])
+  })
+
+  it('leaves the operations untouched outside the mode', () => {
+    const controller = makeController([deleteAction([])])
+    controller.selectRow('a', true)
+
+    const { unmount } = renderPanel(controller)
+    const outside = byId('hilos-table-bulk-delete') as HTMLButtonElement
+    expect(outside.disabled).toBe(false)
+    expect(outside.getAttribute('aria-describedby')).toBeNull()
+    unmount()
+
+    render(
+      <HilosAdminViewModeContext.Provider value={false}>
+        {panel(controller)}
+      </HilosAdminViewModeContext.Provider>,
+    )
+    const off = byId('hilos-table-bulk-delete') as HTMLButtonElement
+    expect(off.disabled).toBe(false)
+    expect(off.getAttribute('aria-describedby')).toBeNull()
   })
 })

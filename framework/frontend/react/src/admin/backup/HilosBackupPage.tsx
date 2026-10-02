@@ -66,12 +66,11 @@ import {
   isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
-  hiddenAsWord,
-  HILOS_VIEW_MODE_COPY,
   isHiddenValue,
   offersBackupRestore,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosBackupRow,
   HilosBackupsContext,
   HilosProgressAnchors,
@@ -79,6 +78,8 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -383,7 +384,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
    *
    * @param row The backup row the button belongs to.
    */
-  function restoreBlockedReason(row: HilosBackupRow): string | null {
+  function restoreBlockedReason(row: HilosBackupRow): Hideable<string> | null {
     // An archive on another node's disk is out of reach whatever else is true of it.
     const outOfReach = formatBackupOutOfReach(row)
     if (outOfReach !== null) {
@@ -396,7 +397,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     // doing right now: waiting for the current run would not make this one restorable.
     if (isBackupMigrationRefused(row)) {
       return (
-        hiddenAsWord(row.restoreMigrationNotice) ??
+        row.restoreMigrationNotice ??
         'This archive was taken on newer code; there is no downgrade path'
       )
     }
@@ -764,6 +765,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               type="button"
               className="btn btn-secondary"
               disabled={del.busy}
+              data-id="hilos-backup-delete-cancel"
               onClick={requestClose}
             >
               Cancel
@@ -807,6 +809,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               type="button"
               className="btn btn-secondary"
               disabled={reopen.busy}
+              data-id="hilos-backup-reopen-cancel"
               onClick={requestClose}
             >
               Cancel
@@ -849,11 +852,15 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </button>
         )}
       >
-        <HilosLongText
-          kind="prose"
-          text={hiddenAsWord(detailsRow?.failureReason ?? '')}
-          dataId="hilos-backup-details-text"
-        />
+        <HilosHideable value={detailsRow?.failureReason ?? ''}>
+          {(value) => (
+            <HilosLongText
+              kind="prose"
+              text={value}
+              dataId="hilos-backup-details-text"
+            />
+          )}
+        </HilosHideable>
       </HilosModal>
 
       <HilosModal
@@ -873,11 +880,17 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </button>
         )}
       >
-        <HilosLongText
-          kind="prose"
-          text={blockedRow ? (restoreBlockedReason(blockedRow) ?? '') : ''}
-          dataId="hilos-backup-blocked-reason-text"
-        />
+        <HilosHideable
+          value={blockedRow ? (restoreBlockedReason(blockedRow) ?? '') : ''}
+        >
+          {(value) => (
+            <HilosLongText
+              kind="prose"
+              text={value}
+              dataId="hilos-backup-blocked-reason-text"
+            />
+          )}
+        </HilosHideable>
       </HilosModal>
 
       <HilosModal
@@ -897,11 +910,15 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </button>
         )}
       >
-        <HilosLongText
-          kind="prose"
-          text={hiddenAsWord(shipErrorRow?.shipError ?? '')}
-          dataId="hilos-backup-ship-error-text"
-        />
+        <HilosHideable value={shipErrorRow?.shipError ?? ''}>
+          {(value) => (
+            <HilosLongText
+              kind="prose"
+              text={value}
+              dataId="hilos-backup-ship-error-text"
+            />
+          )}
+        </HilosHideable>
       </HilosModal>
 
       <HilosModal
@@ -916,6 +933,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               type="button"
               className="btn btn-secondary"
               disabled={restore.busy}
+              data-id="hilos-backup-restore-cancel"
               onClick={requestClose}
             >
               Cancel
@@ -951,7 +969,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         ) : null}
         {isHiddenValue(restoreNotes) ? (
           <p className="mb-2" data-id="hilos-backup-migration-notes">
-            {HILOS_VIEW_MODE_COPY.hidden}
+            <HilosHiddenMark />
           </p>
         ) : restoreNotes.length > 0 ? (
           <ul
@@ -1010,7 +1028,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         from the command refusing after they have walked to the terminal. */}
         {isHiddenValue(cliNotes) ? (
           <p className="mt-2 mb-0" data-id="hilos-backup-migration-cli-notes">
-            {HILOS_VIEW_MODE_COPY.hidden}
+            <HilosHiddenMark />
           </p>
         ) : cliNotes.length > 0 ? (
           <ul
@@ -1050,13 +1068,17 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             The database was already being replaced when this run ended.
           </p>
         ) : null}
-        <HilosLongText
-          kind="prose"
-          text={hiddenAsWord(
-            outcomeRow?.restoreFailureReason || 'No failure recorded.',
+        <HilosHideable
+          value={outcomeRow?.restoreFailureReason || 'No failure recorded.'}
+        >
+          {(value) => (
+            <HilosLongText
+              kind="prose"
+              text={value}
+              dataId="hilos-backup-restore-outcome-text"
+            />
           )}
-          dataId="hilos-backup-restore-outcome-text"
-        />
+        </HilosHideable>
       </HilosModal>
 
       <HilosModal
@@ -1071,6 +1093,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               type="button"
               className="btn btn-secondary"
               disabled={create.busy}
+              data-id="hilos-backup-create-cancel"
               onClick={requestClose}
             >
               Cancel

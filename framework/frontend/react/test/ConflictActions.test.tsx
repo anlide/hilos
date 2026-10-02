@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 
 import { ConflictActions } from '../src/ConflictActions.js'
+import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 
 describe('ConflictActions', () => {
   afterEach(cleanup)
@@ -178,5 +179,93 @@ describe('ConflictActions', () => {
     rerender(<ConflictActions mergeable />)
     expect(container.querySelector('[data-id="conflict-choices"]')).toBeNull()
     expect(read(container, 'conflict-choices-idle')).toEqual(twin)
+  })
+})
+
+describe('ConflictActions in the admin view mode', () => {
+  afterEach(cleanup)
+
+  it('disables the default save and points it at the strip', () => {
+    let saves = 0
+    const { container } = render(
+      <HilosAdminViewModeContext.Provider value>
+        <ConflictActions
+          onSave={() => {
+            saves += 1
+          }}
+        />
+      </HilosAdminViewModeContext.Provider>,
+    )
+    const save = container.querySelector(
+      '[data-id="conflict-save"]',
+    ) as HTMLButtonElement
+
+    expect(save.disabled).toBe(true)
+    expect(save.getAttribute('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+    fireEvent.click(save)
+    expect(saves).toBe(0)
+  })
+
+  it('hands the slotted save a disabled state', () => {
+    const seen: boolean[] = []
+    render(
+      <HilosAdminViewModeContext.Provider value>
+        <ConflictActions
+          saveButton={({ disabled }) => {
+            seen.push(disabled)
+
+            return 'Save'
+          }}
+        />
+      </HilosAdminViewModeContext.Provider>,
+    )
+
+    expect(seen).toEqual([true])
+  })
+
+  it('keeps the conflict choices, which edit only the draft', () => {
+    const calls: Record<string, number> = {
+      'accept-mine': 0,
+      'accept-theirs': 0,
+      merge: 0,
+    }
+    const { container } = render(
+      <HilosAdminViewModeContext.Provider value>
+        <ConflictActions
+          conflict
+          mergeable
+          onAcceptMine={() => {
+            calls['accept-mine'] += 1
+          }}
+          onAcceptTheirs={() => {
+            calls['accept-theirs'] += 1
+          }}
+          onMerge={() => {
+            calls['merge'] += 1
+          }}
+        />
+      </HilosAdminViewModeContext.Provider>,
+    )
+
+    for (const choice of ['accept-mine', 'accept-theirs', 'merge']) {
+      const button = container.querySelector(
+        `[data-id="conflict-${choice}"]`,
+      ) as HTMLButtonElement
+      expect(button.disabled).toBe(false)
+      fireEvent.click(button)
+      expect(calls[choice]).toBe(1)
+    }
+  })
+
+  it('leaves the default save untouched outside the mode', () => {
+    const { container } = render(<ConflictActions />)
+    const save = container.querySelector(
+      '[data-id="conflict-save"]',
+    ) as HTMLButtonElement
+
+    expect(save.disabled).toBe(false)
+    expect(save.getAttribute('aria-describedby')).toBeNull()
   })
 })

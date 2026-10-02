@@ -17,7 +17,6 @@
 // for the passkey block (D-122). Bootstrap classes only (styling-rules.md).
 import { useEffect, useId, useMemo, useState } from 'react'
 import {
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   HilosSignInMethodRowKey,
   createHilosSignInMethodsActions,
@@ -33,6 +32,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -132,7 +132,7 @@ export function HilosSecuritySignInMethodsPage({
           [HilosSignInMethodRowKey.enabled]: (row) => {
             const on = isOn(row)
             if (isHiddenValue(on)) {
-              return <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+              return <HilosHiddenMark />
             }
 
             return (
@@ -186,7 +186,7 @@ export function HilosSecuritySignInMethodsPage({
             </div>
           </div>
           {isHiddenValue(passkeyAllowsUnproven) ? (
-            <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+            <HilosHiddenMark />
           ) : (
             <HilosSwitch
               className="mb-0"

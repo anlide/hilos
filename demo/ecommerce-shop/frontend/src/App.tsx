@@ -16,7 +16,7 @@ import type { ComponentType } from 'react'
 
 import AuthSurface from './auth/AuthSurface.js'
 import { connection } from './bootstrap/connection.js'
-import { currentUserIsAdmin, currentUserName } from './bootstrap/session.js'
+import { currentUserName } from './bootstrap/session.js'
 import { PAGE_MAIN } from './pages/keys.js'
 import About from './views/About/About.js'
 import License from './views/License/License.js'
@@ -56,7 +56,6 @@ export interface AppProps {
 }
 
 export default function App({ authGate }: AppProps) {
-  const isAdmin = useSignal(currentUserIsAdmin)
   const userName = useSignal(currentUserName)
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.
@@ -74,7 +73,6 @@ export default function App({ authGate }: AppProps) {
           <span className="visually-hidden d-md-none">Hilos Flowers</span>
         </>
       }
-      isAdmin={isAdmin}
       user={
         userName ? (
           // The avatar is not a link: the demo has no profile yet — it arrives
@@ -84,9 +82,9 @@ export default function App({ authGate }: AppProps) {
             <span className="visually-hidden">{userName}</span>
           </span>
         ) : (
-          // A visitor gets no gear — there is nothing to show — and one button
-          // that opens the surface over the page they are standing on
-          // (mockups/framework/layout, the "guest" tile).
+          // A visitor gets one button that opens the surface over the page they are
+          // standing on (mockups/framework/layout, the "guest" tile). The gear a
+          // visitor sees on a node in the admin view mode is the shell's own.
           <button
             type="button"
             className="btn btn-sm btn-primary"

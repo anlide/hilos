@@ -47,7 +47,6 @@ import {
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   HILOS_TABLE_ACTIONS_KEY,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   hiddenAsWord,
   isHiddenValue,
@@ -83,6 +82,8 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosAvatar } from '../../HilosAvatar.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -641,7 +642,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 size="md"
               />
               <span className="h5 mb-0" data-id="hilos-user-name">
-                {hiddenAsWord(detail.name)}
+                <HilosHideable value={detail.name} />
               </span>
               <span className="badge text-bg-secondary">{detail.presence}</span>
               {standingBadge !== null && (
@@ -1074,7 +1075,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           {draftHidden ? (
             <>
               <div className="form-label">Display name</div>
-              <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+              <HilosHiddenMark />
             </>
           ) : (
             <>
@@ -1222,36 +1223,40 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 ),
                 name: (row) => (
                   <>
-                    {hiddenAsWord(row.name)}{' '}
+                    <HilosHideable value={row.name} />{' '}
                     <span className="text-body-secondary">#{row.id}</span>
                     {row.id === currentUserId ? (
                       <span className="badge text-bg-secondary ms-2">you</span>
                     ) : null}
                   </>
                 ),
-                [USER_IDENTITIES_FIELD]: (row) =>
-                  isHiddenValue(row.identities) ? (
-                    <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
-                  ) : (
-                    <ul className="list-unstyled mb-0">
-                      {row.identities.map((identity) => (
-                        <li key={`${identity.type}:${identity.identifier}`}>
-                          <span className="fw-medium">
-                            {identityTitle(identity)}
-                          </span>
-                          {identity.type === 'passkey'
-                            ? null
-                            : ` · ${identity.identifier}`}
-                          {identity.verified ? (
-                            <>
-                              <span aria-hidden="true"> ✓</span>
-                              <span className="visually-hidden"> Verified</span>
-                            </>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ),
+                [USER_IDENTITIES_FIELD]: (row) => (
+                  <HilosHideable value={row.identities}>
+                    {(identities) => (
+                      <ul className="list-unstyled mb-0">
+                        {identities.map((identity) => (
+                          <li key={`${identity.type}:${identity.identifier}`}>
+                            <span className="fw-medium">
+                              {identityTitle(identity)}
+                            </span>
+                            {identity.type === 'passkey'
+                              ? null
+                              : ` · ${identity.identifier}`}
+                            {identity.verified ? (
+                              <>
+                                <span aria-hidden="true"> ✓</span>
+                                <span className="visually-hidden">
+                                  {' '}
+                                  Verified
+                                </span>
+                              </>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </HilosHideable>
+                ),
                 lastActivity: (row) => row.lastActivity ?? '—',
               }}
             />
@@ -1260,11 +1265,13 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           <>
             <p data-id="hilos-user-merge-summary">
               <strong>
-                {hiddenAsWord(summaryCandidate.name)} (#{summaryCandidate.id})
+                <HilosHideable value={summaryCandidate.name} /> (#
+                {summaryCandidate.id})
               </strong>{' '}
               will be merged into{' '}
               <strong>
-                {detail ? hiddenAsWord(detail.name) : ''} (#{detail?.id})
+                {detail ? <HilosHideable value={detail.name} /> : ''} (#
+                {detail?.id})
               </strong>
               .
             </p>

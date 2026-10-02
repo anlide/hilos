@@ -522,6 +522,7 @@ export function HilosLogsRotationsPage({
               type="button"
               className="btn btn-secondary"
               disabled={takeout.busy}
+              data-id="hilos-rotation-takeout-close"
               onClick={requestClose}
             >
               Close
@@ -607,6 +608,7 @@ export function HilosLogsRotationsPage({
               type="button"
               className="btn btn-secondary"
               disabled={undo.busy}
+              data-id="hilos-rotation-undo-cancel"
               onClick={requestClose}
             >
               Leave it as it is

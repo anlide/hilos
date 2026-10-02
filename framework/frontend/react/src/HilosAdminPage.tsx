@@ -21,14 +21,20 @@
 //
 // The heading carries an id the shell provides to what it holds: a table that
 // declares no title of its own takes its accessible name from this heading, which
-// already names it. Bootstrap classes only.
+// already names it.
+//
+// The shell also tells what it holds whether a viewer of the admin view mode
+// stands here (hilosAdminAccess is 'view', HIL-1253): the controls of the mode
+// read that themselves and stand plainly disabled (HIL-1261). Bootstrap
+// classes only.
 import { useContext, useId } from 'react'
 import type { ReactNode } from 'react'
-import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
+import { hilosAdminAccess, hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
 import type { HilosAdminChild } from '@hilos/core'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'
+import { HilosAdminViewModeContext } from './hilosLookOnly.js'
 import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useSignal } from './useSignal.js'
@@ -57,6 +63,7 @@ export function HilosAdminPage({ page, children }: HilosAdminPageProps) {
   }
 
   const headingId = useId()
+  const adminAccess = useSignal(hilosAdminAccess)
   const route = useSignal(router.currentRoute)
   const identity = useSignal(router.pageIdentity)
   const crumbs = hilosCrumbLinks(
@@ -72,31 +79,37 @@ export function HilosAdminPage({ page, children }: HilosAdminPageProps) {
 
   return (
     <HilosPageHeadingIdContext.Provider value={headingId}>
-      <section data-id="hilos-admin-page" data-page={page}>
-        {identity === undefined ? (
-          <div
-            className="placeholder-glow mb-3"
-            data-id="hilos-admin-title-skeleton"
-          >
-            <span className="placeholder col-3 d-block mb-2 rounded" />
-            <span className="placeholder col-6 d-block rounded" />
-          </div>
-        ) : (
-          <>
-            <HilosBreadcrumb crumbs={crumbs} />
-            <h1 id={headingId} className="h4 mb-1" data-id="hilos-admin-title">
-              {identity.label}
-            </h1>
-            {identity.lead ? (
-              <p className="text-body-secondary">{identity.lead}</p>
-            ) : null}
-          </>
-        )}
-        {adminChildren.length > 0 ? childCards(adminChildren) : null}
-        {children === undefined
-          ? leafStub(adminChildren, identity !== undefined)
-          : children}
-      </section>
+      <HilosAdminViewModeContext.Provider value={adminAccess === 'view'}>
+        <section data-id="hilos-admin-page" data-page={page}>
+          {identity === undefined ? (
+            <div
+              className="placeholder-glow mb-3"
+              data-id="hilos-admin-title-skeleton"
+            >
+              <span className="placeholder col-3 d-block mb-2 rounded" />
+              <span className="placeholder col-6 d-block rounded" />
+            </div>
+          ) : (
+            <>
+              <HilosBreadcrumb crumbs={crumbs} />
+              <h1
+                id={headingId}
+                className="h4 mb-1"
+                data-id="hilos-admin-title"
+              >
+                {identity.label}
+              </h1>
+              {identity.lead ? (
+                <p className="text-body-secondary">{identity.lead}</p>
+              ) : null}
+            </>
+          )}
+          {adminChildren.length > 0 ? childCards(adminChildren) : null}
+          {children === undefined
+            ? leafStub(adminChildren, identity !== undefined)
+            : children}
+        </section>
+      </HilosAdminViewModeContext.Provider>
     </HilosPageHeadingIdContext.Provider>
   )
 }

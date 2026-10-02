@@ -179,3 +179,88 @@ it('links the past-deadline count to the people it counts, only when there are a
   expect(unlinked.length).toBeGreaterThan(0)
   expect(new Set(unlinked)).toEqual(new Set(['0']))
 })
+
+it('says "Past deadline" beside the count while the refusal setting is hidden (HIL-1260)', () => {
+  const h = harness()
+  const windowListeners: ((signal: { data: unknown }) => void)[] = []
+  Object.assign(h.context.connection, {
+    on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'tableWindow') {
+        windowListeners.push(
+          listener as unknown as (signal: { data: unknown }) => void,
+        )
+      }
+
+      return () => {}
+    },
+  })
+  const revision = {
+    revisionId: 'current',
+    publishedOn: '2026-09-27',
+    effectiveOn: '2026-09-27',
+    significance: 'editorial',
+    setVersion: 1,
+    deviationCount: 0,
+  }
+  const view = render(
+    <HilosRouterContext.Provider value={h.router}>
+      <HilosLegalPage context={h.context} />
+    </HilosRouterContext.Provider>,
+  )
+
+  const label = () =>
+    view.container
+      .querySelector('[data-id="legal-count-lapsed"]')
+      ?.closest('td')?.textContent
+
+  act(() => {
+    for (const listener of windowListeners) {
+      listener({
+        data: {
+          page: 'hilos_legal',
+          tableKey: 'hilosLegalDocuments',
+          rows: [
+            {
+              rowKey: 'terms',
+              slots: {
+                document: {
+                  declared: true,
+                  revision,
+                  covered: 1,
+                  window: 0,
+                  lapsed: 2,
+                },
+              },
+            },
+          ],
+          totalCount: 1,
+        },
+      })
+    }
+  })
+  expect(label()).toContain('Frozen')
+
+  act(() => {
+    for (const listener of windowListeners) {
+      listener({
+        data: {
+          page: 'hilos_legal',
+          tableKey: 'hilosLegalSettings',
+          rows: [
+            {
+              rowKey: 'legal.refusal_after_deadline',
+              slots: {
+                setting: {
+                  value: { _hidden: true },
+                  defaultValue: { _hidden: true },
+                },
+              },
+            },
+          ],
+          totalCount: 1,
+        },
+      })
+    }
+  })
+  expect(label()).toContain('Past deadline')
+})

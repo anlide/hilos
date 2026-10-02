@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ROTATIONS_HEADER_SIGNAL,
   SIGNAL_TYPE_PAGE_RESPONSE,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
@@ -15,6 +18,7 @@ import type {
   HilosLogRotationsHeader,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
   TableViewportDescriptor,
 } from '@hilos/core'
 
@@ -254,14 +258,56 @@ function mountPage(
   connection: HilosConnection,
   actions: ActionLifecycle = makeActions().actions,
   navigator: HilosRouter = router(),
+  scopes: ScopeManager = makeScopes(),
 ): HTMLElement {
   return render(
     <HilosRouterContext.Provider value={navigator}>
-      <HilosLogsRotationsPage
-        context={{ connection, scopes: makeScopes(), actions }}
-      />
+      <HilosLogsRotationsPage context={{ connection, scopes, actions }} />
     </HilosRouterContext.Provider>,
   ).container
+}
+
+/**
+ * Bind the session scope and the admin access the way bootHilos does, over a
+ * page scope the connection's handshake feeds.
+ */
+function bindViewerSession(scopes: ScopeManager): {
+  handshake: (
+    user: { id: number; admin: boolean } | null,
+    viewMode: boolean,
+  ) => void
+} {
+  const listeners: ((signal: ProjectSignal) => void)[] = []
+  const handshakeConnection = {
+    on(event: string, listener: (payload: never) => void): () => void {
+      if (event === 'projectSignal') {
+        listeners.push(listener as (signal: ProjectSignal) => void)
+      }
+
+      return () => {}
+    },
+  } as unknown as HilosConnection
+  bindSessionScope(handshakeConnection, scopes)
+  bindAdminAccess(scopes)
+
+  return {
+    handshake(user, viewMode): void {
+      const signal = {
+        kind: 'project',
+        type: 'handshake_response',
+        data: {
+          entities: {
+            currentUser: user === null ? null : { ...user, name: 'Olena' },
+          },
+          data: { adminViewMode: viewMode },
+        },
+        envelope: {},
+      } as unknown as ProjectSignal
+      for (const listener of listeners) {
+        listener(signal)
+      }
+    },
+  }
 }
 
 function byId(container: HTMLElement, id: string): HTMLElement | null {
@@ -697,5 +743,90 @@ describe('HilosLogsRotationsPage', () => {
     expect(
       byId(container, 'hilos-rotation-state-all')?.getAttribute('aria-pressed'),
     ).toBe('true')
+  })
+})
+
+describe('HilosLogsRotationsPage in the admin view mode', () => {
+  afterEach(cleanup)
+
+  it('a viewer opens the takeout dialog and has nothing to confirm it with', async () => {
+    const scopes = makeScopes()
+    bindViewerSession(scopes).handshake(null, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const container = mountPage(connection, actions, router(), scopes)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+
+    const takeout = byId(
+      container,
+      'hilos-rotation-takeout',
+    ) as HTMLButtonElement
+    expect(takeout.disabled).toBe(false)
+    fireEvent.click(takeout)
+
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-takeout-confirm"]',
+    )
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(true)
+    expect(confirm?.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    fireEvent.click(confirm as HTMLElement)
+    await settled()
+    expect(dispatched).toHaveLength(0)
+
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-takeout-close"]',
+    )
+    expect(close).not.toBeNull()
+    expect(close?.disabled).toBe(false)
+    fireEvent.click(close as HTMLElement)
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-confirm"]'),
+    ).toBeNull()
+  })
+
+  it('a viewer opens the withdrawal dialog and has nothing to withdraw with', async () => {
+    const scopes = makeScopes()
+    bindViewerSession(scopes).handshake(null, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const container = mountPage(connection, actions, router(), scopes)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+
+    const undo = byId(container, 'hilos-rotation-undo') as HTMLButtonElement
+    expect(undo.disabled).toBe(false)
+    fireEvent.click(undo)
+
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-undo-confirm"]',
+    )
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(true)
+    expect(confirm?.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    fireEvent.click(confirm as HTMLElement)
+    await settled()
+    expect(dispatched).toHaveLength(0)
+
+    const cancel = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-undo-cancel"]',
+    )
+    expect(cancel).not.toBeNull()
+    expect(cancel?.disabled).toBe(false)
+    fireEvent.click(cancel as HTMLElement)
+
+    expect(
+      document.querySelector('[data-id="hilos-rotation-undo-confirm"]'),
+    ).toBeNull()
   })
 })

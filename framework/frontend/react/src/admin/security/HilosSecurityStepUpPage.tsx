@@ -13,7 +13,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   HILOS_STEP_UP_ADMIN_COPY,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   createHilosSecurityStepUpActions,
   createHilosSecurityStepUpTable,
@@ -25,6 +24,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -100,7 +100,7 @@ export function HilosSecurityStepUpPage({
           ),
           enabled: (row) => {
             if (isHiddenValue(row.enabled)) {
-              return <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+              return <HilosHiddenMark />
             }
 
             return (

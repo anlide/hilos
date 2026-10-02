@@ -18,11 +18,11 @@ import {
   USER_ONLINE_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
   createHilosUsersTable,
-  hiddenAsWord,
 } from '@hilos/core'
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 
@@ -63,7 +63,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
         controller={users.controller}
         cells={{
           id: (row) => row.id,
-          name: (row) => hiddenAsWord(row.name),
+          name: (row) => <HilosHideable value={row.name} />,
           [USER_PRESENCE_FIELD]: (row) => (
             <span
               className={`badge ${

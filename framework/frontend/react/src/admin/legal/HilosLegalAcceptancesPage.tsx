@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import {
   createHilosLegalAcceptancesTable,
-  hiddenAsWord,
   hilosLegalDocumentLabel,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
@@ -10,6 +9,7 @@ import {
   type HilosLegalContext,
 } from '@hilos/core'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 
@@ -35,9 +35,13 @@ export function HilosLegalAcceptancesPage({
           cells={{
             [HilosLegalRowKey.name]: (row) => (
               <div data-id="legal-acceptance-row" data-record={row.rowKey}>
-                <strong>{hiddenAsWord(row.name)}</strong>
+                <strong>
+                  <HilosHideable value={row.name} />
+                </strong>
                 <div className="small text-body-secondary">
-                  {hiddenAsWord(row.email) ?? 'No verified email'}
+                  <HilosHideable value={row.email}>
+                    {(email) => email ?? 'No verified email'}
+                  </HilosHideable>
                 </div>
               </div>
             ),

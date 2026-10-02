@@ -28,14 +28,14 @@ import {
   computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
-  hiddenAsWord,
-  HILOS_VIEW_MODE_COPY,
   isDeliveryRetryable,
   isHiddenValue,
 } from '@hilos/core'
 import type { HilosDeliveriesContext, HilosDeliveryRow } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -60,19 +60,15 @@ function statusClass(status: string): string {
 }
 
 // The recipient label: the resolved display name, its user id, both, or a dash.
-// A hidden name is the word "Hidden", beside the id when there is one.
 function recipientLabel(row: HilosDeliveryRow): string {
-  const id = row.userId === null ? null : `#${row.userId}`
-  if (isHiddenValue(row.userLabel)) {
-    const word = HILOS_VIEW_MODE_COPY.hidden
-
-    return id === null ? word : `${word} (${id})`
-  }
-  if (id === null) {
+  if (row.userId === null) {
     return '—'
   }
+  const id = `#${row.userId}`
 
-  return row.userLabel ? `${row.userLabel} (${id})` : id
+  return typeof row.userLabel === 'string' && row.userLabel !== ''
+    ? `${row.userLabel} (${id})`
+    : id
 }
 
 /**
@@ -160,7 +156,15 @@ export function HilosCommunicationsDeliveriesPage({
           ),
           [DELIVERY_ATTEMPTS_FIELD]: (row) => row.attempts,
           [DELIVERY_DELIVERED_AT_FIELD]: (row) => row.deliveredAt || '—',
-          [DELIVERY_USER_LABEL_FIELD]: (row) => recipientLabel(row),
+          [DELIVERY_USER_LABEL_FIELD]: (row) =>
+            isHiddenValue(row.userLabel) ? (
+              <>
+                <HilosHiddenMark />
+                {row.userId !== null ? ` (#${row.userId})` : null}
+              </>
+            ) : (
+              recipientLabel(row)
+            ),
           [HILOS_TABLE_ACTIONS_KEY]: (row) =>
             isDeliveryRetryable(row) ? (
               <LoadingButton
@@ -178,15 +182,20 @@ export function HilosCommunicationsDeliveriesPage({
           [DELIVERY_NOTIFICATION_TITLE_FIELD]: (row) => (
             <>
               <div className="fw-semibold">
-                {hiddenAsWord(row.notificationTitle) || '—'}
+                <HilosHideable value={row.notificationTitle}>
+                  {(value) => value || '—'}
+                </HilosHideable>
               </div>
               <code className="small text-body-secondary">
                 {row.notificationType}
               </code>
             </>
           ),
-          [DELIVERY_LAST_ERROR_FIELD]: (row) =>
-            hiddenAsWord(row.lastError) || '—',
+          [DELIVERY_LAST_ERROR_FIELD]: (row) => (
+            <HilosHideable value={row.lastError}>
+              {(value) => value || '—'}
+            </HilosHideable>
+          ),
         }}
       />
     </HilosAdminPage>

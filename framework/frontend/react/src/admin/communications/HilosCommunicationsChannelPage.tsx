@@ -22,11 +22,11 @@ import { useContext, useEffect, useMemo, useState } from 'react'
 import {
   HIDDEN_VALUE,
   HILOS_TABLE_ACTIONS_KEY,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
+  hiddenAsWord,
   isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
@@ -47,6 +47,8 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
@@ -73,15 +75,12 @@ function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
 }
 
 /** Human-readable effective value of a non-secret field. */
-function displayValue(row: HilosChannelFieldRow): string {
-  if (isHiddenValue(row.value)) {
-    return HILOS_VIEW_MODE_COPY.hidden
-  }
-  if (typeof row.value === 'boolean') {
-    return row.value ? 'On' : 'Off'
+function displayValue(value: boolean | number | string | null): string {
+  if (typeof value === 'boolean') {
+    return value ? 'On' : 'Off'
   }
 
-  return row.value === null || row.value === '' ? '—' : String(row.value)
+  return value === null || value === '' ? '—' : String(value)
 }
 
 /** The source badge label: where the effective value comes from. */
@@ -139,7 +138,13 @@ function noticeText(
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return liveRow ? `Changed elsewhere to "${displayValue(liveRow)}".` : ''
+      return liveRow
+        ? `Changed elsewhere to "${
+            isHiddenValue(liveRow.value)
+              ? hiddenAsWord(liveRow.value)
+              : displayValue(liveRow.value)
+          }".`
+        : ''
     case 'updated':
       return 'Updated just now'
     default:
@@ -377,7 +382,9 @@ export function HilosCommunicationsChannelPage({
                 {row.valueSource === 'env' ? 'Set in env' : 'Not set'}
               </span>
             ) : (
-              <span>{displayValue(row)}</span>
+              <HilosHideable value={row.value}>
+                {(value) => <span>{displayValue(value)}</span>}
+              </HilosHideable>
             ),
           valueSource: (row) => (
             <span className="badge text-bg-secondary-subtle text-secondary-emphasis">
@@ -464,7 +471,7 @@ export function HilosCommunicationsChannelPage({
             {editHidden ? (
               <div className="mb-3">
                 <div className="form-label">{editRow.label}</div>
-                <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+                <HilosHiddenMark />
               </div>
             ) : editInputType === 'checkbox' ? (
               <div className="form-check form-switch">
@@ -553,7 +560,9 @@ export function HilosCommunicationsChannelPage({
           <dl className="row mb-0">
             <dt className="col-4">Now</dt>
             <dd className="col-8" data-id="hilos-channel-reset-now">
-              {displayValue(resetShown)}
+              <HilosHideable value={resetShown.value}>
+                {(value) => displayValue(value)}
+              </HilosHideable>
             </dd>
             <dt className="col-4">Back to</dt>
             <dd className="col-8" data-id="hilos-channel-reset-default">

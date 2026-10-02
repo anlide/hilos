@@ -48,6 +48,8 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -274,9 +276,7 @@ export function HilosSecurityOauthPage({
               </p>
               {redirectRow?.setState ? (
                 <code data-id="hilos-oauth-redirect-value">
-                  {isHiddenValue(redirectRow.value)
-                    ? HILOS_VIEW_MODE_COPY.hidden
-                    : redirectRow.value}
+                  <HilosHideable value={redirectRow.value} />
                 </code>
               ) : (
                 <span
@@ -422,7 +422,7 @@ export function HilosSecurityOauthPage({
           {editHidden ? (
             <div className="mb-3">
               <div className="form-label">Return address</div>
-              <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+              <HilosHiddenMark />
             </div>
           ) : (
             <>
@@ -492,11 +492,11 @@ export function HilosSecurityOauthPage({
               className="col-8 text-break"
               data-id="hilos-oauth-redirect-reset-now"
             >
-              {resetShown.setState
-                ? isHiddenValue(resetShown.value)
-                  ? HILOS_VIEW_MODE_COPY.hidden
-                  : resetShown.value
-                : 'Not set'}
+              {resetShown.setState ? (
+                <HilosHideable value={resetShown.value} />
+              ) : (
+                'Not set'
+              )}
             </dd>
             <dt className="col-4">Back to</dt>
             <dd className="col-8" data-id="hilos-oauth-redirect-reset-default">

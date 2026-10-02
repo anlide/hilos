@@ -50,9 +50,8 @@ export const HILOS_VIEW_MODE_STRIP_TEXT_ID = 'hilos-view-mode-strip-text'
 /**
  * A hideable value as a string with no markup can carry it: the word
  * {@link HILOS_VIEW_MODE_COPY.hidden} for a hidden value, the value itself
- * otherwise — a modal's title, an aria-label, and every place the React and
- * Angular views draw until they carry the mark of their own (HIL-1271,
- * HIL-1272).
+ * otherwise — a modal's title, an aria-label, and every place the Angular
+ * views draw until they carry the mark of their own (HIL-1272).
  *
  * @param value The value, or the hidden mark in its place.
  */

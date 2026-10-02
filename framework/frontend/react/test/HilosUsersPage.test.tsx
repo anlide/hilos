@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import {
   ActionLifecycle,
+  HIDDEN_VALUE,
   ScopeManager,
   createSignal,
   entityCollection,
@@ -10,6 +11,7 @@ import {
 } from '@hilos/core'
 import type {
   ActionLifecycleSource,
+  Hideable,
   HilosRouter,
   HilosUsersContext,
   PageRouteMatch,
@@ -44,7 +46,7 @@ function router(): HilosRouter {
 
 interface UserSeed {
   id: number
-  name: string
+  name: Hideable<string>
   lastActivity: string | null
   presence: string
   onlineSessionCount: number
@@ -190,6 +192,26 @@ describe('HilosUsersPage', () => {
     expect(
       container.querySelector('[data-id^="hilos-users-impersonate-"]'),
     ).toBeNull()
+  })
+
+  it('draws the mark for a hidden name (HIL-1260)', () => {
+    const context = seededContext([
+      {
+        id: 1,
+        name: HIDDEN_VALUE,
+        lastActivity: null,
+        presence: 'online',
+        onlineSessionCount: 1,
+      },
+    ])
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosUsersPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+    const row = container.querySelector('[data-id="hilos-table-row-1"]')
+
+    expect(row?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
   })
 
   it('draws a cell under every declared column, aligned the way the column says', () => {

@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 import { HilosSwitch } from '../src/HilosSwitch.js'
-import { HilosTakeoverViewOnlyContext } from '../src/hilosLookOnly.js'
+import {
+  HilosAdminViewModeContext,
+  HilosTakeoverViewOnlyContext,
+} from '../src/hilosLookOnly.js'
 
 function input(): HTMLInputElement {
   return screen.getByRole('switch') as HTMLInputElement
@@ -147,6 +150,64 @@ describe('HilosSwitch', () => {
     expect(inputs[0]?.id).not.toBe(inputs[1]?.id)
     expect(labels[0]?.htmlFor).toBe(inputs[0]?.id)
     expect(labels[1]?.htmlFor).toBe(inputs[1]?.id)
+  })
+})
+
+describe('HilosSwitch in the admin view mode', () => {
+  afterEach(cleanup)
+
+  it('stands disabled where the server put it, described by the strip too', () => {
+    render(
+      <HilosAdminViewModeContext.Provider value>
+        <HilosSwitch
+          checked
+          dataId="setting-toggle"
+          aria-label="Enable setting"
+          aria-describedby="hint"
+          onToggle={() => undefined}
+        />
+      </HilosAdminViewModeContext.Provider>,
+    )
+
+    expect(input().disabled).toBe(true)
+    expect(input().checked).toBe(true)
+    expect(input().getAttribute('aria-describedby')).toBe(
+      'hint hilos-view-mode-strip-text',
+    )
+  })
+
+  it('points at the strip alone when it has no hint of its own', () => {
+    render(
+      <HilosAdminViewModeContext.Provider value>
+        <HilosSwitch
+          checked={false}
+          dataId="setting-toggle"
+          aria-label="Enable setting"
+          onToggle={() => undefined}
+        />
+      </HilosAdminViewModeContext.Provider>,
+    )
+
+    expect(input().getAttribute('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+  })
+
+  it('is untouched outside the mode', () => {
+    render(
+      <HilosAdminViewModeContext.Provider value={false}>
+        <HilosSwitch
+          checked={false}
+          dataId="setting-toggle"
+          aria-label="Enable setting"
+          aria-describedby="hint"
+          onToggle={() => undefined}
+        />
+      </HilosAdminViewModeContext.Provider>,
+    )
+
+    expect(input().disabled).toBe(false)
+    expect(input().getAttribute('aria-describedby')).toBe('hint')
   })
 })
 

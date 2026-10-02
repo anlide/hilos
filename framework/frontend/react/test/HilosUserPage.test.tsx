@@ -5,10 +5,14 @@ import {
   ActionError,
   type ActionResult,
   formatCalendarDate,
+  HIDDEN_VALUE,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosConnection,
   HilosPages,
   hilosToasts,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
   entityCollection,
   USER_ENTITY_TYPE,
@@ -18,6 +22,7 @@ import type {
   HilosRouter,
   HilosUsersContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import { HilosUserPage } from '../src/admin/users/HilosUserPage.js'
@@ -68,6 +73,8 @@ function userContext(
     detailUnverifiedPasswordAddress?: string | null
     candidateHasPassword?: boolean
     candidateUnverifiedPasswordAddress?: string | null
+    candidateNameHidden?: boolean
+    candidateIdentitiesHidden?: boolean
     impersonation?: Record<string, unknown>
     currentUserId?: number
   } = {},
@@ -107,6 +114,14 @@ function userContext(
     })
   }
   const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
+  page.entities.upsert(
+    { type: 'user', id: 2 },
+    {
+      id: 2,
+      name: options.candidateNameHidden ? { _hidden: true } : 'Bob',
+      lastActivity: null,
+    },
+  )
   const connection = new HilosConnection({ url: 'ws://test/ws' })
   const sent: Array<{ action: string; data: unknown; requestId?: string }> = []
   const actionListeners = new Map<string, Array<(signal: unknown) => void>>()
@@ -114,16 +129,18 @@ function userContext(
     {
       rowKey: 2,
       slots: {
-        users: { id: 2, name: 'Bob', lastActivity: null },
+        users: { type: 'user', id: 2 },
         merge: {
-          identities: [
-            {
-              type: 'email',
-              identifier: 'bob@example.test',
-              provider: null,
-              verified: true,
-            },
-          ],
+          identities: options.candidateIdentitiesHidden
+            ? { _hidden: true }
+            : [
+                {
+                  type: 'email',
+                  identifier: 'bob@example.test',
+                  provider: null,
+                  verified: true,
+                },
+              ],
           hasPassword: options.candidateHasPassword ?? false,
           unverifiedPasswordAddress:
             options.candidateUnverifiedPasswordAddress ?? null,
@@ -517,6 +534,40 @@ describe('HilosUserPage', () => {
     expect(byId('modal-confirm-discard')).not.toBeNull()
 
     fireEvent.click(byId('modal-confirm-discard') as Element)
+    expect(byId('modal')).toBeNull()
+  })
+})
+
+describe('HilosUserPage name hidden from a viewer of the admin view mode (HIL-1260)', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+  })
+
+  it('draws the mark and the person icon, and a rename window with the mark in place of the field', () => {
+    const context = userContext(true)
+    context.renameElsewhere({ _hidden: true } as unknown as string)
+    openModal(context)
+
+    expect(
+      byId('hilos-user-name')
+        ?.querySelector('[data-id="hilos-hidden"]')
+        ?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(byId('hilos-avatar')?.querySelector('.bi-person')).not.toBeNull()
+    expect(byId('modal')?.querySelector('.modal-title')?.textContent).toBe(
+      'Rename · Hidden',
+    )
+    expect(
+      document.querySelector('[data-id="hilos-user-name-input"]'),
+    ).toBeNull()
+    expect(
+      byId('modal')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+    expect(saveButton().disabled).toBe(true)
+
+    fireEvent.click(byId('hilos-user-cancel') as Element)
+    expect(byId('modal-confirm-discard')).toBeNull()
     expect(byId('modal')).toBeNull()
   })
 })
@@ -1225,5 +1276,187 @@ describe('HilosUserPage standing (HIL-945)', () => {
     expect(byId('hilos-user-deletion-open')?.textContent).toContain(
       'Cancel deletion',
     )
+  })
+})
+
+describe('HilosUserPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+    cleanup()
+    document.body.classList.remove('modal-open')
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  async function click(id: string): Promise<void> {
+    await act(async () => {
+      fireEvent.click(byId(id) as Element)
+    })
+  }
+
+  it('a guest opens the merge dialog directly, chooses a candidate with hidden fields, and confirm is disabled', async () => {
+    const context = userContext(true, true, 'skip', {
+      candidateNameHidden: true,
+      candidateIdentitiesHidden: true,
+    })
+    bindSession(context.scopes).handshake(null, true)
+    renderPage(context)
+
+    const openBtn = byId('hilos-user-merge-open') as HTMLButtonElement
+    expect(openBtn).not.toBeNull()
+    expect(openBtn.disabled).toBe(false)
+
+    await click('hilos-user-merge-open')
+
+    expect(byId('hilos-user-merge-step-up')).toBeNull()
+    expect(context.sent).toHaveLength(0)
+
+    const rowRadio = byId('hilos-user-merge-row-2') as HTMLInputElement
+    expect(rowRadio).not.toBeNull()
+    expect(rowRadio.getAttribute('aria-label')).toBe('Merge #2')
+    const row2 = rowRadio.closest('tr')
+    expect(row2?.querySelectorAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+
+    await click('hilos-user-merge-row-2')
+
+    const nextBtn = byId('hilos-user-merge-next') as HTMLButtonElement
+    expect(nextBtn).not.toBeNull()
+    await click('hilos-user-merge-next')
+
+    const summary = byId('hilos-user-merge-summary')
+    expect(summary?.textContent).toContain('Hidden')
+
+    const confirmBtn = byId('hilos-user-merge-confirm') as HTMLButtonElement
+    expect(confirmBtn).not.toBeNull()
+    expect(confirmBtn.disabled).toBe(true)
+    expect(confirmBtn.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    await click('hilos-user-merge-confirm')
+    expect(context.sent).toHaveLength(0)
+
+    await click('hilos-user-merge-cancel')
+    expect(byId('modal-confirm-discard')).not.toBeNull()
+  })
+
+  it('a guest opens admin, block and deletion lifecycle dialogs directly and has nothing to send', async () => {
+    const context = userContext(true)
+    context.scopes.page()?.data.set('accountDeletionGraceDays', HIDDEN_VALUE)
+    bindSession(context.scopes).handshake(null, true)
+    renderPage(context)
+
+    for (const key of ['admin', 'block', 'deletion'] as const) {
+      const openBtn = byId(`hilos-user-${key}-open`) as HTMLButtonElement
+      expect(openBtn).not.toBeNull()
+      expect(openBtn.disabled).toBe(false)
+
+      await click(`hilos-user-${key}-open`)
+
+      expect(byId('hilos-user-lifecycle-step-up')).toBeNull()
+      const confirmBtn = byId(
+        'hilos-user-lifecycle-confirm',
+      ) as HTMLButtonElement
+      expect(confirmBtn).not.toBeNull()
+      expect(confirmBtn.disabled).toBe(true)
+      expect(confirmBtn.getAttribute('aria-describedby')).toContain(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+
+      await click('hilos-user-lifecycle-confirm')
+      expect(context.sent).toHaveLength(0)
+
+      await click('hilos-user-lifecycle-cancel')
+    }
+  })
+
+  it('a guest opens the takeover window directly and its confirm is disabled by the mode (HIL-1170)', async () => {
+    const context = userContext(true, false, 'skip', {
+      impersonation: impersonationSettings(),
+    })
+    bindSession(context.scopes).handshake(null, true)
+    renderPage(context)
+
+    const openBtn = byId('hilos-user-impersonate-open') as HTMLButtonElement
+    expect(openBtn.disabled).toBe(false)
+    await click('hilos-user-impersonate-open')
+
+    expect(byId('hilos-user-impersonate-step-up')).toBeNull()
+    const confirmBtn = byId(
+      'hilos-user-impersonate-confirm',
+    ) as HTMLButtonElement
+    expect(confirmBtn.disabled).toBe(true)
+    expect(confirmBtn.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    await click('hilos-user-impersonate-confirm')
+    expect(context.sent).toHaveLength(0)
+  })
+
+  it('a logged-in non-admin on their own card sees block disabled by ownBlockReason without strip text id', () => {
+    const context = userContext(true, false, 'skip', { currentUserId: 1 })
+    bindSession(context.scopes).handshake({ id: 1, admin: false }, true)
+    renderPage(context)
+
+    const blockBtn = byId('hilos-user-block-open') as HTMLButtonElement
+    expect(blockBtn).not.toBeNull()
+    expect(blockBtn.disabled).toBe(true)
+    expect(blockBtn.getAttribute('aria-describedby')).toBe(
+      'hilos-user-block-reason',
+    )
+    expect(blockBtn.getAttribute('aria-describedby')).not.toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+  })
+
+  it('an admin on a node in view mode retains full access and sends step-up start', async () => {
+    const context = userContext(true, false, 'skip')
+    bindSession(context.scopes).handshake({ id: 99, admin: true }, true)
+    renderPage(context)
+
+    const adminBtn = byId('hilos-user-admin-open') as HTMLButtonElement
+    expect(adminBtn).not.toBeNull()
+    expect(adminBtn.disabled).toBe(false)
+
+    await click('hilos-user-admin-open')
+
+    expect(context.sent[0]?.action).toBe('hilos_step_up_start')
   })
 })

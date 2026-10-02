@@ -7,15 +7,20 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
   HilosCommunicationsContext,
+  HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import { HilosCommunicationsChannelPage } from '../src/admin/communications/HilosCommunicationsChannelPage.js'
@@ -83,7 +88,7 @@ interface FieldSlot {
   field: string
   label: string
   type: string
-  value: boolean | number | string | null
+  value: unknown
   valueSource: string
   secret: boolean
   editable: boolean
@@ -611,5 +616,174 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
     renderPage(context)
 
     expect(resetButton().disabled).toBe(true)
+  })
+})
+
+describe('HilosCommunicationsChannelPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  function renderPage(context: HilosCommunicationsContext): void {
+    render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosCommunicationsChannelPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+  }
+
+  function resetButton(): HTMLButtonElement {
+    return document.querySelector(
+      'table [data-id="hilos-channel-field-reset-from"]',
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    return byId('hilos-channel-reset-confirm') as HTMLButtonElement
+  }
+
+  it('a viewer finds the test send standing in view mode', () => {
+    const { context, sent } = seededContext([fromField('+1000')])
+    bindSession(context.scopes).handshake(null, true)
+    renderPage(context)
+
+    const testButton = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-channel-test"]',
+    )
+    expect(testButton?.disabled).toBe(true)
+    expect(testButton?.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    fireEvent.click(testButton as Element)
+    expect(sent).toEqual([])
+  })
+
+  it('a viewer opens a field edit, sees the hidden mark instead of an input, and closes via Cancel', () => {
+    const { context, sent, focus } = seededContext([
+      { ...fromField('+1000'), value: { _hidden: true } },
+    ])
+    bindSession(context.scopes).handshake(null, true)
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosCommunicationsChannelPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+    fireEvent.click(
+      container.querySelector(
+        'table [data-id="hilos-channel-field-edit-from"]',
+      ) as Element,
+    )
+
+    expect(byId('hilos-channel-edit-value')).toBeNull()
+    expect(byId('hilos-hidden')).not.toBeNull()
+
+    expect(saveButton().disabled).toBe(true)
+    fireEvent.click(saveButton())
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    fireEvent.click(cancel as HTMLElement)
+
+    expect(byId('modal-confirm-discard')).toBeNull()
+    expect(byId('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('a viewer opens the reset of an overridden field with a hidden value and has nothing to reset with', () => {
+    const { context, sent, focus } = seededContext([
+      { ...fromField('+1000', 'settings'), value: { _hidden: true } },
+    ])
+    bindSession(context.scopes).handshake(null, true)
+    render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosCommunicationsChannelPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+
+    expect(resetButton().disabled).toBe(false)
+    fireEvent.click(resetButton())
+
+    expect(focus).toEqual([ROW_KEY])
+    expect(
+      byId('hilos-channel-reset-now')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    expect(confirmButton().disabled).toBe(true)
+    expect(confirmButton().getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    fireEvent.click(confirmButton())
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    fireEvent.click(cancel as HTMLElement)
+
+    expect(byId('modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('an admin on a node in the mode sends a test as today', () => {
+    const { context, sent } = seededContext([fromField('+1000')])
+    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+    renderPage(context)
+
+    const testButton = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-channel-test"]',
+    )
+    expect(testButton?.disabled).toBe(false)
+    expect(testButton?.getAttribute('aria-describedby')).toBeNull()
+    fireEvent.click(testButton as Element)
+
+    expect(sent[0]?.action).toBe('communications_channel_test')
+    expect(sent[0]?.payload).toEqual({ channel: 'sms' })
   })
 })

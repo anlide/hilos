@@ -43,6 +43,8 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -214,9 +216,9 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
           ),
           value: (row) => (
             <span data-id={`hilos-2fa-value-${row.rowKey}`}>
-              {isHiddenValue(row.value)
-                ? HILOS_VIEW_MODE_COPY.hidden
-                : describeHilosSecondFactorSetting(row.rowKey, row.value)}
+              <HilosHideable value={row.value}>
+                {(value) => describeHilosSecondFactorSetting(row.rowKey, value)}
+              </HilosHideable>
             </span>
           ),
           actions: (row) => (
@@ -283,7 +285,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
             {editHidden ? (
               <div className="mb-3">
                 <div className="form-label">{labelOf(editRow)}</div>
-                <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+                <HilosHiddenMark />
               </div>
             ) : (
               <>
@@ -321,12 +323,11 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
             )}
             <p className="form-text mb-0">
               {HILOS_SECOND_FACTOR_SETTING_COPY[editRow.rowKey]?.hint} Default:{' '}
-              {isHiddenValue(editRow.defaultValue)
-                ? HILOS_VIEW_MODE_COPY.hidden
-                : describeHilosSecondFactorSetting(
-                    editRow.rowKey,
-                    editRow.defaultValue,
-                  )}
+              <HilosHideable value={editRow.defaultValue}>
+                {(value) =>
+                  describeHilosSecondFactorSetting(editRow.rowKey, value)
+                }
+              </HilosHideable>
               .
             </p>
             <HilosEditNotice

@@ -58,7 +58,7 @@ The src root stays thin and the boot wiring lives in `src/bootstrap/`
   app.
 - `src/pages/`: `keys.ts`, `routes.ts` (`createAppPageRouter`) and
   `pageTitles.ts` ([../agents/frontend/page-registry.md](../agents/frontend/page-registry.md)).
-- `src/App.tsx`: `HilosLayout` with the `brand`, `isAdmin` and `user` props and a
+- `src/App.tsx`: `HilosLayout` with the `brand` and `user` props and a
   `HilosView` over the page map, the page skeletons and the project's
   `AuthSurface` (a wrapper closing the project's `HilosAuthContext` over the
   framework `HilosAuthSurface`).

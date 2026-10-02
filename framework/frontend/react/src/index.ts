@@ -35,6 +35,7 @@ export {
 } from './hilosTableSelectionEdge.js'
 export { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 export {
+  HilosAdminViewModeContext,
   HilosTakeoverViewOnlyContext,
   useLookOnly,
   type LookOnly,
@@ -43,6 +44,8 @@ export { HilosLink, type HilosLinkProps } from './HilosLink.js'
 export { HilosView, type HilosViewProps } from './HilosView.js'
 export { HilosSkeleton, type HilosSkeletonProps } from './HilosSkeleton.js'
 export { HilosAvatar, type HilosAvatarProps } from './HilosAvatar.js'
+export { HilosHiddenMark } from './HilosHiddenMark.js'
+export { HilosHideable, type HilosHideableProps } from './HilosHideable.js'
 export { ErrorPage, type ErrorPageProps } from './ErrorPage.js'
 export {
   HilosMaintenance,

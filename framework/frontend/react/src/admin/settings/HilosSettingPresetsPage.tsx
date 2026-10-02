@@ -28,8 +28,6 @@ import {
   createHilosSettingPresetsActions,
   differencesOf,
   hasDifferences,
-  HILOS_VIEW_MODE_COPY,
-  isHiddenValue,
   isPresetApplied,
   isSelectionUnknown,
   presetsOf,
@@ -37,13 +35,13 @@ import {
   selectedPresetOf,
 } from '@hilos/core'
 import type {
-  HilosSettingPreset,
   HilosSettingPresetsContext,
   HilosSettingPresetsVocabulary,
 } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -193,14 +191,10 @@ export function HilosSettingPresetsPage({
   /**
    * The lines a card lists, read out of the values the preset declares.
    *
-   * @param preset The preset the card stands for.
+   * @param values The values the preset writes, by setting key.
    */
-  function valueLines(preset: HilosSettingPreset): string[] {
-    if (isHiddenValue(preset.values)) {
-      return [HILOS_VIEW_MODE_COPY.hidden]
-    }
-
-    return vocabulary.valueLines(preset.values)
+  function valueLines(values: Record<string, unknown>): string[] {
+    return vocabulary.valueLines(values)
   }
 
   return (
@@ -230,9 +224,8 @@ export function HilosSettingPresetsPage({
             <div
               className={`h-100 border rounded-3 d-flex flex-column ${cardClass(preset.name)}`}
             >
-              <button
-                type="button"
-                className="btn text-start border-0 rounded-0 rounded-top-3 p-3 flex-grow-1"
+              <LoadingButton
+                className="text-start border-0 rounded-0 rounded-top-3 p-3 flex-grow-1"
                 disabled={applyAction.busy || applied(preset.name)}
                 aria-current={applied(preset.name) ? 'true' : undefined}
                 data-id={`hilos-setting-preset-${preset.name}`}
@@ -253,15 +246,19 @@ export function HilosSettingPresetsPage({
                 <span className="d-block small text-body-secondary mb-2">
                   {vocabulary.presetSubtitle(preset.name)}
                 </span>
-                {valueLines(preset).map((line) => (
-                  <span
-                    key={line}
-                    className="d-block small text-body-secondary"
-                  >
-                    {line}
-                  </span>
-                ))}
-              </button>
+                <HilosHideable value={preset.values}>
+                  {(values) =>
+                    valueLines(values).map((line) => (
+                      <span
+                        key={line}
+                        className="d-block small text-body-secondary"
+                      >
+                        {line}
+                      </span>
+                    ))
+                  }
+                </HilosHideable>
+              </LoadingButton>
 
               {applied(preset.name) && drifted ? (
                 <div

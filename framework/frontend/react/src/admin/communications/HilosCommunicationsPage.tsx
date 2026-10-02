@@ -19,13 +19,13 @@ import {
   HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
-  HILOS_VIEW_MODE_COPY,
   isHiddenValue,
   resolveHilosPath,
 } from '@hilos/core'
 import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -102,7 +102,7 @@ export function HilosCommunicationsPage({
           ),
           [HilosChannelRowKey.enabled]: (row) =>
             isHiddenValue(row.enabled) ? (
-              <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+              <HilosHiddenMark />
             ) : (
               <HilosSwitch
                 className="mb-0"

@@ -4,11 +4,12 @@
 // badge — the referenced key, "default", or "custom" — so the catalog origin is
 // visible at a glance. Presentation only; Bootstrap classes (styling-rules.md).
 import {
-  HILOS_VIEW_MODE_COPY,
   isHiddenValue,
   type Hideable,
   type SettingValueSource,
 } from '@hilos/core'
+
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 
 /** Props for {@link HilosSettingValueCell}. */
 export interface HilosSettingValueCellProps {
@@ -38,9 +39,8 @@ export function HilosSettingValueCell({
   const isNumber = type === 'integer' || type === 'float'
   const isEmptyString =
     !isValueHidden && type === 'string' && (value === null || value === '')
-  const display = isValueHidden
-    ? HILOS_VIEW_MODE_COPY.hidden
-    : value === null
+  const display =
+    isValueHidden || value === null
       ? '—'
       : isBoolean
         ? value === '1'
@@ -57,9 +57,7 @@ export function HilosSettingValueCell({
       data-id="setting-value"
     >
       {isValueHidden ? (
-        <span className="text-truncate" title={HILOS_VIEW_MODE_COPY.hidden}>
-          {HILOS_VIEW_MODE_COPY.hidden}
-        </span>
+        <HilosHiddenMark />
       ) : isBoolean ? (
         <input
           type="checkbox"
@@ -96,11 +94,13 @@ export function HilosSettingValueCell({
           }
         >
           <i className="bi bi-arrow-down-right" aria-hidden="true" />
-          <code className="text-truncate text-info-emphasis">
-            {isReferenceKeyHidden
-              ? HILOS_VIEW_MODE_COPY.hidden
-              : defaultReferenceKey}
-          </code>
+          {isReferenceKeyHidden ? (
+            <HilosHiddenMark />
+          ) : (
+            <code className="text-truncate text-info-emphasis">
+              {defaultReferenceKey}
+            </code>
+          )}
         </span>
       ) : valueSource === 'default' ? (
         <span

@@ -10,8 +10,6 @@ import {
   createHilosMaintenanceCircleTable,
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HilosPages,
-  hiddenAsWord,
-  HILOS_VIEW_MODE_COPY,
   isHiddenValue,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
@@ -23,6 +21,8 @@ import {
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -186,7 +186,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
                   <td
                     data-id={`hilos-maintenance-circle-row-${circleKey(row)}`}
                   >
-                    {hiddenAsWord(row.identifier)}
+                    <HilosHideable value={row.identifier} />
                   </td>
                   <td>
                     <span
@@ -315,7 +315,7 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
           <p className="mb-0">
             {HILOS_MAINTENANCE_CIRCLE_COPY.removeAskBefore}{' '}
             {isHiddenValue(removeShown.identifier) ? (
-              HILOS_VIEW_MODE_COPY.hidden
+              <HilosHiddenMark />
             ) : (
               <code>{removeShown.identifier}</code>
             )}{' '}

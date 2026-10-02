@@ -53,6 +53,8 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -264,26 +266,28 @@ export function HilosSecurityImpersonationPage({
           ),
           value: (row) =>
             isHilosImpersonationSwitch(row.rowKey) ? (
-              isHiddenValue(row.enabled) ? (
-                <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
-              ) : (
-                <HilosSwitch
-                  className="mb-0"
-                  checked={row.enabled}
-                  busy={pendingSwitchKey === row.rowKey}
-                  disabled={toggle.busy}
-                  aria-label={labelOf(row)}
-                  dataId={`hilos-impersonation-switch-${row.rowKey}`}
-                  onToggle={(next) => void toggleSwitch(row, next)}
-                />
-              )
+              <HilosHideable value={row.enabled}>
+                {(value) => (
+                  <HilosSwitch
+                    className="mb-0"
+                    checked={value}
+                    busy={pendingSwitchKey === row.rowKey}
+                    disabled={toggle.busy}
+                    aria-label={labelOf(row)}
+                    dataId={`hilos-impersonation-switch-${row.rowKey}`}
+                    onToggle={(next) => void toggleSwitch(row, next)}
+                  />
+                )}
+              </HilosHideable>
             ) : (
               <span data-id="hilos-impersonation-scope-value">
-                {isHiddenValue(row.value)
-                  ? HILOS_VIEW_MODE_COPY.hidden
-                  : HILOS_IMPERSONATION_SCOPE_COPY[
+                <HilosHideable value={row.value}>
+                  {() =>
+                    HILOS_IMPERSONATION_SCOPE_COPY[
                       hilosImpersonationScopeOf(row)
-                    ]}
+                    ]
+                  }
+                </HilosHideable>
               </span>
             ),
           actions: (row) =>
@@ -351,7 +355,7 @@ export function HilosSecurityImpersonationPage({
             {editHidden ? (
               <div className="mb-3">
                 <div className="form-label fs-6">{labelOf(editRow)}</div>
-                <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+                <HilosHiddenMark />
               </div>
             ) : (
               <fieldset aria-describedby="hilos-impersonation-scope-hint">

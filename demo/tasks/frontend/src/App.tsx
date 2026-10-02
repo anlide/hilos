@@ -32,7 +32,7 @@ import type { ComponentType } from 'react'
 import AuthSurface from './auth/AuthSurface'
 import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
-import { currentUserActsAsAdmin, currentUserName } from './bootstrap/session'
+import { currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
 import HilosBackup from './views/Hilos/Backup/Backup'
@@ -149,7 +149,6 @@ export interface AppProps {
 const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 
 export default function App({ authGate }: AppProps) {
-  const isAdmin = useSignal(currentUserActsAsAdmin)
   const userName = useSignal(currentUserName)
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
   // scheduled deletion, in the color of the strip that says it in words.
@@ -174,7 +173,6 @@ export default function App({ authGate }: AppProps) {
     <HilosLayout
       connection={connection}
       brand="Hilos Tasks"
-      isAdmin={isAdmin}
       user={
         userName ? (
           <>
@@ -190,9 +188,10 @@ export default function App({ authGate }: AppProps) {
             </HilosLink>
           </>
         ) : (
-          // A visitor gets neither bell nor gear — there is nothing to show — and
-          // one button that opens the surface over the page they are standing on
-          // (mockups/framework/layout, the "guest" tile).
+          // A visitor gets no bell — there is nothing to show — and one button that
+          // opens the surface over the page they are standing on
+          // (mockups/framework/layout, the "guest" tile). The gear a visitor sees
+          // on a node in the admin view mode is the shell's own, not this slot's.
           <button
             type="button"
             className="btn btn-sm btn-primary"

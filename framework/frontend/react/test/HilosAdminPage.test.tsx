@@ -1,15 +1,26 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
+import { useContext } from 'react'
 import type { ReactNode } from 'react'
-import { HilosPages, TableViewportController, createSignal } from '@hilos/core'
+import {
+  HilosPages,
+  ScopeManager,
+  TableViewportController,
+  bindAdminAccess,
+  bindSessionScope,
+  createSignal,
+} from '@hilos/core'
 import type {
+  HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
+import { HilosAdminViewModeContext } from '../src/hilosLookOnly.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 /** The identity a section answers with: a chain above it and cards below. */
@@ -176,5 +187,129 @@ describe('HilosAdminPage', () => {
     ).toBe(heading?.id)
     // One name over one table: the table draws no heading of its own repeating it.
     expect(container.querySelector('[data-id="hilos-table-title"]')).toBeNull()
+  })
+})
+
+describe('HilosAdminPage and the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    cleanup()
+    for (const release of releases.splice(0)) release()
+  })
+
+  /**
+   * Bind the session scope and the admin access the way bootHilos does, over
+   * handshakes this harness emits.
+   */
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      /**
+       * One handshake: who is behind the session, if anybody, and the node's
+       * admin view mode, both as the backend stamps them (HIL-1253).
+       *
+       * @param user The person behind the session, or null for a guest.
+       * @param viewMode The node's admin view mode.
+       */
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  /** A control on the page that shows what the view mode context carries. */
+  function Probe() {
+    const viewMode = useContext(HilosAdminViewModeContext)
+
+    return <span data-id="probe">{String(viewMode)}</span>
+  }
+
+  function renderWithProbe() {
+    return render(
+      <HilosRouterContext.Provider value={router(LEAF_IDENTITY)}>
+        <HilosAdminPage page={HilosPages.I18N_LANGUAGE}>
+          <Probe />
+        </HilosAdminPage>
+      </HilosRouterContext.Provider>,
+    )
+  }
+
+  it('tells what it holds that a guest on a node in the mode is a viewer', () => {
+    bindSession().handshake(null, true)
+
+    const { container } = renderWithProbe()
+    expect(container.querySelector('[data-id="probe"]')?.textContent).toBe(
+      'true',
+    )
+  })
+
+  it('tells no viewer to a non-admin without the mode or to an admin in it', () => {
+    const session = bindSession()
+
+    session.handshake({ id: 7, admin: false }, false)
+    const off = renderWithProbe()
+    expect(off.container.querySelector('[data-id="probe"]')?.textContent).toBe(
+      'false',
+    )
+    off.unmount()
+
+    session.handshake({ id: 1, admin: true }, true)
+    const admin = renderWithProbe()
+    expect(
+      admin.container.querySelector('[data-id="probe"]')?.textContent,
+    ).toBe('false')
+  })
+
+  it('follows the rights live: given, then taken away', () => {
+    const session = bindSession()
+    session.handshake({ id: 7, admin: false }, true)
+    const { container } = renderWithProbe()
+    expect(container.querySelector('[data-id="probe"]')?.textContent).toBe(
+      'true',
+    )
+
+    act(() => {
+      session.handshake({ id: 7, admin: true }, true)
+    })
+    expect(container.querySelector('[data-id="probe"]')?.textContent).toBe(
+      'false',
+    )
+
+    act(() => {
+      session.handshake({ id: 7, admin: false }, true)
+    })
+    expect(container.querySelector('[data-id="probe"]')?.textContent).toBe(
+      'true',
+    )
   })
 })

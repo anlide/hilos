@@ -2,14 +2,19 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosRouter,
   HilosSettingsContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import { HilosSettingsPage } from '../src/admin/settings/HilosSettingsPage.js'
@@ -42,9 +47,9 @@ function router(): HilosRouter {
 interface SettingSlot {
   key: string
   type: string
-  value: string | null
-  overrideValue: string | null
-  defaultValue: string | null
+  value: unknown
+  overrideValue: unknown
+  defaultValue: unknown
   defaultReferenceKey: string | null
   valueSource: string
 }
@@ -829,5 +834,199 @@ describe('HilosSettingsPage reset dialog', () => {
       'Already reset elsewhere.',
     )
     expect(confirmButton().disabled).toBe(true)
+  })
+})
+
+describe('HilosSettingsPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  function byId(id: string): HTMLElement | null {
+    return document.querySelector(`[data-id="${id}"]`)
+  }
+
+  it('a viewer opens a setting, sees the hidden mark instead of the input, and finds Save disabled', () => {
+    bindSession().handshake(null, true)
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
+      }),
+    ])
+    const { container } = renderPage(context)
+
+    const edit = container.querySelector(
+      '[data-id="hilos-settings-edit-site_name"]',
+    ) as HTMLButtonElement
+    expect(edit.disabled).toBe(false)
+    fireEvent.click(edit)
+
+    expect(byId('hilos-settings-edit-value')).toBeNull()
+    expect(byId('hilos-hidden')).not.toBeNull()
+
+    const save = byId('hilos-settings-edit-save') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+
+    fireEvent.click(save)
+    expect(sent).toEqual([])
+
+    const cancel = byId('hilos-settings-edit-cancel') as HTMLButtonElement
+    expect(cancel.disabled).toBe(false)
+    fireEvent.click(cancel)
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('a viewer opens the reset of a setting and has nothing to reset it with', () => {
+    bindSession().handshake(null, true)
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
+        defaultValue: { _hidden: true },
+      }),
+    ])
+    renderPage(context)
+
+    const reset = document.querySelector<HTMLButtonElement>(
+      'table [data-id="hilos-settings-reset-site_name"]',
+    )
+    expect(reset?.disabled).toBe(false)
+    fireEvent.click(reset as Element)
+
+    expect(
+      byId('hilos-settings-reset-now')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    expect(
+      byId('hilos-settings-reset-default')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+
+    const confirm = byId('hilos-settings-reset-confirm') as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    expect(confirm.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    fireEvent.click(confirm)
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    fireEvent.click(cancel as Element)
+
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('a viewer opens the deletion of an orphan and has nothing to delete it with', () => {
+    bindSession().handshake(null, true)
+    const { context, sent } = seededContext([
+      slot({
+        key: 'orphan',
+        valueSource: 'orphan',
+        overrideValue: { _hidden: true },
+        defaultValue: null,
+      }),
+    ])
+    renderPage(context)
+
+    const del = document.querySelector<HTMLButtonElement>(
+      'table [data-id="hilos-settings-delete-orphan"]',
+    )
+    expect(del?.disabled).toBe(false)
+    fireEvent.click(del as Element)
+
+    const confirm = byId('hilos-settings-delete-confirm') as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    expect(confirm.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    fireEvent.click(confirm)
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    fireEvent.click(cancel as Element)
+
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('an admin on a node in the mode edits a setting as today', () => {
+    bindSession().handshake({ id: 1, admin: true }, true)
+    const { context } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const { container } = renderPage(context)
+
+    const edit = container.querySelector(
+      '[data-id="hilos-settings-edit-site_name"]',
+    ) as HTMLButtonElement
+    expect(edit.disabled).toBe(false)
+    fireEvent.click(edit)
+
+    const input = byId('hilos-settings-edit-value') as HTMLInputElement
+    expect(input.disabled).toBe(false)
+    fireEvent.change(input, { target: { value: 'Other' } })
+
+    const save = byId('hilos-settings-edit-save') as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    expect(save.getAttribute('aria-describedby')).toBeNull()
   })
 })

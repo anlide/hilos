@@ -2,7 +2,8 @@
 // app frame a project fills rather than re-implements. React has no named
 // slots, so the brand and nav regions are node props and the routed page
 // content is children. It renders the top navigation bar carrying the brand and
-// nav, the framework admin entry (the gear linking to the Hilos dashboard), the
+// nav, the framework admin entry (the gear linking to the Hilos dashboard,
+// drawn for an admin and, in the admin view mode, for a viewer), the
 // live connection indicator the SDK owns (core-and-connection.md), and, last,
 // its tracked sign-out control while a person stands behind the session;
 // a full-width banner region below the nav carrying, in this order, the
@@ -11,9 +12,10 @@
 // standing of the person taken over, and marked "view only" when the
 // administrator may only look, HIL-1170), its account deletion strip (the
 // session's own scheduled deletion, with a "Keep my account" that waits the
-// same way, HIL-945), and the app-wide status strip a project fills (e.g. a
-// trial notice) through the banner prop — one live region for all, empty and
-// zero-height while none is up — the content (inside
+// same way, HIL-945), its view-mode strip (a viewer of the admin view mode on
+// an admin route, HIL-1260), and the app-wide status strip a project fills
+// (e.g. a trial notice) through the banner prop — one live region for all,
+// empty and zero-height while none is up — the content (inside
 // HilosTakeoverViewOnlyContext, so in a takeover that only looks the page's
 // controls stand disabled and the shell's do not), and a footer of the public
 // framework pages (HILOS_FOOTER_LINKS). The
@@ -58,10 +60,13 @@ import {
   HILOS_FROZEN_OPEN_PAGES,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HILOS_PAGE_ROUTES,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   createSignal,
   hilosAccountBlocked,
   hilosAccountStanding,
+  hilosAdminAccess,
   hilosFrozenScreen,
   hilosLegalReconsent,
   hilosLegalReconsentDue,
@@ -108,12 +113,6 @@ import { useTrackedAction } from './useTrackedAction.js'
 export interface HilosLayoutProps {
   /** The connection whose live state the shell indicator mirrors. */
   connection: HilosConnection
-  /**
-   * Whether the signed-in user holds the admin privilege. The admin entry is
-   * drawn for an admin and for nobody else, so a project that answers no admin
-   * identity (the default) shows no way into a surface the gate would refuse.
-   */
-  isAdmin?: boolean
   /**
    * Which corner the toast stack sits in; the bottom end by default. A project
    * chooses it once here and never per notice: different corners in different
@@ -182,7 +181,6 @@ const NO_ROUTE = createSignal<PageRouteMatch>({
  */
 export function HilosLayout({
   connection,
-  isAdmin = false,
   toastCorner,
   brand = 'Hilos',
   nav,
@@ -270,6 +268,13 @@ export function HilosLayout({
     void keepAccount.run(keepMyAccount())
   }
 
+  // The admin gear (HIL-1253): drawn for an admin and, on a node in the admin
+  // view mode, for a viewer who may look and not act; the core derives which
+  // from the session's admin flag and the node's mode, so the project feeds it
+  // nothing. It leads to the same dashboard either way - the server decides
+  // what each is shown.
+  const adminAccess = useSignal(hilosAdminAccess)
+
   const signedIn = useSignal(hilosSignedIn)
   const signOutAction = useTrackedAction()
   const onSignOut = (): void => {
@@ -321,6 +326,19 @@ export function HilosLayout({
   const router = useContext(HilosRouterContext)
   const pageTitle = useSignal(router?.currentTitle ?? NO_TITLE)
   const currentRoute = useSignal(router?.currentRoute ?? NO_ROUTE)
+
+  // The fourth framework strip (HIL-1260): a viewer of the admin view mode, on
+  // an admin route — the framework's and a project's alike, the dashboard
+  // included — is told once that the screen may be looked at and not changed.
+  // Its text carries the id every control the mode disables names in
+  // aria-describedby (HIL-1261), so the reason is said in one place. It is grey
+  // because yellow, blue and red already mean "not well", frozen and blocked in
+  // this region, and it is last of the framework's strips: it is about the
+  // screen one stands on, so it sits nearest to it. A grant takes it down live
+  // and a revoke brings it back, both through the access the session derives;
+  // under maintenance there is no admin screen to speak of.
+  const viewModeStrip =
+    adminAccess === 'view' && currentRoute.admin && !underMaintenance
 
   // The "the terms have changed" screen (HIL-500). The core decides everything
   // from the session: whether something is due (the icon), whether the window
@@ -441,11 +459,12 @@ export function HilosLayout({
                         </span>
                       </button>
                     )}
-                    {isAdmin ? (
+                    {adminAccess !== 'none' ? (
                       <HilosLink
                         className="nav-link d-inline-flex align-items-center p-0 fs-5"
                         to={ADMIN_HREF}
                         data-id="nav-admin"
+                        data-access={adminAccess}
                         aria-label="Hilos dashboard"
                       >
                         <i className="bi bi-gear-fill" aria-hidden="true" />
@@ -557,6 +576,20 @@ export function HilosLayout({
                   >
                     {ACCOUNT_STANDING_STRIP_COPY.keep}
                   </LoadingButton>
+                </div>
+              </div>
+            )}
+            {viewModeStrip && (
+              <div
+                className="alert alert-secondary border-0 rounded-0 mb-0 py-2"
+                data-id="view-mode-banner"
+              >
+                <div className="container d-flex flex-wrap align-items-center justify-content-center gap-3">
+                  <span id={HILOS_VIEW_MODE_STRIP_TEXT_ID}>
+                    <i className="bi bi-eye me-1" aria-hidden="true" />{' '}
+                    <strong>{HILOS_VIEW_MODE_COPY.mark}</strong> ·{' '}
+                    {HILOS_VIEW_MODE_COPY.explanation}
+                  </span>
                 </div>
               </div>
             )}

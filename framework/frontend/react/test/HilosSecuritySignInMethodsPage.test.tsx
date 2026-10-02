@@ -10,6 +10,8 @@ import {
   ActionError,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
   hilosToasts,
 } from '@hilos/core'
@@ -20,6 +22,7 @@ import type {
   HilosConnection,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import { HilosSecuritySignInMethodsPage } from '../src/admin/security/HilosSecuritySignInMethodsPage.js'
@@ -159,6 +162,18 @@ const METHOD_ROWS: Record<string, unknown>[] = [
     enabled: true,
     ready: true,
     providerKey: null,
+  },
+]
+
+/** The method rows plus one that a provider's settings back, which carries a link. */
+const ROWS_WITH_PROVIDER: Record<string, unknown>[] = [
+  ...METHOD_ROWS,
+  {
+    methodKey: 'oauth_google',
+    label: 'Google OAuth',
+    enabled: true,
+    ready: true,
+    providerKey: 'google',
   },
 ]
 
@@ -352,5 +367,119 @@ describe('HilosSecuritySignInMethodsPage', () => {
     fireEvent.click(smsSwitch as HTMLInputElement)
 
     expect(passkeyPolicyOf(container)?.disabled).toBe(true)
+  })
+})
+
+describe('HilosSecuritySignInMethodsPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    cleanup()
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it('a viewer sees hidden marks instead of switches and sees the live provider link', () => {
+    const scopes = makeScopes()
+    bindSession(scopes).handshake(null, true)
+    const { connection, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosSecuritySignInMethodsPage
+          context={{ connection, scopes, actions }}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    pushWindow(
+      ROWS_WITH_PROVIDER.map((row) => ({
+        ...row,
+        enabled: { _hidden: true },
+        passkeyAllowsUnproven: { _hidden: true },
+      })),
+    )
+
+    expect(
+      container.querySelectorAll(
+        'input[data-id^="hilos-sign-in-method-enabled-"]',
+      ).length,
+    ).toBe(0)
+    expect(
+      container.querySelectorAll('[data-id="hilos-hidden"]').length,
+    ).toBeGreaterThan(0)
+    expect(passkeyPolicyOf(container)).toBeNull()
+    expect(dispatched).toEqual([])
+
+    expect(
+      container.querySelector(
+        '[data-id="hilos-sign-in-method-provider-oauth_google"]',
+      ),
+    ).not.toBeNull()
+  })
+
+  it('an admin on a node in the mode dispatches a switch without the mode strip reference', () => {
+    const scopes = makeScopes()
+    bindSession(scopes).handshake({ id: 1, admin: true }, true)
+    const { connection, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosSecuritySignInMethodsPage
+          context={{ connection, scopes, actions }}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    pushWindow(ROWS_WITH_PROVIDER)
+
+    const smsSwitch = switchesOf(container, 'sms')[0]
+    expect(smsSwitch?.disabled).toBe(false)
+    expect(smsSwitch?.getAttribute('aria-describedby')).toBeNull()
+
+    fireEvent.click(smsSwitch as HTMLInputElement)
+
+    expect(dispatched).toMatchObject([
+      {
+        action: 'security_sign_in_method_set',
+        payload: { methodKey: 'sms', enabled: false },
+      },
+    ])
   })
 })

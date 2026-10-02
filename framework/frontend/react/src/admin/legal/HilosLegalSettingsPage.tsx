@@ -9,14 +9,13 @@ import {
   HILOS_LEGAL_SETTING_PREVIEWS,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
-  HILOS_VIEW_MODE_COPY,
-  hiddenAsWord,
   isHiddenValue,
-  type Hideable,
   type HilosLegalContext,
 } from '@hilos/core'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
@@ -26,15 +25,12 @@ import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
 /**
- * A setting value in words: its label, the value itself when it has none, or
- * "Hidden" for a value hidden from a viewer of the admin view mode.
+ * A setting value's label, or the value itself when it has none.
  *
- * @param value The value, or the hidden mark in its place.
+ * @param value The value, already narrowed clear of the hidden mark.
  */
-function legalValueLabel(value: Hideable<string>): string {
-  const said = hiddenAsWord(value)
-
-  return HILOS_LEGAL_VALUE_COPY[said] ?? said
+function legalValueLabel(value: string): string {
+  return HILOS_LEGAL_VALUE_COPY[value] ?? value
 }
 
 /** Two legal settings edited through a modal-owned row merge and tracked writes. */
@@ -110,10 +106,15 @@ export function HilosLegalSettingsPage({
           [HilosLegalRowKey.value]: (setting) => (
             <>
               <span data-id={`legal-setting-value-${setting.rowKey}`}>
-                {legalValueLabel(setting.value)}
+                <HilosHideable value={setting.value}>
+                  {legalValueLabel}
+                </HilosHideable>
               </span>
               <div className="small text-body-secondary">
-                Default: {legalValueLabel(setting.defaultValue)}
+                Default:{' '}
+                <HilosHideable value={setting.defaultValue}>
+                  {legalValueLabel}
+                </HilosHideable>
               </div>
             </>
           ),
@@ -236,7 +237,7 @@ export function HilosLegalSettingsPage({
                 <div className="form-label">
                   {HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey}
                 </div>
-                <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+                <HilosHiddenMark />
               </>
             ) : (
               <>
