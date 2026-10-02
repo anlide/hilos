@@ -7,9 +7,10 @@ import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/pr
 // the agent-side driver, and the one entry the mode has (the initiator agent
 // asking its daemon), because nothing here forces any state.
 //
-// Narrower than the chat and polls peers on purpose: this demo drives only what
-// its own specs assert with - the freeze on, the freeze off, and the end of the
-// operation that leaves the node in the verification window (HIL-911). Inspect is
+// Narrower than the binance-btc-tracker and online-testing peers on purpose:
+// this demo drives only what its own specs assert with - the freeze on, the
+// freeze off, and the end of the operation that leaves the node in the
+// verification window (HIL-911). Inspect is
 // present only because any drive may need one state re-ask after a lost reply;
 // mint waits for the first spec that has something to assert with it.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'tasks-daemon-test'

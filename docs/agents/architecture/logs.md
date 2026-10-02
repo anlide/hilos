@@ -895,7 +895,7 @@ Remember the outcome, speak on its change, clear on recovery.
 - `composer run test:framework:frontend` — the six headless modules
   (`framework/frontend/core/test/admin/logs/`) and the preset screen's common
   half (`admin/settings/hilosSettingPresets.test.ts`).
-- `demo/polls` e2e `logs.spec.ts` — every screen of the section rendered
+- `demo/online-testing` e2e `logs.spec.ts` — every screen of the section rendered
   over the live socket.
 - `demo/binance-btc-tracker` e2e `logs.spec.ts` — the tail driven from a
   browser: a line the daemon writes arrives on its own (HIL-395);

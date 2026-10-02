@@ -7,52 +7,88 @@ namespace Demo\OnlineTesting;
 use Demo\OnlineTesting\Agents\OnlineTestingAgent;
 use Demo\OnlineTesting\Agents\Hilos\DataExportAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosAgent;
+use Demo\OnlineTesting\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\OnlineTesting\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\SessionsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\UsersLibraryAgent;
 use Demo\OnlineTesting\Auth\OnlineTestingAuthMethodDirectory;
 use Demo\OnlineTesting\Browser\OnlineTestingBrowserContext;
+use Demo\OnlineTesting\Browser\OnlineTestingBrowserRef;
+use Demo\OnlineTesting\Browser\Table\UserDetailBrowserTable;
 use Demo\OnlineTesting\Core\Agent\Daemon\OnlineTestingAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\OnlineTesting\Database\OnlineTestingDbContext;
+use Demo\OnlineTesting\Database\Settings\OnlineTestingSettingsCatalog;
 use Demo\OnlineTesting\Environment\OnlineTestingEnvCatalog;
 use Demo\OnlineTesting\Fs\OnlineTestingFsContext;
+use Demo\OnlineTesting\Groups\Hilos\NotificationsGroup;
 use Demo\OnlineTesting\Legal\OnlineTestingLegalCatalog;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsSettingsPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
+use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\TermsPage;
+use Demo\OnlineTesting\Pages\Hilos\Users\UserPage;
+use Demo\OnlineTesting\Pages\Hilos\Users\UsersPage;
 use Demo\OnlineTesting\Pages\MainPage;
 use Demo\OnlineTesting\Runtime\View\Context\OnlineTestingRtContext;
+use Demo\OnlineTesting\Tables\HilosUser\HilosUsersTable;
+use Demo\OnlineTesting\Tables\OnlineTestingTableContext;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseGuarantee;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Log\LogAggregatorAgent;
+use Hilos\Log\LogAggregatorAgentDaemon;
+use Hilos\Log\LogCarrierAgent;
+use Hilos\Log\LogCarrierAgentDaemon;
+use Hilos\Log\LogStoreAgent;
+use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
  * Hilos - Main app facade for data access.
  *
- * The smallest complete shape of a project: sign-in by password, an empty home, the empty
- * admin dashboard and the four public footer pages. No admin section is activated yet - each
- * arrives with the leaf that moves its e2e onto this demo.
+ * Sign-in by password, the home and four public footer pages. The admin dashboard now opens
+ * settings, the people list and detail, logs, and Maintenance. The shell notification center
+ * has no delivery channels. Each section arrived with its polls e2e coverage (HIL-1226).
  *
  * Its cluster stand (docker/docker-compose.cluster.yml) runs the framework's fleet and
  * database probes.
@@ -66,6 +102,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read EnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
  * @property-read SettingsAccessor $setting Settings accessor (narrows parent's SettingsAccessor for IDE)
  * @property-read OnlineTestingRtContext $rt Runtime context (narrows parent's RtContext for IDE)
+ * @property-read OnlineTestingTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read OnlineTestingBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
  */
 final class Hilos extends HilosFacade
@@ -74,9 +111,15 @@ final class Hilos extends HilosFacade
 
     protected const string AUTH_METHOD_DIRECTORY = OnlineTestingAuthMethodDirectory::class;
 
+    protected const string SETTINGS_CATALOG = OnlineTestingSettingsCatalog::class;
+
     protected const ?string LEGAL_CATALOG = OnlineTestingLegalCatalog::class;
 
     protected const array FEATURES = [
+        HilosFeature::SETTINGS,
+        HilosFeature::HILOS_USERS,
+        HilosFeature::LOGS,
+        HilosFeature::NOTIFICATIONS,
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
     ];
@@ -89,10 +132,24 @@ final class Hilos extends HilosFacade
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        SettingsPage::PAGE => SettingsPage::class,
+        LogsOverviewPage::PAGE => LogsOverviewPage::class,
+        LogsKeysPage::PAGE => LogsKeysPage::class,
+        LogsWorkersPage::PAGE => LogsWorkersPage::class,
+        LogsRotationsPage::PAGE => LogsRotationsPage::class,
+        LogsViewPage::PAGE => LogsViewPage::class,
+        LogsSettingsPage::PAGE => LogsSettingsPage::class,
+        MaintenancePage::PAGE => MaintenancePage::class,
+        UsersPage::PAGE => UsersPage::class,
+        UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
         LicensePage::PAGE => LicensePage::class,
+    ];
+
+    public const array GROUPS = [
+        NotificationsGroup::GROUP => NotificationsGroup::class,
     ];
 
     public const array AGENTS = [
@@ -104,6 +161,10 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
         ],
+        DemoHilosLogsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
         DataExportAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DataExportAgent::class,
             AgentRegistryKey::DAEMON => DataExportAgentDaemon::class,
@@ -112,6 +173,16 @@ final class Hilos extends HilosFacade
         SessionsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
             AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        NotificationsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => NotificationsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => NotificationsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        SettingsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         UsersLibraryAgent::AGENT_TYPE => [
@@ -123,6 +194,21 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        LogStoreAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogStoreAgent::class,
+            AgentRegistryKey::DAEMON => LogStoreAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogCarrierAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogCarrierAgent::class,
+            AgentRegistryKey::DAEMON => LogCarrierAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        LogAggregatorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogAggregatorAgent::class,
+            AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         AuthThrottleAgent::AGENT_TYPE => [
@@ -167,6 +253,47 @@ final class Hilos extends HilosFacade
         ],
     ];
 
+    public const array TABLES = [
+        OnlineTestingTableContext::settings => HilosSettingsTable::class,
+        OnlineTestingTableContext::hilosUsers => HilosUsersTable::class,
+        OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
+        OnlineTestingTableContext::hilosLogRotations => HilosLogRotationsTable::class,
+        OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        SettingsPage::PAGE => [
+            OnlineTestingTableContext::settings => [],
+        ],
+        MaintenancePage::PAGE => [
+            OnlineTestingTableContext::hilosVerifierCircle => [],
+        ],
+        LogsKeysPage::PAGE => [
+            OnlineTestingTableContext::hilosLogKeys => [],
+        ],
+        LogsRotationsPage::PAGE => [
+            OnlineTestingTableContext::hilosLogRotations => [],
+        ],
+        LogsWorkersPage::PAGE => [
+            OnlineTestingTableContext::hilosLogWorkers => [],
+        ],
+        UsersPage::PAGE => [
+            OnlineTestingTableContext::hilosUsers => [],
+        ],
+        UserPage::PAGE => [
+            UserDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => OnlineTestingBrowserRef::HILOS_USER_ID,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Creates the online-testing database context.
      *
@@ -185,6 +312,16 @@ final class Hilos extends HilosFacade
     protected static function createRuntime(): ?RtContext
     {
         return new OnlineTestingRtContext();
+    }
+
+    /**
+     * Creates the online-testing table context.
+     *
+     * @return ?OnlineTestingTableContext Online-testing table context
+     */
+    protected static function createTable(): ?TableContext
+    {
+        return new OnlineTestingTableContext();
     }
 
     /**

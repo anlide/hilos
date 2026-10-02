@@ -6,7 +6,7 @@ import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/pr
 // over the wire directly; this still exercises the real CommandServer parking,
 // the agent-side driver, and the one entry the mode has (the initiator agent
 // asking its daemon), because nothing here forces any state.
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'polls-daemon-test'
+const COMMAND_HOST = process.env.COMMAND_HOST ?? 'online-testing-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // The MIDDLE of the command channel's three nested windows: how long the side

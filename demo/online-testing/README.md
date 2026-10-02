@@ -9,20 +9,23 @@ attempts and verdicts that move on every open page at once.
 
 ### Today
 
-The empty shell of the testing room, and the smallest complete Hilos project on
-Angular — the one to copy (`docs/new-project/README.md`):
+The testing room has its Angular shell and operations admin sections. The tests,
+attempts and verdicts of the planned product have not been built yet:
 
 - **Sign-in** by password, on the framework surface; registration and recovery
   confirm the address with a code sent by mail.
 - **Home page** that says who is looking: "Browsing anonymously" for a visitor,
   "Signed in as …" with an account.
-- **Admin dashboard** at `/hilos`, empty — the admin sections arrive one by one.
+- **Admin dashboard** at `/hilos`, with Settings, Users (list and card), Logs and
+  Maintenance. A signed-in user has the notification bell, without delivery channels.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
 
-The backend is the base set: one app agent owning the connections and the
-home page, the Hilos index agent with the dashboard and the footer pages, and
-the framework sign-in libraries. It keeps no table of its own — people,
-sessions and the tables of signing in are the framework's.
+The backend has one app agent owning the connections and home page, the Hilos
+index agent serving the dashboard, admin pages and footer, settings and
+notifications libraries, and the logs section, store, carrier and aggregator
+agents. The sign-in libraries remain framework-owned. The demo keeps no
+product table of its own; people, sessions, notifications and settings use
+framework tables.
 
 ### What it is going to show
 

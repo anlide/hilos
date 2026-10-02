@@ -94,3 +94,20 @@ export async function gotoPage(
     expected ?? SETTLED,
   )
 }
+
+/** The maintenance stub displayed while the node is frozen. */
+const MAINTENANCE = 'maintenance'
+
+/**
+ * Open a url while the node is under protected mode and wait for the stub.
+ *
+ * The freeze replaces the routed outlet, so `hilos-page-state` is absent. The
+ * stub is painted from the welcome frame before any subscription.
+ *
+ * @param page The Playwright page.
+ * @param path Path to open.
+ */
+export async function gotoMaintenance(page: Page, path: string): Promise<void> {
+  await page.goto(path)
+  await expect(page.getByTestId(MAINTENANCE)).toBeVisible()
+}

@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-import { gotoMaintenance, gotoPage } from '../helpers/page'
+import { gotoMaintenance, gotoPage } from '../helpers/page.js'
 import {
   enterProtectedMode,
   leaveProtectedMode,
   mintProtectedModePass,
   openProtectedModeIfAny,
-} from '../helpers/protectedMode'
+} from '../helpers/protectedMode.js'
 
 // The Angular half of HIL-615 and HIL-616: the verifier's code field belongs to
 // administrative surfaces and to nowhere else, and only once a code exists to type

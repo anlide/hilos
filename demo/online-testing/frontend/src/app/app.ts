@@ -9,6 +9,7 @@ import {
   HILOS_AUTH_GATE,
   HilosAvatar,
   HilosLayout,
+  HilosNotificationBell,
   HilosView,
   hilosAdminViews,
   hilosSignal,
@@ -21,6 +22,16 @@ import { connection } from './bootstrap/connection.js'
 import { PAGE_MAIN } from './pages/keys.js'
 import { About } from './views/about/about.js'
 import { License } from './views/license/license.js'
+import { LogKeys } from './views/hilos/logs/keys.js'
+import { LogRotations } from './views/hilos/logs/rotations.js'
+import { LogSettings } from './views/hilos/logs/settings.js'
+import { LogViewer } from './views/hilos/logs/view.js'
+import { LogWorkers } from './views/hilos/logs/workers.js'
+import { LogsOverview } from './views/hilos/logs/overview.js'
+import { Maintenance } from './views/hilos/maintenance/maintenance.js'
+import { Settings } from './views/hilos/settings/settings.js'
+import { User } from './views/hilos/users/user.js'
+import { Users } from './views/hilos/users/users.js'
 import { Main } from './views/main/main.js'
 import { MainSkeleton } from './views/main/main-skeleton.js'
 import { Privacy } from './views/privacy/privacy.js'
@@ -29,7 +40,7 @@ import { Terms } from './views/terms/terms.js'
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAvatar, HilosLayout, HilosView],
+  imports: [HilosAvatar, HilosLayout, HilosNotificationBell, HilosView],
   // The user region is ONE projected node, not two: the shell's slot is
   // `<ng-content select="[user]">`, which matches the root nodes of what is
   // projected, and a conditional block sitting on that boundary is the known
@@ -45,6 +56,7 @@ import { Terms } from './views/terms/terms.js'
     </span>
     <ng-container ngProjectAs="[user]">
       @if (userName()) {
+        <hilos-notification-bell [connection]="connection" />
         <!-- The avatar is not a link: the demo has no profile of its own, and
         signing out is the shell's own button. -->
         <span class="small" data-id="nav-profile-name" [title]="userName()">
@@ -99,10 +111,20 @@ export class App {
   // server, and the outlet draws that refusal instead.
   protected readonly pages: Record<string, Type<unknown>> = {
     [PAGE_MAIN]: Main,
-    // The Hilos admin section. The framework ships a real default page for every
-    // admin key (hilosAdminViews), the dashboard included, and this demo registers
-    // the dashboard alone: no admin section is switched on here yet.
+    // The framework supplies the admin defaults. This demo binds the sections
+    // activated by its backend to their Angular contexts and leaves the rest to
+    // the defaults.
     ...hilosAdminViews(),
+    [HilosPages.SETTINGS]: Settings,
+    [HilosPages.USERS]: Users,
+    [HilosPages.USER]: User,
+    [HilosPages.LOGS]: LogsOverview,
+    [HilosPages.LOGS_KEYS]: LogKeys,
+    [HilosPages.LOGS_WORKERS]: LogWorkers,
+    [HilosPages.LOGS_ROTATIONS]: LogRotations,
+    [HilosPages.LOGS_SETTINGS]: LogSettings,
+    [HilosPages.LOGS_VIEW]: LogViewer,
+    [HilosPages.MAINTENANCE]: Maintenance,
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,

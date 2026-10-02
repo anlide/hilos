@@ -34,8 +34,10 @@ declare(strict_types=1);
  *            binance-btc-tracker re-measured by HIL-1221 the same day, after the
  *            protected-mode spec moved between them, again by HIL-1220, after
  *            the backup specs did, and again by HIL-1219, after the settings,
- *            people and admin specs did), read off a GREEN
- *            run on nova-de, where a step beside its neighbours takes what it
+ *            people and admin specs did; polls and online-testing e2e re-measured
+ *            by HIL-1226 in isolated green test:e2e-full cycles on 2026-10-02
+ *            after the operations half moved), read off GREEN runs on nova-de,
+ *            where a step beside its neighbours takes what it
  *            takes alone (chat-e2e 19m47s alone against 19m21s–21m30s beside two,
  *            28.09). A scheduling HINT only, and a narrow one: of the steps ready
  *            to go, the one with the longest OWN duration starts first, and
@@ -83,10 +85,10 @@ declare(strict_types=1);
 $demos = [
     'chat' => ['check' => 11, 'php' => 106, 'e2e' => 849],
     'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 132],
-    'polls' => ['check' => 15, 'php' => 17, 'e2e' => 166],
+    'polls' => ['check' => 15, 'php' => 17, 'e2e' => 142],
     'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'e2e' => 394],
     'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 57],
-    'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 61],
+    'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],
 ];
 
 $steps = [

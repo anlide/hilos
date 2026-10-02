@@ -7,47 +7,83 @@ namespace Demo\OnlineTesting\Tests\Unit;
 use Demo\OnlineTesting\Agents\OnlineTestingAgent;
 use Demo\OnlineTesting\Agents\Hilos\DataExportAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosAgent;
+use Demo\OnlineTesting\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\OnlineTesting\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\SessionsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\UsersLibraryAgent;
 use Demo\OnlineTesting\Constants\AgentType;
 use Demo\OnlineTesting\Constants\PageConstants;
 use Demo\OnlineTesting\Core\Agent\Daemon\OnlineTestingAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
+use Demo\OnlineTesting\Browser\OnlineTestingBrowserRef;
+use Demo\OnlineTesting\Browser\Table\UserDetailBrowserTable;
 use Demo\OnlineTesting\Database\OnlineTestingDbContext;
+use Demo\OnlineTesting\Database\Settings\OnlineTestingSettingsCatalog;
 use Demo\OnlineTesting\Hilos;
+use Demo\OnlineTesting\Groups\Hilos\NotificationsGroup;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsSettingsPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsViewPage;
+use Demo\OnlineTesting\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\OnlineTesting\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
+use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\TermsPage;
+use Demo\OnlineTesting\Pages\Hilos\Users\UserPage;
+use Demo\OnlineTesting\Pages\Hilos\Users\UsersPage;
 use Demo\OnlineTesting\Pages\MainPage;
 use Demo\OnlineTesting\Runtime\View\Context\OnlineTestingRtContext;
+use Demo\OnlineTesting\Tables\HilosUser\HilosUsersTable;
+use Demo\OnlineTesting\Tables\OnlineTestingTableContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\HilosException;
+use Hilos\Log\LogAggregatorAgent;
+use Hilos\Log\LogCarrierAgent;
+use Hilos\Log\LogSettingsCatalog;
+use Hilos\Log\LogStoreAgent;
+use Hilos\Notification\NotificationAction;
+use Hilos\Notification\NotificationPreferenceAction;
+use Hilos\Push\PushSubscriptionAction;
+use Hilos\Tables\Logs\HilosLogKeysTable;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Guards the project-level online-testing topology registry.
  *
- * The smallest complete shape: an app agent with its home page, the Hilos index agent with the
- * empty dashboard and the four footer pages, and sign-in activated on the framework libraries.
- * No admin section is registered, and the snapshots below say so, so the first leaf that moves
- * an admin section here turns them red on purpose and rewrites them with its own.
+ * Guards the home, admin sections, notifications, sign-in and cluster probe registry.
+ * Snapshots intentionally name every page and agent; a later activation must update them.
  */
 final class OnlineTestingTopologyRegistryTest extends TestCase
 {
@@ -69,11 +105,21 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         self::assertTrue((new DataExportAgentDaemon())->requiresMonopolisticProcess());
     }
 
-    public function testPageRegistryIsTheHomeTheDashboardAndTheFooter(): void
+    public function testPageRegistryIncludesTheAdminSections(): void
     {
         $this->assertSame([
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
+            SettingsPage::PAGE => SettingsPage::class,
+            LogsOverviewPage::PAGE => LogsOverviewPage::class,
+            LogsKeysPage::PAGE => LogsKeysPage::class,
+            LogsWorkersPage::PAGE => LogsWorkersPage::class,
+            LogsRotationsPage::PAGE => LogsRotationsPage::class,
+            LogsViewPage::PAGE => LogsViewPage::class,
+            LogsSettingsPage::PAGE => LogsSettingsPage::class,
+            MaintenancePage::PAGE => MaintenancePage::class,
+            UsersPage::PAGE => UsersPage::class,
+            UserPage::PAGE => UserPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -114,15 +160,21 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testAgentRegistryIsTheAppTheIndexSignInAndTheClusterProbes(): void
+    public function testAgentRegistryIncludesTheAdminSectionsAndTheClusterProbes(): void
     {
         $this->assertSame([
             AgentType::ONLINE_TESTING,
             AgentType::HILOS_INDEX,
+            AgentType::HILOS_LOGS,
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            AgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_MAIL,
+            HilosAgentType::HILOS_LOG_STORE,
+            HilosAgentType::HILOS_LOG_CARRIER,
+            HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosAgentType::HILOS_AUTH_THROTTLE,
             HilosAgentType::HILOS_PROBE_FLEET,
             HilosAgentType::HILOS_PROBE_DB,
@@ -161,7 +213,18 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
 
     public function testHilosPagesAreOwnedByTheIndexAgent(): void
     {
-        foreach ([DashboardPage::class, AboutPage::class, TermsPage::class, PrivacyPage::class, LicensePage::class] as $page) {
+        $hilosPages = [
+            DashboardPage::class,
+            SettingsPage::class,
+            MaintenancePage::class,
+            UsersPage::class,
+            UserPage::class,
+            AboutPage::class,
+            TermsPage::class,
+            PrivacyPage::class,
+            LicensePage::class,
+        ];
+        foreach ($hilosPages as $page) {
             $this->assertSame(AgentType::HILOS_INDEX, $page::SUBSCRIPTION_AGENT_TYPE);
         }
         $entry = Hilos::AGENTS[AgentType::HILOS_INDEX];
@@ -173,22 +236,14 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testAppOwnSurfaceStaysTransportOnly(): void
     {
         // The application's OWN surface is transport-only: its main page and worker push no
-        // server-driven data, and the demo registers no group, table or browser table.
+        // server-driven data. The admin tables and notification group belong to their features.
         //
         // The one frame the worker is addressed by is not its surface but the seam the sessions
         // moved behind (HIL-710): the library says what a session became, and this agent updates
         // the connection rows that belong to the project. The sweep frame is not declared, so the
         // library does not send it.
-        $this->assertSame([], Hilos::GROUPS);
-        $this->assertSame([], Hilos::TABLES);
-        $this->assertSame([], Hilos::BROWSER_TABLES);
-        $this->assertSame([], Hilos::PAGE_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
-        $this->assertSame(
-            [HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS],
-            Hilos::getPageActionRoutes(),
-        );
         $this->assertSame(
             [HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class],
             OnlineTestingAgent::AGENT_SIGNALS,
@@ -196,6 +251,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame(
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ONLINE_TESTING,
+                HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
                 HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 // The other half of the seam, and the endings the users library hands over:
                 // what a sign-in became reaches the library that owns the session.
@@ -230,6 +286,15 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_PROFILE_FLOW_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 // Sign-in's own frames (HIL-623): the users library waits for the throttle
                 // verdict, and the mail agent and the node-scoped throttle answer on their own
                 // names.
@@ -239,6 +304,13 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
+                HilosSignalConstants::LOGS_AGENT_READ_LINES => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_AGENT_FOLLOW_START => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_AGENT_TAKEOUT_CONFIRM => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_AGENT_TAKEOUT_UNDO => HilosAgentType::HILOS_LOG_STORE,
+                HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
+                HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => HilosAgentType::HILOS_AUTH_THROTTLE,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => HilosAgentType::HILOS_AUTH_THROTTLE,
             ],
@@ -253,7 +325,14 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         // framework's. The snapshot is the whole action map on purpose - a command that silently
         // stopped being routed here would otherwise look like a working surface until somebody
         // submitted the form it belongs to.
-        $this->assertSame([HilosFeature::AUTH, HilosFeature::AUTH_THROTTLE], Hilos::features());
+        $this->assertSame([
+            HilosFeature::SETTINGS,
+            HilosFeature::HILOS_USERS,
+            HilosFeature::LOGS,
+            HilosFeature::NOTIFICATIONS,
+            HilosFeature::AUTH,
+            HilosFeature::AUTH_THROTTLE,
+        ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
             Hilos::AGENTS[HilosAgentType::HILOS_USERS_LIBRARY],
@@ -287,6 +366,12 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_TOAST_READING => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_RESUME => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_PROFILE_FLOW_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            NotificationAction::MARK_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            NotificationAction::MARK_ALL_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            NotificationPreferenceAction::CHANNEL_SET => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::SUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::UNSUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::REMOVE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_CONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_RECONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -352,6 +437,114 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
         ], Hilos::getAgentActionRoutes());
+    }
+
+    public function testSettingsAndUsersAdminFeaturesAreActivated(): void
+    {
+        $this->assertSame([
+            OnlineTestingTableContext::settings => HilosSettingsTable::class,
+            OnlineTestingTableContext::hilosUsers => HilosUsersTable::class,
+            OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+            OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
+            OnlineTestingTableContext::hilosLogRotations => HilosLogRotationsTable::class,
+            OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+        ], Hilos::TABLES);
+        $this->assertSame(
+            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            Hilos::BROWSER_TABLES,
+        );
+        $this->assertSame([
+            SettingsPage::PAGE,
+            MaintenancePage::PAGE,
+            LogsKeysPage::PAGE,
+            LogsRotationsPage::PAGE,
+            LogsWorkersPage::PAGE,
+            UsersPage::PAGE,
+            UserPage::PAGE,
+        ], array_keys(Hilos::PAGE_TABLES));
+        $this->assertSame([OnlineTestingTableContext::settings => []], Hilos::PAGE_TABLES[SettingsPage::PAGE]);
+        $this->assertSame([OnlineTestingTableContext::hilosUsers => []], Hilos::PAGE_TABLES[UsersPage::PAGE]);
+        $this->assertSame([
+            UserDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => OnlineTestingBrowserRef::HILOS_USER_ID,
+                ],
+            ],
+        ], Hilos::PAGE_TABLES[UserPage::PAGE]);
+        $this->assertSame(OnlineTestingDbContext::users, UserPage::READS_DB[0]);
+
+        $settingsLibrary = Hilos::AGENTS[HilosAgentType::HILOS_SETTINGS_LIBRARY];
+        $this->assertSame(SettingsLibraryAgent::class, AgentRegistry::workerClass($settingsLibrary));
+        $this->assertSame(SettingsLibraryAgentDaemon::class, AgentRegistry::daemonClass($settingsLibrary));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($settingsLibrary));
+        $catalog = OnlineTestingSettingsCatalog::getCatalog();
+        foreach ([
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING,
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER,
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN,
+        ] as $key) {
+            $this->assertArrayHasKey($key, $catalog);
+        }
+        $this->assertSame([], array_diff_key(LogSettingsCatalog::getCatalog(), $catalog));
+        $this->assertSame(UserPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE]);
+    }
+
+    /** Maintenance has no feature switch; its page and verifier table activate it. */
+    public function testMaintenanceSectionIsActivated(): void
+    {
+        $this->assertSame(MaintenancePage::class, Hilos::PAGES[MaintenancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, MaintenancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            [OnlineTestingTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
+        );
+    }
+
+    public function testLogsAdminFeatureIsActivated(): void
+    {
+        $logPages = [
+            LogsOverviewPage::PAGE => LogsOverviewPage::class,
+            LogsKeysPage::PAGE => LogsKeysPage::class,
+            LogsWorkersPage::PAGE => LogsWorkersPage::class,
+            LogsRotationsPage::PAGE => LogsRotationsPage::class,
+            LogsViewPage::PAGE => LogsViewPage::class,
+            LogsSettingsPage::PAGE => LogsSettingsPage::class,
+        ];
+        $this->assertSame($logPages, array_intersect_key(Hilos::PAGES, $logPages));
+        foreach ($logPages as $page) {
+            $this->assertSame(AgentType::HILOS_LOGS, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        $this->assertSame(DemoHilosLogsAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[AgentType::HILOS_LOGS]));
+        $this->assertSame(DemoHilosLogsAgentDaemon::class, AgentRegistry::daemonClass(Hilos::AGENTS[AgentType::HILOS_LOGS]));
+        $this->assertTrue((new DemoHilosLogsAgentDaemon())->requiresMonopolisticProcess());
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope(Hilos::AGENTS[HilosAgentType::HILOS_LOG_STORE]));
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope(Hilos::AGENTS[HilosAgentType::HILOS_LOG_CARRIER]));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement(Hilos::AGENTS[HilosAgentType::HILOS_LOG_AGGREGATOR]));
+        $this->assertSame(LogStoreAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_LOG_STORE]));
+        $this->assertSame(LogCarrierAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_LOG_CARRIER]));
+        $this->assertSame(LogAggregatorAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_LOG_AGGREGATOR]));
+        $this->assertSame([OnlineTestingTableContext::hilosLogKeys => []], Hilos::PAGE_TABLES[LogsKeysPage::PAGE]);
+        $this->assertSame([OnlineTestingTableContext::hilosLogRotations => []], Hilos::PAGE_TABLES[LogsRotationsPage::PAGE]);
+        $this->assertSame([OnlineTestingTableContext::hilosLogWorkers => []], Hilos::PAGE_TABLES[LogsWorkersPage::PAGE]);
+    }
+
+    public function testNotificationCenterIsActivatedWithoutDelivery(): void
+    {
+        $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
+        $this->assertNotContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+        $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
+        $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));
+        $this->assertSame(NotificationsLibraryAgentDaemon::class, AgentRegistry::daemonClass($library));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($library));
     }
 
     public function testProjectTopologyPassesStartupValidation(): void

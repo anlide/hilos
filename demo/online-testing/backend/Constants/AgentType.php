@@ -19,4 +19,10 @@ final class AgentType
 
     /** @var string Hilos index agent type (dashboard the shell gear links to) */
     public const string HILOS_INDEX = HilosAgentType::HILOS_INDEX;
+
+    /** @var string Hilos notifications library agent type */
+    public const string HILOS_NOTIFICATIONS_LIBRARY = HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY;
+
+    /** @var string Hilos logs section agent type */
+    public const string HILOS_LOGS = HilosAgentType::HILOS_LOGS;
 }

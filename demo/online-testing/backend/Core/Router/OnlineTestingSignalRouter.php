@@ -36,6 +36,7 @@ final class OnlineTestingSignalRouter extends SignalRouter
     {
         return [
             AgentType::ONLINE_TESTING,
+            AgentType::HILOS_LOGS,
         ];
     }
 

@@ -10,6 +10,7 @@ import { bootHilos, createAuthGate } from '@hilos/core'
 
 import { App } from '../app.js'
 import { appConfig } from '../app.config.js'
+import { pageEntityTypes } from '../pages/entityTypes.js'
 import { appName, pageTitles } from '../pages/pageTitles.js'
 import { router } from '../pages/routes.js'
 import { actions, connection } from './connection.js'
@@ -21,8 +22,11 @@ const hilosRouter = bootHilos({
   actions,
   scopes,
   router,
+  pageEntityTypes,
   pageTitles,
   appName,
+  // Fill the shell bell once the session names its user.
+  notifications: true,
 })
 
 // The auth gate (HIL-165): resume a 401'd page and close the sign-in modal when

@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
-import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant'
-import { gotoPage, PAGE_REFUSED } from '../helpers/page'
-import { clickSubmit } from '../helpers/session'
+import { grantAdminToSelf, setAdmin } from '../helpers/adminGrant.js'
+import { gotoPage, PAGE_REFUSED } from '../helpers/page.js'
+import { clickSubmit, typeInto } from '../helpers/session.js'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own granted row is present, search filters the client
@@ -89,7 +89,7 @@ test('filters the users table from the search box', async ({ page }) => {
 
   // A query no name matches empties the viewport; clearing it restores rows.
   const search = page.getByTestId('hilos-table-search')
-  await search.fill('zzz-no-such-user-zzz')
+  await typeInto(search, 'zzz-no-such-user-zzz')
   await expect(page.locator('[data-id^="hilos-users-open-"]')).toHaveCount(0)
   await search.fill('')
   await expect(
@@ -109,7 +109,7 @@ test('renames a user from the detail page and re-renders live', async ({
 
   const newName = 'E2E Renamed User'
   await page.getByTestId('hilos-user-edit').click()
-  await page.getByTestId('hilos-user-name-input').fill(newName)
+  await typeInto(page.getByTestId('hilos-user-name-input'), newName)
   await page.getByTestId('hilos-user-save').click()
 
   // The committed name returns over the live table and the edit form closes.
@@ -162,7 +162,7 @@ test('a rename in one tab lands at once in another, raising no Apply', async ({
   await page.locator('[data-id^="hilos-users-open-"]').first().click()
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
   await page.getByTestId('hilos-user-edit').click()
-  await page.getByTestId('hilos-user-name-input').fill(newName)
+  await typeInto(page.getByTestId('hilos-user-name-input'), newName)
   await page.getByTestId('hilos-user-save').click()
   await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
 
@@ -181,12 +181,10 @@ test('a rename in one tab lands at once in another, raising no Apply', async ({
 })
 
 test('a revoked admin loses the gear and the door', async ({ page }) => {
-  // Keeps the framework admin:grant / admin:revoke route walked end to end now
-  // that grantAdminToSelf drives admin:create instead (HIL-609): these two demos
-  // are the only e2e it has, since chat flips the flag through its own project
-  // command. Only the revoke is sent, and that covers the route rather than half
-  // of it — both wire names land on one handler and differ in nothing but the
-  // boolean in the payload, which the framework unit test pins separately.
+  // Keep the framework admin:grant / admin:revoke route covered now that
+  // grantAdminToSelf drives admin:create instead (HIL-609). Binance-btc-tracker
+  // exercises the same route. Only the revoke is sent here: both wire names land
+  // on one handler and differ only by the boolean, pinned by a framework unit test.
   const userId = await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()

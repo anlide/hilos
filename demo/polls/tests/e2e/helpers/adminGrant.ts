@@ -14,8 +14,6 @@ const REPLY_TIMEOUT_MS = 5_000
 
 /** The framework command names, as CliCommands spells them on the wire. */
 const COMMAND_CREATE = 'admin:create'
-const COMMAND_GRANT = 'admin:grant'
-const COMMAND_REVOKE = 'admin:revoke'
 
 const sendCommand = createCommandChannel({
   host: COMMAND_HOST,
@@ -35,17 +33,6 @@ function isSessionCookie(name: string): boolean {
     name.startsWith(SESSION_COOKIE_PREFIX) &&
     !name.endsWith(ROTATE_COOKIE_SUFFIX)
   )
-}
-
-/**
- * Sets a user's admin flag over the daemon command channel, resolving once the
- * daemon replies ok (its DB write and browser fan-out have completed by then).
- *
- * @param userId Target user id.
- * @param admin Whether to grant (true) or revoke (false) admin.
- */
-export async function setAdmin(userId: number, admin: boolean): Promise<void> {
-  await sendCommand(admin ? COMMAND_GRANT : COMMAND_REVOKE, { userId, admin })
 }
 
 /**

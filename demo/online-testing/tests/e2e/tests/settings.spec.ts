@@ -7,11 +7,11 @@ import {
   shownByTestId,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
-import { typeInto } from '../helpers/session'
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import { gotoPage } from '../helpers/page.js'
+import { typeInto } from '../helpers/session.js'
 
-// Hilos settings admin e2e for the polls demo: activating the framework settings
+// Hilos settings admin e2e for the online-testing demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
 // makes /hilos/settings render the framework settings table over the live socket.
 // The table is a declared one, so it stands in the document twice — rows for a wide
@@ -122,7 +122,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
 test('a narrow window draws the settings as cards and never scrolls sideways', async ({
   page,
 }) => {
-  // HIL-815 acceptance, the Angular twin of the chat case (HIL-806). A
+  // HIL-815 acceptance, the Angular twin of the binance-btc-tracker case. A
   // declared table is a table on a wide screen and a list of cards on a narrow
   // one; both are mounted, and Bootstrap's display utilities show exactly one of
   // them. What a phone must never get is the wide table squeezed into a sideways

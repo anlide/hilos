@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test'
 
 import { setCustomSetting } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { gotoPage } from '../helpers/page'
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import { gotoPage } from '../helpers/page.js'
+import { typeInto } from '../helpers/session.js'
 
-// Hilos logs admin e2e for the polls demo: activating the framework logs feature
+// Hilos logs admin e2e for the online-testing demo: activating the framework logs feature
 // (six pages, the section agent with the per-node store and the cluster
 // aggregator behind it, and three browser tables) makes every screen of the
 // section render over the live socket, drawn by the Angular SDK. This is a smoke
@@ -95,7 +96,7 @@ test('renders every screen of the logs section over the live socket', async ({
   // the retention age, which only changes which batches are suggested for takeout.
   const retentionKey = 'logs.archive_retention.max_age_seconds'
   await gotoPage(page, '/hilos/settings')
-  await page.getByTestId('hilos-table-search').fill(retentionKey)
+  await typeInto(page.getByTestId('hilos-table-search'), retentionKey)
   await expect(
     page.getByTestId(`hilos-table-row-${retentionKey}`),
   ).toBeVisible()

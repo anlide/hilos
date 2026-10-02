@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
 import { readRegisterCode } from './mail'
+import { gotoPage } from './page.js'
 
 // Sign-in helpers for the online-testing demo. A fresh browser context is a
 // guest: it reads the app anonymously, and has no account until it registers or
@@ -284,6 +285,26 @@ export async function login(
 export async function openSignIn(page: Page): Promise<void> {
   await page.getByTestId('nav-signin').click()
   await expect(page.getByTestId('auth-surface')).toBeVisible()
+}
+
+/**
+ * Make a fresh account and leave it signed in on the main page.
+ *
+ * The registration code also proves the email address (HIL-825), so this
+ * account may be added to the verifier circle.
+ *
+ * @param page Playwright page in a context that has not signed in.
+ * @returns The registered email address.
+ */
+export async function signUp(page: Page): Promise<string> {
+  const email = uniqueEmail()
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await openSignIn(page)
+  await register(page, email)
+  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+
+  return email
 }
 
 /**

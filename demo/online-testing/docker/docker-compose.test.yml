@@ -233,6 +233,10 @@ services:
     working_dir: /hilos/demo/online-testing/tests/e2e
     environment:
       BASE_URL: https://online-testing-nginx-test
+      # Admin grants, notification emits and the protected-mode spec call the
+      # daemon's command channel through this in-network address.
+      COMMAND_HOST: online-testing-daemon-test
+      COMMAND_PORT: "8094"
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       # The mail interceptor's HTTP API. The shared stand mailbox module

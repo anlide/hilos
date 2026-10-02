@@ -1,22 +1,19 @@
-import {
-  test,
-  expect,
-  type Browser,
-  type Locator,
-  type Page,
-} from '@playwright/test'
+import { test, expect, type Browser, type Page } from '@playwright/test'
 
 import {
   clearCustomSetting,
+  openBell,
   setCustomSetting,
+  unreadBadge,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { grantAdminToSelf } from '../helpers/adminGrant'
-import { emitNotification } from '../helpers/notifications'
-import { gotoPage } from '../helpers/page'
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
+import { emitNotification } from '../helpers/notifications.js'
+import { gotoPage } from '../helpers/page.js'
+import { typeInto } from '../helpers/session.js'
 
-// Notification-center e2e for the polls demo (HIL-558), the Angular half of the
-// same coverage the chat and tasks demos carry. A notification is emitted through
-// the live daemon over its command channel (helpers/notifications.ts), so the row
+// Notification-center e2e for the online-testing demo: the Angular half of the
+// center coverage binance-btc-tracker and tasks carry. A notification is emitted
+// through the live daemon over its command channel (helpers/notifications.ts), so the row
 // is written and the in-app signal is fanned exactly as a product caller's emit
 // would do it — the browser is then asserted on what the server actually sent,
 // never on a fixture the test planted.
@@ -29,7 +26,7 @@ import { gotoPage } from '../helpers/page'
 //
 // This demo activates NOTIFICATIONS without NOTIFICATION_DELIVERY, so the
 // coverage stops at the center and the toast: the channel and delivery halves
-// have no surface here, and they are the chat demo's to prove.
+// have no surface here; binance-btc-tracker proves the channels and journal.
 
 /**
  * Open the app and learn who this browser is, on a page whose socket has already
@@ -60,22 +57,6 @@ async function openJoined(page: Page): Promise<number> {
   return userId
 }
 
-/** Open the bell's dropdown so its rows are on screen. */
-async function openBell(page: Page): Promise<void> {
-  await page.getByTestId('hilos-notification-toggle').click()
-  await expect(page.getByTestId('hilos-notification-menu')).toBeVisible()
-}
-
-/**
- * The unread badge. Its label carries a visually-hidden suffix — unread is never
- * signalled by color alone — so a count is matched at the front of the text.
- *
- * @param page The page whose bell is read.
- */
-function badge(page: Page): Locator {
-  return page.getByTestId('hilos-notification-badge')
-}
-
 test('an emitted notification reaches the bell as an unread row', async ({
   page,
 }) => {
@@ -90,7 +71,7 @@ test('an emitted notification reaches the bell as an unread row', async ({
 
   // The badge is fed by the live signal, so it turns without the menu ever
   // being opened.
-  await expect(badge(page)).toHaveText(/^1\b/)
+  await expect(unreadBadge(page)).toHaveText(/^1\b/)
 
   await openBell(page)
   const row = page.getByTestId(`hilos-notification-item-${notificationId}`)
@@ -106,7 +87,7 @@ test('marking a row read clears the badge', async ({ page }) => {
     type: 'e2e_mark_read',
     title: 'One to read',
   })
-  await expect(badge(page)).toHaveText(/^1\b/)
+  await expect(unreadBadge(page)).toHaveText(/^1\b/)
 
   await openBell(page)
   await page
@@ -116,7 +97,7 @@ test('marking a row read clears the badge', async ({ page }) => {
   // The store never turns read optimistically: it turns when the server fans the
   // read signal back, so the badge going and the row's own mark-read control
   // going are both proof the round trip landed.
-  await expect(badge(page)).toHaveCount(0)
+  await expect(unreadBadge(page)).toHaveCount(0)
   await expect(
     page.getByTestId(`hilos-notification-mark-read-${notificationId}`),
   ).toHaveCount(0)
@@ -135,12 +116,12 @@ test('mark-all read clears a badge carrying several', async ({ page }) => {
     type: 'e2e_mark_all',
     title: 'Second',
   })
-  await expect(badge(page)).toHaveText(/^2\b/)
+  await expect(unreadBadge(page)).toHaveText(/^2\b/)
 
   await openBell(page)
   await page.getByTestId('hilos-notification-mark-all').click()
 
-  await expect(badge(page)).toHaveCount(0)
+  await expect(unreadBadge(page)).toHaveCount(0)
   await expect(
     page.getByTestId(`hilos-notification-mark-read-${first}`),
   ).toHaveCount(0)
@@ -171,8 +152,8 @@ test('a read in one tab reaches the other tab of the same user', async ({
     type: 'e2e_across_tabs',
     title: 'Seen from both tabs',
   })
-  await expect(badge(page)).toHaveText(/^1\b/)
-  await expect(badge(tabB)).toHaveText(/^1\b/)
+  await expect(unreadBadge(page)).toHaveText(/^1\b/)
+  await expect(unreadBadge(tabB)).toHaveText(/^1\b/)
 
   await openBell(page)
   await openBell(tabB)
@@ -182,7 +163,7 @@ test('a read in one tab reaches the other tab of the same user', async ({
 
   // The read is fanned to every connection of the recipient, so tab B settles
   // without asking for anything.
-  await expect(badge(tabB)).toHaveCount(0)
+  await expect(unreadBadge(tabB)).toHaveCount(0)
   await expect(
     tabB.getByTestId(`hilos-notification-mark-read-${notificationId}`),
   ).toHaveCount(0)
@@ -202,7 +183,7 @@ test('saving a setting raises a toast the close button dismisses', async ({
   await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await page.getByTestId('hilos-table-search').fill('example_boolean')
+  await typeInto(page.getByTestId('hilos-table-search'), 'example_boolean')
   await expect(
     page.getByTestId('hilos-table-row-example_boolean'),
   ).toBeVisible()
@@ -257,19 +238,6 @@ async function openSecondVisitor(browser: Browser): Promise<Page> {
   return context.newPage()
 }
 
-/**
- * Type a value the way a user does: clear, then key by key. A bare `fill(value)`
- * dispatches one synthetic `input`, which can slip past the view's reactivity and
- * leave the surface holding a stale value.
- *
- * @param field The input locator.
- * @param value The value to type.
- */
-async function typeInto(field: Locator, value: string): Promise<void> {
-  await field.fill('')
-  await field.pressSequentially(value, { delay: 10 })
-}
-
 test('an administrator renaming somebody reaches the renamed visitor', async ({
   page,
   browser,
@@ -292,7 +260,7 @@ test('an administrator renaming somebody reaches the renamed visitor', async ({
   // The rename settles when the committed name returns over the live table.
   await expect(adminPage.getByTestId('hilos-user-name')).toHaveText(newName)
 
-  await expect(badge(page)).toHaveText(/^1\b/)
+  await expect(unreadBadge(page)).toHaveText(/^1\b/)
 
   // The product emit never hands the id out, so the row is found by its own
   // title rather than by hilos-notification-item-<id>.

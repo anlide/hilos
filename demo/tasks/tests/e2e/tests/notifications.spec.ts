@@ -15,9 +15,10 @@ import { emitNotification } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
 
 // Notification-center e2e for the tasks demo (HIL-558), the React half of the
-// same coverage the chat and polls demos carry. A notification is emitted through
-// the live daemon over its command channel (helpers/notifications.ts), so the row
-// is written and the in-app signal is fanned exactly as a product caller's emit
+// same center coverage binance-btc-tracker and online-testing carry. A notification
+// is emitted through the live daemon over its command channel
+// (helpers/notifications.ts), so the row is written and the in-app signal is
+// fanned exactly as a product caller's emit
 // would do it — the browser is then asserted on what the server actually sent,
 // never on a fixture the test planted.
 //
@@ -29,7 +30,7 @@ import { gotoPage } from '../helpers/page'
 //
 // This demo activates NOTIFICATIONS without NOTIFICATION_DELIVERY, so the
 // coverage stops at the center and the toast: the channel and delivery halves
-// have no surface here, and they are the chat demo's to prove.
+// have no surface here; binance-btc-tracker proves the channels and journal.
 
 /**
  * Open the app and learn who this browser is, on a page whose socket has already

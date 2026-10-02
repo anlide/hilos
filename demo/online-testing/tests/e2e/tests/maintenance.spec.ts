@@ -9,7 +9,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
-import { signInByPhone } from '../helpers/session.js'
+import { signUp } from '../helpers/session.js'
 
 // Taking a verifier out in Maintenance: the row leaves over the live table, and a
 // dialog open over a row removed in another tab says so before anybody presses Remove.
@@ -34,37 +34,37 @@ test('taking a verifier out removes the row, and a dialog over a row taken out i
 
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const phone = await signInByPhone(member)
-  await addToMaintenanceCircle(page, phone)
+  const email = await signUp(member)
+  await addToMaintenanceCircle(page, email)
   await dismissToasts(page)
 
   // A second tab of the same administrator, on the same section and the same row.
   const tabB = await page.context().newPage()
   await gotoPage(tabB, MAINTENANCE_URL)
-  await expect(maintenanceCircleRow(tabB, phone)).toBeVisible()
+  await expect(maintenanceCircleRow(tabB, email)).toBeVisible()
 
   // A opens the dialog over the row: it names the address and Remove is live.
   await page
     .getByTestId('hilos-maintenance-circle-table')
-    .getByTestId(`hilos-maintenance-circle-remove-${phone}`)
+    .getByTestId(`hilos-maintenance-circle-remove-${email}`)
     .click()
   const dialogA = page.getByTestId('modal')
   const confirmA = page.getByTestId('hilos-maintenance-circle-remove-confirm')
   await expect(confirmA).toBeEnabled()
-  await expect(dialogA).toContainText(phone)
+  await expect(dialogA).toContainText(email)
 
   // B takes the member out: the row leaves B's table over the live table, and the
   // ack's own sentence is B's toast.
   await tabB
     .getByTestId('hilos-maintenance-circle-table')
-    .getByTestId(`hilos-maintenance-circle-remove-${phone}`)
+    .getByTestId(`hilos-maintenance-circle-remove-${email}`)
     .click()
   await confirmMaintenanceCircleRemoval(tabB)
-  await expect(maintenanceCircleRow(tabB, phone)).toHaveCount(0)
+  await expect(maintenanceCircleRow(tabB, email)).toHaveCount(0)
   await expect(
     tabB
       .getByTestId('hilos-toasts')
-      .getByText(`${phone} removed from the circle.`),
+      .getByText(`${email} removed from the circle.`),
   ).toBeVisible()
 
   // A's dialog heard it before anybody pressed anything: Remove reads Removed and is
