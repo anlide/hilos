@@ -11,14 +11,17 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 
 /**
  * Framework user list and user detail admin pages.
  *
  * The rows and the reading of the people are the framework's: every project keeps its people
  * in the framework's own table. The project extends the users table only to name its runtime
- * connections collection, whose key is its own. The detail page carries no framework table class to name, so its binding is required
- * without naming a target: what it is bound to is the project's own browser table.
+ * connections collection, whose key is its own. The card of one person is the framework's too
+ * ({@see HilosUserDetailBrowserTable}, HIL-1254): the detail page must be bound to it, and a
+ * project that registers its user page without the card is refused here rather than drawing
+ * an empty one.
  *
  * The presence source is a requirement rather than an optional extra because the user list
  * shows who is online; without a runtime collection implementing {@see HilosPresenceSource}
@@ -45,7 +48,7 @@ final class HilosUsersFeature extends FeatureDefinition
             requiredTables: [AbstractHilosUsersTable::class],
             requiredPageTables: [
                 AbstractHilosUsersPage::class => AbstractHilosUsersTable::class,
-                AbstractHilosUserPage::class => null,
+                AbstractHilosUserPage::class => HilosUserDetailBrowserTable::class,
             ],
             requiresPresenceSource: true,
         );

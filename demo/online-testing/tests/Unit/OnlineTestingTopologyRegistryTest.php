@@ -19,8 +19,6 @@ use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
-use Demo\OnlineTesting\Browser\OnlineTestingBrowserRef;
-use Demo\OnlineTesting\Browser\Table\UserDetailBrowserTable;
 use Demo\OnlineTesting\Database\OnlineTestingDbContext;
 use Demo\OnlineTesting\Database\Settings\OnlineTestingSettingsCatalog;
 use Demo\OnlineTesting\Hilos;
@@ -47,14 +45,12 @@ use Demo\OnlineTesting\Tables\OnlineTestingTableContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
-use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
@@ -77,6 +73,7 @@ use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -450,7 +447,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         ], Hilos::TABLES);
         $this->assertSame(
-            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
             Hilos::BROWSER_TABLES,
         );
         $this->assertSame([
@@ -465,11 +462,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([OnlineTestingTableContext::settings => []], Hilos::PAGE_TABLES[SettingsPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosUsers => []], Hilos::PAGE_TABLES[UsersPage::PAGE]);
         $this->assertSame([
-            UserDetailBrowserTable::TABLE => [
-                BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => OnlineTestingBrowserRef::HILOS_USER_ID,
-                ],
-            ],
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
         ], Hilos::PAGE_TABLES[UserPage::PAGE]);
         $this->assertSame(OnlineTestingDbContext::users, UserPage::READS_DB[0]);
 

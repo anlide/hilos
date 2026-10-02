@@ -19,11 +19,6 @@ final class ChatBrowserSource
         BrowserSourceKey::KEY => ChatDbContext::users,
     ];
 
-    public const array DB_ACCOUNT_DELETIONS = [
-        BrowserSourceKey::TYPE => BrowserSourceType::DB,
-        BrowserSourceKey::KEY => ChatDbContext::accountDeletions,
-    ];
-
     public const array DB_EVENTS = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => ChatDbContext::events,

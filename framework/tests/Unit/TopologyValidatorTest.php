@@ -950,14 +950,13 @@ final class TopologyValidatorTest extends TestCase
         $path = 'BROWSER_TABLES[' . TopologyBrowserNotPersonalTable::TABLE . '] class '
             . TopologyBrowserNotPersonalTable::class . '::BROWSER';
 
-        // Row 2 is the valid case: a runtime field opened, and nothing reported for it.
+        // Row 2 is the valid case: a runtime field opened, and nothing reported for it. Row 0 opens 'label', a
+        // field its database source projects: whether that is a column is asked in the second moment (P-443).
         $this->assertTopologyErrors(
             static function (): void {
                 TopologyBrowserNotPersonalHilos::validateTopology();
             },
             [
-                "{$path} rows[0] notPersonal names label, which comes from a database column; "
-                    . "the column's verdict decides whether it is personal",
                 "{$path} rows[0] notPersonal names ghost, which is not a field of this row",
                 "{$path} rows[1] notPersonal must be a list of field names",
             ],
@@ -1057,6 +1056,29 @@ final class TopologyValidatorTest extends TestCase
             [
                 "BROWSER_TABLES[browser_unindexed_join_table]: join column 'nickname' of source 'owners'"
                 . ' is neither the primary key nor the leftmost column of an index that can answer a lookup by value',
+            ],
+        );
+    }
+
+    public function testANotPersonalDeclarationOnADatabaseColumnIsRefusedOnceTheCollectionIsMounted(): void
+    {
+        $db = new TopologyMountedDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+        $runtime = new TopologyMountedRtContext();
+        $runtime->configure();
+        HilosFacade::$rt = $runtime;
+        $path = 'BROWSER_TABLES[' . TopologyBrowserNotPersonalColumnTable::TABLE . '] class '
+            . TopologyBrowserNotPersonalColumnTable::class . '::BROWSER';
+
+        // 'label' is read from 'name', which the entity has no column for, so opening it is allowed.
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserNotPersonalColumnHilos::validateTopologyReferences();
+            },
+            [
+                "{$path} rows[0] notPersonal names owner, which is the column owner_id of owners;"
+                    . " the entity's verdict (_pii / _piiNotPersonal) decides whether it is personal",
             ],
         );
     }
@@ -4086,6 +4108,53 @@ final class TopologyBrowserUnmountedHilos extends HilosFacade
     protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
+    }
+}
+
+/**
+ * Browser table opening two fields of a mounted collection to a viewer: one read from a column, which
+ * its verdict decides and the declaration may not, and one read from a field the entity has no column
+ * for, which only the declaration can open (P-443).
+ */
+final class TopologyBrowserNotPersonalColumnTable
+{
+    public const string TABLE = 'browser_not_personal_column_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'owners',
+            ],
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => ['id', 'ownerId' => 'owner', 'name' => 'label'],
+                BrowserTableFieldKey::NOT_PERSONAL => ['owner', 'label'],
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserNotPersonalColumnHilos extends HilosFacade
+{
+    public const array BROWSER_TABLES = [
+        TopologyBrowserNotPersonalColumnTable::TABLE => TopologyBrowserNotPersonalColumnTable::class,
+    ];
+
+    /**
+     * Creates a DB context mounting the collections the fixtures name.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyMountedDbContext();
     }
 }
 

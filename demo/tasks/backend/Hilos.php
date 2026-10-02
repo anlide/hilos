@@ -29,9 +29,7 @@ use Demo\Tasks\Auth\TasksAuthMethodDirectory;
 use Demo\Tasks\Auth\TasksCodeChannelRegistry;
 use Demo\Tasks\Auth\TasksOAuthProviderDirectory;
 use Demo\Tasks\Backup\BackupCatalog;
-use Demo\Tasks\Browser\Table\UserDetailBrowserTable;
 use Demo\Tasks\Browser\TasksBrowserContext;
-use Demo\Tasks\Browser\TasksBrowserRef;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
@@ -81,11 +79,9 @@ use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
-use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
@@ -123,6 +119,7 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -362,7 +359,7 @@ final class Hilos extends HilosFacade
     ];
 
     public const array BROWSER_TABLES = [
-        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+        HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
     ];
 
     public const array PAGE_TABLES = [
@@ -425,11 +422,7 @@ final class Hilos extends HilosFacade
             TasksTableContext::hilosUsers => [],
         ],
         UserPage::PAGE => [
-            UserDetailBrowserTable::TABLE => [
-                BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => TasksBrowserRef::HILOS_USER_ID,
-                ],
-            ],
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
         ],
     ];
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Users;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
@@ -30,6 +31,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Object\Item\UserMerge as ObjectUserMerge;
 use Hilos\Database\View\Item\Identity as DbIdentity;
 use Hilos\Database\View\Item\User as DbUser;
@@ -229,6 +231,32 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
             self::FIELD_NAME => self::FIELD_NAME,
             HilosMergeCandidateTableRow::identityAddresses => HilosMergeCandidateTableRow::identityAddresses,
             HilosMergeCandidateTableRow::exactUserId => HilosMergeCandidateTableRow::exactUserId,
+        ];
+    }
+
+    /**
+     * Declares where each field of a candidate's row comes from, for a viewer of the admin view mode (HIL-1254).
+     *
+     * The person's fields are their columns, the name hidden by its verdict. Whether a password is set
+     * is worked out of the identity's type, which is not personal, and the exact id is the id again in
+     * the form the search reads, so a viewer still finds a candidate by its number. Three fields are left
+     * out of the map and so reach a viewer hidden: the sign-in methods, whole, because the merge window
+     * reads the list as one value and their types without the addresses tell a viewer nothing (HIL-1263);
+     * the addresses they are searched by; and the unconfirmed password address, which is an address
+     * (HIL-1276).
+     *
+     * @return array<string, WireField> Candidate row field to where it comes from
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosUserTableRow::id => WireField::column(HilosDbContext::users, ObjectUser::id),
+            HilosUserTableRow::admin => WireField::column(HilosDbContext::users, ObjectUser::admin),
+            HilosUserTableRow::block => WireField::column(HilosDbContext::users, ObjectUser::block),
+            HilosUserTableRow::name => WireField::column(HilosDbContext::users, ObjectUser::name),
+            HilosUserTableRow::lastActivity => WireField::column(HilosDbContext::users, ObjectUser::lastActivity),
+            self::FIELD_HAS_PASSWORD => WireField::notPersonal(),
+            HilosMergeCandidateTableRow::exactUserId => WireField::notPersonal(),
         ];
     }
 

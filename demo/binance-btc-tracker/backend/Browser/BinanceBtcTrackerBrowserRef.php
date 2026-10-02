@@ -17,9 +17,4 @@ final class BinanceBtcTrackerBrowserRef
         BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
         BrowserRefKey::KEY => HilosPageRouteParams::HILOS_USER_USER_ID,
     ];
-
-    public const array TABLE_HILOS_USER_ID = [
-        BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
-        BrowserRefKey::KEY => HilosPageRouteParams::HILOS_USER_USER_ID,
-    ];
 }

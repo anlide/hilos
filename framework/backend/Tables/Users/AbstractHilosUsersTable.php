@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Users;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
@@ -334,6 +335,30 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     {
         return [
             HilosUserTableRow::name => HilosUserTableRow::name,
+        ];
+    }
+
+    /**
+     * Declares where each field of a person's row comes from, for a viewer of the admin view mode (HIL-1254).
+     *
+     * The name is declared as a column and hidden by the column's verdict (FAKE_NAME) rather than by
+     * omission in the map; the id, the admin and block flags and the last activity are non-personal by
+     * their column verdicts; presence and onlineSessionCount are aggregates of runtime connections and
+     * declared non-personal. The name being the one field searched, a viewer's window is served without
+     * the search and without the order by name.
+     *
+     * @return array<string, WireField> Person's row field to where it comes from
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosUserTableRow::id => WireField::column(HilosDbContext::users, ObjectUser::id),
+            HilosUserTableRow::admin => WireField::column(HilosDbContext::users, ObjectUser::admin),
+            HilosUserTableRow::block => WireField::column(HilosDbContext::users, ObjectUser::block),
+            HilosUserTableRow::name => WireField::column(HilosDbContext::users, ObjectUser::name),
+            HilosUserTableRow::lastActivity => WireField::column(HilosDbContext::users, ObjectUser::lastActivity),
+            HilosUserTableRow::presence => WireField::notPersonal(),
+            HilosUserTableRow::onlineSessionCount => WireField::notPersonal(),
         ];
     }
 

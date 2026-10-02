@@ -104,11 +104,16 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\Runtime\View\Collection\HilosPresenceSource;
+use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Tables\Users\HilosMergeCandidatesTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
 use ArrayAccess;
+use OutOfBoundsException;
 use Closure;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\AdminViewMode\HiddenValue;
@@ -2152,8 +2157,13 @@ abstract class BrowserContext
     /**
      * Computes a declared browser field for a logical table row.
      *
-     * Project browser contexts override this for computed names listed in
-     * browser table configs. Unknown computed fields resolve to null.
+     * The framework computes the fields of its own browser tables - the scheduled deletion's
+     * date, a person's presence and session count, whether a password is set and its address
+     * while unconfirmed ({@see HilosUserDetailBrowserTable}) - and a project's browser context
+     * overrides this for the computed names of its own tables, handing every other name back
+     * here. The branches go by the field's name alone, not by the table, so a project row that
+     * names one of these fields over the same sources is served by the same branch. Unknown
+     * computed fields resolve to null.
      *
      * @param string $browserKey Browser table key
      * @param string $field Computed field name
@@ -2163,7 +2173,7 @@ abstract class BrowserContext
      * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value, or null when the field is unknown
-     * @throws PageInternalErrorException When a project computed field cannot be resolved
+     * @throws PageInternalErrorException When a computed field cannot be resolved
      */
     protected function computeBrowserField(
         string $browserKey,
@@ -2174,6 +2184,31 @@ abstract class BrowserContext
         array $browserParams,
         array $sources,
     ): mixed {
+        if (
+            $field === HilosUserPresenceSummary::presence
+            || $field === HilosUserPresenceSummary::onlineSessionCount
+        ) {
+            return $this->computeUserPresenceField($field, $rowKey);
+        }
+
+        if ($field === HilosMergeCandidatesTable::FIELD_HAS_PASSWORD) {
+            try {
+                return Hilos::$db->identities->findPasswordByUser((int) $rowKey) !== null;
+            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
+                throw new PageInternalErrorException('Password presence could not be resolved', $exception);
+            }
+        }
+
+        if ($field === HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS) {
+            try {
+                return HilosMergeCandidatesTable::unverifiedPasswordAddress(
+                    Hilos::$db->identities->findPasswordByUser((int) $rowKey),
+                );
+            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
+                throw new PageInternalErrorException('Unverified password address could not be resolved', $exception);
+            }
+        }
+
         if ($field === HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT) {
             try {
                 $deletion = Hilos::$db->accountDeletions->liveOf((int) $rowKey);
@@ -2185,6 +2220,45 @@ abstract class BrowserContext
         }
 
         return null;
+    }
+
+    /**
+     * Computes a person's presence or session count out of the connections the framework reads.
+     *
+     * The connections are read under the key the framework holds for them
+     * ({@see HilosUserDetailBrowserTable::CONNECTIONS}), the way the people list reads its own
+     * presence source. A project that mounts nothing there, or mounts a collection that does not
+     * report presence, gets null rather than a refusal: the card then draws the person as
+     * offline, as a project without a connections collection always has.
+     *
+     * @param string $field Summary field name (presence or online session count)
+     * @param int|string $rowKey User id row key
+     * @return mixed Summary field value, or null when no presence source is mounted under the key
+     * @throws PageInternalErrorException When the connections cannot read their runtime state
+     */
+    private function computeUserPresenceField(string $field, int|string $rowKey): mixed
+    {
+        $userId = (int) $rowKey;
+        if ($userId <= 0 || (string) $userId !== (string) $rowKey) {
+            return null;
+        }
+
+        try {
+            $source = Hilos::$rt?->{HilosUserDetailBrowserTable::CONNECTIONS};
+        } catch (RtCollectionNotFoundException|OutOfBoundsException) {
+            return null;
+        }
+        if (!$source instanceof HilosPresenceSource) {
+            return null;
+        }
+
+        try {
+            $summary = $source->summaryForUser($userId);
+        } catch (HilosException $exception) {
+            throw new PageInternalErrorException('Presence could not be resolved', $exception);
+        }
+
+        return $field === HilosUserPresenceSummary::presence ? $summary->presence : $summary->onlineSessionCount;
     }
 
     /**
@@ -2950,7 +3024,11 @@ abstract class BrowserContext
      *
      * A field a database source projects is the column it was read from: the source's collection and the
      * Object field named in FIELDS, so its own verdict decides. A field of a runtime source, and a computed
-     * one, has no column to ask, and is shown only when the config names it in NOT_PERSONAL.
+     * one, has no column to ask, and is shown only when the config names it in NOT_PERSONAL. So is a field
+     * of a database item that is not a column - an overlay, a property its object computes (P-443) - which
+     * the declaration opens only when the mounted collection says it has no column of that name: a column
+     * named there stays with its verdict even when the check at the start was not run, and so does a field
+     * of a collection that is not mounted, which nobody can ask.
      *
      * @param array<string, mixed> $rowConfig One row config of the declarative table
      * @param array<string, mixed> $source Its source declaration
@@ -2959,6 +3037,7 @@ abstract class BrowserContext
     private function declarativeWireFields(array $rowConfig, array $source): array
     {
         $wireFields = [];
+        $sourceFields = [];
         $sourceKey = $this->sourceKey($source);
         $fields = $rowConfig[BrowserFieldKey::FIELDS] ?? [];
         if ($this->sourceType($source) === BrowserSourceType::DB && $sourceKey !== null && is_array($fields)) {
@@ -2968,18 +3047,41 @@ abstract class BrowserContext
                 }
                 if (is_string($sourceField) && is_string($targetField)) {
                     $wireFields[$targetField] = WireField::column($sourceKey, $sourceField);
+                    $sourceFields[$targetField] = $sourceField;
                 }
             }
         }
 
         $notPersonal = $rowConfig[BrowserFieldKey::NOT_PERSONAL] ?? [];
         foreach (is_array($notPersonal) ? $notPersonal : [] as $field) {
-            if (is_string($field)) {
-                $wireFields[$field] = WireField::notPersonal();
+            if (!is_string($field)) {
+                continue;
             }
+            if ($sourceKey !== null && isset($sourceFields[$field]) && !$this->hasNoColumnFor($sourceKey, $sourceFields[$field])) {
+                continue;
+            }
+
+            $wireFields[$field] = WireField::notPersonal();
         }
 
         return $wireFields;
+    }
+
+    /**
+     * Whether a field a database source projects is not a column of the mounted collection (P-443).
+     *
+     * Asked of the collection as it is mounted, without a query: the entity's column list answers. A
+     * collection that is not mounted answers false - nothing can say the field is not a column there.
+     *
+     * @param string $sourceKey Collection name the field is read from
+     * @param string $sourceField Object field named in FIELDS
+     * @return bool True when the collection is mounted and has no column for the field
+     */
+    private function hasNoColumnFor(string $sourceKey, string $sourceField): bool
+    {
+        $collection = Hilos::$db?->mountedObjectCollection($sourceKey);
+
+        return $collection !== null && $collection->columnForField($sourceField) === null;
     }
 
     /**

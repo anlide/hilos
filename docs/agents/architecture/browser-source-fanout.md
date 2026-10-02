@@ -113,10 +113,13 @@ later, and the fan-out treats it as nothing to deliver yet.
 
 A row config may name the fields of its row a viewer of the admin view mode is
 shown in the `notPersonal` key (`BrowserFieldKey::NOT_PERSONAL`, a list of wire
-names) — only fields of an RT source or `computed` ones. A field a DB source
-projects is judged by its own column's verdict, never by this key, and the start
-refuses `notPersonal` naming one. The row is hidden for a viewer once it is
-whole, after the VIA joins have read the real values
+names) — fields of an RT source, `computed` ones, and fields of a DB item that
+are not columns (an overlay, a property its object computes; P-443). A field a
+DB source reads out of a column is judged by that column's verdict, never by
+this key: the start refuses `notPersonal` naming one once the collections are
+mounted (`TopologyValidator::validateReferences()`), and at run time the column
+keeps its verdict even where the check did not run. The row is hidden for a
+viewer once it is whole, after the VIA joins have read the real values
 ([admin-view-mode.md](admin-view-mode.md), *Personal Fields On The Wire*).
 
 The separate `table_mutation` transport remains server-authoritative immediate

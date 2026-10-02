@@ -13,8 +13,6 @@ use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
 use Demo\EcommerceShop\Backup\BackupCatalog;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
-use Demo\EcommerceShop\Browser\EcommerceShopBrowserRef;
-use Demo\EcommerceShop\Browser\Table\UserDetailBrowserTable;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
@@ -48,11 +46,9 @@ use Hilos\Cluster\Probe\ClaimerProbeAgent;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Cluster\Probe\FleetProbeAgent;
 use Hilos\Constants\HilosAgentType;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
-use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
@@ -73,6 +69,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -254,7 +251,7 @@ final class Hilos extends HilosFacade
     ];
 
     public const array BROWSER_TABLES = [
-        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+        HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
     ];
 
     public const array PAGE_TABLES = [
@@ -271,11 +268,7 @@ final class Hilos extends HilosFacade
             EcommerceShopTableContext::hilosUsers => [],
         ],
         UserPage::PAGE => [
-            UserDetailBrowserTable::TABLE => [
-                BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => EcommerceShopBrowserRef::HILOS_USER_ID,
-                ],
-            ],
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
         ],
     ];
 

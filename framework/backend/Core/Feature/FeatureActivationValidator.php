@@ -12,7 +12,6 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Files\Image\ImagesAgent;
 use Hilos\Files\Image\ImageVariant;
@@ -61,6 +60,7 @@ final class FeatureActivationValidator
         $groups = $this->constantArray($hilosClass, 'GROUPS');
         $agents = $this->constantArray($hilosClass, 'AGENTS');
         $tables = $this->constantArray($hilosClass, 'TABLES');
+        $browserTables = $this->constantArray($hilosClass, 'BROWSER_TABLES');
         $pageTables = $this->constantArray($hilosClass, 'PAGE_TABLES');
 
         $described = [];
@@ -78,6 +78,7 @@ final class FeatureActivationValidator
                     $groups,
                     $agents,
                     $tables,
+                    $browserTables,
                     $pageTables,
                     $errors,
                 );
@@ -158,6 +159,7 @@ final class FeatureActivationValidator
      * @param array $groups Group registry
      * @param array $agents Agent registry
      * @param array $tables Registered table registry
+     * @param array $browserTables Browser-only table registry
      * @param array $pageTables Page table binding registry
      * @param list<string> $errors Activation error accumulator
      */
@@ -170,6 +172,7 @@ final class FeatureActivationValidator
         array $groups,
         array $agents,
         array $tables,
+        array $browserTables,
         array $pageTables,
         array &$errors,
     ): void {
@@ -208,7 +211,7 @@ final class FeatureActivationValidator
         }
 
         foreach ($requirements->requiredPageTables as $pageClass => $tableClass) {
-            $this->validatePageTableBinding($name, $pageClass, $tableClass, $pages, $tables, $pageTables, $errors);
+            $this->validatePageTableBinding($name, $pageClass, $tableClass, $pages, $tables, $browserTables, $pageTables, $errors);
         }
 
         if ($requirements->requiredCatalogConstant !== null
@@ -294,25 +297,27 @@ final class FeatureActivationValidator
      * Validates that the page a feature owns is bound to the table it reads.
      *
      * A binding on any page extending the required base satisfies the requirement: a project
-     * registers one such page, and which key it registered it under is its own business. A null
-     * target means the page must be bound to something without the framework naming it - the
-     * user detail page is bound to the project's own user table, and no framework class exists
-     * to name there.
+     * registers one such page, and which key it registered it under is its own business. The
+     * bound key is looked up among the registered tables and then among the browser-only ones,
+     * because a framework table is either: the people list is a table the project extends, the
+     * card of one person a browser table it registers as it is (HIL-1254).
      *
      * @param string $name Feature name for error messages
      * @param class-string<AbstractPage> $pageClass Framework page base class the binding belongs to
-     * @param ?class-string<TableDefinition> $tableClass Framework table class the page must be bound to, or null for any binding
+     * @param class-string $tableClass Framework table class or browser table class the page must be bound to
      * @param array $pages Page registry
      * @param array $tables Registered table registry
+     * @param array $browserTables Browser-only table registry
      * @param array $pageTables Page table binding registry
      * @param list<string> $errors Activation error accumulator
      */
     private function validatePageTableBinding(
         string $name,
         string $pageClass,
-        ?string $tableClass,
+        string $tableClass,
         array $pages,
         array $tables,
+        array $browserTables,
         array $pageTables,
         array &$errors,
     ): void {
@@ -326,20 +331,15 @@ final class FeatureActivationValidator
                 continue;
             }
 
-            if ($tableClass === null) {
-                return;
-            }
-
             foreach (array_keys($bindings) as $table) {
-                $boundClass = is_string($table) ? $tables[$table] ?? null : null;
+                $boundClass = is_string($table) ? $tables[$table] ?? $browserTables[$table] ?? null : null;
                 if (is_string($boundClass) && is_a($boundClass, $tableClass, true)) {
                     return;
                 }
             }
         }
 
-        $target = $tableClass ?? 'a table';
-        $errors[] = "{$name} is declared but PAGE_TABLES binds no page extending {$pageClass} to {$target}";
+        $errors[] = "{$name} is declared but PAGE_TABLES binds no page extending {$pageClass} to {$tableClass}";
     }
 
     /**

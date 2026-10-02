@@ -19,11 +19,6 @@ final class OnlineTestingBrowserSource
         BrowserSourceKey::KEY => OnlineTestingDbContext::users,
     ];
 
-    public const array DB_ACCOUNT_DELETIONS = [
-        BrowserSourceKey::TYPE => BrowserSourceType::DB,
-        BrowserSourceKey::KEY => OnlineTestingDbContext::accountDeletions,
-    ];
-
     public const array RT_CONNECTIONS = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => OnlineTestingRtContext::connections,

@@ -8,20 +8,17 @@ use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
-use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
-use Hilos\Database\DatabaseException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
-use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
-use Hilos\Tables\Users\HilosMergeCandidatesTable;
 
 /**
  * Chat demo browser-facing context.
  *
- * Supplies the chat-specific computed browser fields — user presence and
- * self-connection state — over the framework source fan-out. Settings rows are
- * delivered by the framework self-snapshot path (HilosSettingsTable), not here.
+ * Supplies the chat-specific computed browser fields — the self-connection state —
+ * over the framework source fan-out. A person's presence and session count, the
+ * password fields and the scheduled deletion's date are the framework's, and the chat
+ * lists that name them are served by the same framework branches (HIL-1254). Settings
+ * rows are delivered by the framework self-snapshot path (HilosSettingsTable), not here.
  */
 final class ChatBrowserContext extends BrowserContext
 {
@@ -47,31 +44,6 @@ final class ChatBrowserContext extends BrowserContext
         array $browserParams,
         array $sources,
     ): mixed {
-        if ($field === HilosMergeCandidatesTable::FIELD_HAS_PASSWORD) {
-            try {
-                return Hilos::$db->identities->findPasswordByUser((int) $rowKey) !== null;
-            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
-                throw new PageInternalErrorException('Password presence could not be resolved', $exception);
-            }
-        }
-
-        if ($field === HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS) {
-            try {
-                return HilosMergeCandidatesTable::unverifiedPasswordAddress(
-                    Hilos::$db->identities->findPasswordByUser((int) $rowKey),
-                );
-            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
-                throw new PageInternalErrorException('Unverified password address could not be resolved', $exception);
-            }
-        }
-
-        if (
-            $field === HilosUserPresenceSummary::presence
-            || $field === HilosUserPresenceSummary::onlineSessionCount
-        ) {
-            return $this->computeUserPresenceSummaryField($field, $rowKey);
-        }
-
         if (
             $field === SelfConnectionSignalData::messageRateLimitSecondsRemaining
             || $field === SelfConnectionSignalData::outboundModerationState
@@ -125,33 +97,6 @@ final class ChatBrowserContext extends BrowserContext
         } catch (RtCollectionNotFoundException) {
             return ConnectionIdentity::resolved(null);
         }
-    }
-
-    /**
-     * Computes runtime connection summary fields for user-shaped rows.
-     *
-     * @param string $field Summary field name
-     * @param int|string $rowKey User id row key
-     * @return mixed Summary field value, or null when runtime state is unavailable
-     */
-    private function computeUserPresenceSummaryField(string $field, int|string $rowKey): mixed
-    {
-        $userId = (int) $rowKey;
-        if ($userId <= 0 || (string) $userId !== (string) $rowKey) {
-            return null;
-        }
-
-        try {
-            $summary = Hilos::$rt?->connections->summaryForUser($userId);
-        } catch (RtCollectionNotFoundException) {
-            return null;
-        }
-
-        return match ($field) {
-            HilosUserPresenceSummary::presence => $summary?->presence,
-            HilosUserPresenceSummary::onlineSessionCount => $summary?->onlineSessionCount,
-            default => null,
-        };
     }
 
     /**

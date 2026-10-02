@@ -30,7 +30,6 @@ use Demo\Polls\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Polls\Agents\Hilos\UsersLibraryAgent;
 use Demo\Polls\Agents\OAuthAgent;
 use Demo\Polls\Agents\PollsAgent;
-use Demo\Polls\Browser\Table\UserDetailBrowserTable;
 use Demo\Polls\Constants\AgentType;
 use Demo\Polls\Constants\PageConstants;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -89,6 +88,7 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use PHPUnit\Framework\TestCase;
@@ -486,7 +486,7 @@ final class PollsTopologyRegistryTest extends TestCase
         ], Hilos::TABLES);
 
         $this->assertSame(
-            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
             Hilos::BROWSER_TABLES,
         );
 

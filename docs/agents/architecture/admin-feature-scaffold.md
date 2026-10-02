@@ -131,9 +131,13 @@ requires, in dependency order (the table merges sources that must exist first):
 3. **RT presence source.** Generate an RT connections collection that
    `implements Hilos\Runtime\View\Collection\HilosPresenceSource`, returning a
    `HilosUserPresenceSummary` from `summaryForUser(?int)`. Register it on the
-   project `RtContext`, returned from `createRuntime()`. *(Contract Gate: RT item
-   shape.)* Presence comes from this project RT collection — never framework
-   analytics, which is process-local and not user-keyed.
+   project `RtContext` under the key `connections`
+   (`HilosUserDetailBrowserTable::CONNECTIONS`), returned from `createRuntime()`:
+   the card of one person reads presence under that key, and a collection
+   mounted under another one is refused by the start's source check.
+   *(Contract Gate: RT item shape.)* Presence comes from this project RT
+   collection — never framework analytics, which is process-local and not
+   user-keyed.
 4. **Table.** Generate a subclass of `AbstractHilosUsersTable` with two things:
    a `BROWSER` built from the base's `USERS_SOURCE` and `USERS_ROW` plus the row
    of the project's own connections collection (its `userId` as the row key,
@@ -145,12 +149,23 @@ requires, in dependency order (the table merges sources that must exist first):
    the query, sort and search, and the merge dispatch are the base's — do not
    re-implement them. A project that merges accounts registers the candidates
    window as the framework class itself, `Hilos\Tables\Users\HilosMergeCandidatesTable`,
-   the way it registers `HilosSettingsTable`.
+   the way it registers `HilosSettingsTable`. The card of one person is the
+   framework's too: `Hilos\Tables\Users\HilosUserDetailBrowserTable`, a browser
+   table the project registers as it is (step 6) — the project writes neither
+   the card nor the counting behind it (presence, the session count, the
+   password fields and the date a deletion falls due are computed by the
+   framework's `BrowserContext`). A user page bound to anything else is refused
+   by the activation of `HILOS_USERS` (HIL-1254).
 5. **Page.** Generate thin concrete pages — `extends Hilos\Pages\Users\AbstractHilosUsersPage`
    / `AbstractHilosUserPage`; the subscribe and the action lifecycle stay
    framework-owned.
 6. **Topology + frontend.** Register the page(s) in `PAGES`, the table in
-   `TABLES`, the binding in `PAGE_TABLES`. Mount the SDK views: map
+   `TABLES`, the card in `BROWSER_TABLES`
+   (`HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class`),
+   the bindings in `PAGE_TABLES` — the people table on the users page, and on
+   the user page the card's ready binding
+   (`HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING`).
+   Mount the SDK views: map
    `HilosPages.USERS`/`USER` to the `@hilos/{vue,react,angular}` `admin/users/`
    views, passing the thin typed context — the frontend twin of the backend
    collection binding.

@@ -60,7 +60,6 @@ use Demo\Chat\Browser\List\ProfileDevicesBrowserList;
 use Demo\Chat\Browser\List\ProfileSessionsBrowserList;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
-use Demo\Chat\Browser\Table\UserDetailBrowserTable;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Pages\PageCatalog;
 use Demo\Chat\Database\Settings\SettingsCatalog;
@@ -242,6 +241,7 @@ use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -671,7 +671,7 @@ final class Hilos extends HilosFacade
     ];
 
     public const array BROWSER_TABLES = [
-        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+        HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
         GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::class,
         GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::class,
     ];
@@ -848,11 +848,7 @@ final class Hilos extends HilosFacade
             ChatTableContext::hilosUsers => [],
         ],
         HilosUserPage::PAGE => [
-            UserDetailBrowserTable::TABLE => [
-                BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => ChatBrowserRef::HILOS_USER_ID,
-                ],
-            ],
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
             ChatTableContext::hilosMergeCandidates => [],
         ],
     ];

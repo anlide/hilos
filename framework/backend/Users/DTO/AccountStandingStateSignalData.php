@@ -10,6 +10,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Users\AccountStanding;
 
@@ -56,14 +58,18 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
     /**
      * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * Empty: a viewer is sent the frame with every field hidden ({@see AbstractPage::frameForViewer()})
-     * until the leaf that declares the fields of people opens them (HIL-1254).
+     * The person is named by their id, a column the verdict of people shows, and the standing by the one
+     * map the card's page data uses too ({@see AccountStanding::wireFields()}), so a viewer's live frame
+     * hides exactly what the first render hid ({@see AbstractPage::frameForViewer()}).
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
     public static function wireFields(): array
     {
-        return [];
+        return [
+            self::userId => WireField::column(HilosDbContext::users, ObjectUser::id),
+            self::accountStanding => WireField::each(AccountStanding::wireFields()),
+        ];
     }
 
     /**

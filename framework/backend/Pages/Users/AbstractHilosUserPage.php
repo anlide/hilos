@@ -38,6 +38,7 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
+use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
@@ -296,8 +297,8 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * The impersonation settings decide whether the card has its takeover section and for whom its
      * button is switched off (HIL-1170); no frame follows them - a setting changed while the card is
      * open is caught by the server's refusal in the same words. A viewer of the admin view mode is
-     * shown the impersonation settings ({@see self::dataFields()}) and the rest hidden: the people's
-     * fields are opened by HIL-1254.
+     * shown the standing and the impersonation settings ({@see self::dataFields()}) and the grace
+     * period hidden.
      *
      * @param string $acceptKey Subscribing connection (unused)
      * @param PageRouteParams $params Route params naming the person
@@ -320,16 +321,21 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     }
 
     /**
-     * Declares the impersonation settings open to a viewer of the admin view mode (HIL-1170).
+     * Declares what of the card's data a viewer of the admin view mode is shown.
      *
-     * They are settings of the installation, not facts about the person on the card; the card's
-     * other keys stay hidden until the people's fields are opened (HIL-1254).
+     * The standing goes by the one map its live frame uses too ({@see AccountStanding::wireFields()},
+     * HIL-1254). The impersonation settings are settings of the installation, not facts about the
+     * person on the card (HIL-1170). The grace period of a deletion is left out and so hidden: it is
+     * the value of a setting, and the values of settings are hidden from a viewer.
      *
      * @return array<string, WireField> Data key to where it comes from
      */
     protected function dataFields(): array
     {
-        return [self::IMPERSONATION => WireField::notPersonal()];
+        return [
+            self::ACCOUNT_STANDING => WireField::each(AccountStanding::wireFields()),
+            self::IMPERSONATION => WireField::notPersonal(),
+        ];
     }
 
     /**

@@ -13,8 +13,6 @@ use Demo\OnlineTesting\Agents\Hilos\SessionsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\UsersLibraryAgent;
 use Demo\OnlineTesting\Auth\OnlineTestingAuthMethodDirectory;
 use Demo\OnlineTesting\Browser\OnlineTestingBrowserContext;
-use Demo\OnlineTesting\Browser\OnlineTestingBrowserRef;
-use Demo\OnlineTesting\Browser\Table\UserDetailBrowserTable;
 use Demo\OnlineTesting\Core\Agent\Daemon\OnlineTestingAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
@@ -49,12 +47,10 @@ use Demo\OnlineTesting\Tables\OnlineTestingTableContext;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
-use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
@@ -82,6 +78,7 @@ use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -263,7 +260,7 @@ final class Hilos extends HilosFacade
     ];
 
     public const array BROWSER_TABLES = [
-        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+        HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
     ];
 
     public const array PAGE_TABLES = [
@@ -286,11 +283,7 @@ final class Hilos extends HilosFacade
             OnlineTestingTableContext::hilosUsers => [],
         ],
         UserPage::PAGE => [
-            UserDetailBrowserTable::TABLE => [
-                BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => OnlineTestingBrowserRef::HILOS_USER_ID,
-                ],
-            ],
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
         ],
     ];
 

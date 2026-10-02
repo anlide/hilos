@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -21,6 +20,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Identity;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /** Integration coverage for password presence on the Hilos user detail row. */
@@ -101,7 +101,7 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
             $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
             $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
             $payload = $signal->data->data->toArray()[PageResponseSignalData::payload];
-            $rows = $payload[PagePayload::tables][ChatBrowserTable::USER_DETAIL][PagePayload::rows] ?? [];
+            $rows = $payload[PagePayload::tables][HilosUserDetailBrowserTable::TABLE][PagePayload::rows] ?? [];
             $this->assertCount(1, $rows);
             $identity = $rows[0][PagePayload::slots][HilosDbContext::identities] ?? null;
             $this->assertIsArray($identity);

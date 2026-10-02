@@ -50,8 +50,17 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableProgressScope;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Collection\EntityCollection;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Object\Objects;
+use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Database\View\Item\DbItem;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
@@ -80,6 +89,7 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
 
     protected function tearDown(): void
     {
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(DeclarativeDbWireTestDbContext::BADGES));
         Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::$table = null;
@@ -419,6 +429,33 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
         );
     }
 
+    public function testADatabaseFieldThatIsNoColumnIsOpenedAndAColumnKeepsItsVerdict(): void
+    {
+        DeclarativeDbWireTestEntity::reset([['id' => 1, 'holder' => 'Olena']]);
+        Hilos::$sr = new SignalRouter();
+        Hilos::$db = new DeclarativeDbWireTestDbContext();
+        Hilos::$db->configure();
+        SourceInterestRegistry::register(
+            SourceChange::KIND_DB,
+            DeclarativeDbWireTestDbContext::BADGES,
+            SourceConsumer::feature(DeclarativeDbWireTestDbContext::BADGES),
+        );
+
+        new DeclarativeDbWireTestBrowser(viewer: true)->subscribeSnapshot(
+            DeclarativeDbWireTestBrowser::PAGE,
+            self::ACCEPT_KEY,
+            new PageRouteParams([]),
+        );
+
+        // Both holder and rank are named not personal; holder is a column, so its verdict hides it all the same (P-443).
+        $rows = $this->declarativeRows(DeclarativeDbWireTestBrowser::TABLE);
+        $this->assertIsArray($rows);
+        $this->assertSame(
+            [DeclarativeDbWireTestDbContext::BADGES => ['id' => 1, 'holder' => HiddenValue::mark(), 'rank' => 'rank-of-Olena']],
+            $rows[0][PagePayload::slots] ?? null,
+        );
+    }
+
     /**
      * Mounts the two runtime sources of the declarative table: one person and the team it points at.
      */
@@ -433,13 +470,14 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
     }
 
     /**
+     * @param string $table Key of the declarative table to read
      * @return mixed The rows of the declarative table in the page answer the subscription queued
      */
-    private function declarativeRows(): mixed
+    private function declarativeRows(string $table = DeclarativeWireTestBrowser::TABLE): mixed
     {
         $answer = $this->nextSignal(SignalTypeConstants::PAGE_RESPONSE, PageResponseSignalData::class)->toArray();
 
-        return $answer[PageResponseSignalData::payload][PagePayload::tables][DeclarativeWireTestBrowser::TABLE][PagePayload::rows] ?? null;
+        return $answer[PageResponseSignalData::payload][PagePayload::tables][$table][PagePayload::rows] ?? null;
     }
 
     /**
@@ -1114,5 +1152,250 @@ final class DeclarativeWireTestItem extends RtItem
     public function toArray(): array
     {
         return $this->getState()->toArray();
+    }
+}
+
+/**
+ * A declarative table over one database source whose item carries a field that is no column (P-443).
+ */
+final class DeclarativeDbWireTestBrowser extends BrowserContext
+{
+    public const string PAGE = WireTestAdminPage::PAGE;
+
+    public const string TABLE = 'adminViewModeDeclarativeBadges';
+
+    /**
+     * @param bool $viewer What the one question answers
+     */
+    public function __construct(private readonly bool $viewer)
+    {
+        parent::__construct();
+        $this->bindHilosFacade(WireTestHilos::class);
+    }
+
+    /**
+     * @param string $pageClass Class of the page the frame belongs to
+     * @param string $acceptKey Connection the frame goes to
+     * @return bool The answer the test was built with
+     */
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        return $this->viewer;
+    }
+
+    /**
+     * @return ?PiiRegistry The holder is personal, the id is not
+     */
+    protected function viewerPiiRegistry(): ?PiiRegistry
+    {
+        return new PiiRegistry(
+            [0 => [DeclarativeDbWireTestEntity::_table => ['holder' => AnonymizationStrategy::FAKE_NAME]]],
+            [0 => [DeclarativeDbWireTestEntity::_table => ['id']]],
+        );
+    }
+
+    /**
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        return $page === self::PAGE ? BrowserPageConfig::fromArray([BrowserConfigKey::SIGNAL => WireTestBrowser::SIGNAL]) : null;
+    }
+
+    /**
+     * @param string $page Page name from the subscription mirror
+     * @return BrowserPageBindings Page table bindings
+     */
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
+    {
+        return $page === self::PAGE ? BrowserPageBindings::fromArray([self::TABLE => []]) : BrowserPageBindings::empty();
+    }
+
+    /**
+     * @param string $browserKey Browser table key
+     * @return ?BrowserSourceConfig The declarative table
+     */
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
+    {
+        if ($browserKey !== self::TABLE) {
+            return null;
+        }
+
+        return BrowserSourceConfig::fromArray([
+            BrowserTableConfigKey::ROWS => [
+                [
+                    BrowserTableFieldKey::SOURCE => [
+                        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                        BrowserSourceKey::KEY => DeclarativeDbWireTestDbContext::BADGES,
+                    ],
+                    BrowserTableFieldKey::ROW_KEY => DeclarativeDbWireTestObject::id,
+                    BrowserTableFieldKey::FIELDS => [
+                        DeclarativeDbWireTestObject::id,
+                        DeclarativeDbWireTestObject::holder,
+                        DeclarativeDbWireTestObject::rank,
+                    ],
+                    BrowserTableFieldKey::NOT_PERSONAL => [DeclarativeDbWireTestObject::holder, DeclarativeDbWireTestObject::rank],
+                ],
+            ],
+        ]);
+    }
+}
+
+final class DeclarativeDbWireTestDbContext extends HilosDbContext
+{
+    public const string BADGES = 'adminViewModeBadges';
+
+    public function configure(): void
+    {
+        $this->_objectCollections[self::BADGES] = DeclarativeDbWireTestObjects::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::BADGES, DeclarativeDbWireTestCollection::class);
+    }
+}
+
+/**
+ * Entity fixture answering out of an in-test table, so a database source is read without a database.
+ */
+final class DeclarativeDbWireTestEntity extends Entity
+{
+    public const string _table = 'admin_view_mode_badge';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'holder'];
+    public const array _types = ['id' => 'integer', 'holder' => 'string'];
+
+    public ?int $id = null;
+    public ?string $holder = null;
+
+    /** @var list<array<string, mixed>> Rows the fake table holds */
+    private static array $rows = [];
+
+    /**
+     * @param list<array<string, mixed>> $rows Rows the fake table holds from now on
+     */
+    public static function reset(array $rows): void
+    {
+        self::$rows = $rows;
+    }
+
+    /**
+     * @param array<string, mixed>|string $filters Column => value pairs; one pair at most is understood
+     * @param array<int, mixed>|string $filtersParam Unused; the fake table understands no IN clause
+     * @param array<string, string>|string $orderBy Unused; the fake table has one order
+     * @param int $limit Unused; the fake table answers whole
+     * @param int $offset Unused; the fake table answers whole
+     * @return EntityCollection Matching entities keyed by primary key
+     */
+    public static function get(
+        array|string $filters = [],
+        array|string $filtersParam = [],
+        array|string $orderBy = [],
+        int $limit = TableConstants::NO_LIMIT,
+        int $offset = 0,
+    ): EntityCollection {
+        return self::matching(is_array($filters) ? $filters : []);
+    }
+
+    /**
+     * @param mixed $id Primary key value
+     * @return ?static Entity carrying that key, or null when the fake table has no such row
+     */
+    public static function getById(mixed $id): ?static
+    {
+        return self::matching([self::_primary => $id])->first();
+    }
+
+    /**
+     * @param array<string, mixed>|string $filters Column => value pairs; one pair at most is understood
+     * @param array<int, mixed>|string $filtersParam Unused; the fake table understands no IN clause
+     * @return int How many rows match
+     */
+    public static function count(array|string $filters = [], array|string $filtersParam = []): int
+    {
+        return self::matching(is_array($filters) ? $filters : [])->count();
+    }
+
+    /**
+     * @param array<string, mixed> $filters Column => value pairs; one pair at most is understood
+     * @return EntityCollection Matching entities keyed by primary key
+     */
+    private static function matching(array $filters): EntityCollection
+    {
+        $collection = EntityCollection::empty();
+        foreach (self::$rows as $row) {
+            if ($filters !== [] && (string) $row[(string) array_key_first($filters)] !== (string) reset($filters)) {
+                continue;
+            }
+            $entity = new self();
+            $entity->id = $row['id'];
+            $entity->holder = $row['holder'];
+            $entity->flushRelated();
+            $collection->add($entity, (string) $row['id']);
+        }
+
+        return $collection;
+    }
+}
+
+/**
+ * Object fixture with a field the entity has no column for: the rank is worked out of the holder.
+ *
+ * @property-read ?int $id
+ * @property-read ?string $holder
+ * @property-read string $rank
+ */
+final class DeclarativeDbWireTestObject extends Object_
+{
+    public const string ENTITY_CLASS = DeclarativeDbWireTestEntity::class;
+    public const string id = 'id';
+    public const string holder = 'holder';
+    public const string rank = 'rank';
+
+    /**
+     * @param string $property Property name (id, holder, rank)
+     * @return mixed Property value
+     * @throws HilosException When the property is no field of this fixture
+     */
+    public function __get(string $property): mixed
+    {
+        return match ($property) {
+            self::id => $this->entity->id,
+            self::holder => $this->entity->holder,
+            self::rank => 'rank-of-' . $this->entity->holder,
+            default => parent::__get($property),
+        };
+    }
+}
+
+final class DeclarativeDbWireTestObjects extends Objects
+{
+    public const string OBJECT_CLASS = DeclarativeDbWireTestObject::class;
+    public const string COLLECTION_KEY = DeclarativeDbWireTestDbContext::BADGES;
+}
+
+final class DeclarativeDbWireTestCollection extends DbCollection
+{
+    public const string DB_ITEM_CLASS = DeclarativeDbWireTestItem::class;
+    public const string OBJECT_COLLECTION_CLASS = DeclarativeDbWireTestObjects::class;
+}
+
+/**
+ * @extends DbItem<DeclarativeDbWireTestObject>
+ */
+final class DeclarativeDbWireTestItem extends DbItem
+{
+    /**
+     * @param string $name Property name (id, holder, rank)
+     * @return mixed Property value
+     * @throws HilosException Whatever the inherited getter raises
+     */
+    public function __get(string $name): mixed
+    {
+        return match ($name) {
+            DeclarativeDbWireTestObject::id => $this->_object->id,
+            DeclarativeDbWireTestObject::holder => $this->_object->holder,
+            DeclarativeDbWireTestObject::rank => $this->_object->rank,
+            default => parent::__get($name),
+        };
     }
 }

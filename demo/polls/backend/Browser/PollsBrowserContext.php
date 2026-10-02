@@ -7,63 +7,18 @@ namespace Demo\Polls\Browser;
 use Demo\Polls\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
-use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
-use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 
 /**
  * PollsBrowserContext - Browser-facing context ($browser layer) for polls.
  *
- * Supplies the one computed browser field the demo needs: a user row's runtime
- * presence summary (presence + online session count), read from the RT
- * connections presence source over the framework source fan-out. The users table
- * and the single-user detail table both declare these as COMPUTED fields, so
- * without this override a connected user would render as offline / 0 sessions.
- * Settings rows are delivered by the framework self-snapshot path
- * (HilosSettingsTable), not here.
+ * Says who is behind a socket - the admin pages ask it through the page access gate. It
+ * computes no field of its own: a person's presence and session count, the password fields
+ * and the scheduled deletion's date are the framework's, computed for its card of one person
+ * (HIL-1254), and the other admin tables go out through the framework self-snapshot path.
  */
 final class PollsBrowserContext extends BrowserContext
 {
-    /**
-     * Computes the demo's browser fields named by page/table configs.
-     *
-     * @param string $browserKey Browser table key
-     * @param string $field Computed field name from the mirrored browser config
-     * @param int|string $rowKey Logical browser table row key
-     * @param string $acceptKey Subscriber accept key
-     * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $browserParams Resolved table params for this page subscription
-     * @param array<string, mixed> $sources Source fragments already built for the row
-     * @return mixed Computed browser field value, or null when unavailable
-     * @throws PageInternalErrorException When another project computed field cannot be resolved
-     */
-    protected function computeBrowserField(
-        string $browserKey,
-        string $field,
-        int|string $rowKey,
-        string $acceptKey,
-        array $pageParams,
-        array $browserParams,
-        array $sources,
-    ): mixed {
-        if (
-            $field === HilosUserPresenceSummary::presence
-            || $field === HilosUserPresenceSummary::onlineSessionCount
-        ) {
-            return $this->computeUserPresenceSummaryField($field, $rowKey);
-        }
-
-        return parent::computeBrowserField(
-            $browserKey,
-            $field,
-            $rowKey,
-            $acceptKey,
-            $pageParams,
-            $browserParams,
-            $sources,
-        );
-    }
-
     /**
      * Resolves who is behind an accept key from the demo's runtime connection
      * registry, where the handshake records the acceptKey -> user mapping. Lets the
@@ -99,32 +54,5 @@ final class PollsBrowserContext extends BrowserContext
         } catch (RtCollectionNotFoundException) {
             return ConnectionIdentity::resolved(null);
         }
-    }
-
-    /**
-     * Computes a runtime connection presence summary field for a user row.
-     *
-     * @param string $field Summary field name (presence or online session count)
-     * @param int|string $rowKey User id row key
-     * @return mixed Summary field value, or null when runtime state is unavailable
-     */
-    private function computeUserPresenceSummaryField(string $field, int|string $rowKey): mixed
-    {
-        $userId = (int) $rowKey;
-        if ($userId <= 0 || (string) $userId !== (string) $rowKey) {
-            return null;
-        }
-
-        try {
-            $summary = Hilos::$rt?->connections->summaryForUser($userId);
-        } catch (RtCollectionNotFoundException) {
-            return null;
-        }
-
-        return match ($field) {
-            HilosUserPresenceSummary::presence => $summary?->presence,
-            HilosUserPresenceSummary::onlineSessionCount => $summary?->onlineSessionCount,
-            default => null,
-        };
     }
 }

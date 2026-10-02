@@ -19,11 +19,6 @@ final class BinanceBtcTrackerBrowserSource
         BrowserSourceKey::KEY => BinanceBtcTrackerDbContext::users,
     ];
 
-    public const array DB_ACCOUNT_DELETIONS = [
-        BrowserSourceKey::TYPE => BrowserSourceType::DB,
-        BrowserSourceKey::KEY => BinanceBtcTrackerDbContext::accountDeletions,
-    ];
-
     public const array RT_CONNECTIONS = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => BinanceBtcTrackerRtContext::connections,

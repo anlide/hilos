@@ -29,8 +29,6 @@ use Demo\Polls\Auth\PollsAuthMethodDirectory;
 use Demo\Polls\Auth\PollsCodeChannelRegistry;
 use Demo\Polls\Auth\PollsOAuthProviderDirectory;
 use Demo\Polls\Browser\PollsBrowserContext;
-use Demo\Polls\Browser\PollsBrowserRef;
-use Demo\Polls\Browser\Table\UserDetailBrowserTable;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
@@ -77,11 +75,9 @@ use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\AuthCodeAgentDaemon;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
-use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
@@ -118,6 +114,7 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -349,7 +346,7 @@ final class Hilos extends HilosFacade
     ];
 
     public const array BROWSER_TABLES = [
-        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+        HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
     ];
 
     public const array PAGE_TABLES = [
@@ -409,11 +406,7 @@ final class Hilos extends HilosFacade
             PollsTableContext::hilosUsers => [],
         ],
         UserPage::PAGE => [
-            UserDetailBrowserTable::TABLE => [
-                BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => PollsBrowserRef::HILOS_USER_ID,
-                ],
-            ],
+            HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
         ],
     ];
 

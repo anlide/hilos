@@ -11,8 +11,6 @@ use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\SessionsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\UsersLibraryAgent;
-use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserRef;
-use Demo\BinanceBtcTracker\Browser\Table\UserDetailBrowserTable;
 use Demo\BinanceBtcTracker\Constants\AgentType;
 use Demo\BinanceBtcTracker\Constants\PageConstants;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
@@ -56,13 +54,11 @@ use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
-use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -89,6 +85,7 @@ use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -368,20 +365,16 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             [BinanceBtcTrackerTableContext::hilosUsers => []],
             Hilos::PAGE_TABLES[UsersPage::PAGE],
         );
-        // The card reads one person through a browser-only table filtered by the page's user id;
+        // The card is the framework's browser-only table, bound to the page's user id by its own binding;
         // no merge-candidates window is bound, because this demo wires no account merge.
         $this->assertSame(
             [
-                UserDetailBrowserTable::TABLE => [
-                    BrowserParamKey::PARAMS => [
-                        HilosPageRouteParams::HILOS_USER_USER_ID => BinanceBtcTrackerBrowserRef::HILOS_USER_ID,
-                    ],
-                ],
+                HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
             ],
             Hilos::PAGE_TABLES[UserPage::PAGE],
         );
         $this->assertSame(
-            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
             Hilos::BROWSER_TABLES,
         );
     }
@@ -508,7 +501,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         // the connection rows that belong to the project. The sweep frame is not declared, so the
         // library does not send it.
         $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
-        $this->assertSame([UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class], Hilos::BROWSER_TABLES);
+        $this->assertSame([HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class], Hilos::BROWSER_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame(

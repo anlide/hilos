@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Users;
 
+use Hilos\AdminViewMode\WireField;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Item\LegalAcceptance;
+use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Legal\LegalDocumentStanding;
+use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Users\DTO\AccountStandingStateSignalData;
 
 /**
  * The standing of one account: three independent facts and the one of them that is shown (HIL-945).
@@ -67,6 +73,36 @@ final readonly class AccountStanding
             self::deletionEffectiveAt => $this->deletionEffectiveAt,
             self::lapsed => self::documentsToArray($this->lapsed),
             self::window => self::documentsToArray($this->window),
+        ];
+    }
+
+    /**
+     * Declares where each field of the standing comes from, for a viewer of the admin view mode (HIL-1254).
+     *
+     * One map serves the two places an admin card carries the standing: its page data
+     * ({@see AbstractHilosUserPage}) and its live frame ({@see AccountStandingStateSignalData}). The block
+     * is the person's column and its verdict decides. Which fact is shown and the freeze are worked out of
+     * the stored facts, and the documents with their deadlines are the revision catalog and acceptance
+     * records that are not personal ({@see LegalAcceptance}). The date a scheduled erasure falls due is
+     * opened by the owner's word (2026-10-01): it names nobody, and without it the card would tell a
+     * viewer no deletion is scheduled; the columns of the deletion table stay hidden.
+     *
+     * @return array<string, WireField> Standing field to where it comes from
+     */
+    public static function wireFields(): array
+    {
+        $documents = WireField::each([
+            self::document => WireField::notPersonal(),
+            self::deadline => WireField::notPersonal(),
+        ]);
+
+        return [
+            self::shown => WireField::notPersonal(),
+            self::blocked => WireField::column(HilosDbContext::users, ObjectUser::block),
+            self::frozen => WireField::notPersonal(),
+            self::deletionEffectiveAt => WireField::notPersonal(),
+            self::lapsed => $documents,
+            self::window => $documents,
         ];
     }
 

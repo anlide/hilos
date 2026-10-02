@@ -19,11 +19,6 @@ final class TasksBrowserSource
         BrowserSourceKey::KEY => TasksDbContext::users,
     ];
 
-    public const array DB_ACCOUNT_DELETIONS = [
-        BrowserSourceKey::TYPE => BrowserSourceType::DB,
-        BrowserSourceKey::KEY => TasksDbContext::accountDeletions,
-    ];
-
     public const array RT_CONNECTIONS = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => TasksRtContext::connections,

@@ -29,7 +29,6 @@ use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\OAuthAgent;
 use Demo\Tasks\Agents\TasksAgent;
-use Demo\Tasks\Browser\Table\UserDetailBrowserTable;
 use Demo\Tasks\Constants\AgentType;
 use Demo\Tasks\Constants\PageConstants;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -93,6 +92,7 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use PHPUnit\Framework\TestCase;
@@ -501,7 +501,7 @@ final class TasksTopologyRegistryTest extends TestCase
         ], Hilos::TABLES);
 
         $this->assertSame(
-            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
             Hilos::BROWSER_TABLES,
         );
 

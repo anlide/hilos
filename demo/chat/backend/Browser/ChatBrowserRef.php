@@ -55,11 +55,6 @@ final class ChatBrowserRef
         BrowserRefKey::KEY => UserPageSubscribeParams::USER_ID,
     ];
 
-    public const array TABLE_HILOS_USER_ID = [
-        BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
-        BrowserRefKey::KEY => HilosPageRouteParams::HILOS_USER_USER_ID,
-    ];
-
     public const array TABLE_HILOS_GUARDIAN_AGENT_ID = [
         BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
         BrowserRefKey::KEY => HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID,

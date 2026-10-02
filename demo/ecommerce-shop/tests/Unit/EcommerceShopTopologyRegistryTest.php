@@ -10,8 +10,6 @@ use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
 use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
-use Demo\EcommerceShop\Browser\EcommerceShopBrowserRef;
-use Demo\EcommerceShop\Browser\Table\UserDetailBrowserTable;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
@@ -43,13 +41,11 @@ use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
-use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
@@ -65,6 +61,7 @@ use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -229,7 +226,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         // the connection rows that belong to the project. The sweep frame is not declared, so the
         // library does not send it.
         $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
-        $this->assertSame([UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class], Hilos::BROWSER_TABLES);
+        $this->assertSame([HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class], Hilos::BROWSER_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame(
@@ -540,20 +537,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             [EcommerceShopTableContext::hilosUsers => []],
             Hilos::PAGE_TABLES[UsersPage::PAGE],
         );
-        // The card reads one person through a browser-only table filtered by the page's user id;
+        // The card is the framework's browser-only table, bound to the page's user id by its own binding;
         // no merge-candidates window is bound, because this demo wires no account merge.
         $this->assertSame(
             [
-                UserDetailBrowserTable::TABLE => [
-                    BrowserParamKey::PARAMS => [
-                        HilosPageRouteParams::HILOS_USER_USER_ID => EcommerceShopBrowserRef::HILOS_USER_ID,
-                    ],
-                ],
+                HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
             ],
             Hilos::PAGE_TABLES[UserPage::PAGE],
         );
         $this->assertSame(
-            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
             Hilos::BROWSER_TABLES,
         );
     }

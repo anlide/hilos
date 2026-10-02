@@ -121,6 +121,24 @@ final class FeatureActivationValidatorTest extends TestCase
         FeatureActivationUnboundPageHilos::validateFeatureActivation();
     }
 
+    public function testPageBoundToItsBrowserOnlyTablePasses(): void
+    {
+        FeatureActivationCardBoundHilos::validateFeatureActivation();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDeclaredFeatureWithoutItsBrowserTableBindingIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::HILOS_USERS is declared but PAGE_TABLES binds no page extending '
+            . FeatureActivationCardBasePage::class . ' to ' . FeatureActivationCardTable::class,
+        );
+
+        FeatureActivationCardUnboundHilos::validateFeatureActivation();
+    }
+
     public function testDeclaredFeatureWithoutItsCatalogIsReported(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
@@ -359,6 +377,7 @@ final class FeatureActivationTestRegistry extends FeatureRegistry
             new FeatureActivationDependentFeature(),
             new FeatureActivationSessionsLibraryFeature(),
             new FeatureActivationFragmentFeature(),
+            new FeatureActivationCardFeature(),
             new UploadsFeature(),
             new FilesFeature(),
             new ImagesFeature(),
@@ -413,6 +432,30 @@ final class FeatureActivationDependentFeature extends FeatureDefinition
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(requires: [HilosFeature::SETTINGS]);
+    }
+}
+
+/**
+ * Synthetic feature whose page must be bound to a browser-only table, as the card of one person is.
+ */
+final class FeatureActivationCardFeature extends FeatureDefinition
+{
+    /**
+     * @return HilosFeature Case standing in for a feature bound to a browser table
+     */
+    public function feature(): HilosFeature
+    {
+        return HilosFeature::HILOS_USERS;
+    }
+
+    /**
+     * @return FeatureRequirements One binding to a browser table
+     */
+    public function requirements(): FeatureRequirements
+    {
+        return new FeatureRequirements(
+            requiredPageTables: [FeatureActivationCardBasePage::class => FeatureActivationCardTable::class],
+        );
     }
 }
 
@@ -555,6 +598,31 @@ class FeatureActivationBaseTable extends TableDefinition
  */
 final class FeatureActivationProjectTable extends FeatureActivationBaseTable
 {
+}
+
+/**
+ * Framework-side page base class the synthetic card feature binds to a browser table.
+ */
+class FeatureActivationCardBasePage extends AbstractPage
+{
+}
+
+/**
+ * Project page standing in for the user page that draws the card.
+ */
+final class FeatureActivationCardPage extends FeatureActivationCardBasePage
+{
+    public const string PAGE = 'feature_activation_card_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'feature_activation_agent';
+}
+
+/**
+ * Framework-side browser-only table a project registers as it is, in BROWSER_TABLES.
+ */
+final class FeatureActivationCardTable
+{
+    public const string TABLE = 'feature_activation_card';
 }
 
 /**
@@ -727,6 +795,44 @@ final class FeatureActivationMissingTableHilos extends FeatureActivationValidHil
 final class FeatureActivationUnboundPageHilos extends FeatureActivationValidHilos
 {
     public const array PAGE_TABLES = [];
+}
+
+/**
+ * Facade that also declares the card feature and binds its page to the browser-only table.
+ */
+class FeatureActivationCardBoundHilos extends FeatureActivationValidHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::HILOS_USERS];
+
+    public const array PAGES = [
+        FeatureActivationProjectPage::PAGE => FeatureActivationProjectPage::class,
+        FeatureActivationCardPage::PAGE => FeatureActivationCardPage::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        FeatureActivationCardTable::TABLE => FeatureActivationCardTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        FeatureActivationProjectPage::PAGE => [
+            self::FEATURE_TABLE => [],
+        ],
+        FeatureActivationCardPage::PAGE => [
+            FeatureActivationCardTable::TABLE => [],
+        ],
+    ];
+}
+
+/**
+ * Facade that registers the card page and the browser-only table but binds neither to the other.
+ */
+final class FeatureActivationCardUnboundHilos extends FeatureActivationCardBoundHilos
+{
+    public const array PAGE_TABLES = [
+        FeatureActivationProjectPage::PAGE => [
+            self::FEATURE_TABLE => [],
+        ],
+    ];
 }
 
 /**

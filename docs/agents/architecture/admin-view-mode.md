@@ -290,10 +290,16 @@ nobody is asked*).
     any other field.
   - The declarative fields of a source: the row is hidden once it is whole,
     after every VIA join has read the real values. A field a database source
-    projects is judged by its column; a field of an RT source and a computed
-    one is shown only when the row config names it in the `notPersonal` key
-    (`BrowserFieldKey::NOT_PERSONAL`). `notPersonal` naming a field a database
-    source projects is refused at the start.
+    projects out of a column is judged by that column's verdict; a field of an
+    RT source and a computed one is shown only when the row config names it in
+    the `notPersonal` key (`BrowserFieldKey::NOT_PERSONAL`). So is a field of a
+    database item that is not a column — an overlay, a property its object
+    computes (P-443): no verdict covers it, and the declaration opens it as it
+    opens a computed one. `notPersonal` naming a field read out of a column is
+    refused at the start, in its second moment
+    (`TopologyValidator::validateReferences()`), where the collections are
+    mounted and can say which of their fields are columns; and at run time
+    such a field keeps its column's verdict even where the check did not run.
   - The page's own data, declared by `AbstractPage::dataFields()`; the page's
     other sections (entities, lists, tables) are hidden whole.
   - The frames of pages with a subscriber set of their own (the logs pages,
@@ -354,12 +360,28 @@ nobody is asked*).
   session — one rule for setting values; OAuth providers are shown according to
   the entity's verdict (HIL-1255). A log line shows its time, level and
   node, and its text is hidden; there is no marking at write time
-  (not in the code yet — HIL-1257). A person's name is hidden
-  (not in the code yet — HIL-1254). Rows assembled by hand past the marking
-  are classified by the leaves of their sections: the people rows and the
-  merge candidates (not in the code yet — HIL-1254); the verifier circle, the
-  deliveries, the free text of backup refusals and the maintenance texts
-  (HIL-1256).
+  (not in the code yet — HIL-1257). A person's name is hidden (HIL-1254).
+  Rows assembled by hand past the marking are classified by the leaves of
+  their sections: the people rows and the merge candidates (HIL-1254); the
+  verifier circle, the deliveries, the free text of backup refusals and the
+  maintenance texts (HIL-1256).
+- The people (HIL-1254). The list, the card of one person and the merge
+  candidates show a viewer the id, the admin and block flags and the last
+  activity by their column verdicts, the name hidden by its own; presence and
+  the session count, worked out of runtime connections; whether a password is
+  set, worked out of the identity's type; and the account standing whole — the
+  fact shown, the block, the freeze, the documents and their deadlines, the
+  date a scheduled deletion falls due — on the card's page data and on its live
+  frame alike, by one map (`AccountStanding::wireFields()`). Hidden: the
+  addresses, the unconfirmed password address among them; a candidate's
+  sign-in methods whole, because the merge window reads the list as one value
+  and the methods' types without their addresses tell a viewer nothing; the
+  grace period of a deletion, which is the value of a setting. The date a
+  deletion falls due is the one computed field out of a table under `PURGE` a
+  viewer is shown: `hilos_account_deletion` is erased on a restore so that the
+  copy does not go on to erase a masked person, not because the date names
+  anybody, and without it the card would tell a viewer no deletion is
+  scheduled (the owner, 2026-10-01). The table's columns stay hidden.
 
 ## The Browser Side
 

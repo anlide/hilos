@@ -222,8 +222,9 @@ final class TopologyValidator
      * where both layers stand, by the same accumulate-then-throw rule as the first moment.
      *
      * @param class-string<Hilos> $hilosClass Project facade class
-     * @throws InvalidTopologyException When a declaration names a collection no layer mounts, or an agent claims a set of a table
-     *     cut by no column, or of a runtime collection cut by no field
+     * @throws InvalidTopologyException When a declaration names a collection no layer mounts, opens a database column to a
+     *     viewer of the admin view mode, or an agent claims a set of a table cut by no column, or of a runtime collection
+     *     cut by no field
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public function validateReferences(string $hilosClass): void
@@ -231,12 +232,14 @@ final class TopologyValidator
         $errors = [];
         $declarations = [];
         $joins = [];
+        $notPersonal = [];
         foreach ([self::SECTION_BROWSER_TABLES, self::SECTION_BROWSER_LISTS, self::SECTION_BROWSER_DATA] as $registry) {
             $this->collectBrowserSourceReferences(
                 $this->constantArray($hilosClass, $registry, $errors),
                 $registry,
                 $declarations,
                 $joins,
+                $notPersonal,
             );
         }
 
@@ -264,6 +267,7 @@ final class TopologyValidator
         }
 
         $this->validateBrowserJoinColumns($joins, $errors);
+        $this->validateBrowserNotPersonalColumns($notPersonal, $errors);
         $agents = $this->constantArray($hilosClass, 'AGENTS', $errors);
         $this->validateSetClaims($agents, $errors);
         $this->validateRtSetClaims($agents, $errors);
@@ -301,6 +305,39 @@ final class TopologyValidator
             $errors[] = "{$join['registry']}[{$join['browserKey']}]: join column '{$join['column']}'"
                 . " of source '{$join['sourceKey']}' is neither the primary key"
                 . " nor the leftmost column of an index that can answer a lookup by value";
+        }
+    }
+
+    /**
+     * Holds every field a database row declares not personal against the columns of its collection (P-443).
+     *
+     * A database item carries more than its columns - an overlay, a property its object computes - and such
+     * a field has no column verdict to ask, so the declaration may open it, as it opens a computed one. A
+     * column may not be opened that way: whether it is personal is the entity's own verdict, declared where a
+     * restore reads it too, and a second say beside it would be the second marking the admin view mode was
+     * built without. Judged here rather than in {@see self::validate()} because the answer lives on the
+     * mounted collection's entity, and nothing is mounted that early - the same reason the join columns are.
+     *
+     * @param list<array{path: string, sourceKey: string, sourceField: string, field: string}> $notPersonal
+     *     Database fields declared not personal, in declaration order
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateBrowserNotPersonalColumns(array $notPersonal, array &$errors): void
+    {
+        foreach ($notPersonal as $declared) {
+            $collection = Hilos::$db?->mountedObjectCollection($declared['sourceKey']);
+            if ($collection === null) {
+                // An unmounted collection is already reported above, and by its own name.
+                continue;
+            }
+            $column = $collection->columnForField($declared['sourceField']);
+            if ($column === null) {
+                continue;
+            }
+
+            $errors[] = "{$declared['path']} " . BrowserFieldKey::NOT_PERSONAL . " names {$declared['field']},"
+                . " which is the column {$column} of {$declared['sourceKey']};"
+                . " the entity's verdict (_pii / _piiNotPersonal) decides whether it is personal";
         }
     }
 
@@ -446,12 +483,15 @@ final class TopologyValidator
      * @param array<string, string> $declarations Identity-to-path accumulator
      * @param list<array{registry: string, browserKey: string, sourceKey: string, column: string}> $joins
      *     Declared database joins accumulator
+     * @param list<array{path: string, sourceKey: string, sourceField: string, field: string}> $notPersonal
+     *     Database fields declared not personal accumulator
      */
     private function collectBrowserSourceReferences(
         array $browserSources,
         string $registry,
         array &$declarations,
         array &$joins,
+        array &$notPersonal,
     ): void {
         foreach ($browserSources as $key => $sourceClass) {
             if (!is_string($key) || !is_string($sourceClass) || !class_exists($sourceClass)) {
@@ -480,8 +520,10 @@ final class TopologyValidator
                 }
 
                 $source = $row[BrowserFieldKey::SOURCE] ?? null;
-                $this->rememberBrowserSourceReference($source, "{$path} {$rowsKey}[{$index}]", $declarations);
+                $rowPath = "{$path} {$rowsKey}[{$index}]";
+                $this->rememberBrowserSourceReference($source, $rowPath, $declarations);
                 $this->rememberBrowserJoinColumn($source, $row, $registry, $key, $joins);
+                $this->rememberBrowserNotPersonalFields($source, $row, $rowPath, $notPersonal);
             }
         }
     }
@@ -519,6 +561,53 @@ final class TopologyValidator
             'sourceKey' => $sourceKey,
             'column' => $column,
         ];
+    }
+
+    /**
+     * Remembers the database fields one row config declares not personal, for the column rule to hold them to.
+     *
+     * Only a name FIELDS projects is remembered, with the Object field it is read from: a computed name has
+     * no column behind it, and a name the row does not have is refused by the first moment already.
+     *
+     * @param mixed $source Declared source entry
+     * @param array<string, mixed> $rowConfig Browser row source config
+     * @param string $rowPath Path of the row, for the message
+     * @param list<array{path: string, sourceKey: string, sourceField: string, field: string}> $notPersonal
+     *     Database fields declared not personal accumulator
+     */
+    private function rememberBrowserNotPersonalFields(
+        mixed $source,
+        array $rowConfig,
+        string $rowPath,
+        array &$notPersonal,
+    ): void {
+        if (!is_array($source) || ($source[BrowserSourceKey::TYPE] ?? null) !== BrowserSourceType::DB) {
+            return;
+        }
+
+        $sourceKey = $source[BrowserSourceKey::KEY] ?? null;
+        $names = $rowConfig[BrowserFieldKey::NOT_PERSONAL] ?? null;
+        $fields = $rowConfig[BrowserFieldKey::FIELDS] ?? null;
+        if (!is_string($sourceKey) || !is_array($names) || !is_array($fields)) {
+            return;
+        }
+
+        foreach ($fields as $sourceField => $field) {
+            // A FIELDS entry is `source => wire` or a bare name that is both.
+            if (is_int($sourceField)) {
+                $sourceField = $field;
+            }
+            if (!is_string($sourceField) || !is_string($field) || !in_array($field, $names, true)) {
+                continue;
+            }
+
+            $notPersonal[] = [
+                'path' => $rowPath,
+                'sourceKey' => $sourceKey,
+                'sourceField' => $sourceField,
+                'field' => $field,
+            ];
+        }
     }
 
     /**
@@ -1526,11 +1615,12 @@ final class TopologyValidator
      *
      * The declaration opens a field to a viewer, so a wrong one is a leak rather than a blank cell, and it
      * is refused at the start. It may name a field that came from a runtime source or is computed - no
-     * column verdict covers those. It may not name a field a database source projects: whether a column
-     * is personal is its own verdict, declared on its entity where a restore reads it too, and a second
-     * say beside it would be the second marking the mode was built without. Nor may it name a field the
-     * row does not have, which is a declaration that opens nothing today and whatever takes the name
-     * tomorrow.
+     * column verdict covers those - and a field of a database item that is not a column (P-443). A field a
+     * database source projects out of a column is its column's to decide, and that is judged in the second
+     * moment, where the collections are mounted and can say which of their fields are columns
+     * ({@see self::validateBrowserNotPersonalColumns()}). What is judged here is the shape, and that the
+     * name is a field of the row at all: a name the row does not have is a declaration that opens nothing
+     * today and whatever takes the name tomorrow.
      *
      * @param array<string, mixed> $row One row declaration
      * @param string $rowPath Path of the row, for the message
@@ -1550,18 +1640,13 @@ final class TopologyValidator
             return;
         }
 
-        $source = $row[BrowserFieldKey::SOURCE] ?? null;
-        $fromDatabase = is_array($source) && ($source[BrowserSourceKey::TYPE] ?? null) === BrowserSourceType::DB;
         // A FIELDS entry is `source => wire` or a bare name that is both, so its value is the wire name either way.
         $fields = $row[BrowserFieldKey::FIELDS] ?? [];
         $projected = is_array($fields) ? array_values($fields) : [];
         $computed = $row[BrowserFieldKey::COMPUTED] ?? [];
 
         foreach ($names as $field) {
-            if (in_array($field, $projected, true) && $fromDatabase) {
-                $errors[] = "{$rowPath} {$key} names {$field}, which comes from a database column; "
-                    . "the column's verdict decides whether it is personal";
-            } elseif (!in_array($field, $projected, true) && !(is_array($computed) && in_array($field, $computed, true))) {
+            if (!in_array($field, $projected, true) && !(is_array($computed) && in_array($field, $computed, true))) {
                 $errors[] = "{$rowPath} {$key} names {$field}, which is not a field of this row";
             }
         }
