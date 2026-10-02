@@ -7,49 +7,74 @@ namespace Demo\EcommerceShop\Tests\Unit;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
+use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserRef;
+use Demo\EcommerceShop\Browser\Table\UserDetailBrowserTable;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
+use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
+use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
+use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
+use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
+use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
+use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
+use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\HilosException;
+use Hilos\Notification\NotificationAction;
+use Hilos\Notification\NotificationPreferenceAction;
+use Hilos\Push\PushSubscriptionAction;
+use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Guards the project-level ecommerce-shop topology registry.
  *
  * The smallest complete shape: an app agent with its home page, the Hilos index agent with the
- * empty dashboard and the four footer pages, and sign-in activated on the framework libraries.
- * No admin section is registered, and the snapshots below say so, so the first leaf that moves
- * an admin section here turns them red on purpose and rewrites them with its own. The agent
- * registry closes on the framework's fleet, claimer and ballast probes, which only its cluster
- * stand runs (HIL-1216).
+ * dashboard, Maintenance, Backup, Settings, Users and the four footer pages, sign-in on the
+ * framework libraries, and notifications without delivery. The snapshots below say so. The
+ * agent registry closes on the framework's fleet, claimer and ballast probes, which only its
+ * cluster stand runs (HIL-1216).
  */
 final class EcommerceShopTopologyRegistryTest extends TestCase
 {
@@ -71,11 +96,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertTrue((new DataExportAgentDaemon())->requiresMonopolisticProcess());
     }
 
-    public function testPageRegistryIsTheHomeTheDashboardAndTheFooter(): void
+    public function testPageRegistryIsTheHomeTheDashboardTheAdminSectionsAndTheFooter(): void
     {
         $this->assertSame([
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
+            BackupPage::PAGE => BackupPage::class,
+            MaintenancePage::PAGE => MaintenancePage::class,
+            SettingsPage::PAGE => SettingsPage::class,
+            UsersPage::PAGE => UsersPage::class,
+            UserPage::PAGE => UserPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -116,7 +146,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testAgentRegistryIsTheAppTheIndexSignInAndTheClusterProbes(): void
+    public function testAgentRegistryIsTheAppTheIndexSignInTheAdminSectionsAndTheClusterProbes(): void
     {
         $this->assertSame([
             AgentType::ECOMMERCE_SHOP,
@@ -124,8 +154,11 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_USERS_LIBRARY,
+            AgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_MAIL,
             HilosAgentType::HILOS_AUTH_THROTTLE,
+            HilosAgentType::HILOS_BACKUP,
             HilosAgentType::HILOS_PROBE_FLEET,
             HilosAgentType::HILOS_PROBE_CLAIMER,
             HilosAgentType::HILOS_PROBE_BALLAST,
@@ -164,7 +197,18 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
 
     public function testHilosPagesAreOwnedByTheIndexAgent(): void
     {
-        foreach ([DashboardPage::class, AboutPage::class, TermsPage::class, PrivacyPage::class, LicensePage::class] as $page) {
+        foreach ([
+            DashboardPage::class,
+            BackupPage::class,
+            MaintenancePage::class,
+            SettingsPage::class,
+            UsersPage::class,
+            UserPage::class,
+            AboutPage::class,
+            TermsPage::class,
+            PrivacyPage::class,
+            LicensePage::class,
+        ] as $page) {
             $this->assertSame(AgentType::HILOS_INDEX, $page::SUBSCRIPTION_AGENT_TYPE);
         }
         $entry = Hilos::AGENTS[AgentType::HILOS_INDEX];
@@ -176,21 +220,21 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testAppOwnSurfaceStaysTransportOnly(): void
     {
         // The application's OWN surface is transport-only: its main page and worker push no
-        // server-driven data, and the demo registers no group, table or browser table.
+        // server-driven data. The one browser table is the card of the framework's people
+        // (HIL-1225), the one group is the framework's notification group, and the tables and
+        // page actions the admin sections bring are the framework's too; each pins its own above.
         //
         // The one frame the worker is addressed by is not its surface but the seam the sessions
         // moved behind (HIL-710): the library says what a session became, and this agent updates
         // the connection rows that belong to the project. The sweep frame is not declared, so the
         // library does not send it.
-        $this->assertSame([], Hilos::GROUPS);
-        $this->assertSame([], Hilos::TABLES);
-        $this->assertSame([], Hilos::BROWSER_TABLES);
-        $this->assertSame([], Hilos::PAGE_TABLES);
+        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+        $this->assertSame([UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class], Hilos::BROWSER_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame(
-            [HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS],
-            Hilos::getPageActionRoutes(),
+            HilosPageConstants::HILOS_TERMS,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_TERMS_REVISION_TEXT],
         );
         $this->assertSame(
             [HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class],
@@ -240,10 +284,34 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
+                // The notifications library's own frames (HIL-1225 activates the feature here,
+                // with the notification e2e): an emit from any worker, the retry of a delivery,
+                // the hand-over of a person's rows and their erasure. The push frame is mounted
+                // with the library whether or not the push channel is registered.
+                HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+                // Every settings write goes through the library that owns the rows (HIL-1225).
+                HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => HilosAgentType::HILOS_AUTH_THROTTLE,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => HilosAgentType::HILOS_AUTH_THROTTLE,
+                // The backup section's own frames: the page hands every operation to the
+                // monopoly agent, and the carry-over receipts of a restore come back to it
+                // (HIL-1225 activates the feature here, with the backup e2e).
+                HilosSignalConstants::BACKUP_AGENT_CREATE => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_DELETE => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_SET_KEEP => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_RESTORE => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_REOPEN => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => HilosAgentType::HILOS_BACKUP,
             ],
             Hilos::getAgentSignalRoutes(),
         );
@@ -255,8 +323,17 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         // and registers the library pairs, and every command name behind the surface is the
         // framework's. The snapshot is the whole action map on purpose - a command that silently
         // stopped being routed here would otherwise look like a working surface until somebody
-        // submitted the form it belongs to.
-        $this->assertSame([HilosFeature::AUTH, HilosFeature::AUTH_THROTTLE], Hilos::features());
+        // submitted the form it belongs to. The other features are backup, settings and the
+        // people (HIL-1225), whose actions are their pages' and so stay out of this map, and
+        // notifications without delivery, whose actions close the map.
+        $this->assertSame([
+            HilosFeature::AUTH,
+            HilosFeature::AUTH_THROTTLE,
+            HilosFeature::BACKUP,
+            HilosFeature::SETTINGS,
+            HilosFeature::HILOS_USERS,
+            HilosFeature::NOTIFICATIONS,
+        ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
             Hilos::AGENTS[HilosAgentType::HILOS_USERS_LIBRARY],
@@ -354,7 +431,146 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_START => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
+            // The bell writes the rows the notifications library owns (HIL-1225); the push
+            // actions come with the library, as in every demo that switches notifications on.
+            NotificationAction::MARK_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            NotificationAction::MARK_ALL_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            NotificationPreferenceAction::CHANNEL_SET => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::SUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::UNSUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            PushSubscriptionAction::REMOVE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
         ], Hilos::getAgentActionRoutes());
+    }
+
+    public function testBackupAdminFeatureIsActivated(): void
+    {
+        // Backup is a configure-only framework feature with a monopoly agent behind it. It is
+        // activated here because the backup e2e moved onto this demo (HIL-1225): the page
+        // answered by the index agent, the agent pair, and its archive table. The verifier
+        // circle is drawn in Maintenance.
+        $this->assertSame(BackupPage::class, Hilos::PAGES[BackupPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, BackupPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(BackupAgent::class, AgentRegistry::workerClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
+        ));
+        $this->assertSame(BackupAgentDaemon::class, AgentRegistry::daemonClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
+        ));
+        // Placed by policy, not hosted by the leader: the agent owns a directory on one node's
+        // disk, and following leadership would move it away from its archives (HIL-940).
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement(
+            Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
+        ));
+        $this->assertSame(
+            HilosBackupHistoryTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosBackups],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosBackups => []],
+            Hilos::PAGE_TABLES[BackupPage::PAGE],
+        );
+    }
+
+    /** Maintenance has no feature switch: page and table registration activate it (HIL-1225). */
+    public function testMaintenanceSectionIsActivated(): void
+    {
+        $this->assertSame(MaintenancePage::class, Hilos::PAGES[MaintenancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, MaintenancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosVerifierCircleTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosVerifierCircle],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[MaintenancePage::PAGE],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_ADD],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
+        );
+    }
+
+    /** Settings is configure-only; its catalog carries the three example keys and nothing a feature requires. */
+    public function testSettingsAdminFeatureIsActivated(): void
+    {
+        $this->assertSame(SettingsPage::class, Hilos::PAGES[SettingsPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, SettingsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(SettingsLibraryAgent::class, AgentRegistry::workerClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_SETTINGS_LIBRARY],
+        ));
+        $this->assertSame(SettingsLibraryAgentDaemon::class, AgentRegistry::daemonClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_SETTINGS_LIBRARY],
+        ));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement(
+            Hilos::AGENTS[HilosAgentType::HILOS_SETTINGS_LIBRARY],
+        ));
+        $this->assertSame(
+            HilosSettingsTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::settings],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::settings => []],
+            Hilos::PAGE_TABLES[SettingsPage::PAGE],
+        );
+        $catalog = EcommerceShopSettingsCatalog::getCatalog();
+        $this->assertSame([
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING,
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER,
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN,
+        ], array_keys($catalog));
+    }
+
+    /** The people are a bound framework feature: the demo binds its presence source and the card's table (HIL-1225). */
+    public function testHilosUsersAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::HILOS_USERS, Hilos::features());
+        $this->assertSame(UsersPage::class, Hilos::PAGES[UsersPage::PAGE]);
+        $this->assertSame(UserPage::class, Hilos::PAGES[UserPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, UsersPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::HILOS_INDEX, UserPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosUsersTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosUsers],
+        );
+        $this->assertSame(
+            [EcommerceShopTableContext::hilosUsers => []],
+            Hilos::PAGE_TABLES[UsersPage::PAGE],
+        );
+        // The card reads one person through a browser-only table filtered by the page's user id;
+        // no merge-candidates window is bound, because this demo wires no account merge.
+        $this->assertSame(
+            [
+                UserDetailBrowserTable::TABLE => [
+                    BrowserParamKey::PARAMS => [
+                        HilosPageRouteParams::HILOS_USER_USER_ID => EcommerceShopBrowserRef::HILOS_USER_ID,
+                    ],
+                ],
+            ],
+            Hilos::PAGE_TABLES[UserPage::PAGE],
+        );
+        $this->assertSame(
+            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            Hilos::BROWSER_TABLES,
+        );
+    }
+
+    public function testNotificationsAreActivated(): void
+    {
+        // Notifications without delivery are an activation, not a build (HIL-1225): the demo
+        // declares the feature, registers the library and its group, and every row behind the
+        // bell is the framework's. Delivery is not switched on.
+        $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
+        $this->assertNotContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
+        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+
+        $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
+        $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));
+        $this->assertSame(NotificationsLibraryAgentDaemon::class, AgentRegistry::daemonClass($library));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($library));
     }
 
     public function testProjectTopologyPassesStartupValidation(): void

@@ -5,7 +5,7 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 // wire directly; the emit still runs where a product caller's would, in a worker
 // (AbstractHilosIndexAgent), so it writes the durable row and fans the live
 // in-app signal exactly as the product path does.
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'tasks-daemon-test'
+const COMMAND_HOST = process.env.COMMAND_HOST ?? 'ecommerce-shop-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // Past the emit's own work — a durable write and a group fan-out — so a slow box
@@ -39,8 +39,8 @@ export interface NotificationDraft {
  * returned here: this demo activates NOTIFICATIONS without NOTIFICATION_DELIVERY,
  * so no delivery journal is mounted and the agent always reads back an empty
  * list. Handing a caller a field that cannot say anything would invite a channel
- * assertion this stand can never answer; the chat demo, which does deliver, is
- * where that half is exercised.
+ * assertion this stand can never answer; the binance-btc-tracker demo, which does
+ * deliver, is where that half is exercised.
  *
  * @param userId Recipient's durable user id.
  * @param draft The notification to emit.

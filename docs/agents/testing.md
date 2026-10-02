@@ -162,7 +162,7 @@ looks suspiciously cheap, the guards' own log lines are the first place to check
 It is **not** part of the inner loop. The two-window coverage lives in chat's
 `moderator.spec.ts` (Vue; bots / profile also carry two-tab tests, and so do
 binance-btc-tracker's `settings.spec.ts` and `users.spec.ts`, Vue too) and the
-`users.spec.ts` of tasks (React) and online-testing (Angular) — one representative path
+`users.spec.ts` of ecommerce-shop (React) and online-testing (Angular) — one representative path
 per view layer. The **a11y** coverage is the same kind of
 separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
 accessibility tree over the live socket: table accessible names and `aria-sort`,

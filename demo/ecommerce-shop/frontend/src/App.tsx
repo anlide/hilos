@@ -7,6 +7,7 @@
 import {
   HilosAvatar,
   HilosLayout,
+  HilosNotificationBell,
   HilosView,
   hilosAdminViews,
   useSignal,
@@ -19,6 +20,11 @@ import { connection } from './bootstrap/connection.js'
 import { currentUserName } from './bootstrap/session.js'
 import { PAGE_MAIN } from './pages/keys.js'
 import About from './views/About/About.js'
+import HilosBackup from './views/Hilos/Backup/Backup.js'
+import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.js'
+import Settings from './views/Hilos/Settings/Settings.js'
+import HilosUser from './views/Hilos/Users/User.js'
+import HilosUsers from './views/Hilos/Users/Users.js'
 import License from './views/License/License.js'
 import Main from './views/Main/Main.js'
 import MainSkeleton from './views/Main/MainSkeleton.js'
@@ -31,9 +37,28 @@ import Terms from './views/Terms/Terms.js'
 const pages: Record<string, ComponentType> = {
   [PAGE_MAIN]: Main,
   // The Hilos admin section. The framework ships a real default page for every
-  // admin key (hilosAdminViews), the dashboard included, and this demo registers
-  // the dashboard alone: no admin section is switched on here yet.
+  // admin key (hilosAdminViews) — including the dashboard — so the demo maps only
+  // the pages it implements itself; the rest render the framework default, never
+  // recopied per project (page-module-structure.md).
   ...hilosAdminViews(),
+  // The framework settings admin page, activated configure-only: the framework
+  // owns the table and the add/update/delete lifecycle; the project binds only its
+  // scope stores + action lifecycle (views/Hilos/Settings) and its catalog on the backend.
+  [HilosPages.SETTINGS]: Settings,
+  // The framework users/user admin pages: the framework owns the table, the
+  // detail, and the rename round-trip; the project binds its scope stores,
+  // connection, and typed user collection (views/Hilos/Users) and supplies its
+  // user entity + presence sources on the backend.
+  [HilosPages.USERS]: HilosUsers,
+  [HilosPages.USER]: HilosUser,
+  // The framework backup page, activated configure-only: the framework owns the
+  // archive and verifier-circle tables, the create / delete / keep / reopen
+  // round-trips and the monopoly agent; the project binds its context
+  // (views/Hilos/Backup) and, on its backend, the catalog, the page and the table.
+  [HilosPages.BACKUP]: HilosBackup,
+  // Maintenance has no feature switch: the framework owns the circle and both
+  // actions; the project binds its context and registers the page and table.
+  [HilosPages.MAINTENANCE]: HilosMaintenance,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
@@ -76,15 +101,19 @@ export default function App({ authGate }: AppProps) {
       user={
         userName ? (
           // The avatar is not a link: the demo has no profile yet — it arrives
-          // with the shop's "My orders".
-          <span className="small" data-id="nav-profile-name" title={userName}>
-            <HilosAvatar name={userName} mark={avatarMark} />
-            <span className="visually-hidden">{userName}</span>
-          </span>
+          // with the shop's "My orders". The bell sits in front of it.
+          <>
+            <HilosNotificationBell connection={connection} />
+            <span className="small" data-id="nav-profile-name" title={userName}>
+              <HilosAvatar name={userName} mark={avatarMark} />
+              <span className="visually-hidden">{userName}</span>
+            </span>
+          </>
         ) : (
           // A visitor gets one button that opens the surface over the page they are
-          // standing on (mockups/framework/layout, the "guest" tile). The gear a
-          // visitor sees on a node in the admin view mode is the shell's own.
+          // standing on (mockups/framework/layout, the "guest" tile): neither bell
+          // nor gear. The gear a visitor sees on a node in the admin view mode is
+          // the shell's own.
           <button
             type="button"
             className="btn btn-sm btn-primary"

@@ -36,7 +36,9 @@ declare(strict_types=1);
  *            the backup specs did, and again by HIL-1219, after the settings,
  *            people and admin specs did; polls and online-testing e2e re-measured
  *            by HIL-1226 in isolated green test:e2e-full cycles on 2026-10-02
- *            after the operations half moved), read off GREEN runs on nova-de,
+ *            after the operations half moved, and the e2e of tasks and
+ *            ecommerce-shop by HIL-1225 the same day, the same way), read off
+ *            GREEN runs on nova-de,
  *            where a step beside its neighbours takes what it
  *            takes alone (chat-e2e 19m47s alone against 19m21s–21m30s beside two,
  *            28.09). A scheduling HINT only, and a narrow one: of the steps ready
@@ -84,10 +86,10 @@ declare(strict_types=1);
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
     'chat' => ['check' => 11, 'php' => 106, 'e2e' => 849],
-    'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 132],
+    'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 108],
     'polls' => ['check' => 15, 'php' => 17, 'e2e' => 142],
     'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'e2e' => 394],
-    'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 57],
+    'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 83],
     'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],
 ];
 

@@ -31,10 +31,9 @@ use Hilos\Database\SqlParamCollection;
  * Runs on top of the test database raised by composer run test:db-reset; it neither
  * creates nor drops schema, reads information_schema, and rolls back everything it writes.
  *
- * The same test chat, tasks and binance-btc-tracker keep. This demo declares no backup yet,
- * so its node does not ask the startup gate below; every table it creates is the framework's
- * and carries its verdict already, and the case keeps it that way for the day a leaf switches
- * backup on here.
+ * The same test chat, tasks and binance-btc-tracker keep, because the obligation comes with
+ * the feature and not with the demo: this one declares backup too (HIL-1225), and its node
+ * refuses to start on a schema the startup gate below would refuse.
  */
 final class PiiRegistryCoverageTest extends IntegrationTestCase
 {
@@ -43,8 +42,8 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
 
     /**
      * Lower bound on the tables read out of the live schema, so an introspection query
-     * that returned nothing cannot pass as a covered schema. The demo carries 21 tables
-     * today (20 from its migrations plus `migration`, which the migration runner creates),
+     * that returned nothing cannot pass as a covered schema. The demo carries 23 tables
+     * today (22 from its migrations plus `migration`, which the migration runner creates),
      * every one of them the framework's; this is a floor, because adding a table is allowed
      * and adding a row for it is what the coverage gate then demands.
      */

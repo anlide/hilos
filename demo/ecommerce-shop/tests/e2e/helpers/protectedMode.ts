@@ -13,7 +13,7 @@ import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/pr
 // verification window (HIL-911). Inspect is
 // present only because any drive may need one state re-ask after a lost reply;
 // mint waits for the first spec that has something to assert with it.
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'tasks-daemon-test'
+const COMMAND_HOST = process.env.COMMAND_HOST ?? 'ecommerce-shop-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // The MIDDLE of the command channel's three nested windows: how long the side

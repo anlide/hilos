@@ -13,6 +13,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import App from '../App.js'
+import { pageEntityTypes } from '../pages/entityTypes.js'
 import { appName, pageTitles } from '../pages/pageTitles.js'
 import { router } from '../pages/routes.js'
 import { actions, connection } from './connection.js'
@@ -24,8 +25,13 @@ const hilosRouter = bootHilos({
   actions,
   scopes,
   router,
+  pageEntityTypes,
   pageTitles,
   appName,
+  // Register the notification center so the bell in the shell's user slot fills
+  // once a user is known — which, since sign-in was activated here (HIL-623), is
+  // as soon as somebody signs in.
+  notifications: true,
 })
 
 // The auth gate (HIL-165): resume a 401'd page and close the sign-in modal when

@@ -1,0 +1,87 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\EcommerceShop\Browser\Table;
+
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserRef;
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserSource;
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserTable;
+use Demo\EcommerceShop\Runtime\State\Item\Connection;
+use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
+use Hilos\Database\Object\Item\AccountDeletion;
+use Hilos\Database\Object\Item\User;
+use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Tables\Users\HilosUserTableRow;
+
+/**
+ * Browser table config for a single Hilos user detail page.
+ *
+ * Filters the DB users and RT connections to the subscribed user id and projects
+ * the same row shape as the Hilos users table.
+ */
+final class UserDetailBrowserTable
+{
+    public const string TABLE = EcommerceShopBrowserTable::USER_DETAIL;
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::PARAMS => [
+            HilosPageRouteParams::HILOS_USER_USER_ID => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserTableConfigKey::SOURCES => [
+            EcommerceShopBrowserSource::DB_USERS,
+            EcommerceShopBrowserSource::DB_ACCOUNT_DELETIONS,
+            EcommerceShopBrowserSource::RT_CONNECTIONS,
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => EcommerceShopBrowserSource::DB_USERS,
+                BrowserTableFieldKey::ROW_KEY => User::id,
+                BrowserTableFieldKey::WHERE => [
+                    User::id => EcommerceShopBrowserRef::TABLE_HILOS_USER_ID,
+                ],
+                BrowserTableFieldKey::FIELDS => [
+                    User::id => HilosUserTableRow::id,
+                    User::name => HilosUserTableRow::name,
+                    User::lastActivity => HilosUserTableRow::lastActivity,
+                    User::admin => HilosUserTableRow::admin,
+                    User::block => HilosUserTableRow::block,
+                ],
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => EcommerceShopBrowserSource::RT_CONNECTIONS,
+                BrowserTableFieldKey::ROW_KEY => Connection::userId,
+                BrowserTableFieldKey::WHERE => [
+                    Connection::userId => EcommerceShopBrowserRef::TABLE_HILOS_USER_ID,
+                ],
+                BrowserTableFieldKey::FIELDS => [
+                    Connection::userId,
+                ],
+                BrowserTableFieldKey::COMPUTED => [
+                    HilosUserPresenceSummary::presence,
+                    HilosUserPresenceSummary::onlineSessionCount,
+                ],
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => EcommerceShopBrowserSource::DB_ACCOUNT_DELETIONS,
+                BrowserTableFieldKey::ROW_KEY => AccountDeletion::userId,
+                BrowserTableFieldKey::WHERE => [
+                    AccountDeletion::userId => EcommerceShopBrowserRef::TABLE_HILOS_USER_ID,
+                ],
+                BrowserTableFieldKey::FIELDS => [
+                    AccountDeletion::userId,
+                ],
+                BrowserTableFieldKey::COMPUTED => [
+                    HilosUserTableRow::FIELD_DELETION_EFFECTIVE_AT,
+                ],
+            ],
+        ],
+    ];
+}

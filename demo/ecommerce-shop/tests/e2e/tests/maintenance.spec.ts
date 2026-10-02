@@ -8,7 +8,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
-import { signInByPhone, uniqueEmail } from '../helpers/session.js'
+import { signUp, uniqueEmail } from '../helpers/session.js'
 
 // Naming a verifier in Maintenance: the server decides, the row arrives over the
 // live table, and a refusal is said twice - in the dialog and in the corner.
@@ -31,19 +31,22 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   await gotoPage(page, MAINTENANCE_URL)
   await clearMaintenanceCircle(page)
 
-  // Signing in by SMS proves the phone, so the section can name this address.
-  // An address nobody has confirmed is exactly what the section refuses.
+  // The registration code proves the address (HIL-825). This demo signs in by
+  // password only. An address nobody has confirmed is exactly what the section
+  // refuses.
   const memberContext = await browser.newContext()
   const member = await memberContext.newPage()
-  const phone = await signInByPhone(member)
+  const memberEmail = await signUp(member)
 
-  await addToMaintenanceCircle(page, phone)
+  await addToMaintenanceCircle(page, memberEmail)
 
   // The row comes over the live table - there is no optimistic row to wait out - and
   // the ack's own sentence is the toast.
-  await expect(maintenanceCircleRow(page, phone)).toBeVisible()
+  await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await expect(
-    page.getByTestId('hilos-toasts').getByText(`${phone} added to the circle.`),
+    page
+      .getByTestId('hilos-toasts')
+      .getByText(`${memberEmail} added to the circle.`),
   ).toBeVisible()
   await dismissToasts(page)
 
@@ -78,7 +81,7 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   // left standing - under an open dialog the stack takes no clicks - so the second one
   // is told apart by what it says.
   await field.fill('')
-  await field.pressSequentially(phone, { delay: 10 })
+  await field.pressSequentially(memberEmail, { delay: 10 })
   await confirm.scrollIntoViewIfNeeded()
   await expect(confirm).toBeVisible()
   await expect(confirm).toBeEnabled()
@@ -91,7 +94,7 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
       .getByTestId('hilos-toast-error')
       .filter({ hasText: 'This address is already in the circle' }),
   ).toBeVisible()
-  await expect(field).toHaveValue(phone)
+  await expect(field).toHaveValue(memberEmail)
   await expect(confirm).toBeEnabled()
 
   await dialog.getByTestId('modal-close').click()

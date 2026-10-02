@@ -7,40 +7,61 @@ namespace Demo\EcommerceShop;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
+use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
+use Demo\EcommerceShop\Backup\BackupCatalog;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserRef;
+use Demo\EcommerceShop\Browser\Table\UserDetailBrowserTable;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Environment\EcommerceShopEnvCatalog;
 use Demo\EcommerceShop\Fs\EcommerceShopFsContext;
+use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
+use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
+use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
+use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
+use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
+use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
+use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClaimerProbeAgent;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Cluster\Probe\FleetProbeAgent;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseGuarantee;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
@@ -49,13 +70,20 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
  * Hilos - Main app facade for data access.
  *
- * The smallest complete shape of a project: sign-in by password, an empty home, the empty
- * admin dashboard and the four public footer pages. No admin section is activated yet - each
- * arrives with the leaf that moves its e2e onto this demo.
+ * The smallest complete shape of a project: sign-in by password, an empty home, the admin
+ * dashboard and the four public footer pages. Five admin sections are activated so far -
+ * Maintenance, the verifier circle a freeze lets through, Backup, the database archives,
+ * Settings, the three example keys, and Users, the people and a person's card (renaming,
+ * takeover, rights; no account merge) - and the others arrive with the leaves that bring them.
+ *
+ * Notifications are switched on with them: the bell in the header, without delivery.
  *
  * Its cluster stand (docker/docker-compose.cluster.yml) runs the framework's fleet, claimer and
  * ballast probes.
@@ -69,6 +97,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read EnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
  * @property-read SettingsAccessor $setting Settings accessor (narrows parent's SettingsAccessor for IDE)
  * @property-read EcommerceShopRtContext $rt Runtime context (narrows parent's RtContext for IDE)
+ * @property-read EcommerceShopTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read EcommerceShopBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
  */
 final class Hilos extends HilosFacade
@@ -79,9 +108,17 @@ final class Hilos extends HilosFacade
 
     protected const ?string LEGAL_CATALOG = EcommerceShopLegalCatalog::class;
 
+    protected const ?string BACKUP_CATALOG = BackupCatalog::class;
+
+    protected const string SETTINGS_CATALOG = EcommerceShopSettingsCatalog::class;
+
     protected const array FEATURES = [
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
+        HilosFeature::BACKUP,
+        HilosFeature::SETTINGS,
+        HilosFeature::HILOS_USERS,
+        HilosFeature::NOTIFICATIONS,
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -92,10 +129,19 @@ final class Hilos extends HilosFacade
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        BackupPage::PAGE => BackupPage::class,
+        MaintenancePage::PAGE => MaintenancePage::class,
+        SettingsPage::PAGE => SettingsPage::class,
+        UsersPage::PAGE => UsersPage::class,
+        UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
         LicensePage::PAGE => LicensePage::class,
+    ];
+
+    public const array GROUPS = [
+        NotificationsGroup::GROUP => NotificationsGroup::class,
     ];
 
     public const array AGENTS = [
@@ -122,6 +168,16 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => UsersLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
+        NotificationsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => NotificationsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => NotificationsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        SettingsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
         MailDeliveryChannelAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
@@ -132,6 +188,11 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => AuthThrottleAgent::class,
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        BackupAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => BackupAgent::class,
+            AgentRegistryKey::DAEMON => BackupAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         // The probes of this demo's cluster stand - scenarios 3, 4, 9, 12, 14, 16 and 19 read the
         // fleet, 14 stages a second owner of its collection with the claimer, 18 fills the slaves
@@ -185,6 +246,39 @@ final class Hilos extends HilosFacade
         ],
     ];
 
+    public const array TABLES = [
+        EcommerceShopTableContext::hilosBackups => HilosBackupHistoryTable::class,
+        EcommerceShopTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
+        EcommerceShopTableContext::settings => HilosSettingsTable::class,
+        EcommerceShopTableContext::hilosUsers => HilosUsersTable::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        BackupPage::PAGE => [
+            EcommerceShopTableContext::hilosBackups => [],
+        ],
+        MaintenancePage::PAGE => [
+            EcommerceShopTableContext::hilosVerifierCircle => [],
+        ],
+        SettingsPage::PAGE => [
+            EcommerceShopTableContext::settings => [],
+        ],
+        UsersPage::PAGE => [
+            EcommerceShopTableContext::hilosUsers => [],
+        ],
+        UserPage::PAGE => [
+            UserDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => EcommerceShopBrowserRef::HILOS_USER_ID,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Creates the ecommerce-shop database context.
      *
@@ -203,6 +297,16 @@ final class Hilos extends HilosFacade
     protected static function createRuntime(): ?RtContext
     {
         return new EcommerceShopRtContext();
+    }
+
+    /**
+     * Creates the ecommerce-shop table context.
+     *
+     * @return ?EcommerceShopTableContext E-commerce shop table context
+     */
+    protected static function createTable(): ?TableContext
+    {
+        return new EcommerceShopTableContext();
     }
 
     /**

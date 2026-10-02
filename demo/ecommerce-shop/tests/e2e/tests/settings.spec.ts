@@ -11,7 +11,7 @@ import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import { typeInto } from '../helpers/session'
 
-// Hilos settings admin e2e for the tasks demo: activating the framework settings
+// Hilos settings admin e2e for this demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
 // makes /hilos/settings render the framework settings table over the live socket.
 // The table is a declared one, so it stands in the document twice — rows for a wide

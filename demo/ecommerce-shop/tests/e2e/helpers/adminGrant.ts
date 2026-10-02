@@ -3,17 +3,19 @@ import { expect, type Page } from '@playwright/test'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { gotoPage } from './page'
 
-// The daemon command channel — the same socket the CLI admin:create command
-// speaks. The Playwright runner has no PHP,
+// The daemon command channel — the same socket the CLI admin:create /
+// admin:grant / admin:revoke commands speak. The Playwright runner has no PHP,
 // so the e2e drives the commands over the wire directly; this still exercises
 // the real CommandServer parking, the framework's routing, and the demo's own
 // seams behind it.
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'tasks-daemon-test'
+const COMMAND_HOST = process.env.COMMAND_HOST ?? 'ecommerce-shop-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 const REPLY_TIMEOUT_MS = 5_000
 
 /** The framework command names, as CliCommands spells them on the wire. */
 const COMMAND_CREATE = 'admin:create'
+const COMMAND_GRANT = 'admin:grant'
+const COMMAND_REVOKE = 'admin:revoke'
 
 const sendCommand = createCommandChannel({
   host: COMMAND_HOST,
@@ -33,6 +35,17 @@ function isSessionCookie(name: string): boolean {
     name.startsWith(SESSION_COOKIE_PREFIX) &&
     !name.endsWith(ROTATE_COOKIE_SUFFIX)
   )
+}
+
+/**
+ * Sets a user's admin flag over the daemon command channel, resolving once the
+ * daemon replies ok (its DB write and browser fan-out have completed by then).
+ *
+ * @param userId Target user id.
+ * @param admin Whether to grant (true) or revoke (false) admin.
+ */
+export async function setAdmin(userId: number, admin: boolean): Promise<void> {
+  await sendCommand(admin ? COMMAND_GRANT : COMMAND_REVOKE, { userId, admin })
 }
 
 /**

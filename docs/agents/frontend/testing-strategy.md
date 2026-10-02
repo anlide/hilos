@@ -139,7 +139,7 @@ the demo it leaves.
 | Logs | binance-btc-tracker: logs, logs-rotation | binance-btc-tracker | HIL-1222 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
-| The operations half of tasks | tasks: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop (not in the code yet — HIL-1225) | HIL-1225 |
+| The operations half of tasks | ecommerce-shop: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop | HIL-1225 |
 | The operations half of polls | online-testing: users, settings, notifications, protected-mode, maintenance, logs | online-testing | HIL-1226 |
 
 `admin-gating` and `account-lifecycle` are the screens of an administrator
