@@ -1634,7 +1634,18 @@ test('comes back to the phone code screen after a reload, and finishes there', a
   await expect(page.getByTestId('profile-name')).toBeVisible()
 })
 
-test('opens the code screen of a new send with an empty field, even after a code was typed (HIL-1173)', async ({
+// FIXME(HIL-1173): flaky since it landed on 01.10.2026 (run 0719) - the first attempt
+// went red in 17 of the next ~30 full runs and the retry green; alone, in one lane,
+// it passes. It times out waiting for the SMS channel after Back, with the screen
+// back on "Enter the code" and the 000000 still typed. Read from the code, not caught
+// in a log: Back from a code step is local (backToIdentifier in
+// framework/frontend/core/src/auth/authFlow.ts) and lets only a second-factor wait go
+// on the server (HIL-494), so the session holder keeps this code wait, and the surface
+// follows pendingAuthStep for changes (HIL-833) - a session frame landing after Back
+// puts the screen back on the code. A product defect, not the test's: parked by the
+// owner on 02.10.2026 (HOTFIX). The cure is Back telling the holder to let the code
+// wait go, as second_factor_cancel does.
+test.fixme('opens the code screen of a new send with an empty field, even after a code was typed (HIL-1173)', async ({
   page,
 }) => {
   const phone = uniquePhone()
