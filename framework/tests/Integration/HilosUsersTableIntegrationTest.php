@@ -209,6 +209,47 @@ final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCa
     }
 
     /**
+     * @throws HilosException On database or runtime error
+     */
+    public function testSigningOutOnAnOpenConnectionRefreshesTheLeaversRowAsOffline(): void
+    {
+        $ann = self::seedPerson('Ann');
+        $this->connections()->actions->register(self::FIRST_TAB, null);
+
+        $mutation = $this->table()->buildMutationForSourceEvent(SourceChange::rtUpdated(
+            UsersTableTestRtContext::connections,
+            self::FIRST_TAB,
+            [StateHilosConnection::userId => null],
+            previous: [StateHilosConnection::userId => $ann],
+        ));
+
+        $row = self::userRow($mutation, TableMutationType::Update, $ann);
+        $this->assertSame(0, $row->onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_OFFLINE, $row->presence);
+    }
+
+    /**
+     * @throws HilosException On database or runtime error
+     */
+    public function testSigningOutOnOneOfTwoTabsKeepsTheLeaverOnline(): void
+    {
+        $ann = self::seedPerson('Ann');
+        $this->connections()->actions->register(self::FIRST_TAB, null);
+        $this->connections()->actions->register(self::SECOND_TAB, $ann);
+
+        $mutation = $this->table()->buildMutationForSourceEvent(SourceChange::rtUpdated(
+            UsersTableTestRtContext::connections,
+            self::FIRST_TAB,
+            [StateHilosConnection::userId => null],
+            previous: [StateHilosConnection::userId => $ann],
+        ));
+
+        $row = self::userRow($mutation, TableMutationType::Update, $ann);
+        $this->assertSame(1, $row->onlineSessionCount);
+        $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $row->presence);
+    }
+
+    /**
      * A narrow diff carries no person, and the live connection row answers instead.
      *
      * @throws HilosException On database or runtime error

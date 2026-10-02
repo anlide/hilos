@@ -57,10 +57,10 @@ use Hilos\Runtime\State\Item\RtState;
  * - a person named by two addresses has only one of the two rows re-drawn live, because one
  *   source change gives a table exactly one row mutation ({@see TableContext::buildMutationSignalsForSourceEvent()});
  *   the other row catches up the next time it is drawn;
- * - signing out without closing the tab clears the binding in place, and the change carries only
- *   the new, empty binding ({@see RtState::sync()}), so it cannot name who left - that person's
- *   mark stays on until the tab closes or the page is opened again. The users table's presence
- *   has the same gap.
+ * - a tab passing directly from one person to another — an administrator starting or stopping
+ *   impersonation — re-draws only the new person's row, for the same reason: one change, one
+ *   row; the previous person's row catches up on the next render. The users table's presence
+ *   shares that limit.
  */
 final class HilosVerifierCircleTable extends TableDefinition implements SelfSnapshotTable
 {
@@ -285,27 +285,28 @@ final class HilosVerifierCircleTable extends TableDefinition implements SelfSnap
      * Re-draws the row of the named person whose live connection changed.
      *
      * The person is read off the change: a removal carries the row the connection held, a creation
-     * the whole new row, and an update the fields that moved. An update that leaves the binding
-     * alone cannot change whether anybody holds a connection, so it re-draws nothing - a project
-     * connection moves its own fields often (a file upload counts every chunk), and each of those
-     * would otherwise cost the identity and circle lookups and a frame to every open window, for
-     * a mark that cannot have changed. A connection change never adds or removes a row: the mark
-     * is recomputed by {@see self::rowFromMember()} over the connections as they are after the
-     * change, so closing one of two tabs keeps the person signed in.
+     * the whole new row, and an update the fields that moved — and an update that clears the binding
+     * in place names, among its previous values ({@see RtState::sync()}), the person who left. An
+     * update that leaves the binding alone cannot change whether anybody holds a connection, so it
+     * re-draws nothing - a project connection moves its own fields often (a file upload counts every
+     * chunk), and each of those would otherwise cost the identity and circle lookups and a frame to
+     * every open window, for a mark that cannot have changed. A connection change never adds or
+     * removes a row: the mark is recomputed by {@see self::rowFromMember()} over the connections as
+     * they are after the change, so closing one of two tabs keeps the person signed in.
      *
      * The person's addresses are walked in the order their identities were stored, and the first
      * one the circle names is the row re-drawn: one change yields one row mutation.
      *
      * @param SourceChange $change Change of the live connections collection
      * @return ?TableRowMutationDTO Update of the person's circle row, or null when the change binds
-     *     nobody or its person is not named in the circle
+     *     or unbinds nobody, or its person is not named in the circle
      * @throws DatabaseException When the circle or identity lookup fails
      * @throws LogicException When a collection's class constants are not configured
      * @throws InvalidArgumentException When a loaded object type does not match its collection
      */
     private function mutationForConnection(SourceChange $change): ?TableRowMutationDTO
     {
-        $userId = $change->row[HilosConnection::userId] ?? null;
+        $userId = $change->row[HilosConnection::userId] ?? $change->previous[HilosConnection::userId] ?? null;
         if (!is_int($userId) || $userId <= 0) {
             return null;
         }

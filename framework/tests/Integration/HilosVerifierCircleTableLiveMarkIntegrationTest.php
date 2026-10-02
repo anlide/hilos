@@ -209,6 +209,45 @@ final class HilosVerifierCircleTableLiveMarkIntegrationTest extends HilosSession
     /**
      * @throws HilosException When a step against the database fails
      */
+    public function testSigningOutOnAnOpenConnectionMarksTheMemberNotSignedIn(): void
+    {
+        $memberId = self::seedCircle(self::EMAIL_TYPE, self::MEMBER_EMAIL);
+        self::seedIdentity(self::MEMBER_USER_ID, self::EMAIL_TYPE, self::MEMBER_EMAIL);
+        $this->connect(self::FIRST_TAB, null, self::TOKEN);
+
+        $mutation = $this->table()->buildMutationForSourceEvent(SourceChange::rtUpdated(
+            CircleLiveMarkTestRtContext::connections,
+            self::FIRST_TAB,
+            [HilosConnection::userId => null],
+            previous: [HilosConnection::userId => self::MEMBER_USER_ID],
+        ));
+
+        $this->assertMarkedRow($mutation, $memberId, false);
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testSigningOutOnOneOfTwoTabsKeepsTheMemberSignedIn(): void
+    {
+        $memberId = self::seedCircle(self::EMAIL_TYPE, self::MEMBER_EMAIL);
+        self::seedIdentity(self::MEMBER_USER_ID, self::EMAIL_TYPE, self::MEMBER_EMAIL);
+        $this->connect(self::FIRST_TAB, null, self::TOKEN);
+        $this->connect(self::SECOND_TAB, self::MEMBER_USER_ID, self::TOKEN);
+
+        $mutation = $this->table()->buildMutationForSourceEvent(SourceChange::rtUpdated(
+            CircleLiveMarkTestRtContext::connections,
+            self::FIRST_TAB,
+            [HilosConnection::userId => null],
+            previous: [HilosConnection::userId => self::MEMBER_USER_ID],
+        ));
+
+        $this->assertMarkedRow($mutation, $memberId, true);
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
     public function testAChangeOfAnotherCollectionRedrawsNothing(): void
     {
         self::seedCircle(self::EMAIL_TYPE, self::MEMBER_EMAIL);

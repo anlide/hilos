@@ -491,8 +491,10 @@ see, before an operation, who would be let in; what decides is still the
 photograph above. Two limits come from how live tables work: a person named by
 two addresses has only one of the two rows re-drawn live (one source change
 gives a table one row mutation — the other catches up on the next draw), and
-signing out without closing the tab leaves the mark on until the tab closes,
-because the change carries only the new, empty binding and cannot name who left.
+a tab passing directly from one person to another — an administrator starting
+or stopping impersonation — re-draws only the new person's row, for the same
+reason. Signing out on an open tab names who left through the binding it
+replaced, and that person's mark goes off (HIL-1141).
 The section refuses a second address of a person already standing in the
 circle (HIL-1120), so two new rows of one person can now come from two admin
 tabs naming one person by two addresses in the same second, both past the

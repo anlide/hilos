@@ -244,9 +244,11 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     /**
      * Resolves the user id affected by a presence (connection) source change.
      *
-     * On create the row carries the user id; an update may carry a narrow diff without it, so
-     * the live runtime row answers. A project whose presence is a collection of another kind
-     * overrides this together with {@see self::presenceSource()}.
+     * On create the row carries the user id; an update that clears the binding in place — a
+     * sign-out on a tab that stays open — carries the id it replaced among its previous values
+     * (HIL-288); an update that does not touch the binding carries neither, so the live
+     * runtime row answers. A project whose presence is a collection of another kind overrides
+     * this together with {@see self::presenceSource()}.
      *
      * @param SourceChange $change Presence source change
      * @return int Affected user id, or 0 when it cannot be resolved
@@ -258,6 +260,11 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     protected function resolveUserIdForPresence(SourceChange $change): int
     {
         $userId = (int) ($change->row[StateHilosConnection::userId] ?? 0);
+        if ($userId > 0) {
+            return $userId;
+        }
+
+        $userId = (int) ($change->previous[StateHilosConnection::userId] ?? 0);
         if ($userId > 0) {
             return $userId;
         }
