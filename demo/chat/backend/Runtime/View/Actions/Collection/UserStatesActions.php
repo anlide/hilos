@@ -19,8 +19,8 @@ use LogicException;
 /**
  * Write API for per-user chat runtime state.
  *
- * Binary upload sessions live on connections; uploaded files waiting for send
- * live in attachment drafts.
+ * Moderation of a submitted message lives on its connection; the files it carries
+ * are uploads of the framework uploads agent (HIL-144).
  *
  * @extends RtActions<ViewChatUserState, UserStates, StateUserStates>
  * @property-read StateUserStates $stateCollection

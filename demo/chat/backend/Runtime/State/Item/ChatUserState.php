@@ -12,7 +12,7 @@ use Hilos\Runtime\State\Item\RtState;
  * Per-user chat runtime row: shared outbound message rate-limit state.
  *
  * State id is `(string) userId`. Created lazily at chat WebSocket handshake via
- * `UserStatesActions::ensure()`. Connection-local moderation and binary upload sessions live on connections.
+ * `UserStatesActions::ensure()`. Connection-local moderation lives on connections; uploads are the framework uploads agent's.
  */
 final class ChatUserState extends RtState
 {

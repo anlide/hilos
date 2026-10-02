@@ -30,6 +30,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
 use Hilos\LLM\Routing\LlmProfile;
+use Hilos\Runtime\State\Item\HilosUpload;
 
 /**
  * Regular agent that discovers runtime user moderation requests and returns decisions.
@@ -44,12 +45,12 @@ final class ModeratorAgent extends AbstractAgent
     public const string AGENT_TYPE = AgentType::MODERATOR;
 
     /**
-     * Connections carry the moderation requests this agent answers, and the drafts hang off the
-     * connection being moderated; it owns neither.
+     * Connections carry the moderation requests this agent answers, and the uploads a moderated
+     * message names are the framework uploads agent's rows (HIL-144); it owns neither.
      *
      * @var list<string>
      */
-    public const array READS_RT = [ChatRtContext::connections, ChatRtContext::attachmentDrafts];
+    public const array READS_RT = [ChatRtContext::connections, HilosUpload::RT_COLLECTION];
 
     private const string REASON_SERVICE_UNAVAILABLE = 'service_unavailable';
     private const string REASON_UNKNOWN = 'unknown';
@@ -327,12 +328,17 @@ final class ModeratorAgent extends AbstractAgent
             $userContentParts[] = "Message:\n"
                 . $this->currentModerationValue;
         }
-        foreach (Hilos::$rt->connections[$acceptKey]->attachmentDrafts as $draft) {
+        // An upload gone since the message was sent is left out here; its publication refuses next.
+        foreach (Hilos::$rt->connections[$acceptKey]->outboundModerationAttachments as $clientUploadId) {
+            $upload = Hilos::$rt->hilosUploads->find($acceptKey, $clientUploadId);
+            if ($upload === null) {
+                continue;
+            }
             $userContentParts[] = sprintf(
                 'Attachment: name=%s, mime=%s, size=%d bytes.',
-                $draft->originalFilename,
-                $draft->mimeType,
-                $draft->size,
+                $upload->filename,
+                $upload->detectedMimeType ?? $upload->mimeType,
+                $upload->declaredSize,
             );
         }
 

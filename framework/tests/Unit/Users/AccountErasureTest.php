@@ -12,13 +12,13 @@ final class AccountErasureTest extends TestCase
 {
     public function testCombinesSharedAndDistinctFamiliesAndKeepsFileOrder(): void
     {
-        $first = new AccountErasure(['messages' => 2, 'events' => 1], ['first']);
-        $second = new AccountErasure(['messages' => 3, 'attachments' => 4], ['second', 'third']);
+        $first = new AccountErasure(['messages' => 2, 'events' => 1], [11]);
+        $second = new AccountErasure(['messages' => 3, 'attachments' => 4], [12, 13]);
 
         $combined = $first->plus($second);
 
         self::assertSame(['messages' => 5, 'events' => 1, 'attachments' => 4], $combined->rowsErased);
-        self::assertSame(['first', 'second', 'third'], $combined->publishedFiles);
+        self::assertSame([11, 12, 13], $combined->fileIds);
     }
 
     public function testCombiningTwoEmptyAnswersIsEmpty(): void
@@ -26,6 +26,6 @@ final class AccountErasureTest extends TestCase
         $combined = (new AccountErasure([], []))->plus(new AccountErasure([], []));
 
         self::assertSame([], $combined->rowsErased);
-        self::assertSame([], $combined->publishedFiles);
+        self::assertSame([], $combined->fileIds);
     }
 }

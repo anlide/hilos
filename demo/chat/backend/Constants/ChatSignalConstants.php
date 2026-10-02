@@ -19,15 +19,6 @@ final class ChatSignalConstants
     /** @var string Message signal name */
     public const string MESSAGE = 'message';
 
-    /** @var string File signal name */
-    public const string FILE = 'file';
-
-    /** @var string Client → server: start binary file upload (metadata only) */
-    public const string FILE_UPLOAD_INIT = 'file_upload_init';
-
-    /** @var string Client → server: delete one completed attachment draft */
-    public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
-
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 
@@ -61,6 +52,12 @@ final class ChatSignalConstants
     // ── Agent-to-agent signals ───────────────────────────────────────────
     /** @var string ModeratorAgent → ChatAgent: message moderation result */
     public const string MODERATION_RESULT = 'moderation_result';
+
+    /**
+     * @var string Files library → ChatAgent: the attachments of an approved message are published
+     *     into the registry, or why not - the answer to Hilos::$files->publishUploads() (HIL-144)
+     */
+    public const string ATTACHMENTS_PUBLISHED = 'chat_attachments_published';
 
     /** @var string ModeratorAgent → ChatAgent: user-initiated rename moderation result */
     public const string RENAME_MODERATION_RESULT = 'rename_moderation_result';

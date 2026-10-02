@@ -6,9 +6,11 @@ namespace Demo\Chat\Agents\Hilos;
 
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
+use Hilos\Core\Exception\LogicException;
 use Hilos\DataExport\AbstractDataExportAgent;
 use Hilos\DataExport\DataExportTime;
 use Hilos\DataExport\DataExportWriter;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
 
 /** Exports only the project's records belonging to the person. */
@@ -21,12 +23,14 @@ final class DataExportAgent extends AbstractDataExportAgent
         ChatDbContext::eventAttachments,
         ChatDbContext::events,
         ChatDbContext::eventUserRegistrations,
+        HilosDbContext::files,
     ];
 
     /**
      * @param int $userId Person whose profile and content are exported
      * @param DataExportWriter $writer Archive serialization boundary
      * @throws HilosException When a record or attachment cannot be exported
+     * @throws LogicException When an attachment links no registry row, which its foreign key forbids
      */
     protected function applyAccountExport(int $userId, DataExportWriter $writer): void
     {
@@ -34,9 +38,11 @@ final class DataExportAgent extends AbstractDataExportAgent
         foreach (Hilos::$db->eventMessages->byAuthor($userId) as $message) {
             $attachments = [];
             foreach ($message->attachments as $attachment) {
+                // The name and the bytes are the registry's; the foreign key keeps the row while the attachment lives.
+                $file = $attachment->file ?? throw new LogicException("Attachment {$attachment->id} links no registry row");
                 $attachments[] = [
-                    'filename' => $attachment->filename,
-                    'file' => $writer->file($attachment->storedName, $attachment->file->getPath()),
+                    'filename' => $file->filename,
+                    'file' => $writer->file($file->storedName, Hilos::$fs->files[$file->storedName]->getPath()),
                 ];
             }
             $messages[] = [

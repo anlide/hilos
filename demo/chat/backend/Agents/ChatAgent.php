@@ -71,7 +71,8 @@ final class ChatAgent extends AbstractAgent
     ];
 
     /**
-     * Who is on the wire, what each of them is doing, and what they have half-uploaded.
+     * Who is on the wire and what each of them is doing; what they upload is the framework
+     * uploads agent's (HIL-144).
      *
      * The connections stay this agent's, because who is on the wire is this node's truth and the
      * row carries chat's own fields.
@@ -81,7 +82,6 @@ final class ChatAgent extends AbstractAgent
     public const array OWNS_RT = [
         ChatRtContext::connections => TruthSourceOperation::BY_KIND,
         ChatRtContext::userStates => TruthSourceOperation::BY_KIND,
-        ChatRtContext::attachmentDrafts => TruthSourceOperation::BY_KIND,
     ];
 
     public const string AGENT_TYPE = AgentType::CHAT;
@@ -274,7 +274,7 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Delete connection-owned attachment drafts and unregister the WebSocket connection.
+     * Unregister the WebSocket connection; its uploads are removed by the uploads agent.
      *
      * The summary is emitted after every close so online session counters update
      * when a user still has other active tabs.
@@ -286,7 +286,6 @@ final class ChatAgent extends AbstractAgent
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
-        Hilos::$rt->selfConnection?->attachmentDrafts->actions->deleteAllWithFiles();
         Hilos::$rt->selfConnection?->actions->unregister();
     }
 
@@ -304,12 +303,15 @@ final class ChatAgent extends AbstractAgent
     public function onStop(): void
     {
         Hilos::$db->events->actions->addChatStopped();
-        Hilos::$rt->attachmentDrafts->actions->clearWithFiles();
         Hilos::$rt->userStates->actions->clear();
     }
 
     /**
-     * Handles chat-owned cron cleanup for persisted history and transient attachment state.
+     * Handles chat-owned cron cleanup of the persisted history and the files its messages carried.
+     *
+     * The files are collected before their events go and handed to the files library after: it
+     * removes each one at once, rather than leaving it to hold its place in the storage limit
+     * until the janitor's day runs out (HIL-144).
      *
      * The expired-registration-hold sweep used to be here too. It went with the sessions
      * (HIL-710): what it frees is a hold on a session row, and it is scheduled by
@@ -320,20 +322,16 @@ final class ChatAgent extends AbstractAgent
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Task name
      * @throws AgentUnknownSignalException When cron name is not supported
-     * @throws HilosException On history, runtime, or filesystem cleanup failure
+     * @throws HilosException On history cleanup failure, or when the removal of its files cannot be asked
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
         switch ($name) {
             case ChatCronConstants::CLEANUP_HISTORY:
+                $fileIds = Hilos::$db->eventAttachments->allFileIds();
                 Hilos::$db->events->actions->deleteAll();
                 Hilos::$db->events->actions->addChatCleared();
-                $this->deleteAllAttachmentFilesFromDisk();
-
-                return;
-
-            case ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS:
-                Hilos::$rt->attachmentDrafts->actions->deleteExpired();
+                (Hilos::$files ?? throw new LogicException('The files door is not created'))->remove($fileIds);
 
                 return;
 
@@ -367,6 +365,7 @@ final class ChatAgent extends AbstractAgent
                 $this->applySessionState($data->data);
                 return;
             case ChatSignalConstants::MODERATION_RESULT:
+            case ChatSignalConstants::ATTACHMENTS_PUBLISHED:
             case ChatSignalConstants::USER_ADMIN_RENAME_DONE:
                 // Both belong to a page this agent merely serves: the frame is routed here
                 // because that is where the page lives, and the page router hands it on. Named
@@ -395,18 +394,5 @@ final class ChatAgent extends AbstractAgent
     private function handleBotMessage(BotMessageSignalData $message): void
     {
         Hilos::$db->events->actions->addMessage($message->message, botId: $message->botId);
-    }
-
-    /**
-     * Deletes all attachment files on disk and resets file-related runtime fields.
-     *
-     * @throws HilosException On runtime or filesystem cleanup failure
-     */
-    private function deleteAllAttachmentFilesFromDisk(): void
-    {
-        Hilos::$fs->published->deleteAll();
-        Hilos::$fs->quarantine->deleteAll();
-        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
-        Hilos::$rt->connections->actions->clearAllFileRuntimeOnAllConnections();
     }
 }

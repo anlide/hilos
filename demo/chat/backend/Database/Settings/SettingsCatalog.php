@@ -128,10 +128,6 @@ final class SettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_FILE_BYTES,
             ],
-            ChatSettingsConstants::CHAT_ATTACHMENT_MAX_TOTAL_BYTES => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_TOTAL_BYTES,
-            ],
         ],
             ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()),
             DeliveryLogSettingsCatalog::getCatalog(),
@@ -148,6 +144,11 @@ final class SettingsCatalog implements CatalogProviderInterface
             [PasskeyAddressPolicy::SETTING_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
+            ]],
+            // Chat keeps its 100 MB of attachments, as before the registry held them (HIL-144).
+            [FilesSettingsCatalog::MAX_TOTAL_BYTES_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_TOTAL_BYTES,
             ]],
         );
     }

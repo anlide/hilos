@@ -89,11 +89,6 @@ final class ChatBrowserSource
         BrowserSourceKey::KEY => ChatRtContext::userStates,
     ];
 
-    public const array RT_ATTACHMENT_DRAFTS = [
-        BrowserSourceKey::TYPE => BrowserSourceType::RT,
-        BrowserSourceKey::KEY => ChatRtContext::attachmentDrafts,
-    ];
-
     public const array RT_BOT_AGENT_STATUSES = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => ChatRtContext::botAgentStatuses,

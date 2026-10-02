@@ -9,16 +9,12 @@ namespace Demo\Chat\Constants;
  */
 final class ChatEnvConstants
 {
-    public const string CHAT_FILES_QUARANTINE_DIR = 'CHAT_FILES_QUARANTINE_DIR';
-
-    public const string CHAT_FILES_PUBLISHED_DIR = 'CHAT_FILES_PUBLISHED_DIR';
-
     /**
-     * Internal nginx location prefix for X-Accel-Redirect file serving. Empty
-     * means the daemon streams attachment bytes itself (dev, no web server in
-     * front); a non-empty prefix delegates streaming to nginx (test/prod).
+     * Directory the files registry keeps the chat's attachments in; empty keeps the project's own
+     * data/chat_attachments/published. Serving them through nginx is the framework's
+     * HILOS_FILES_XACCEL_LOCATION (HIL-144).
      */
-    public const string CHAT_FILES_XACCEL_LOCATION = 'CHAT_FILES_XACCEL_LOCATION';
+    public const string CHAT_FILES_PUBLISHED_DIR = 'CHAT_FILES_PUBLISHED_DIR';
 
     /**
      * Secret for signing the stateless OAuth `state` token (HMAC-bound to the

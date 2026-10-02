@@ -2,7 +2,7 @@
 
 **Collection:** `ChatRtContext::connections` | **Key:** `acceptKey`
 
-Runtime row for one active WebSocket connection. Holds transport metadata plus connection-local outbound moderation, active binary upload session, and progress UI for this socket.
+Runtime row for one active WebSocket connection. Holds transport metadata plus connection-local outbound and rename moderation for this socket. The files a person attaches are not here: they are rows of the framework uploads agent (`Hilos::$rt->hilosUploads`), and the row names the ones a moderated message carries by their client ids.
 
 ## Fields
 
@@ -20,6 +20,7 @@ Runtime row for one active WebSocket connection. Holds transport metadata plus c
 |---|---|
 | `outboundModerationPhase` | `checking`, `rejected`, `unavailable`, or empty when clear |
 | `outboundModerationMessage` | Submitted message text |
+| `outboundModerationAttachments` | Client ids of the complete uploads the submitted message carries, in attach order; empty when none |
 | `outboundModerationReason` | Rejection/unavailable reason, empty when none |
 | `outboundModerationUpdatedAt` | Unix time of last moderation field change |
 
@@ -32,43 +33,13 @@ Runtime row for one active WebSocket connection. Holds transport metadata plus c
 | `renameModerationReason` | Rejection/unavailable reason, empty when none |
 | `renameModerationUpdatedAt` | Unix time of last rename moderation field change |
 
-### Upload Session
-
-| Field | Meaning |
-|---|---|
-| `fileSessionUploadId` | Active upload UUID (null = no upload) |
-| `fileSessionDeclaredSize` | Declared total bytes |
-| `fileSessionReceivedBytes` | Bytes received so far |
-| `fileSessionQuarantineBasename` | Tmp file basename while upload is active |
-| `fileSessionOriginalFilename` | Client filename |
-| `fileSessionMimeType` | MIME type |
-| `fileSessionClientUploadId` | Client-side correlation ID |
-| `fileSessionNormalizedFilename` | Normalized basename for duplicate checks |
-
-### Upload State
-
-| Field | Meaning |
-|---|---|
-| `fileUploadPhase` | `ready`, `uploading`, `failed`, or empty when idle |
-| `fileUploadClientUploadId` | Client-side correlation ID for ready/failed UI |
-| `fileUploadErrorCode` | Short failure code, null when not failed |
-| `fileUploadErrorMessage` | User-facing failure message, null when not failed |
-
-### Upload Progress UI
-
-| Field | Meaning |
-|---|---|
-| `fileProgressFilename` | Filename shown in progress bar (null = hidden) |
-| `fileProgressUploadedBytes`, `fileProgressTotalBytes` | Progress values |
-| `uploadProgressLastSentAt` | Microtime of last progress signal (for throttle) |
-
 ## Lifecycle
 
 - **Created**: `ConnectionsActions::register(acceptKey, userId)` in `ChatAgent::onSignalHandshake()`.
-- **Updated**: moderation fields set during message submit/result handling; rename moderation fields set during profile rename submit/result handling; upload fields set during binary upload init/frame processing.
+- **Updated**: moderation fields set during message submit/result handling; rename moderation fields set during profile rename submit/result handling.
 - **Deleted**: `Hilos::$rt->connections[$acceptKey]->actions->unregister()` in `ChatAgent::onSignalConnectionClose()`.
 
-Completed uploads no longer live on `Connection`; they become `AttachmentDraft` rows keyed by draft id and owned by the same `acceptKey`.
+Uploads have not lived on this row since HIL-144: the uploads agent keeps them per connection and removes them once the connection is gone.
 
 ## Truth Source
 

@@ -4,11 +4,6 @@
 
 - `TODO` in `DaemonManager::sendToGroup()`: Group subscription tracking is not properly implemented. Currently sends to all clients instead of group members only.
 
-## Draft Cleanup Cadence
-
-Completed attachment drafts expire one hour after upload completion, but cleanup runs on cron plus upload/message touch points.
-An expired draft can remain visible until the next cleanup trigger.
-
 ## Rate Limiting UX
 
 The backend rejects submits inside the 10-second common outbound limit with an action error.

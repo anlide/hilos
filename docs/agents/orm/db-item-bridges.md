@@ -163,8 +163,11 @@ return match ($name) {
 Non-DB resources derived from the current item's own scalar fields may be
 exposed as computed item properties. They are not relation bridges, but they
 follow the same naming and fallback rules. For example,
-`EventAttachment->file` may resolve `Hilos::$fs->published[$storedName]`
-because `storedName` belongs to the attachment itself.
+`EventAttachment->url` and `->thumbUrl` resolve
+`HilosFiles::downloadPath($fileId)` (the second with the chat's thumbnail
+variant) because `fileId` belongs to the attachment itself, while
+`EventAttachment->file` is an ordinary relation bridge to the registry row,
+`Hilos::$db->files[$this->_object->fileId]`.
 
 ## Null And Empty Semantics
 

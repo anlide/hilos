@@ -5,11 +5,11 @@ message, registration, or presence flip appears without a refresh. The identity
 line has two branches (HIL-625): with an account it names the account, without
 one it says the visit is anonymous — Chat hands a guest no name, so the
 `self-user` marker is absent rather than carrying an empty one. The message
-composer is pinned to the bottom: it submits the `message` action, attaches
-files over the WebSocket `frame_binary` channel (paperclip, drag & drop, or
-paste) via the useComposerUpload engine, shows each upload's progress and the
-pending attachment chips, and runs a re-send lockout timer before the next
-submit. Rendered by HilosView when the navigator's route is the main page. -->
+composer is pinned to the bottom: it submits the `message` action naming the
+attached files, hands each picked file (paperclip, drag & drop, or paste) to the
+framework uploads client via useComposerUpload, shows each upload's progress and
+the ready attachment chips, and runs a re-send lockout timer before the next
+submit. A feed image shows as its thumbnail and opens the original. Rendered by HilosView when the navigator's route is the main page. -->
 <script setup lang="ts">
 import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
 import { hilosAuthGateKey, useConnectionState, useSignal } from '@hilos/vue'
@@ -17,7 +17,6 @@ import { hilosAuthGateKey, useConnectionState, useSignal } from '@hilos/vue'
 import { connection } from '../../bootstrap/connection'
 import { currentUserId, currentUserName } from '../../bootstrap/session'
 import {
-  attachmentDrafts,
   mainParticipants,
   mainBots,
   mainEvents,
@@ -25,7 +24,6 @@ import {
 } from './mainPage'
 import {
   MESSAGE_RATE_LIMIT_SECONDS,
-  deleteAttachmentDraft,
   messageError,
   sendChatMessage,
 } from './mainActions'
@@ -39,7 +37,6 @@ const participants = useSignal(mainParticipants)
 const bots = useSignal(mainBots)
 const events = useSignal(mainEvents)
 const selfConn = useSignal(selfConnection)
-const drafts = useSignal(attachmentDrafts)
 const error = useSignal(messageError)
 
 const connectionState = useConnectionState(connection)
@@ -129,9 +126,9 @@ const moderationBanner = computed<ModerationBanner | null>(() => {
   }
 })
 
-// The composer's file-upload engine — drag/drop, the picker, the sequential
-// queue, and the binary-frame streaming — lives in its own composable so this
-// view keeps only the message composer and the markup.
+// The composer's file picking — drag/drop, the picker, paste — lives in its own
+// composable over the framework uploads client, so this view keeps only the
+// message composer and the markup.
 const {
   fileAccept,
   fileInputRef,
@@ -140,23 +137,22 @@ const {
   uploadProgress,
   uploadProgressPercent,
   uploadError,
+  drafts,
+  draftIds,
+  removeDraft,
   openFilePicker,
   onFileInputChange,
   onDragEnter,
   onDragLeave,
   onDrop,
   onPaste,
-} = useComposerUpload(isConnected, selfConn)
+} = useComposerUpload(isAuthenticated, isConnected)
 
 // The composer accepts a message with attachments and no text, so content is
-// present when the draft is non-blank OR at least one attachment is pending.
+// present when the draft is non-blank OR at least one attachment is ready.
 const hasContent = computed(
-  () => draft.value.trim() !== '' || drafts.value.length > 0,
+  () => draft.value.trim() !== '' || draftIds.value.length > 0,
 )
-
-const removeDraft = (draftId: string): void => {
-  deleteAttachmentDraft(draftId)
-}
 
 // Send is gated: an authenticated + live connection, some content (text or an
 // attachment), no active re-send lockout, no in-flight moderation, and no
@@ -196,7 +192,7 @@ const submitMessage = (): void => {
   if (!canSend.value) {
     return
   }
-  if (!sendChatMessage(draft.value.trim())) {
+  if (!sendChatMessage(draft.value.trim(), draftIds.value)) {
     return
   }
   draft.value = ''
@@ -307,8 +303,8 @@ onUnmounted(() => {
                   v-for="attachment in event.attachments"
                   :key="attachment.key"
                 >
-                  <!-- Images render inline (the backend serves them with
-                  Content-Disposition: inline); a click opens the original. -->
+                  <!-- An image shows as its thumbnail (the chat_thumb copy the
+                  files library draws); a click opens the original. -->
                   <a
                     v-if="attachment.mimeType.startsWith('image/')"
                     :href="attachment.url"
@@ -317,7 +313,7 @@ onUnmounted(() => {
                     data-id="event-attachment"
                   >
                     <img
-                      :src="attachment.url"
+                      :src="attachment.thumbUrl"
                       :alt="attachment.filename"
                       class="rounded border"
                       style="
@@ -514,7 +510,7 @@ onUnmounted(() => {
       >
         <span
           v-for="d in drafts"
-          :key="d.draftId"
+          :key="d.clientUploadId"
           class="badge rounded-pill text-bg-secondary d-inline-flex align-items-center gap-1"
           data-id="attachment-draft"
         >
@@ -531,9 +527,9 @@ onUnmounted(() => {
             class="btn-close btn-close-white"
             style="font-size: 0.5rem"
             aria-label="Remove attachment"
-            :disabled="isModerating"
+            :disabled="isModerating || d.canceling"
             data-id="attachment-draft-remove"
-            @click="removeDraft(d.draftId)"
+            @click="removeDraft(d.clientUploadId)"
           />
         </span>
       </div>

@@ -23,6 +23,7 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\File;
 use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
@@ -35,10 +36,11 @@ use Hilos\HilosException;
 use ReflectionProperty;
 
 /**
- * Integration coverage for the files registry: the janitor of unbound files and the bind frame (HIL-336).
+ * Integration coverage for the files registry: the janitor of unbound files and the bind frame (HIL-336),
+ * and the remove frame that takes a file at once by the janitor's own steps (HIL-144).
  *
- * The janitor removes a file through the storage seam (HIL-136), so the case puts the local
- * storage on the door, over the files directory of the case.
+ * The janitor and the remove frame delete a file through the storage seam (HIL-136), so the case
+ * puts the local storage on the door, over the files directory of the case.
  *
  * The selection, the row-then-file order and the foreign-key refusal are database behavior end to
  * end, so the cases use the real hilos_file table, a real directory, and the library tick
@@ -51,7 +53,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
     /** Framework tables the cases raise, in dependency order. */
     private const array TABLES = ['hilos_setting', 'hilos_file', 'hilos_file_variant'];
 
-    /** Project table whose foreign key holds a registry row, as a chat attachment will (HIL-144). */
+    /** Project table whose foreign key holds a registry row, as a chat attachment does (HIL-144). */
     private const string LINK_TABLE = 'file_sweep_test_link';
 
     /** Owner of every fixture file. */
@@ -366,6 +368,59 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
         self::assertSame(0, self::boundFlag($file));
     }
 
+    /** A bound file is not the janitor's, but the remove frame takes it with both copies at once. */
+    public function testTheRemoveFrameTakesABoundFileWithItsVariantsAtOnce(): void
+    {
+        $bound = $this->publish('bound.bin', hoursAgo: 0);
+        $other = $this->publish('other.bin', hoursAgo: 0);
+        Hilos::$db->files[$bound]?->actions->markBound();
+        $this->keepVariant($bound, 'thumb', 'bound-thumb.webp');
+        $this->keepVariant($bound, 'preview', 'bound-preview.webp');
+
+        $this->remove([$bound]);
+
+        self::assertFalse(self::rowExists($bound));
+        self::assertSame([], Hilos::$db->fileVariants->forFile($bound));
+        self::assertFileDoesNotExist($this->filesPath . '/bound.bin');
+        self::assertFileDoesNotExist($this->filesPath . '/bound-thumb.webp');
+        self::assertFileDoesNotExist($this->filesPath . '/bound-preview.webp');
+        self::assertTrue(self::rowExists($other));
+        self::assertFileExists($this->filesPath . '/other.bin');
+        self::assertSame([], $this->agent->warnings);
+        self::assertSame(['Files removed: 1, kept 0'], $this->agent->infos);
+    }
+
+    /** A project row still pointing at the file keeps the row as it was; its copies go regardless. */
+    public function testTheRemoveFrameKeepsARowAProjectRowStillLinks(): void
+    {
+        $linked = $this->publish('linked.bin', hoursAgo: 0);
+        $this->keepVariant($linked, 'thumb', 'linked-thumb.webp');
+        Database::sqlRun('INSERT INTO `' . self::LINK_TABLE . '` (`file_id`) VALUES (?)', [$linked]);
+
+        $this->remove([$linked]);
+
+        self::assertTrue(self::rowExists($linked));
+        self::assertSame(0, self::boundFlag($linked), 'The door does not mark the row; it leaves it as it was');
+        self::assertFileExists($this->filesPath . '/linked.bin');
+        self::assertSame([], Hilos::$db->fileVariants->forFile($linked));
+        self::assertFileDoesNotExist($this->filesPath . '/linked-thumb.webp');
+        self::assertSame(["File {$linked} is still linked by a project row; kept"], $this->agent->warnings);
+        self::assertSame(['Files removed: 0, kept 1'], $this->agent->infos);
+    }
+
+    public function testTheRemoveFrameSkipsAnUnknownId(): void
+    {
+        $file = $this->publish('known.bin', hoursAgo: 0);
+        $unknown = $file + 1000;
+
+        $this->remove([$unknown, $file]);
+
+        self::assertFalse(self::rowExists($file));
+        self::assertFileDoesNotExist($this->filesPath . '/known.bin');
+        self::assertSame(["File {$unknown} is not in the registry"], $this->agent->warnings);
+        self::assertSame(['Files removed: 1, kept 0'], $this->agent->infos);
+    }
+
     /**
      * @param int $fileId Original registry file id
      * @param string $variant Variant name
@@ -447,6 +502,21 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
             new AgentSignalData(new FileBindSignalData($fileIds)),
             '',
             HilosSignalConstants::HILOS_FILE_BIND,
+        );
+    }
+
+    /**
+     * Delivers one remove frame to the library.
+     *
+     * @param list<int> $fileIds Ids the project no longer links
+     * @throws HilosException When the library cannot handle the frame
+     */
+    private function remove(array $fileIds): void
+    {
+        $this->agent->onSignalAgent(
+            new AgentSignalData(new FileRemoveSignalData($fileIds)),
+            '',
+            HilosSignalConstants::HILOS_FILE_REMOVE,
         );
     }
 

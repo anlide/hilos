@@ -23,8 +23,8 @@ use Hilos\Runtime\View\Collection\HilosSessionConnections;
  * Stands on the framework {@see HilosSessionConnections} base — the session stage
  * — which carries the user-scoped reads, the presence source the users table
  * merges over its rows, and the session-token lookup the session host seam makes.
- * What is left here is chat's own: the upload quota reads and the users a client
- * needs rows for. Write operations go through ConnectionsActions.
+ * What is left here is chat's own: the users a client needs rows for. Write
+ * operations go through ConnectionsActions.
  *
  * @extends HilosSessionConnections<Connection, ConnectionsActions>
  * @property-read ConnectionsActions $actions Actions for write operations
@@ -33,46 +33,6 @@ use Hilos\Runtime\View\Collection\HilosSessionConnections;
 final class Connections extends HilosSessionConnections
 {
     public const string relevantUsers = 'relevantUsers';
-
-    /**
-     * Sum of unreceived bytes across active file upload sessions.
-     *
-     * The quota is reserved until bytes arrive.
-     *
-     * @return int Non-negative sum of unreceived bytes for in-flight uploads.
-     */
-    public function sumActiveUploadReservedBytes(): int
-    {
-        $sum = 0;
-        foreach ($this as $c) {
-            if ($c->fileSessionUploadId === null) {
-                continue;
-            }
-            $sum += (int)$c->fileSessionDeclaredSize - (int)$c->fileSessionReceivedBytes;
-        }
-
-        return $sum;
-    }
-
-    /**
-     * Check whether an active upload already uses the normalized filename.
-     *
-     * @param string $normalized Normalized basename
-     * @return bool True when any connection has an in-flight upload with that name
-     */
-    public function hasActiveUploadWithNormalizedFilename(string $normalized): bool
-    {
-        foreach ($this as $connection) {
-            if ($connection->fileSessionUploadId === null) {
-                continue;
-            }
-            if ($connection->fileSessionNormalizedFilename === $normalized) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * @param RtState $state StateConnection instance

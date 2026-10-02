@@ -16,7 +16,7 @@ use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 
 /**
- * EventAttachmentsActions - write operations for published event attachments.
+ * EventAttachmentsActions - write operations for the links between message events and registry files.
  *
  * @extends DbActions<DbEventAttachment, ObjectEventAttachments>
  * @property-read DbCollectionEventAttachments $collection
@@ -35,24 +35,20 @@ final class EventAttachmentsActions extends DbActions
     }
 
     /**
-     * Creates metadata for one published attachment.
+     * Links one published registry file to the message event it was sent with.
      *
      * @param int $eventId Parent event id
-     * @param string $filename Original client filename
-     * @param string $mimeType Published MIME type
-     * @param string $storedName Basename in published storage
+     * @param int $fileId Id of the registry file
      * @return DbEventAttachment Created attachment item
      * @throws HilosException On database or truth-source failure
      */
-    public function create(int $eventId, string $filename, string $mimeType, string $storedName): DbEventAttachment
+    public function create(int $eventId, int $fileId): DbEventAttachment
     {
         $this->ensureCanCreateInSet((string)$eventId);
 
         $attachment = ObjectEventAttachment::create();
         $attachment->eventId = $eventId;
-        $attachment->filename = $filename;
-        $attachment->mimeType = $mimeType;
-        $attachment->storedName = $storedName;
+        $attachment->fileId = $fileId;
         $attachment->sync();
 
         $this->addObjectToCollection($attachment);
@@ -73,13 +69,14 @@ final class EventAttachmentsActions extends DbActions
     }
 
     /**
-     * Deletes the attachments of the given messages and names their files (HIL-302).
+     * Deletes the attachments of the given messages and names their registry files (HIL-302, HIL-144).
      *
      * The account is being erased: the rows go here, inside its transaction, and the files are
-     * only named - the session holder removes them from disk once the rows are committed.
+     * only named - the session holder asks the files library to remove them once the rows are
+     * committed.
      *
      * @param list<int> $eventIds Event ids of the messages whose attachments go
-     * @return list<string> Stored names of the deleted attachments, in the files directory
+     * @return list<int> Ids of the registry files the deleted attachments linked
      * @throws HilosException On database or truth-source failure
      */
     public function deleteForMessages(array $eventIds): array
@@ -91,18 +88,18 @@ final class EventAttachmentsActions extends DbActions
         $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         $where = '`' . EventAttachment::event_id . '` IN (' . implode(', ', array_fill(0, count($eventIds), '?')) . ')';
-        $storedNames = [];
+        $fileIds = [];
         foreach (EventAttachment::get($where, $eventIds) as $entityAttachment) {
             $id = $entityAttachment->id;
             if ($id === null) {
                 continue;
             }
             $attachment = $this->objectCollection[$id] ?? ObjectEventAttachment::fromEntity($entityAttachment);
-            $storedNames[] = $attachment->storedName;
+            $fileIds[] = $attachment->fileId;
             $attachment->delete();
             unset($this->objectCollection[$id]);
         }
 
-        return $storedNames;
+        return $fileIds;
     }
 }

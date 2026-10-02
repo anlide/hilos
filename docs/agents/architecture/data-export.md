@@ -83,9 +83,12 @@ are excluded. A project without push storage gets an empty push section.
 
 `applyAccountExport(int $userId, DataExportWriter $writer)` must contribute the
 project's person row and all content belonging to that person, excluding other
-people's records. It refuses by default. `section()` writes JSON; `file()`
-copies attachment bytes and returns the relative archive path the JSON should
-reference.
+people's records. It refuses by default. `section()` writes JSON;
+`file($name, $sourcePath)` copies a file's bytes to `files/<name>` and returns
+the relative archive path the JSON should reference. A file kept in the
+[files registry](files-registry.md) is read from its row: the chat takes the
+name and the stored name from `hilos_file` and the bytes from
+`Hilos::$fs->files[$storedName]`, so the archive holds `files/<stored_name>`.
 
 A failure removes partial bytes, marks the request failed and logs the reason.
 There is no automatic retry of a failed request. A restart retries a preparing

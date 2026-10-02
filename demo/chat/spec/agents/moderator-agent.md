@@ -9,7 +9,7 @@ Handles LLM-based user content moderation. Runs in a regular worker and communic
 - Discover user outbound messages from runtime connection state and send `MODERATION_RESULT`.
 - Discover user-initiated display-name changes from runtime connection state and send `RENAME_MODERATION_RESULT`.
 
-Uploaded files are not moderated through a separate signal. They are attachment drafts included in a normal outbound message moderation request.
+Uploaded files are not moderated through a separate signal. A message names its complete uploads by client id (`Connection::outboundModerationAttachments`), and the agent reads each from `Hilos::$rt->hilosUploads` — the framework uploads agent's rows, hence `READS_RT` — into one prompt line, `Attachment: name=…, mime=…, size=… bytes.`: the file name, the type read from the content (the declared one when none was read), and the declared size. An upload gone since the send is left out; its publication refuses next. The bytes are not inspected.
 
 ## LLM Client
 

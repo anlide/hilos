@@ -18,10 +18,15 @@ FROM php:8.4-cli
 #   configured (BACKUP_SHIP_ENCRYPT_RECIPIENTS); same bargain as rsync - its
 #   absence is a failed transfer rather than a refused start, because an
 #   installation that ships nowhere never calls it
+# - libjpeg62-turbo-dev, libpng-dev, libwebp-dev: what GD reads and writes
+#   the feed's thumbnails with (HilosFeature::IMAGES, HIL-144)
 # -----------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
     libssl-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
     git \
     zip \
     unzip \
@@ -38,6 +43,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # mysqli, pdo, and pdo_mysql are required for database operations.
 # -----------------------------------------------------------
 RUN docker-php-ext-install -j$(nproc) sockets pcntl posix mysqli pdo pdo_mysql
+
+# -----------------------------------------------------------
+# GD draws the image variants the feed shows (HilosFeature::IMAGES): without it
+# the start refuses the feature. JPEG and WEBP are configured in, PNG is GD's own.
+# -----------------------------------------------------------
+RUN docker-php-ext-configure gd --with-jpeg --with-webp \
+ && docker-php-ext-install -j$(nproc) gd
 
 # -----------------------------------------------------------
 # Ensure custom extension load order

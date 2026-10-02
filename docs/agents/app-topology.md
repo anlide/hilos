@@ -329,9 +329,9 @@ final class MainPage extends AbstractPage
     ];
 
     public const array SIGNALS = [
-        SignalTypeConstants::FRAME_BINARY => [],
         SignalTypeConstants::AGENT_SIGNAL => [
             ChatSignalConstants::MODERATION_RESULT => ModerationResultSignalData::class,
+            ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
         ],
     ];
 }

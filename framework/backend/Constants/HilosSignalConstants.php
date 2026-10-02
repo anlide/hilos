@@ -65,6 +65,7 @@ use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
@@ -1735,6 +1736,17 @@ final class HilosSignalConstants
      * refusal as the same fact. Carried by {@see FileBindSignalData}.
      */
     public const string HILOS_FILE_BIND = 'hilos_file_bind';
+
+    /**
+     * {@see HilosFiles::remove()} → files library: the project dropped its links to these files;
+     * remove them now; no answer (HIL-144).
+     *
+     * The library removes each row with its image copies and their bytes at once, as the janitor
+     * does, instead of leaving the files to wait out the unbound lifetime. A row the database
+     * still refuses with a foreign key - the project still links it - stays as it was. Carried by
+     * {@see FileRemoveSignalData}.
+     */
+    public const string HILOS_FILE_REMOVE = 'hilos_file_remove';
 
     /**
      * Uploads agent → files library: keep these handed-over temporary files and register them

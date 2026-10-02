@@ -97,14 +97,18 @@ indirection to maintain.
   next to the action whose contract it belongs to. Do not create an empty
   `…Error.ts` ahead of a real need.
 - **A view-layer helper (composable / hook) — optional.** Imperative, stateful
-  view logic that outgrows the view file — a file-upload engine, a drag/drop
-  queue, a wizard's step machine — moves into a page-local composable (Vue/React
-  `use…`; an Angular service or signal helper) the view consumes, keeping the
-  view file markup-first. It stays view-layer: it may own reactive UI state and
-  call `…Actions.ts`, but it is **not** a selector (it projects no payload) and
-  **not** an action module (it adds no outbound actions). It is named for what
-  it does in the `use…` idiom (`useComposerUpload.ts`), not the page-key prefix
-  the other files carry. Add it only when a view file genuinely grows one.
+  view logic that outgrows the view file — a file picker with drag/drop and
+  paste, a wizard's step machine — moves into a page-local composable
+  (Vue/React `use…`; an Angular service or signal helper) the view consumes,
+  keeping the view file markup-first. It stays view-layer: it may own reactive
+  UI state, call `…Actions.ts` and drive a client the core ships, but it is
+  **not** a selector (it projects no payload) and **not** an action module (it
+  adds no outbound actions). The chat's `useComposerUpload.ts` is the shape: it
+  hands each picked file to the `@hilos/core` uploads client (`uploadFile`,
+  `cancelUpload`) and reads its `hilosUploads` list back as progress, error
+  and chips — the queue and the frames are the client's. It is named for what
+  it does in the `use…` idiom, not the page-key prefix the other files carry.
+  Add it only when a view file genuinely grows one.
 - **`types/` — page-local types.** See the next section.
 
 ## Mounting a framework-owned page

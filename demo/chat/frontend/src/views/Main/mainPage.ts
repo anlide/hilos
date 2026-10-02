@@ -6,8 +6,6 @@
 // re-streaming. The view reads these signals and never touches a raw store.
 import {
   computedSignal,
-  readNumber,
-  readString,
   type EntityRef,
   type ReadonlySignal,
 } from '@hilos/core'
@@ -27,7 +25,6 @@ import {
   type UserRename,
 } from '../../types'
 import { toSelfConnection, type SelfConnection } from './types/SelfConnection'
-import { type AttachmentDraftItem } from './types/lists/AttachmentDraftItem'
 import { type BotItem } from './types/lists/BotItem'
 import {
   type EventAttachmentItem,
@@ -40,8 +37,6 @@ import { type ParticipantItem } from './types/lists/ParticipantItem'
 const MAIN_USERS_LIST = 'mainUsers'
 const MAIN_BOTS_LIST = 'mainBots'
 const MAIN_EVENTS_LIST = 'mainEvents'
-// The composer's pending uploads list (backend ChatBrowserTable::ATTACHMENT_DRAFTS).
-const ATTACHMENT_DRAFTS_LIST = 'attachmentDrafts'
 // The single-row data slot carrying this connection's own composer state
 // (backend ChatBrowserTable::SELF_CONNECTION).
 const SELF_CONNECTION_DATA = 'selfConnection'
@@ -54,10 +49,6 @@ const MESSAGE_SLOT = 'eventMessages'
 const REGISTRATION_SLOT = 'eventUserRegistrations'
 const RENAME_SLOT = 'userRenames'
 const ATTACHMENT_SLOT = 'eventAttachments'
-// The per-row field slot of a draft (backend source ChatRtContext::attachmentDrafts);
-// its value coincides with the list key, but a list item nests its fields under
-// the source-collection slot, never at the item root.
-const ATTACHMENT_DRAFT_SLOT = 'attachmentDrafts'
 
 // Event type values mirror the backend ChatEventType enum; the stream renders a
 // line per kind. Keep in sync with Demo\Chat\Constants\ChatEventType.
@@ -74,20 +65,6 @@ function recordSlot(slot: unknown): Record<string, unknown> | undefined {
   return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
     ? (slot as Record<string, unknown>)
     : undefined
-}
-
-// The same-origin attachment endpoint: the session cookie authorizes each GET,
-// so the URL carries only the attachment id. nginx (test/prod) and the Vite dev
-// proxy both forward it to the daemon's HTTP router.
-const ATTACHMENT_DOWNLOAD_PATH = '/chat/attachment'
-
-/**
- * Build the same-origin download URL for a published attachment.
- *
- * @param id The attachment id.
- */
-function attachmentUrl(id: number | string): string {
-  return `${ATTACHMENT_DOWNLOAD_PATH}?id=${encodeURIComponent(String(id))}`
 }
 
 const mainUserItems = scopes.pageListSignal(MAIN_USERS_LIST)
@@ -212,11 +189,14 @@ export const mainEvents: ReadonlySignal<readonly EventItem[]> = computedSignal(
             const attachment = EventAttachments.signal(attachmentRef).get()
             const id = attachment?.id ?? attachmentRef.id
 
+            // Both addresses come from the server, which serves the files from
+            // /_hilos/file and alone can sign a thumbnail's address (HIL-144).
             return {
               key: String(id),
               filename: attachment?.filename ?? '',
               mimeType: attachment?.mimeType ?? '',
-              url: attachmentUrl(id),
+              url: attachment?.url ?? '',
+              thumbUrl: attachment?.thumbUrl ?? '',
             }
           })
         : []
@@ -243,20 +223,3 @@ const selfConnectionData = scopes.pageDataSignal(SELF_CONNECTION_DATA)
  */
 export const selfConnection: ReadonlySignal<SelfConnection | undefined> =
   computedSignal(() => toSelfConnection(selfConnectionData.get()))
-
-const attachmentDraftItems = scopes.pageListSignal(ATTACHMENT_DRAFTS_LIST)
-
-/** The composer's pending attachment drafts — one removable chip per uploaded-but-unsent file. */
-export const attachmentDrafts: ReadonlySignal<readonly AttachmentDraftItem[]> =
-  computedSignal(() =>
-    attachmentDraftItems.get().map((item) => {
-      const draft = recordSlot(item.slots[ATTACHMENT_DRAFT_SLOT])
-
-      return {
-        draftId: item.itemKey,
-        filename: draft ? readString(draft, 'filename') : '',
-        mimeType: draft ? readString(draft, 'mimeType') : '',
-        size: draft ? readNumber(draft, 'size') : 0,
-      }
-    }),
-  )

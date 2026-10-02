@@ -11,8 +11,10 @@ use Demo\Chat\Database\Object\Item\EventAttachment;
 use Demo\Chat\Database\Object\Item\EventMessage;
 use Demo\Chat\Database\Object\Item\EventUserRegistration;
 use Demo\Chat\Database\Object\Item\UserRename;
+use Demo\Chat\Database\View\Item\EventAttachment as DbEventAttachment;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Core\Browser\Config\BrowserListFieldKey;
+use Hilos\Database\Object\Item\File;
 
 /**
  * Browser list source for the main chat event stream.
@@ -75,8 +77,11 @@ final class MainEventsBrowserList
                 BrowserListFieldKey::FIELDS => [
                     EventAttachment::id,
                     EventAttachment::eventId,
-                    EventAttachment::filename,
-                    EventAttachment::mimeType,
+                    EventAttachment::fileId,
+                    File::filename,
+                    File::mimeType,
+                    DbEventAttachment::url,
+                    DbEventAttachment::thumbUrl,
                 ],
             ],
         ],

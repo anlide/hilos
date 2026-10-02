@@ -29,6 +29,7 @@ use Hilos\Database\View\Item\Session;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishItemData;
 use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\Download\FileAccess;
 use Hilos\Files\Download\FileDownloadOutcome;
@@ -64,7 +65,10 @@ use Random\RandomException;
  * uploads agent hands the files over with {@see HilosSignalConstants::HILOS_FILE_PUBLISH}, and
  * the library keeps each one in the storage and registers it, all or nothing (HIL-136). The
  * project then reaches it through {@see HilosFiles::markBound()}, which sends
- * {@see HilosSignalConstants::HILOS_FILE_BIND} here.
+ * {@see HilosSignalConstants::HILOS_FILE_BIND} here, and once it drops its links - a history
+ * cleared, an account erased - through {@see HilosFiles::remove()}, which sends
+ * {@see HilosSignalConstants::HILOS_FILE_REMOVE}: the rows go at once, by the janitor's own
+ * steps, and a row the project still links is kept (HIL-144).
  *
  * It also keeps the registry clean. A row is born unbound, and a row nobody bound within the
  * `files.unbound_ttl_hours` setting is taken by the janitor: the row first, then the file of the
@@ -74,8 +78,7 @@ use Random\RandomException;
  * one the project linked without saying so - its bind frame was lost on the way - so the janitor
  * marks it bound instead and keeps the file.
  *
- * The janitor never walks the storage: files without a row are not its own, and in the chat
- * demo the files directory also holds the attachments published before the registry existed.
+ * The janitor never walks the storage: files without a row are not its own.
  *
  * And it serves the files: GET {@see HilosFiles::DOWNLOAD_PATH}?id=N is an address this agent
  * declares ({@see self::AGENT_HTTP_ROUTES}), so it is mounted on every project that declares
@@ -104,10 +107,11 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_FILES_LIBRARY;
 
     /**
-     * Bind requests, uploads handed over for publication, and rendered image copies to keep.
+     * Bind and remove requests, uploads handed over for publication, and rendered image copies to keep.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
+        HilosSignalConstants::HILOS_FILE_REMOVE => FileRemoveSignalData::class,
         HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
         HilosSignalConstants::HILOS_IMAGE_RENDERED => ImageRenderedSignalData::class,
     ];
@@ -172,14 +176,16 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Binds linked files, publishes handed-over uploads, or keeps image copies and answers their waiting requests.
+     * Binds linked files, removes dropped ones, publishes handed-over uploads, or keeps image copies and answers
+     * their waiting requests.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declares
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
-     * @throws HilosException When a row cannot be read or written
+     * @throws HilosException When a row cannot be read or written, or a file to remove fails in the storage
+     *     for a reason other than a refused deletion
      * @throws InvalidArgumentException When the answer to a publication cannot be named
      * @throws RandomException When the stored names of a publication cannot be drawn
      */
@@ -191,6 +197,14 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, FileBindSignalData::class, $data->data);
                 }
                 $this->markBound($data->data->fileIds);
+
+                return;
+
+            case HilosSignalConstants::HILOS_FILE_REMOVE:
+                if (!$data->data instanceof FileRemoveSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, FileRemoveSignalData::class, $data->data);
+                }
+                $this->removeFiles($data->data->fileIds);
 
                 return;
 
@@ -551,6 +565,40 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Removes each named row the project no longer links, by the janitor's own steps.
+     *
+     * A row the registry does not hold is reported and skipped; a row the database still refuses
+     * with a foreign key stays as it was and is reported - the project asked too early, or one of
+     * its rows still points at the file. The library does not mark it or retry it: whoever still
+     * links the file asks again once that link goes.
+     *
+     * @param list<int> $fileIds Ids of the registry rows the project dropped its links to
+     * @throws HilosException When a row cannot be read or written, or a file fails in the storage for a reason
+     *     other than a refused deletion
+     */
+    private function removeFiles(array $fileIds): void
+    {
+        $removed = 0;
+        $kept = 0;
+        foreach ($fileIds as $fileId) {
+            $file = Hilos::$db->files[$fileId];
+            if ($file === null) {
+                $this->logAgentWarning("File {$fileId} is not in the registry");
+                continue;
+            }
+
+            if ($this->removeRegistryFile($file)) {
+                $removed++;
+                continue;
+            }
+            $this->logAgentWarning("File {$fileId} is still linked by a project row; kept");
+            $kept++;
+        }
+
+        $this->logAgentInfo("Files removed: {$removed}, kept {$kept}");
+    }
+
+    /**
      * Keeps each handed-over file under a random name and registers it unbound, or undoes the
      * whole request.
      *
@@ -679,34 +727,13 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
         $marked = 0;
 
         foreach ($files as $file) {
-            $fileId = $file->id;
-            $storedName = $file->storedName;
-
-            // Keep the names across the row removals: bytes go only after their registry rows.
-            $variantNames = [];
-            foreach (Hilos::$db->fileVariants->forFile($fileId) as $variant) {
-                $variantNames[] = $variant->storedName;
-                $variant->actions->delete();
-            }
-
-            try {
-                $file->actions->delete();
-            } catch (ForeignKeyConstraintException) {
-                $file->actions->markBound();
-                $this->logAgentWarning("File {$fileId} is referenced by a project row; marked bound");
-                $marked++;
-                // The copy rows are already gone, even when a project link keeps the original.
-                foreach ($variantNames as $variantName) {
-                    $this->deleteSweptFile($variantName);
-                }
+            if ($this->removeRegistryFile($file)) {
+                $removed++;
                 continue;
             }
-            $removed++;
-
-            foreach ($variantNames as $variantName) {
-                $this->deleteSweptFile($variantName);
-            }
-            $this->deleteSweptFile($storedName);
+            $file->actions->markBound();
+            $this->logAgentWarning("File {$file->id} is referenced by a project row; marked bound");
+            $marked++;
         }
 
         $done = $removed + $marked;
@@ -718,7 +745,52 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     }
 
     /**
-     * @param string $storedName Name whose registry row the sweep has already removed
+     * Removes one registry row: its copy rows, the row itself, then the bytes of the copies and
+     * of the original - the one sequence the janitor and {@see HilosFiles::remove()} share.
+     *
+     * Rows first, bytes after: a file left behind costs disk space, while a row left behind
+     * points at nothing. A foreign-key refusal on the row is the database saying a project row
+     * still links the file: the row stays, and what to do with it is the caller's - the janitor
+     * marks it bound, the remove door only reports it. The copies' bytes go either way, since
+     * their rows are already gone; they are drawn again on the next request. A file that stays in
+     * the storage is reported and the row is not brought back.
+     *
+     * @param File $file Registry row to remove
+     * @return bool True when the row is gone, false when a project row still links it
+     * @throws HilosException When a row cannot be read or written past the foreign-key refusal
+     * @throws LogicException When the files door is not configured
+     * @throws FsException When storage fails for a reason other than a refused deletion
+     */
+    private function removeRegistryFile(File $file): bool
+    {
+        $storedName = $file->storedName;
+
+        // Keep the names across the row removals: bytes go only after their registry rows.
+        $variantNames = [];
+        foreach (Hilos::$db->fileVariants->forFile($file->id) as $variant) {
+            $variantNames[] = $variant->storedName;
+            $variant->actions->delete();
+        }
+
+        $removed = true;
+        try {
+            $file->actions->delete();
+        } catch (ForeignKeyConstraintException) {
+            $removed = false;
+        }
+
+        foreach ($variantNames as $variantName) {
+            $this->deleteSweptFile($variantName);
+        }
+        if ($removed) {
+            $this->deleteSweptFile($storedName);
+        }
+
+        return $removed;
+    }
+
+    /**
+     * @param string $storedName Name whose registry row is already removed
      * @throws LogicException When the files door is not configured
      * @throws FsException When storage fails for a reason other than a refused deletion
      */

@@ -189,6 +189,11 @@ use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\DTO\FileRemoveSignalData;
+use Hilos\Files\Image\DTO\ImageRenderSignalData;
+use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
+use Hilos\Files\Upload\DTO\UploadInitActionDTO;
+use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\Image\DTO\ImageRenderedSignalData;
 use Hilos\Files\HilosFiles;
@@ -377,7 +382,8 @@ final class ChatTopologyRegistryTest extends TestCase
         // of its own besides: minting an account is a claim one process holds wherever it sits,
         // every handshake touches sessions, every worker emits into notifications, every published
         // file is bound and swept by one owner, every admin screen writes settings through one
-        // hand, and the leader has enough to do. The backup
+        // hand, and the leader has enough to do. The uploads and images agents are placed the same
+        // way, beside the files library they hand files to (on separate nodes - HIL-1241). The backup
         // agent owns a directory on one node's disk, so it has to stay with it: following
         // leadership would move it on every master restart to a node whose directory holds none
         // of its archives. The aggregator is placed so that one holder of the merged log picture
@@ -389,6 +395,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosAgentType::HILOS_FILES_LIBRARY,
+            HilosAgentType::HILOS_UPLOADS,
+            HilosAgentType::HILOS_IMAGES,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_BACKUP,
             AgentType::HILOS_MAIL,
@@ -441,8 +449,6 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
-            ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
-            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
             HilosSignalConstants::HILOS_LINK_OAUTH_START => HilosPageConstants::HILOS_PROFILE_SIGN_IN,
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
@@ -502,8 +508,6 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
-            ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
-            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AgentType::CHAT,
             HilosSignalConstants::HILOS_LINK_OAUTH_START => AgentType::CHAT,
             ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::LIBRARY,
@@ -562,9 +566,9 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedPageSignalRoutesMatchChatSignalOwnership(): void
     {
         $this->assertSame([
-            SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
+                ChatSignalConstants::ATTACHMENTS_PUBLISHED => PageConstants::MAIN,
                 ChatSignalConstants::USER_ADMIN_RENAME_DONE => PageConstants::ADMIN_USERS,
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SETTINGS,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => HilosPageConstants::HILOS_BACKUP,
@@ -593,9 +597,9 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedPageSignalAgentRoutesUseOwningPageSubscriptionAgents(): void
     {
         $this->assertSame([
-            SignalTypeConstants::FRAME_BINARY => AgentType::CHAT,
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
+                ChatSignalConstants::ATTACHMENTS_PUBLISHED => AgentType::CHAT,
                 ChatSignalConstants::USER_ADMIN_RENAME_DONE => AgentType::CHAT,
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => AgentType::HILOS_INDEX,
@@ -662,8 +666,11 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
+            HilosSignalConstants::HILOS_FILE_REMOVE => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_IMAGE_RENDERED => HilosAgentType::HILOS_FILES_LIBRARY,
+            HilosSignalConstants::HILOS_UPLOAD_PUBLISH => HilosAgentType::HILOS_UPLOADS,
+            HilosSignalConstants::HILOS_IMAGE_RENDER => HilosAgentType::HILOS_IMAGES,
             HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
@@ -838,8 +845,11 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => NotificationForgetUserSignalData::class,
             HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
+            HilosSignalConstants::HILOS_FILE_REMOVE => FileRemoveSignalData::class,
             HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,
             HilosSignalConstants::HILOS_IMAGE_RENDERED => ImageRenderedSignalData::class,
+            HilosSignalConstants::HILOS_UPLOAD_PUBLISH => UploadPublishSignalData::class,
+            HilosSignalConstants::HILOS_IMAGE_RENDER => ImageRenderSignalData::class,
             HilosSignalConstants::HILOS_SETTING_WRITE => SettingWriteSignalData::class,
             HilosSignalConstants::HILOS_SETTING_RESET => SettingResetSignalData::class,
             HilosSignalConstants::HILOS_SETTING_DELETE => SettingDeleteSignalData::class,
@@ -964,6 +974,8 @@ final class ChatTopologyRegistryTest extends TestCase
             PushSubscriptionAction::SUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             PushSubscriptionAction::UNSUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             PushSubscriptionAction::REMOVE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::HILOS_UPLOAD_INIT => HilosAgentType::HILOS_UPLOADS,
+            HilosSignalConstants::HILOS_UPLOAD_CANCEL => HilosAgentType::HILOS_UPLOADS,
         ], Hilos::getAgentActionRoutes());
     }
 
@@ -1064,6 +1076,8 @@ final class ChatTopologyRegistryTest extends TestCase
             PushSubscriptionAction::SUBSCRIBE => PushSubscribeActionDTO::class,
             PushSubscriptionAction::UNSUBSCRIBE => PushUnsubscribeActionDTO::class,
             PushSubscriptionAction::REMOVE => PushRemoveActionDTO::class,
+            HilosSignalConstants::HILOS_UPLOAD_INIT => UploadInitActionDTO::class,
+            HilosSignalConstants::HILOS_UPLOAD_CANCEL => UploadCancelActionDTO::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentActionDtoRoutes());
     }

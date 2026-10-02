@@ -11,9 +11,7 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Socket\Server\ChatWebSocketServer;
 use Demo\Chat\Core\Socket\Server\ChatWorkerServer;
 use Demo\Chat\Hilos;
-use Demo\Chat\Http\ChatAttachmentDownloadHandler;
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
@@ -30,8 +28,8 @@ use Hilos\Socket\Server\ServerInterface;
  * ChatDaemonManager - Main daemon manager for chat demo.
  *
  * Extends framework DaemonManager to provide chat functionality: declares the chat
- * server set, the attachment-download route, and the peer/build-timestamp/
- * frontend-html modules the demo opts into.
+ * server set and the peer/build-timestamp/frontend-html modules the demo opts into.
+ * Attachments are served by the framework files library, not by a route here (HIL-144).
  */
 final class ChatDaemonManager extends DaemonManager
 {
@@ -42,7 +40,7 @@ final class ChatDaemonManager extends DaemonManager
      * Initializes chat daemon manager.
      *
      * Sets shutdown timeout to 10 seconds.
-     * Registers cron rules for chat cleanup and expired attachment drafts.
+     * Registers the cron rule of the chat history cleanup.
      */
     public function __construct()
     {
@@ -53,7 +51,6 @@ final class ChatDaemonManager extends DaemonManager
         // Register cron rule for chat history cleanup (every 30 minutes)
         // Cron expression: "*/30 * * * *" means every 30 minutes
         $this->addCronRule(ChatCronConstants::CLEANUP_HISTORY, '*/30 * * * *');
-        $this->addCronRule(ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS, '*/15 * * * *');
     }
 
     /**
@@ -107,23 +104,6 @@ final class ChatDaemonManager extends DaemonManager
                 Hilos::$env[EnvConstants::COMMAND_HOST]->string(),
                 Hilos::$env[EnvConstants::COMMAND_PORT]->int(),
             ),
-        ];
-    }
-
-    /**
-     * The chat HTTP routes: the attachment download.
-     *
-     * @param DaemonContext $context Resolved path context
-     * @return iterable<array{0: string, 1: string, 2: callable}> Route triples [method, path, handler]
-     */
-    protected function httpRoutes(DaemonContext $context): iterable
-    {
-        return [
-            [
-                HttpConstants::METHOD_GET,
-                '/chat/attachment',
-                static fn (array $args): array => ChatAttachmentDownloadHandler::handle($args),
-            ],
         ];
     }
 

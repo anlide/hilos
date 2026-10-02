@@ -8,6 +8,7 @@ use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Files\Upload\Check\DuplicateContentCheck;
 use Hilos\Files\Upload\Check\StorageLimitCheck;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * An upload target: the policy a project declares for one kind of file it accepts (HIL-135).
@@ -25,7 +26,10 @@ use Hilos\Hilos;
 abstract class AbstractUploadTarget
 {
     /**
+     * Asked on every declaration, so a limit read from a setting follows its changes at once.
+     *
      * @return int Largest file the target accepts, in bytes
+     * @throws HilosException When the target reads its limit from something that cannot be read - a setting
      */
     abstract public function maxBytes(): int;
 

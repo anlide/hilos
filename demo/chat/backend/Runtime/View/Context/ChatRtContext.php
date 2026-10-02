@@ -4,25 +4,21 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Context;
 
-use Demo\Chat\Runtime\State\Collection\AttachmentDrafts as StateAttachmentDrafts;
 use Demo\Chat\Runtime\State\Collection\BotAgentStatuses as StateBotAgentStatuses;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Collection\GuardianAgentStatuses as StateGuardianAgentStatuses;
 use Demo\Chat\Runtime\State\Collection\UserStates as StateUserStates;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
-use Demo\Chat\Runtime\View\Actions\Collection\AttachmentDraftsActions;
 use Demo\Chat\Runtime\View\Actions\Collection\BotAgentStatusesActions;
 use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
 use Demo\Chat\Runtime\View\Actions\Collection\GuardianAgentStatusesActions;
 use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
-use Demo\Chat\Runtime\View\Actions\Item\AttachmentDraftActions;
 use Demo\Chat\Runtime\View\Actions\Item\BotAgentStatusActions;
 use Demo\Chat\Runtime\View\Actions\Item\ChatContextActions;
 use Demo\Chat\Runtime\View\Actions\Item\ChatUserStateActions;
 use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
 use Demo\Chat\Runtime\View\Actions\Item\GuardianAgentStatusActions;
-use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Demo\Chat\Runtime\View\Collection\BotAgentStatuses;
 use Demo\Chat\Runtime\View\Collection\Connections;
 use Demo\Chat\Runtime\View\Collection\GuardianAgentStatuses;
@@ -40,7 +36,6 @@ use Hilos\Runtime\View\Context\RtContext;
  * Available collections:
  *   - connections: Active WebSocket connections (acceptKey → userId mapping)
  *   - userStates: Per-user outbound moderation and submit rate-limit state
- *   - attachmentDrafts: Uploaded quarantine files waiting for message submit
  *   - botAgentStatuses: Runtime lifecycle markers for bot agents
  *   - guardianAgentStatuses: Runtime UI statuses for Hilos guardian agents
  *
@@ -49,14 +44,12 @@ use Hilos\Runtime\View\Context\RtContext;
  *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
  *   Hilos::$rt->connections[$acceptKey]->actions->… (per-connection writes and deletes)
  *   Hilos::$rt->userStates[$userId]; // key is string user id; offsetGet casts int to string
- *   Hilos::$rt->connections[$acceptKey]->attachmentDrafts;
  *   Hilos::$rt->chatContext;
  *
  * @property-read Connections $connections Active connections collection
  * @property-read ?Connection $selfConnection Current inbound WebSocket connection, or null outside a WS context
  * @property-read ChatContext $chatContext Shared chat topic and summary singleton
  * @property-read UserStates $userStates Per-user chat runtime state
- * @property-read AttachmentDrafts $attachmentDrafts Uploaded attachment drafts
  * @property-read BotAgentStatuses $botAgentStatuses Bot agent lifecycle status collection
  * @property-read GuardianAgentStatuses $guardianAgentStatuses Guardian run status collection
  */
@@ -64,13 +57,11 @@ final class ChatRtContext extends RtContext
 {
     public const string connections = 'connections';
     public const string userStates = 'userStates';
-    public const string attachmentDrafts = 'attachmentDrafts';
     public const string botAgentStatuses = 'botAgentStatuses';
     public const string guardianAgentStatuses = 'guardianAgentStatuses';
 
     public const string connection = 'connection';
     public const string chatUserState = 'chatUserState';
-    public const string attachmentDraft = 'attachmentDraft';
     public const string chatContext = 'chatContext';
     public const string botAgentStatus = 'botAgentStatus';
     public const string guardianAgentStatus = 'guardianAgentStatus';
@@ -86,7 +77,6 @@ final class ChatRtContext extends RtContext
     {
         $this->_stateCollections[self::connections] = StateConnections::init();
         $this->_stateCollections[self::userStates] = StateUserStates::init();
-        $this->_stateCollections[self::attachmentDrafts] = StateAttachmentDrafts::init();
         $this->_stateItems[self::chatContext] = StateChatContext::create();
         $this->_stateCollections[self::botAgentStatuses] = StateBotAgentStatuses::init();
         $this->_stateCollections[self::guardianAgentStatuses] = StateGuardianAgentStatuses::init();
@@ -108,12 +98,6 @@ final class ChatRtContext extends RtContext
             UserStates::class,
             UserStatesActions::class,
             ChatUserStateActions::class,
-        );
-        $this->setRepresent(
-            self::attachmentDrafts,
-            AttachmentDrafts::class,
-            AttachmentDraftsActions::class,
-            AttachmentDraftActions::class,
         );
         $this->setRepresent(
             self::botAgentStatuses,

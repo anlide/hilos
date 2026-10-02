@@ -50,7 +50,7 @@ services:
       - FRONTEND_HTML_HOST=0.0.0.0
       - FRONTEND_HTML_PORT=8093
       - FRONTEND_DIST_PATH=${FRONTEND_DIST_PATH:-/app/frontend/dist}
-      - CHAT_FILES_XACCEL_LOCATION=${CHAT_FILES_XACCEL_LOCATION:-/__chat_published}
+      - HILOS_FILES_XACCEL_LOCATION=${HILOS_FILES_XACCEL_LOCATION:-/__hilos_files}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     ports:

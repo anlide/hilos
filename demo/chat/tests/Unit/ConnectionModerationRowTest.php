@@ -44,6 +44,26 @@ final class ConnectionModerationRowTest extends TestCase
         $this->assertSame('', $connection->outboundModerationMessage);
     }
 
+    /**
+     * The files a submitted message carries cross to the moderator with the text (HIL-144).
+     */
+    public function testTheAttachedUploadsTravelInARowAndInADiff(): void
+    {
+        $connection = Connection::fromRow(self::row([Connection::outboundModerationAttachments => ['u2', 'u1']]));
+        $this->assertSame(['u2', 'u1'], $connection->outboundModerationAttachments);
+
+        $connection->applyDiff([Connection::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE]);
+        $this->assertSame(['u2', 'u1'], $connection->outboundModerationAttachments, 'A diff without the key leaves the list');
+
+        $connection->applyDiff([Connection::outboundModerationAttachments => []]);
+        $this->assertSame([], $connection->outboundModerationAttachments);
+    }
+
+    public function testAFreshRowCarriesNoAttachments(): void
+    {
+        $this->assertSame([], Connection::fromRow(self::row([]))->outboundModerationAttachments);
+    }
+
     public function testARowCarryingNoMessageReadsAsNone(): void
     {
         $connection = Connection::fromRow(self::row([Connection::outboundModerationMessage => null]));

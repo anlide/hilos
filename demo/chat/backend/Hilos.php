@@ -52,7 +52,6 @@ use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\Data\BotStatusBrowserData;
 use Demo\Chat\Browser\Data\SelfConnectionBrowserData;
 use Demo\Chat\Browser\Data\UserPresenceBrowserData;
-use Demo\Chat\Browser\List\AttachmentDraftsBrowserList;
 use Demo\Chat\Browser\List\MainBotsBrowserList;
 use Demo\Chat\Browser\List\MainEventsBrowserList;
 use Demo\Chat\Browser\List\MainUsersBrowserList;
@@ -68,6 +67,7 @@ use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Environment\ChatEnvCatalog;
 use Demo\Chat\Environment\ChatLlmProfileCatalog;
 use Demo\Chat\Environment\ChatLlmProfileOverrideSource;
+use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\Hilos\NotificationsGroup;
 use Demo\Chat\Groups\SessionGroup;
@@ -202,6 +202,13 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImagesAgentDaemon;
+use Hilos\Files\Image\ImageVariant;
+use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\HilosException;
@@ -247,7 +254,7 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * - Hilos::$rt->userStates
  * - Hilos::$table->users
  * - Hilos::$browser
- * - Hilos::$fs->quarantine, Hilos::$fs->published, Hilos::$fs->tmp
+ * - Hilos::$fs->files, Hilos::$fs->tmp
  *
  * @property-read ChatDbContext $db Database context (narrows parent's DbContext for IDE)
  * @property-read EnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
@@ -302,7 +309,24 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::CODE_CHANNELS,
         HilosFeature::FILES,
+        HilosFeature::UPLOADS,
+        HilosFeature::IMAGES,
         HilosFeature::ANALYTICS,
+    ];
+
+    /** A file attached to a message - the chat's one kind of upload (HIL-144). */
+    public const array UPLOAD_TARGETS = [
+        ChatAttachmentUploadTarget::NAME => ChatAttachmentUploadTarget::class,
+    ];
+
+    /** The picture the feed shows in place of an attached image; a click opens the original. */
+    public const array IMAGE_VARIANTS = [
+        ChatAttachmentUploadTarget::THUMB_VARIANT => [
+            ImageVariant::WIDTH => 384,
+            ImageVariant::HEIGHT => 384,
+            ImageVariant::FIT => ImageFit::CONTAIN,
+            ImageVariant::FORMAT => ImageFormat::WEBP,
+        ],
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -439,6 +463,16 @@ final class Hilos extends HilosFacade
         FilesLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => FilesLibraryAgent::class,
             AgentRegistryKey::DAEMON => FilesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        UploadsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UploadsAgent::class,
+            AgentRegistryKey::DAEMON => UploadsAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ImagesAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ImagesAgent::class,
+            AgentRegistryKey::DAEMON => ImagesAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         SettingsLibraryAgent::AGENT_TYPE => [
@@ -625,7 +659,6 @@ final class Hilos extends HilosFacade
         MainEventsBrowserList::LIST => MainEventsBrowserList::class,
         MainUsersBrowserList::LIST => MainUsersBrowserList::class,
         MainBotsBrowserList::LIST => MainBotsBrowserList::class,
-        AttachmentDraftsBrowserList::LIST => AttachmentDraftsBrowserList::class,
         ProfileIdentitiesBrowserList::LIST => ProfileIdentitiesBrowserList::class,
         ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::class,
         ProfileDevicesBrowserList::LIST => ProfileDevicesBrowserList::class,
@@ -648,11 +681,6 @@ final class Hilos extends HilosFacade
             MainEventsBrowserList::LIST => [],
             MainUsersBrowserList::LIST => [],
             MainBotsBrowserList::LIST => [],
-            AttachmentDraftsBrowserList::LIST => [
-                BrowserParamKey::PARAMS => [
-                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
-                ],
-            ],
         ],
         ProfilePage::PAGE => [
             ProfileIdentitiesBrowserList::LIST => [

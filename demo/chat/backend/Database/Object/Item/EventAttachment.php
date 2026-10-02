@@ -10,15 +10,13 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * EventAttachment - Object wrapper for published event attachment metadata.
+ * EventAttachment - Object wrapper for the link between a message event and a registry file.
  *
  * @extends Object_<EntityEventAttachment>
  *
  * @property-read ?int $id
  * @property int $eventId
- * @property string $filename
- * @property string $mimeType
- * @property string $storedName
+ * @property int $fileId
  */
 final class EventAttachment extends Object_
 {
@@ -26,9 +24,7 @@ final class EventAttachment extends Object_
 
     public const string id = 'id';
     public const string eventId = 'eventId';
-    public const string filename = 'filename';
-    public const string mimeType = 'mimeType';
-    public const string storedName = 'storedName';
+    public const string fileId = 'fileId';
 
     /**
      * Returns the database collection key for published attachments.
@@ -52,9 +48,7 @@ final class EventAttachment extends Object_
         return match ($property) {
             self::id => $this->entity->id,
             self::eventId => $this->entity->event_id,
-            self::filename => $this->entity->filename,
-            self::mimeType => $this->entity->mime_type,
-            self::storedName => $this->entity->stored_name,
+            self::fileId => $this->entity->file_id,
             default => parent::__get($property),
         };
     }
@@ -70,9 +64,7 @@ final class EventAttachment extends Object_
     {
         match ($property) {
             self::eventId => $this->entity->event_id = (int)$value,
-            self::filename => $this->entity->filename = (string)$value,
-            self::mimeType => $this->entity->mime_type = (string)$value,
-            self::storedName => $this->entity->stored_name = basename((string)$value),
+            self::fileId => $this->entity->file_id = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -87,9 +79,7 @@ final class EventAttachment extends Object_
         return [
             self::id => $this->entity->id,
             self::eventId => $this->entity->event_id,
-            self::filename => $this->entity->filename,
-            self::mimeType => $this->entity->mime_type,
-            self::storedName => $this->entity->stored_name,
+            self::fileId => $this->entity->file_id,
         ];
     }
 }

@@ -103,8 +103,10 @@ leaves the request due for the next sweep.
 
 After the commit, outside the transaction: every session of every erased
 account is signed out — signed in as them, taking over somebody else's account, or
-waiting on their second factor; the files the project named are removed from
-disk (a file that will not go is logged as an orphan, not retried); and
+waiting on their second factor; the registry files the project named go to the
+files library in one `Hilos::$files->remove()` when the project declares `FILES`
+([files-registry.md](files-registry.md#removing)) — nothing is deleted from disk
+past the registry; and
 `Hilos::$notify->forgetUser()` sends `hilos_notification_forget_user` for each
 erased account to the notifications library, which deletes its notifications,
 journal, preferences and push subscriptions. That is a frame and not a write
@@ -134,4 +136,6 @@ The framework deletes the rename journal and person row after the hook; the
 journal is still readable during the hook. It runs inside the transaction and
 under the holder's own claims, so each table it
 writes needs a borrowed claim on the project's session holder. Files are
-named in the answer, never removed in the seam.
+named in the answer by their registry ids (`AccountErasure::$fileIds`), never
+removed in the seam: a file gone from disk cannot come back if the transaction
+rolls back, so the library removes them after the commit.

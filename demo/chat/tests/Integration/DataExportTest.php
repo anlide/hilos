@@ -6,8 +6,6 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Demo\Chat\Database\DTO\PublishedAttachmentInput;
-use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Hilos;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -68,12 +66,8 @@ final class DataExportTest extends IntegrationTestCase
         Hilos::$db->events->actions->addUserRenamed(
             Hilos::$db->userRenames->actions->add($otherId, $personId, 'Other before', 'Other'),
         );
-        Hilos::$fs->files->create('mine.txt')->append("my attachment\n");
-        Hilos::$db->events->actions->addMessage(
-            'my message',
-            userId: $personId,
-            attachments: new PublishedAttachmentInputs(new PublishedAttachmentInput('note.txt', 'text/plain', 'mine.txt')),
-        );
+        $file = $this->keepRegistryFile($personId, 'note.txt', "my attachment\n");
+        Hilos::$db->events->actions->addMessage('my message', userId: $personId, fileIds: [(int)$file->id]);
         Hilos::$db->events->actions->addMessage('foreign message', userId: $otherId);
         $agent = new DataExportAgent();
         $this->startAgent($agent);
@@ -90,8 +84,9 @@ final class DataExportTest extends IntegrationTestCase
         self::assertSame(['name' => 'Exporting'], $chat['profile']);
         self::assertCount(1, $chat['messages']);
         self::assertSame('my message', $chat['messages'][0]['text']);
-        self::assertSame([['filename' => 'note.txt', 'file' => 'files/mine.txt']], $chat['messages'][0]['attachments']);
-        self::assertSame("my attachment\n", $archive['files/mine.txt']->getContent());
+        // The name and the bytes are the registry row's; the archive path is its stored name (HIL-144).
+        self::assertSame([['filename' => 'note.txt', 'file' => 'files/' . $file->storedName]], $chat['messages'][0]['attachments']);
+        self::assertSame("my attachment\n", $archive['files/' . $file->storedName]->getContent());
         self::assertNotNull($chat['registeredAt']);
         self::assertArrayNotHasKey('renames', $chat, 'The renames are the framework\'s section');
         $renames = json_decode($archive['renames.json']->getContent(), true, flags: JSON_THROW_ON_ERROR);
@@ -108,11 +103,10 @@ final class ChatExportTestFs extends FsContext
     /** @param string $directory Private test root */
     public function __construct(private readonly string $directory) { }
 
-    /** Registers the existing attachment names and the export directory. */
+    /** Registers the files registry's directory and the export directory. */
     public function configure(): void
     {
         $this->registerDirectory(self::FILES, $this->directory . '/published', DirectoryScope::CLUSTER);
-        $this->registerDirectory('published', $this->directory . '/published', DirectoryScope::CLUSTER);
         $this->registerDirectory(self::DATA_EXPORT, $this->directory . '/exports', DirectoryScope::CLUSTER);
     }
 }

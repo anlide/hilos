@@ -15,6 +15,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
+use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Image\ImageFit;
@@ -28,7 +29,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
 /**
- * Unit tests for the files registry door (HIL-336, publication HIL-136).
+ * Unit tests for the files registry door (HIL-336, publication HIL-136, removal HIL-144).
  *
  * The door writes nothing: it names one frame and hands the ids over. What can break silently is
  * the frame, the library still declaring itself its destination, and the refusal of a project
@@ -114,6 +115,49 @@ final class HilosFilesTest extends TestCase
         self::assertInstanceOf(AgentSignalData::class, $signal->data);
         self::assertInstanceOf(FileBindSignalData::class, $signal->data->data);
         self::assertSame([5, 8], $signal->data->data->fileIds);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal(), 'The door queues nothing else');
+    }
+
+    public function testTheLibraryDeclaresItselfTheDestinationOfTheRemoveFrame(): void
+    {
+        self::assertSame(
+            FileRemoveSignalData::class,
+            AbstractFilesLibraryAgent::AGENT_SIGNALS[HilosSignalConstants::HILOS_FILE_REMOVE] ?? null,
+        );
+    }
+
+    public function testRemovingWithoutTheFeatureIsRefusedAtTheDoor(): void
+    {
+        self::bindAppClass(HilosFilesUndeclaredTestHilos::class);
+
+        $this->expectException(FeatureNotDeclaredException::class);
+        $this->expectExceptionMessage('HilosFeature::FILES');
+
+        new HilosFiles(new LocalFilesStorage())->remove([1]);
+    }
+
+    public function testRemovingAnEmptyListSendsNothing(): void
+    {
+        self::bindAppClass(HilosFilesDeclaredTestHilos::class);
+
+        new HilosFiles(new LocalFilesStorage())->remove([]);
+
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testTheIdsToRemoveLeaveAsOneAgentFrame(): void
+    {
+        self::bindAppClass(HilosFilesDeclaredTestHilos::class);
+
+        new HilosFiles(new LocalFilesStorage())->remove([9, 4]);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        self::assertNotNull($signal, 'The door queues exactly one frame');
+        self::assertSame(HilosSignalConstants::HILOS_FILE_REMOVE, $signal->signalName->getName());
+        self::assertSame(SignalTypeConstants::AGENT_SIGNAL, $signal->signalType->getType());
+        self::assertInstanceOf(AgentSignalData::class, $signal->data);
+        self::assertInstanceOf(FileRemoveSignalData::class, $signal->data->data);
+        self::assertSame([9, 4], $signal->data->data->fileIds);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal(), 'The door queues nothing else');
     }
 

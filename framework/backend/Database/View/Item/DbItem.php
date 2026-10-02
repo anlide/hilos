@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Item;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Item\DbActions;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\CloneException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
@@ -225,6 +226,7 @@ abstract class DbItem
      * @return array<string, mixed> Item data as associative array
      * @throws LogicException When an override reads a related collection whose class constants are not configured
      * @throws InvalidArgumentException When an override reads a related collection whose object type does not match it
+     * @throws DatabaseException When an override reads a related row that is not loaded yet and loading it fails
      */
     public function toArray(
         bool $withId = true,

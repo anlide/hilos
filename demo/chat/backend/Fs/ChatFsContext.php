@@ -12,26 +12,24 @@ use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsTmpDirectory;
 
 /**
- * Chat-project filesystem context: quarantine, published, files, and tmp directories.
+ * Chat-project filesystem context: tmp, the files registry's directory, data exports and the
+ * analytics journal.
  *
- * Tmp is the node's - only the connection's process touches it; the other four are the cluster's,
- * quarantine among them because ChatAgent, one per cluster and on any node, empties it. The
- * analytics journal is the node's as well: each node's journal agent keeps its own files there
- * (HIL-1154), under a subdirectory of the environment and the node, so the environments that
- * mount this one data directory never see each other's.
+ * Tmp is the node's - only the connection's process touches it, and the uploads agent keeps the
+ * chunks of a file there. The files directory and the exports are the cluster's. The analytics
+ * journal is the node's as well: each node's journal agent keeps its own files there (HIL-1154),
+ * under a subdirectory of the environment and the node, so the environments that mount this one
+ * data directory never see each other's.
  *
  * @property-read FsTmpDirectory $tmp
- * @property-read FsDirectory $quarantine
- * @property-read FsDirectory $published
- * @property-read FsDirectory $files The published directory under the name the files registry reads
+ * @property-read FsDirectory $files Where the files registry keeps the chat's attachments
  */
 final class ChatFsContext extends FsContext
 {
-    public const string quarantine = 'quarantine';
-
-    public const string published = 'published';
-
     private const string STORAGE_DIR = 'chat_attachments';
+
+    /** Subdirectory the chat published its attachments into before the registry, kept so no file moves. */
+    private const string FILES_DIR = 'published';
 
     /**
      * Project-relative base: demo/chat/data/chat_attachments.
@@ -44,23 +42,18 @@ final class ChatFsContext extends FsContext
     public function configure(): void
     {
         $base = self::defaultBaseDir();
-        $quarantinePath = Hilos::$env[ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR]->string();
-        $publishedPath = Hilos::$env[ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR]->string();
+        $filesPath = Hilos::$env[ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR]->string();
 
         $this->setTmpPath($base . DIRECTORY_SEPARATOR . self::TMP, DirectoryScope::NODE);
 
+        // The files registry keeps its files where attachments were published before it (HIL-336):
+        // the earlier attachments became registry rows without a file moving (HIL-144), and the
+        // web server serves from the same directory. CHAT_FILES_PUBLISHED_DIR moves it.
         $this->registerDirectory(
-            self::quarantine,
-            $quarantinePath !== '' ? $quarantinePath : $base . DIRECTORY_SEPARATOR . self::quarantine,
+            FsContext::FILES,
+            $filesPath !== '' ? $filesPath : $base . DIRECTORY_SEPARATOR . self::FILES_DIR,
             DirectoryScope::CLUSTER,
         );
-
-        // The files registry keeps its files where attachments are published today (HIL-336):
-        // moving attachments onto the registry (HIL-144) then moves no file, and the web server
-        // already serves from there. CHAT_FILES_PUBLISHED_DIR moves both names at once.
-        $publishedDirectory = $publishedPath !== '' ? $publishedPath : $base . DIRECTORY_SEPARATOR . self::published;
-        $this->registerDirectory(self::published, $publishedDirectory, DirectoryScope::CLUSTER);
-        $this->registerDirectory(FsContext::FILES, $publishedDirectory, DirectoryScope::CLUSTER);
         $this->registerDirectory(
             FsContext::DATA_EXPORT,
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/data_export',

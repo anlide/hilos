@@ -493,6 +493,24 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         $this->complete(self::SIGNED_IN, 'u2', 'same bytes', FilePublishTestHilos::DEDUP);
     }
 
+    /**
+     * After a dropped socket the browser sends the same file again on its new connection, while
+     * the old connection's complete row waits for the sweep: an upload whose connection is gone
+     * is no copy the person keeps, and must not refuse the resend (HIL-144).
+     */
+    public function testAnUploadOfAConnectionThatIsGoneIsNotADuplicate(): void
+    {
+        $this->complete(self::SIGNED_IN, 'u1', 'same bytes', FilePublishTestHilos::DEDUP);
+        Hilos::$rt->connectionsSource()?->remove(self::SIGNED_IN);
+        $this->browser->seat(self::GUEST, self::SIGNED_IN_USER);
+
+        $this->complete(self::GUEST, 'u1', 'same bytes', FilePublishTestHilos::DEDUP);
+
+        $this->declare(self::GUEST, 'u2', FilePublishTestHilos::DEDUP, size: strlen('same bytes'));
+        $this->chunk(self::GUEST, 'u2', 'same bytes');
+        $this->assertFailedAsDuplicate(self::GUEST, 'u2');
+    }
+
     public function testTheSamePersonCannotUploadWhatAnotherOfTheirUploadsHolds(): void
     {
         $this->complete(self::SIGNED_IN, 'u1', 'same bytes');

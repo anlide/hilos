@@ -133,7 +133,7 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\AccountDeletion;
 use Hilos\Database\View\Item\Session;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Fs\Exception\FileDeleteException;
+use Hilos\Files\HilosFiles;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
@@ -5115,7 +5115,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Ages and carries out one standing deletion request through the scheduled erasure core.
      *
      * @param int $userId User whose account is erased
-     * @return AccountErasure Project deletion tally and published files
+     * @return AccountErasure Project deletion tally and registry files
      * @throws ValidationException When account deletion is unavailable or no live request can be carried out
      * @throws HilosException When the request lookup, aging, or erasure fails
      */
@@ -5151,9 +5151,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * person row. A failure at any account rolls the entire circle and its requests back.
      *
      * After the commit, outside the transaction because none of it can be rolled back: every
-     * session of every erased account is signed out, the files the project's rows pointed at are
-     * removed, and the notifications library is asked to forget each account - its tables are not
-     * claimed here, because the feature is not mounted everywhere. The request row stays behind,
+     * session of every erased account is signed out, the files library is asked to remove the
+     * registry files the project's rows pointed at, and the notifications library is asked to
+     * forget each account - its tables are not claimed here, because the feature is not mounted
+     * everywhere. The request row stays behind,
      * carried out: the number of an account that no longer exists and three dates. A failure
      * there is logged and not retried - the request is carried out, and no sweep returns to it.
      *
@@ -5212,7 +5213,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             }
         }
         try {
-            $this->removeErasedFiles($erasure->publishedFiles);
+            if ($erasure->fileIds !== [] && Hilos::hasFeature(HilosFeature::FILES)) {
+                (Hilos::$files ?? throw new LogicException('The files door is not created'))->remove($erasure->fileIds);
+            }
         } catch (HilosException $e) {
             $this->logAgentError("Account of user {$userId} erased, but removing its files failed: {$e->getMessage()}");
         }
@@ -5294,8 +5297,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * A refusing default, as the merge's seams have: a project that forgot to erase its rows
      * hears it the first time an account falls due, rather than keeping them in silence.
      *
-     * Files are named, not removed: a file deleted from disk cannot come back if the transaction
-     * rolls back, so the holder removes the named ones after the commit.
+     * Files are named, not removed: registry files are named by id, and a file deleted from disk
+     * cannot come back if the transaction rolls back, so after the commit the holder asks the
+     * files library to remove the named ones ({@see HilosFiles::remove()}).
      *
      * @param int $userId Person whose account is being erased
      * @return AccountErasure Rows deleted per family this project names, and the files they pointed at
@@ -5305,31 +5309,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     protected function applyAccountErasure(int $userId): AccountErasure
     {
         throw new NotImplementedException('Account erasure is not wired in this project');
-    }
-
-    /**
-     * Removes from the files directory what an erased account's rows pointed at (HIL-302).
-     *
-     * After the commit, so a file never goes while its row may still come back. A file that
-     * will not go is logged as an orphan and not tried again, as the files janitor does: a
-     * spare file on disk is cheaper than an erasure that is never finished.
-     *
-     * @param list<string> $storedNames Names in the files directory
-     */
-    private function removeErasedFiles(array $storedNames): void
-    {
-        $fs = Hilos::$fs;
-        foreach ($storedNames as $storedName) {
-            if ($fs === null) {
-                $this->logAgentWarning("Orphan file {$storedName} of an erased account left on disk: no file system here");
-                continue;
-            }
-            try {
-                $fs->files[$storedName]->unlink();
-            } catch (FileDeleteException $e) {
-                $this->logAgentWarning("Orphan file {$storedName} of an erased account left on disk: " . $e->getMessage());
-            }
-        }
     }
 
     /**

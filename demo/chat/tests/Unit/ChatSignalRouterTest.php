@@ -81,18 +81,6 @@ final class ChatSignalRouterTest extends TestCase
         }
     }
 
-    public function testAttachmentDraftDeleteRouteIsDeclaredByMainPage(): void
-    {
-        $this->assertSame(
-            PageConstants::MAIN,
-            Hilos::getPageActionRoutes()[ChatSignalConstants::ATTACHMENT_DRAFT_DELETE] ?? null,
-        );
-        $this->assertSame(
-            AgentType::CHAT,
-            Hilos::getActionAgentRoutes()[ChatSignalConstants::ATTACHMENT_DRAFT_DELETE] ?? null,
-        );
-    }
-
     public function testUnknownActionsDoNotUseWebSocketActionFallback(): void
     {
         $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
@@ -258,7 +246,10 @@ final class ChatSignalRouterTest extends TestCase
         ], $destinations);
     }
 
-    public function testBinaryFramesRouteToChatAgentThroughPageSignalOwnership(): void
+    /**
+     * A file's chunks go to the framework uploads agent whatever page is open (HIL-144).
+     */
+    public function testBinaryFramesRouteToTheUploadsAgent(): void
     {
         $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
@@ -268,7 +259,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertEquals([
-            new AgentDestination(AgentType::CHAT),
+            new AgentDestination(HilosAgentType::HILOS_UPLOADS),
         ], $destinations);
     }
 

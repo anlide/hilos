@@ -58,13 +58,14 @@ into the url that could have gone in a header:
   after the socket opens — the key has to be on the upgrade request itself, and
   the browser cannot put it in a header there. It is single-use, lives minutes,
   and is stored only as a hash. The decision is HIL-481.
-- **`attachmentId`** — the chat attachment being downloaded
-  (`ChatAttachmentDownloadHandler`). Not a secret at all: it names a row, and the
+- **`id`** — the registry file being downloaded, `/_hilos/file?id=…`
+  (`HilosFiles::DOWNLOAD_ID_KEY`), answered by the files library; a chat
+  attachment is served there. Not a secret at all: it names a row, and the
   session cookie on the same request is what says whether the caller may have it.
   A url naming a resource is what a url is for.
 
 The difference between the two is worth stating, because it is the thing to
-reason about when a third case appears: `attachmentId` is *identification*, and
+reason about when a third case appears: the file `id` is *identification*, and
 `hilosPass` is *authorization* that has nowhere else to go for the length of one
 upgrade request. Neither is "a token, but ours".
 

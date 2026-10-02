@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Files\Upload\Check;
 
+use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\UploadCheckInterface;
 use Hilos\Files\Upload\UploadDeclaration;
 use Hilos\Files\Upload\UploadRefusal;
+use Hilos\HilosException;
 use Hilos\Runtime\View\Item\HilosUpload;
 
 /**
  * Built-in check: the declared size is not empty and not above the target's limit (HIL-135).
  *
  * Judged on the declaration alone: the agent never accepts a byte past the declared size, so a
- * received file cannot outgrow what this check let through.
+ * received file cannot outgrow what this check let through. The limit is asked of the target on
+ * every declaration rather than once when the agent starts, so a target that reads it from a
+ * setting follows an administrator's change at once (HIL-144).
  */
 final readonly class SizeLimitCheck implements UploadCheckInterface
 {
@@ -30,16 +34,17 @@ final readonly class SizeLimitCheck implements UploadCheckInterface
     private const string MESSAGE_TOO_LARGE = 'File is larger than the allowed size';
 
     /**
-     * @param int $maxBytes Largest size the target accepts, in bytes
+     * @param AbstractUploadTarget $target Target whose limit the declarations are judged by
      */
     public function __construct(
-        private int $maxBytes,
+        private AbstractUploadTarget $target,
     ) {
     }
 
     /**
      * @param UploadDeclaration $declaration What the browser declared
      * @return ?UploadRefusal Refusal of an empty or oversized file, or null
+     * @throws HilosException When the target cannot read its limit - from a setting, say
      */
     public function checkDeclared(UploadDeclaration $declaration): ?UploadRefusal
     {
@@ -47,7 +52,7 @@ final readonly class SizeLimitCheck implements UploadCheckInterface
             return new UploadRefusal(self::CODE_EMPTY, self::MESSAGE_EMPTY);
         }
 
-        if ($declaration->size > $this->maxBytes) {
+        if ($declaration->size > $this->target->maxBytes()) {
             return new UploadRefusal(self::CODE_TOO_LARGE, self::MESSAGE_TOO_LARGE);
         }
 

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Database\Actions\Collection;
 
 use Demo\Chat\Constants\ChatEventType;
-use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Database\Entity\Item\Event;
 use Demo\Chat\Database\View\Collection\Events as DbCollectionEvents;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
@@ -126,7 +125,7 @@ final class EventsActions extends DbActions
      * @param string $message Published message text
      * @param ?int $userId Authoring user id
      * @param ?int $botId Authoring bot id
-     * @param ?PublishedAttachmentInputs $attachments Published attachment metadata
+     * @param list<int> $fileIds Registry files sent with the message, in the order they were attached
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
      * @throws LogicException If event id is null after sync
@@ -135,7 +134,7 @@ final class EventsActions extends DbActions
         string $message,
         ?int $userId = null,
         ?int $botId = null,
-        ?PublishedAttachmentInputs $attachments = null,
+        array $fileIds = [],
     ): DbEvent
     {
         $event = $this->add(ChatEventType::MESSAGE_SENT->value);
@@ -149,15 +148,8 @@ final class EventsActions extends DbActions
         // Every feed message is born here, so both authors reach mention detection once.
         ChatMentionNotifier::notifyMentions((int)$event->id, $message, $userId, $botId);
 
-        if ($attachments !== null) {
-            foreach ($attachments as $attachment) {
-                Hilos::$db->eventAttachments->actions->create(
-                    (int)$event->id,
-                    $attachment->filename,
-                    $attachment->mimeType,
-                    $attachment->storedName,
-                );
-            }
+        foreach ($fileIds as $fileId) {
+            Hilos::$db->eventAttachments->actions->create((int)$event->id, $fileId);
         }
 
         return $event;

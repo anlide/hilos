@@ -15,8 +15,9 @@ use Hilos\Runtime\State\Item\HilosSessionConnection;
  * Stands on the framework {@see HilosSessionConnection} base — the session stage,
  * because chat carries browser sessions — which owns the session triple
  * (acceptKey / sessionToken / userId) and the whole create/hydrate/serialize/diff
- * template. This subclass adds chat's own in-memory moderation, file upload
- * session, and progress UI state for this socket only, and reaches them through
+ * template. This subclass adds chat's own in-memory moderation state for this
+ * socket only - the files a submitted message carries are the framework uploads
+ * agent's, named here by their client ids (HIL-144) - and reaches it through
  * the four hooks the base leaves it: {@see initOwn()}, {@see hydrateOwn()},
  * {@see ownToArray()}, {@see applyOwnDiff()}. Inbound RT updates arrive through
  * the base `applyDiff()`; local writes from item actions use typed properties and
@@ -28,31 +29,16 @@ final class Connection extends HilosSessionConnection
     public const string outboundModerationMessage = 'outboundModerationMessage';
     public const string outboundModerationReason = 'outboundModerationReason';
     public const string outboundModerationUpdatedAt = 'outboundModerationUpdatedAt';
+    public const string outboundModerationAttachments = 'outboundModerationAttachments';
 
     public const string renameModerationPhase = 'renameModerationPhase';
     public const string renameModerationName = 'renameModerationName';
     public const string renameModerationReason = 'renameModerationReason';
     public const string renameModerationUpdatedAt = 'renameModerationUpdatedAt';
 
-    public const string fileSessionUploadId = 'fileSessionUploadId';
-    public const string fileSessionDeclaredSize = 'fileSessionDeclaredSize';
-    public const string fileSessionReceivedBytes = 'fileSessionReceivedBytes';
-    public const string fileSessionQuarantineBasename = 'fileSessionQuarantineBasename';
-    public const string fileSessionOriginalFilename = 'fileSessionOriginalFilename';
-    public const string fileSessionMimeType = 'fileSessionMimeType';
-    public const string fileSessionClientUploadId = 'fileSessionClientUploadId';
-    public const string fileSessionNormalizedFilename = 'fileSessionNormalizedFilename';
 
-    public const string fileUploadPhase = 'fileUploadPhase';
-    public const string fileUploadClientUploadId = 'fileUploadClientUploadId';
-    public const string fileUploadErrorCode = 'fileUploadErrorCode';
-    public const string fileUploadErrorMessage = 'fileUploadErrorMessage';
 
-    public const string fileProgressFilename = 'fileProgressFilename';
-    public const string fileProgressUploadedBytes = 'fileProgressUploadedBytes';
-    public const string fileProgressTotalBytes = 'fileProgressTotalBytes';
 
-    public const string uploadProgressLastSentAt = 'uploadProgressLastSentAt';
 
     /** Moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
     public string $outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
@@ -69,6 +55,14 @@ final class Connection extends HilosSessionConnection
     /** Unix time of last moderation state update. */
     public int $outboundModerationUpdatedAt = 0;
 
+    /**
+     * Client ids of the complete uploads the submitted message carries, in the order the
+     * person attached them; empty while no message is moderated or it carries no file.
+     *
+     * @var list<string>
+     */
+    public array $outboundModerationAttachments = [];
+
     /** Rename moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
     public string $renameModerationPhase = ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_NONE;
 
@@ -80,54 +74,6 @@ final class Connection extends HilosSessionConnection
 
     /** Unix time of last rename moderation state update. */
     public int $renameModerationUpdatedAt = 0;
-
-    /** Active upload id or null. */
-    public ?string $fileSessionUploadId = null;
-
-    /** Declared total size for current upload. */
-    public int $fileSessionDeclaredSize = 0;
-
-    /** Bytes appended so far for current upload. */
-    public int $fileSessionReceivedBytes = 0;
-
-    /** Quarantine file basename, or null when no upload session is open. */
-    public ?string $fileSessionQuarantineBasename = null;
-
-    /** Client original filename for session, or null when no upload session is open. */
-    public ?string $fileSessionOriginalFilename = null;
-
-    /** MIME type for session, or null when no upload session is open. */
-    public ?string $fileSessionMimeType = null;
-
-    /** Client-side upload correlation id, or null when no upload session is open. */
-    public ?string $fileSessionClientUploadId = null;
-
-    /** Normalized basename for duplicate-name checks, or null when no upload session is open. */
-    public ?string $fileSessionNormalizedFilename = null;
-
-    /** Upload UI phase: ready, uploading, failed, or idle while no upload is running. */
-    public string $fileUploadPhase = ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_IDLE;
-
-    /** Client-side upload correlation id for ready/failed upload state. */
-    public ?string $fileUploadClientUploadId = null;
-
-    /** Upload failure code shown through self-connection state. */
-    public ?string $fileUploadErrorCode = null;
-
-    /** Upload failure message shown through self-connection state. */
-    public ?string $fileUploadErrorMessage = null;
-
-    /** Progress bar filename or null. */
-    public ?string $fileProgressFilename = null;
-
-    /** Bytes for upload progress UI. */
-    public int $fileProgressUploadedBytes = 0;
-
-    /** Total for upload progress UI. */
-    public int $fileProgressTotalBytes = 0;
-
-    /** Last upload-progress browser notify time for throttle (microtime). */
-    public float $uploadProgressLastSentAt = 0.0;
 
     protected function initOwn(): void
     {
@@ -153,26 +99,11 @@ final class Connection extends HilosSessionConnection
         $this->outboundModerationMessage = self::optionalString($row, self::outboundModerationMessage);
         $this->outboundModerationReason = self::optionalString($row, self::outboundModerationReason);
         $this->outboundModerationUpdatedAt = self::requireInt($row, self::outboundModerationUpdatedAt);
+        $this->outboundModerationAttachments = self::requireStringList($row, self::outboundModerationAttachments);
         $this->renameModerationPhase = self::requireString($row, self::renameModerationPhase);
         $this->renameModerationName = self::optionalString($row, self::renameModerationName);
         $this->renameModerationReason = self::optionalString($row, self::renameModerationReason);
         $this->renameModerationUpdatedAt = self::requireInt($row, self::renameModerationUpdatedAt);
-        $this->fileSessionUploadId = self::optionalString($row, self::fileSessionUploadId);
-        $this->fileSessionDeclaredSize = self::requireInt($row, self::fileSessionDeclaredSize);
-        $this->fileSessionReceivedBytes = self::requireInt($row, self::fileSessionReceivedBytes);
-        $this->fileSessionQuarantineBasename = self::optionalString($row, self::fileSessionQuarantineBasename);
-        $this->fileSessionOriginalFilename = self::optionalString($row, self::fileSessionOriginalFilename);
-        $this->fileSessionMimeType = self::optionalString($row, self::fileSessionMimeType);
-        $this->fileSessionClientUploadId = self::optionalString($row, self::fileSessionClientUploadId);
-        $this->fileSessionNormalizedFilename = self::optionalString($row, self::fileSessionNormalizedFilename);
-        $this->fileUploadPhase = self::requireString($row, self::fileUploadPhase);
-        $this->fileUploadClientUploadId = self::optionalString($row, self::fileUploadClientUploadId);
-        $this->fileUploadErrorCode = self::optionalString($row, self::fileUploadErrorCode);
-        $this->fileUploadErrorMessage = self::optionalString($row, self::fileUploadErrorMessage);
-        $this->fileProgressFilename = self::optionalString($row, self::fileProgressFilename);
-        $this->fileProgressUploadedBytes = self::requireInt($row, self::fileProgressUploadedBytes);
-        $this->fileProgressTotalBytes = self::requireInt($row, self::fileProgressTotalBytes);
-        $this->uploadProgressLastSentAt = self::requireFloat($row, self::uploadProgressLastSentAt);
     }
 
     /**
@@ -198,34 +129,15 @@ final class Connection extends HilosSessionConnection
         $this->outboundModerationMessage = self::patchOptionalString($diff, self::outboundModerationMessage, $this->outboundModerationMessage);
         $this->outboundModerationReason = self::patchOptionalString($diff, self::outboundModerationReason, $this->outboundModerationReason);
         $this->outboundModerationUpdatedAt = self::patchInt($diff, self::outboundModerationUpdatedAt, $this->outboundModerationUpdatedAt);
+        $this->outboundModerationAttachments = self::patchStringList(
+            $diff,
+            self::outboundModerationAttachments,
+            $this->outboundModerationAttachments,
+        );
         $this->renameModerationPhase = self::patchString($diff, self::renameModerationPhase, $this->renameModerationPhase);
         $this->renameModerationName = self::patchOptionalString($diff, self::renameModerationName, $this->renameModerationName);
         $this->renameModerationReason = self::patchOptionalString($diff, self::renameModerationReason, $this->renameModerationReason);
         $this->renameModerationUpdatedAt = self::patchInt($diff, self::renameModerationUpdatedAt, $this->renameModerationUpdatedAt);
-        $this->fileSessionUploadId = self::patchOptionalString($diff, self::fileSessionUploadId, $this->fileSessionUploadId);
-        $this->fileSessionDeclaredSize = self::patchInt($diff, self::fileSessionDeclaredSize, $this->fileSessionDeclaredSize);
-        $this->fileSessionReceivedBytes = self::patchInt($diff, self::fileSessionReceivedBytes, $this->fileSessionReceivedBytes);
-        $this->fileSessionQuarantineBasename = self::patchOptionalString(
-            $diff,
-            self::fileSessionQuarantineBasename,
-            $this->fileSessionQuarantineBasename,
-        );
-        $this->fileSessionOriginalFilename = self::patchOptionalString($diff, self::fileSessionOriginalFilename, $this->fileSessionOriginalFilename);
-        $this->fileSessionMimeType = self::patchOptionalString($diff, self::fileSessionMimeType, $this->fileSessionMimeType);
-        $this->fileSessionClientUploadId = self::patchOptionalString($diff, self::fileSessionClientUploadId, $this->fileSessionClientUploadId);
-        $this->fileSessionNormalizedFilename = self::patchOptionalString(
-            $diff,
-            self::fileSessionNormalizedFilename,
-            $this->fileSessionNormalizedFilename,
-        );
-        $this->fileUploadPhase = self::patchString($diff, self::fileUploadPhase, $this->fileUploadPhase);
-        $this->fileUploadClientUploadId = self::patchOptionalString($diff, self::fileUploadClientUploadId, $this->fileUploadClientUploadId);
-        $this->fileUploadErrorCode = self::patchOptionalString($diff, self::fileUploadErrorCode, $this->fileUploadErrorCode);
-        $this->fileUploadErrorMessage = self::patchOptionalString($diff, self::fileUploadErrorMessage, $this->fileUploadErrorMessage);
-        $this->fileProgressFilename = self::patchOptionalString($diff, self::fileProgressFilename, $this->fileProgressFilename);
-        $this->fileProgressUploadedBytes = self::patchInt($diff, self::fileProgressUploadedBytes, $this->fileProgressUploadedBytes);
-        $this->fileProgressTotalBytes = self::patchInt($diff, self::fileProgressTotalBytes, $this->fileProgressTotalBytes);
-        $this->uploadProgressLastSentAt = self::patchFloat($diff, self::uploadProgressLastSentAt, $this->uploadProgressLastSentAt);
     }
 
     /**
@@ -238,26 +150,11 @@ final class Connection extends HilosSessionConnection
             self::outboundModerationMessage => $this->outboundModerationMessage,
             self::outboundModerationReason => $this->outboundModerationReason,
             self::outboundModerationUpdatedAt => $this->outboundModerationUpdatedAt,
+            self::outboundModerationAttachments => $this->outboundModerationAttachments,
             self::renameModerationPhase => $this->renameModerationPhase,
             self::renameModerationName => $this->renameModerationName,
             self::renameModerationReason => $this->renameModerationReason,
             self::renameModerationUpdatedAt => $this->renameModerationUpdatedAt,
-            self::fileSessionUploadId => $this->fileSessionUploadId,
-            self::fileSessionDeclaredSize => $this->fileSessionDeclaredSize,
-            self::fileSessionReceivedBytes => $this->fileSessionReceivedBytes,
-            self::fileSessionQuarantineBasename => $this->fileSessionQuarantineBasename,
-            self::fileSessionOriginalFilename => $this->fileSessionOriginalFilename,
-            self::fileSessionMimeType => $this->fileSessionMimeType,
-            self::fileSessionClientUploadId => $this->fileSessionClientUploadId,
-            self::fileSessionNormalizedFilename => $this->fileSessionNormalizedFilename,
-            self::fileUploadPhase => $this->fileUploadPhase,
-            self::fileUploadClientUploadId => $this->fileUploadClientUploadId,
-            self::fileUploadErrorCode => $this->fileUploadErrorCode,
-            self::fileUploadErrorMessage => $this->fileUploadErrorMessage,
-            self::fileProgressFilename => $this->fileProgressFilename,
-            self::fileProgressUploadedBytes => $this->fileProgressUploadedBytes,
-            self::fileProgressTotalBytes => $this->fileProgressTotalBytes,
-            self::uploadProgressLastSentAt => $this->uploadProgressLastSentAt,
         ];
     }
 }

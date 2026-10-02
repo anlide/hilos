@@ -75,8 +75,6 @@ final class ChatBrowserContext extends BrowserContext
         if (
             $field === SelfConnectionSignalData::messageRateLimitSecondsRemaining
             || $field === SelfConnectionSignalData::outboundModerationState
-            || $field === SelfConnectionSignalData::fileUploadState
-            || $field === SelfConnectionSignalData::fileUploadProgress
         ) {
             return $this->computeSelfConnectionField($field, $acceptKey);
         }

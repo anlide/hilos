@@ -10,7 +10,6 @@ namespace Demo\Chat\Constants;
 final class ConnectionRuntimeConstants
 {
     public const string userState = 'userState';
-    public const string attachmentDrafts = 'attachmentDrafts';
 
     /**
      * No visible moderation state.
@@ -28,7 +27,7 @@ final class ConnectionRuntimeConstants
     public const string OUTBOUND_MODERATION_PHASE_REJECTED = 'rejected';
 
     /**
-     * Moderation phase for unavailable moderation or missing attachment state.
+     * Moderation phase for unavailable moderation, or attachments that could not be published.
      */
     public const string OUTBOUND_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
 
@@ -51,24 +50,4 @@ final class ConnectionRuntimeConstants
      * Moderation phase for unavailable rename moderation.
      */
     public const string RENAME_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
-
-    /**
-     * No upload state visible to the frontend.
-     */
-    public const string FILE_UPLOAD_PHASE_IDLE = '';
-
-    /**
-     * Backend accepted metadata and the client may stream binary frames.
-     */
-    public const string FILE_UPLOAD_PHASE_READY = 'ready';
-
-    /**
-     * The client is streaming binary frames for the active upload.
-     */
-    public const string FILE_UPLOAD_PHASE_UPLOADING = 'uploading';
-
-    /**
-     * Upload init or binary streaming failed; retry is allowed.
-     */
-    public const string FILE_UPLOAD_PHASE_FAILED = 'failed';
 }

@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Entity\Item;
 
-use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Demo\Chat\Database\Entity\Collection\EventAttachments as EntityEventAttachments;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Item\File;
 use Hilos\Database\PhpType;
 
 /**
  * EventAttachment - Entity representing event_attachment table row.
  *
- * Stores published chat attachment metadata linked to one event.
+ * Links one published registry file to the message event it was sent with (HIL-144).
  *
  * @method static EntityEventAttachments get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityEventAttachments getAll()
@@ -21,56 +21,49 @@ final class EventAttachment extends Entity
 {
     public const string id = 'id';
     public const string event_id = 'event_id';
-    public const string filename = 'filename';
-    public const string mime_type = 'mime_type';
-    public const string stored_name = 'stored_name';
+    public const string file_id = 'file_id';
 
     public const string _table = 'event_attachment';
     public const string _primary = self::id;
     public const array _columns = [
         self::id,
         self::event_id,
-        self::filename,
-        self::mime_type,
-        self::stored_name,
+        self::file_id,
     ];
 
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::event_id => PhpType::INTEGER->value,
-        self::filename => PhpType::STRING->value,
-        self::mime_type => PhpType::STRING->value,
-        self::stored_name => PhpType::STRING->value,
+        self::file_id => PhpType::INTEGER->value,
     ];
 
+    // No cascade on file_id: the refusal to remove a file an attachment still names is how
+    // the files library learns the chat still links it.
     public const array _foreign = [
         self::event_id => EventMessage::_table,
+        self::file_id => File::_table,
     ];
 
     public const array _indexes = [
         'event_id' => [Entity::INDEX_COLUMNS => [self::event_id]],
-        'stored_name' => [Entity::INDEX_COLUMNS => [self::stored_name], Entity::INDEX_UNIQUE => true],
+        'uk_event_attachment_file' => [Entity::INDEX_COLUMNS => [self::file_id], Entity::INDEX_UNIQUE => true],
     ];
 
     // The column is named event_id, but _foreign hangs it on event_message.
     public const string _setVia = self::event_id;
     public const bool _setRoot = false;
 
-    // The name the uploader gave the file; `stored_name` is the name it has on disk and
-    // identifies a file rather than a person - the attachment would be unreachable
-    // without it.
-    public const array _pii = [self::filename => AnonymizationStrategy::MASK];
+    // Two keys and a link: the name the uploader gave the file lives in hilos_file, which
+    // carries its own verdict.
+    public const array _pii = [];
 
     public const array _piiNotPersonal = [
         self::id,
         self::event_id,
-        self::mime_type,
-        self::stored_name,
+        self::file_id,
     ];
 
     public ?int $id = null;
     public int $event_id;
-    public string $filename;
-    public string $mime_type;
-    public string $stored_name;
+    public int $file_id;
 }

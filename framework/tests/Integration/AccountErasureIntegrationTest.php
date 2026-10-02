@@ -27,6 +27,9 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Verification\VerificationType;
+use Hilos\Files\DTO\FileRemoveSignalData;
+use Hilos\Files\HilosFiles;
+use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\DTO\NotificationForgetUserSignalData;
@@ -280,6 +283,44 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertNotNull(self::requestRow((int)$foldedRequest->id)['completed_at']);
         self::assertTrue(self::personExists(self::NEIGHBOUR_ID));
         self::assertSame([self::DEEPEST_ID, self::FOLDED_ID, self::USER_ID], $this->forgottenUsers());
+    }
+
+    /**
+     * The registry files the project's rows pointed at - of the whole circle, in erasure order -
+     * leave for the files library in one remove frame after the commit, rather than being deleted
+     * from the files directory past the registry (HIL-144).
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testTheErasedRowsFilesLeaveForTheFilesLibraryInOneFrame(): void
+    {
+        self::bindAppClass(AccountErasureFilesTestHilos::class);
+        $previousFiles = Hilos::$files;
+        Hilos::$files = new HilosFiles(new LocalFilesStorage());
+        try {
+            self::seedPersonRows();
+            Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Folded')", [self::FOLDED_ID]);
+            self::seedMerge(self::FOLDED_ID, self::USER_ID);
+            Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+
+            $agent = new AccountErasureTestAgent();
+            $agent->fileIdsOf = [self::FOLDED_ID => [41], self::USER_ID => [42, 43]];
+            $agent->onStart();
+            $agent->onTick();
+
+            self::assertSame([self::FOLDED_ID, self::USER_ID], $agent->erased);
+            $removals = [];
+            foreach ($this->drainQueue() as $signal) {
+                if ($signal->signalName->getName() === HilosSignalConstants::HILOS_FILE_REMOVE) {
+                    self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                    self::assertInstanceOf(FileRemoveSignalData::class, $signal->data->data);
+                    $removals[] = $signal->data->data->fileIds;
+                }
+            }
+            self::assertSame([[41, 42, 43]], $removals);
+        } finally {
+            Hilos::$files = $previousFiles;
+        }
     }
 
     /**
@@ -844,6 +885,14 @@ abstract class AccountErasureTestHilos extends Hilos
 }
 
 /**
+ * Fixture project that also keeps a files registry, so the holder hands erased files to it.
+ */
+abstract class AccountErasureFilesTestHilos extends Hilos
+{
+    protected const array FEATURES = [HilosFeature::AUTH, HilosFeature::FILES];
+}
+
+/**
  * Session holder of the fixture project, whose seam records the erasure or refuses it.
  */
 final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
@@ -857,13 +906,16 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
     /** @var list<array{int, bool, int}> Person and rename journal state seen by each hook call */
     public array $seenAtHook = [];
 
+    /** @var array<int, list<int>> Registry files the seam names for each erased person */
+    public array $fileIdsOf = [];
+
     public function onStop(): void
     {
     }
 
     /**
      * @param int $userId Person whose account is being erased
-     * @return AccountErasure Nothing of a project, and no files
+     * @return AccountErasure One project row, and the registry files the case names for the person
      * @throws ValidationException When the case asks the seam to refuse
      * @throws DatabaseException When the person or rename journal cannot be inspected
      */
@@ -878,7 +930,7 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
         Database::sql('SELECT COUNT(*) AS `count` FROM `hilos_user_rename` WHERE `user_id` = ?', [$userId]);
         $this->seenAtHook[] = [$userId, $exists, (int)(Database::row()['count'] ?? 0)];
 
-        return new AccountErasure(['projectRows' => 1], []);
+        return new AccountErasure(['projectRows' => 1], $this->fileIdsOf[$userId] ?? []);
     }
 }
 

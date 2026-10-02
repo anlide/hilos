@@ -23,9 +23,17 @@ link to the file is written — a chat attachment, a gallery entry:
 Hilos::$files->markBound([$fileId]);
 ```
 
-That is the whole contract. Until the call arrives, the janitor may take the
-file; after it, the janitor never touches it again. There is no way back to
-unbound yet.
+Until the call arrives, the janitor may take the file; after it, the janitor
+never touches it again. When the project later drops its links — deletes its
+rows and commits — it owes one more call, and the files go at once
+([Removing](#removing)):
+
+```php
+Hilos::$files->remove($fileIds);
+```
+
+There is no way back to unbound: a file the project no longer wants is removed,
+not left to wait for the janitor.
 
 ## Activation
 
@@ -56,9 +64,10 @@ $this->registerDirectory(FsContext::FILES, $path, DirectoryScope::CLUSTER);
 start refuses the feature without the library pair (and the pair without the
 feature), without the settings library or the catalog fragment, and — once the
 FS context is configured — without the files directory. The chat demo
-registers its published-attachments directory under this name too, so moving
-attachments onto the registry moves no file. The files directory is the
-cluster's: every node and its nginx see it ([filesystem.md](filesystem.md)).
+registers its attachments directory under this name, which is why its earlier
+attachments became registry rows without a file moving (HIL-144). The files
+directory is the cluster's: every node and its nginx see it
+([filesystem.md](filesystem.md)).
 
 ## Publishing
 
@@ -121,8 +130,8 @@ a moderation verdict. Declare that name in the consuming agent's
 
 The project reads the answer: `error` not null → tell the person; otherwise
 write its own links, then `markBound($fileIds)`. A file the project never binds
-goes to the janitor. Publication does not know about moderation: the chat will
-call it on approval (HIL-144), a gallery at once.
+goes to the janitor. Publication does not know about moderation: the chat calls
+it on approval, a gallery at once.
 
 If the library dies in the middle of a request, the asker hears nothing and
 waits out its own timeout; the handed-over temporary files stay on disk, as
@@ -163,7 +172,7 @@ through the index `idx_file_owner_hash (owner_user_id, content_hash)`; a row
 nothing has bound yet does not count.
 
 A row never shares its file with another: one copy for several links needs
-reference counting, and without it the janitor or an unbind would delete the
+reference counting, and without it the janitor or a removal would delete the
 file from under the second link.
 
 ## Binding
@@ -174,6 +183,42 @@ nothing to wait for. An empty list sends nothing. A project that did not declare
 `FILES` is refused at the door (`FeatureNotDeclaredException`) — the frame would
 reach nobody and the caller would believe its files kept. In the library an id
 the registry does not hold is a warning, and a row already bound is not written.
+
+## Removing
+
+`remove()` is the door for a project that dropped its links: its rows are
+deleted and committed — a history cleared, an account erased — and their files
+should go now rather than wait out `files.unbound_ttl_hours`, holding their
+place in the storage limit:
+
+```php
+$fileIds = Hilos::$db->eventAttachments->allFileIds();
+Hilos::$db->events->actions->deleteAll();      // the project's links go first
+Hilos::$files->remove($fileIds);
+```
+
+It sends the frame `hilos_file_remove` (`{fileIds: list<int>}`) to the library
+and answers nothing. The door refuses as `markBound()` does: no `FILES`, a
+`FeatureNotDeclaredException`; an empty list, nothing sent. Call it after the
+commit, never inside the transaction that deletes the links: the library works
+in another process, and a rolled-back link would point at a file already gone.
+
+The library removes each row by the janitor's own steps — one function serves
+both ([The Janitor](#the-janitor)): copy rows, the row, then the copy files and
+the original through the storage. The differences are two. A bound row is
+removed as readily as an unbound one: the call itself says the project's links
+are gone. And a foreign-key refusal means a project row **still** links the
+file — the project asked too early, or another of its rows points at it — so the
+row stays as it was, neither marked nor retried, and a warning says so; its
+copies' bytes go regardless, as the janitor's do. An id the registry does not
+hold is a warning. The pass ends with one line, `Files removed: N, kept M`.
+
+Who calls it today: the chat's history cleanup (every 30 minutes) and the
+erasure of an account — the project's `applyAccountErasure()` names the registry
+files its deleted rows pointed at in `AccountErasure::$fileIds`, and the session
+holder calls `remove()` after the commit if the project declares `FILES`
+([account-deletion.md](account-deletion.md)). Nothing deletes a registry file
+past the library.
 
 ## The Janitor
 
@@ -201,9 +246,7 @@ for the schedule. Only these two refusals are caught; anything else — the
 database, the setting — leaves the tick, as in
 [code-style/wiring-refusals.md](../code-style/wiring-refusals.md).
 
-The janitor never walks the storage. A file without a row is not its own — in
-the chat, the files directory also holds attachments published before the
-registry existed.
+The janitor never walks the storage. A file without a row is not its own.
 
 ## Serving A File
 
@@ -267,8 +310,6 @@ location ^~ /_files_internal/ { internal; alias /path/to/files/; }
 
 ## What Is Not Here
 
-- Unbinding, and moving chat attachments onto the registry, its nginx location
-  and whether chat guests see its files — HIL-144.
 - `Range` and streaming when the daemon sends the bytes itself.
 - One copy shared by several links, and a quota per person.
 - Placing the uploads agent and the library on one node: the temporary

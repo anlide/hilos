@@ -26,11 +26,20 @@ export interface Event extends Entity {
   readonly timestamp: string
 }
 
-/** A published file attached to a message event. */
+/**
+ * A registry file attached to a message event (HIL-144). The name and the type are
+ * the registry row's; both addresses are built by the server — the thumbnail's
+ * carries the signature of its declaration, which only the server knows.
+ */
 export interface EventAttachment extends Entity {
   readonly eventId: number
+  readonly fileId: number
   readonly filename: string
   readonly mimeType: string
+  /** Same-origin address of the original (/_hilos/file?id=…). */
+  readonly url: string
+  /** Same-origin address of the feed's thumbnail; a picture the server cannot draw comes back as the original. */
+  readonly thumbUrl: string
 }
 
 /** The message detail of a `message_sent` event. */
@@ -82,8 +91,11 @@ export function eventAttachmentFromFields(
   return {
     id: readNumber(fields, 'id'),
     eventId: readNumber(fields, 'eventId'),
+    fileId: readNumber(fields, 'fileId'),
     filename: readString(fields, 'filename'),
     mimeType: readString(fields, 'mimeType'),
+    url: readString(fields, 'url'),
+    thumbUrl: readString(fields, 'thumbUrl'),
   }
 }
 

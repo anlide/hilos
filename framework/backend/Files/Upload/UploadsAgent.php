@@ -771,7 +771,7 @@ final class UploadsAgent extends AbstractAgent
     private function checksOf(AbstractUploadTarget $target): array
     {
         $checks = [
-            new SizeLimitCheck($target->maxBytes()),
+            new SizeLimitCheck($target),
             new DeclaredMimeCheck($target->acceptedMimeTypes()),
         ];
         if (Hilos::hasFeature(HilosFeature::FILES)) {

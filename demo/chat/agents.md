@@ -22,7 +22,7 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 
 | File | Read when... |
 |---|---|
-| [pages/main-page.md](spec/pages/main-page.md) | subscription flow, initial state, message/file actions |
+| [pages/main-page.md](spec/pages/main-page.md) | subscription flow, initial state, the message action and the files it names |
 | [pages/moderator-page.md](spec/pages/moderator-page.md) | moderator console, profile, user, admin, hilos system pages |
 
 ## Data Flow
@@ -31,16 +31,16 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 |---|---|
 | [data-flow/ws-handshake.md](spec/data-flow/ws-handshake.md) | tracing a new connection from TCP to initial state delivery |
 | [data-flow/message-flow.md](spec/data-flow/message-flow.md) | tracing a text message from user input to broadcast |
-| [data-flow/file-upload-flow.md](spec/data-flow/file-upload-flow.md) | binary upload: init, binary frames, progress, quarantine |
-| [data-flow/file-moderation-flow.md](spec/data-flow/file-moderation-flow.md) | file moderation after upload, approve/reject, cleanup |
-| [data-flow/attachment-serving.md](spec/data-flow/attachment-serving.md) | serving an attachment back to the browser — cookie auth, same-origin, X-Accel-Redirect, render-by-mimeType |
+| [data-flow/file-upload-flow.md](spec/data-flow/file-upload-flow.md) | attaching a file: the `chat_attachment` upload target, its limits, the composer's chips and where a draft lives |
+| [data-flow/file-moderation-flow.md](spec/data-flow/file-moderation-flow.md) | a message's files through moderation: approve/reject, publication into the files registry |
+| [data-flow/attachment-serving.md](spec/data-flow/attachment-serving.md) | serving an attachment back to the browser — `/_hilos/file`, cookie auth, same-origin, X-Accel-Redirect, thumbnails, who may read |
 
 ## Runtime State
 
 | File | Read when... |
 |---|---|
-| [runtime/connection.md](spec/runtime/connection.md) | per-connection state: acceptKey, userId, upload session, mod UI |
-| [runtime/chat-user-state.md](spec/runtime/chat-user-state.md) | per-user state: pending text moderation |
+| [runtime/connection.md](spec/runtime/connection.md) | per-connection state: acceptKey, userId, moderation and the files it carries |
+| [runtime/chat-user-state.md](spec/runtime/chat-user-state.md) | per-user state: the common outbound submit rate limit |
 | [runtime/chat-context.md](spec/runtime/chat-context.md) | shared chat summary for bots (ChatContextAnalyzerAgent output) |
 
 ## AI / Moderation
@@ -60,10 +60,10 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
 
 ## Key rules for this project
 
-1. `ChatAgent` is the **only** truth source for: `events`, `eventAttachments`, `users`, `connections`, `userStates`, `attachmentDrafts`
+1. `ChatAgent` is the **only** truth source for: `events`, `eventAttachments`, `users`, `connections`, `userStates`
 2. `LibraryAgent` is the **only** truth source for admin library DB collections: `bots`, `moderatorPromptPieces`
 3. `ChatContextAnalyzerAgent` is the only truth source for `chatContexts`
-4. File upload state lives on `Connection` (per-connection), text moderation on `ChatUserState` (per-user)
+4. Uploads belong to the framework uploads agent (`hilosUploads`) and attached files to the files registry (`hilos_file`); moderation lives on `Connection` (per-connection), the submit rate limit on `ChatUserState` (per-user)
 5. All LLM calls are **async** — never block in `onTick()`
 6. Moderation always goes through `ModeratorAgent` — `ChatAgent` never calls LLM directly
 

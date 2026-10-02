@@ -25,6 +25,5 @@ Only `ChatAgent` should write to it.
 
 ## Related State
 
-- Outbound moderation state lives on `Connection` (per connection).
-- Active binary upload state lives on `Connection` (per connection).
-- Completed uploaded files waiting to be sent live in `ChatRtContext::attachmentDrafts` (per connection).
+- Outbound moderation state lives on `Connection` (per connection), with the client ids of the files the moderated message carries.
+- Uploads, unfinished and complete, are the framework uploads agent's rows (`Hilos::$rt->hilosUploads`, per connection).

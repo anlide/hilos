@@ -2,7 +2,7 @@
 
 **Page constant:** `PageConstants::MAIN` | **Agent:** `ChatAgent`
 
-The primary chat page. Handles subscription, message submit, binary upload init, binary upload frames, and outbound moderation results.
+The primary chat page. Handles subscription, message submit, outbound moderation results, and the publication of an approved message's files. The files themselves are sent to the framework uploads agent, not to this page ([file-upload-flow.md](../data-flow/file-upload-flow.md)).
 
 ## onSubscribe
 
@@ -11,25 +11,21 @@ The primary chat page. Handles subscription, message submit, binary upload init,
 3. Sends `SUBSCRIPTION_PAGE_MAIN` with:
    - Main event rows for chat history
    - Main user and bot rows with their runtime status overlays
-   - `selfConnection` with current connection-local user, moderation, upload state/progress, and rate-limit summary
-   - Attachment draft rows for this connection
+   - `selfConnection` with current connection-local user, moderation, and rate-limit summary
 
 ## Actions Handled
 
 | Action | DTO | Handler |
 |---|---|---|
-| `message` | `MessageActionDTO` | Validate text/drafts -> common rate limit -> outbound moderation |
-| `file_upload_init` | `FileUploadInitActionDTO` | Initialize per-connection binary upload session |
-| `attachment_draft_delete` | `AttachmentDraftDeleteActionDTO` | Delete one completed draft for this connection |
+| `message` | `MessageActionDTO` (`content`, `attachments: list<clientUploadId>`) | Common rate limit -> named uploads -> non-empty -> outbound moderation |
 
-## File Upload
+## Attachments
 
-File upload init and binary frame logic lives in `Pages/MainPage`:
+The page reads the uploads a message names and publishes them once it is approved:
 
-- Validates file size, MIME type, total storage, and filename uniqueness.
-- Keeps in-flight upload state on `Connection`.
-- Converts completed uploads into `ChatRtContext::attachmentDrafts`.
-- Publishes ready/failed upload state, progress, and attachment drafts through runtime-backed browser rows.
+- Each id must be named once (`Attachment is listed twice`) and be a complete `chat_attachment` upload of this connection (`Attachment is not ready`); empty text with no file is `Message cannot be empty`.
+- The text and the ids are kept on `Connection` (`outboundModerationAttachments`) while `ModeratorAgent` judges them.
+- On approval with files it calls `Hilos::$files->publishUploads()` and handles the agent signal `chat_attachments_published` (`FilesPublishedSignalData`): writes the event with its `event_attachment` links and marks the files bound, turns the moderation `unavailable` on a refusal, or removes files nobody waits for any more ([file-moderation-flow.md](../data-flow/file-moderation-flow.md)).
 
 ## Incremental Signals
 

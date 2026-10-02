@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Collection;
 
 use Hilos\Files\ContentHash;
 use Hilos\Files\Upload\UploadPhase;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
@@ -111,6 +112,10 @@ final class HilosUploads extends RtCollection
     /**
      * Tells whether a person has another complete upload of this content.
      *
+     * An upload whose connection is gone is not counted: it only waits for the sweep, and it can
+     * never be published. After a dropped socket it is the very file the browser is sending again
+     * on its new connection, and counting it would refuse that file as a copy of itself (HIL-144).
+     *
      * @param int $userId Person whose uploads are looked at
      * @param string $contentHash Fingerprint of the content ({@see ContentHash})
      * @param string $exceptRowId Row id of the upload asking, which is not counted
@@ -119,11 +124,13 @@ final class HilosUploads extends RtCollection
      */
     public function hasCompleteWithContent(int $userId, string $contentHash, string $exceptRowId): bool
     {
+        $connections = Hilos::$rt?->connectionsSource();
         foreach ($this as $upload) {
             if ($upload->userId === $userId
                 && $upload->phase === UploadPhase::COMPLETE
                 && $upload->contentHash === $contentHash
                 && $upload->getId() !== $exceptRowId
+                && ($connections === null || $connections->get($upload->acceptKey) !== null)
             ) {
                 return true;
             }

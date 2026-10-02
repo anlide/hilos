@@ -76,13 +76,11 @@ where the library's node sees it: the hand-over goes through a cluster
 directory (not in the code yet — HIL-1241).
 
 One path, one answer: names registered on one path are one directory with one
-owner. The chat registers `published` and `files` on one path
-(`demo/chat/backend/Fs/ChatFsContext.php`). Two owners on one path — the
-temporary directory counted too, under `tmp` — fail the start, naming the
-names, the path and the owners. Paths are compared as written, less trailing
-separators: a directory is created on first use and may not exist at start;
-whether two paths are physically one directory is the question of "The Guard"
-below.
+owner. Two owners on one path — the temporary directory counted too, under
+`tmp` — fail the start, naming the names, the path and the owners. Paths are
+compared as written, less trailing separators: a directory is created on first
+use and may not exist at start; whether two paths are physically one directory
+is the question of "The Guard" below.
 
 What stays with the node and lives outside `$fs`: the log directory — one
 daemon per directory, the owner on its own node ([logs.md](logs.md), "One
@@ -105,8 +103,8 @@ alias, because the X-Accel reply comes from the node that holds the browser's
 connection. The demos show the shape: `data_export` is mounted at
 `/data_export/` behind `location ^~ /__hilos_data_export/`
 (`demo/chat/docker/nginx.conf.template`, the same in `demo/tasks` and
-`demo/polls`), and the chat's published files at `/published/` behind
-`/__chat_published/`.
+`demo/polls`), and the chat's registry files at `/published/` behind
+`/__hilos_files/` (`HILOS_FILES_XACCEL_LOCATION`).
 
 Watching a cluster directory: a write from another machine may announce
 nothing, and the periodic rescan covers it
@@ -172,7 +170,6 @@ X-Accel alias still assume a disk.
   ([files-registry.md](files-registry.md), "Serving A File").
 - Handing an upload between nodes, live on a stand — when the first cluster
   demo declares `UPLOADS` (no leaf).
-- Chat attachments onto the registry — HIL-144.
 - Storage drivers — the section above.
 
 ## Validation

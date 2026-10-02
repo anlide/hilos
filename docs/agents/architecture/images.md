@@ -48,7 +48,10 @@ Startup collects all activation errors: missing FILES or agent pair, variants
 without IMAGES, IMAGES without variants, malformed declarations, a worker
 outside the `ImagesAgent` family, or an engine that cannot write the declared
 formats. The default needs PHP GD with the relevant output codecs. A project
-without IMAGES needs no GD; the demos do not declare IMAGES yet.
+without IMAGES needs no GD. The chat declares IMAGES with one variant,
+`chat_thumb` (384×384, contain, WEBP), the picture its feed shows in place of
+an attached image; its image builds GD with JPEG and WEBP
+(`demo/chat/docker/Dockerfile`).
 
 ## The Address
 
@@ -187,8 +190,7 @@ whose the directories are — [filesystem.md](filesystem.md).
 
 ## What Is Not Here
 
-- Chat thumbnails and GD in its image — HIL-144; avatar variants and a person's
-  crop choice — HIL-1205.
+- Avatar variants and a person's crop choice — HIL-1205.
 - Original metadata removal — HIL-1171. Copies carry no source metadata; the
   original is unchanged. GD does not preserve color profiles.
 - HEIC, TIFF, AVIF, BMP or SVG decoding in GD; those originals are served as
@@ -205,5 +207,5 @@ Run `composer run test:framework:unit` for declarations, DTO roundtrips and GD
 geometry;
 `composer run test:framework:integration -- --filter ImageVariantIntegrationTest`
 for the complete library–renderer trip and its failure recovery. The chat's
-`ChatTopologyRegistryTest` pins the library's incoming result frame even though
-chat does not activate the renderer yet.
+`ChatTopologyRegistryTest` pins both frames of the trip: the render request to
+the images agent and the result to the library.

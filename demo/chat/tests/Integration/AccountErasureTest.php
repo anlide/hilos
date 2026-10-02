@@ -6,8 +6,6 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Demo\Chat\Database\DTO\PublishedAttachmentInput;
-use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Demo\Chat\Database\Entity\Item\EventAttachment as EntityEventAttachment;
 use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
@@ -16,10 +14,13 @@ use Demo\Chat\Database\Entity\Item\UserRename as EntityUserRename;
 use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Demo\Chat\Hilos;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
+use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -29,8 +30,9 @@ use Hilos\Utils\Helpers\RandomHelper;
  * What a chat keeps of a person goes: the messages they wrote with the attachments, the events
  * of those messages, the registration events and the rename journal rows about them with their
  * feed events, and their row. A rename they made of somebody else stays with its feed line and
- * loses only its author. The attachment files are removed after the commit. Another person's
- * rows are the proof that the erasure cut by the person.
+ * loses only its author. The attachments' registry files are named to the files library after
+ * the commit, which removes them (HIL-144). Another person's rows are the proof that the erasure
+ * cut by the person.
  *
  * Driven inside the library's own execution frame, as {@see AccountMergeTest} drives the
  * merge: every write runs as the agent that owns the sessions, so the borrowed claims the
@@ -71,22 +73,18 @@ final class AccountErasureTest extends IntegrationTestCase
         $renameOfOther = (int)Hilos::$db->events->actions->addUserRenamed(
             Hilos::$db->userRenames->actions->add($otherId, $personId, 'Old', 'Staying'),
         )->id;
-        $storedName = 'erasure-' . RandomHelper::hex(8) . '.txt';
-        $fs = Hilos::$fs;
-        self::assertNotNull($fs);
-        $fs->files->create($storedName)->append('attachment of a person who asked to leave');
-        $personMessage = (int)Hilos::$db->events->actions->addMessage(
-            'goodbye',
-            userId: $personId,
-            attachments: new PublishedAttachmentInputs(new PublishedAttachmentInput('note.txt', 'text/plain', $storedName)),
-        )->id;
+        $file = $this->keepRegistryFile($personId, 'note.txt', 'attachment of a person who asked to leave');
+        $fileId = (int)$file->id;
+        $personMessage = (int)Hilos::$db->events->actions->addMessage('goodbye', userId: $personId, fileIds: [$fileId])->id;
         $otherMessage = (int)Hilos::$db->events->actions->addMessage('stay', userId: $otherId)->id;
         Database::sqlRun(
             'INSERT INTO `hilos_account_deletion` (`user_id`, `requested_at`, `effective_at`) VALUES (?, ?, ?)',
             [$personId, self::PAST, self::PAST],
         );
 
+        $this->drainSignals();
         $this->runErasure();
+        $removals = $this->drainFileRemovals();
 
         self::assertCount(0, EntityUser::get([EntityUser::id => $personId]), 'The person row is gone');
         self::assertCount(1, EntityUser::get([EntityUser::id => $otherId]));
@@ -105,7 +103,10 @@ final class AccountErasureTest extends IntegrationTestCase
         self::assertNotNull($renameLeft);
         self::assertSame($otherId, $renameLeft->user_id);
         self::assertNull($renameLeft->renamed_by_user_id, 'The rename of the other person lost its author');
-        self::assertFalse($fs->files[$storedName]->exists(), 'The attachment file is removed after the commit');
+        self::assertSame([[$fileId]], $removals, 'The attachment file is named to the files library after the commit');
+        $storedName = $file->storedName;
+        Hilos::$db->files[$fileId]?->actions->delete();
+        Hilos::$fs?->files[$storedName]->unlink();
 
         Database::sql('SELECT `completed_at` FROM `hilos_account_deletion` WHERE `user_id` = ?', [$personId]);
         self::assertNotNull(Database::row()['completed_at'] ?? null, 'The request stays behind, carried out');
@@ -158,6 +159,26 @@ final class AccountErasureTest extends IntegrationTestCase
         self::assertCount(0, EntityUserRename::get([EntityUserRename::user_id => $foldedId]));
         self::assertCount(0, EntityEvent::get([EntityEvent::id => $registrationId]));
         self::assertCount(0, EntityEvent::get([EntityEvent::id => $renameId]));
+    }
+
+    /**
+     * Drains the queue and returns the file lists of every remove frame on it.
+     *
+     * @return list<list<int>> Registry ids named by each hilos_file_remove frame, in queue order
+     */
+    private function drainFileRemovals(): array
+    {
+        $removals = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_FILE_REMOVE) {
+                continue;
+            }
+            self::assertInstanceOf(AgentSignalData::class, $signal->data);
+            self::assertInstanceOf(FileRemoveSignalData::class, $signal->data->data);
+            $removals[] = $signal->data->data->fileIds;
+        }
+
+        return $removals;
     }
 
     /**

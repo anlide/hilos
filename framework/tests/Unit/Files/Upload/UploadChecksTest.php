@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Files\Upload;
 
 use Hilos\Files\Upload\Check\AllowedContentCheck;
 use Hilos\Files\Upload\Check\DeclaredMimeCheck;
+use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\Check\SizeLimitCheck;
 use Hilos\Files\Upload\UploadDeclaration;
 use Hilos\Files\Upload\UploadFailureCode;
@@ -27,7 +28,7 @@ final class UploadChecksTest extends TestCase
 
     public function testSizeLimitRefusesAnEmptyFile(): void
     {
-        $refusal = (new SizeLimitCheck(self::LIMIT))->checkDeclared($this->declaration(size: 0));
+        $refusal = (new SizeLimitCheck(new UploadChecksTestTarget(self::LIMIT)))->checkDeclared($this->declaration(size: 0));
 
         $this->assertNotNull($refusal);
         $this->assertSame(SizeLimitCheck::CODE_EMPTY, $refusal->code);
@@ -36,16 +37,28 @@ final class UploadChecksTest extends TestCase
 
     public function testSizeLimitAcceptsExactlyTheLimit(): void
     {
-        $this->assertNull((new SizeLimitCheck(self::LIMIT))->checkDeclared($this->declaration(size: self::LIMIT)));
+        $this->assertNull((new SizeLimitCheck(new UploadChecksTestTarget(self::LIMIT)))->checkDeclared($this->declaration(size: self::LIMIT)));
     }
 
     public function testSizeLimitRefusesOneByteAboveTheLimit(): void
     {
-        $refusal = (new SizeLimitCheck(self::LIMIT))->checkDeclared($this->declaration(size: self::LIMIT + 1));
+        $refusal = (new SizeLimitCheck(new UploadChecksTestTarget(self::LIMIT)))->checkDeclared($this->declaration(size: self::LIMIT + 1));
 
         $this->assertNotNull($refusal);
         $this->assertSame(SizeLimitCheck::CODE_TOO_LARGE, $refusal->code);
         $this->assertSame('File is larger than the allowed size', $refusal->message);
+    }
+
+    /** The limit is asked on every declaration, so a target reading a setting follows its change (HIL-144). */
+    public function testSizeLimitFollowsAChangeOfTheTargetsLimit(): void
+    {
+        $target = new UploadChecksTestTarget(self::LIMIT);
+        $check = new SizeLimitCheck($target);
+        $this->assertNotNull($check->checkDeclared($this->declaration(size: self::LIMIT + 1)));
+
+        $target->limit = self::LIMIT + 1;
+
+        $this->assertNull($check->checkDeclared($this->declaration(size: self::LIMIT + 1)));
     }
 
     public function testDeclaredMimeRefusesAMalformedTypeEvenWithoutAList(): void
@@ -95,7 +108,7 @@ final class UploadChecksTest extends TestCase
     {
         $received = $this->received('text/plain');
 
-        $this->assertNull((new SizeLimitCheck(self::LIMIT))->checkReceived($received));
+        $this->assertNull((new SizeLimitCheck(new UploadChecksTestTarget(self::LIMIT)))->checkReceived($received));
         $this->assertNull((new DeclaredMimeCheck(['image/png']))->checkReceived($received));
         $this->assertNull((new AllowedContentCheck(['image/png']))->checkDeclared($this->declaration(mimeType: 'text/plain')));
     }
@@ -133,5 +146,34 @@ final class UploadChecksTest extends TestCase
             StateHilosUpload::errorMessage => null,
             StateHilosUpload::updatedAt => 1,
         ]));
+    }
+}
+
+/**
+ * Target of the size cases: its limit, and whether it is asked again on the next declaration.
+ */
+final class UploadChecksTestTarget extends AbstractUploadTarget
+{
+    /**
+     * @param int $limit Largest file, in bytes
+     */
+    public function __construct(public int $limit)
+    {
+    }
+
+    /**
+     * @return int The limit as it stands now
+     */
+    public function maxBytes(): int
+    {
+        return $this->limit;
+    }
+
+    /**
+     * @return bool Never asked by the size check
+     */
+    public function requiresSignIn(): bool
+    {
+        return false;
     }
 }

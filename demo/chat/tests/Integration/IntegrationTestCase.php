@@ -30,7 +30,11 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\View\Item\File;
 use Hilos\Database\View\Item\Session;
+use Hilos\Files\FileVisibility;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -94,8 +98,9 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(HilosDbContext::legalAcceptances, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::stepUps, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::userMerges, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        // The registry rows a case attaches to a message, as the files library would have published them (HIL-144).
+        TruthSourceRegistry::register(HilosDbContext::files, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::attachmentDrafts, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // Owned by the framework rather than the project (HIL-582), and written by any case
         // that drives a login, so the harness claims it once for everybody.
         RtTruthSourceRegistry::register(StateHilosSessionRotation::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -477,6 +482,33 @@ abstract class IntegrationTestCase extends TestCase
         OwnershipDeclaration::claimAll($agent);
 
         $agent->onStart();
+    }
+
+    /**
+     * Keeps a file in the files directory and registers it bound, as a published attachment is.
+     *
+     * @param int $ownerUserId Person who sent it
+     * @param string $filename Name the person gave it
+     * @param string $content Its bytes
+     * @return File The registry row
+     * @throws HilosException When the file or the row cannot be written
+     */
+    protected function keepRegistryFile(int $ownerUserId, string $filename, string $content): File
+    {
+        $storedName = RandomHelper::hex(16) . '.txt';
+        (Hilos::$fs ?? throw new LogicException('The FS context is not configured'))->files->create($storedName)->append($content);
+        $file = Hilos::$db->files->actions->create(
+            $storedName,
+            $filename,
+            'text/plain',
+            strlen($content),
+            hash('sha256', $content),
+            $ownerUserId,
+            FileVisibility::AUTHENTICATED,
+        );
+        $file->actions->markBound();
+
+        return $file;
     }
 
     /**

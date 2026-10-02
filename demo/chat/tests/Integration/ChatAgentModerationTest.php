@@ -40,8 +40,8 @@ final class ChatAgentModerationTest extends IntegrationTestCase
     /**
      * What a stopping agent may empty, and what is not its to empty (HIL-664).
      *
-     * The user states and the attachment drafts are the agent's own, and a stop is the end of
-     * them. The connections are not: they say who is on the wire, which is the truth of the node
+     * The user states are the agent's own, and a stop is the end of them; the uploads are the
+     * framework uploads agent's (HIL-144). The connections are not: they say who is on the wire, which is the truth of the node
      * holding the sockets, and a stop closes no socket. Emptying them here is what made a freeze
      * report an empty hall to the rest of the node while every tab was still connected - and the
      * restore that followed photographed nobody. The row below therefore SURVIVES the stop; the
@@ -53,7 +53,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
-        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         Hilos::$db->events->actions->deleteAll();
 
         try {
@@ -62,6 +61,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['stop-ak']?->actions->startOutboundModeration(
                 'pending moderation',
+                [],
             );
 
             $agent = new ChatAgent();
@@ -69,12 +69,10 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
             $this->assertSame(1, count(Hilos::$rt->connections));
             $this->assertSame(0, count(Hilos::$rt->userStates));
-            $this->assertSame(0, count(Hilos::$rt->attachmentDrafts));
             $this->assertEventTypeExists(ChatEventType::CHAT_STOPPED);
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
-            Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
             Hilos::$db->events->actions->deleteAll();
         }
     }
@@ -128,6 +126,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['live-ak']?->actions->startOutboundModeration(
                 'pending moderation',
+                [],
             );
 
             Hilos::initSignalRouter(new ChatSignalRouter());
@@ -167,6 +166,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['reject-ak']?->actions->startOutboundModeration(
                 'blocked message',
+                [],
             );
 
             Hilos::initSignalRouter(new ChatSignalRouter());

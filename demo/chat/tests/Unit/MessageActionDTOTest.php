@@ -65,6 +65,51 @@ final class MessageActionDTOTest extends TestCase
     }
 
     /**
+     * A message without text is valid when it carries a file.
+     */
+    public function testIsValidTrueWhenOnlyAttachmentsAreSent(): void
+    {
+        $dto = MessageActionDTO::fromArray(['content' => '', 'attachments' => ['u1']]);
+        $this->assertTrue($dto->isValid());
+    }
+
+    /**
+     * Without the key a message carries no file; with it, the upload ids in the order sent.
+     */
+    public function testAttachmentsDefaultToNoneAndKeepTheirOrder(): void
+    {
+        $this->assertSame([], MessageActionDTO::fromArray(['content' => 'hi'])->attachments);
+        $this->assertSame(
+            ['u2', 'u1'],
+            MessageActionDTO::fromArray(['content' => 'hi', 'attachments' => ['u2', 'u1']])->attachments,
+        );
+        $this->assertSame(
+            ['u3'],
+            MessageActionDTO::fromArray(['data' => ['message' => 'legacy'], 'attachments' => ['u3']])->attachments,
+        );
+    }
+
+    /**
+     * An attachment id that is not a string is refused rather than dropped from the list.
+     */
+    public function testFromArrayRefusesANonStringAttachment(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        MessageActionDTO::fromArray(['content' => 'hi', 'attachments' => ['u1', 7]]);
+    }
+
+    /**
+     * A list keyed by name is not the list of uploads the client sends.
+     */
+    public function testFromArrayRefusesAKeyedAttachmentMap(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        MessageActionDTO::fromArray(['content' => 'hi', 'attachments' => ['first' => 'u1']]);
+    }
+
+    /**
      * isValid is true when trimmed content is non-empty.
      */
     public function testIsValidTrueWhenContentNonEmpty(): void
@@ -74,13 +119,15 @@ final class MessageActionDTOTest extends TestCase
     }
 
     /**
-     * toArray exposes content for transport.
+     * toArray exposes content and the attached upload ids for transport.
      */
     public function testToArrayRoundTripShape(): void
     {
-        $dto = new MessageActionDTO('text');
+        $dto = new MessageActionDTO('text', ['u1']);
         $this->assertSame([
             'content' => 'text',
+            'attachments' => ['u1'],
         ], $dto->toArray());
+        $this->assertSame(['u1'], MessageActionDTO::fromArray($dto->toArray())->attachments);
     }
 }

@@ -11,27 +11,27 @@ use Hilos\Fs\FsDirectory;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the chat filesystem context (HIL-336).
+ * Unit tests for the chat filesystem context (HIL-336, HIL-144).
  *
- * The files registry keeps its files where chat attachments are published, so that moving
- * attachments onto the registry (HIL-144) moves no byte and the web server keeps serving from
- * the same place. Two names for one directory is the whole promise, and a path computed twice
- * is where it would quietly break.
+ * The files registry keeps the chat's attachments where they were published before it, so the
+ * attachments published then became registry rows without a byte moving and the web server
+ * keeps serving from the same place. The chat's own quarantine and published names are gone
+ * with the page upload: chunks are the uploads agent's, in tmp.
  */
 final class ChatFsContextTest extends TestCase
 {
-    public function testTheFilesDirectoryIsThePublishedDirectory(): void
+    public function testTheFilesDirectoryKeepsThePathAttachmentsWerePublishedTo(): void
     {
         $context = new ChatFsContext();
         $context->configure();
 
         self::assertTrue($context->hasDirectory(FsContext::FILES));
-        self::assertSame($context->published->getPath(), $context->files->getPath());
+        self::assertStringEndsWith('/chat_attachments/published', $context->files->getPath());
     }
 
     /**
-     * Tmp and the analytics journal are the node's (HIL-1154), the other four the cluster's
-     * (HIL-1240), and the start accepts that.
+     * Tmp and the analytics journal are the node's (HIL-1154), the files and the exports the
+     * cluster's (HIL-1240), and the start accepts that.
      */
     public function testEveryDirectoryDeclaresItsOwner(): void
     {
@@ -41,8 +41,6 @@ final class ChatFsContextTest extends TestCase
         self::assertSame(DirectoryScope::NODE, $context->tmp->getScope());
         self::assertSame(
             [
-                ChatFsContext::quarantine => DirectoryScope::CLUSTER,
-                ChatFsContext::published => DirectoryScope::CLUSTER,
                 FsContext::FILES => DirectoryScope::CLUSTER,
                 FsContext::DATA_EXPORT => DirectoryScope::CLUSTER,
                 FsContext::ANALYTICS_JOURNAL => DirectoryScope::NODE,

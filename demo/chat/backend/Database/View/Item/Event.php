@@ -82,6 +82,7 @@ final class Event extends DbItem
      * @return array<string, mixed> Event payload
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
+     * @throws DatabaseException When a bridged row is not loaded yet and loading it fails
      */
     public function toArray(
         bool $withId = true,

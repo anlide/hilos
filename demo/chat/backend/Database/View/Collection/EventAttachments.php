@@ -11,11 +11,9 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Collection\DbCollection;
-use Hilos\Fs\FsException;
-use Hilos\Utils\Helpers\FileSystemHelper;
 
 /**
- * EventAttachments - Db collection of published chat event attachments.
+ * EventAttachments - Db collection of the links between message events and registry files.
  *
  * @extends DbCollection<EventAttachment, ObjectEventAttachments>
  * @method ObjectEventAttachments|null getObjectCollection()
@@ -60,43 +58,39 @@ final class EventAttachments extends DbCollection
     }
 
     /**
-     * Total size in bytes of files that still exist in published storage.
+     * Registry files of every attachment, for a cleanup that removes them once their events are gone.
      *
-     * @return int Total bytes
+     * @return list<int> Ids of the attached registry files, in attachment order
      * @throws DatabaseException If attachment collection loading fails
      */
-    public function sumPublishedAttachmentBytes(): int
+    public function allFileIds(): array
     {
         $this->ensureAllLoaded();
-        $sum = 0;
+        $fileIds = [];
         foreach ($this as $attachment) {
-            try {
-                $sum += $attachment->file->size();
-            } catch (FsException) {
-                continue;
-            }
+            $fileIds[] = $attachment->fileId;
         }
 
-        return $sum;
+        return $fileIds;
     }
 
     /**
-     * Check whether a published attachment already uses the normalized filename.
+     * The attachment that links one registry file, if any; a file is attached to one message at most.
      *
-     * @param string $normalized Normalized basename
-     * @return bool True when a published attachment has that original filename
+     * @param int $fileId Id of the registry file
+     * @return ?EventAttachment The attachment linking the file, or null when no message carries it
      * @throws DatabaseException If attachment collection loading fails
      */
-    public function hasPublishedFileWithNormalizedFilename(string $normalized): bool
+    public function forFileId(int $fileId): ?EventAttachment
     {
         $this->ensureAllLoaded();
         foreach ($this as $attachment) {
-            if (FileSystemHelper::normalizeBasename($attachment->filename) === $normalized) {
-                return true;
+            if ($attachment->fileId === $fileId) {
+                return $attachment;
             }
         }
 
-        return false;
+        return null;
     }
 
     /**

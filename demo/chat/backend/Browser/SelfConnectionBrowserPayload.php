@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Browser;
 
-use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
@@ -32,33 +31,12 @@ final class SelfConnectionBrowserPayload
             );
         }
 
-        $fileUploadProgress = null;
-        if ($connection->fileProgressFilename !== null) {
-            $fileUploadProgress = [
-                SelfConnectionSignalData::filename => $connection->fileProgressFilename,
-                SelfConnectionSignalData::uploadedBytes => $connection->fileProgressUploadedBytes,
-                SelfConnectionSignalData::totalBytes => $connection->fileProgressTotalBytes,
-            ];
-        }
-
-        $fileUploadState = null;
-        if ($connection->fileUploadPhase !== ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_IDLE) {
-            $fileUploadState = [
-                SelfConnectionSignalData::phase => $connection->fileUploadPhase,
-                SelfConnectionSignalData::clientUploadId => $connection->fileUploadClientUploadId,
-                SelfConnectionSignalData::errorCode => $connection->fileUploadErrorCode,
-                SelfConnectionSignalData::errorMessage => $connection->fileUploadErrorMessage,
-            ];
-        }
-
         return [
             SelfConnectionSignalData::userId => $connection->userId,
             SelfConnectionSignalData::connectedAt => $connection->connectedAt,
             SelfConnectionSignalData::messageRateLimitSecondsRemaining => $messageRateLimitSecondsRemaining,
             SelfConnectionSignalData::outboundModerationState =>
                 OutboundModerationBrowserPayload::forConnection($connection),
-            SelfConnectionSignalData::fileUploadState => $fileUploadState,
-            SelfConnectionSignalData::fileUploadProgress => $fileUploadProgress,
         ];
     }
 }

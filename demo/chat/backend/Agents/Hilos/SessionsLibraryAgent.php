@@ -144,19 +144,20 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * journal while it still exists. Where the person only renamed somebody else, that rename
      * and its feed line stay, and the database clears their author (HIL-1195). The framework
      * removes the person's journal and row after this hook, including for each folded account
-     * in the erasure circle (HIL-1200). Attachment files are removed after the commit.
+     * in the erasure circle (HIL-1200). The attachments' registry files are named by id, and the
+     * files library removes them after the commit (HIL-144).
      *
      * Runs inside the framework's erasure transaction, so a failure of any write rolls back
      * every one before it and the ways in that went first.
      *
      * @param int $userId Person whose account is being erased
-     * @return AccountErasure Rows deleted under chat's own family names, and the attachment files
+     * @return AccountErasure Rows deleted under chat's own family names, and the attachments' registry files
      * @throws HilosException On database or truth-source failure while deleting the rows
      */
     protected function applyAccountErasure(int $userId): AccountErasure
     {
         $messageIds = Hilos::$db->eventMessages->eventIdsByAuthor($userId);
-        $files = Hilos::$db->eventAttachments->actions->deleteForMessages($messageIds);
+        $fileIds = Hilos::$db->eventAttachments->actions->deleteForMessages($messageIds);
         $messages = Hilos::$db->eventMessages->actions->deleteByAuthor($userId);
         $registrationIds = Hilos::$db->eventUserRegistrations->actions->deleteByTarget($userId);
         $renameEventIds = Hilos::$db->userRenames->eventIdsByUser($userId);
@@ -165,10 +166,10 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         return new AccountErasure(
             [
                 ChatCommandConstants::ROWS_ERASED_MESSAGES => $messages,
-                ChatCommandConstants::ROWS_ERASED_ATTACHMENTS => count($files),
+                ChatCommandConstants::ROWS_ERASED_ATTACHMENTS => count($fileIds),
                 ChatCommandConstants::ROWS_ERASED_EVENTS => $events,
             ],
-            $files,
+            $fileIds,
         );
     }
 }

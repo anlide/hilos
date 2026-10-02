@@ -14,8 +14,6 @@ use Hilos\Utils\Helpers\RandomHelper;
 
 final class RuntimeBridgePropertiesTest extends IntegrationTestCase
 {
-    private const string TEST_AGENT_ID = 'runtime-bridge-test-agent';
-
     public function testBotAndAgentStatusExposeBridgeDirections(): void
     {
         $bot = Hilos::$db->bots->actions->create('Bridge Bot ' . RandomHelper::hex(4), active: true);
@@ -34,36 +32,6 @@ final class RuntimeBridgePropertiesTest extends IntegrationTestCase
         } finally {
             RtTruthSourceRegistry::unregisterAgent($agentId);
             ExecutionContext::setCurrentAgentId(null);
-        }
-    }
-
-    public function testAttachmentDraftExposesUserAndConnectionBridges(): void
-    {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        Hilos::$rt->connections->actions->clear();
-        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
-
-        try {
-            $user = Hilos::$db->users->actions->createWithName('User');
-            Hilos::$rt->connections->actions->register('draft-bridge-ak', $user->id);
-            $draft = Hilos::$rt->attachmentDrafts->actions->create(
-                'draft-bridge',
-                'draft-bridge-ak',
-                $user->id,
-                '',
-                'bridge.txt',
-                'text/plain',
-                1,
-                'bridge.txt',
-                time(),
-            );
-
-            $this->assertSame($user->id, $draft->user?->id);
-            $this->assertSame('draft-bridge-ak', $draft->connection?->acceptKey);
-        } finally {
-            Hilos::$rt->connections->actions->clear();
-            Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
-            RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         }
     }
 }

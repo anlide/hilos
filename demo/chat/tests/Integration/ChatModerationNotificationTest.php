@@ -70,7 +70,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         $user = Hilos::$db->users->actions->createWithName('ModerationAuthor557');
         Hilos::$rt->connections->actions->register('reject-notify-ak', $user->id);
         Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
-        Hilos::$rt->connections['reject-notify-ak']?->actions->startOutboundModeration('blocked message');
+        Hilos::$rt->connections['reject-notify-ak']?->actions->startOutboundModeration('blocked message', []);
 
         Hilos::initSignalRouter(new ChatSignalRouter());
         $this->dispatchTextModerationSignalToMainPage(
@@ -101,7 +101,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         $user = Hilos::$db->users->actions->createWithName('ModerationAuthor557');
         Hilos::$rt->connections->actions->register('unavailable-notify-ak', $user->id);
         Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
-        Hilos::$rt->connections['unavailable-notify-ak']?->actions->startOutboundModeration('pending message');
+        Hilos::$rt->connections['unavailable-notify-ak']?->actions->startOutboundModeration('pending message', []);
 
         Hilos::initSignalRouter(new ChatSignalRouter());
         $this->dispatchTextModerationSignalToMainPage(

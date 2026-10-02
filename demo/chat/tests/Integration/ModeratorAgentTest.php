@@ -42,6 +42,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
             Hilos::$rt->userStates->actions->ensure($user->id);
             Hilos::$rt->connections['moderator-tick-ak']?->actions->startOutboundModeration(
                 'moderate me from runtime',
+                [],
             );
 
             Hilos::initSignalRouter(new ChatSignalRouter());
@@ -113,6 +114,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
             Hilos::$rt->userStates->actions->ensure($user->id);
             Hilos::$rt->connections['moderator-invalid-output-ak']?->actions->startOutboundModeration(
                 'bad model response should deny',
+                [],
             );
 
             Hilos::initSignalRouter(new ChatSignalRouter());
@@ -148,6 +150,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
             Hilos::$rt->connections['moderator-invalid-output-ak']?->actions->startOutboundModeration(
                 'second moderation request',
+                [],
             );
             $agent->onTick();
 
@@ -170,6 +173,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
             Hilos::$rt->userStates->actions->ensure($user->id);
             Hilos::$rt->connections['moderator-in-flight-ak']?->actions->startOutboundModeration(
                 'first moderation request',
+                [],
             );
 
             Hilos::initSignalRouter(new ChatSignalRouter());
@@ -200,6 +204,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
             Hilos::$rt->connections['moderator-in-flight-ak']?->actions->startOutboundModeration(
                 'second moderation request',
+                [],
             );
             $agent->onTick();
 

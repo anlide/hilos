@@ -22,7 +22,9 @@ navigation inside the application does not cut an upload.
 Do not add a page that routes `frame_binary` in a project that declares
 `UPLOADS`: the frame is routed by type, and the activation validator refuses
 the pair by the page's name. A project keeps one kind of upload — the chat
-keeps its page upload until HIL-144 moves it here.
+gave up its page upload for this feature (HIL-144) and is its first consumer,
+with the one target `chat_attachment`
+(`demo/chat/backend/Files/ChatAttachmentUploadTarget.php`).
 
 ## Activation
 
@@ -62,7 +64,9 @@ declaration before any byte is accepted, `checkReceived()` the whole file
 before the upload completes; a check with nothing to say at one moment answers
 null there. The agent runs them in this order and the first refusal wins:
 
-1. `SizeLimitCheck` — empty file, or above `maxBytes()`;
+1. `SizeLimitCheck` — empty file, or above `maxBytes()`, asked of the target
+   on every declaration: a limit read from a setting follows an
+   administrator's change at once (the chat's `chat_attachment_max_file_bytes`);
 2. `DeclaredMimeCheck` — a type that is not `type/subtype` after
    `UploadMime::normalize()`, or one outside a non-empty list;
 3. `StorageLimitCheck` — only where the project declares `FILES`: the
@@ -239,7 +243,6 @@ An upload goes with its file when:
 - Publishing a received file into the registry — see
   [files-registry.md](files-registry.md).
 - Drag and drop, the file picker and the upload list — HIL-140.
-- Moving the chat onto this feature — HIL-144.
 - Streaming a file without writing it to disk — HIL-142.
 - Placing the agent so chunks stay on one node: it runs as an ordinary cluster
   singleton — HIL-1241. Tmp files orphaned by a killed process are not swept.

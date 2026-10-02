@@ -27,10 +27,10 @@ function buildTimestampPlugin(): Plugin {
 // the project lives on the WSL2 filesystem, so inotify works and no polling is
 // needed (see docs/agents/frontend/build-and-docker.md).
 export default defineConfig(({ mode }) => {
-  // Same-origin attachment downloads: the browser requests /chat/attachment on
-  // the Vite origin (so the session cookie rides along, no token in the URL) and
-  // Vite forwards it to the daemon's HTTP router. VITE_ATTACHMENT_TARGET is set
-  // by docker-compose.local.yml; test/prod use nginx, so this proxy is dev-only.
+  // Same-origin registry files: the browser requests /_hilos/file on the Vite
+  // origin (so the session cookie rides along, no token in the URL) and Vite
+  // forwards it to the daemon, where the files library answers. VITE_FILES_TARGET
+  // is set by docker-compose.local.yml; test/prod use nginx, so this proxy is dev-only.
   const env = loadEnv(mode, '.', 'VITE_')
 
   return {
@@ -60,8 +60,8 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_WS_TARGET || 'http://chat-local:8092',
           ws: true,
         },
-        '/chat/attachment': {
-          target: env.VITE_ATTACHMENT_TARGET || 'http://chat-local:8090',
+        '/_hilos/file': {
+          target: env.VITE_FILES_TARGET || 'http://chat-local:8090',
           changeOrigin: true,
         },
       },

@@ -16,6 +16,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Files\DTO\FileBindSignalData;
+use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
@@ -27,8 +28,9 @@ use Hilos\Hilos;
  * HilosFiles - the project's door into the files registry (HIL-336).
  *
  * The facade global {@see Hilos::$files}. The registry is written in one process only, the one
- * of {@see AbstractFilesLibraryAgent}, so the door writes nothing: it sends a frame - straight
- * there to bind, or to the uploads agent to publish, which hands the files on.
+ * of {@see AbstractFilesLibraryAgent}, so the door writes nothing: it sends a frame - to the
+ * uploads agent to publish, which hands the files on, or straight there to bind a file the
+ * project linked and to remove one it no longer links.
  */
 class HilosFiles
 {
@@ -100,6 +102,37 @@ class HilosFiles
             signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             signalName: new SignalName(HilosSignalConstants::HILOS_FILE_BIND),
             signalData: new AgentSignalData(data: new FileBindSignalData($fileIds)),
+        );
+    }
+
+    /**
+     * Tells the files library that the project no longer links these files, so they go now.
+     *
+     * Call it after the project's own links are gone - its rows deleted and committed. The
+     * library removes each row with its image copies and their bytes at once, rather than leaving
+     * them to the janitor for the unbound lifetime; a row the project still links, which the
+     * database refuses with a foreign key, stays as it was. Fire-and-forget like
+     * {@see self::markBound()}: nothing answers, and with no signal router in the process the
+     * frame reaches nobody.
+     *
+     * @param list<int> $fileIds Ids of the registry rows the project no longer links
+     * @throws FeatureNotDeclaredException When the project did not declare HilosFeature::FILES
+     * @throws InvalidArgumentException When the remove signal cannot be named or queued
+     */
+    public function remove(array $fileIds): void
+    {
+        if (!Hilos::hasFeature(HilosFeature::FILES)) {
+            throw FeatureNotDeclaredException::forFeature(HilosFeature::FILES);
+        }
+        if ($fileIds === []) {
+            return;
+        }
+
+        Hilos::$sr?->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            signalName: new SignalName(HilosSignalConstants::HILOS_FILE_REMOVE),
+            signalData: new AgentSignalData(data: new FileRemoveSignalData($fileIds)),
         );
     }
 

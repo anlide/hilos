@@ -154,7 +154,7 @@ services:
       - FRONTEND_HTML_HOST=0.0.0.0
       - FRONTEND_HTML_PORT=8093
       - FRONTEND_DIST_PATH=/app/frontend/dist
-      - CHAT_FILES_XACCEL_LOCATION=/__chat_published
+      - HILOS_FILES_XACCEL_LOCATION=/__hilos_files
       # WebAuthn / passkey (HIL-284): pin the Relying Party to the in-network e2e
       # host so passkey.spec.ts's round-trip verifies. The runner reaches the app
       # as https://chat-nginx-test, so the browser scopes the credential to that RP

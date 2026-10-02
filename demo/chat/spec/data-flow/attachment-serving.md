@@ -1,30 +1,40 @@
 # Attachment Serving
 
-How an uploaded chat attachment is served back to the browser — images inline,
-other files as a download. Upload itself is in
-[file-upload-flow.md](file-upload-flow.md); this is the read/display path.
+How an uploaded chat attachment is served back to the browser — images as a
+thumbnail that opens the original, other files as a download. Upload itself is
+in [file-upload-flow.md](file-upload-flow.md); this is the read/display path.
+The chat has no route of its own for it: the files library serves every
+registry file at `GET /_hilos/file`
+([files-registry.md](../../../../docs/agents/architecture/files-registry.md),
+"Serving A File"), and this file is what the chat decides on top of it.
 
 ## The four decisions
 
-1. **Authorize by cookie**, the same session cookie the WebSocket uses, looked up
-   by the name `SessionCookieName::resolve()` gives it.
-   The URL carries only the attachment `id` (`/chat/attachment?id=123`); the
-   browser attaches the cookie to `<img src>` / `<a download>` automatically.
-2. **Serve strictly same-origin.** `/chat/attachment` is reverse-proxied in every
-   environment — an nginx `location` in test/prod (mirroring `/ws`) and the Vite
-   `server.proxy` in dev. A separate public port/host for files is not allowed:
-   cross-site the cookie would not ride without `SameSite=None` + CORS.
-3. **nginx streams the bytes via `X-Accel-Redirect`.** PHP only authorizes and
-   sets `Content-Type` / `Content-Disposition`, returning an empty body plus the
-   redirect header; nginx's `internal` location streams the file from disk
-   (sendfile / Range / caching for free). This fits the buffered `body: string`
-   response contract and keeps file I/O off the event loop. In dev (no nginx) the
-   daemon serves the bytes directly — an environment-specific transport, not a
-   stopgap.
-4. **Render by mime type.** `image/*` → `<img loading=lazy>` (inline);
-   everything else → `<a download>`. The backend already sets
-   `Content-Disposition: inline` for images and `attachment` otherwise, and the
-   attachment's `mimeType` already reaches the frontend on its entity.
+1. **Authorize by cookie**, the same session cookie the WebSocket uses. The URL
+   carries only the registry file id (`/_hilos/file?id=123`, plus
+   `variant=chat_thumb&v=…` for the thumbnail); the browser attaches the cookie
+   to `<img src>` / `<a download>` automatically. Both addresses are built on
+   the server by `HilosFiles::downloadPath()` and ride the feed row as `url`
+   and `thumbUrl` — the thumbnail's carries the signature of its declaration,
+   which only the server knows.
+2. **Serve strictly same-origin.** `/_hilos/file` is reverse-proxied in every
+   environment — an nginx `location = /_hilos/file` in test/prod (mirroring
+   `/ws`) and the Vite `server.proxy` in dev (`VITE_FILES_TARGET`). A separate
+   public port/host for files is not allowed: cross-site the cookie would not
+   ride without `SameSite=None` + CORS.
+3. **nginx streams the bytes via `X-Accel-Redirect`.** With
+   `HILOS_FILES_XACCEL_LOCATION=/__hilos_files` (test/prod) the library answers
+   with an empty body and the redirect header; nginx's `internal` location
+   `^~ /__hilos_files/` (`alias /published/`, the registry's files directory
+   mounted read-only) streams the file. In dev, with no nginx in front, the
+   daemon sends the bytes itself, up to 4 MiB — an environment-specific
+   transport, not a stopgap.
+4. **Render by mime type.** `image/*` → the `chat_thumb` copy
+   (`<img loading=lazy>`; 384×384 contain, WEBP, drawn by the images agent on
+   its first request) inside a link to the original; everything else →
+   `<a download>`. The library serves images `inline` and everything else as
+   `attachment`, and the type the server read from the content reaches the
+   frontend on the feed row (`mimeType`).
 
 ## Why not a query-token
 
@@ -38,6 +48,10 @@ A token in the URL is fatal here, not just untidy:
 
 ## Per-object authorization
 
-The handler checks a valid session only — any logged-in user can fetch any
-attachment by id. The chat is global (no private messages), so a session check
-suffices; revisit per-object authorization if private conversations are added.
+The chat publishes its attachments with `FileVisibility::AUTHENTICATED`, and its
+`FilesLibraryAgent::grantsRead()` widens that by one rule: a file attached to a
+message is served to **any** session — a guest's, or one that has expired —
+because a guest reads the feed and sees its pictures. A request presenting no
+session at all is refused with 401. The chat is global (no private messages),
+so this suffices; revisit per-object authorization if private conversations
+are added.
