@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Security;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\OAuth\OAuthConfigField;
 use Hilos\Auth\OAuth\OAuthConfigResolver;
 use Hilos\Auth\OAuth\OAuthProviderDescriptor;
@@ -124,6 +125,34 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of an OAuth provider field row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Field identity, provider key, descriptor label, type, secret flag, source layer and set-state flag are not personal;
+     * value of client_id and scope comes from the columns (or env/defaults) which are not personal (OAuthProvider._piiNotPersonal);
+     * declared by the client_id column so only an entity verdict making it personal would close both (closing, not opening);
+     * secret value is null anyway.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosSecurityOAuthProviderFieldsTableRow::rowKey => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::providerKey => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::field => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::label => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::type => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::secret => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::source => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::setState => WireField::notPersonal(),
+            HilosSecurityOAuthProviderFieldsTableRow::value => WireField::column(
+                HilosDbContext::oauthProviders,
+                ObjectOAuthProvider::clientId,
+            ),
         ];
     }
 

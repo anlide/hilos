@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest'
 import {
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
+  isSignInMethodOn,
   resolveHilosSignInMethodRow,
   type HilosSignInMethodsContext,
 } from '../../../src/admin/security/hilosSecuritySignInMethods.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
@@ -42,6 +44,19 @@ describe('resolveHilosSignInMethodRow', () => {
     })
   })
 
+  it('preserves a hidden mark on the enabled field', () => {
+    const row = resolveHilosSignInMethodRow(
+      methodRow('password', {
+        methodKey: 'password',
+        label: 'Password',
+        enabled: { _hidden: true },
+        ready: true,
+      }),
+    )
+
+    expect(row.enabled).toBe(HIDDEN_VALUE)
+  })
+
   it('falls back to the row key, names the method by it, and links nowhere', () => {
     expect(
       resolveHilosSignInMethodRow(methodRow('passkey', undefined)),
@@ -52,6 +67,36 @@ describe('resolveHilosSignInMethodRow', () => {
       ready: false,
       providerKey: null,
     })
+  })
+})
+
+describe('isSignInMethodOn', () => {
+  it('returns HIDDEN_VALUE when row.enabled is a mark', () => {
+    const row = resolveHilosSignInMethodRow(
+      methodRow('password', {
+        methodKey: 'password',
+        label: 'Password',
+        enabled: { _hidden: true },
+        ready: true,
+      }),
+    )
+
+    expect(isSignInMethodOn(row, ['password'])).toBe(HIDDEN_VALUE)
+    expect(isSignInMethodOn(row, [])).toBe(HIDDEN_VALUE)
+  })
+
+  it('checks enabledKeys when row.enabled is not a mark', () => {
+    const row = resolveHilosSignInMethodRow(
+      methodRow('password', {
+        methodKey: 'password',
+        label: 'Password',
+        enabled: true,
+        ready: true,
+      }),
+    )
+
+    expect(isSignInMethodOn(row, ['password'])).toBe(true)
+    expect(isSignInMethodOn(row, ['sms'])).toBe(false)
   })
 })
 
@@ -136,6 +181,35 @@ describe('createHilosSignInMethodsTable', () => {
 
     scopes.session.data.set('passkeyAllowsUnproven', false)
     expect(table.passkeyAllowsUnproven.get()).toBe(false)
+  })
+
+  it('yields HIDDEN_VALUE for passkeyAllowsUnproven when passkey row is masked', () => {
+    const scopes = new ScopeManager()
+    scopes.session.data.set('passkeyAllowsUnproven', true)
+    const table = createHilosSignInMethodsTable({
+      connection: { sendTableViewport() {}, sendTableRendered() {} },
+      scopes,
+      actions: {},
+    } as unknown as HilosSignInMethodsContext)
+
+    table.controller.ingestSubscriptionWindow(
+      [
+        methodRow('passkey', {
+          methodKey: 'passkey',
+          label: 'Passkey',
+          enabled: { _hidden: true },
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      [],
+    )
+
+    expect(table.passkeyAllowsUnproven.get()).toBe(HIDDEN_VALUE)
   })
 })
 

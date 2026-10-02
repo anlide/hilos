@@ -20,6 +20,7 @@ import {
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
   HilosPages,
+  isSignInMethodOn,
   resolveHilosPath,
   type HilosSignInMethodRow,
   type HilosSignInMethodsContext,
@@ -27,6 +28,7 @@ import {
 import { onMounted, onUnmounted, ref, useId } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -55,11 +57,6 @@ onUnmounted(() => methods.dispose())
 const { busy: switchBusy, run: runSwitch } = useTrackedAction()
 const pendingMethodKey = ref<string | null>(null)
 const passkeyPending = ref(false)
-
-/** Whether the method is on now, by the live set rather than the row. */
-function isOn(row: HilosSignInMethodRow): boolean {
-  return enabledKeys.value.includes(row.methodKey)
-}
 
 /** The provider's own screen (its {providerId} route param is the key). */
 function providerPath(providerKey: string): string {
@@ -99,15 +96,19 @@ async function togglePasskeyUnproven(next: boolean): Promise<void> {
         <code class="small text-body-secondary">{{ row.methodKey }}</code>
       </template>
       <template #cell-enabled="{ row }">
-        <HilosSwitch
-          class="mb-0"
-          :checked="isOn(row)"
-          :busy="pendingMethodKey === row.methodKey"
-          :disabled="switchBusy"
-          :aria-label="`Enable ${row.label}`"
-          :data-id="`hilos-sign-in-method-enabled-${row.methodKey}`"
-          @toggle="toggle(row, $event)"
-        />
+        <HilosHideable :value="isSignInMethodOn(row, enabledKeys)">
+          <template #default="{ value: on }">
+            <HilosSwitch
+              class="mb-0"
+              :checked="on"
+              :busy="pendingMethodKey === row.methodKey"
+              :disabled="switchBusy"
+              :aria-label="`Enable ${row.label}`"
+              :data-id="`hilos-sign-in-method-enabled-${row.methodKey}`"
+              @toggle="toggle(row, $event)"
+            />
+          </template>
+        </HilosHideable>
       </template>
       <template #cell-ready="{ row }">
         <span
@@ -143,16 +144,20 @@ async function togglePasskeyUnproven(next: boolean): Promise<void> {
           created keep signing in with their passkey.
         </div>
       </div>
-      <HilosSwitch
-        class="mb-0"
-        :checked="passkeyAllowsUnproven"
-        :busy="passkeyPending"
-        :disabled="switchBusy"
-        aria-label="Allow passkey without a confirmed address"
-        :aria-describedby="passkeyHintId"
-        data-id="hilos-sign-in-passkey-unproven"
-        @toggle="togglePasskeyUnproven"
-      />
+      <HilosHideable :value="passkeyAllowsUnproven">
+        <template #default="{ value: on }">
+          <HilosSwitch
+            class="mb-0"
+            :checked="on"
+            :busy="passkeyPending"
+            :disabled="switchBusy"
+            aria-label="Allow passkey without a confirmed address"
+            :aria-describedby="passkeyHintId"
+            data-id="hilos-sign-in-passkey-unproven"
+            @toggle="togglePasskeyUnproven"
+          />
+        </template>
+      </HilosHideable>
     </div>
   </HilosAdminPage>
 </template>

@@ -9,6 +9,7 @@ import {
   resolveHilosOAuthRedirectRow,
   type HilosSecurityOauthContext,
 } from '../../../src/admin/security/hilosSecurityOauth.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -145,6 +146,18 @@ describe('resolveHilosOAuthRedirectRow', () => {
       source: 'env',
       setState: true,
     })
+  })
+
+  it('preserves a hidden mark on the return-address value', () => {
+    const row = resolveHilosOAuthRedirectRow(
+      slotRow('oauth_redirect_uri', 'redirect', {
+        value: { _hidden: true },
+        source: 'env',
+        setState: true,
+      }),
+    )
+
+    expect(row.value).toBe(HIDDEN_VALUE)
   })
 })
 

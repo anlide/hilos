@@ -9,6 +9,7 @@ import {
   type HilosSettingsContext,
   type SettingValueSource,
 } from '../../../src/admin/settings/hilosSettings.js'
+import { HIDDEN_VALUE, type Hideable } from '../../../src/state/hiddenValue.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
@@ -23,7 +24,7 @@ function settingsRow(
 /** Build a resolved settings view-model with the given value source and override. */
 function rowWithSource(
   valueSource: SettingValueSource,
-  overrideValue: string | null = null,
+  overrideValue: Hideable<string | null> = null,
 ): HilosSettingRow {
   return {
     key: 'k',
@@ -61,6 +62,28 @@ describe('resolveHilosSettingRow', () => {
     })
   })
 
+  it('maps hidden mark values to the canonical HIDDEN_VALUE', () => {
+    const row = resolveHilosSettingRow(
+      settingsRow('chat_bot_timeout_sec', {
+        key: 'chat_bot_timeout_sec',
+        type: 'float',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
+        defaultValue: { _hidden: true },
+        defaultReferenceKey: { _hidden: true },
+        valueSource: 'override',
+      }),
+    )
+
+    expect(row.key).toBe('chat_bot_timeout_sec')
+    expect(row.type).toBe('float')
+    expect(row.value).toBe(HIDDEN_VALUE)
+    expect(row.overrideValue).toBe(HIDDEN_VALUE)
+    expect(row.defaultValue).toBe(HIDDEN_VALUE)
+    expect(row.defaultReferenceKey).toBe(HIDDEN_VALUE)
+    expect(row.valueSource).toBe('override')
+  })
+
   it('falls back to the row key and orphan source when the slot is absent', () => {
     const row = resolveHilosSettingRow(settingsRow('stray_key', undefined))
 
@@ -92,9 +115,11 @@ describe('isOrphanSetting', () => {
 })
 
 describe('hasCustomValue', () => {
-  it('reads the override value, not the value source', () => {
+  it('reads the value source so a masked override still counts as custom', () => {
     expect(hasCustomValue(rowWithSource('override', 'mine'))).toBe(true)
+    expect(hasCustomValue(rowWithSource('override', HIDDEN_VALUE))).toBe(true)
     expect(hasCustomValue(rowWithSource('orphan', 'mine'))).toBe(true)
+    expect(hasCustomValue(rowWithSource('orphan', null))).toBe(true)
     expect(hasCustomValue(rowWithSource('default'))).toBe(false)
     expect(hasCustomValue(rowWithSource('reference'))).toBe(false)
   })

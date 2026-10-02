@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Communications;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -120,6 +121,30 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a channel row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Channel is the row key; label and driver come from the channel descriptor; configured and missingFields
+     * count resolved layers rather than values; enabled is the value of the enablement setting ({@see resolveEnabled()})
+     * and is hidden by its column verdict (MASK).
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosCommunicationsChannelsTableRow::channel => WireField::notPersonal(),
+            HilosCommunicationsChannelsTableRow::label => WireField::notPersonal(),
+            HilosCommunicationsChannelsTableRow::driver => WireField::notPersonal(),
+            HilosCommunicationsChannelsTableRow::configured => WireField::notPersonal(),
+            HilosCommunicationsChannelsTableRow::missingFields => WireField::notPersonal(),
+            HilosCommunicationsChannelsTableRow::enabled => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
         ];
     }
 

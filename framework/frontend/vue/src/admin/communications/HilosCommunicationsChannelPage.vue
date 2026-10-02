@@ -21,11 +21,15 @@ import {
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
+  HIDDEN_VALUE,
+  hiddenAsWord,
   HilosPages,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
+  type Hideable,
   type HilosChannelFieldRow,
   type HilosCommunicationsContext,
   type RowEditBaseline,
@@ -39,6 +43,8 @@ import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -95,12 +101,12 @@ function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
 }
 
 /** Human-readable effective value of a non-secret field. */
-function displayValue(row: HilosChannelFieldRow): string {
-  if (typeof row.value === 'boolean') {
-    return row.value ? 'On' : 'Off'
+function displayValue(value: boolean | number | string | null): string {
+  if (typeof value === 'boolean') {
+    return value ? 'On' : 'Off'
   }
 
-  return row.value === null || row.value === '' ? '—' : String(row.value)
+  return value === null || value === '' ? '—' : String(value)
 }
 
 /** The source badge label: where the effective value comes from. */
@@ -112,7 +118,7 @@ const SOURCE_LABEL: Record<string, string> = {
 
 /** The one field the dialog edits: the field's typed value. */
 interface ChannelEditFields {
-  value: boolean | number | string | null
+  value: Hideable<boolean | number | string | null>
 }
 
 /**
@@ -139,7 +145,10 @@ function noticeText(
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return liveRow ? `Changed elsewhere to "${displayValue(liveRow)}".` : ''
+      if (!liveRow) {
+        return ''
+      }
+      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? hiddenAsWord(liveRow.value) : displayValue(liveRow.value)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -171,6 +180,9 @@ const editValueBool = computed({
     editValue.value = on ? '1' : '0'
   },
 })
+const editHidden = computed(() =>
+  isHiddenValue(editBaseline.value.values.value),
+)
 const editTitle = computed(() =>
   editRow.value ? `Edit · ${editRow.value.label}` : 'Edit field',
 )
@@ -194,7 +206,13 @@ const live = computed(() =>
   resolveRowEdit(
     liveRow.value ? { value: liveRow.value.value } : undefined,
     editBaseline.value,
-    { value: editRow.value ? editedValue(editRow.value) : null },
+    {
+      value: editHidden.value
+        ? HIDDEN_VALUE
+        : editRow.value
+          ? editedValue(editRow.value)
+          : null,
+    },
   ),
 )
 const editNotice = computed(() => live.value.notice?.kind ?? null)
@@ -229,7 +247,9 @@ function openEdit(row: HilosChannelFieldRow): void {
   }
   clearEditError()
   editRow.value = fresh
-  editValue.value = formText(fresh.type, fresh.value)
+  if (!isHiddenValue(fresh.value)) {
+    editValue.value = formText(fresh.type, fresh.value)
+  }
   editBaseline.value = openRowEdit<ChannelEditFields>({ value: fresh.value })
   editOpen.value = true
 }
@@ -248,7 +268,7 @@ function applyStep(step: RowEditStep<ChannelEditFields>): void {
   }
   editBaseline.value = step.baseline
   const taken = step.take.value
-  if (taken !== undefined) {
+  if (taken !== undefined && !isHiddenValue(taken)) {
     editValue.value = formText(row.type, taken)
   }
 }
@@ -277,7 +297,7 @@ async function submitEdit(): Promise<void> {
   if (!row || editBusy.value || live.value.gone) {
     return
   }
-  if (!live.value.dirty) {
+  if (editHidden.value || !live.value.dirty) {
     closeEdit()
 
     return
@@ -345,7 +365,11 @@ async function submitReset(): Promise<void> {
         <span v-if="row.secret" class="text-body-secondary fst-italic">
           {{ row.valueSource === 'env' ? 'Set in env' : 'Not set' }}
         </span>
-        <span v-else>{{ displayValue(row) }}</span>
+        <HilosHideable v-else :value="row.value">
+          <template #default="{ value }">
+            <span>{{ displayValue(value) }}</span>
+          </template>
+        </HilosHideable>
       </template>
       <template #cell-valueSource="{ row }">
         <span class="badge text-bg-secondary-subtle text-secondary-emphasis">
@@ -389,33 +413,42 @@ async function submitReset(): Promise<void> {
       </template>
       <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form v-if="editRow" @submit.prevent="submitEdit">
-        <div v-if="editInputType === 'checkbox'" class="form-check form-switch">
-          <input
-            id="hilos-channel-edit-value"
-            v-model="editValueBool"
-            type="checkbox"
-            class="form-check-input"
-            role="switch"
-            data-id="hilos-channel-edit-value"
-            data-autofocus
-          />
-          <label class="form-check-label" for="hilos-channel-edit-value">
-            {{ editRow.label }}
-          </label>
-        </div>
+        <template v-if="editHidden">
+          <div class="form-label">{{ editRow.label }}</div>
+          <HilosHiddenMark />
+        </template>
         <template v-else>
-          <label class="form-label" for="hilos-channel-edit-value">
-            {{ editRow.label }}
-          </label>
-          <input
-            id="hilos-channel-edit-value"
-            v-model="editValue"
-            :type="editInputType"
-            :step="editStep"
-            class="form-control"
-            data-id="hilos-channel-edit-value"
-            data-autofocus
-          />
+          <div
+            v-if="editInputType === 'checkbox'"
+            class="form-check form-switch"
+          >
+            <input
+              id="hilos-channel-edit-value"
+              v-model="editValueBool"
+              type="checkbox"
+              class="form-check-input"
+              role="switch"
+              data-id="hilos-channel-edit-value"
+              data-autofocus
+            />
+            <label class="form-check-label" for="hilos-channel-edit-value">
+              {{ editRow.label }}
+            </label>
+          </div>
+          <template v-else>
+            <label class="form-label" for="hilos-channel-edit-value">
+              {{ editRow.label }}
+            </label>
+            <input
+              id="hilos-channel-edit-value"
+              v-model="editValue"
+              :type="editInputType"
+              :step="editStep"
+              class="form-control"
+              data-id="hilos-channel-edit-value"
+              data-autofocus
+            />
+          </template>
         </template>
         <HilosEditNotice
           :kind="editNotice"
@@ -472,7 +505,11 @@ async function submitReset(): Promise<void> {
       <dl v-if="resetShown" class="row mb-0">
         <dt class="col-4">Now</dt>
         <dd class="col-8" data-id="hilos-channel-reset-now">
-          {{ displayValue(resetShown) }}
+          <HilosHideable :value="resetShown.value">
+            <template #default="{ value }">
+              {{ displayValue(value) }}
+            </template>
+          </HilosHideable>
         </dd>
         <dt class="col-4">Back to</dt>
         <dd class="col-8" data-id="hilos-channel-reset-default">

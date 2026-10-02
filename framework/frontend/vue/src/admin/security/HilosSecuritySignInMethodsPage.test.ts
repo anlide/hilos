@@ -9,7 +9,6 @@ import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionError,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
@@ -401,42 +400,31 @@ describe('HilosSecuritySignInMethodsPage in the admin view mode', () => {
     },
   ]
 
-  it('a viewer sees disabled switches referencing the mode strip and live provider link', async () => {
+  it('a viewer sees hidden marks instead of switches and sees the live provider link', async () => {
     const scopes = makeScopes()
     bindSession(scopes).handshake(null, true)
     const { connection, pushWindow } = makeConnection()
     const { actions, dispatched } = makeActions()
     const wrapper = mountPage(connection, scopes, actions)
 
-    pushWindow(ROWS_WITH_PROVIDER)
+    pushWindow(
+      ROWS_WITH_PROVIDER.map((row) => ({
+        ...row,
+        enabled: { _hidden: true },
+        passkeyAllowsUnproven: { _hidden: true },
+      })),
+    )
     await nextTick()
 
-    const switches = wrapper
-      .findAll<HTMLInputElement>(
-        'input[data-id^="hilos-sign-in-method-enabled-"]',
-      )
-      .map((node) => node.element)
-    expect(switches.length).toBeGreaterThan(0)
-    for (const box of switches) {
-      expect(box.disabled).toBe(true)
-      expect(box.getAttribute('aria-describedby')).toContain(
-        HILOS_VIEW_MODE_STRIP_TEXT_ID,
-      )
-      box.click()
-    }
-    await nextTick()
-    expect(dispatched).toEqual([])
+    const switches = wrapper.findAll(
+      'input[data-id^="hilos-sign-in-method-enabled-"]',
+    )
+    expect(switches).toHaveLength(0)
 
-    const passkeyPolicy = wrapper.find<HTMLInputElement>(
-      PASSKEY_POLICY_SWITCH,
-    ).element
-    expect(passkeyPolicy.disabled).toBe(true)
-    const passkeyDescribedBy =
-      passkeyPolicy.getAttribute('aria-describedby') ?? ''
-    expect(passkeyDescribedBy).toContain(HILOS_VIEW_MODE_STRIP_TEXT_ID)
-    expect(passkeyDescribedBy.trim().split(/\s+/).length).toBe(2)
-    passkeyPolicy.click()
-    await nextTick()
+    const hiddenMarks = wrapper.findAll('[data-id="hilos-hidden"]')
+    expect(hiddenMarks.length).toBeGreaterThan(0)
+
+    expect(wrapper.find(PASSKEY_POLICY_SWITCH).exists()).toBe(false)
     expect(dispatched).toEqual([])
 
     const providerLink = wrapper.find(

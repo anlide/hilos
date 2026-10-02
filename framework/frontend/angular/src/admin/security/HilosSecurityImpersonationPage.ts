@@ -29,15 +29,18 @@ import {
   untracked,
 } from '@angular/core'
 import {
-  createHilosSecurityImpersonationActions,
-  createHilosSecurityImpersonationTable,
+  HIDDEN_VALUE,
   HILOS_IMPERSONATION_SCOPE_COPY,
   HILOS_IMPERSONATION_SCOPE_HINT,
   HILOS_IMPERSONATION_SCOPE_VALUES,
   HILOS_IMPERSONATION_SETTING_COPY,
-  hilosImpersonationScopeOf,
+  HILOS_VIEW_MODE_COPY,
   HilosPages,
+  createHilosSecurityImpersonationActions,
+  createHilosSecurityImpersonationTable,
+  hilosImpersonationScopeOf,
   isHilosImpersonationSwitch,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
@@ -45,6 +48,7 @@ import {
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosImpersonationContext,
   HilosImpersonationScope,
   HilosImpersonationSettingRow,
@@ -67,7 +71,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
 /** The one field the scope's modal edits. */
 interface ScopeEditFields {
-  scope: HilosImpersonationScope
+  scope: Hideable<HilosImpersonationScope>
 }
 
 /**
@@ -85,9 +89,10 @@ function noticeText(
     case 'deleted':
       return 'Deleted elsewhere — your choice stays on screen.'
     case 'conflict':
-      return liveRow
-        ? `Changed elsewhere to "${HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(liveRow)]}".`
-        : ''
+      if (!liveRow) {
+        return ''
+      }
+      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? HILOS_VIEW_MODE_COPY.hidden : HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(liveRow)]}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -123,18 +128,22 @@ function noticeText(
         </ng-template>
         <ng-template hilosTableCell="value" let-row>
           @if (isSwitch(row.rowKey)) {
-            <hilos-switch
-              class="mb-0"
-              [checked]="row.enabled"
-              [busy]="pendingSwitchKey() === row.rowKey"
-              [disabled]="toggle.busy()"
-              [aria-label]="labelOf(row)"
-              [dataId]="'hilos-impersonation-switch-' + row.rowKey"
-              (toggle)="toggleSwitch(row, $event)"
-            />
+            @if (isHidden(row.enabled)) {
+              <span>{{ hiddenCopy }}</span>
+            } @else {
+              <hilos-switch
+                class="mb-0"
+                [checked]="row.enabled"
+                [busy]="pendingSwitchKey() === row.rowKey"
+                [disabled]="toggle.busy()"
+                [aria-label]="labelOf(row)"
+                [dataId]="'hilos-impersonation-switch-' + row.rowKey"
+                (toggle)="toggleSwitch(row, $event)"
+              />
+            }
           } @else {
             <span data-id="hilos-impersonation-scope-value">{{
-              scopeCopy[scopeOf(row)]
+              isHidden(row.value) ? hiddenCopy : scopeCopy[scopeOf(row)]
             }}</span>
           }
         </ng-template>
@@ -169,32 +178,39 @@ function noticeText(
         <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
-            <fieldset aria-describedby="hilos-impersonation-scope-hint">
-              <legend class="form-label fs-6">{{ labelOf(row) }}</legend>
-              @for (value of scopeValues; track value) {
-                <div class="form-check">
-                  <input
-                    [id]="'hilos-impersonation-scope-' + value + '-field'"
-                    class="form-check-input"
-                    type="radio"
-                    name="hilos-impersonation-scope"
-                    [value]="value"
-                    [checked]="editScope() === value"
-                    [attr.data-id]="'hilos-impersonation-scope-' + value"
-                    data-autofocus
-                    (change)="editScope.set(value)"
-                  />
-                  <label
-                    class="form-check-label"
-                    [for]="'hilos-impersonation-scope-' + value + '-field'"
-                    >{{ scopeCopy[value] }}</label
-                  >
-                </div>
-              }
-            </fieldset>
-            <p id="hilos-impersonation-scope-hint" class="form-text mb-0">
-              {{ scopeHint }}
-            </p>
+            @if (editHidden()) {
+              <div class="mb-3">
+                <div class="form-label">{{ labelOf(row) }}</div>
+                <div>{{ hiddenCopy }}</div>
+              </div>
+            } @else {
+              <fieldset aria-describedby="hilos-impersonation-scope-hint">
+                <legend class="form-label fs-6">{{ labelOf(row) }}</legend>
+                @for (value of scopeValues; track value) {
+                  <div class="form-check">
+                    <input
+                      [id]="'hilos-impersonation-scope-' + value + '-field'"
+                      class="form-check-input"
+                      type="radio"
+                      name="hilos-impersonation-scope"
+                      [value]="value"
+                      [checked]="editScope() === value"
+                      [attr.data-id]="'hilos-impersonation-scope-' + value"
+                      data-autofocus
+                      (change)="editScope.set(value)"
+                    />
+                    <label
+                      class="form-check-label"
+                      [for]="'hilos-impersonation-scope-' + value + '-field'"
+                      >{{ scopeCopy[value] }}</label
+                    >
+                  </div>
+                }
+              </fieldset>
+              <p id="hilos-impersonation-scope-hint" class="form-text mb-0">
+                {{ scopeHint }}
+              </p>
+            }
             <hilos-edit-notice
               [kind]="editNotice()"
               [text]="editNoticeText()"
@@ -206,7 +222,9 @@ function noticeText(
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!live().dirty || edit.busy() || live().gone"
+            [disableSave]="
+              !live().dirty || edit.busy() || live().gone || editHidden()
+            "
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -267,6 +285,9 @@ export class HilosSecurityImpersonationPage {
   protected readonly toggle = createHilosTrackedAction()
   protected readonly pendingSwitchKey = signal<string | null>(null)
 
+  protected readonly isHidden = isHiddenValue
+  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
+
   // The scope's modal: the choice as made until Save.
   protected readonly editOpen = signal(false)
   protected readonly editRow = signal<HilosImpersonationSettingRow | null>(null)
@@ -280,6 +301,9 @@ export class HilosSecurityImpersonationPage {
   protected readonly editBaseline = signal<RowEditBaseline<ScopeEditFields>>(
     openRowEdit<ScopeEditFields>({ scope: 'act' }),
   )
+  protected readonly editHidden = computed(() =>
+    isHiddenValue(this.editBaseline().values.scope),
+  )
   // The live row the open modal is about: the row the table holds in focus, which
   // the server follows wherever it goes; undefined once the row is gone. Mirrored
   // from the controller: the handle arrives through a computed, so hilosSignal
@@ -289,11 +313,18 @@ export class HilosSecurityImpersonationPage {
   )
   protected readonly live = computed(() => {
     const row = this.liveRow()
+    const editHidden = this.editHidden()
 
     return resolveRowEdit(
-      row ? { scope: hilosImpersonationScopeOf(row) } : undefined,
+      row
+        ? {
+            scope: isHiddenValue(row.value)
+              ? HIDDEN_VALUE
+              : hilosImpersonationScopeOf(row),
+          }
+        : undefined,
       this.editBaseline(),
-      { scope: this.editScope() },
+      { scope: editHidden ? HIDDEN_VALUE : this.editScope() },
     )
   })
   protected readonly editNotice = computed(
@@ -375,11 +406,18 @@ export class HilosSecurityImpersonationPage {
     if (!fresh) {
       return
     }
+    const freshHidden = isHiddenValue(fresh.value)
     const scope = hilosImpersonationScopeOf(fresh)
     this.edit.clearError()
     this.editRow.set(fresh)
-    this.editScope.set(scope)
-    this.editBaseline.set(openRowEdit<ScopeEditFields>({ scope }))
+    if (!freshHidden) {
+      this.editScope.set(scope)
+    }
+    this.editBaseline.set(
+      openRowEdit<ScopeEditFields>({
+        scope: freshHidden ? HIDDEN_VALUE : scope,
+      }),
+    )
     this.editOpen.set(true)
   }
 
@@ -392,7 +430,7 @@ export class HilosSecurityImpersonationPage {
   // step takes lands in the choice.
   private applyStep(step: RowEditStep<ScopeEditFields>): void {
     this.editBaseline.set(step.baseline)
-    if (step.take.scope !== undefined) {
+    if (step.take.scope !== undefined && !isHiddenValue(step.take.scope)) {
       this.editScope.set(step.take.scope)
     }
   }
@@ -411,11 +449,12 @@ export class HilosSecurityImpersonationPage {
       this.editRow() === null ||
       this.edit.busy() ||
       this.live().gone ||
-      this.live().conflict
+      this.live().conflict ||
+      this.editHidden()
     ) {
       return
     }
-    if (!this.live().dirty) {
+    if (!this.live().dirty || this.editHidden()) {
       this.closeEdit()
 
       return

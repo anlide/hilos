@@ -17,6 +17,11 @@
 // the framework owns the rest.
 
 import {
+  HIDDEN_VALUE,
+  isHiddenValue,
+  type Hideable,
+} from '../../state/hiddenValue.js'
+import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
@@ -24,6 +29,7 @@ import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
+  readHideableBoolean,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -45,7 +51,7 @@ export interface HilosChannelRow {
   /** Human-readable channel label; falls back to the channel key when the row names none. */
   readonly label: string
   /** Whether the channel is globally enabled (a persisted settings override). */
-  readonly enabled: boolean
+  readonly enabled: Hideable<boolean>
   /** Whether every config field resolved to a value (no field on its bare default). */
   readonly configured: boolean
   /** Transport / driver name (e.g. `smtp`), or null when the channel names none. */
@@ -76,7 +82,7 @@ export interface HilosChannelFieldRow {
   /** Value type: `string` | `integer` | `float` | `boolean`. */
   readonly type: string
   /** Effective value, or null for a secret (a secret is never sent to the browser). */
-  readonly value: boolean | number | string | null
+  readonly value: Hideable<boolean | number | string | null>
   /** Where the effective value comes from. */
   readonly valueSource: ChannelValueSource
   /** Whether the field is an env-only secret (shown as set/not-set, never edited). */
@@ -200,8 +206,12 @@ const HilosChannelFieldRowKey = {
 /** Read a field's effective value, keeping its scalar type (or null for a secret). */
 function readFieldValue(
   slot: Record<string, unknown>,
-): boolean | number | string | null {
+): Hideable<boolean | number | string | null> {
   const value = slot[HilosChannelFieldRowKey.value]
+
+  if (isHiddenValue(value)) {
+    return HIDDEN_VALUE
+  }
 
   return typeof value === 'boolean' ||
     typeof value === 'number' ||
@@ -229,7 +239,7 @@ export function resolveHilosChannelRow(row: TableRow): HilosChannelRow {
     // An unlabelled channel is shown by its key rather than as a blank cell: the key is a
     // real name a reader can act on, which an empty string standing in for "no label" is not.
     label: readStringOrNull(slot, HilosChannelRowKey.label) ?? channel,
-    enabled: readBoolean(slot, HilosChannelRowKey.enabled),
+    enabled: readHideableBoolean(slot, HilosChannelRowKey.enabled),
     configured: readBoolean(slot, HilosChannelRowKey.configured),
     driver: readStringOrNull(slot, HilosChannelRowKey.driver),
     missingFields: Number(slot[HilosChannelRowKey.missingFields] ?? 0),

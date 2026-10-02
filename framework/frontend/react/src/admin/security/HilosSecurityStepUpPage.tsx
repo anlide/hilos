@@ -12,10 +12,12 @@
 // Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
+  HILOS_STEP_UP_ADMIN_COPY,
+  HILOS_VIEW_MODE_COPY,
+  HilosPages,
   createHilosSecurityStepUpActions,
   createHilosSecurityStepUpTable,
-  HILOS_STEP_UP_ADMIN_COPY,
-  HilosPages,
+  isHiddenValue,
 } from '@hilos/core'
 import type {
   HilosStepUpOperationRow,
@@ -96,17 +98,23 @@ export function HilosSecurityStepUpPage({
                 : HILOS_STEP_UP_ADMIN_COPY.project}
             </span>
           ),
-          enabled: (row) => (
-            <HilosSwitch
-              className="mb-0"
-              checked={row.enabled}
-              busy={pendingOperationKey === row.operationKey}
-              disabled={operationToggle.busy}
-              aria-label={`Require confirmation for ${row.label}`}
-              dataId={`hilos-step-up-switch-${row.operationKey}`}
-              onToggle={(enabled) => void toggleOperation(row, enabled)}
-            />
-          ),
+          enabled: (row) => {
+            if (isHiddenValue(row.enabled)) {
+              return <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+            }
+
+            return (
+              <HilosSwitch
+                className="mb-0"
+                checked={row.enabled}
+                busy={pendingOperationKey === row.operationKey}
+                disabled={operationToggle.busy}
+                aria-label={`Require confirmation for ${row.label}`}
+                dataId={`hilos-step-up-switch-${row.operationKey}`}
+                onToggle={(enabled) => void toggleOperation(row, enabled)}
+              />
+            )
+          },
         }}
       />
     </HilosAdminPage>

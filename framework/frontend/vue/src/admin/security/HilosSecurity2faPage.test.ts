@@ -8,8 +8,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HILOS_VIEW_MODE_COPY,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   HilosSecondFactorSettingKey,
   ScopeManager,
@@ -61,7 +59,7 @@ function settingSlot(rowKey: string, value: string): Record<string, unknown> {
   return { rowKey, value, defaultValue: rowKey === REQUIRED ? 'none' : '30' }
 }
 
-function seededContext(): {
+function seededContext(hiddenValues = false): {
   context: HilosTwoFactorContext
   pushUpdate: (rowKey: string, value: string) => void
   pushRemove: (rowKey: string) => void
@@ -70,8 +68,26 @@ function seededContext(): {
   focus: string[]
 } {
   let settings = new Map<string, Record<string, unknown>>([
-    [REQUIRED, settingSlot(REQUIRED, 'admins')],
-    [TRUST_DAYS, settingSlot(TRUST_DAYS, '30')],
+    [
+      REQUIRED,
+      hiddenValues
+        ? {
+            rowKey: REQUIRED,
+            value: { _hidden: true },
+            defaultValue: { _hidden: true },
+          }
+        : settingSlot(REQUIRED, 'admins'),
+    ],
+    [
+      TRUST_DAYS,
+      hiddenValues
+        ? {
+            rowKey: TRUST_DAYS,
+            value: { _hidden: true },
+            defaultValue: { _hidden: true },
+          }
+        : settingSlot(TRUST_DAYS, '30'),
+    ],
   ])
   const focus: string[] = []
   const scopes = new ScopeManager()
@@ -464,16 +480,14 @@ describe('HilosSecurity2faPage in the admin view mode', () => {
     }
   }
 
-  it('a viewer opens a setting edit, finds Save disabled with the mode strip reference, and closes via Cancel', async () => {
-    const { context, sent } = seededContext()
+  it('a viewer opens a setting edit, sees the hidden mark instead of an input, and closes via Cancel', async () => {
+    const { context, sent } = seededContext(true)
     bindSession(context.scopes).handshake(null, true)
     await openModal(context, REQUIRED)
 
-    expect(valueInput().disabled).toBe(false)
+    expect(modalEl('hilos-2fa-input')).toBeNull()
+    expect(modalEl('hilos-hidden')).not.toBeNull()
     expect(saveButton().disabled).toBe(true)
-    expect(saveButton().getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
     saveButton().click()
     await nextTick()
     expect(sent).toEqual([])
@@ -487,36 +501,6 @@ describe('HilosSecurity2faPage in the admin view mode', () => {
 
     expect(modalEl('modal-confirm-discard')).toBeNull()
     expect(modalEl('modal')).toBeNull()
-  })
-
-  it('Enter in a setting edit is refused with the view mode phrase', async () => {
-    const { context, sent, answer } = seededContext()
-    bindSession(context.scopes).handshake(null, true)
-    await openModal(context, REQUIRED)
-
-    await typeDraft('everyone')
-    expect(saveButton().disabled).toBe(true)
-
-    const form = document.querySelector('[data-id="modal"] form')
-    expect(form).not.toBeNull()
-    form?.dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true }),
-    )
-    await nextTick()
-
-    expect(sent).toHaveLength(1)
-    expect(sent[0]?.action).toBe('security_2fa_setting_set')
-    expect(sent[0]?.payload).toMatchObject({ key: REQUIRED, value: 'everyone' })
-
-    answer('fail', 'view_mode')
-    await settle()
-    await nextTick()
-
-    expect(modalEl('modal')).not.toBeNull()
-    expect(modalEl('hilos-action-error')?.textContent).toContain(
-      HILOS_VIEW_MODE_COPY.refusal,
-    )
-    expect(saveButton().disabled).toBe(true)
   })
 
   it('an admin on a node in the mode has Save active after typing a draft', async () => {

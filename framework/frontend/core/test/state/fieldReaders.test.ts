@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   readBoolean,
+  readHideableBoolean,
   readHideableString,
   readHideableStringOrNull,
   readNumber,
@@ -58,5 +59,15 @@ describe('field readers', () => {
     expect(readBoolean({ active: false }, 'active')).toBe(false)
     expect(readBoolean({ active: 1 }, 'active')).toBe(false)
     expect(readBoolean({}, 'active')).toBe(false)
+  })
+
+  it('readHideableBoolean hands the one hidden value out for the mark, else reads as readBoolean', () => {
+    expect(readHideableBoolean({ active: { _hidden: true } }, 'active')).toBe(
+      HIDDEN_VALUE,
+    )
+    expect(readHideableBoolean({ active: true }, 'active')).toBe(true)
+    expect(readHideableBoolean({ active: false }, 'active')).toBe(false)
+    expect(readHideableBoolean({ active: 1 }, 'active')).toBe(false)
+    expect(readHideableBoolean({}, 'active')).toBe(false)
   })
 })

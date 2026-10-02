@@ -244,8 +244,9 @@ nobody is asked*).
   hidden after the marking and reach a viewer's screen — the personal ones.
   `isHiddenValue` recognizes it (the mirror of `HiddenValue::isMark`), and the
   readers hand out the one frozen `HIDDEN_VALUE` as a third state of the field,
-  beside the value and null, typed `Hideable<T>`: `readHideableString` and
-  `readHideableStringOrNull` beside `readString`, and for a field of an entity
+  beside the value and null, typed `Hideable<T>`: `readHideableString`,
+  `readHideableStringOrNull` and `readHideableBoolean` beside `readString`, and
+  `hideable()` for a frame schema validated by core; and for a field of an entity
   whose typed shape stays plain — a person's name, read by the chat and the
   profile where it is never hidden — the collection's
   `EntityCollection.hidden(target, field)`. One instance and not the object off
@@ -344,8 +345,14 @@ nobody is asked*).
 - The owner's decisions per surface. The values of ALL settings are hidden
   while keys, types and captions are shown; there is no marking by key —
   `Setting.value` is `AnonymizationStrategy::MASK` whole, because the
-  framework does not know what the project put there
-  (not in the code yet — HIL-1255). A log line shows its time, level and
+  framework does not know what the project put there. On every settings screen,
+  a viewer sees the key, type, caption, source, and presence of a value; the
+  value itself, the default value, and the key of a referenced default are
+  hidden; a switch-value is rendered as a hidden mark; log modes — card titles
+  are shown, the applied mode, mode values, and drift are hidden; the set of
+  enabled sign-in methods is hidden on the screen even though sent to every
+  session — one rule for setting values; OAuth providers are shown according to
+  the entity's verdict (HIL-1255). A log line shows its time, level and
   node, and its text is hidden; there is no marking at write time
   (not in the code yet — HIL-1257). A person's name is hidden
   (not in the code yet — HIL-1254). Rows assembled by hand past the marking
@@ -564,8 +571,9 @@ its e2e (`demo/binance-btc-tracker/tests/e2e/tests/communications.spec.ts`) walk
 the hub's switch and the test send. The buttons that open those dialogs and the
 retry stand on row fields — whether a field is editable, where its value comes
 from, a delivery's status: a viewer sees the delivery status, so Retry stands
-disabled for them (HIL-1256); what a viewer is shown of the channel fields is
-HIL-1255's (HIL-1266).
+disabled for them (HIL-1256); the value of a channel field is hidden from a
+viewer, while the source and editability are shown — the edit and reset controls
+stand for a viewer the same as for an admin (HIL-1255).
 
 The backup section carries the viewer cases of its keep toggle and of its
 restore and reopen dialogs as a unit of its page
@@ -581,9 +589,8 @@ The settings carry their viewer case in
 moved with HIL-1219). The log modes carry theirs as a unit of the
 setting-presets screen
 (`framework/frontend/vue/src/admin/settings/HilosSettingPresetsPage.test.ts`)
-and not as an e2e: a viewer is sent the frame of the presets hidden whole until
-its fields are classified (not in the code yet — HIL-1255), so no stand draws a
-viewer a card to find disabled (HIL-1262).
+and not as an e2e: a viewer receives the presets frame with masked fields,
+cards are rendered disabled, and none of them is lit up (HIL-1255).
 
 The people section carries its viewer case in
 `demo/chat/tests/e2e/tests/users.spec.ts` (HIL-1263; moving with the file under
@@ -599,7 +606,7 @@ The security section carries its viewer cases as units of six pages
 and in the chat e2e (`demo/chat/tests/e2e/tests/auth.spec.ts`,
 `demo/chat/tests/e2e/tests/step-up.spec.ts`,
 `demo/chat/tests/e2e/tests/second-factor.spec.ts`); what a viewer is shown in
-security fields is HIL-1255's (not in the code yet — HIL-1255) (HIL-1267).
+security fields is HIL-1255's — values and switches are hidden as marks (HIL-1255).
 
 ## What The View Mode Does Not Do
 

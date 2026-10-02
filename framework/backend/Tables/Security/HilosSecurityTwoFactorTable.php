@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Security;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -95,6 +96,25 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a two-factor setting row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Row key is not personal; value is hidden by the column verdict of settings (MASK); defaultValue is omitted
+     * and therefore hidden, as defaults are also setting values (HIL-1258).
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosSecurityTwoFactorTableRow::rowKey => WireField::notPersonal(),
+            HilosSecurityTwoFactorTableRow::value => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
         ];
     }
 

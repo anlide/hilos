@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Security;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\OAuth\OAuthConfigResolver;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -98,6 +99,26 @@ class HilosSecurityOAuthRedirectTable extends TableDefinition implements SelfSna
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of the return-address row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Row key, source layer and set-state flag are not personal; value is hidden by the column verdict of settings (MASK).
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosSecurityOAuthRedirectTableRow::rowKey => WireField::notPersonal(),
+            HilosSecurityOAuthRedirectTableRow::source => WireField::notPersonal(),
+            HilosSecurityOAuthRedirectTableRow::setState => WireField::notPersonal(),
+            HilosSecurityOAuthRedirectTableRow::value => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
         ];
     }
 

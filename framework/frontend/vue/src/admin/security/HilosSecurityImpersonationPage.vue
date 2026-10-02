@@ -24,17 +24,21 @@ two-factor page (D-143). Bootstrap classes only (styling-rules.md). -->
 import {
   createHilosSecurityImpersonationActions,
   createHilosSecurityImpersonationTable,
+  HIDDEN_VALUE,
   HILOS_IMPERSONATION_SCOPE_COPY,
   HILOS_IMPERSONATION_SCOPE_HINT,
   HILOS_IMPERSONATION_SCOPE_VALUES,
   HILOS_IMPERSONATION_SETTING_COPY,
+  hiddenAsWord,
   hilosImpersonationScopeOf,
   HilosPages,
   isHilosImpersonationSwitch,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
+  type Hideable,
   type HilosImpersonationContext,
   type HilosImpersonationScope,
   type HilosImpersonationSettingRow,
@@ -49,6 +53,8 @@ import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -99,7 +105,7 @@ async function toggle(
 
 /** The one field the scope's modal edits. */
 interface ScopeEditFields {
-  scope: HilosImpersonationScope
+  scope: Hideable<HilosImpersonationScope>
 }
 
 /**
@@ -117,9 +123,10 @@ function noticeText(
     case 'deleted':
       return 'Deleted elsewhere — your choice stays on screen.'
     case 'conflict':
-      return liveRow
-        ? `Changed elsewhere to "${HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(liveRow)]}".`
-        : ''
+      if (!liveRow) {
+        return ''
+      }
+      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? hiddenAsWord(liveRow.value) : HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(liveRow)]}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -133,6 +140,9 @@ const editRow = ref<HilosImpersonationSettingRow | null>(null)
 const editScope = ref<HilosImpersonationScope>('act')
 const editBaseline = ref<RowEditBaseline<ScopeEditFields>>(
   openRowEdit<ScopeEditFields>({ scope: 'act' }),
+)
+const editHidden = computed(() =>
+  isHiddenValue(editBaseline.value.values.scope),
 )
 const editAction = useTrackedAction()
 const {
@@ -148,10 +158,14 @@ const liveRow = useSignal(settings.controller.focusedRow)
 const live = computed(() =>
   resolveRowEdit(
     liveRow.value
-      ? { scope: hilosImpersonationScopeOf(liveRow.value) }
+      ? {
+          scope: isHiddenValue(liveRow.value.value)
+            ? HIDDEN_VALUE
+            : hilosImpersonationScopeOf(liveRow.value),
+        }
       : undefined,
     editBaseline.value,
-    { scope: editScope.value },
+    { scope: editHidden.value ? HIDDEN_VALUE : editScope.value },
   ),
 )
 const editNotice = computed(() => live.value.notice?.kind ?? null)
@@ -170,11 +184,16 @@ function openEdit(row: HilosImpersonationSettingRow): void {
   if (!fresh) {
     return
   }
-  const scope = hilosImpersonationScopeOf(fresh)
   clearEditError()
+  const freshHidden = isHiddenValue(fresh.value)
+  const scope = hilosImpersonationScopeOf(fresh)
   editRow.value = fresh
-  editScope.value = scope
-  editBaseline.value = openRowEdit<ScopeEditFields>({ scope })
+  if (!freshHidden) {
+    editScope.value = scope
+  }
+  editBaseline.value = openRowEdit<ScopeEditFields>({
+    scope: freshHidden ? HIDDEN_VALUE : scope,
+  })
   editOpen.value = true
 }
 
@@ -187,8 +206,9 @@ function closeEdit(): void {
 // step takes lands in the choice.
 function applyStep(step: RowEditStep<ScopeEditFields>): void {
   editBaseline.value = step.baseline
-  if (step.take.scope !== undefined) {
-    editScope.value = step.take.scope
+  const taken = step.take.scope
+  if (taken !== undefined && !isHiddenValue(taken)) {
+    editScope.value = taken
   }
 }
 
@@ -221,7 +241,7 @@ async function submitEdit(): Promise<void> {
   ) {
     return
   }
-  if (!live.value.dirty) {
+  if (!live.value.dirty || editHidden.value) {
     closeEdit()
 
     return
@@ -245,19 +265,31 @@ async function submitEdit(): Promise<void> {
         </div>
       </template>
       <template #cell-value="{ row }">
-        <HilosSwitch
+        <HilosHideable
           v-if="isHilosImpersonationSwitch(row.rowKey)"
-          class="mb-0"
-          :checked="row.enabled"
-          :busy="pendingSwitchKey === row.rowKey"
-          :disabled="switchBusy"
-          :aria-label="labelOf(row)"
-          :data-id="`hilos-impersonation-switch-${row.rowKey}`"
-          @toggle="toggle(row, $event)"
-        />
-        <span v-else data-id="hilos-impersonation-scope-value">{{
-          HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(row)]
-        }}</span>
+          :value="row.enabled"
+        >
+          <template #default="{ value }">
+            <HilosSwitch
+              class="mb-0"
+              :checked="value"
+              :busy="pendingSwitchKey === row.rowKey"
+              :disabled="switchBusy"
+              :aria-label="labelOf(row)"
+              :data-id="`hilos-impersonation-switch-${row.rowKey}`"
+              @toggle="toggle(row, $event)"
+            />
+          </template>
+        </HilosHideable>
+        <span v-else data-id="hilos-impersonation-scope-value">
+          <HilosHideable :value="row.value">
+            <template #default>
+              {{
+                HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(row)]
+              }}
+            </template>
+          </HilosHideable>
+        </span>
       </template>
       <template #cell-actions="{ row }">
         <button
@@ -285,33 +317,39 @@ async function submitEdit(): Promise<void> {
       </template>
       <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form v-if="editRow" @submit.prevent="submitEdit">
-        <fieldset aria-describedby="hilos-impersonation-scope-hint">
-          <legend class="form-label fs-6">{{ labelOf(editRow) }}</legend>
-          <div
-            v-for="value in HILOS_IMPERSONATION_SCOPE_VALUES"
-            :key="value"
-            class="form-check"
-          >
-            <input
-              :id="`hilos-impersonation-scope-${value}-field`"
-              v-model="editScope"
-              class="form-check-input"
-              type="radio"
-              name="hilos-impersonation-scope"
-              :value="value"
-              :data-id="`hilos-impersonation-scope-${value}`"
-              data-autofocus
-            />
-            <label
-              class="form-check-label"
-              :for="`hilos-impersonation-scope-${value}-field`"
-              >{{ HILOS_IMPERSONATION_SCOPE_COPY[value] }}</label
+        <template v-if="editHidden">
+          <div class="form-label fs-6">{{ labelOf(editRow) }}</div>
+          <HilosHiddenMark />
+        </template>
+        <template v-else>
+          <fieldset aria-describedby="hilos-impersonation-scope-hint">
+            <legend class="form-label fs-6">{{ labelOf(editRow) }}</legend>
+            <div
+              v-for="value in HILOS_IMPERSONATION_SCOPE_VALUES"
+              :key="value"
+              class="form-check"
             >
-          </div>
-        </fieldset>
-        <p id="hilos-impersonation-scope-hint" class="form-text mb-0">
-          {{ HILOS_IMPERSONATION_SCOPE_HINT }}
-        </p>
+              <input
+                :id="`hilos-impersonation-scope-${value}-field`"
+                v-model="editScope"
+                class="form-check-input"
+                type="radio"
+                name="hilos-impersonation-scope"
+                :value="value"
+                :data-id="`hilos-impersonation-scope-${value}`"
+                data-autofocus
+              />
+              <label
+                class="form-check-label"
+                :for="`hilos-impersonation-scope-${value}-field`"
+                >{{ HILOS_IMPERSONATION_SCOPE_COPY[value] }}</label
+              >
+            </div>
+          </fieldset>
+          <p id="hilos-impersonation-scope-hint" class="form-text mb-0">
+            {{ HILOS_IMPERSONATION_SCOPE_HINT }}
+          </p>
+        </template>
         <HilosEditNotice
           :kind="editNotice"
           :text="editNoticeText"

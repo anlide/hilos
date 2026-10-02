@@ -17,13 +17,17 @@
 // for the passkey block (D-122). Bootstrap classes only (styling-rules.md).
 import { useEffect, useId, useMemo, useState } from 'react'
 import {
+  HILOS_VIEW_MODE_COPY,
   HilosPages,
   HilosSignInMethodRowKey,
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
+  isHiddenValue,
+  isSignInMethodOn,
   resolveHilosPath,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosSignInMethodRow,
   HilosSignInMethodsContext,
 } from '@hilos/core'
@@ -85,8 +89,8 @@ export function HilosSecuritySignInMethodsPage({
   const [passkeyPending, setPasskeyPending] = useState(false)
 
   /** Whether the method is on now, by the live set rather than the row. */
-  function isOn(row: HilosSignInMethodRow): boolean {
-    return enabledKeys.includes(row.methodKey)
+  function isOn(row: HilosSignInMethodRow): Hideable<boolean> {
+    return isSignInMethodOn(row, enabledKeys)
   }
 
   // Dispatch the switch as a tracked action. Nothing is set optimistically: the
@@ -125,17 +129,24 @@ export function HilosSecuritySignInMethodsPage({
               <code className="small text-body-secondary">{row.methodKey}</code>
             </>
           ),
-          [HilosSignInMethodRowKey.enabled]: (row) => (
-            <HilosSwitch
-              className="mb-0"
-              checked={isOn(row)}
-              busy={pendingMethodKey === row.methodKey}
-              disabled={toggle.busy}
-              aria-label={`Enable ${row.label}`}
-              dataId={`hilos-sign-in-method-enabled-${row.methodKey}`}
-              onToggle={(next) => void toggleEnabled(row, next)}
-            />
-          ),
+          [HilosSignInMethodRowKey.enabled]: (row) => {
+            const on = isOn(row)
+            if (isHiddenValue(on)) {
+              return <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+            }
+
+            return (
+              <HilosSwitch
+                className="mb-0"
+                checked={on}
+                busy={pendingMethodKey === row.methodKey}
+                disabled={toggle.busy}
+                aria-label={`Enable ${row.label}`}
+                dataId={`hilos-sign-in-method-enabled-${row.methodKey}`}
+                onToggle={(next) => void toggleEnabled(row, next)}
+              />
+            )
+          },
           [HilosSignInMethodRowKey.ready]: (row) => (
             <>
               {row.ready ? (
@@ -174,16 +185,20 @@ export function HilosSecuritySignInMethodsPage({
               those already created keep signing in with their passkey.
             </div>
           </div>
-          <HilosSwitch
-            className="mb-0"
-            checked={passkeyAllowsUnproven}
-            busy={passkeyPending}
-            disabled={toggle.busy}
-            aria-label="Allow passkey without a confirmed address"
-            aria-describedby={passkeyHintId}
-            dataId="hilos-sign-in-passkey-unproven"
-            onToggle={(next) => void togglePasskeyUnproven(next)}
-          />
+          {isHiddenValue(passkeyAllowsUnproven) ? (
+            <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+          ) : (
+            <HilosSwitch
+              className="mb-0"
+              checked={passkeyAllowsUnproven}
+              busy={passkeyPending}
+              disabled={toggle.busy}
+              aria-label="Allow passkey without a confirmed address"
+              aria-describedby={passkeyHintId}
+              dataId="hilos-sign-in-passkey-unproven"
+              onToggle={(next) => void togglePasskeyUnproven(next)}
+            />
+          )}
         </div>
       ) : null}
     </HilosAdminPage>

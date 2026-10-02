@@ -16,6 +16,7 @@ import {
   isHilosImpersonationSwitch,
   resolveHilosImpersonationSettingRow,
 } from '../../../src/admin/security/hilosSecurityImpersonation.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
@@ -53,6 +54,23 @@ describe('resolveHilosImpersonationSettingRow', () => {
         rawRow(HilosImpersonationSettingKey.allowed, '1', 'true'),
       ).enabled,
     ).toBe(false)
+  })
+
+  it('preserves hidden value marks on value and defaultValue, and sets enabled to HIDDEN_VALUE for switches', () => {
+    const row = resolveHilosImpersonationSettingRow({
+      rowKey: HilosImpersonationSettingKey.equal,
+      slots: {
+        setting: {
+          rowKey: HilosImpersonationSettingKey.equal,
+          value: { _hidden: true },
+          defaultValue: { _hidden: true },
+        },
+      },
+    })
+
+    expect(row.value).toBe(HIDDEN_VALUE)
+    expect(row.defaultValue).toBe(HIDDEN_VALUE)
+    expect(row.enabled).toBe(HIDDEN_VALUE)
   })
 
   it('never reads the scope as a switch that is on', () => {

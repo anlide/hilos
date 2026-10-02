@@ -20,17 +20,21 @@
 // Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
 import {
+  HIDDEN_VALUE,
   HILOS_TABLE_ACTIONS_KEY,
+  HILOS_VIEW_MODE_COPY,
   HilosPages,
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosChannelFieldRow,
   HilosCommunicationsContext,
   RowEditBaseline,
@@ -70,6 +74,9 @@ function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
 
 /** Human-readable effective value of a non-secret field. */
 function displayValue(row: HilosChannelFieldRow): string {
+  if (isHiddenValue(row.value)) {
+    return HILOS_VIEW_MODE_COPY.hidden
+  }
   if (typeof row.value === 'boolean') {
     return row.value ? 'On' : 'Off'
   }
@@ -84,6 +91,7 @@ const SOURCE_LABEL: Record<string, string> = {
   default: 'Default',
 }
 
+/** Coerce the edited string to the field's typed value for the set action. */
 /** Coerce the edited string to the field's typed value for the set action. */
 function editedValue(
   row: HilosChannelFieldRow,
@@ -101,7 +109,7 @@ function editedValue(
 
 /** The one field the dialog edits: the field's typed value. */
 interface ChannelEditFields {
-  value: boolean | number | string | null
+  value: Hideable<boolean | number | string | null>
 }
 
 /**
@@ -110,8 +118,11 @@ interface ChannelEditFields {
  */
 function formText(
   type: string,
-  value: boolean | number | string | null,
+  value: Hideable<boolean | number | string | null>,
 ): string {
+  if (isHiddenValue(value)) {
+    return ''
+  }
   if (type === 'boolean') {
     return value === true ? '1' : '0'
   }
@@ -201,13 +212,21 @@ export function HilosCommunicationsChannelPage({
   const editStep = editRow?.type === 'float' ? 'any' : undefined
   const editTitle = editRow ? `Edit · ${editRow.label}` : 'Edit field'
 
+  const editHidden = isHiddenValue(editBaseline.values.value)
+
   // The live row the open dialog is about: the row the table holds in focus, which
   // the server follows wherever it goes; undefined once the row is gone.
   const liveRow = useSignal(fields.controller.focusedRow)
   const live = resolveRowEdit(
     liveRow ? { value: liveRow.value } : undefined,
     editBaseline,
-    { value: editRow ? editedValue(editRow, editValue) : null },
+    {
+      value: editHidden
+        ? HIDDEN_VALUE
+        : editRow
+          ? editedValue(editRow, editValue)
+          : null,
+    },
   )
   const editNotice = live.notice?.kind ?? null
   const editNoticeText = noticeText(editNotice, liveRow)
@@ -252,7 +271,9 @@ export function HilosCommunicationsChannelPage({
     }
     edit.clearError()
     setEditRow(fresh)
-    setEditValue(formText(fresh.type, fresh.value))
+    setEditValue(
+      isHiddenValue(fresh.value) ? '' : formText(fresh.type, fresh.value),
+    )
     setEditBaseline(openRowEdit<ChannelEditFields>({ value: fresh.value }))
     setEditOpen(true)
   }
@@ -273,7 +294,7 @@ export function HilosCommunicationsChannelPage({
   }
 
   async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy || live.gone) {
+    if (!editRow || edit.busy || live.gone || editHidden) {
       return
     }
     if (!live.dirty) {
@@ -403,7 +424,7 @@ export function HilosCommunicationsChannelPage({
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!live.dirty || edit.busy || live.gone}
+            disableSave={!live.dirty || edit.busy || live.gone || editHidden}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -440,7 +461,12 @@ export function HilosCommunicationsChannelPage({
               void submitEdit()
             }}
           >
-            {editInputType === 'checkbox' ? (
+            {editHidden ? (
+              <div className="mb-3">
+                <div className="form-label">{editRow.label}</div>
+                <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+              </div>
+            ) : editInputType === 'checkbox' ? (
               <div className="form-check form-switch">
                 <input
                   id="hilos-channel-edit-value"

@@ -1,6 +1,7 @@
+import { type Hideable } from '../../state/hiddenValue.js'
 import { type ActionHandle } from '../../connection/actionLifecycle.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readBoolean, readString } from '../../state/fieldReaders.js'
+import { readHideableBoolean, readString } from '../../state/fieldReaders.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
@@ -13,7 +14,7 @@ export interface HilosStepUpOperationRow {
   readonly operationKey: string
   readonly label: string
   readonly owner: string
-  readonly enabled: boolean
+  readonly enabled: Hideable<boolean>
 }
 
 const STEP_UP_TABLE = 'hilosSecurityStepUp'
@@ -50,7 +51,7 @@ export function resolveHilosStepUpOperationRow(
       String(row.rowKey),
     label: readString(record, HilosStepUpOperationRowKey.label),
     owner: readString(record, HilosStepUpOperationRowKey.owner),
-    enabled: readBoolean(record, HilosStepUpOperationRowKey.enabled),
+    enabled: readHideableBoolean(record, HilosStepUpOperationRowKey.enabled),
   }
 }
 

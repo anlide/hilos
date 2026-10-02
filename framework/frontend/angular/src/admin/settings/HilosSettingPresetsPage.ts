@@ -31,10 +31,12 @@ import {
   signal,
 } from '@angular/core'
 import {
+  HILOS_VIEW_MODE_COPY,
   createHilosSettingPresets,
   createHilosSettingPresetsActions,
   differencesOf,
   hasDifferences,
+  isHiddenValue,
   isPresetApplied,
   isSelectionUnknown,
   presetsOf,
@@ -340,6 +342,10 @@ export class HilosSettingPresetsPage {
 
   /** The lines a card lists, read out of the values the preset declares. */
   protected valueLines(preset: HilosSettingPreset): string[] {
+    if (isHiddenValue(preset.values)) {
+      return [HILOS_VIEW_MODE_COPY.hidden]
+    }
+
     return this.vocabulary().valueLines(preset.values)
   }
 

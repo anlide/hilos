@@ -61,6 +61,7 @@ export {
 } from './state/EntityCollection.js'
 export {
   readBoolean,
+  readHideableBoolean,
   readHideableString,
   readHideableStringOrNull,
   readNumber,
@@ -74,6 +75,7 @@ export {
   type HiddenValue,
   type Hideable,
 } from './state/hiddenValue.js'
+export { hideable } from './state/hideableSchema.js'
 export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
 export { DataStore } from './state/DataStore.js'
 export { ListStore, type ListItem } from './state/ListStore.js'
@@ -1274,6 +1276,7 @@ export {
 } from './admin/security/hilosSecurityOauth.js'
 export {
   resolveHilosSignInMethodRow,
+  isSignInMethodOn,
   createHilosSignInMethodsTable,
   createHilosSignInMethodsActions,
   HilosSignInMethodRowKey,

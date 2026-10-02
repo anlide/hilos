@@ -511,26 +511,45 @@ describe('HilosSettingPresetsPage in the admin view mode', () => {
     }
   }
 
-  it('a viewer finds every mode disabled and applies none of them', async () => {
+  it('a viewer finds every mode disabled, with hidden marks in place of values, and applies none of them', async () => {
     bindSession().handshake(null, true)
     const { context, push, dispatched } = makeContext()
     const wrapper = mountPage(context)
 
-    push(groupState())
+    push({
+      group: 'logs',
+      selected: { _hidden: true } as unknown as string,
+      presets: [
+        {
+          name: 'frugal',
+          values: { _hidden: true } as unknown as Record<string, string>,
+        },
+        {
+          name: 'normal',
+          values: { _hidden: true } as unknown as Record<string, string>,
+        },
+        {
+          name: 'investigation',
+          values: { _hidden: true } as unknown as Record<string, string>,
+        },
+      ],
+      differences: { _hidden: true } as unknown as [],
+    })
     await nextTick()
 
-    for (const name of ['frugal', 'investigation']) {
-      expect(wrapper.find(card(name)).attributes('disabled')).toBeDefined()
-      expect(wrapper.find(card(name)).attributes('aria-describedby')).toBe(
+    for (const name of ['frugal', 'normal', 'investigation']) {
+      const cardEl = wrapper.find(card(name))
+      expect(cardEl.attributes('disabled')).toBeDefined()
+      expect(cardEl.attributes('aria-describedby')).toBe(
         HILOS_VIEW_MODE_STRIP_TEXT_ID,
       )
-      await wrapper.find(card(name)).trigger('click')
+      expect(cardEl.attributes('aria-current')).toBeUndefined()
+      expect(cardEl.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+      await cardEl.trigger('click')
     }
     await settled()
     expect(dispatched).toHaveLength(0)
 
-    expect(wrapper.find(card('normal')).attributes('disabled')).toBeDefined()
-    expect(wrapper.find(card('normal')).attributes('aria-current')).toBe('true')
     expect(
       wrapper
         .find('[data-id="hilos-setting-preset-settings-link"]')
@@ -538,18 +557,30 @@ describe('HilosSettingPresetsPage in the admin view mode', () => {
     ).toBe('/hilos/settings')
   })
 
-  it('a viewer raises no overwrite question and has nothing to put the values back with', async () => {
+  it('a viewer raises no overwrite question and finds no differences displayed when hidden', async () => {
     bindSession().handshake(null, true)
     const { context, push, dispatched } = makeContext()
     const wrapper = mountPage(context)
 
-    push(
-      groupState({
-        differences: [
-          { key: 'level', presetValue: 'INFO', currentValue: 'DEBUG' },
-        ],
-      }),
-    )
+    push({
+      group: 'logs',
+      selected: { _hidden: true } as unknown as string,
+      presets: [
+        {
+          name: 'frugal',
+          values: { _hidden: true } as unknown as Record<string, string>,
+        },
+        {
+          name: 'normal',
+          values: { _hidden: true } as unknown as Record<string, string>,
+        },
+        {
+          name: 'investigation',
+          values: { _hidden: true } as unknown as Record<string, string>,
+        },
+      ],
+      differences: { _hidden: true } as unknown as [],
+    })
     await nextTick()
 
     expect(wrapper.find(card('frugal')).attributes('disabled')).toBeDefined()
@@ -562,12 +593,7 @@ describe('HilosSettingPresetsPage in the admin view mode', () => {
     ).toBeNull()
 
     const revert = wrapper.find('[data-id="hilos-setting-preset-revert"]')
-    expect(revert.attributes('disabled')).toBeDefined()
-    expect(revert.attributes('aria-describedby')).toBe(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-    await revert.trigger('click')
-    await settled()
+    expect(revert.exists()).toBe(false)
 
     expect(dispatched).toHaveLength(0)
   })

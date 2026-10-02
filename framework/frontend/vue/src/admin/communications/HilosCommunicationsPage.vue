@@ -24,6 +24,7 @@ import {
 import { onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -79,15 +80,19 @@ async function toggleEnabled(
         <code class="small text-body-secondary">{{ row.channel }}</code>
       </template>
       <template #cell-enabled="{ row }">
-        <HilosSwitch
-          class="mb-0"
-          :checked="row.enabled"
-          :busy="pendingChannel === row.channel"
-          :disabled="toggleBusy"
-          :aria-label="`Enable ${row.label}`"
-          :data-id="`hilos-channel-enabled-${row.channel}`"
-          @toggle="toggleEnabled(row, $event)"
-        />
+        <HilosHideable :value="row.enabled">
+          <template #default="{ value: enabled }">
+            <HilosSwitch
+              class="mb-0"
+              :checked="enabled"
+              :busy="pendingChannel === row.channel"
+              :disabled="toggleBusy"
+              :aria-label="`Enable ${row.label}`"
+              :data-id="`hilos-channel-enabled-${row.channel}`"
+              @toggle="toggleEnabled(row, $event)"
+            />
+          </template>
+        </HilosHideable>
       </template>
       <template #cell-configured="{ row }">
         <span

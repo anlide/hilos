@@ -13,6 +13,7 @@ import {
   type HilosSettingPresetsContext,
   type HilosSettingPresetsState,
 } from '../../../src/admin/settings/hilosSettingPresets.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
 import { type ProjectSignal } from '../../../src/index.js'
 
@@ -336,5 +337,27 @@ describe('selectors', () => {
     expect(
       presetsOf(state).some((preset) => isPresetApplied(state, preset.name)),
     ).toBe(false)
+  })
+
+  it('parses a masked frame from the server under admin view mode and treats all hidden values properly', () => {
+    const schemas = settingPresetsSignalSchemas(SIGNAL)
+    const rawFrame = {
+      group: 'logs',
+      selected: { _hidden: true },
+      presets: [
+        { name: 'frugal', values: { _hidden: true } },
+        { name: 'normal', values: { _hidden: true } },
+        { name: 'investigation', values: { _hidden: true } },
+      ],
+      differences: { _hidden: true },
+    }
+    const parsed = schemas[SIGNAL].parse(rawFrame) as HilosSettingPresetsState
+
+    expect(parsed.presets[0].values).toBe(HIDDEN_VALUE)
+    expect(selectedPresetOf(parsed)).toBeNull()
+    expect(isSelectionUnknown(parsed)).toBe(false)
+    expect(differencesOf(parsed)).toEqual([])
+    expect(hasDifferences(parsed)).toBe(false)
+    expect(isPresetApplied(parsed, 'normal')).toBe(false)
   })
 })

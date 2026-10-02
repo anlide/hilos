@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Security;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\OAuth\OAuthConfigField;
 use Hilos\Auth\OAuth\OAuthConfigResolver;
 use Hilos\Auth\OAuth\OAuthProviderDescriptor;
@@ -110,6 +111,32 @@ class HilosSecurityOAuthProvidersTable extends TableDefinition implements SelfSn
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a provider row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Every field is either from the code recipe or computed metadata, none is personal; the entire row is shown.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosSecurityOAuthProvidersTableRow::providerKey => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::label => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::builtIn => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::configured => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::missingFields => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::secretSet => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::clientIdSource => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::authorizeUrl => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::tokenUrl => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::userInfoUrl => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::subjectKey => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::emailKey => WireField::notPersonal(),
+            HilosSecurityOAuthProvidersTableRow::nameKey => WireField::notPersonal(),
         ];
     }
 

@@ -11,13 +11,14 @@
 // and a value a setting's rule refuses is answered on the action's `::fail` —
 // the modal keeps it and says why.
 
+import { type Hideable } from '../../state/hiddenValue.js'
 import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readString } from '../../state/fieldReaders.js'
+import { readHideableString, readString } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -134,9 +135,9 @@ export interface HilosTwoFactorSettingRow {
   /** The setting key the row stands for; also the table row key. */
   readonly rowKey: string
   /** The value in force, as text. */
-  readonly value: string
+  readonly value: Hideable<string>
   /** The catalog default, as text. */
-  readonly defaultValue: string
+  readonly defaultValue: Hideable<string>
 }
 
 // Wire keys: the framework two-step verification table, its inline row slot, and
@@ -205,8 +206,11 @@ export function resolveHilosTwoFactorSettingRow(
     rowKey:
       readString(slot, HilosTwoFactorSettingRowKey.rowKey) ||
       String(row.rowKey),
-    value: readString(slot, HilosTwoFactorSettingRowKey.value),
-    defaultValue: readString(slot, HilosTwoFactorSettingRowKey.defaultValue),
+    value: readHideableString(slot, HilosTwoFactorSettingRowKey.value),
+    defaultValue: readHideableString(
+      slot,
+      HilosTwoFactorSettingRowKey.defaultValue,
+    ),
   }
 }
 

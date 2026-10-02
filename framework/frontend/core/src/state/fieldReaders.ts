@@ -116,3 +116,17 @@ export function readBoolean(
 ): boolean {
   return fields[key] === true
 }
+
+/**
+ * Read a boolean field a viewer of the admin view mode may be sent hidden:
+ * {@link HIDDEN_VALUE} for the hidden mark, otherwise as {@link readBoolean}.
+ *
+ * @param fields The raw committed fields record.
+ * @param key The field name to read.
+ */
+export function readHideableBoolean(
+  fields: Readonly<Record<string, unknown>>,
+  key: string,
+): Hideable<boolean> {
+  return isHiddenValue(fields[key]) ? HIDDEN_VALUE : readBoolean(fields, key)
+}

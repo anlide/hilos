@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Security;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -82,6 +83,27 @@ final class HilosSecurityStepUpTable extends TableDefinition implements SelfSnap
         return [
             BrowserPageSignalData::rowKey => $row->requireRowKey(),
             BrowserPageSignalData::sources => [self::ROW_SLOT => $row->toArray()],
+        ];
+    }
+
+    /**
+     * Declares where each field of a step-up row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Operation key, label and owner come from the operation directory and are not personal;
+     * enabled is the value of the step-up setting and is hidden by its column verdict (MASK).
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosSecurityStepUpTableRow::operationKey => WireField::notPersonal(),
+            HilosSecurityStepUpTableRow::label => WireField::notPersonal(),
+            HilosSecurityStepUpTableRow::owner => WireField::notPersonal(),
+            HilosSecurityStepUpTableRow::enabled => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
         ];
     }
 

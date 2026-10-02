@@ -9,7 +9,12 @@ import {
   computed,
   input,
 } from '@angular/core'
-import type { SettingValueSource } from '@hilos/core'
+import {
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
+  type Hideable,
+  type SettingValueSource,
+} from '@hilos/core'
 
 /** Render one setting value with its catalog-origin badge. */
 @Component({
@@ -20,7 +25,9 @@ import type { SettingValueSource } from '@hilos/core'
       class="d-inline-flex align-items-center gap-2 mw-100"
       data-id="setting-value"
     >
-      @if (isBoolean()) {
+      @if (isHidden()) {
+        <span class="text-truncate" [title]="display()">{{ display() }}</span>
+      } @else if (isBoolean()) {
         <input
           type="checkbox"
           class="form-check-input mt-0 flex-shrink-0"
@@ -48,11 +55,11 @@ import type { SettingValueSource } from '@hilos/core'
       @if (isReference()) {
         <span
           class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1"
-          [title]="'Default from ' + defaultReferenceKey()"
+          [title]="'Default from ' + defaultReferenceDisplay()"
         >
           <i class="bi bi-arrow-down-right" aria-hidden="true"></i>
           <code class="text-truncate text-info-emphasis">{{
-            defaultReferenceKey()
+            defaultReferenceDisplay()
           }}</code>
         </span>
       } @else if (valueSource() === 'default') {
@@ -73,29 +80,38 @@ import type { SettingValueSource } from '@hilos/core'
 })
 export class HilosSettingValueCell {
   /** The effective value, serialized; null renders an em dash. */
-  readonly value = input.required<string | null>()
+  readonly value = input.required<Hideable<string | null>>()
   /** The setting's value type (`boolean` | `integer` | `float` | `string`). */
   readonly type = input.required<string>()
   /** Where the effective value comes from (drives the source badge). */
   readonly valueSource = input.required<SettingValueSource>()
   /** The referenced key when the default is a reference, else null. */
-  readonly defaultReferenceKey = input.required<string | null>()
+  readonly defaultReferenceKey = input.required<Hideable<string | null>>()
 
-  protected readonly isBoolean = computed(() => this.type() === 'boolean')
+  protected readonly isHidden = computed(() => isHiddenValue(this.value()))
+  protected readonly isBoolean = computed(
+    () => !this.isHidden() && this.type() === 'boolean',
+  )
   protected readonly isNumber = computed(
-    () => this.type() === 'integer' || this.type() === 'float',
+    () =>
+      !this.isHidden() &&
+      (this.type() === 'integer' || this.type() === 'float'),
   )
   protected readonly isEmptyString = computed(
     () =>
+      !this.isHidden() &&
       this.type() === 'string' &&
       (this.value() === null || this.value() === ''),
   )
   protected readonly display = computed(() => {
     const value = this.value()
+    if (isHiddenValue(value)) {
+      return HILOS_VIEW_MODE_COPY.hidden
+    }
     if (value === null) {
       return '—'
     }
-    if (this.isBoolean()) {
+    if (this.type() === 'boolean') {
       return value === '1' ? 'true' : 'false'
     }
 
@@ -105,4 +121,12 @@ export class HilosSettingValueCell {
     () =>
       this.valueSource() === 'reference' && this.defaultReferenceKey() !== null,
   )
+  protected readonly defaultReferenceDisplay = computed(() => {
+    const ref = this.defaultReferenceKey()
+    if (isHiddenValue(ref)) {
+      return HILOS_VIEW_MODE_COPY.hidden
+    }
+
+    return ref
+  })
 }

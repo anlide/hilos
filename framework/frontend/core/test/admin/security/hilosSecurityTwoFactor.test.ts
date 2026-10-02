@@ -10,6 +10,7 @@ import {
   HilosSecondFactorSettingKey,
   resolveHilosTwoFactorSettingRow,
 } from '../../../src/admin/security/hilosSecurityTwoFactor.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
@@ -32,6 +33,22 @@ describe('resolveHilosTwoFactorSettingRow', () => {
       value: '14',
       defaultValue: '30',
     })
+  })
+
+  it('preserves hidden value marks on value and defaultValue', () => {
+    const row = resolveHilosTwoFactorSettingRow({
+      rowKey: HilosSecondFactorSettingKey.trustDays,
+      slots: {
+        setting: {
+          rowKey: HilosSecondFactorSettingKey.trustDays,
+          value: { _hidden: true },
+          defaultValue: { _hidden: true },
+        },
+      },
+    })
+
+    expect(row.value).toBe(HIDDEN_VALUE)
+    expect(row.defaultValue).toBe(HIDDEN_VALUE)
   })
 
   it('falls back to the table row key when the slot is absent', () => {

@@ -743,7 +743,7 @@ test('a refusal too long for the line still moves nothing under it', async ({
 test.describe('in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
 
-  test('a guest edits a setting, has nothing to save it with, and Enter is refused in the words of the view mode', async ({
+  test('a guest opens a setting, sees the hidden mark in the modal and has nothing to edit or save', async ({
     page,
   }) => {
     const key = 'notifications.delivery_log.retention_days'
@@ -752,7 +752,11 @@ test.describe('in the admin view mode', () => {
     await openSettings(page)
     await isolate(page, key)
 
-    const value = await draftCustomSetting(page, key, '45')
+    await shownByTestId(page, `hilos-settings-edit-${key}`).click()
+
+    const modal = page.getByTestId('modal')
+    await expect(modal.getByTestId('hilos-hidden').first()).toBeVisible()
+    await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
 
     const save = page.getByTestId('hilos-settings-edit-save')
     await expect(save).toBeDisabled()
@@ -761,18 +765,8 @@ test.describe('in the admin view mode', () => {
       /(^| )hilos-view-mode-strip-text( |$)/,
     )
 
-    await value.press('Enter')
-
-    const refusal = page.getByTestId('hilos-action-error')
-    await expect(refusal).toBeVisible()
-    await expect(refusal).toContainText(
-      'View mode: you can look around, but not change anything.',
-    )
-    await expect(value).toHaveValue('45')
-    await expect(save).toBeDisabled()
-
     await clickSubmit(page.getByTestId('hilos-settings-edit-cancel'))
-    await clickSubmit(page.getByTestId('modal-confirm-discard'))
-    await expect(value).toBeHidden()
+    await expect(page.getByTestId('modal-confirm-discard')).toHaveCount(0)
+    await expect(modal).toBeHidden()
   })
 })

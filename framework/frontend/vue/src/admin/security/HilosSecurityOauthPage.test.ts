@@ -9,7 +9,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
@@ -57,7 +56,10 @@ function router(): HilosRouter {
 }
 
 /** The return-address row's slot, with the given value and, unless named, its usual source. */
-function redirectSlot(value: string, source?: string): Record<string, unknown> {
+function redirectSlot(
+  value: unknown,
+  source?: string,
+): Record<string, unknown> {
   return {
     value,
     source: source ?? (value === '' ? 'default' : 'db'),
@@ -65,9 +67,9 @@ function redirectSlot(value: string, source?: string): Record<string, unknown> {
   }
 }
 
-function seededContext(initial: string): {
+function seededContext(initial: unknown): {
   context: HilosSecurityOauthContext
-  pushUpdate: (value: string, source?: string) => void
+  pushUpdate: (value: unknown, source?: string) => void
   pushRemove: () => void
   answer: (outcome: 'success' | 'fail', errorCode?: string) => void
   sent: Array<{
@@ -227,7 +229,7 @@ function seededContext(initial: string): {
       scopes,
       actions,
     },
-    pushUpdate(value: string, source?: string): void {
+    pushUpdate(value: unknown, source?: string): void {
       rows = [redirectSlot(value, source)]
       pushDelta({
         kind: 'row_updated',
@@ -601,43 +603,31 @@ describe('HilosSecurityOauthPage in the admin view mode', () => {
     return modalEl('hilos-oauth-redirect-reset-confirm') as HTMLButtonElement
   }
 
-  it('a viewer opens return address edit and finds Save disabled with the mode strip reference', async () => {
-    const { context, sent, answer } = seededContext('https://a.example/cb')
+  it('a viewer opens return address edit, sees the hidden mark instead of an input, and closes via Cancel', async () => {
+    const { context, sent } = seededContext({ _hidden: true })
     bindSession(context.scopes).handshake(null, true)
     await openModal(context)
 
-    expect(saveButton().disabled).toBe(true)
-    expect(saveButton().getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-
-    await typeDraft('https://mine.example/cb')
+    expect(modalEl('hilos-oauth-redirect-input')).toBeNull()
+    expect(modalEl('hilos-hidden')).not.toBeNull()
     expect(saveButton().disabled).toBe(true)
 
-    const form = document.querySelector('[data-id="modal"] form')
-    expect(form).not.toBeNull()
-    form?.dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true }),
-    )
+    saveButton().click()
+    await nextTick()
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
     await nextTick()
 
-    expect(sent).toHaveLength(1)
-    expect(sent[0]?.action).toBe('security_oauth_redirect_set')
-    expect(sent[0]?.payload).toEqual({ value: 'https://mine.example/cb' })
-
-    answer('fail', 'view_mode')
-    await settle()
-    await nextTick()
-
-    expect(modalEl('modal')).not.toBeNull()
-    expect(modalEl('hilos-action-error')?.textContent).toContain(
-      HILOS_VIEW_MODE_COPY.refusal,
-    )
-    expect(saveButton().disabled).toBe(true)
+    expect(modalEl('modal')).toBeNull()
   })
 
   it('a viewer opens return address reset, finds confirm disabled, and closes via Cancel', async () => {
-    const { context, sent } = seededContext('https://a.example/cb')
+    const { context, sent } = seededContext({ _hidden: true })
     bindSession(context.scopes).handshake(null, true)
     const wrapper = mount(HilosSecurityOauthPage, {
       props: { context: markRaw(context) },
@@ -647,10 +637,21 @@ describe('HilosSecurityOauthPage in the admin view mode', () => {
     mounted.push(wrapper)
     await nextTick()
 
+    expect(
+      document.querySelector(
+        'code[data-id="hilos-oauth-redirect-value"] [data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+
     expect(resetButton().disabled).toBe(false)
     resetButton().click()
     await nextTick()
 
+    expect(
+      modalEl('hilos-oauth-redirect-reset-now')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
     expect(confirmButton().disabled).toBe(true)
     expect(confirmButton().getAttribute('aria-describedby')).toContain(
       HILOS_VIEW_MODE_STRIP_TEXT_ID,

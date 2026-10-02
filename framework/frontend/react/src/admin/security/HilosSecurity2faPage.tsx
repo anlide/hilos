@@ -13,20 +13,24 @@
 // (D-115). Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
-  createHilosSecurityTwoFactorActions,
-  createHilosSecurityTwoFactorTable,
-  describeHilosSecondFactorSetting,
+  HIDDEN_VALUE,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
+  HILOS_VIEW_MODE_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
+  createHilosSecurityTwoFactorActions,
+  createHilosSecurityTwoFactorTable,
+  describeHilosSecondFactorSetting,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
   RowEditBaseline,
@@ -62,7 +66,7 @@ function labelOf(row: HilosTwoFactorSettingRow): string {
 
 /** The one field the edit modal edits. */
 interface SettingEditFields {
-  value: string
+  value: Hideable<string>
 }
 
 /**
@@ -77,9 +81,10 @@ function noticeText(
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return liveRow
-        ? `Changed elsewhere to "${describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
-        : ''
+      if (!liveRow) {
+        return ''
+      }
+      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? HILOS_VIEW_MODE_COPY.hidden : describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -117,13 +122,15 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
   >(() => openRowEdit<SettingEditFields>({ value: '' }))
   const edit = useTrackedAction()
 
+  const editHidden = isHiddenValue(editBaseline.values.value)
+
   // The live row the open modal is about: the row the table holds in focus, which
   // the server follows wherever it goes; undefined once the row is gone.
   const liveRow = useSignal(settings.controller.focusedRow)
   const live = resolveRowEdit(
     liveRow ? { value: liveRow.value } : undefined,
     editBaseline,
-    { value: editValue.trim() },
+    { value: editHidden ? HIDDEN_VALUE : editValue.trim() },
   )
   const editNotice = live.notice?.kind ?? null
   const editNoticeText = noticeText(editNotice, liveRow)
@@ -134,7 +141,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
   // step takes lands in the input.
   function applyStep(step: RowEditStep<SettingEditFields>): void {
     setEditBaseline(step.baseline)
-    if (step.take.value !== undefined) {
+    if (step.take.value !== undefined && !isHiddenValue(step.take.value)) {
       setEditValue(step.take.value)
     }
   }
@@ -158,7 +165,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
     }
     edit.clearError()
     setEditRow(fresh)
-    setEditValue(fresh.value)
+    setEditValue(isHiddenValue(fresh.value) ? '' : fresh.value)
     setEditBaseline(openRowEdit<SettingEditFields>({ value: fresh.value }))
     setEditOpen(true)
   }
@@ -177,10 +184,10 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
   }
 
   async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy || live.gone || live.conflict) {
+    if (!editRow || edit.busy || live.gone || live.conflict || editHidden) {
       return
     }
-    if (!live.dirty) {
+    if (!live.dirty || editHidden) {
       closeEdit()
 
       return
@@ -207,7 +214,9 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
           ),
           value: (row) => (
             <span data-id={`hilos-2fa-value-${row.rowKey}`}>
-              {describeHilosSecondFactorSetting(row.rowKey, row.value)}
+              {isHiddenValue(row.value)
+                ? HILOS_VIEW_MODE_COPY.hidden
+                : describeHilosSecondFactorSetting(row.rowKey, row.value)}
             </span>
           ),
           actions: (row) => (
@@ -234,7 +243,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!live.dirty || edit.busy || live.gone}
+            disableSave={!live.dirty || edit.busy || live.gone || editHidden}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -271,42 +280,53 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
               void submitEdit()
             }}
           >
-            <label className="form-label" htmlFor="hilos-2fa-input">
-              {labelOf(editRow)}
-            </label>
-            {editRow.rowKey === HilosSecondFactorSettingKey.required ? (
-              <select
-                id="hilos-2fa-input"
-                className="form-select"
-                data-id="hilos-2fa-input"
-                data-autofocus
-                value={editValue}
-                onChange={(event) => setEditValue(event.target.value)}
-              >
-                {HILOS_SECOND_FACTOR_REQUIRED_VALUES.map((value) => (
-                  <option key={value} value={value}>
-                    {HILOS_SECOND_FACTOR_REQUIRED_COPY[value]}
-                  </option>
-                ))}
-              </select>
+            {editHidden ? (
+              <div className="mb-3">
+                <div className="form-label">{labelOf(editRow)}</div>
+                <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+              </div>
             ) : (
-              <input
-                id="hilos-2fa-input"
-                type="number"
-                inputMode="numeric"
-                className="form-control"
-                data-id="hilos-2fa-input"
-                data-autofocus
-                value={editValue}
-                onChange={(event) => setEditValue(event.target.value)}
-              />
+              <>
+                <label className="form-label" htmlFor="hilos-2fa-input">
+                  {labelOf(editRow)}
+                </label>
+                {editRow.rowKey === HilosSecondFactorSettingKey.required ? (
+                  <select
+                    id="hilos-2fa-input"
+                    className="form-select"
+                    data-id="hilos-2fa-input"
+                    data-autofocus
+                    value={editValue}
+                    onChange={(event) => setEditValue(event.target.value)}
+                  >
+                    {HILOS_SECOND_FACTOR_REQUIRED_VALUES.map((value) => (
+                      <option key={value} value={value}>
+                        {HILOS_SECOND_FACTOR_REQUIRED_COPY[value]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="hilos-2fa-input"
+                    type="number"
+                    inputMode="numeric"
+                    className="form-control"
+                    data-id="hilos-2fa-input"
+                    data-autofocus
+                    value={editValue}
+                    onChange={(event) => setEditValue(event.target.value)}
+                  />
+                )}
+              </>
             )}
             <p className="form-text mb-0">
               {HILOS_SECOND_FACTOR_SETTING_COPY[editRow.rowKey]?.hint} Default:{' '}
-              {describeHilosSecondFactorSetting(
-                editRow.rowKey,
-                editRow.defaultValue,
-              )}
+              {isHiddenValue(editRow.defaultValue)
+                ? HILOS_VIEW_MODE_COPY.hidden
+                : describeHilosSecondFactorSetting(
+                    editRow.rowKey,
+                    editRow.defaultValue,
+                  )}
               .
             </p>
             <HilosEditNotice

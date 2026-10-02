@@ -15,6 +15,7 @@
 // backend's echo; there is no new server->client signal. A project supplies a
 // HilosSecurityOauthContext and the framework owns the rest.
 
+import { type Hideable } from '../../state/hiddenValue.js'
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -23,6 +24,7 @@ import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
+  readHideableString,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -99,7 +101,7 @@ export interface HilosOAuthRedirectRow {
   /** The row key: the setting key of the address. */
   readonly key: string
   /** Effective return address; empty when none is set anywhere. */
-  readonly value: string
+  readonly value: Hideable<string>
   /** Where the address comes from. */
   readonly source: OAuthValueSource
   /** Whether the address is non-empty. */
@@ -297,7 +299,7 @@ export function resolveHilosOAuthRedirectRow(
 
   return {
     key: String(row.rowKey),
-    value: readString(slot, HilosOAuthRedirectRowKey.value),
+    value: readHideableString(slot, HilosOAuthRedirectRowKey.value),
     source: toValueSource(slot[HilosOAuthRedirectRowKey.source]),
     setState: readBoolean(slot, HilosOAuthRedirectRowKey.setState),
   }

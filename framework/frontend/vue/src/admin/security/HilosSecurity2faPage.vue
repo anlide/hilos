@@ -17,15 +17,19 @@ import {
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
   describeHilosSecondFactorSetting,
+  HIDDEN_VALUE,
+  hiddenAsWord,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
+  type Hideable,
   type HilosTwoFactorContext,
   type HilosTwoFactorSettingRow,
   type RowEditBaseline,
@@ -39,6 +43,8 @@ import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -67,7 +73,7 @@ function labelOf(row: HilosTwoFactorSettingRow): string {
 
 /** The one field the edit modal edits. */
 interface SettingEditFields {
-  value: string
+  value: Hideable<string>
 }
 
 /**
@@ -82,9 +88,10 @@ function noticeText(
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return liveRow
-        ? `Changed elsewhere to "${describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
-        : ''
+      if (!liveRow) {
+        return ''
+      }
+      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? hiddenAsWord(liveRow.value) : describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -107,6 +114,9 @@ const editValueText = computed({
     editValue.value = String(typed)
   },
 })
+const editHidden = computed(() =>
+  isHiddenValue(editBaseline.value.values.value),
+)
 const editAction = useTrackedAction()
 const {
   loading: editLoading,
@@ -122,7 +132,7 @@ const live = computed(() =>
   resolveRowEdit(
     liveRow.value ? { value: liveRow.value.value } : undefined,
     editBaseline.value,
-    { value: editValue.value.trim() },
+    { value: editHidden.value ? HIDDEN_VALUE : editValue.value.trim() },
   ),
 )
 const editNotice = computed(() => live.value.notice?.kind ?? null)
@@ -143,7 +153,9 @@ function openEdit(row: HilosTwoFactorSettingRow): void {
   }
   clearEditError()
   editRow.value = fresh
-  editValue.value = fresh.value
+  if (!isHiddenValue(fresh.value)) {
+    editValue.value = fresh.value
+  }
   editBaseline.value = openRowEdit<SettingEditFields>({ value: fresh.value })
   editOpen.value = true
 }
@@ -157,8 +169,9 @@ function closeEdit(): void {
 // step takes lands in the input.
 function applyStep(step: RowEditStep<SettingEditFields>): void {
   editBaseline.value = step.baseline
-  if (step.take.value !== undefined) {
-    editValue.value = step.take.value
+  const taken = step.take.value
+  if (taken !== undefined && !isHiddenValue(taken)) {
+    editValue.value = taken
   }
 }
 
@@ -192,7 +205,7 @@ async function submitEdit(): Promise<void> {
   ) {
     return
   }
-  if (!live.value.dirty) {
+  if (!live.value.dirty || editHidden.value) {
     closeEdit()
 
     return
@@ -213,9 +226,13 @@ async function submitEdit(): Promise<void> {
         </div>
       </template>
       <template #cell-value="{ row }">
-        <span :data-id="`hilos-2fa-value-${row.rowKey}`">{{
-          describeHilosSecondFactorSetting(row.rowKey, row.value)
-        }}</span>
+        <span :data-id="`hilos-2fa-value-${row.rowKey}`">
+          <HilosHideable :value="row.value">
+            <template #default="{ value }">
+              {{ describeHilosSecondFactorSetting(row.rowKey, value) }}
+            </template>
+          </HilosHideable>
+        </span>
       </template>
       <template #cell-actions="{ row }">
         <button
@@ -242,44 +259,49 @@ async function submitEdit(): Promise<void> {
       </template>
       <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form v-if="editRow" @submit.prevent="submitEdit">
-        <label class="form-label" for="hilos-2fa-input">
-          {{ labelOf(editRow) }}
-        </label>
-        <select
-          v-if="editRow.rowKey === HilosSecondFactorSettingKey.required"
-          id="hilos-2fa-input"
-          v-model="editValue"
-          class="form-select"
-          data-id="hilos-2fa-input"
-          data-autofocus
-        >
-          <option
-            v-for="value in HILOS_SECOND_FACTOR_REQUIRED_VALUES"
-            :key="value"
-            :value="value"
+        <template v-if="editHidden">
+          <div class="form-label">{{ labelOf(editRow) }}</div>
+          <HilosHiddenMark />
+        </template>
+        <template v-else>
+          <label class="form-label" for="hilos-2fa-input">
+            {{ labelOf(editRow) }}
+          </label>
+          <select
+            v-if="editRow.rowKey === HilosSecondFactorSettingKey.required"
+            id="hilos-2fa-input"
+            v-model="editValue"
+            class="form-select"
+            data-id="hilos-2fa-input"
+            data-autofocus
           >
-            {{ HILOS_SECOND_FACTOR_REQUIRED_COPY[value] }}
-          </option>
-        </select>
-        <input
-          v-else
-          id="hilos-2fa-input"
-          v-model="editValueText"
-          type="number"
-          inputmode="numeric"
-          class="form-control"
-          data-id="hilos-2fa-input"
-          data-autofocus
-        />
+            <option
+              v-for="value in HILOS_SECOND_FACTOR_REQUIRED_VALUES"
+              :key="value"
+              :value="value"
+            >
+              {{ HILOS_SECOND_FACTOR_REQUIRED_COPY[value] }}
+            </option>
+          </select>
+          <input
+            v-else
+            id="hilos-2fa-input"
+            v-model="editValueText"
+            type="number"
+            inputmode="numeric"
+            class="form-control"
+            data-id="hilos-2fa-input"
+            data-autofocus
+          />
+        </template>
         <p class="form-text mb-0">
           {{ HILOS_SECOND_FACTOR_SETTING_COPY[editRow.rowKey]?.hint }}
           Default:
-          {{
-            describeHilosSecondFactorSetting(
-              editRow.rowKey,
-              editRow.defaultValue,
-            )
-          }}.
+          <HilosHideable :value="editRow.defaultValue">
+            <template #default="{ value }">
+              {{ describeHilosSecondFactorSetting(editRow.rowKey, value) }}
+            </template> </HilosHideable
+          >.
         </p>
         <HilosEditNotice
           :kind="editNotice"

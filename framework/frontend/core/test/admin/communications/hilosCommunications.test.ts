@@ -7,6 +7,7 @@ import {
   resolveHilosChannelRow,
   type HilosCommunicationsContext,
 } from '../../../src/admin/communications/hilosCommunications.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
 import {
   type HilosConnection,
@@ -53,6 +54,21 @@ describe('resolveHilosChannelRow', () => {
       driver: 'smtp',
       missingFields: 2,
     })
+  })
+
+  it('preserves a hidden value mark on the enabled field', () => {
+    const row = resolveHilosChannelRow(
+      channelRow('email', {
+        channel: 'email',
+        label: 'Email',
+        enabled: { _hidden: true },
+        configured: false,
+        driver: 'smtp',
+        missingFields: 2,
+      }),
+    )
+
+    expect(row.enabled).toBe(HIDDEN_VALUE)
   })
 
   it('falls back to the row key and safe defaults when the slot is absent', () => {
@@ -115,6 +131,23 @@ describe('resolveHilosChannelFieldRow', () => {
     expect(row.value).toBeNull()
     expect(row.secret).toBe(true)
     expect(row.editable).toBe(false)
+  })
+
+  it('preserves a hidden value mark on the value field', () => {
+    const row = resolveHilosChannelFieldRow(
+      fieldRow('notifications.channel.email.smtp_port', {
+        channel: 'email',
+        field: 'smtp_port',
+        label: 'SMTP port',
+        type: 'integer',
+        value: { _hidden: true },
+        valueSource: 'env',
+        secret: false,
+        editable: true,
+      }),
+    )
+
+    expect(row.value).toBe(HIDDEN_VALUE)
   })
 
   it('narrows an unknown value source to default', () => {

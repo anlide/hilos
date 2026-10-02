@@ -11,13 +11,17 @@
 // HilosSettingsContext — its scope manager and its connection — and the framework
 // owns the rest.
 
+import { type Hideable } from '../../state/hiddenValue.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import {
   ActionLifecycle,
   type ActionHandle,
 } from '../../connection/actionLifecycle.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readString, readStringOrNull } from '../../state/fieldReaders.js'
+import {
+  readHideableStringOrNull,
+  readString,
+} from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -45,13 +49,13 @@ export interface HilosSettingRow {
   /** Value type: `string` | `integer` | `float` | `boolean`. */
   readonly type: string
   /** Effective value (override when set, else the resolved default), serialized. */
-  readonly value: string | null
+  readonly value: Hideable<string | null>
   /** The persisted override value, or null when on the catalog default. */
-  readonly overrideValue: string | null
+  readonly overrideValue: Hideable<string | null>
   /** The catalog default value, serialized; null for an orphan. */
-  readonly defaultValue: string | null
+  readonly defaultValue: Hideable<string | null>
   /** The key this setting's default references, when the default is a reference. */
-  readonly defaultReferenceKey: string | null
+  readonly defaultReferenceKey: Hideable<string | null>
   /** Where the effective value comes from. */
   readonly valueSource: SettingValueSource
 }
@@ -165,10 +169,10 @@ export function resolveHilosSettingRow(row: TableRow): HilosSettingRow {
   return {
     key: readString(slot, SETTING_KEY_FIELD) || String(row.rowKey),
     type: readString(slot, SETTING_TYPE_FIELD),
-    value: readStringOrNull(slot, SETTING_VALUE_FIELD),
-    overrideValue: readStringOrNull(slot, SETTING_OVERRIDE_VALUE_FIELD),
-    defaultValue: readStringOrNull(slot, SETTING_DEFAULT_VALUE_FIELD),
-    defaultReferenceKey: readStringOrNull(
+    value: readHideableStringOrNull(slot, SETTING_VALUE_FIELD),
+    overrideValue: readHideableStringOrNull(slot, SETTING_OVERRIDE_VALUE_FIELD),
+    defaultValue: readHideableStringOrNull(slot, SETTING_DEFAULT_VALUE_FIELD),
+    defaultReferenceKey: readHideableStringOrNull(
       slot,
       SETTING_DEFAULT_REFERENCE_KEY_FIELD,
     ),
@@ -186,11 +190,14 @@ export function isOrphanSetting(row: HilosSettingRow): boolean {
  * default — the question the screen actually asks, both to label the row's
  * button and to arm the edit dialog's custom-value switch.
  *
- * Not "is a row stored": a setting row without a value does not exist, so the
- * two questions have the same answer and only one of them is on the wire.
+ * Reads the setting's value source rather than checking whether overrideValue
+ * is non-null: for an admin both questions have the same answer (an override
+ * and an orphan both carry a custom value), but for a viewer in the admin view
+ * mode overrideValue is masked (`{"_hidden": true}`) while valueSource remains
+ * visible.
  */
 export function hasCustomValue(row: HilosSettingRow): boolean {
-  return row.overrideValue !== null
+  return row.valueSource === 'override' || row.valueSource === 'orphan'
 }
 
 /** The settings table handle a settings view drives: the controller plus its mount lifecycle. */

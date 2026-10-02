@@ -3,18 +3,23 @@
 // for numbers, the text (or an "empty string" chip) otherwise, plus a source
 // badge — the referenced key, "default", or "custom" — so the catalog origin is
 // visible at a glance. Presentation only; Bootstrap classes (styling-rules.md).
-import type { SettingValueSource } from '@hilos/core'
+import {
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
+  type Hideable,
+  type SettingValueSource,
+} from '@hilos/core'
 
 /** Props for {@link HilosSettingValueCell}. */
 export interface HilosSettingValueCellProps {
   /** The effective value, serialized; null renders an em dash. */
-  value: string | null
+  value: Hideable<string | null>
   /** The setting's value type (`boolean` | `integer` | `float` | `string`). */
   type: string
   /** Where the effective value comes from (drives the source badge). */
   valueSource: SettingValueSource
   /** The referenced key when the default is a reference, else null. */
-  defaultReferenceKey: string | null
+  defaultReferenceKey: Hideable<string | null>
 }
 
 /**
@@ -28,11 +33,14 @@ export function HilosSettingValueCell({
   valueSource,
   defaultReferenceKey,
 }: HilosSettingValueCellProps) {
+  const isValueHidden = isHiddenValue(value)
   const isBoolean = type === 'boolean'
   const isNumber = type === 'integer' || type === 'float'
-  const isEmptyString = type === 'string' && (value === null || value === '')
-  const display =
-    value === null
+  const isEmptyString =
+    !isValueHidden && type === 'string' && (value === null || value === '')
+  const display = isValueHidden
+    ? HILOS_VIEW_MODE_COPY.hidden
+    : value === null
       ? '—'
       : isBoolean
         ? value === '1'
@@ -41,13 +49,18 @@ export function HilosSettingValueCell({
         : value
   const isReference =
     valueSource === 'reference' && defaultReferenceKey !== null
+  const isReferenceKeyHidden = isHiddenValue(defaultReferenceKey)
 
   return (
     <span
       className="d-inline-flex align-items-center gap-2 mw-100"
       data-id="setting-value"
     >
-      {isBoolean ? (
+      {isValueHidden ? (
+        <span className="text-truncate" title={HILOS_VIEW_MODE_COPY.hidden}>
+          {HILOS_VIEW_MODE_COPY.hidden}
+        </span>
+      ) : isBoolean ? (
         <input
           type="checkbox"
           className="form-check-input mt-0 flex-shrink-0"
@@ -76,11 +89,17 @@ export function HilosSettingValueCell({
       {isReference ? (
         <span
           className="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1"
-          title={`Default from ${defaultReferenceKey}`}
+          title={
+            isReferenceKeyHidden
+              ? undefined
+              : `Default from ${defaultReferenceKey}`
+          }
         >
           <i className="bi bi-arrow-down-right" aria-hidden="true" />
           <code className="text-truncate text-info-emphasis">
-            {defaultReferenceKey}
+            {isReferenceKeyHidden
+              ? HILOS_VIEW_MODE_COPY.hidden
+              : defaultReferenceKey}
           </code>
         </span>
       ) : valueSource === 'default' ? (

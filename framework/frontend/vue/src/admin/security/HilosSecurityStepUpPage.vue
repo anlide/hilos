@@ -22,6 +22,7 @@ import {
 import { onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -76,15 +77,19 @@ async function toggleOperation(
         </span>
       </template>
       <template #cell-enabled="{ row }">
-        <HilosSwitch
-          class="mb-0"
-          :checked="row.enabled"
-          :busy="pendingOperationKey === row.operationKey"
-          :disabled="operationBusy"
-          :aria-label="`Require confirmation for ${row.label}`"
-          :data-id="`hilos-step-up-switch-${row.operationKey}`"
-          @toggle="toggleOperation(row, $event)"
-        />
+        <HilosHideable :value="row.enabled">
+          <template #default="{ value: enabled }">
+            <HilosSwitch
+              class="mb-0"
+              :checked="enabled"
+              :busy="pendingOperationKey === row.operationKey"
+              :disabled="operationBusy"
+              :aria-label="`Require confirmation for ${row.label}`"
+              :data-id="`hilos-step-up-switch-${row.operationKey}`"
+              @toggle="toggleOperation(row, $event)"
+            />
+          </template>
+        </HilosHideable>
       </template>
     </HilosViewportTable>
   </HilosAdminPage>

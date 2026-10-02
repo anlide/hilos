@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Communications;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -130,6 +131,33 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a channel-config field row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Field identity, channel, descriptor label, type, source, secret and editable flags are not personal;
+     * value is hidden by the column verdict of settings (MASK), whichever layer it resolved from (settings,
+     * env, or descriptor default) - env and default values are also setting values; secret values never leave the server anyway.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosCommunicationsChannelFieldsTableRow::rowKey => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::channel => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::field => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::label => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::type => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::valueSource => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::secret => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::editable => WireField::notPersonal(),
+            HilosCommunicationsChannelFieldsTableRow::value => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
         ];
     }
 

@@ -19,6 +19,8 @@ import {
   HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
   resolveHilosPath,
 } from '@hilos/core'
 import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
@@ -98,17 +100,20 @@ export function HilosCommunicationsPage({
               <code className="small text-body-secondary">{row.channel}</code>
             </>
           ),
-          [HilosChannelRowKey.enabled]: (row) => (
-            <HilosSwitch
-              className="mb-0"
-              checked={row.enabled}
-              busy={pendingChannel === row.channel}
-              disabled={toggle.busy}
-              aria-label={`Enable ${row.label}`}
-              dataId={`hilos-channel-enabled-${row.channel}`}
-              onToggle={(next) => void toggleEnabled(row, next)}
-            />
-          ),
+          [HilosChannelRowKey.enabled]: (row) =>
+            isHiddenValue(row.enabled) ? (
+              <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+            ) : (
+              <HilosSwitch
+                className="mb-0"
+                checked={row.enabled}
+                busy={pendingChannel === row.channel}
+                disabled={toggle.busy}
+                aria-label={`Enable ${row.label}`}
+                dataId={`hilos-channel-enabled-${row.channel}`}
+                onToggle={(next) => void toggleEnabled(row, next)}
+              />
+            ),
           [HilosChannelRowKey.configured]: (row) =>
             row.configured ? (
               <span className="badge text-bg-success-subtle text-success-emphasis">

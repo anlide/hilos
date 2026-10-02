@@ -7,7 +7,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
   bindAdminAccess,
@@ -55,7 +54,7 @@ function router(): HilosRouter {
  * A context whose connection answers a window on the step-up page with one
  * operation, and records every action sent.
  */
-function seededContext(): {
+function seededContext(enabledValue: unknown = false): {
   context: HilosTwoFactorContext
   sent: Array<{ action: string; payload: Record<string, unknown> }>
 } {
@@ -73,7 +72,7 @@ function seededContext(): {
                   operationKey: 'change_name',
                   label: 'Change name',
                   owner: 'framework',
-                  enabled: false,
+                  enabled: enabledValue,
                 },
               },
             },
@@ -245,20 +244,17 @@ describe('HilosSecurityStepUpPage in the admin view mode', () => {
     }
   }
 
-  it('a viewer sees disabled switches referencing the mode strip and sending nothing', async () => {
-    const { context, sent } = seededContext()
+  it('a viewer sees hidden marks instead of switches and sends nothing', async () => {
+    const { context, sent } = seededContext({ _hidden: true })
     bindSession(context.scopes).handshake(null, true)
     const wrapper = await mountPage(context)
 
-    const switchEl = wrapper.find<HTMLInputElement>(
-      'table input[data-id="hilos-step-up-switch-change_name"]',
-    )
-    expect(switchEl.element.disabled).toBe(true)
-    expect(switchEl.element.getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-
-    await switchEl.trigger('click')
+    expect(
+      wrapper
+        .find('table input[data-id="hilos-step-up-switch-change_name"]')
+        .exists(),
+    ).toBe(false)
+    expect(wrapper.find('[data-id="hilos-hidden"]').exists()).toBe(true)
     expect(sent).toEqual([])
   })
 

@@ -21,12 +21,16 @@ import {
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
+  HIDDEN_VALUE,
+  hiddenAsWord,
   HilosPages,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveHilosPath,
   resolveRowEdit,
   takeTheirsRowEdit,
+  type Hideable,
   type HilosOAuthProviderRow,
   type HilosOAuthRedirectRow,
   type HilosSecurityOauthContext,
@@ -41,6 +45,8 @@ import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -88,21 +94,22 @@ function providerPath(row: HilosOAuthProviderRow): string {
 
 /** The one field the return-address dialog edits. */
 interface RedirectEditFields {
-  value: string
+  value: Hideable<string>
 }
 
 /** The one line the dialog says about the other side, for what the helper found. */
 function noticeText(
   kind: RowEditNoticeKind | null,
-  liveValue: string | undefined,
+  liveValue: Hideable<string> | undefined,
 ): string {
   switch (kind) {
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return liveValue === undefined
-        ? ''
-        : `Changed elsewhere to "${liveValue === '' ? '—' : liveValue}".`
+      if (liveValue === undefined) {
+        return ''
+      }
+      return `Changed elsewhere to "${isHiddenValue(liveValue) ? hiddenAsWord(liveValue) : liveValue === '' ? '—' : liveValue}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -115,6 +122,9 @@ const editOpen = ref(false)
 const editValue = ref('')
 const editBaseline = ref<RowEditBaseline<RedirectEditFields>>(
   openRowEdit<RedirectEditFields>({ value: '' }),
+)
+const editHidden = computed(() =>
+  isHiddenValue(editBaseline.value.values.value),
 )
 const editAction = useTrackedAction()
 const {
@@ -131,7 +141,7 @@ const live = computed(() =>
   resolveRowEdit(
     liveRow.value ? { value: liveRow.value.value } : undefined,
     editBaseline.value,
-    { value: editValue.value },
+    { value: editHidden.value ? HIDDEN_VALUE : editValue.value },
   ),
 )
 const editNotice = computed(() => live.value.notice?.kind ?? null)
@@ -168,7 +178,9 @@ function openEdit(): void {
     return
   }
   clearEditError()
-  editValue.value = fresh.value
+  if (!isHiddenValue(fresh.value)) {
+    editValue.value = fresh.value
+  }
   editBaseline.value = openRowEdit<RedirectEditFields>({ value: fresh.value })
   editOpen.value = true
 }
@@ -182,8 +194,9 @@ function closeEdit(): void {
 // step takes lands in the input.
 function applyStep(step: RowEditStep<RedirectEditFields>): void {
   editBaseline.value = step.baseline
-  if (step.take.value !== undefined) {
-    editValue.value = step.take.value
+  const taken = step.take.value
+  if (taken !== undefined && !isHiddenValue(taken)) {
+    editValue.value = taken
   }
 }
 
@@ -211,12 +224,12 @@ async function submitEdit(): Promise<void> {
   if (editBusy.value || live.value.gone || live.value.conflict) {
     return
   }
-  if (!live.value.dirty) {
+  if (!live.value.dirty || editHidden.value) {
     closeEdit()
 
     return
   }
-  if (await runEditAction(sendRedirectSet(editValue.value))) {
+  if (await runEditAction(sendRedirectSet(editValue.value.trim()))) {
     closeEdit()
   }
 }
@@ -269,7 +282,7 @@ async function submitReset(): Promise<void> {
               v-if="redirectRow?.setState"
               data-id="hilos-oauth-redirect-value"
             >
-              {{ redirectRow.value }}
+              <HilosHideable :value="redirectRow.value" />
             </code>
             <span
               v-else
@@ -368,18 +381,24 @@ async function submitReset(): Promise<void> {
       </template>
       <HilosActionError :action="editAction" details-title="Couldn't save" />
       <form @submit.prevent="submitEdit">
-        <label class="form-label" for="hilos-oauth-redirect-input">
-          Return address
-        </label>
-        <input
-          id="hilos-oauth-redirect-input"
-          v-model="editValue"
-          type="url"
-          class="form-control"
-          placeholder="https://app.example/auth/callback"
-          data-id="hilos-oauth-redirect-input"
-          data-autofocus
-        />
+        <template v-if="editHidden">
+          <div class="form-label">Return address</div>
+          <HilosHiddenMark />
+        </template>
+        <template v-else>
+          <label class="form-label" for="hilos-oauth-redirect-input">
+            Return address
+          </label>
+          <input
+            id="hilos-oauth-redirect-input"
+            v-model="editValue"
+            type="url"
+            class="form-control"
+            placeholder="https://app.example/auth/callback"
+            data-id="hilos-oauth-redirect-input"
+            data-autofocus
+          />
+        </template>
         <HilosEditNotice
           :kind="editNotice"
           :text="editNoticeText"
@@ -435,7 +454,8 @@ async function submitReset(): Promise<void> {
       <dl v-if="resetShown" class="row mb-0">
         <dt class="col-4">Now</dt>
         <dd class="col-8 text-break" data-id="hilos-oauth-redirect-reset-now">
-          {{ resetShown.setState ? resetShown.value : 'Not set' }}
+          <HilosHideable v-if="resetShown.setState" :value="resetShown.value" />
+          <template v-else>Not set</template>
         </dd>
         <dt class="col-4">Back to</dt>
         <dd class="col-8" data-id="hilos-oauth-redirect-reset-default">

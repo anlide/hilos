@@ -29,10 +29,13 @@ import {
   untracked,
 } from '@angular/core'
 import {
+  HIDDEN_VALUE,
+  HILOS_VIEW_MODE_COPY,
   HilosPages,
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
@@ -41,6 +44,7 @@ import {
 } from '@hilos/core'
 import type {
   ChannelValueSource,
+  Hideable,
   HilosChannelFieldRow,
   HilosCommunicationsContext,
   RowEditBaseline,
@@ -82,11 +86,14 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
 
 /** The one field the dialog edits: the field's typed value. */
 interface ChannelEditFields {
-  value: boolean | number | string | null
+  value: Hideable<boolean | number | string | null>
 }
 
 /** Human-readable effective value of a non-secret field. */
 function displayValue(row: HilosChannelFieldRow): string {
+  if (isHiddenValue(row.value)) {
+    return HILOS_VIEW_MODE_COPY.hidden
+  }
   if (typeof row.value === 'boolean') {
     return row.value ? 'On' : 'Off'
   }
@@ -100,8 +107,11 @@ function displayValue(row: HilosChannelFieldRow): string {
  */
 function formText(
   type: string,
-  value: boolean | number | string | null,
+  value: Hideable<boolean | number | string | null>,
 ): string {
+  if (isHiddenValue(value)) {
+    return ''
+  }
   if (type === 'boolean') {
     return value === true ? '1' : '0'
   }
@@ -219,7 +229,12 @@ function noticeText(
         <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
-            @if (editInputType() === 'checkbox') {
+            @if (editHidden()) {
+              <div class="mb-3">
+                <div class="form-label">{{ row.label }}</div>
+                <div>{{ hiddenCopy }}</div>
+              </div>
+            } @else if (editInputType() === 'checkbox') {
               <div class="form-check form-switch">
                 <input
                   id="hilos-channel-edit-value"
@@ -261,7 +276,9 @@ function noticeText(
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!live().dirty || edit.busy() || live().gone"
+            [disableSave]="
+              !live().dirty || edit.busy() || live().gone || editHidden()
+            "
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -397,6 +414,10 @@ export class HilosCommunicationsChannelPage {
     openRowEdit<ChannelEditFields>({ value: null }),
   )
   protected readonly editValue = signal('')
+  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
+  protected readonly editHidden = computed(() =>
+    isHiddenValue(this.editBaseline().values.value),
+  )
   // The live row the open dialog is about: the row the table holds in focus, which
   // the server follows wherever it goes; undefined once the row is gone. Mirrored
   // the way the viewport table mirrors its rows.
@@ -417,11 +438,18 @@ export class HilosCommunicationsChannelPage {
   protected readonly live = computed(() => {
     const row = this.liveRow()
     const editRow = this.editRow()
+    const editHidden = this.editHidden()
 
     return resolveRowEdit(
       row ? { value: row.value } : undefined,
       this.editBaseline(),
-      { value: editRow ? this.editedValue(editRow) : null },
+      {
+        value: editHidden
+          ? HIDDEN_VALUE
+          : editRow
+            ? this.editedValue(editRow)
+            : null,
+      },
     )
   })
   protected readonly editNotice = computed(
@@ -498,7 +526,9 @@ export class HilosCommunicationsChannelPage {
     }
     this.edit.clearError()
     this.editRow.set(fresh)
-    this.editValue.set(formText(fresh.type, fresh.value))
+    this.editValue.set(
+      isHiddenValue(fresh.value) ? '' : formText(fresh.type, fresh.value),
+    )
     this.editBaseline.set(
       openRowEdit<ChannelEditFields>({ value: fresh.value }),
     )
@@ -535,7 +565,7 @@ export class HilosCommunicationsChannelPage {
   protected async submitEdit(event?: Event): Promise<void> {
     event?.preventDefault()
     const row = this.editRow()
-    if (!row || this.edit.busy() || this.live().gone) {
+    if (!row || this.edit.busy() || this.live().gone || this.editHidden()) {
       return
     }
     if (!this.live().dirty) {

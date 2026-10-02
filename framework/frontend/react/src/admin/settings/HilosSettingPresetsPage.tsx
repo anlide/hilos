@@ -28,6 +28,8 @@ import {
   createHilosSettingPresetsActions,
   differencesOf,
   hasDifferences,
+  HILOS_VIEW_MODE_COPY,
+  isHiddenValue,
   isPresetApplied,
   isSelectionUnknown,
   presetsOf,
@@ -194,6 +196,10 @@ export function HilosSettingPresetsPage({
    * @param preset The preset the card stands for.
    */
   function valueLines(preset: HilosSettingPreset): string[] {
+    if (isHiddenValue(preset.values)) {
+      return [HILOS_VIEW_MODE_COPY.hidden]
+    }
+
     return vocabulary.valueLines(preset.values)
   }
 

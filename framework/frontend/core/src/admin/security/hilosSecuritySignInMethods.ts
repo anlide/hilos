@@ -21,6 +21,11 @@
 // it reads the live value every connection is sent with the set
 // ({@link sessionPasskeyAllowsUnproven}); a click only asks for the write.
 
+import {
+  HIDDEN_VALUE,
+  isHiddenValue,
+  type Hideable,
+} from '../../state/hiddenValue.js'
 import { PASSKEY_METHOD_KEY } from '../../auth/authFlow.js'
 import {
   type ActionHandle,
@@ -34,6 +39,7 @@ import {
 } from '../../session/sessionScope.js'
 import {
   readBoolean,
+  readHideableBoolean,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -52,11 +58,32 @@ export interface HilosSignInMethodRow {
   /** The name the screen shows the method under; the key when the row names none. */
   readonly label: string
   /** Whether the method was on when the window was drawn; the switch reads the live set instead. */
-  readonly enabled: boolean
+  readonly enabled: Hideable<boolean>
   /** Whether the installation can serve the method: a provider configured, a code deliverable. */
   readonly ready: boolean
   /** The provider key for a provider method, whose own screen it links to; null otherwise. */
   readonly providerKey: string | null
+}
+
+/**
+ * Whether a sign-in method is currently on.
+ *
+ * In the admin view mode the enabled state arrives masked as a HiddenValue mark,
+ * which this function preserves so views render a hidden mark instead of an
+ * interactive switch. In ordinary mode it checks whether the method key is in the
+ * live enabled keys set.
+ *
+ * @param row The sign-in method table row.
+ * @param enabledKeys The keys of methods currently enabled in session scope.
+ */
+export function isSignInMethodOn(
+  row: HilosSignInMethodRow,
+  enabledKeys: readonly string[],
+): Hideable<boolean> {
+  if (isHiddenValue(row.enabled)) {
+    return HIDDEN_VALUE
+  }
+  return enabledKeys.includes(row.methodKey)
 }
 
 // Wire keys: the framework sign-in methods table, its inline row slot, and the
@@ -138,7 +165,7 @@ export function resolveHilosSignInMethodRow(
     methodKey,
     // An unnamed method is shown by its key: a real name a reader can act on.
     label: readStringOrNull(slot, HilosSignInMethodRowKey.label) ?? methodKey,
-    enabled: readBoolean(slot, HilosSignInMethodRowKey.enabled),
+    enabled: readHideableBoolean(slot, HilosSignInMethodRowKey.enabled),
     ready: readBoolean(slot, HilosSignInMethodRowKey.ready),
     providerKey: readStringOrNull(slot, HilosSignInMethodRowKey.providerKey),
   }
@@ -153,7 +180,7 @@ export interface HilosSignInMethodsTable {
   /** Whether the project wired a passkey: a passkey row stands in the table. */
   readonly passkeyWired: ReadonlySignal<boolean>
   /** Whether a passkey may start an account on an unconfirmed address, live from the session scope. */
-  readonly passkeyAllowsUnproven: ReadonlySignal<boolean>
+  readonly passkeyAllowsUnproven: ReadonlySignal<Hideable<boolean>>
   /** Bind the table to the connection — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
@@ -227,7 +254,15 @@ export function createHilosSignInMethodsTable(
         .get()
         .some((entry) => entry.row?.methodKey === PASSKEY_METHOD_KEY),
     ),
-    passkeyAllowsUnproven: sessionPasskeyAllowsUnproven(context.scopes),
+    passkeyAllowsUnproven: computedSignal(() => {
+      const passkeyRow = controller.rows
+        .get()
+        .find((entry) => entry.row?.methodKey === PASSKEY_METHOD_KEY)?.row
+      if (passkeyRow && isHiddenValue(passkeyRow.enabled)) {
+        return HIDDEN_VALUE
+      }
+      return sessionPasskeyAllowsUnproven(context.scopes).get()
+    }),
     start() {
       teardown = [
         bindTableViewport(

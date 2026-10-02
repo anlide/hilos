@@ -5,6 +5,7 @@ import {
   createHilosSecurityStepUpTable,
   resolveHilosStepUpOperationRow,
 } from '../../../src/admin/security/hilosSecurityStepUp.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosTwoFactorContext } from '../../../src/admin/security/hilosSecurityTwoFactor.js'
 
@@ -57,6 +58,22 @@ describe('resolveHilosStepUpOperationRow', () => {
       owner: 'framework',
       enabled: true,
     })
+  })
+
+  it('preserves a hidden value mark on the enabled field', () => {
+    const row = resolveHilosStepUpOperationRow({
+      rowKey: 'change_email',
+      slots: {
+        operation: {
+          operationKey: 'change_email',
+          label: 'Change email',
+          owner: 'framework',
+          enabled: { _hidden: true },
+        },
+      },
+    })
+
+    expect(row.enabled).toBe(HIDDEN_VALUE)
   })
 })
 

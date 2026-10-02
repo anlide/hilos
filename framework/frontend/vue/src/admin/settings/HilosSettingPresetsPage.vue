@@ -36,7 +36,6 @@ import {
   presetsOf,
   resolveHilosPath,
   selectedPresetOf,
-  type HilosSettingPreset,
   type HilosSettingPresetsContext,
   type HilosSettingPresetsVocabulary,
 } from '@hilos/core'
@@ -44,6 +43,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -160,8 +160,8 @@ function revert(): void {
 }
 
 /** The lines a card lists, read out of the values the preset declares. */
-function valueLines(preset: HilosSettingPreset): string[] {
-  return props.vocabulary.valueLines(preset.values)
+function valueLines(values: unknown): string[] {
+  return props.vocabulary.valueLines(values as Record<string, string>)
 }
 </script>
 
@@ -213,13 +213,17 @@ function valueLines(preset: HilosSettingPreset): string[] {
             <span class="d-block small text-body-secondary mb-2">
               {{ vocabulary.presetSubtitle(preset.name) }}
             </span>
-            <span
-              v-for="line in valueLines(preset)"
-              :key="line"
-              class="d-block small text-body-secondary"
-            >
-              {{ line }}
-            </span>
+            <HilosHideable :value="preset.values">
+              <template #default="{ value: values }">
+                <span
+                  v-for="line in valueLines(values)"
+                  :key="line"
+                  class="d-block small text-body-secondary"
+                >
+                  {{ line }}
+                </span>
+              </template>
+            </HilosHideable>
           </LoadingButton>
 
           <div

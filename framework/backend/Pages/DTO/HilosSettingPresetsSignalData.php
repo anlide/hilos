@@ -99,14 +99,20 @@ final class HilosSettingPresetsSignalData extends BaseDTO implements SignalDataI
      * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
      *
      * A viewer is sent the frame untyped, every field this map does not open replaced by the hidden mark
-     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. The map is empty until the
-     * leaf that classifies the setting presets opens it (HIL-1255), so a viewer sees none of it yet.
+     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. Group and preset names come
+     * from code and are shown; the applied preset is a setting value (group selection setting), preset
+     * values are code values like catalog defaults, and differences are setting values; all of those are hidden.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
     public static function wireFields(): array
     {
-        return [];
+        return [
+            self::group => WireField::notPersonal(),
+            self::presets => WireField::each([
+                self::name => WireField::notPersonal(),
+            ]),
+        ];
     }
 
     /**

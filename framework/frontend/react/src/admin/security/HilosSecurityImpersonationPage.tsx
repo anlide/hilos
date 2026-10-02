@@ -21,21 +21,25 @@
 // two-factor page (D-143). Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
-  createHilosSecurityImpersonationActions,
-  createHilosSecurityImpersonationTable,
+  HIDDEN_VALUE,
   HILOS_IMPERSONATION_SCOPE_COPY,
   HILOS_IMPERSONATION_SCOPE_HINT,
   HILOS_IMPERSONATION_SCOPE_VALUES,
   HILOS_IMPERSONATION_SETTING_COPY,
-  hilosImpersonationScopeOf,
+  HILOS_VIEW_MODE_COPY,
   HilosPages,
+  createHilosSecurityImpersonationActions,
+  createHilosSecurityImpersonationTable,
+  hilosImpersonationScopeOf,
   isHilosImpersonationSwitch,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosImpersonationContext,
   HilosImpersonationScope,
   HilosImpersonationSettingRow,
@@ -73,7 +77,7 @@ function labelOf(row: HilosImpersonationSettingRow): string {
 
 /** The one field the scope's modal edits. */
 interface ScopeEditFields {
-  scope: HilosImpersonationScope
+  scope: Hideable<HilosImpersonationScope>
 }
 
 /**
@@ -91,9 +95,10 @@ function noticeText(
     case 'deleted':
       return 'Deleted elsewhere — your choice stays on screen.'
     case 'conflict':
-      return liveRow
-        ? `Changed elsewhere to "${HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(liveRow)]}".`
-        : ''
+      if (!liveRow) {
+        return ''
+      }
+      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? HILOS_VIEW_MODE_COPY.hidden : HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(liveRow)]}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -154,13 +159,21 @@ export function HilosSecurityImpersonationPage({
   >(() => openRowEdit<ScopeEditFields>({ scope: 'act' }))
   const edit = useTrackedAction()
 
+  const editHidden = isHiddenValue(editBaseline.values.scope)
+
   // The live row the open modal is about: the row the table holds in focus, which
   // the server follows wherever it goes; undefined once the row is gone.
   const liveRow = useSignal(settings.controller.focusedRow)
   const live = resolveRowEdit(
-    liveRow ? { scope: hilosImpersonationScopeOf(liveRow) } : undefined,
+    liveRow
+      ? {
+          scope: isHiddenValue(liveRow.value)
+            ? HIDDEN_VALUE
+            : hilosImpersonationScopeOf(liveRow),
+        }
+      : undefined,
     editBaseline,
-    { scope: editScope },
+    { scope: editHidden ? HIDDEN_VALUE : editScope },
   )
   const editNotice = live.notice?.kind ?? null
   const editNoticeText = noticeText(editNotice, liveRow)
@@ -171,7 +184,7 @@ export function HilosSecurityImpersonationPage({
   // step takes lands in the choice.
   function applyStep(step: RowEditStep<ScopeEditFields>): void {
     setEditBaseline(step.baseline)
-    if (step.take.scope !== undefined) {
+    if (step.take.scope !== undefined && !isHiddenValue(step.take.scope)) {
       setEditScope(step.take.scope)
     }
   }
@@ -193,11 +206,18 @@ export function HilosSecurityImpersonationPage({
     if (!fresh) {
       return
     }
+    const freshHidden = isHiddenValue(fresh.value)
     const scope = hilosImpersonationScopeOf(fresh)
     edit.clearError()
     setEditRow(fresh)
-    setEditScope(scope)
-    setEditBaseline(openRowEdit<ScopeEditFields>({ scope }))
+    if (!freshHidden) {
+      setEditScope(scope)
+    }
+    setEditBaseline(
+      openRowEdit<ScopeEditFields>({
+        scope: freshHidden ? HIDDEN_VALUE : scope,
+      }),
+    )
     setEditOpen(true)
   }
 
@@ -215,10 +235,10 @@ export function HilosSecurityImpersonationPage({
   }
 
   async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy || live.gone || live.conflict) {
+    if (!editRow || edit.busy || live.gone || live.conflict || editHidden) {
       return
     }
-    if (!live.dirty) {
+    if (!live.dirty || editHidden) {
       closeEdit()
 
       return
@@ -244,18 +264,26 @@ export function HilosSecurityImpersonationPage({
           ),
           value: (row) =>
             isHilosImpersonationSwitch(row.rowKey) ? (
-              <HilosSwitch
-                className="mb-0"
-                checked={row.enabled}
-                busy={pendingSwitchKey === row.rowKey}
-                disabled={toggle.busy}
-                aria-label={labelOf(row)}
-                dataId={`hilos-impersonation-switch-${row.rowKey}`}
-                onToggle={(next) => void toggleSwitch(row, next)}
-              />
+              isHiddenValue(row.enabled) ? (
+                <span>{HILOS_VIEW_MODE_COPY.hidden}</span>
+              ) : (
+                <HilosSwitch
+                  className="mb-0"
+                  checked={row.enabled}
+                  busy={pendingSwitchKey === row.rowKey}
+                  disabled={toggle.busy}
+                  aria-label={labelOf(row)}
+                  dataId={`hilos-impersonation-switch-${row.rowKey}`}
+                  onToggle={(next) => void toggleSwitch(row, next)}
+                />
+              )
             ) : (
               <span data-id="hilos-impersonation-scope-value">
-                {HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(row)]}
+                {isHiddenValue(row.value)
+                  ? HILOS_VIEW_MODE_COPY.hidden
+                  : HILOS_IMPERSONATION_SCOPE_COPY[
+                      hilosImpersonationScopeOf(row)
+                    ]}
               </span>
             ),
           actions: (row) =>
@@ -283,7 +311,7 @@ export function HilosSecurityImpersonationPage({
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!live.dirty || edit.busy || live.gone}
+            disableSave={!live.dirty || edit.busy || live.gone || editHidden}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -320,30 +348,37 @@ export function HilosSecurityImpersonationPage({
               void submitEdit()
             }}
           >
-            <fieldset aria-describedby="hilos-impersonation-scope-hint">
-              <legend className="form-label fs-6">{labelOf(editRow)}</legend>
-              {HILOS_IMPERSONATION_SCOPE_VALUES.map((value) => (
-                <div key={value} className="form-check">
-                  <input
-                    id={`hilos-impersonation-scope-${value}-field`}
-                    className="form-check-input"
-                    type="radio"
-                    name="hilos-impersonation-scope"
-                    value={value}
-                    checked={editScope === value}
-                    data-id={`hilos-impersonation-scope-${value}`}
-                    data-autofocus
-                    onChange={() => setEditScope(value)}
-                  />
-                  <label
-                    className="form-check-label"
-                    htmlFor={`hilos-impersonation-scope-${value}-field`}
-                  >
-                    {HILOS_IMPERSONATION_SCOPE_COPY[value]}
-                  </label>
-                </div>
-              ))}
-            </fieldset>
+            {editHidden ? (
+              <div className="mb-3">
+                <div className="form-label fs-6">{labelOf(editRow)}</div>
+                <div>{HILOS_VIEW_MODE_COPY.hidden}</div>
+              </div>
+            ) : (
+              <fieldset aria-describedby="hilos-impersonation-scope-hint">
+                <legend className="form-label fs-6">{labelOf(editRow)}</legend>
+                {HILOS_IMPERSONATION_SCOPE_VALUES.map((value) => (
+                  <div key={value} className="form-check">
+                    <input
+                      id={`hilos-impersonation-scope-${value}-field`}
+                      className="form-check-input"
+                      type="radio"
+                      name="hilos-impersonation-scope"
+                      value={value}
+                      checked={editScope === value}
+                      data-id={`hilos-impersonation-scope-${value}`}
+                      data-autofocus
+                      onChange={() => setEditScope(value)}
+                    />
+                    <label
+                      className="form-check-label"
+                      htmlFor={`hilos-impersonation-scope-${value}-field`}
+                    >
+                      {HILOS_IMPERSONATION_SCOPE_COPY[value]}
+                    </label>
+                  </div>
+                ))}
+              </fieldset>
+            )}
             <p id="hilos-impersonation-scope-hint" className="form-text mb-0">
               {HILOS_IMPERSONATION_SCOPE_HINT}
             </p>

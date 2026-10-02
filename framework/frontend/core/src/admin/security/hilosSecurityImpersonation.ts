@@ -12,12 +12,17 @@
 // a modal (the modal-only editing rule).
 
 import {
+  HIDDEN_VALUE,
+  isHiddenValue,
+  type Hideable,
+} from '../../state/hiddenValue.js'
+import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readString } from '../../state/fieldReaders.js'
+import { readHideableString, readString } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -125,11 +130,11 @@ export interface HilosImpersonationSettingRow {
   /** The setting key the row stands for; also the table row key. */
   readonly rowKey: string
   /** The value in force, as text. */
-  readonly value: string
+  readonly value: Hideable<string>
   /** The catalog default, as text. */
-  readonly defaultValue: string
+  readonly defaultValue: Hideable<string>
   /** For a switch, whether it is on; false for the scope. */
-  readonly enabled: boolean
+  readonly enabled: Hideable<boolean>
 }
 
 // Wire keys: the framework impersonation table, its inline row slot, and the two
@@ -203,16 +208,18 @@ export function resolveHilosImpersonationSettingRow(
   const rowKey =
     readString(slot, HilosImpersonationSettingRowKey.rowKey) ||
     String(row.rowKey)
-  const value = readString(slot, HilosImpersonationSettingRowKey.value)
+  const value = readHideableString(slot, HilosImpersonationSettingRowKey.value)
 
   return {
     rowKey,
     value,
-    defaultValue: readString(
+    defaultValue: readHideableString(
       slot,
       HilosImpersonationSettingRowKey.defaultValue,
     ),
-    enabled: isHilosImpersonationSwitch(rowKey) && value === SWITCH_ON,
+    enabled: isHiddenValue(value)
+      ? HIDDEN_VALUE
+      : isHilosImpersonationSwitch(rowKey) && value === SWITCH_ON,
   }
 }
 

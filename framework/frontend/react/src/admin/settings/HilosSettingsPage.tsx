@@ -18,6 +18,7 @@
 // Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
+  HIDDEN_VALUE,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   SETTING_KEY_FIELD,
@@ -25,6 +26,8 @@ import {
   createHilosSettingsActions,
   createHilosSettingsTable,
   hasCustomValue,
+  hiddenAsWord,
+  isHiddenValue,
   isOrphanSetting,
   keepMineRowEdit,
   openRowEdit,
@@ -32,6 +35,7 @@ import {
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosSettingRow,
   HilosSettingsContext,
   RowEditBaseline,
@@ -75,7 +79,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
 
 /** The one field the dialog edits: the row's own value, null for the catalog default. */
 interface SettingEditFields {
-  overrideValue: string | null
+  overrideValue: Hideable<string | null>
 }
 
 /** The one line the dialog says about the other side, for what the helper found. */
@@ -86,7 +90,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
     case 'conflict':
       return live.fields.overrideValue.incoming === null
         ? 'Reset elsewhere to the catalog default.'
-        : `Changed elsewhere to "${live.fields.overrideValue.incoming}".`
+        : `Changed elsewhere to "${hiddenAsWord(live.fields.overrideValue.incoming)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -135,10 +139,15 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
 
   const editInputType = inputType(editRow?.type)
   const editStep = inputStep(editRow?.type)
+  const editHidden = isHiddenValue(editBaseline.values.overrideValue)
   // The custom value the dialog would persist, normalized to a string: a number
   // input yields a number, while the row override and the wire are strings, so an
   // un-normalized value would never match the echoed row. Null leaves the default.
-  const editOverride: string | null = editUseCustom ? String(editValue) : null
+  const editOverride: Hideable<string | null> = editHidden
+    ? HIDDEN_VALUE
+    : editUseCustom
+      ? String(editValue)
+      : null
   // The live row the open dialog is about: the row the table holds in focus, which
   // the server follows wherever it goes; undefined once the row is gone.
   const liveRow = useSignal(settings.controller.focusedRow)
@@ -168,8 +177,17 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     setEditBaseline(step.baseline)
     const taken = step.take.overrideValue
     if (taken !== undefined) {
+      if (isHiddenValue(taken)) {
+        return
+      }
       setEditUseCustom(taken !== null || isOrphanSetting(row))
-      setEditValue(taken ?? liveRow?.value ?? row.value ?? '')
+      const effective =
+        liveRow?.value !== undefined && !isHiddenValue(liveRow.value)
+          ? liveRow.value
+          : !isHiddenValue(row.value)
+            ? row.value
+            : null
+      setEditValue(taken ?? effective ?? '')
     }
   }
 
@@ -192,12 +210,20 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     }
     edit.clearError()
     setEditRow(fresh)
-    // An orphan has no catalog default behind it and no switch in the dialog, so its
-    // value is always its own; a cataloged key opens with the switch on only when it
-    // carries a value of its own.
-    setEditUseCustom(isOrphanSetting(fresh) || hasCustomValue(fresh))
-    setEditValue(fresh.overrideValue ?? fresh.value ?? '')
-    setEditBaseline(openRowEdit({ overrideValue: fresh.overrideValue }))
+    if (!isHiddenValue(fresh.overrideValue)) {
+      // An orphan has no catalog default behind it and no switch in the dialog, so its
+      // value is always its own; a cataloged key opens with the switch on only when it
+      // carries a value of its own.
+      setEditUseCustom(isOrphanSetting(fresh) || hasCustomValue(fresh))
+      setEditValue(
+        fresh.overrideValue ??
+          (!isHiddenValue(fresh.value) ? fresh.value : '') ??
+          '',
+      )
+    }
+    setEditBaseline(
+      openRowEdit<SettingEditFields>({ overrideValue: fresh.overrideValue }),
+    )
     setEditOpen(true)
   }
 
@@ -209,7 +235,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
   // reply; a failure toasts and stays open so the entered value survives.
   async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy || live.gone) {
+    if (!editRow || edit.busy || live.gone || editHidden) {
       return
     }
     if (!live.dirty) {
@@ -218,6 +244,11 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
       return
     }
     const next = editOverride
+    if (isHiddenValue(next)) {
+      closeEdit()
+
+      return
+    }
     // The switch turned off means "back to the catalog default", which resets the key
     // by dropping its row. With a value, an orphan updates in place and a cataloged
     // key adds by key (the add is idempotent, so the row need not exist yet).
@@ -382,7 +413,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!editDirty || edit.busy || live.gone}
+            disableSave={!editDirty || edit.busy || live.gone || editHidden}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -420,79 +451,95 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
               void submitEdit()
             }}
           >
-            {!isOrphanSetting(editRow) ? (
+            {editHidden ? (
               <div className="mb-3">
-                <span className="form-label d-block">Catalog default</span>
+                <span className="form-label d-block">{editRow.key}</span>
                 <HilosSettingValueCell
-                  value={editRow.defaultValue}
+                  value={editRow.value}
                   type={editRow.type}
                   valueSource={editRow.valueSource}
                   defaultReferenceKey={editRow.defaultReferenceKey}
                 />
               </div>
-            ) : null}
-            {!isOrphanSetting(editRow) ? (
-              <div className="form-check form-switch mb-3">
-                <input
-                  id="hilos-settings-edit-custom"
-                  type="checkbox"
-                  className="form-check-input"
-                  data-id="hilos-settings-edit-custom"
-                  checked={editUseCustom}
-                  onChange={(event) => setEditUseCustom(event.target.checked)}
-                />
-                <label
-                  className="form-check-label"
-                  htmlFor="hilos-settings-edit-custom"
-                >
-                  Custom value
-                </label>
-              </div>
-            ) : null}
-            {editUseCustom ? (
-              <div className="mb-0">
-                {editInputType === 'checkbox' ? (
-                  <div className="form-check">
+            ) : (
+              <>
+                {!isOrphanSetting(editRow) ? (
+                  <div className="mb-3">
+                    <span className="form-label d-block">Catalog default</span>
+                    <HilosSettingValueCell
+                      value={editRow.defaultValue}
+                      type={editRow.type}
+                      valueSource={editRow.valueSource}
+                      defaultReferenceKey={editRow.defaultReferenceKey}
+                    />
+                  </div>
+                ) : null}
+                {!isOrphanSetting(editRow) ? (
+                  <div className="form-check form-switch mb-3">
                     <input
-                      id="hilos-settings-edit-value"
+                      id="hilos-settings-edit-custom"
                       type="checkbox"
                       className="form-check-input"
-                      data-id="hilos-settings-edit-value"
-                      data-autofocus
-                      checked={editValue === '1'}
+                      data-id="hilos-settings-edit-custom"
+                      checked={editUseCustom}
                       onChange={(event) =>
-                        setEditValue(event.target.checked ? '1' : '0')
+                        setEditUseCustom(event.target.checked)
                       }
                     />
                     <label
                       className="form-check-label"
-                      htmlFor="hilos-settings-edit-value"
+                      htmlFor="hilos-settings-edit-custom"
                     >
-                      Enabled
+                      Custom value
                     </label>
                   </div>
-                ) : (
-                  <>
-                    <label
-                      className="form-label"
-                      htmlFor="hilos-settings-edit-value"
-                    >
-                      {editRow.key}
-                    </label>
-                    <input
-                      id="hilos-settings-edit-value"
-                      type={editInputType}
-                      step={editStep}
-                      className="form-control"
-                      data-id="hilos-settings-edit-value"
-                      data-autofocus
-                      value={editValue}
-                      onChange={(event) => setEditValue(event.target.value)}
-                    />
-                  </>
-                )}
-              </div>
-            ) : null}
+                ) : null}
+                {editUseCustom ? (
+                  <div className="mb-0">
+                    {editInputType === 'checkbox' ? (
+                      <div className="form-check">
+                        <input
+                          id="hilos-settings-edit-value"
+                          type="checkbox"
+                          className="form-check-input"
+                          data-id="hilos-settings-edit-value"
+                          data-autofocus
+                          checked={editValue === '1'}
+                          onChange={(event) =>
+                            setEditValue(event.target.checked ? '1' : '0')
+                          }
+                        />
+                        <label
+                          className="form-check-label"
+                          htmlFor="hilos-settings-edit-value"
+                        >
+                          Enabled
+                        </label>
+                      </div>
+                    ) : (
+                      <>
+                        <label
+                          className="form-label"
+                          htmlFor="hilos-settings-edit-value"
+                        >
+                          {editRow.key}
+                        </label>
+                        <input
+                          id="hilos-settings-edit-value"
+                          type={editInputType}
+                          step={editStep}
+                          className="form-control"
+                          data-id="hilos-settings-edit-value"
+                          data-autofocus
+                          value={editValue}
+                          onChange={(event) => setEditValue(event.target.value)}
+                        />
+                      </>
+                    )}
+                  </div>
+                ) : null}
+              </>
+            )}
             <HilosEditNotice
               kind={editNotice}
               text={editNoticeText}

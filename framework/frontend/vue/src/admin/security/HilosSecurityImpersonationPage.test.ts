@@ -10,7 +10,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosImpersonationSettingKey,
   HilosPages,
   ScopeManager,
@@ -84,7 +83,7 @@ function settingSlot(rowKey: string, value: string): Record<string, unknown> {
  * the seven settings, pushes a row update on demand, records every action sent
  * and answers the last one on demand.
  */
-function seededContext(): {
+function seededContext(hiddenValues = false): {
   context: HilosImpersonationContext
   pushUpdate: (rowKey: string, value: string) => void
   answer: (outcome: 'success' | 'fail', message?: string) => void
@@ -92,7 +91,16 @@ function seededContext(): {
   focus: string[]
 } {
   let settings = new Map<string, Record<string, unknown>>(
-    DEFAULTS.map(([key, value]) => [key, settingSlot(key, value)]),
+    DEFAULTS.map(([key, value]) => [
+      key,
+      hiddenValues
+        ? {
+            rowKey: key,
+            value: { _hidden: true },
+            defaultValue: { _hidden: true },
+          }
+        : settingSlot(key, value),
+    ]),
   )
   const focus: string[] = []
   const scopes = new ScopeManager()
@@ -495,22 +503,40 @@ describe('HilosSecurityImpersonationPage in the admin view mode', () => {
     }
   }
 
-  it('stands the switches and Save disabled, pointing at the mode strip, and opens the modal', async () => {
-    const { context, sent } = seededContext()
+  it('shows hidden marks for switches and the scope, and opens the modal with a hidden mark', async () => {
+    const { context, sent } = seededContext(true)
     viewAsGuest(context.scopes)
+    await mountPage(context)
+
+    expect(
+      document.querySelector(
+        `input[data-id="hilos-impersonation-switch-${ALLOWED}"]`,
+      ),
+    ).toBeNull()
+    expect(
+      document.querySelectorAll('[data-id="hilos-hidden"]').length,
+    ).toBeGreaterThan(0)
+
     await openScope(context)
 
-    expect(switchOf(ALLOWED).disabled).toBe(true)
-    expect(switchOf(ALLOWED).getAttribute('aria-describedby')).toBe(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
-    await choose('view')
+    expect(scopeRadio('view')).toBeNull()
+    expect(scopeRadio('act')).toBeNull()
+    expect(
+      el('modal')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
     expect(saveButton().disabled).toBe(true)
-    expect(saveButton().getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
+
     saveButton().click()
     await nextTick()
     expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    await nextTick()
+
+    expect(el('modal')).toBeNull()
   })
 })

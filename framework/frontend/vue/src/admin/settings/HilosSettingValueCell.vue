@@ -4,25 +4,39 @@ numbers, the text (or an "empty string" chip) otherwise, plus a source badge —
 the referenced key, "default", or "custom" — so the catalog origin is visible at
 a glance. Presentation only; Bootstrap classes (styling-rules.md). -->
 <script setup lang="ts">
-import { type SettingValueSource } from '@hilos/core'
+import {
+  type Hideable,
+  isHiddenValue,
+  type SettingValueSource,
+} from '@hilos/core'
 import { computed } from 'vue'
 
+import HilosHiddenMark from '../../HilosHiddenMark.vue'
+
 const props = defineProps<{
-  value: string | null
+  value: Hideable<string | null>
   type: string
   valueSource: SettingValueSource
-  defaultReferenceKey: string | null
+  defaultReferenceKey: Hideable<string | null>
 }>()
 
+const isValueHidden = computed(() => isHiddenValue(props.value))
 const isBoolean = computed(() => props.type === 'boolean')
 const isNumber = computed(
   () => props.type === 'integer' || props.type === 'float',
 )
 const isEmptyString = computed(
-  () => props.type === 'string' && (props.value === null || props.value === ''),
+  () =>
+    !isValueHidden.value &&
+    props.type === 'string' &&
+    (props.value === null || props.value === ''),
 )
-const display = computed(() => {
-  if (props.value === null) {
+const display = computed<string>(() => {
+  if (
+    isValueHidden.value ||
+    props.value === null ||
+    isHiddenValue(props.value)
+  ) {
     return '—'
   }
   if (isBoolean.value) {
@@ -34,6 +48,9 @@ const display = computed(() => {
 const isReference = computed(
   () => props.valueSource === 'reference' && props.defaultReferenceKey !== null,
 )
+const isReferenceKeyHidden = computed(() =>
+  isHiddenValue(props.defaultReferenceKey),
+)
 </script>
 
 <template>
@@ -41,8 +58,9 @@ const isReference = computed(
     class="d-inline-flex align-items-center gap-2 mw-100"
     data-id="setting-value"
   >
+    <HilosHiddenMark v-if="isValueHidden" />
     <input
-      v-if="isBoolean"
+      v-else-if="isBoolean"
       type="checkbox"
       class="form-check-input mt-0 flex-shrink-0"
       :checked="value === '1'"
@@ -68,10 +86,13 @@ const isReference = computed(
     <span
       v-if="isReference"
       class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1"
-      :title="`Default from ${defaultReferenceKey}`"
+      :title="
+        isReferenceKeyHidden ? undefined : `Default from ${defaultReferenceKey}`
+      "
     >
       <i class="bi bi-arrow-down-right" aria-hidden="true"></i>
-      <code class="text-truncate text-info-emphasis">{{
+      <HilosHiddenMark v-if="isReferenceKeyHidden" />
+      <code v-else class="text-truncate text-info-emphasis">{{
         defaultReferenceKey
       }}</code>
     </span>

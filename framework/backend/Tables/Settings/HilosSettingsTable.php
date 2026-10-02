@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Settings;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
@@ -227,6 +228,38 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
             BrowserPageSignalData::sources => [
                 HilosDbContext::settings => $slot,
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a settings row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Key and type come from the settings collection columns (Setting._piiNotPersonal); valueSource is computed;
+     * value and overrideValue come from the value column (hidden by MASK verdict); defaultValue and defaultReferenceKey
+     * are omitted and hidden, as defaults are also setting values and all setting values are hidden from viewers (HIL-1258).
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosSettingTableRow::key => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::key,
+            ),
+            HilosSettingTableRow::type => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::type,
+            ),
+            HilosSettingTableRow::valueSource => WireField::notPersonal(),
+            HilosSettingTableRow::value => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
+            HilosSettingTableRow::overrideValue => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
         ];
     }
 

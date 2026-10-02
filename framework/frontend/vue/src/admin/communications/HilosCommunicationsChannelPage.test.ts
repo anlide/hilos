@@ -9,7 +9,6 @@ import { markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HILOS_VIEW_MODE_COPY,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
@@ -697,12 +696,6 @@ describe('HilosCommunicationsChannelPage in the admin view mode', () => {
     return modalEl('hilos-channel-reset-confirm') as HTMLButtonElement
   }
 
-  async function settle(): Promise<void> {
-    await nextTick()
-    await nextTick()
-    await nextTick()
-  }
-
   it('a viewer finds the test send standing in view mode', async () => {
     const { handshake } = bindSession()
     handshake(null, true)
@@ -721,24 +714,25 @@ describe('HilosCommunicationsChannelPage in the admin view mode', () => {
     expect(sent).toEqual([])
   })
 
-  it('a viewer opens a field edit, may type, and has nothing to save it with', async () => {
+  it('a viewer opens a field edit, sees the hidden mark instead of an input, and closes via Cancel', async () => {
     const { handshake } = bindSession()
     handshake(null, true)
-    const { context, sent, focus } = seededContext([fromField('+1000')])
+    const { context, sent, focus } = seededContext([
+      {
+        ...fromField('+1000'),
+        value: { _hidden: true } as unknown as string,
+      },
+    ])
     await mountPage(context)
 
     expect((editButton() as HTMLButtonElement).disabled).toBe(false)
     editButton().click()
     await nextTick()
 
-    expect(valueInput().disabled).toBe(false)
-    await typeDraft('+mine')
-    expect(valueInput().value).toBe('+mine')
+    expect(modalEl('hilos-channel-field-input')).toBeNull()
+    expect(modalEl('hilos-hidden')).not.toBeNull()
 
     expect(saveButton().disabled).toBe(true)
-    expect(saveButton().getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
     saveButton().click()
     await nextTick()
     expect(sent).toEqual([])
@@ -750,51 +744,20 @@ describe('HilosCommunicationsChannelPage in the admin view mode', () => {
     cancel?.click()
     await nextTick()
 
-    const discard = modalEl('modal-confirm-discard')
-    expect(discard).not.toBeNull()
-    discard?.click()
-    await nextTick()
-
+    expect(modalEl('modal-confirm-discard')).toBeNull()
     expect(modalEl('modal')).toBeNull()
     expect(focus).toEqual([ROW_KEY, ''])
   })
 
-  it('Enter in a field edit is refused in the words of the view mode', async () => {
+  it('a viewer opens the reset of an overridden field with a hidden value and has nothing to reset with', async () => {
     const { handshake } = bindSession()
     handshake(null, true)
-    const { context, sent, answer } = seededContext([fromField('+1000')])
-    await openModal(context)
-    await typeDraft('+mine')
-
-    const form = document.querySelector('[data-id="modal"] form')
-    expect(form).not.toBeNull()
-    form?.dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true }),
-    )
-    await nextTick()
-
-    expect(sent.map(({ action, payload }) => ({ action, payload }))).toEqual([
+    const { context, sent, focus } = seededContext([
       {
-        action: 'communications_channel_set',
-        payload: { channel: 'sms', field: 'from', value: '+mine' },
+        ...fromField('+1000', 'settings'),
+        value: { _hidden: true } as unknown as string,
       },
     ])
-
-    answer('fail', 'view_mode')
-    await settle()
-
-    expect(modalEl('hilos-action-error')?.textContent).toContain(
-      HILOS_VIEW_MODE_COPY.refusal,
-    )
-    expect(modalEl('modal')).not.toBeNull()
-    expect(valueInput().value).toBe('+mine')
-    expect(saveButton().disabled).toBe(true)
-  })
-
-  it('a viewer opens the reset of an overridden field and has nothing to reset with', async () => {
-    const { handshake } = bindSession()
-    handshake(null, true)
-    const { context, sent, focus } = seededContext([fromField('+1000')])
     await mountPage(context)
 
     expect(resetButton().disabled).toBe(false)
@@ -802,6 +765,11 @@ describe('HilosCommunicationsChannelPage in the admin view mode', () => {
     await nextTick()
 
     expect(focus).toEqual([ROW_KEY])
+    expect(
+      modalEl('hilos-channel-reset-now')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
     expect(confirmButton().disabled).toBe(true)
     expect(confirmButton().getAttribute('aria-describedby')).toContain(
       HILOS_VIEW_MODE_STRIP_TEXT_ID,

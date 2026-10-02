@@ -28,10 +28,13 @@ import {
   untracked,
 } from '@angular/core'
 import {
+  HIDDEN_VALUE,
+  HILOS_VIEW_MODE_COPY,
   HilosPages,
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
+  isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
   resolveHilosPath,
@@ -40,6 +43,7 @@ import {
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosOAuthProviderRow,
   HilosOAuthRedirectRow,
   HilosSecurityOauthContext,
@@ -71,21 +75,22 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
 
 /** The one field the return-address dialog edits. */
 interface RedirectEditFields {
-  value: string
+  value: Hideable<string>
 }
 
 /** The one line the dialog says about the other side, for what the helper found. */
 function noticeText(
   kind: RowEditNoticeKind | null,
-  liveValue: string | undefined,
+  liveValue: Hideable<string> | undefined,
 ): string {
   switch (kind) {
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return liveValue === undefined
-        ? ''
-        : `Changed elsewhere to "${liveValue === '' ? '—' : liveValue}".`
+      if (liveValue === undefined) {
+        return ''
+      }
+      return `Changed elsewhere to "${isHiddenValue(liveValue) ? HILOS_VIEW_MODE_COPY.hidden : liveValue === '' ? '—' : liveValue}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -124,7 +129,11 @@ function noticeText(
               </p>
               @if (redirectRow()?.setState) {
                 <code data-id="hilos-oauth-redirect-value">
-                  {{ redirectRow()?.value }}
+                  {{
+                    isHidden(redirectRow()!.value)
+                      ? hiddenCopy
+                      : redirectRow()!.value
+                  }}
                 </code>
               } @else {
                 <span
@@ -225,19 +234,26 @@ function noticeText(
         ></h5>
         <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         <form (submit)="submitEdit($event)">
-          <label class="form-label" for="hilos-oauth-redirect-input">
-            Return address
-          </label>
-          <input
-            id="hilos-oauth-redirect-input"
-            type="url"
-            class="form-control"
-            placeholder="https://app.example/auth/callback"
-            data-id="hilos-oauth-redirect-input"
-            data-autofocus
-            [value]="editValue()"
-            (input)="onValueInput($event)"
-          />
+          @if (editHidden()) {
+            <div class="mb-3">
+              <div class="form-label">Return address</div>
+              <div>{{ hiddenCopy }}</div>
+            </div>
+          } @else {
+            <label class="form-label" for="hilos-oauth-redirect-input">
+              Return address
+            </label>
+            <input
+              id="hilos-oauth-redirect-input"
+              type="url"
+              class="form-control"
+              placeholder="https://app.example/auth/callback"
+              data-id="hilos-oauth-redirect-input"
+              data-autofocus
+              [value]="editValue()"
+              (input)="onValueInput($event)"
+            />
+          }
           <hilos-edit-notice
             [kind]="editNotice()"
             [text]="editNoticeText()"
@@ -248,7 +264,9 @@ function noticeText(
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!live().dirty || edit.busy() || live().gone"
+            [disableSave]="
+              !live().dirty || edit.busy() || live().gone || editHidden()
+            "
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -376,6 +394,11 @@ export class HilosSecurityOauthPage {
     openRowEdit<RedirectEditFields>({ value: '' }),
   )
   protected readonly edit = createHilosTrackedAction()
+  protected readonly isHidden = isHiddenValue
+  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
+  protected readonly editHidden = computed(() =>
+    isHiddenValue(this.editBaseline().values.value),
+  )
   // The live row the open dialog is about: the row the table holds in focus, which
   // the server follows wherever it goes; undefined once the row is gone. Mirrored
   // the way the rows are.
@@ -384,11 +407,12 @@ export class HilosSecurityOauthPage {
   )
   protected readonly live = computed(() => {
     const row = this.liveRow()
+    const editHidden = this.editHidden()
 
     return resolveRowEdit(
       row ? { value: row.value } : undefined,
       this.editBaseline(),
-      { value: this.editValue() },
+      { value: editHidden ? HIDDEN_VALUE : this.editValue() },
     )
   })
   protected readonly editNotice = computed(
@@ -484,7 +508,7 @@ export class HilosSecurityOauthPage {
       return
     }
     this.edit.clearError()
-    this.editValue.set(fresh.value)
+    this.editValue.set(isHiddenValue(fresh.value) ? '' : fresh.value)
     this.editBaseline.set(
       openRowEdit<RedirectEditFields>({ value: fresh.value }),
     )
@@ -500,7 +524,7 @@ export class HilosSecurityOauthPage {
   // the step takes lands in the input.
   private applyStep(step: RowEditStep<RedirectEditFields>): void {
     this.editBaseline.set(step.baseline)
-    if (step.take.value !== undefined) {
+    if (step.take.value !== undefined && !isHiddenValue(step.take.value)) {
       this.editValue.set(step.take.value)
     }
   }
@@ -515,10 +539,15 @@ export class HilosSecurityOauthPage {
 
   protected async submitEdit(event?: Event): Promise<void> {
     event?.preventDefault()
-    if (this.edit.busy() || this.live().gone || this.live().conflict) {
+    if (
+      this.edit.busy() ||
+      this.live().gone ||
+      this.live().conflict ||
+      this.editHidden()
+    ) {
       return
     }
-    if (!this.live().dirty) {
+    if (!this.live().dirty || this.editHidden()) {
       this.closeEdit()
 
       return

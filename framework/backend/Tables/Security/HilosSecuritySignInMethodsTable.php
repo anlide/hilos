@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Security;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Method\AuthMethodReadiness;
+use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -23,6 +25,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 
@@ -115,6 +118,30 @@ class HilosSecuritySignInMethodsTable extends TableDefinition implements SelfSna
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares where each field of a sign-in method row comes from, for a viewer of the admin view mode (HIL-1250).
+     *
+     * Method key, label, readiness and provider key come from the method directory and are not personal;
+     * enabled is the value of the disabled-methods setting and is hidden by its column verdict (MASK).
+     * The set of enabled methods travels to every session anyway ({@see AuthMethodsSignalData}), but
+     * is hidden here under the uniform rule for setting values.
+     *
+     * @return array<string, WireField>
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosSecuritySignInMethodsTableRow::methodKey => WireField::notPersonal(),
+            HilosSecuritySignInMethodsTableRow::label => WireField::notPersonal(),
+            HilosSecuritySignInMethodsTableRow::ready => WireField::notPersonal(),
+            HilosSecuritySignInMethodsTableRow::providerKey => WireField::notPersonal(),
+            HilosSecuritySignInMethodsTableRow::enabled => WireField::column(
+                HilosDbContext::settings,
+                ObjectSetting::value,
+            ),
         ];
     }
 

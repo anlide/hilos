@@ -16,12 +16,14 @@
 // second wire, and nothing is ever re-requested: after the action lands, the new
 // state is pushed to every open tab rather than answered to the one that clicked.
 
+import { isHiddenValue } from '../../state/hiddenValue.js'
 import {
   ActionLifecycle,
   type ActionHandle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { type HilosPageKey } from '../../routing/hilosPages.js'
+import { hideable } from '../../state/hideableSchema.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
 import { z } from 'zod'
 
@@ -63,7 +65,7 @@ export const PRESET_DIFFERENCE_CURRENT_VALUE_FIELD = 'currentValue'
 /** One preset: a name and every value it writes (PHP `SettingPreset`). */
 const presetSchema = z.looseObject({
   [PRESET_NAME_FIELD]: z.string(),
-  [PRESET_VALUES_FIELD]: z.record(z.string(), z.unknown()),
+  [PRESET_VALUES_FIELD]: hideable(z.record(z.string(), z.unknown())),
 })
 
 /**
@@ -86,9 +88,9 @@ const differenceSchema = z.looseObject({
  */
 const settingPresetsSchema = z.looseObject({
   [PRESET_GROUP_FIELD]: z.string(),
-  [PRESET_SELECTED_FIELD]: z.string().nullable(),
+  [PRESET_SELECTED_FIELD]: hideable(z.string().nullable()),
   [PRESET_PRESETS_FIELD]: z.array(presetSchema),
-  [PRESET_DIFFERENCES_FIELD]: z.array(differenceSchema),
+  [PRESET_DIFFERENCES_FIELD]: hideable(z.array(differenceSchema)),
 })
 
 /** One preset as its card draws it. */
@@ -321,7 +323,11 @@ export function presetsOf(
 export function selectedPresetOf(
   state: HilosSettingPresetsState | null,
 ): string | null {
-  return state ? state[PRESET_SELECTED_FIELD] : null
+  if (!state) {
+    return null
+  }
+  const selected = state[PRESET_SELECTED_FIELD]
+  return isHiddenValue(selected) ? null : selected
 }
 
 /**
@@ -336,7 +342,11 @@ export function selectedPresetOf(
 export function differencesOf(
   state: HilosSettingPresetsState | null,
 ): HilosSettingPresetDifference[] {
-  return state ? state[PRESET_DIFFERENCES_FIELD] : []
+  if (!state) {
+    return []
+  }
+  const differences = state[PRESET_DIFFERENCES_FIELD]
+  return isHiddenValue(differences) ? [] : differences
 }
 
 /**

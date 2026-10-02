@@ -11,6 +11,7 @@ import {
   ScopeManager,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosConnection,
   HilosRouter,
   HilosSettingsContext,
@@ -48,10 +49,10 @@ function router(): HilosRouter {
 interface SettingSlot {
   key: string
   type: string
-  value: string | null
-  overrideValue: string | null
-  defaultValue: string | null
-  defaultReferenceKey: string | null
+  value: Hideable<string | null>
+  overrideValue: Hideable<string | null>
+  defaultValue: Hideable<string | null>
+  defaultReferenceKey: Hideable<string | null>
   valueSource: string
 }
 
@@ -780,14 +781,14 @@ describe('HilosSettingsPage in the admin view mode', () => {
     }
   }
 
-  it('a viewer opens a setting, may type a value and has nothing to save it with', async () => {
+  it('a viewer opens a setting, sees the hidden mark instead of the input, and finds Save disabled', async () => {
     bindSession().handshake(null, true)
     const { context, sent } = seededContext([
       slot({
         key: 'site_name',
         valueSource: 'override',
-        value: 'Hilos',
-        overrideValue: 'Hilos',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
       }),
     ])
     await mountPage(context)
@@ -797,17 +798,11 @@ describe('HilosSettingsPage in the admin view mode', () => {
     edit.click()
     await nextTick()
 
-    const input = modalEl('hilos-settings-edit-value') as HTMLInputElement
-    expect(input.disabled).toBe(false)
-    input.value = 'Other'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    await nextTick()
+    expect(modalEl('hilos-settings-edit-value')).toBeNull()
+    expect(modalEl('hilos-hidden')).not.toBeNull()
 
     const save = modalEl('hilos-settings-edit-save') as HTMLButtonElement
     expect(save.disabled).toBe(true)
-    expect(save.getAttribute('aria-describedby')).toContain(
-      HILOS_VIEW_MODE_STRIP_TEXT_ID,
-    )
 
     save.click()
     await nextTick()
@@ -815,6 +810,9 @@ describe('HilosSettingsPage in the admin view mode', () => {
 
     const cancel = modalEl('hilos-settings-edit-cancel') as HTMLButtonElement
     expect(cancel.disabled).toBe(false)
+    cancel.click()
+    await nextTick()
+    expect(modalEl('modal')).toBeNull()
   })
 
   it('a viewer opens the reset of a setting and has nothing to reset it with', async () => {
@@ -823,9 +821,9 @@ describe('HilosSettingsPage in the admin view mode', () => {
       slot({
         key: 'site_name',
         valueSource: 'override',
-        value: 'Mine',
-        overrideValue: 'Mine',
-        defaultValue: 'Hilos',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
+        defaultValue: { _hidden: true },
       }),
     ])
     await mountPage(context)
@@ -836,6 +834,17 @@ describe('HilosSettingsPage in the admin view mode', () => {
     expect(reset?.disabled).toBe(false)
     reset?.click()
     await nextTick()
+
+    expect(
+      modalEl('hilos-settings-reset-now')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    expect(
+      modalEl('hilos-settings-reset-default')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
 
     const confirm = modalEl('hilos-settings-reset-confirm') as HTMLButtonElement
     expect(confirm.disabled).toBe(true)
@@ -862,7 +871,7 @@ describe('HilosSettingsPage in the admin view mode', () => {
       slot({
         key: 'orphan',
         valueSource: 'orphan',
-        overrideValue: 'x',
+        overrideValue: { _hidden: true },
         defaultValue: null,
       }),
     ])
