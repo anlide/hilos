@@ -19,8 +19,9 @@ declare(strict_types=1);
  *   deps     ids that must have finished GREEN before this one may start. A
  *            failed dependency skips this step rather than failing it.
  *   group    steps sharing a group never run at the same time. Unlike `deps` this
- *            is mutual exclusion only: it does not order them, and a red member
- *            does not skip its group-mates.
+ *            is mutual exclusion only: no member waits for another to go green,
+ *            and a red member does not skip its group-mates. Of the members ready
+ *            to go the shortest starts first (`scripts/launch-order.php`).
  *   tags     selectors: `run-test-suite.php frontend` runs everything tagged
  *            `frontend` plus whatever those steps depend on.
  *   stand    the id of a record in `scripts/test-stands.php`, from which the run's
@@ -41,10 +42,11 @@ declare(strict_types=1);
  *            GREEN runs on nova-de,
  *            where a step beside its neighbours takes what it
  *            takes alone (chat-e2e 19m47s alone against 19m21s–21m30s beside two,
- *            28.09). A scheduling HINT only, and a narrow one: of the steps ready
- *            to go, the one with the longest OWN duration starts first, and
- *            nothing here looks at the work waiting behind a step. A stale number
- *            costs wall clock, never correctness.
+ *            28.09). A scheduling HINT only, and a narrow one
+ *            (`scripts/launch-order.php`): of the steps ready to go, the group
+ *            whose longest member is longest goes first, its shortest step
+ *            ahead of the rest, and nothing here looks at the work waiting
+ *            behind a step. A stale number costs wall clock, never correctness.
  *
  * WHAT BOUNDS A FULL RUN, and why neither the order nor the lanes are the lever.
  * Measured 2026-09-29 (HIL-1227) on nova-de, run 0659, the first green run at

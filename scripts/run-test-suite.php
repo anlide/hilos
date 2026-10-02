@@ -75,6 +75,7 @@ enum StepOutcome: string
 
 $root = dirname(__DIR__);
 require_once $root . '/scripts/lane-count.php';
+require_once $root . '/scripts/launch-order.php';
 require_once $root . '/scripts/unstable-line.php';
 require_once $root . '/scripts/step-artifacts.php';
 require_once $root . '/scripts/stand-registry.php';
@@ -261,7 +262,7 @@ function printPlan(array $manifest, array $plan, int $lanes, string $lanesSource
 {
     fwrite(STDOUT, sprintf("plan: %d steps at %d lane(s)\n", count($plan), $lanes));
     fwrite(STDOUT, lanesLine($lanes, $lanesSource));
-    foreach (sortByDurationDescending($manifest, $plan) as $id) {
+    foreach (launchOrder($manifest, $plan) as $id) {
         $step = $manifest[$id];
         fwrite(STDOUT, sprintf(
             "  %-20s %4ds  after [%s]%s\n",
@@ -423,8 +424,8 @@ function runPlan(
     fwrite(STDOUT, lanesLine($lanes, $lanesSource));
     fwrite(STDOUT, sprintf("=== SUITE START %s — %d steps, %d lane(s) ===\n", now(), count($plan), $lanes));
 
-    /** @var array<int, string> $pending Ids not started yet, longest first. */
-    $pending = sortByDurationDescending($manifest, $plan);
+    /** @var array<int, string> $pending Ids not started yet, in {@see launchOrder()}. */
+    $pending = launchOrder($manifest, $plan);
     /** @var array<string, array{handle: resource, since: float, at: string,
      *     neighbors: array<int, string>}> $running */
     $running = [];
@@ -543,30 +544,10 @@ function dropStandAfterStep(string $root, array $step): void
 }
 
 /**
- * Plan ids ordered by their OWN duration, longest first.
- *
- * Not by the work waiting behind a step: `fe-install` costs two seconds and holds up
- * the entire frontend chain, and it still sorts near the end. That was measured and
- * left alone deliberately — the head of `scripts/test-suite.php` says what a full run
- * is actually bound by, and why neither the order nor the lanes are the lever (HIL-854,
- * HIL-1227).
- *
- * @param array<string, array{seconds: int}> $manifest Steps by id.
- * @param array<int, string> $plan Step ids to run.
- * @return array<int, string>
- */
-function sortByDurationDescending(array $manifest, array $plan): array
-{
-    usort($plan, static fn(string $a, string $b): int => $manifest[$b]['seconds'] <=> $manifest[$a]['seconds']);
-
-    return $plan;
-}
-
-/**
  * The ids that may start right now: dependencies green, group free, lane free.
  *
  * @param array<string, array{deps: array<int, string>, group: string|null}> $manifest Steps by id.
- * @param array<int, string> $pending Ids not started yet, longest first.
+ * @param array<int, string> $pending Ids not started yet, in {@see launchOrder()}.
  * @param array<string, array{handle: resource}> $running Ids in flight.
  * @param array<string, array{outcome: StepOutcome}> $done Ids already finished.
  * @param int $lanes Steps at a time.
