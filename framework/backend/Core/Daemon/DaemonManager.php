@@ -5785,23 +5785,27 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Holds a frame for one agent that is not up yet, instead of handing it to nobody (HIL-629).
      *
-     * Two doors lead here and they wait on different things (HIL-1041). The local delivery door
-     * holds for an agent whose start is under way on this node: that wait ends on a fact the node
-     * is going to hear, and a clock over it would answer the asker while the start it is waiting
-     * for is still running. The walk holds for an agent no node is known to host and marks the
-     * hold as waiting on a placement verdict, because that is the fact that is coming. Either way
-     * the frame is let go by {@see releaseParkedAgentSignals()}.
+     * Three doors lead here and they wait on different things (HIL-1041, HIL-1208). The local
+     * delivery door holds for an agent whose start is under way on this node: that wait ends on a
+     * fact the node is going to hear, and a clock over it would answer the asker while the start
+     * it is waiting for is still running. The same door holds a connection's close for an agent
+     * the protected-mode freeze stopped, until the lift brings it back. The walk holds for an
+     * agent no node is known to host and marks the hold as waiting on a placement verdict,
+     * because that is the fact that is coming. In every case the frame is let go by
+     * {@see releaseParkedAgentSignals()}.
      *
      * @param SignalDTO $signal Signal the walk was delivering
      * @param string $agentId Agent it waits for
      * @param bool $awaitingPlacement Whether the wait is for a placement verdict rather than a start here
      * @param bool $localOnly Whether the frame arrived over the mesh, so the release never places it again
+     * @param bool $awaitingResume Whether the frame is a connection's close waiting for the lift to bring its agent back
      */
     private function parkUntilAgentUp(
         SignalDTO $signal,
         string $agentId,
         bool $awaitingPlacement = false,
         bool $localOnly = false,
+        bool $awaitingResume = false,
     ): void {
         $this->parkedAgentSignals[] = new ParkedAgentSignal(
             $signal,
@@ -5809,6 +5813,7 @@ abstract class DaemonManager extends BaseManager implements
             microtime(true),
             $awaitingPlacement,
             $localOnly,
+            $awaitingResume,
         );
     }
 
@@ -5916,6 +5921,11 @@ abstract class DaemonManager extends BaseManager implements
      * door starts the agent when it still belongs here; no address asks for a placement and waits
      * on the verdict, the way the walk already does (HIL-1041).
      *
+     * A connection's close held through the freeze waits while its agent still awaits the lift; it
+     * then goes out on the start report like any held frame, and is dropped with a warning when the
+     * walk passed the agent without bringing it back here - that worker then keeps every tab of
+     * that agent, which is not this hold's to cure (HIL-1208).
+     *
      * @param WorkerServer $workerServer Worker server hosting the agents of this node
      * @param ?AgentSignalMesh $mesh Outbound peer port for a frame whose agent turned up on another node
      * @throws InvalidArgumentException When a refusal answering a page or a command cannot be named
@@ -5946,6 +5956,25 @@ abstract class DaemonManager extends BaseManager implements
 
                 $released[] = $parked;
                 continue;
+            }
+
+            if ($parked->awaitingResume && !$workerServer->awaitsProtectedModeResume($agent->type, $agent->index)) {
+                if ($this->agentManagerDaemon->isAgentStarted($parked->agentId)) {
+                    $released[] = $parked;
+                    continue;
+                }
+
+                if ($this->isAgentStartUnderWay($workerServer, $parked->agentId)) {
+                    $parked = $parked->withoutResumeWait();
+                } else {
+                    $signal = $parked->signal;
+                    Logger::warning(
+                        "Signal {$signal->signalType->getType()}/{$signal->signalName->getName()}"
+                        . " held through the freeze for agent {$parked->agentId}"
+                        . ' dropped: the lift did not bring it back to this node',
+                    );
+                    continue;
+                }
             }
 
             if ($parked->awaitingPlacement && $this->isAgentStartUnderWay($workerServer, $parked->agentId)) {
@@ -6125,8 +6154,8 @@ abstract class DaemonManager extends BaseManager implements
      * @param AgentDestination $destination Agent instance to reach
      * @param SignalDTO $signal Signal to deliver
      * @param bool $localOnly Whether a frame held here must never be placed again, which a forwarded one must not
-     * @return AgentDeliveryOutcome Delivered, Held while the agent's start is under way, ShutdownSkipped when
-     *     the node is on its way out, or StartRefused
+     * @return AgentDeliveryOutcome Delivered, Held while the agent's start is under way or while a connection's
+     *     close waits for the protected-mode lift, ShutdownSkipped when the node is on its way out, or StartRefused
      */
     private function sendSignalToAgentDestination(
         WorkerServer $workerServer,
@@ -6152,6 +6181,24 @@ abstract class DaemonManager extends BaseManager implements
             // freeze or a placement gate refuses quietly is not under way, and the frame goes on to
             // the delivery below, which answers it the way it always has.
             if (!$this->agentManagerDaemon->isAgentStarted($agentId)) {
+                // The one frame a stopped agent is still owed: its worker keeps the subscription mirror,
+                // the reader interest, the page router's pages and the agent's subscriber sets through
+                // the stop, the lift puts the agent back into that worker, and only the close, with its
+                // hooks, lets them go. Held before the start, because an agent the walk is about to
+                // bring back to its own worker must not be started by this frame on another one (HIL-1208).
+                if (
+                    $signalType === SignalTypeConstants::CONNECTION_CLOSE
+                    && $workerServer->awaitsProtectedModeResume($agentType, $agentIndex)
+                ) {
+                    Logger::debug(
+                        "Signal {$signalType}/{$signalName} held for agent {$agentLabel}"
+                        . ' until protected mode brings it back',
+                    );
+                    $this->parkUntilAgentUp($signal, $agentId, false, $localOnly, true);
+
+                    return AgentDeliveryOutcome::Held;
+                }
+
                 $workerServer->ensureAgentUp($agentType, $agentIndex);
                 if ($this->isAgentStartUnderWay($workerServer, $agentId)) {
                     $this->parkUntilAgentUp($signal, $agentId, false, $localOnly);

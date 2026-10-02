@@ -203,6 +203,40 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         $this->assertSame(1, $server->liftHookCalls, 'The lift hook must fire once, after the roster is replayed.');
     }
 
+    /**
+     * An agent the freeze stopped awaits the lift until the walk asks for it back.
+     *
+     * True once the stop has remembered it, and still true while it sits in the replay queue
+     * before its turn. False for the initiator, who was never stopped, and false once the walk
+     * has asked for the agent (HIL-1208).
+     */
+    public function testAnAgentTheFreezeStoppedAwaitsTheLiftUntilTheWalkAsksForIt(): void
+    {
+        $manager = new FreezeGateTestAgentManagerDaemon();
+        $server = $this->buildServer(FreezeGateTestWorkerServer::class, $manager);
+        $manager->registerUnlinked(self::OTHER_TYPE, null);
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
+        $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
+        $this->passes($server, 1);
+
+        $this->assertTrue($server->awaitsProtectedModeResume(self::OTHER_TYPE, null));
+        $this->assertFalse($server->awaitsProtectedModeResume(self::INITIATOR_TYPE, null));
+
+        $this->clearRoster($manager);
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
+        $server->resumeAgentsForProtectedMode();
+
+        $this->assertTrue(
+            $server->awaitsProtectedModeResume(self::OTHER_TYPE, null),
+            'The agent still awaits the lift while it sits in the replay queue.',
+        );
+
+        $this->passes($server, 1);
+
+        $this->assertFalse($server->awaitsProtectedModeResume(self::OTHER_TYPE, null));
+    }
+
     public function testStoppingForTheFreezeSkipsAnIndexedInitiator(): void
     {
         $manager = new FreezeGateTestAgentManagerDaemon();

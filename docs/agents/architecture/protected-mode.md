@@ -728,6 +728,20 @@ its earlier join was refused or answered; the server records the membership by n
 answers again, so a tab is never a member twice (HIL-1079,
 [core-and-connection.md](../frontend/core-and-connection.md)).
 
+**A tab that closes while the freeze holds its agent is told to that agent when the
+lift brings it back (HIL-1208).** The browser sends nothing under the freeze, so the
+one frame a stopped agent is still owed is a connection's close: its worker keeps the
+subscription mirror, the page's reader interest, the page router with its pages and
+the agent's own subscriber sets through the stop, and the lift puts the agent back
+into that same worker. The master holds the close at the delivery door
+(`DaemonManager::sendSignalToAgentDestination()`) for an agent the freeze stopped on
+this node and the lift has not asked back yet
+(`WorkerServer::awaitsProtectedModeResume()`), without starting it, and lets it go on
+the agent's start report like any held frame; the worker's ordinary close does the
+rest. The hold sits on the agent's node, where the close is refused. A walk that
+passes the agent without bringing it back here drops the close with a warning. Every
+other frame for a stopped agent is still dropped.
+
 **On the way out the frame goes to everybody, the initiator included.**
 `DaemonProtectedModeExecutor::enterInactive()` passes no exclusion at all, and
 the frame means reload: after a restore the initiator's data is as stale as

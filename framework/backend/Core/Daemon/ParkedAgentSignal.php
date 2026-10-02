@@ -20,6 +20,10 @@ use Hilos\Core\Router\DTO\SignalDTO;
  * as long as the start does. An agent no node is known to host waits on a placement verdict:
  * the leader names a node, or it answers that it could not place it. Nothing here is a clock.
  *
+ * A third reason, a connection's close held for an agent the freeze stopped (HIL-1208): it waits
+ * for the lift to bring that agent back, then for its start report like any start under way; it
+ * is dropped only when the walk passed the agent without starting it here.
+ *
  * A frame that arrived over the peer mesh is marked, because the sender already decided which
  * node hosts the agent and a hold must not reopen that question: released back into the placing
  * walk it could be forwarded a second time, and two nodes disagreeing about the host would pass
@@ -38,6 +42,7 @@ final readonly class ParkedAgentSignal
      * @param float $parkedAt Unix seconds the hold began at, which the release line reports the age from
      * @param bool $awaitingPlacement Whether the wait is for a placement verdict rather than a start here
      * @param bool $localOnly Whether this frame already crossed the mesh, so it is never placed again
+     * @param bool $awaitingResume Whether the frame is a connection's close waiting for the protected-mode lift to bring its agent back
      */
     public function __construct(
         public SignalDTO $signal,
@@ -45,6 +50,7 @@ final readonly class ParkedAgentSignal
         public float $parkedAt,
         public bool $awaitingPlacement,
         public bool $localOnly = false,
+        public bool $awaitingResume = false,
     ) {
     }
 
@@ -53,6 +59,28 @@ final readonly class ParkedAgentSignal
      */
     public function withoutPlacementWait(): self
     {
-        return new self($this->signal, $this->agentId, $this->parkedAt, false, $this->localOnly);
+        return new self(
+            $this->signal,
+            $this->agentId,
+            $this->parkedAt,
+            false,
+            $this->localOnly,
+            $this->awaitingResume,
+        );
+    }
+
+    /**
+     * @return self The same hold, waiting on a start here rather than on the lift
+     */
+    public function withoutResumeWait(): self
+    {
+        return new self(
+            $this->signal,
+            $this->agentId,
+            $this->parkedAt,
+            $this->awaitingPlacement,
+            $this->localOnly,
+            false,
+        );
     }
 }

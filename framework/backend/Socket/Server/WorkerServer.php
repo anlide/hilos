@@ -2121,6 +2121,32 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
+     * Whether the freeze in flight stopped this agent on this node and the lift has not asked for it back yet.
+     *
+     * Read off the remembered set and the replay queue, the two places such an agent stands between
+     * its stop and its turn in the walk. A stop over an unfinished lift moves the queue back into the
+     * set (stopAgentsForProtectedMode()), so the answer holds through it; the initiator and the mail
+     * pool are never stopped, so never here; once the walk has asked for the agent it is an ordinary
+     * start under way. The master asks this to hold a connection's close for the agent rather than
+     * drop it (HIL-1208).
+     *
+     * @param string $agentType Agent type to ask about
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return bool Whether that agent still awaits the protected-mode lift
+     */
+    public function awaitsProtectedModeResume(string $agentType, ?string $agentIndex): bool
+    {
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+        foreach ([...$this->protectedModeStoppedAgents, ...($this->protectedModeResumeQueue ?? [])] as $frozen) {
+            if ($this->buildAgentId($frozen->agent->type, $frozen->agent->index) === $agentId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Asks for the agents {@see stopAgentsForProtectedMode()} stopped for this freeze to be brought
      * back, when it lifts ({@see ProtectedModeAgentFreezer}).
      *

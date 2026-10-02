@@ -368,6 +368,124 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
+     * A close for an agent the freeze stopped is held, and the hold does not start that agent.
+     *
+     * The walk is about to put the agent back into the worker that still keeps the tab, so a start
+     * from this frame would seat it somewhere else (HIL-1208).
+     */
+    public function testAConnectionCloseForAnAgentTheFreezeStoppedIsHeldWithoutStartingIt(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->workerServer->awaitingResume = [HeldAgentSignalTestRouter::FROZEN_AGENT];
+        $this->queueFrozenClose();
+
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->awaitingResume);
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertNotContains(
+            HeldAgentSignalTestRouter::FROZEN_AGENT,
+            $manager->workerServer->startedAgentTypes,
+        );
+    }
+
+    /**
+     * Once the lift has asked for the agent, the held close waits on the start report and then goes out.
+     */
+    public function testTheHeldCloseReachesTheAgentOnceTheLiftBringsItBack(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->workerServer->awaitingResume = [HeldAgentSignalTestRouter::FROZEN_AGENT];
+        $this->queueFrozenClose();
+        $manager->drainQueue();
+
+        $manager->workerServer->awaitingResume = [];
+        $manager->workerServer->seatAgentUnderWay(HeldAgentSignalTestRouter::FROZEN_AGENT);
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertFalse($manager->heldFrames()[0]->awaitingResume);
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::FROZEN_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [HeldAgentSignalTestRouter::FROZEN_CLOSE . '@' . HeldAgentSignalTestRouter::FROZEN_AGENT],
+            $manager->workerServer->deliveries,
+        );
+    }
+
+    /**
+     * A lift that passes the agent without bringing it back here drops the held close.
+     */
+    public function testAHeldCloseIsDroppedWhenTheLiftDoesNotBringItsAgentBack(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->workerServer->awaitingResume = [HeldAgentSignalTestRouter::FROZEN_AGENT];
+        $this->queueFrozenClose();
+        $manager->drainQueue();
+
+        $manager->workerServer->awaitingResume = [];
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame([], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * Any frame but a close still reaches the delivery that drops it, the way a refused start always has.
+     */
+    public function testAnyOtherFrameForAFrozenAgentIsStillNotHeld(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->workerServer->awaitingResume = [HeldAgentSignalTestRouter::FROZEN_AGENT];
+        $this->queuePush(HeldAgentSignalTestRouter::FROZEN_PUSH);
+
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame(
+            [HeldAgentSignalTestRouter::FROZEN_PUSH . '@' . HeldAgentSignalTestRouter::FROZEN_AGENT],
+            $manager->workerServer->deliveries,
+        );
+    }
+
+    /**
+     * A close that already crossed the mesh is held with that mark, and the release delivers it here.
+     */
+    public function testACloseFromAnotherNodeForAFrozenAgentIsHeldWithTheMeshMark(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->workerServer->awaitingResume = [HeldAgentSignalTestRouter::FROZEN_AGENT];
+
+        $manager->deliverSignalToAgent(
+            HeldAgentSignalTestRouter::FROZEN_AGENT,
+            null,
+            $this->frozenCloseSignal(),
+        );
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->localOnly);
+        $this->assertTrue($manager->heldFrames()[0]->awaitingResume);
+
+        $manager->workerServer->awaitingResume = [];
+        $manager->workerServer->seatAgentUnderWay(HeldAgentSignalTestRouter::FROZEN_AGENT);
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertFalse($manager->heldFrames()[0]->awaitingResume);
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::FROZEN_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [HeldAgentSignalTestRouter::FROZEN_CLOSE . '@' . HeldAgentSignalTestRouter::FROZEN_AGENT],
+            $manager->workerServer->deliveries,
+        );
+        $this->assertSame([], $manager->placedReleases);
+    }
+
+    /**
      * An agent no node is known to host is waited for too, instead of answered at once - and it
      * is the one wait a placement verdict ends. The answer is the one a dropped subscribe always
      * got, only later, and the frame is not held a second time.
@@ -994,6 +1112,33 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     /**
      * @param string $name Signal name the router answers with its case's destinations
      */
+    /**
+     * Queues a connection close the router addresses to the frozen agent.
+     */
+    private function queueFrozenClose(): void
+    {
+        $signal = $this->frozenCloseSignal();
+        Hilos::$sr->queueSignal(
+            $signal->signalSource,
+            $signal->signalType,
+            $signal->signalName,
+            $signal->data,
+        );
+    }
+
+    /**
+     * @return SignalDTO A connection close named apart from the ordinary close, so that case stays as it is
+     */
+    private function frozenCloseSignal(): SignalDTO
+    {
+        return new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::CONNECTION_CLOSE),
+            new SignalName(HeldAgentSignalTestRouter::FROZEN_CLOSE),
+            new WebSocketCloseSignalDTO(self::ACCEPT_KEY),
+        );
+    }
+
     private function queuePush(string $name): void
     {
         Hilos::$sr->queueSignal(
@@ -1177,6 +1322,7 @@ final class HeldAgentSignalTestManager extends DaemonManager
                 $parked->parkedAt - $seconds,
                 $parked->awaitingPlacement,
                 $parked->localOnly,
+                $parked->awaitingResume,
             ),
             $held->getValue($this),
         ));
@@ -1233,6 +1379,8 @@ final class HeldAgentSignalTestRouter extends SignalRouter
 
     public const string FROZEN_PUSH = 'frozen_push';
 
+    public const string FROZEN_CLOSE = 'frozen_close';
+
     public const string COLD_COMMAND = 'cold:command';
 
     public const string COLD_HTTP_PATH = '/_test/cold';
@@ -1278,7 +1426,7 @@ final class HeldAgentSignalTestRouter extends SignalRouter
                 => [new AgentDestination(self::COLD_AGENT)],
             self::SHARED_PUSH => [new AgentDestination(self::UP_AGENT), new AgentDestination(self::COLD_AGENT)],
             self::UP_PUSH => [new AgentDestination(self::UP_AGENT)],
-            self::FROZEN_PUSH => [new AgentDestination(self::FROZEN_AGENT)],
+            self::FROZEN_PUSH, self::FROZEN_CLOSE => [new AgentDestination(self::FROZEN_AGENT)],
             self::UNPLACED_PAGE => [new UnknownAgentDestination(self::COLD_AGENT)],
             self::UNPLACED_UP_PAGE => [new UnknownAgentDestination(self::UP_AGENT)],
             default => [],
@@ -1324,6 +1472,9 @@ final class HeldAgentSignalTestWorkerServer extends WorkerServer
     /** @var list<string> Deliveries as `<signal name>@<agent type>`, in order */
     public array $deliveries = [];
 
+    /** @var list<string> Agent types the freeze stopped and the lift has not asked back yet */
+    public array $awaitingResume = [];
+
     /** Roster the stand-in start registers its record in */
     private AgentManagerDaemon $roster;
 
@@ -1343,7 +1494,27 @@ final class HeldAgentSignalTestWorkerServer extends WorkerServer
             return;
         }
 
+        $this->seatAgentUnderWay($agentType);
+    }
+
+    /**
+     * Seats an agent the way a start under way does, including one the freeze would refuse to start.
+     *
+     * @param string $agentType Agent type to seat
+     */
+    public function seatAgentUnderWay(string $agentType): void
+    {
         $this->roster->addAgent($agentType, new HeldAgentSignalTestAgentDaemon(), 1, false);
+    }
+
+    /**
+     * @param string $agentType Agent type to ask about
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return bool Whether the fixture says that agent still awaits the lift
+     */
+    public function awaitsProtectedModeResume(string $agentType, ?string $agentIndex): bool
+    {
+        return in_array($agentType, $this->awaitingResume, true);
     }
 
     /**
