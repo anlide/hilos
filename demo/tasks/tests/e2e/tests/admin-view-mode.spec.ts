@@ -16,8 +16,9 @@ import {
 // routes do not refuse that viewer on the client. On every admin screen of the
 // account side the viewer reads one strip saying the screen may be looked at and
 // not changed, and what the server keeps from them reads as one mark, "Hidden".
-// The screens of the operations side live in the ecommerce-shop demo (HIL-1273);
-// the live grant and revoke are proven by the React shell's unit and by chat.
+// The screens of the operations side live in the ecommerce-shop demo (its
+// admin-view-mode.spec.ts); the live grant and revoke are proven by the React
+// shell's unit and by chat.
 //
 // The lever is node-wide; every test here leaves it off, failed or not.
 

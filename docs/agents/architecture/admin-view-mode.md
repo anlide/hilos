@@ -548,18 +548,35 @@ flip is opened again to learn it. The operations sections carry their viewer cas
 in binance-btc-tracker
 ([../frontend/testing-strategy.md](../frontend/testing-strategy.md), "Which demo carries a spec"),
 where the lever is the same `setAdminViewMode()` of
-`demo/binance-btc-tracker/tests/e2e/helpers/adminViewMode.ts`. How the viewer's
-e2e is laid out across the three frontends is HIL-1273's
-(not in the code yet — HIL-1273).
+`demo/binance-btc-tracker/tests/e2e/helpers/adminViewMode.ts`.
+
+Where every demo carries its viewer scenarios, and the refusals that run beside
+them with the mode off, is the table below (HIL-1273). A spec is named by its
+file under `demo/<demo>/tests/e2e/tests/`; every demo that turns the mode on
+carries its own copy of the lever in `tests/e2e/helpers/adminViewMode.ts`.
+
+**Viewer scenarios by demo.**
+
+| Demo | Kit | Side | Looks (mode on) | Refused (mode off) |
+|---|---|---|---|---|
+| chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/app/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `auth` (sign-in methods), `step-up`, `second-factor`, `legal-admin` (the Legal setting window), `bots`, `moderator`, `account-merge` (the merge window) | `admin-view-mode`, its first test (no gear while the mode is off) |
+| binance-btc-tracker | Vue | operations | `settings`, `backup`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card) | `auth` (the surface in place of an admin page), `admin-gating` (the people page), `backup` (the backup page) |
+| tasks | React | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window) | `auth`, `a11y` (no gear) |
+| ecommerce-shop | React | operations | `admin-view-mode` (the strip on the operations screens: settings, users, backup, maintenance) | `auth`, `users` |
+| polls | Angular | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window) | `auth`, `a11y` (no gear) |
+| online-testing | Angular | operations | `admin-view-mode` (the strip on the operations screens: settings, users, maintenance and the six log screens) | `auth`, `users` (the refusal and the revoked grant) |
 
 The React and Angular kits carry the viewer cases of their primitives and of
 every section as units (`framework/frontend/react/test/`,
-`framework/frontend/angular/test/`), mirroring the Vue ones; a guest's gear, the
-strip on the admin screens, the mark on the acceptances and the legal setting
-window are an e2e of the demo of each kit
+`framework/frontend/angular/test/`), mirroring the Vue ones. A guest's gear, the
+strip on the account screens, the mark on the acceptances and the legal setting
+window are an e2e of the account demo of each kit
 (`demo/tasks/tests/e2e/tests/admin-view-mode.spec.ts`,
-`demo/polls/tests/e2e/tests/admin-view-mode.spec.ts`), with the lever copied
-into its `tests/e2e/helpers/adminViewMode.ts`.
+`demo/polls/tests/e2e/tests/admin-view-mode.spec.ts`); the strip on the
+operations screens is an e2e of its operations demo
+(`demo/ecommerce-shop/tests/e2e/tests/admin-view-mode.spec.ts`,
+`demo/online-testing/tests/e2e/tests/admin-view-mode.spec.ts`). Each of the four
+copies the lever into its own `tests/e2e/helpers/adminViewMode.ts`.
 
 The log takeouts carry their viewer case as a unit of the rotations page
 (`framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.test.ts`) and not
@@ -597,8 +614,10 @@ and not as an e2e: a viewer receives the presets frame with masked fields,
 cards are rendered disabled, and none of them is lit up (HIL-1255).
 
 The people section carries its viewer case in
-`demo/chat/tests/e2e/tests/users.spec.ts` (HIL-1263; moving with the file under
-HIL-1219).
+`demo/binance-btc-tracker/tests/e2e/tests/users.spec.ts` (HIL-1263, laid out by
+HIL-1273). Its merge window is the account side and binance-btc-tracker wires no
+merge, so that window's viewer case is
+`demo/chat/tests/e2e/tests/account-merge.spec.ts`.
 
 The security section carries its viewer cases as units of six pages
 (`framework/frontend/vue/src/admin/security/HilosSecuritySignInMethodsPage.test.ts`,

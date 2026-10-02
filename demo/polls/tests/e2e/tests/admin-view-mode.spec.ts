@@ -13,12 +13,12 @@ import {
 // HIL-1272: the Angular shell reads the node's admin view mode from the session
 // response, as the Vue one does (HIL-1253, HIL-1260): the gear is drawn for a
 // viewer who may look — a guest without an account included — and the admin
-// routes do not refuse that viewer on the client. On every admin screen polls
-// mounts the viewer reads one strip saying the screen may be looked at and not
-// changed, and what the server keeps from them reads as one mark, "Hidden". The
-// screens of the operations side stand here until they move to online-testing
-// (HIL-1226) and the viewer specs are laid out across the demos (HIL-1273); the
-// live grant and revoke are proven by the Angular shell's unit and by chat.
+// routes do not refuse that viewer on the client. On every admin screen of the
+// account side the viewer reads one strip saying the screen may be looked at and
+// not changed, and what the server keeps from them reads as one mark, "Hidden".
+// The screens of the operations side live in the online-testing demo (its
+// admin-view-mode.spec.ts, HIL-1273); the live grant and revoke are proven by the
+// Angular shell's unit and by chat.
 //
 // The lever is node-wide; every test here leaves it off, failed or not.
 
@@ -26,22 +26,9 @@ import {
 const VIEW_MODE_STRIP_TEXT =
   'View mode · You can look around, but not change anything.'
 
-/**
- * The admin screens polls mounts that take no parameter of their own: every
- * admin page of demo/polls/backend/Hilos.php (PAGES) whose route has no
- * required parameter.
- */
-const ADMIN_SCREENS = [
+/** The admin screens of the account side that polls mounts. */
+const ACCOUNT_SCREENS = [
   '/hilos',
-  '/hilos/settings',
-  '/hilos/users',
-  '/hilos/maintenance',
-  '/hilos/logs',
-  '/hilos/logs/keys',
-  '/hilos/logs/workers',
-  '/hilos/logs/rotations',
-  '/hilos/logs/settings',
-  '/hilos/logs/view',
   '/hilos/security',
   '/hilos/security/sign-in-methods',
   '/hilos/security/2fa',
@@ -76,7 +63,7 @@ test('a guest without an account sees the admin gear and opens the admin section
   await expect(page.getByTestId('page-error')).toHaveCount(0)
 })
 
-test('a guest reads the view-mode strip on every admin screen and the acceptances as hidden', async ({
+test('a guest reads the view-mode strip on the account screens and the acceptances as hidden', async ({
   browser,
   page,
 }) => {
@@ -102,7 +89,7 @@ test('a guest reads the view-mode strip on every admin screen and the acceptance
   )
   await expect(page.getByTestId('view-mode-banner')).toHaveCount(0)
 
-  for (const path of ADMIN_SCREENS) {
+  for (const path of ACCOUNT_SCREENS) {
     await gotoPage(page, path, PAGE_READY)
     const strip = page.getByTestId('view-mode-banner')
     await expect(strip).toBeVisible()

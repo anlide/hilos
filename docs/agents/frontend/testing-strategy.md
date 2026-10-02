@@ -152,7 +152,8 @@ screen (`/hilos/app/users`, its own table), which binance-btc-tracker does not
 have. The test that switches on the confirmation before removing rights sits in
 `step-up.spec`: its subject is the switch, and the switch lives in the Security
 Center, on the account side. `admin-view-mode.spec` is the shell's gear over
-chat's screen; where the view-mode e2e lie after the moves is HIL-1273.
+chat's screen; where every viewer e2e lies is the table in
+[../architecture/admin-view-mode.md](../architecture/admin-view-mode.md), "Tests".
 
 The old demos switch nothing off — only the spec moves; the new demo switches
 on what it tests, plus sign-in.

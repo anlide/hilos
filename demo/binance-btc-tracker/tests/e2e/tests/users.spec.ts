@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
+import { setAdminViewMode } from '../helpers/adminViewMode'
 import { gotoPage } from '../helpers/page'
 import {
   clickSubmit,
@@ -418,4 +419,80 @@ test("shows a person's standing on the card and in the takeover strip", async ({
   } finally {
     await personContext.close()
   }
+})
+
+// The framework people section under admin view mode (HIL-1263): a viewer — a guest
+// included — opens every window of the person card directly, without the confirmation
+// step, and every mutation control stands disabled by the mode. The takeover is one of
+// the card's windows since HIL-1170; the users list carries none. The merge window is
+// not this demo's: binance-btc-tracker wires no account merge (backend/Hilos.php:112);
+// the viewer case of that window is chat's account-merge.spec.ts.
+test.describe('the people section in the admin view mode', () => {
+  test.afterEach(() => setAdminViewMode(false))
+
+  test("a guest opens every window of a person's card and has nothing to send from it", async ({
+    browser,
+    page,
+  }) => {
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    const userAContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+    })
+    const userBContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+    })
+    const userAPage = await userAContext.newPage()
+    const userBPage = await userBContext.newPage()
+
+    try {
+      const { userId: userAId } = await signUpPerson(userAPage)
+      const { userId: userBId } = await signUpPerson(userBPage)
+
+      await setAdminViewMode(true)
+
+      // 1. User card: the takeover window
+      await gotoPage(page, `/hilos/user/${userBId}`)
+      await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
+      await expect(
+        page.getByTestId('hilos-user-impersonate-step-up'),
+      ).toHaveCount(0)
+      const impersonateConfirm = page.getByTestId(
+        'hilos-user-impersonate-confirm',
+      )
+      await expect(impersonateConfirm).toBeDisabled()
+      await expect(impersonateConfirm).toHaveAttribute(
+        'aria-describedby',
+        /(^| )hilos-view-mode-strip-text( |$)/,
+      )
+      await clickSubmit(page.getByTestId('hilos-user-impersonate-cancel'))
+
+      // 2. User card: lifecycle modals (admin, block, deletion)
+      await gotoPage(page, `/hilos/user/${userAId}`)
+      for (const key of ['admin', 'block', 'deletion'] as const) {
+        await clickSubmit(page.getByTestId(`hilos-user-${key}-open`))
+        await expect(
+          page.getByTestId('hilos-user-lifecycle-step-up'),
+        ).toHaveCount(0)
+        const lifecycleConfirm = page.getByTestId(
+          'hilos-user-lifecycle-confirm',
+        )
+        await expect(lifecycleConfirm).toBeDisabled()
+        await expect(lifecycleConfirm).toHaveAttribute(
+          'aria-describedby',
+          /(^| )hilos-view-mode-strip-text( |$)/,
+        )
+        await clickSubmit(page.getByTestId('hilos-user-lifecycle-cancel'))
+      }
+
+      // 3. User card: rename modal
+      await clickSubmit(page.getByTestId('hilos-user-edit'))
+      await expect(page.getByTestId('hilos-user-save')).toBeDisabled()
+      await clickSubmit(page.getByTestId('hilos-user-cancel'))
+    } finally {
+      await userAContext.close()
+      await userBContext.close()
+    }
+  })
 })
