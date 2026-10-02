@@ -118,6 +118,16 @@ return [
         'holdsDatabase' => true,
     ],
     [
+        'id' => 'ecommerce-shop-cluster',
+        'cwd' => 'demo/ecommerce-shop',
+        'composeFile' => 'docker/docker-compose.cluster.yml',
+        'project' => 'hilos-ecommerce-shop-cluster',
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
+    [
         'id' => 'online-testing',
         'cwd' => 'demo/online-testing',
         'composeFile' => 'docker/docker-compose.test.yml',

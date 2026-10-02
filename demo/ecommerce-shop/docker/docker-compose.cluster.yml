@@ -1,50 +1,54 @@
-# Multi-node daemon-cluster e2e stack (HIL-185).
+# The cluster stand of ecommerce-shop (HIL-1216): one master and two slaves of unequal room
+# on one database.
 #
 # One shared MariaDB carrying ONE schema for the whole stand (HIL-712) — the model
 # Hilos is built on, and what makes "node A writes a row, node B reads it" sayable —
-# five daemon nodes that roll that schema out themselves as they start together,
+# three daemon nodes that roll that schema out themselves as they start together,
 # under the rollout claim in the database (HIL-1228), on a dedicated bridge with
-# static IPs — three masters (the consensus/master-set) and two data-plane slaves
-# (the placement targets) — and a long-lived CLI container the shared cluster harness
-# `docker exec`s to run `test:cluster:inspect` against each node. Node role, identity, capabilities,
-# master set, and timeouts all come from CLUSTER_* env, so the same image is a
-# master or a data-plane node purely by configuration.
+# static IPs — one master, the whole master set, so it leads for as long as it lives
+# (placement and failover are proved where the leader is stable, the owner's word,
+# 2026-09-27), and two data-plane slaves (the placement targets) — and a long-lived
+# CLI container the shared cluster harness `docker exec`s to run `test:cluster:inspect`
+# against each node. Node role, identity, capabilities, master set, and timeouts all
+# come from CLUSTER_* env, so the same image is a master or a data-plane node purely
+# by configuration.
+#
+# A compose project of its own, beside the demo's local and test stacks rather than inside
+# one of them: the demo's e2e steps take their whole project down when they start, and a
+# fleet inside it would fall in the middle of its matrix. The nodes run the whole demo —
+# every agent it registers, the framework's cluster probes among them — and publish nothing
+# on the host: the harness reaches them through the cli container.
 
-name: hilos-cluster
+name: hilos-ecommerce-shop-cluster
 
 # What the shared cluster harness (framework/docker/cluster/cluster.py) reads besides the services
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
 x-hilos-cluster:
-  cli: cluster-cli
-  stranger: x1
-  # Empty: the matrix this stand carried has moved whole to the cluster stands of
-  # binance-btc-tracker, ecommerce-shop and online-testing, so the harness refuses this stand
-  # before raising it and only the demo's unit suite still runs (test:cluster:all). The block,
-  # the stand and its scripts leave with demo/cluster (HIL-1218).
-  scenarios: []
+  cli: ecommerce-shop-cluster-cli
+  scenarios: [3, 4, 6, 9, 12, 14, 16, 18, 19]
 
 x-node-base: &node-base
   build: .
   restart: "no"
   command: ["php", "backend/Bootstrap/docker.php"]
   depends_on:
-    cluster-mysql:
+    ecommerce-shop-cluster-mysql:
       condition: service_healthy
 
 x-node-env: &node-env
   # APP_ENV is required of every node (HIL-566), and the value is `dev`, not `test`:
   # `dev` is not production-like, so the nodes admit the test-only commands this
-  # harness drives. Moving the nodes to `test` is a separate question for this
-  # harness; only the cluster-cli container runs as APP_ENV=test today, and since
-  # HIL-712 no env file can point a container of this stand at a database of its
-  # own anyway — every one of them names the same DB_DATABASE.
+  # harness drives, and the framework's cluster probes start only on a clustered
+  # node of a non-production environment. Only the cli container runs as
+  # APP_ENV=test, and no env file can point a container of this stand at a database
+  # of its own anyway — every one of them names the same DB_DATABASE.
   APP_ENV: dev
-  DB_HOST: cluster-mysql
+  DB_HOST: ecommerce-shop-cluster-mysql
   DB_PORT: "3306"
   # One schema for the whole stand, nodes and CLI alike: the cluster model is
   # "one database per cluster", and a node that cannot see its neighbour's row
   # cannot be asked about it (HIL-712).
-  DB_DATABASE: hilos-demo-cluster
+  DB_DATABASE: hilos-demo-ecommerce-shop-cluster
   DB_USERNAME: hilos
   DB_PASSWORD: hilos_pass
   HTTP_STATUS_HOST: 0.0.0.0
@@ -53,6 +57,10 @@ x-node-env: &node-env
   WORKER_COMM_PORT: "8091"
   COMMAND_HOST: 0.0.0.0
   COMMAND_PORT: "8094"
+  # The demo has pages, so a node refuses to start without its WebSocket listener; bound in the
+  # container at the port every demo uses, and published nowhere - no browser reaches this stand.
+  WEBSOCKET_HOST: 0.0.0.0
+  WEBSOCKET_PORT: "8092"
   # Every node addresses itself, so an operator command run with `docker exec` in
   # any node's container (admin:create / admin:grant / admin:revoke /
   # protected-mode:open, and the harness's test:cluster:inspect) reaches that
@@ -61,7 +69,7 @@ x-node-env: &node-env
   CLUSTER_ENABLED: "true"
   CLUSTER_PEER_HOST: 0.0.0.0
   CLUSTER_PEER_PORT: "8095"
-  CLUSTER_MASTER_SET: "m1,m2,m3"
+  CLUSTER_MASTER_SET: "m1"
   # CLUSTER_SEEDS is set PER NODE below, each excluding the node's own advertise
   # address: a node must never dial itself (the self-link collapse tears the daemon
   # down). Gossip admits every other peer from any one live seed.
@@ -74,17 +82,17 @@ x-node-env: &node-env
   CLUSTER_SLAVE_WORK_GRACE_MS: "4000"
   # Every link between nodes is mutual TLS (HIL-1034): each node trusts the stand's authority
   # and presents its own certificate, set per node below as CLUSTER_TLS_CERT_FILE. The files in
-  # docker/tls/ are stand fixtures issued by the framework's cluster:tls:* commands; how to
-  # reissue them is in demo/cluster/README.md.
+  # docker/tls/ are stand fixtures issued by the framework's cluster:tls:* commands against an
+  # authority of this stand alone; how to reissue them is in demo/ecommerce-shop/README.md.
   CLUSTER_TLS_CA_FILE: /app/docker/tls/ca.pem
   WORKER_MIN_REGULAR: "1"
   WORKER_MAX_REGULAR: "1"
   WORKER_MIN_MONOPOLISTIC: "1"
 
 services:
-  cluster-mysql:
+  ecommerce-shop-cluster-mysql:
     image: mariadb:11.4
-    container_name: cluster-mysql
+    container_name: ecommerce-shop-cluster-mysql
     # How the runner's artifact collector finds this container: the stands spell their
     # database service several ways, so it is asked for by role rather than guessed at by
     # name (HIL-841).
@@ -92,7 +100,7 @@ services:
       hilos.role: database
     environment:
       MYSQL_ROOT_PASSWORD: hilos_root_pass
-      MYSQL_DATABASE: hilos-demo-cluster
+      MYSQL_DATABASE: hilos-demo-ecommerce-shop-cluster
       MYSQL_USER: hilos
       MYSQL_PASSWORD: hilos_pass
       TZ: UTC
@@ -109,14 +117,14 @@ services:
       start_period: 10s
     networks:
       cluster-net:
-        ipv4_address: 10.185.0.10
+        ipv4_address: 10.222.0.10
 
-  cluster-m1:
+  ecommerce-shop-cluster-m1:
     <<: *node-base
-    container_name: cluster-m1
+    container_name: ecommerce-shop-cluster-m1
     # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE:
-    # the five nodes share one schema (HIL-712), the collector takes the first container
-    # wearing the label, and putting it on all five would make which of them answers a
+    # the three nodes share one schema (HIL-712), the collector takes the first container
+    # wearing the label, and putting it on all three would make which of them answers a
     # matter of the order docker happened to list them in.
     labels:
       hilos.role: app
@@ -127,83 +135,43 @@ services:
       CLUSTER_NODE_ROLE: master
       # Empty on purpose: the framework gates placement on what a node DECLARES, never on its
       # role (HIL-445). An empty string declares no capacity, and a node with no key=value
-      # accepts NO placed work by rule (HIL-448) - no fleet member, no ballast, nothing the
-      # policy places. The per-node db_probe replica (AgentScope::NODE) is not placed and needs
-      # no capacity, so it still runs here. The split is what scenarios 3, 14 and 18 are
-      # written against. The decision and what follows from it:
+      # accepts NO placed work by rule (HIL-448) - no fleet member, no ballast, no policy-placed
+      # agent of this demo, nothing the policy places. The per-node agents (AgentScope::NODE) -
+      # the auth throttle among them - are not placed and need no capacity, so they still run
+      # here. The decision and what follows from it:
       # docs/agents/architecture/daemon-lifecycle.md, "Who may carry placed work (HIL-445)"
       # and "Consumable capacity and agent cost (HIL-448)".
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.185.0.11:8095"
-      CLUSTER_SEEDS: "10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.222.0.11:8095"
+      CLUSTER_SEEDS: "10.222.0.14:8095,10.222.0.15:8095"
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
-      - ../data/logs/m1:/var/log/hilos
+      - ../data/logs-cluster/m1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.185.0.11
+        ipv4_address: 10.222.0.11
 
-  cluster-m2:
+  ecommerce-shop-cluster-s1:
     <<: *node-base
-    container_name: cluster-m2
-    environment:
-      <<: *node-env
-      CLUSTER_NODE_ID: m2
-      CLUSTER_TLS_CERT_FILE: /app/docker/tls/m2.pem
-      CLUSTER_NODE_ROLE: master
-      # Empty for the same reason m1's is; see the comment there.
-      CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.185.0.12:8095"
-      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
-      WORKER_MIN_MONOPOLISTIC: "0"
-    volumes:
-      - ..:/app
-      - ../../../composer.json:/hilos/composer.json:ro
-      - ../../../composer.lock:/hilos/composer.lock:ro
-      - ../../../framework:/hilos/framework:ro
-      - ../data/logs/m2:/var/log/hilos
-    networks:
-      cluster-net:
-        ipv4_address: 10.185.0.12
-
-  cluster-m3:
-    <<: *node-base
-    container_name: cluster-m3
-    environment:
-      <<: *node-env
-      CLUSTER_NODE_ID: m3
-      CLUSTER_TLS_CERT_FILE: /app/docker/tls/m3.pem
-      CLUSTER_NODE_ROLE: master
-      # Empty for the same reason m1's is; see the comment there.
-      CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.185.0.13:8095"
-      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.14:8095,10.185.0.15:8095"
-      WORKER_MIN_MONOPOLISTIC: "0"
-    volumes:
-      - ..:/app
-      - ../../../composer.json:/hilos/composer.json:ro
-      - ../../../composer.lock:/hilos/composer.lock:ro
-      - ../../../framework:/hilos/framework:ro
-      - ../data/logs/m3:/var/log/hilos
-    networks:
-      cluster-net:
-        ipv4_address: 10.185.0.13
-
-  cluster-s1:
-    <<: *node-base
-    container_name: cluster-s1
+    container_name: ecommerce-shop-cluster-s1
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s1
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/s1.pem
       CLUSTER_NODE_ROLE: slave
+      # `worker` is the tag the probe fleet asks of its host. The ram is the room scenario 18
+      # fills with the ballast (ram=2 apiece), and what makes the node take placed work at all:
+      # a node that declares no key=value accepts none (HIL-445, rule 4). s2 declares less on
+      # purpose - unequal room shows that the ballast goes by the declared room, not by the head
+      # count. Nothing but the ballast spends ram on this stand: the demo's own agents cost
+      # nothing.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=10"
-      CLUSTER_PEER_ADVERTISE: "10.185.0.14:8095"
-      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.13:8095,10.185.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.222.0.14:8095"
+      CLUSTER_SEEDS: "10.222.0.11:8095,10.222.0.15:8095"
       # Fleet members share these regular workers. A member's synthetic job blocks its
       # worker, so several of them keep the whole fleet ticking even when one node holds
       # it all after a failover.
@@ -214,22 +182,23 @@ services:
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
-      - ../data/logs/s1:/var/log/hilos
+      - ../data/logs-cluster/s1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.185.0.14
+        ipv4_address: 10.222.0.14
 
-  cluster-s2:
+  ecommerce-shop-cluster-s2:
     <<: *node-base
-    container_name: cluster-s2
+    container_name: ecommerce-shop-cluster-s2
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s2
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/s2.pem
       CLUSTER_NODE_ROLE: slave
+      # Less room than s1 on purpose; see the comment there.
       CLUSTER_NODE_CAPABILITIES: "worker,ram=4"
-      CLUSTER_PEER_ADVERTISE: "10.185.0.15:8095"
-      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095"
+      CLUSTER_PEER_ADVERTISE: "10.222.0.15:8095"
+      CLUSTER_SEEDS: "10.222.0.11:8095,10.222.0.14:8095"
       # Regular workers the fleet members share on this node; see s1.
       WORKER_MIN_REGULAR: "5"
       WORKER_MAX_REGULAR: "5"
@@ -238,59 +207,29 @@ services:
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
-      - ../data/logs/s2:/var/log/hilos
+      - ../data/logs-cluster/s2:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 10.185.0.15
-
-  # A stranger on the cluster network (HIL-1034): a node whose certificate is signed by an
-  # authority the cluster does not trust. It passes its own start-up check - its trust file is
-  # that other authority - and dials every node, and every link is refused on both ends:
-  # scenario 17 asserts that nobody admits it. Profile `intruder`, so it never comes up with
-  # the cluster; the shared harness's `stranger up|down` drives it. Not in CLUSTER_MASTER_SET.
-  cluster-x1:
-    <<: *node-base
-    container_name: cluster-x1
-    profiles:
-      - intruder
-    environment:
-      <<: *node-env
-      CLUSTER_NODE_ID: x1
-      CLUSTER_TLS_CERT_FILE: /app/docker/tls/x1.pem
-      CLUSTER_TLS_CA_FILE: /app/docker/tls/intruder-ca.pem
-      CLUSTER_NODE_ROLE: slave
-      CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "10.185.0.16:8095"
-      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
-    volumes:
-      - ..:/app
-      - ../../../composer.json:/hilos/composer.json:ro
-      - ../../../composer.lock:/hilos/composer.lock:ro
-      - ../../../framework:/hilos/framework:ro
-      - ../data/logs/x1:/var/log/hilos
-    networks:
-      cluster-net:
-        ipv4_address: 10.185.0.16
+        ipv4_address: 10.222.0.15
 
   # Long-lived CLI container the harness `docker exec`s for test:cluster:inspect,
-  # and the one-shot runner for composer/phpunit (profile cli, so it never joins a
-  # cluster bring-up implicitly). Deliberately WITHOUT HILOS_DAEMON_HOST: unlike a
-  # demo's cli service, which faces one daemon, this one addresses five nodes in
-  # turn, so the caller names the node (`docker exec -e HILOS_DAEMON_HOST=<ip>`):
-  # the shared harness names the node per call.
-  cluster-cli:
+  # and the one-shot runner for the harness's own chores (profile cli, so it never
+  # joins a cluster bring-up implicitly). Deliberately WITHOUT HILOS_DAEMON_HOST:
+  # unlike the demo's other cli services, which face one daemon, this one addresses
+  # three nodes in turn, so the caller names the node (`docker exec -e
+  # HILOS_DAEMON_HOST=<ip>`): the shared harness names the node per call.
+  ecommerce-shop-cluster-cli:
     build: .
-    container_name: cluster-cli
+    container_name: ecommerce-shop-cluster-cli
     working_dir: /app
     command: ["sleep", "infinity"]
     environment:
       APP_ENV: test
-      DB_HOST: cluster-mysql
+      DB_HOST: ecommerce-shop-cluster-mysql
       DB_PORT: "3306"
       # Not inherited: this service carries no anchor. Same schema as the nodes
-      # (HIL-712) — the cluster unit suite never touches the database, so sharing
-      # it costs nothing.
-      DB_DATABASE: hilos-demo-cluster
+      # (HIL-712).
+      DB_DATABASE: hilos-demo-ecommerce-shop-cluster
       DB_USERNAME: hilos
       DB_PASSWORD: hilos_pass
       COMMAND_PORT: "8094"
@@ -300,7 +239,7 @@ services:
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
     depends_on:
-      cluster-mysql:
+      ecommerce-shop-cluster-mysql:
         condition: service_healthy
     profiles:
       - cli
@@ -309,11 +248,11 @@ services:
 
 volumes:
   mysql-cluster-data:
-    name: hilos-cluster-mysql-data
+    name: hilos-ecommerce-shop-cluster-mysql-data
 
 networks:
   cluster-net:
-    name: hilos-cluster-net
+    name: hilos-ecommerce-shop-cluster-net
     driver: bridge
     ipam:
       config:
@@ -324,4 +263,4 @@ networks:
         # race: any other stack whose network came up first may already hold the
         # range, and then the whole cluster fails to start with "Pool overlaps with
         # other one on this address space". 10.0.0.0/8 is never auto-assigned.
-        - subnet: 10.185.0.0/16
+        - subnet: 10.222.0.0/16

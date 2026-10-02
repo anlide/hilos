@@ -48,8 +48,7 @@
         "test:cluster:status": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml status",
         "test:cluster:scenarios": "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml scenarios",
         "test:cluster:all": [
-            "@test:unit",
-            "python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml scenarios"
+            "@test:unit"
         ]
     },
     "config": {

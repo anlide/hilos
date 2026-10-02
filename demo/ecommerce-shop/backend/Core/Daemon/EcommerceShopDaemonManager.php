@@ -14,6 +14,7 @@ use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\BuildTimestampModule;
 use Hilos\Core\Daemon\Module\DaemonModule;
+use Hilos\Core\Daemon\Module\PeerModule;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Server\CommandServer;
@@ -24,7 +25,7 @@ use Hilos\Socket\Server\ServerInterface;
  * EcommerceShopDaemonManager - Main daemon manager for the ecommerce-shop demo.
  *
  * Extends framework DaemonManager: declares the ecommerce-shop server set (HTTP status, worker,
- * WebSocket) and the build-timestamp module. No cron rules yet.
+ * WebSocket), the cluster peer transport and the build-timestamp module. No cron rules yet.
  */
 final class EcommerceShopDaemonManager extends DaemonManager
 {
@@ -89,7 +90,9 @@ final class EcommerceShopDaemonManager extends DaemonManager
     }
 
     /**
-     * The ecommerce-shop modules: build-timestamp exposure for the handshake welcome frame.
+     * The ecommerce-shop modules: the cluster peer transport, which binds nothing unless the node
+     * is in a cluster - this demo's cluster stand (docker/docker-compose.cluster.yml) is the one
+     * that puts it in one - and build-timestamp exposure for the handshake welcome frame.
      *
      * @param DaemonContext $context Resolved path context
      * @return iterable<DaemonModule> Modules to consider, checked via isActive() before register()
@@ -98,6 +101,7 @@ final class EcommerceShopDaemonManager extends DaemonManager
     protected function modules(DaemonContext $context): iterable
     {
         return [
+            new PeerModule(),
             new BuildTimestampModule($context->frontendDistPath()),
         ];
     }

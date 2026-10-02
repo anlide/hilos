@@ -1601,7 +1601,7 @@ def scenario_18_capacity_is_consumed():
     leader. What each assertion proves:
 
     - s1 holds 5 and s2 holds 2: the spread follows the declared stock (10:4), not the head count.
-      A head count would have put the eight on all five nodes, one or two apiece;
+      A head count would have put the eight on every node;
     - no master holds any: a ballast requires no tag, so the only thing keeping it off a master is
       the rule that a node declaring no capacity accepts no placed work;
     - hilos_probe_ballast:7 has no record, and still has none after the retry interval has
@@ -1609,10 +1609,11 @@ def scenario_18_capacity_is_consumed():
       slaves full there is nowhere left. What should become of such work is HIL-446, not this
       scenario.
 
-    The order is deterministic - s1, s1, s2, s1, s1, then a tie at full load that the head count
-    gives to s2, then s1 - so the 5/2 split does not depend on timing. Placed LAST because the
-    ballasts stay up and hold capacity, and every earlier scenario is written against a stand
-    without them.
+    The split does not depend on the order either: seven fit and seven are placed, and a slave
+    never takes more than its stock - on a stand of a whole demo the head count includes the
+    demo's own agents, so the order in which the slaves fill is the stand's, the 5/2 at the end is
+    not. Placed LAST because the ballasts stay up and hold capacity, and every earlier scenario is
+    written against a stand without them.
     """
     views = wait_converge(ALL_NODES)
     leader = leaders(views)[0]
@@ -2460,20 +2461,24 @@ FLAKY_SKIP = {
     # fleet host, and a partitioned fleet host has its members re-placed onto its neighbour,
     # so the rows it is judged by must be the ones it does NOT own.
     "13 rt partition converges": "P-169: an owner with no claim hands over nothing",
-    # The two below are parked without a cause. Each timed out on branches that never touched
-    # the cluster, and both are about to be rewritten when they move to ecommerce-shop
-    # (HIL-1216) - that rewrite is what pays these loans off. Until then 16 no longer guards
-    # HIL-719 and 19 no longer guards HIL-440.
+    # The two below run on the ecommerce-shop stand now, and both are still parked. The owner's
+    # review of P-441 (2026-09-28) gave paying them off to two pending hotfixes: P-441/1 returns
+    # 19 (every retry it was parked on predates HIL-1162, which fixed exactly that), P-441/2
+    # finds why a recreated node keeps a copy of the fleet statuses it no longer reads and
+    # returns 16. Each is paid off by its line removed and `-- 16` / `-- 19` green on the
+    # ecommerce-shop stand; until then 16 no longer guards HIL-719 and 19 no longer guards
+    # HIL-440.
     #
     # 16 waits for the fleet rows after a recreate and times out at 180s: red in five full
-    # runs over two days and retried in two more, while the snapshot taken after the timeout
-    # shows its only reader holding all ten rows. What is known so far is in P-441.
+    # runs over two days and retried in two more, and the snapshot after the timeout is one and
+    # the same every time: the recreated node reads nothing and owns nothing, yet holds all ten
+    # rows.
     "16 recreated node leaves no phantom fleet":
-        "P-441: fleet rows after a recreate time out; rewritten by HIL-1216",
+        "P-441/2: a recreated node keeps a copy of the fleet rows it no longer reads",
     # 19 waits for the victim to name the agents it lost with the killed worker: retried three
     # times in the same two days, green each time on the second attempt, never red.
     "19 worker death on a live node":
-        "the dead worker's agents are named too late; rewritten by HIL-1216",
+        "P-441/1: parked on retries that all predate HIL-1162",
     # 20 is red on the binance-btc-tracker stand - the first stand of a whole demo - for a defect
     # of the demo, not of the scenario: the auth throttle (AuthThrottleAgent, SCOPE NODE) claims
     # hilosAuthAttempts whole on every node, the leader refuses all of them but one, and which

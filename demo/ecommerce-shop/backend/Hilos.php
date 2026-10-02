@@ -28,6 +28,10 @@ use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Cluster\Probe\ClaimerProbeAgent;
+use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Cluster\Probe\FleetProbeAgent;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -43,6 +47,7 @@ use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
+use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -51,6 +56,9 @@ use Hilos\Runtime\View\Context\RtContext;
  * The smallest complete shape of a project: sign-in by password, an empty home, the empty
  * admin dashboard and the four public footer pages. No admin section is activated yet - each
  * arrives with the leaf that moves its e2e onto this demo.
+ *
+ * Its cluster stand (docker/docker-compose.cluster.yml) runs the framework's fleet, claimer and
+ * ballast probes.
  *
  * Usage:
  * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]->string()
@@ -125,6 +133,14 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
+        // The probes of this demo's cluster stand - scenarios 3, 4, 9, 12, 14, 16 and 19 read the
+        // fleet, 14 stages a second owner of its collection with the claimer, 18 fills the slaves
+        // with the ballast. A probe starts only on a clustered node of a non-production
+        // environment, so this demo on one node, on its Playwright stand and in production carries
+        // the rows and runs none of them (docs/agents/testing.md, "The cluster stands").
+        HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
+        HilosAgentType::HILOS_PROBE_CLAIMER => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_CLAIMER],
+        HilosAgentType::HILOS_PROBE_BALLAST => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_BALLAST],
     ];
 
     /**
@@ -152,6 +168,20 @@ final class Hilos extends HilosFacade
         HilosDbContext::registrationReservations => [
             SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+    ];
+
+    /**
+     * The one runtime collection this demo lets two owners hold - on purpose.
+     *
+     * A receipt, not a permission: the claimer holds the whole status collection while every fleet
+     * member holds its own row, and that is the split scenario 14 of its cluster stand exists to
+     * exercise. Startup would refuse the pair without this row.
+     */
+    public const array SHARED_RT_OWNERS = [
+        HilosProbeFleetStatus::RT_COLLECTION => [
+            SharedOwnersKey::OWNERS => [ClaimerProbeAgent::class, FleetProbeAgent::class],
+            SharedOwnersKey::DEBT => 'intentional: the cluster stand stages this split in scenario 14 to exercise the runtime two-owner guard',
         ],
     ];
 

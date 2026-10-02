@@ -171,7 +171,7 @@ registry of taken host ports:
 | binance-btc-tracker cluster | — | — | — | — | — | — | 10.221 |
 | ecommerce-shop local | 33069 | 8130/8131/8132 | 8139 | 8140 | https 8136 | 5177 | 10.202 |
 | ecommerce-shop test | 33070 | 8133/8134/8135 | — | — | http 8137 / https 8138 | — | 10.212 |
-| ecommerce-shop cluster (not in the code yet — HIL-1216) | — | — | — | — | — | — | 10.222 |
+| ecommerce-shop cluster | — | — | — | — | — | — | 10.222 |
 | online-testing local | 33071 | 8150/8151/8152 | 8159 | 8160 | https 8156 | 5178 | 10.203 |
 | online-testing test | 33072 | 8153/8154/8155 | — | — | http 8157 / https 8158 | — | 10.213 |
 | online-testing cluster | — | — | — | — | — | — | 10.223 |

@@ -25,6 +25,7 @@ use Demo\EcommerceShop\Pages\Hilos\TermsPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -46,7 +47,9 @@ use PHPUnit\Framework\TestCase;
  * The smallest complete shape: an app agent with its home page, the Hilos index agent with the
  * empty dashboard and the four footer pages, and sign-in activated on the framework libraries.
  * No admin section is registered, and the snapshots below say so, so the first leaf that moves
- * an admin section here turns them red on purpose and rewrites them with its own.
+ * an admin section here turns them red on purpose and rewrites them with its own. The agent
+ * registry closes on the framework's fleet, claimer and ballast probes, which only its cluster
+ * stand runs (HIL-1216).
  */
 final class EcommerceShopTopologyRegistryTest extends TestCase
 {
@@ -113,7 +116,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testAgentRegistryIsTheAppTheIndexAndSignIn(): void
+    public function testAgentRegistryIsTheAppTheIndexSignInAndTheClusterProbes(): void
     {
         $this->assertSame([
             AgentType::ECOMMERCE_SHOP,
@@ -123,7 +126,19 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_MAIL,
             HilosAgentType::HILOS_AUTH_THROTTLE,
+            HilosAgentType::HILOS_PROBE_FLEET,
+            HilosAgentType::HILOS_PROBE_CLAIMER,
+            HilosAgentType::HILOS_PROBE_BALLAST,
         ], array_keys(Hilos::AGENTS));
+    }
+
+    public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void
+    {
+        // The rows are the framework's records, not this demo's copy of them: the flags every
+        // cluster scenario stands on are pinned once, in the framework's own registry test.
+        foreach ([HilosAgentType::HILOS_PROBE_FLEET, HilosAgentType::HILOS_PROBE_CLAIMER, HilosAgentType::HILOS_PROBE_BALLAST] as $agentType) {
+            $this->assertSame(ClusterProbe::AGENTS[$agentType], Hilos::AGENTS[$agentType], "{$agentType} is listed as the framework wrote it");
+        }
     }
 
     public function testPageSubscriptionOwnersAreDeclaredByPageClasses(): void
@@ -357,13 +372,13 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
      *
      * A ceiling and not the exact rows: an addition paints this red, a removal passes quietly,
      * because nothing should stand in the way of a debt getting smaller. Three database
-     * collections carry it today, all of them the tables of signing in, and no runtime
-     * collection is shared here at all.
+     * collections carry it today, all of them the tables of signing in; one runtime collection
+     * is, and that one on purpose (the claimer and the fleet of the cluster stand, scenario 14).
      */
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
         $this->assertLessThanOrEqual(3, count(Hilos::SHARED_DB_OWNERS));
-        $this->assertSame([], Hilos::SHARED_RT_OWNERS);
+        $this->assertLessThanOrEqual(1, count(Hilos::SHARED_RT_OWNERS));
     }
 
     public function testDeclaredFeaturesAreFullyActivated(): void

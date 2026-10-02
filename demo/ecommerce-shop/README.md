@@ -139,6 +139,86 @@ pointed at a subset.
 | `composer run test:e2e-down` | tear the e2e stack down |
 | `composer run test:e2e-full` | build → install → check → up → test → down; `-- <spec>` or `-- --grep "…"` points the same clean cycle at a subset |
 
+## Cluster stand
+
+`docker/docker-compose.cluster.yml` raises this demo as a Hilos cluster of one
+master and two slaves. `m1` is the whole master set and declares no capacity,
+so it takes no placed work and stays the leader for as long as it lives:
+placement and failover are proved where the leader is stable. The slaves are of
+unequal room on purpose — `s1` declares `worker,ram=10`, `s2` `worker,ram=4` —
+because scenario 18 fills them by the room they declare, not by their number.
+All three share one MariaDB and one schema, on the subnet 10.222, and nothing
+is published on the host. It is a compose project of its own,
+`hilos-ecommerce-shop-cluster`, because the e2e steps take their whole project
+down when they start.
+
+Nothing here drives the stand: the framework's shared cluster harness
+(`framework/docker/cluster/`) reads the nodes out of the compose file and runs
+the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
+9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated
+node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed and
+19 worker death on a live node (parked, P-441/1) (`docs/agents/testing.md`,
+"The cluster stands — three demos, three shapes"). The framework's probe
+fleet, claimer and ballast are in this demo's `AGENTS`, and they start only
+here: on one node, on the Playwright stand and in production the rows are
+carried and nothing is run.
+
+| Command | What it does |
+|---|---|
+| `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
+| `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
+| `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 14 18` runs only the ones named |
+| `composer run test:cluster:down-volumes` | take the stand down, database included |
+| `composer run test:cluster:down` | take the stand down the way the test runner does |
+
+The harness's other commands — `kill`, `partition`, `crash-daemon`,
+`kill-worker`, `recreate`, `inspect` and the rest — are called on the module
+directly, from `demo/ecommerce-shop`:
+
+```bash
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
+```
+
+### TLS fixtures
+
+`docker/tls/` holds the certificates of this stand, and they are **stand
+fixtures only**: the authority behind them signs nothing else, its key is not
+in the repository, and it is not the authority of any other stand on the same
+machine. Nothing here is a template for a real cluster — issue your own.
+
+| File | What it is | Used by |
+|---|---|---|
+| `ca.pem` | the stand authority's certificate, no key | `CLUSTER_TLS_CA_FILE` of the three nodes |
+| `m1.pem`, `s1.pem`, `s2.pem` | a node certificate (CN = node id) followed by its key | `CLUSTER_TLS_CERT_FILE` of that node |
+
+Reissuing means a new set in full: the old authority's key is gone, so no
+single file can be replaced alone. The commands run in the image of the
+stand's cli container, which exists after the first
+`composer -d demo/ecommerce-shop run test:cluster:up` (or `docker compose -f
+demo/ecommerce-shop/docker/docker-compose.cluster.yml --profile cli build
+ecommerce-shop-cluster-cli`). The framework's own commands print PEM to stdout
+and the host shell writes the files, so they come out owned by you rather than
+root. Keep the authority file (`cluster-ca.pem`) outside the repository and
+delete it when done — from the repository root:
+
+```bash
+cli() {  # one framework CLI command in a throwaway container, no network needed
+  docker run --rm --network none --user "$(id -u):$(id -g)" \
+    -v "$PWD/demo/ecommerce-shop":/app:ro -v "$PWD/composer.json":/hilos/composer.json:ro \
+    -v "$PWD/composer.lock":/hilos/composer.lock:ro -v "$PWD/framework":/hilos/framework:ro \
+    -v /tmp/cluster-ca:/ca:ro -w /app -e APP_ENV=dev \
+    hilos-ecommerce-shop-cluster-ecommerce-shop-cluster-cli:latest php backend/Bootstrap/cli.php "$@"
+}
+mkdir -p /tmp/cluster-ca && t=demo/ecommerce-shop/docker/tls
+cli cluster:tls:ca > /tmp/cluster-ca/cluster-ca.pem
+cli cluster:tls:trust /ca/cluster-ca.pem > $t/ca.pem
+for n in m1 s1 s2; do cli cluster:tls:issue $n /ca/cluster-ca.pem > $t/$n.pem; done
+rm -r /tmp/cluster-ca
+```
+
+The node certificates are valid for ten years (the authority's lifetime); a
+node warns in its log from 30 days before the end.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file in the root of the Hilos framework for details.

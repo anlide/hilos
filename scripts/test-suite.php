@@ -61,9 +61,9 @@ declare(strict_types=1);
  * be cut by area across stands of its own (hilos-ops/proposals, P-452) — not the
  * order of the steps and not the lane count.
  *
- * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `cluster`,
- * `binance-btc-tracker-cluster` and `online-testing-cluster` today, ecommerce-shop's
- * once HIL-1216 adds its step — may run beside any e2e step. Neither an edge nor the order keeps
+ * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `binance-btc-tracker-cluster`,
+ * `ecommerce-shop-cluster` and `online-testing-cluster`; `cluster` raises none since its
+ * matrix left for them — may run beside any e2e step. Neither an edge nor the order keeps
  * them apart, and a fleet leaves with its own step (`downsStand`), which is hygiene
  * rather than separation. Decided by the owner on 2026-09-29 on 43 full runs on
  * nova-de (27–29.09), where cluster overlapped chat-e2e for 1.5–6 minutes and
@@ -73,7 +73,10 @@ declare(strict_types=1);
  * should that be needed, belongs to the leaves that add them. The first two need
  * nothing of the kind: in run 0684 on nova-de (2026-09-30, HIL-1215) `cluster` and
  * `binance-btc-tracker-cluster` started in the same second, overlapped for 1m45s,
- * and both were green.
+ * and both were green. Nor do the three fleets of the demos: in run 0747 on nova-de
+ * (2026-10-02, HIL-1216) `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
+ * `online-testing-cluster` started in the same second, ran all three together for 1m21s,
+ * and all were green.
  */
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
@@ -141,18 +144,12 @@ $steps = [
         'tags' => ['framework', 'frontend'],
         'seconds' => 87,
     ],
-    // Not the free neighbour this comment used to promise. The suite holds five node
-    // daemons, a mysql, a cli container and a fleet of ten agents, so it costs real
-    // cores as well as a lane — and it still runs green beside a neighbour: measured
-    // 2026-08-27, green next to chat-php at two lanes, and on nova-de green next to
-    // chat-e2e in 43 full runs (27–29.09.2026). The red this step produced for three
-    // weeks was a cluster defect (HIL-746 roster liveness, HIL-747 hand-over scope),
-    // not a busy box, so do not reach for lanes when it goes red again. The seconds
-    // below are its matrix measured on the step run alone on nova-de (2026-10-01,
-    // HIL-1217) plus its unit suite, with scenarios 16 and 19 parked (P-441, HIL-1216),
-    // with 1, 2, 5, 7, 8, 10, 13, 17, 20, 23 and 25 run on binance-btc-tracker-cluster and
-    // 11, 15, 21 and 22 on online-testing-cluster instead; returning or moving one moves
-    // the number.
+    // demo/cluster's unit suite and nothing more: its scenario matrix has left whole for the
+    // stands of the demos - 1, 2, 5, 7, 8, 10, 13, 17, 20, 23 and 25 run on
+    // binance-btc-tracker-cluster, 3, 4, 6, 9, 12, 14, 16, 18 and 19 on ecommerce-shop-cluster,
+    // 11, 15, 21 and 22 on online-testing-cluster - so the step raises no fleet, only the
+    // database and the cli container its units run in, and stays until HIL-1218 takes
+    // demo/cluster away. The seconds below are measured in run 0747, beside the three fleets.
     [
         'id' => 'cluster',
         'command' => 'composer run test:cluster:all',
@@ -161,7 +158,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 150,
+        'seconds' => 8,
         // Takes its stand down with it, at any outcome. This is hygiene: a fleet has no reason
         // to outlive its step, and one that was FORGOTTEN kept eating cores for the rest of the
         // run — on nova-lt that turned chat-e2e into 16m10s against 9m36s with fourteen failures
@@ -187,6 +184,23 @@ $steps = [
         'group' => null,
         'tags' => ['cluster', 'backend'],
         'seconds' => 105,
+        'downsStand' => true,
+    ],
+    // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the whole
+    // demo on one database. Beside the other fleets and any e2e step, no group and no edge (the
+    // head of this file); takes its stand down with it, at any outcome, for the reason `cluster`
+    // does. The demo's unit suite runs in ecommerce-shop-php. The seconds are measured in run
+    // 0747, beside the other two fleets, with scenarios 16 and 19 parked (P-441/2, P-441/1);
+    // returning one moves the number.
+    [
+        'id' => 'ecommerce-shop-cluster',
+        'command' => 'composer run test:cluster:scenarios',
+        'cwd' => 'demo/ecommerce-shop',
+        'stand' => 'ecommerce-shop-cluster',
+        'deps' => [],
+        'group' => null,
+        'tags' => ['cluster', 'backend'],
+        'seconds' => 150,
         'downsStand' => true,
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,

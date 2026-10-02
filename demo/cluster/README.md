@@ -67,18 +67,23 @@ directly, from `demo/cluster`:
 python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
 ```
 
-`composer -d demo/cluster run test:cluster:all` runs the unit suite then the
-scenario matrix. From the repo root: `composer run test:cluster:all`.
+`composer -d demo/cluster run test:cluster:all` runs the unit suite and
+nothing more: the stand carries no scenario any more, so the harness refuses
+`test:cluster:up` and `test:cluster:scenarios` before raising it. From the repo
+root: `composer run test:cluster:all`.
 
 ## Scenario matrix (the shared harness, `framework/docker/cluster/scenarios.py`)
 
 The stand names the scenarios it carries in the `x-hilos-cluster` block of its
-compose file; this one carries 3, 4, 6, 9, 12, 14, 16, 18 and 19.
+compose file; this one carries none any more, and the stand leaves with
+demo/cluster (HIL-1218).
 Scenarios 1, 2, 5, 7, 8, 10, 13, 17, 20, 23 and 25 run on the cluster stand of
 binance-btc-tracker ([its README](../binance-btc-tracker/README.md), section
-"Cluster stand"); 11, 15, 21, 22 and 24 run on the cluster stand of
-online-testing ([its README](../online-testing/README.md), section "Cluster
-stand"). The list below is the harness's whole matrix.
+"Cluster stand"); 3, 4, 6, 9, 12, 14, 16, 18 and 19 on the cluster stand of
+ecommerce-shop ([its README](../ecommerce-shop/README.md), section "Cluster
+stand"); 11, 15, 21, 22 and 24 on the cluster stand of online-testing ([its
+README](../online-testing/README.md), section "Cluster stand"). The list below
+is the harness's whole matrix.
 
 1. master-slave mesh — exactly one leader, slaves follow
 2. master-master — one leader among masters, slaves never lead
