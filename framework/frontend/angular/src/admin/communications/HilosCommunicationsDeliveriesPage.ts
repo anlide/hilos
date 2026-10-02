@@ -27,14 +27,14 @@ import {
   computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
-  hiddenAsWord,
-  HILOS_VIEW_MODE_COPY,
   isDeliveryRetryable,
   isHiddenValue,
 } from '@hilos/core'
 import type { HilosDeliveriesContext, HilosDeliveryRow } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosTableDetail } from '../../HilosTableDetail.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -56,6 +56,8 @@ const STATUS_CLASS: Record<string, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosHiddenMark,
+    HilosHideable,
     HilosTableCell,
     HilosTableDetail,
     HilosViewportTable,
@@ -95,20 +97,35 @@ const STATUS_CLASS: Record<string, string> = {
         <ng-template hilosTableCell="deliveredAt" let-row>{{
           row.deliveredAt || '—'
         }}</ng-template>
-        <ng-template hilosTableCell="userLabel" let-row>{{
-          recipientLabel(row)
-        }}</ng-template>
+        <ng-template hilosTableCell="userLabel" let-row>
+          @if (isHidden(row.userLabel)) {
+            <hilos-hidden-mark />
+            @if (row.userId !== null) {
+              (#{{ row.userId }})
+            }
+          } @else {
+            {{ recipientLabel(row) }}
+          }
+        </ng-template>
         <ng-template hilosTableDetail="notificationTitle" let-row>
           <div class="fw-semibold">
-            {{ hiddenAsWord(row.notificationTitle) || '—' }}
+            <hilos-hideable [value]="row.notificationTitle"
+              ><ng-template let-title>{{
+                title || '—'
+              }}</ng-template></hilos-hideable
+            >
           </div>
           <code class="small text-body-secondary">{{
             row.notificationType
           }}</code>
         </ng-template>
-        <ng-template hilosTableDetail="lastError" let-row>{{
-          hiddenAsWord(row.lastError) || '—'
-        }}</ng-template>
+        <ng-template hilosTableDetail="lastError" let-row>
+          <hilos-hideable [value]="row.lastError"
+            ><ng-template let-error>{{
+              error || '—'
+            }}</ng-template></hilos-hideable
+          >
+        </ng-template>
         <ng-template hilosTableCell="actions" let-row>
           @if (isRetryable(row)) {
             <button
@@ -132,7 +149,7 @@ export class HilosCommunicationsDeliveriesPage {
   readonly context = input.required<HilosDeliveriesContext>()
 
   protected readonly page = HilosPages.COMMUNICATIONS_DELIVERIES
-  protected readonly hiddenAsWord = hiddenAsWord
+  protected readonly isHidden = isHiddenValue
   protected readonly isRetryable = isDeliveryRetryable
 
   private readonly router = inject(HILOS_ROUTER, { optional: true })
@@ -190,21 +207,18 @@ export class HilosCommunicationsDeliveriesPage {
 
   /**
    * The recipient label: the resolved display name, its user id, both, or a dash.
-   * A hidden name is the word "Hidden", beside the id when there is one.
+   * A hidden name is not this text: the template draws the mark beside the id.
    *
    * @param row The delivery row.
    */
   protected recipientLabel(row: HilosDeliveryRow): string {
-    const id = row.userId === null ? null : `#${row.userId}`
-    if (isHiddenValue(row.userLabel)) {
-      const word = HILOS_VIEW_MODE_COPY.hidden
-
-      return id === null ? word : `${word} (${id})`
-    }
-    if (id === null) {
+    if (row.userId === null) {
       return '—'
     }
+    const id = `#${row.userId}`
 
-    return row.userLabel ? `${row.userLabel} (${id})` : id
+    return typeof row.userLabel === 'string' && row.userLabel !== ''
+      ? `${row.userLabel} (${id})`
+      : id
   }
 }

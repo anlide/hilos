@@ -15,6 +15,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosTableSelection } from '../src/HilosTableSelection.js'
+import { HILOS_ADMIN_VIEW_MODE } from '../src/hilosLookOnly.js'
 
 /** A host binding the panel's inputs. */
 @Component({
@@ -109,9 +110,26 @@ function makeController(
   return controller
 }
 
+/**
+ * Mount the panel over a controller, on an admin page when asked.
+ *
+ * @param controller The table's controller.
+ * @param viewMode The admin page's view mode, or undefined for no admin page.
+ */
 function mountPanel(
   controller: TableViewportController<unknown>,
+  viewMode?: boolean,
 ): ComponentFixture<SelectionHost> {
+  if (viewMode !== undefined) {
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HILOS_ADMIN_VIEW_MODE,
+          useValue: signal(viewMode).asReadonly(),
+        },
+      ],
+    })
+  }
   const fixture = TestBed.createComponent(SelectionHost)
   fixture.componentInstance.controller = controller
   fixture.detectChanges()
@@ -282,5 +300,56 @@ describe('HilosTableSelection', () => {
     const group = byId(fixture, 'hilos-table-selection')
     expect(group?.getAttribute('role')).toBe('group')
     expect(group?.getAttribute('aria-label')).toBe('Selection')
+  })
+})
+
+describe('HilosTableSelection in the admin view mode', () => {
+  it('disables the operations and keeps the marks live', () => {
+    const asked: HilosTableSelectionTarget[] = []
+    const controller = makeController([deleteAction(asked)])
+    controller.selectRow('a', true)
+    const fixture = mountPanel(controller, true)
+
+    const operation = byId(
+      fixture,
+      'hilos-table-bulk-delete',
+    ) as HTMLButtonElement
+    expect(operation.disabled).toBe(true)
+    expect(operation.getAttribute('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+
+    const selectAll = byId(
+      fixture,
+      'hilos-table-select-all-filtered',
+    ) as HTMLButtonElement
+    const clear = byId(
+      fixture,
+      'hilos-table-selection-clear',
+    ) as HTMLButtonElement
+    expect(selectAll.disabled).toBe(false)
+    expect(clear.disabled).toBe(false)
+
+    click(fixture, 'hilos-table-select-all-filtered')
+    expect(controller.selection.target.get()?.kind).toBe('filter')
+    click(fixture, 'hilos-table-selection-clear')
+    expect(controller.selection.count.get()).toBe(0)
+    expect(asked).toEqual([])
+  })
+
+  it('leaves the operations untouched outside the mode', () => {
+    for (const viewMode of [undefined, false]) {
+      TestBed.resetTestingModule()
+      const controller = makeController([deleteAction([])])
+      controller.selectRow('a', true)
+      const fixture = mountPanel(controller, viewMode)
+
+      const operation = byId(
+        fixture,
+        'hilos-table-bulk-delete',
+      ) as HTMLButtonElement
+      expect(operation.disabled).toBe(false)
+      expect(operation.getAttribute('aria-describedby')).toBeNull()
+    }
   })
 })

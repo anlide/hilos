@@ -16,7 +16,9 @@
 // and merges against it through the shared row-edit helper (rowEdit.ts,
 // conflict-resolution.md), saying what happened elsewhere on one line of room
 // held in advance (HilosEditNotice); Save closes it on the server's answer,
-// whose sentence is the toast, and a refusal stays in it.
+// whose sentence is the toast, and a refusal stays in it. A viewer of the
+// admin view mode finds the switches and Save disabled by the SDK's own
+// controls (HIL-1261).
 // The screen is built from text: the mockup still draws these rows on the
 // two-factor page (D-143). Bootstrap classes only (styling-rules.md).
 import {
@@ -62,6 +64,8 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
@@ -108,6 +112,8 @@ function noticeText(
     HilosAdminPage,
     HilosActionError,
     HilosEditNotice,
+    HilosHiddenMark,
+    HilosHideable,
     HilosModal,
     HilosSwitch,
     HilosTableCell,
@@ -128,23 +134,27 @@ function noticeText(
         </ng-template>
         <ng-template hilosTableCell="value" let-row>
           @if (isSwitch(row.rowKey)) {
-            @if (isHidden(row.enabled)) {
-              <span>{{ hiddenCopy }}</span>
-            } @else {
-              <hilos-switch
-                class="mb-0"
-                [checked]="row.enabled"
-                [busy]="pendingSwitchKey() === row.rowKey"
-                [disabled]="toggle.busy()"
-                [aria-label]="labelOf(row)"
-                [dataId]="'hilos-impersonation-switch-' + row.rowKey"
-                (toggle)="toggleSwitch(row, $event)"
-              />
-            }
+            <hilos-hideable [value]="row.enabled">
+              <ng-template let-enabled>
+                <hilos-switch
+                  class="mb-0"
+                  [checked]="enabled"
+                  [busy]="pendingSwitchKey() === row.rowKey"
+                  [disabled]="toggle.busy()"
+                  [aria-label]="labelOf(row)"
+                  [dataId]="'hilos-impersonation-switch-' + row.rowKey"
+                  (toggle)="toggleSwitch(row, $event)"
+                />
+              </ng-template>
+            </hilos-hideable>
           } @else {
-            <span data-id="hilos-impersonation-scope-value">{{
-              isHidden(row.value) ? hiddenCopy : scopeCopy[scopeOf(row)]
-            }}</span>
+            <span data-id="hilos-impersonation-scope-value"
+              ><hilos-hideable [value]="row.value"
+                ><ng-template>{{
+                  scopeCopy[scopeOf(row)]
+                }}</ng-template></hilos-hideable
+              ></span
+            >
           }
         </ng-template>
         <ng-template hilosTableCell="actions" let-row>
@@ -179,10 +189,8 @@ function noticeText(
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             @if (editHidden()) {
-              <div class="mb-3">
-                <div class="form-label">{{ labelOf(row) }}</div>
-                <div>{{ hiddenCopy }}</div>
-              </div>
+              <div class="form-label fs-6">{{ labelOf(row) }}</div>
+              <hilos-hidden-mark />
             } @else {
               <fieldset aria-describedby="hilos-impersonation-scope-hint">
                 <legend class="form-label fs-6">{{ labelOf(row) }}</legend>
@@ -284,9 +292,6 @@ export class HilosSecurityImpersonationPage {
   // enough, and the busy flag disables every switch while one write is settling.
   protected readonly toggle = createHilosTrackedAction()
   protected readonly pendingSwitchKey = signal<string | null>(null)
-
-  protected readonly isHidden = isHiddenValue
-  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
 
   // The scope's modal: the choice as made until Save.
   protected readonly editOpen = signal(false)

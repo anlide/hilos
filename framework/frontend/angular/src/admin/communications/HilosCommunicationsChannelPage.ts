@@ -30,11 +30,11 @@ import {
 } from '@angular/core'
 import {
   HIDDEN_VALUE,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
+  hiddenAsWord,
   isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
@@ -57,6 +57,8 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -90,15 +92,12 @@ interface ChannelEditFields {
 }
 
 /** Human-readable effective value of a non-secret field. */
-function displayValue(row: HilosChannelFieldRow): string {
-  if (isHiddenValue(row.value)) {
-    return HILOS_VIEW_MODE_COPY.hidden
-  }
-  if (typeof row.value === 'boolean') {
-    return row.value ? 'On' : 'Off'
+function displayValue(value: boolean | number | string | null): string {
+  if (typeof value === 'boolean') {
+    return value ? 'On' : 'Off'
   }
 
-  return row.value === null || row.value === '' ? '—' : String(row.value)
+  return value === null || value === '' ? '—' : String(value)
 }
 
 /**
@@ -128,7 +127,11 @@ function noticeText(
     case 'deleted':
       return 'Deleted elsewhere — your text stays to copy.'
     case 'conflict':
-      return liveRow ? `Changed elsewhere to "${displayValue(liveRow)}".` : ''
+      if (!liveRow) {
+        return ''
+      }
+
+      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? hiddenAsWord(liveRow.value) : displayValue(liveRow.value)}".`
     case 'updated':
       return 'Updated just now'
     default:
@@ -145,6 +148,8 @@ function noticeText(
     HilosModal,
     HilosActionError,
     HilosEditNotice,
+    HilosHiddenMark,
+    HilosHideable,
     HilosTableCell,
     HilosViewportTable,
     LoadingButton,
@@ -180,7 +185,11 @@ function noticeText(
               {{ row.valueSource === 'env' ? 'Set in env' : 'Not set' }}
             </span>
           } @else {
-            <span>{{ displayValue(row) }}</span>
+            <hilos-hideable [value]="row.value">
+              <ng-template let-value>
+                <span>{{ displayValue(value) }}</span>
+              </ng-template>
+            </hilos-hideable>
           }
         </ng-template>
         <ng-template hilosTableCell="valueSource" let-row>
@@ -230,10 +239,8 @@ function noticeText(
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             @if (editHidden()) {
-              <div class="mb-3">
-                <div class="form-label">{{ row.label }}</div>
-                <div>{{ hiddenCopy }}</div>
-              </div>
+              <div class="form-label">{{ row.label }}</div>
+              <hilos-hidden-mark />
             } @else if (editInputType() === 'checkbox') {
               <div class="form-check form-switch">
                 <input
@@ -330,7 +337,9 @@ function noticeText(
           <dl class="row mb-0">
             <dt class="col-4">Now</dt>
             <dd class="col-8" data-id="hilos-channel-reset-now">
-              {{ displayValue(row) }}
+              <hilos-hideable [value]="row.value">
+                <ng-template let-value>{{ displayValue(value) }}</ng-template>
+              </hilos-hideable>
             </dd>
             <dt class="col-4">Back to</dt>
             <dd class="col-8" data-id="hilos-channel-reset-default">
@@ -414,7 +423,6 @@ export class HilosCommunicationsChannelPage {
     openRowEdit<ChannelEditFields>({ value: null }),
   )
   protected readonly editValue = signal('')
-  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
   protected readonly editHidden = computed(() =>
     isHiddenValue(this.editBaseline().values.value),
   )
@@ -636,9 +644,14 @@ export class HilosCommunicationsChannelPage {
     return SOURCE_LABEL[row.valueSource]
   }
 
-  /** Human-readable effective value of a non-secret field. */
-  protected displayValue(row: HilosChannelFieldRow): string {
-    return displayValue(row)
+  /**
+   * Human-readable effective value of a non-secret field that is not hidden.
+   *
+   * @param value The field's effective value.
+   * @returns The text the screen shows for it.
+   */
+  protected displayValue(value: boolean | number | string | null): string {
+    return displayValue(value)
   }
 
   /** Coerce the edited string to the field's typed value for the set action. */

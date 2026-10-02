@@ -10,23 +10,25 @@ import {
   input,
 } from '@angular/core'
 import {
-  HILOS_VIEW_MODE_COPY,
   isHiddenValue,
   type Hideable,
   type SettingValueSource,
 } from '@hilos/core'
 
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+
 /** Render one setting value with its catalog-origin badge. */
 @Component({
   selector: 'hilos-setting-value-cell',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HilosHiddenMark],
   template: `
     <span
       class="d-inline-flex align-items-center gap-2 mw-100"
       data-id="setting-value"
     >
       @if (isHidden()) {
-        <span class="text-truncate" [title]="display()">{{ display() }}</span>
+        <hilos-hidden-mark />
       } @else if (isBoolean()) {
         <input
           type="checkbox"
@@ -55,12 +57,20 @@ import {
       @if (isReference()) {
         <span
           class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1"
-          [title]="'Default from ' + defaultReferenceDisplay()"
+          [attr.title]="
+            isReferenceKeyHidden()
+              ? null
+              : 'Default from ' + defaultReferenceKey()
+          "
         >
           <i class="bi bi-arrow-down-right" aria-hidden="true"></i>
-          <code class="text-truncate text-info-emphasis">{{
-            defaultReferenceDisplay()
-          }}</code>
+          @if (isReferenceKeyHidden()) {
+            <hilos-hidden-mark />
+          } @else {
+            <code class="text-truncate text-info-emphasis">{{
+              defaultReferenceKey()
+            }}</code>
+          }
         </span>
       } @else if (valueSource() === 'default') {
         <span
@@ -105,10 +115,7 @@ export class HilosSettingValueCell {
   )
   protected readonly display = computed(() => {
     const value = this.value()
-    if (isHiddenValue(value)) {
-      return HILOS_VIEW_MODE_COPY.hidden
-    }
-    if (value === null) {
+    if (isHiddenValue(value) || value === null) {
       return '—'
     }
     if (this.type() === 'boolean') {
@@ -121,12 +128,7 @@ export class HilosSettingValueCell {
     () =>
       this.valueSource() === 'reference' && this.defaultReferenceKey() !== null,
   )
-  protected readonly defaultReferenceDisplay = computed(() => {
-    const ref = this.defaultReferenceKey()
-    if (isHiddenValue(ref)) {
-      return HILOS_VIEW_MODE_COPY.hidden
-    }
-
-    return ref
-  })
+  protected readonly isReferenceKeyHidden = computed(() =>
+    isHiddenValue(this.defaultReferenceKey()),
+  )
 }

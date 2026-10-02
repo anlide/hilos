@@ -5,7 +5,8 @@
 // modal on the shared row-edit helper whose Save closes on the answer and
 // toasts its sentence, and whose refusal stays inside. In the page's area of a
 // takeover that only looks the switches and Save stand disabled by the SDK's
-// own controls.
+// own controls; in the admin view mode a viewer sees the hidden mark in place
+// of the switches, the scope and the modal's choice (HIL-1261).
 import { signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
@@ -14,13 +15,17 @@ import {
   HilosImpersonationSettingKey,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
   hilosToasts,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosImpersonationContext,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -86,7 +91,7 @@ const drops: Array<() => void> = []
  * the seven settings, pushes a row update on demand, records every action sent
  * and answers the last one on demand.
  */
-function seededContext(): {
+function seededContext(hiddenValues = false): {
   context: HilosImpersonationContext
   pushUpdate: (rowKey: string, value: string) => void
   answer: (outcome: 'success' | 'fail', message?: string) => void
@@ -98,7 +103,16 @@ function seededContext(): {
   focus: string[]
 } {
   let settings = new Map<string, Record<string, unknown>>(
-    DEFAULTS.map(([key, value]) => [key, settingSlot(key, value)]),
+    DEFAULTS.map(([key, value]) => [
+      key,
+      hiddenValues
+        ? {
+            rowKey: key,
+            value: { _hidden: true },
+            defaultValue: { _hidden: true },
+          }
+        : settingSlot(key, value),
+    ]),
   )
   const focus: string[] = []
   const scopes = new ScopeManager()
@@ -525,5 +539,80 @@ describe('HilosSecurityImpersonationPage in a takeover that only looks', () => {
     saveButton(fixture).click()
     fixture.detectChanges()
     expect(sent).toEqual([])
+  })
+})
+
+describe('HilosSecurityImpersonationPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  /** Put a guest on a node in the view mode behind the page's scopes. */
+  function viewAsGuest(scopes: ScopeManager): void {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+    const signal = {
+      kind: 'project',
+      type: 'handshake_response',
+      data: {
+        entities: { currentUser: null },
+        data: { adminViewMode: true },
+      },
+      envelope: {},
+    } as unknown as ProjectSignal
+    for (const listener of listeners) {
+      listener(signal)
+    }
+  }
+
+  it('shows hidden marks for switches and the scope, and opens the modal with a hidden mark', () => {
+    const { context, sent } = seededContext(true)
+    viewAsGuest(context.scopes)
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+
+    expect(
+      root.querySelector(
+        `input[data-id="hilos-impersonation-switch-${ALLOWED}"]`,
+      ),
+    ).toBeNull()
+    expect(
+      root.querySelectorAll('[data-id="hilos-hidden"]').length,
+    ).toBeGreaterThan(0)
+
+    inTable(fixture, 'hilos-impersonation-scope-edit').click()
+    fixture.detectChanges()
+
+    expect(scopeRadio(fixture, 'view')).toBeNull()
+    expect(scopeRadio(fixture, 'act')).toBeNull()
+    expect(
+      el(fixture, 'modal')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+    expect(saveButton(fixture).disabled).toBe(true)
+
+    saveButton(fixture).click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      root.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    fixture.detectChanges()
+
+    expect(el(fixture, 'modal')).toBeNull()
   })
 })

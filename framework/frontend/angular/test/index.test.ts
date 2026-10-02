@@ -24,6 +24,8 @@ import {
   HilosSettingsPage,
   HilosSkeleton,
   HilosAvatar,
+  HilosHiddenMark,
+  HilosHideable,
   HilosSwitch,
   HilosUserPage,
   HilosUsersPage,
@@ -46,6 +48,8 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosView).toBeTypeOf('function')
   expect(HilosSkeleton).toBeTypeOf('function')
   expect(HilosAvatar).toBeTypeOf('function')
+  expect(HilosHiddenMark).toBeTypeOf('function')
+  expect(HilosHideable).toBeTypeOf('function')
   expect(HilosSwitch).toBeTypeOf('function')
   expect(ErrorPage).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')

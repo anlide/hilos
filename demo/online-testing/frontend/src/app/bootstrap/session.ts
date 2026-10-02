@@ -8,7 +8,6 @@ import {
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionUserId,
-  sessionUserIsAdmin,
   sessionUserName,
 } from '@hilos/core'
 
@@ -20,9 +19,6 @@ export const currentUserName = sessionUserName(scopes)
 
 /** The current user's id; null until the handshake response lands. */
 export const currentUserId = sessionUserId(scopes)
-
-/** Whether the current user holds the admin privilege; false until the handshake says so. */
-export const currentUserIsAdmin = sessionUserIsAdmin(scopes)
 
 /**
  * The auth step this session stands on and has not finished, or null when it

@@ -5,6 +5,8 @@
 // refusal puts the clicked box back to what the set still says. The passkey policy
 // switch under the table (HIL-1105) is drawn only beside a passkey row, follows the
 // live value rather than the click, and waits while a method write is in flight.
+// In the admin view mode a viewer sees the hidden mark in place of every switch
+// and keeps the provider link; an admin on the node keeps the switches.
 //
 // The world below — the connection, the action lifecycle and the row on the wire —
 // is the React peer's. What is Angular's own is the mount (TestBed) and the fact
@@ -14,6 +16,8 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionError,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
   HilosPages,
   hilosToasts,
@@ -24,6 +28,7 @@ import {
   type HilosConnection,
   type HilosRouter,
   type PageRouteMatch,
+  type ProjectSignal,
 } from '@hilos/core'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -373,5 +378,119 @@ describe('HilosSecuritySignInMethodsPage', () => {
     fixture.detectChanges()
 
     expect(passkeyPolicyOf(fixture)?.disabled).toBe(true)
+  })
+})
+
+describe('HilosSecuritySignInMethodsPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  const ROWS_WITH_PROVIDER: Record<string, unknown>[] = [
+    ...METHOD_ROWS,
+    {
+      methodKey: 'oauth_google',
+      label: 'Google OAuth',
+      enabled: true,
+      ready: true,
+      providerKey: 'google',
+    },
+  ]
+
+  it('a viewer sees hidden marks instead of switches and sees the live provider link', () => {
+    const scopes = makeScopes()
+    bindSession(scopes).handshake(null, true)
+    const { connection, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const fixture = mountPage(connection, scopes, actions)
+    const root = fixture.nativeElement as HTMLElement
+
+    pushWindow(
+      ROWS_WITH_PROVIDER.map((row) => ({
+        ...row,
+        enabled: { _hidden: true },
+        passkeyAllowsUnproven: { _hidden: true },
+      })),
+    )
+    fixture.detectChanges()
+
+    expect(
+      root.querySelectorAll('input[data-id^="hilos-sign-in-method-enabled-"]'),
+    ).toHaveLength(0)
+    expect(
+      root.querySelectorAll('[data-id="hilos-hidden"]').length,
+    ).toBeGreaterThan(0)
+    expect(passkeyPolicyOf(fixture)).toBeNull()
+    expect(dispatched).toEqual([])
+
+    expect(
+      root.querySelector(
+        '[data-id="hilos-sign-in-method-provider-oauth_google"]',
+      ),
+    ).not.toBeNull()
+  })
+
+  it('an admin on a node in the mode dispatches a switch without the mode strip reference', () => {
+    const scopes = makeScopes()
+    bindSession(scopes).handshake({ id: 1, admin: true }, true)
+    const { connection, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const fixture = mountPage(connection, scopes, actions)
+
+    pushWindow(ROWS_WITH_PROVIDER)
+    fixture.detectChanges()
+
+    const smsSwitch = switchesOf(fixture, 'sms')[0]
+    expect(smsSwitch?.disabled).toBe(false)
+    expect(smsSwitch?.getAttribute('aria-describedby')).toBeNull()
+
+    smsSwitch?.click()
+    fixture.detectChanges()
+
+    expect(dispatched).toMatchObject([
+      {
+        action: 'security_sign_in_method_set',
+        payload: { methodKey: 'sms', enabled: false },
+      },
+    ])
   })
 })

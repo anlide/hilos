@@ -2,11 +2,16 @@
 // react/test/ConflictActions.test.tsx: these cases verify that ConflictActions
 // provides the Save button and conflict resolution choices, reacts to conflict
 // state, emits resolution events, and renders the narrow-screen button group.
+// The last describe is the admin view mode (HIL-1261): on an admin page a
+// viewer stands on, Save — the default one and the one a template hands in —
+// stands disabled, described by the view-mode strip, and the conflict choices,
+// which edit only the draft, stay live.
 import { Component, signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
 
 import { ConflictActions } from '../src/ConflictActions.js'
+import { HILOS_ADMIN_VIEW_MODE } from '../src/hilosLookOnly.js'
 
 /** A host that drives ConflictActions through signals and captures output events. */
 @Component({
@@ -236,6 +241,89 @@ describe('ConflictActions', () => {
     fixture.detectChanges()
     expect(document.querySelector('[data-id="conflict-choices"]')).toBeNull()
     expect(readChildren('conflict-choices-idle')).toEqual(twin)
+  })
+})
+
+describe('ConflictActions in the admin view mode', () => {
+  /**
+   * Mount the host on an admin page a viewer stands on, the way HilosAdminPage
+   * provides it.
+   *
+   * @returns The mounted fixture.
+   */
+  function mountInViewMode(): ComponentFixture<ConflictActionsHost> {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HILOS_ADMIN_VIEW_MODE, useValue: signal(true).asReadonly() },
+      ],
+    })
+
+    return mountHost()
+  }
+
+  /**
+   * One button of the mounted host.
+   *
+   * @param fixture The mounted host.
+   * @param id The button's data-id.
+   */
+  function button(
+    fixture: ComponentFixture<ConflictActionsHost>,
+    id: string,
+  ): HTMLButtonElement | null {
+    return (fixture.nativeElement as HTMLElement).querySelector(
+      `[data-id="${id}"]`,
+    )
+  }
+
+  it('disables the default save and points it at the strip', () => {
+    const fixture = mountInViewMode()
+    const save = button(fixture, 'conflict-save')
+
+    expect(save?.disabled).toBe(true)
+    expect(save?.getAttribute('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+    save?.click()
+    expect(fixture.componentInstance.saveCalls).toBe(0)
+  })
+
+  it('hands the template save a disabled state', () => {
+    const fixture = mountInViewMode()
+    fixture.componentInstance.useCustomSave.set(true)
+    fixture.detectChanges()
+
+    expect(button(fixture, 'custom-save')?.disabled).toBe(true)
+  })
+
+  it('keeps the conflict choices, which edit only the draft', () => {
+    const fixture = mountInViewMode()
+    fixture.componentInstance.conflict.set(true)
+    fixture.componentInstance.mergeable.set(true)
+    fixture.detectChanges()
+
+    for (const choice of ['accept-mine', 'accept-theirs', 'merge']) {
+      const choiceButton = button(fixture, `conflict-${choice}`)
+      expect(choiceButton?.disabled).toBe(false)
+      choiceButton?.click()
+    }
+    expect(fixture.componentInstance.acceptMineCalls).toBe(1)
+    expect(fixture.componentInstance.acceptTheirsCalls).toBe(1)
+    expect(fixture.componentInstance.mergeCalls).toBe(1)
+  })
+
+  it('keeps the handed Cancel live', () => {
+    const fixture = mountInViewMode()
+
+    expect(button(fixture, 'host-cancel')?.disabled).toBe(false)
+  })
+
+  it('leaves the default save untouched outside the mode', () => {
+    const fixture = mountHost()
+    const save = button(fixture, 'conflict-save')
+
+    expect(save?.disabled).toBe(false)
+    expect(save?.getAttribute('aria-describedby')).toBeNull()
   })
 })
 

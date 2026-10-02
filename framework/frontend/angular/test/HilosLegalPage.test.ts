@@ -211,3 +211,104 @@ it('links the past-deadline count to the people it counts, only when there are a
   expect(new Set(unlinked)).toEqual(new Set(['0']))
   fixture.destroy()
 })
+
+it('says "Past deadline" beside the count while the refusal setting is hidden (HIL-1260)', async () => {
+  const h = harness()
+  const windowListeners: ((signal: { data: unknown }) => void)[] = []
+  Object.assign(h.context.connection, {
+    on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'tableWindow') {
+        windowListeners.push(
+          listener as unknown as (signal: { data: unknown }) => void,
+        )
+      }
+
+      return () => {}
+    },
+  })
+  const revision = {
+    revisionId: 'current',
+    publishedOn: '2026-09-27',
+    effectiveOn: '2026-09-27',
+    significance: 'editorial',
+    setVersion: 1,
+    deviationCount: 0,
+  }
+  await TestBed.configureTestingModule({
+    imports: [HilosLegalPage],
+    providers: [
+      {
+        provide: HILOS_ROUTER,
+        useValue: { ...h.router, currentPath: createSignal('') },
+      },
+    ],
+  }).compileComponents()
+  const fixture = TestBed.createComponent(HilosLegalPage)
+  fixture.componentRef.setInput('context', h.context)
+  fixture.detectChanges()
+  await fixture.whenStable()
+
+  for (const listener of windowListeners) {
+    listener({
+      data: {
+        page: 'hilos_legal',
+        tableKey: 'hilosLegalDocuments',
+        rows: [
+          {
+            rowKey: 'terms',
+            slots: {
+              document: {
+                declared: true,
+                revision,
+                covered: 1,
+                window: 0,
+                lapsed: 2,
+              },
+            },
+          },
+        ],
+        totalCount: 1,
+      },
+    })
+  }
+  fixture.detectChanges()
+
+  const element = fixture.nativeElement as HTMLElement
+  // The words stand beside the count in every copy of the cell — its row and
+  // its narrow-screen card.
+  const labels = () => {
+    const links = Array.from(
+      element.querySelectorAll('[data-id="legal-count-lapsed-link"]'),
+    )
+    expect(links.length).toBeGreaterThan(0)
+    return new Set(
+      links.map((link) => link.nextElementSibling?.textContent?.trim()),
+    )
+  }
+  expect(labels()).toEqual(new Set(['Frozen']))
+
+  for (const listener of windowListeners) {
+    listener({
+      data: {
+        page: 'hilos_legal',
+        tableKey: 'hilosLegalSettings',
+        rows: [
+          {
+            rowKey: 'legal.refusal_after_deadline',
+            slots: {
+              setting: {
+                value: { _hidden: true },
+                defaultValue: { _hidden: true },
+              },
+            },
+          },
+        ],
+        totalCount: 1,
+      },
+    })
+  }
+  fixture.detectChanges()
+
+  expect(labels()).toEqual(new Set(['Past deadline']))
+  fixture.destroy()
+})

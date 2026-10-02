@@ -360,6 +360,7 @@ const RETENTION_CLASS: Record<string, string> = {
             type="button"
             class="btn btn-secondary"
             [disabled]="takeout.busy()"
+            data-id="hilos-rotation-takeout-close"
             (click)="requestClose()"
           >
             Close
@@ -408,6 +409,7 @@ const RETENTION_CLASS: Record<string, string> = {
             type="button"
             class="btn btn-secondary"
             [disabled]="undo.busy()"
+            data-id="hilos-rotation-undo-cancel"
             (click)="requestClose()"
           >
             Leave it as it is

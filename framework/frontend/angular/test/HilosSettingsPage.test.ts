@@ -2,20 +2,28 @@
 // The merge itself lives in the core row-edit helper; this file covers the thin view:
 // that a live row update reloads a pristine modal, that a dirty one shows the
 // conflict chrome without Merge, and that Take theirs adopts the incoming value;
-// and the ↺ that resets only through a confirm dialog (HIL-1147).
+// the ↺ that resets only through a confirm dialog (HIL-1147); and what a viewer
+// of the admin view mode finds there — the hidden mark in place of a value, and
+// nothing to send it with (HIL-1272).
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  Hideable,
+  HilosConnection,
   HilosRouter,
   HilosSettingsContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosSettingsPage } from '../src/admin/settings/HilosSettingsPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -47,10 +55,10 @@ function router(): HilosRouter {
 interface SettingSlot {
   key: string
   type: string
-  value: string | null
-  overrideValue: string | null
-  defaultValue: string | null
-  defaultReferenceKey: string | null
+  value: Hideable<string | null>
+  overrideValue: Hideable<string | null>
+  defaultValue: Hideable<string | null>
+  defaultReferenceKey: Hideable<string | null>
   valueSource: string
 }
 
@@ -731,5 +739,227 @@ describe('HilosSettingsPage reset dialog', () => {
     expect(
       (el(root, 'hilos-settings-reset-confirm') as HTMLButtonElement).disabled,
     ).toBe(true)
+  })
+})
+
+describe('HilosSettingsPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  /**
+   * Bind the session scope and the admin access the way bootHilos does, over
+   * handshakes this harness emits.
+   */
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      /**
+       * One handshake: who is behind the session, if anybody, and the node's
+       * admin view mode, both as the backend stamps them (HIL-1253).
+       *
+       * @param user The person behind the session, or null for a guest.
+       * @param viewMode The node's admin view mode.
+       */
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  // The row's controls stand in the document twice — once in the table and once
+  // in the card the same row becomes on a narrow screen — so a row button is
+  // looked up through the table, which says which of the two is clicked.
+  function rowButton(root: HTMLElement, id: string): HTMLButtonElement | null {
+    return root.querySelector(`table [data-id="${id}"]`)
+  }
+
+  function cancelButton(root: HTMLElement): HTMLButtonElement | undefined {
+    return Array.from(
+      root.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+  }
+
+  it('a viewer opens a setting, sees the hidden mark instead of the input, and finds Save disabled', () => {
+    bindSession().handshake(null, true)
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+
+    const edit = rowButton(root, 'hilos-settings-edit-site_name')
+    expect(edit?.disabled).toBe(false)
+    edit?.click()
+    fixture.detectChanges()
+
+    expect(el(root, 'hilos-settings-edit-value')).toBeNull()
+    expect(
+      el(root, 'modal')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+
+    const save = el(root, 'hilos-settings-edit-save') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+
+    save.click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+
+    const cancel = el(root, 'hilos-settings-edit-cancel') as HTMLButtonElement
+    expect(cancel.disabled).toBe(false)
+    cancel.click()
+    fixture.detectChanges()
+    expect(el(root, 'modal')).toBeNull()
+  })
+
+  it('a viewer opens the reset of a setting and has nothing to reset it with', () => {
+    bindSession().handshake(null, true)
+    const { context, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: { _hidden: true },
+        overrideValue: { _hidden: true },
+        defaultValue: { _hidden: true },
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+
+    const reset = rowButton(root, 'hilos-settings-reset-site_name')
+    expect(reset?.disabled).toBe(false)
+    reset?.click()
+    fixture.detectChanges()
+
+    expect(
+      el(root, 'hilos-settings-reset-now')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    expect(
+      el(root, 'hilos-settings-reset-default')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+
+    const confirm = el(
+      root,
+      'hilos-settings-reset-confirm',
+    ) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    expect(confirm.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirm.click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+
+    cancelButton(root)?.click()
+    fixture.detectChanges()
+
+    expect(el(root, 'modal')).toBeNull()
+  })
+
+  it('a viewer opens the deletion of an orphan and has nothing to delete it with', () => {
+    bindSession().handshake(null, true)
+    const { context, sent } = seededContext([
+      slot({
+        key: 'orphan',
+        valueSource: 'orphan',
+        overrideValue: { _hidden: true },
+        defaultValue: null,
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+
+    const del = rowButton(root, 'hilos-settings-delete-orphan')
+    expect(del?.disabled).toBe(false)
+    del?.click()
+    fixture.detectChanges()
+
+    const confirm = el(
+      root,
+      'hilos-settings-delete-confirm',
+    ) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    expect(confirm.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirm.click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+
+    cancelButton(root)?.click()
+    fixture.detectChanges()
+
+    expect(el(root, 'modal')).toBeNull()
+  })
+
+  it('an admin on a node in the mode edits a setting as today', () => {
+    bindSession().handshake({ id: 1, admin: true }, true)
+    const { context } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+
+    const edit = rowButton(root, 'hilos-settings-edit-site_name')
+    expect(edit?.disabled).toBe(false)
+    edit?.click()
+    fixture.detectChanges()
+
+    const input = el(root, 'hilos-settings-edit-value') as HTMLInputElement
+    expect(input.disabled).toBe(false)
+    input.value = 'Other'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    fixture.detectChanges()
+
+    const save = el(root, 'hilos-settings-edit-save') as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    expect(save.getAttribute('aria-describedby')).toBeNull()
   })
 })

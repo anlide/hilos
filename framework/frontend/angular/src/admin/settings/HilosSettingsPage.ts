@@ -27,11 +27,11 @@ import {
 } from '@angular/core'
 import {
   HIDDEN_VALUE,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   createHilosSettingsActions,
   createHilosSettingsTable,
   hasCustomValue,
+  hiddenAsWord,
   isHiddenValue,
   isOrphanSetting,
   keepMineRowEdit,
@@ -91,7 +91,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
       if (live.fields.overrideValue.incoming === null) {
         return 'Reset elsewhere to the catalog default.'
       }
-      return `Changed elsewhere to "${isHiddenValue(live.fields.overrideValue.incoming) ? HILOS_VIEW_MODE_COPY.hidden : live.fields.overrideValue.incoming}".`
+      return `Changed elsewhere to "${hiddenAsWord(live.fields.overrideValue.incoming)}".`
     case 'updated':
       return 'Updated just now'
     default:

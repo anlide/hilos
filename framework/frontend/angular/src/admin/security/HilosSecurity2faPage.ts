@@ -52,6 +52,8 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -94,6 +96,8 @@ function noticeText(
     HilosAdminPage,
     HilosActionError,
     HilosEditNotice,
+    HilosHiddenMark,
+    HilosHideable,
     HilosModal,
     HilosTableCell,
     HilosViewportTable,
@@ -109,9 +113,13 @@ function noticeText(
           <div class="small text-body-secondary">{{ hintOf(row.rowKey) }}</div>
         </ng-template>
         <ng-template hilosTableCell="value" let-row>
-          <span [attr.data-id]="'hilos-2fa-value-' + row.rowKey">{{
-            describe(row.rowKey, row.value)
-          }}</span>
+          <span [attr.data-id]="'hilos-2fa-value-' + row.rowKey"
+            ><hilos-hideable [value]="row.value"
+              ><ng-template let-value>{{
+                describe(row.rowKey, value)
+              }}</ng-template></hilos-hideable
+            ></span
+          >
         </ng-template>
         <ng-template hilosTableCell="actions" let-row>
           <button
@@ -143,10 +151,8 @@ function noticeText(
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             @if (editHidden()) {
-              <div class="mb-3">
-                <div class="form-label">{{ labelOf(row) }}</div>
-                <div>{{ hiddenCopy }}</div>
-              </div>
+              <div class="form-label">{{ labelOf(row) }}</div>
+              <hilos-hidden-mark />
             } @else {
               <label class="form-label" for="hilos-2fa-input">
                 {{ labelOf(row) }}
@@ -181,7 +187,11 @@ function noticeText(
             }
             <p class="form-text mb-0">
               {{ hintOf(row.rowKey) }} Default:
-              {{ describe(row.rowKey, row.defaultValue) }}.
+              <hilos-hideable [value]="row.defaultValue"
+                ><ng-template let-value>{{
+                  describe(row.rowKey, value)
+                }}</ng-template></hilos-hideable
+              >.
             </p>
             <hilos-edit-notice
               [kind]="editNotice()"
@@ -255,7 +265,6 @@ export class HilosSecurity2faPage {
   protected readonly editRow = signal<HilosTwoFactorSettingRow | null>(null)
   protected readonly editValue = signal('')
   protected readonly edit = createHilosTrackedAction()
-  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
 
@@ -343,16 +352,12 @@ export class HilosSecurity2faPage {
   }
 
   /**
-   * A setting's value in words.
+   * A setting's value in words (a hidden one is drawn as the mark instead).
    *
    * @param settingKey The setting the value belongs to.
    * @param value The value as text.
    */
-  protected describe(settingKey: string, value: Hideable<string>): string {
-    if (isHiddenValue(value)) {
-      return HILOS_VIEW_MODE_COPY.hidden
-    }
-
+  protected describe(settingKey: string, value: string): string {
     return describeHilosSecondFactorSetting(settingKey, value)
   }
 

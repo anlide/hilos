@@ -16,8 +16,6 @@ import {
   HILOS_LEGAL_SETTING_PREVIEWS,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
-  HILOS_VIEW_MODE_COPY,
-  hiddenAsWord,
   isHiddenValue,
   openRowEdit,
   resolveRowEdit,
@@ -30,6 +28,8 @@ import {
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
@@ -47,6 +47,8 @@ let inputSequence = 0
     HilosAdminPage,
     HilosViewportTable,
     HilosTableCell,
+    HilosHiddenMark,
+    HilosHideable,
     HilosModal,
     HilosActionError,
     HilosEditNotice,
@@ -67,12 +69,20 @@ let inputSequence = 0
           </div></ng-template
         >
         <ng-template [hilosTableCell]="keys.value" let-setting
-          ><span [attr.data-id]="'legal-setting-value-' + setting.rowKey">{{
-            valueLabel(setting.value)
-          }}</span>
+          ><span [attr.data-id]="'legal-setting-value-' + setting.rowKey"
+            ><hilos-hideable [value]="setting.value"
+              ><ng-template let-shown>{{
+                valueLabel(shown)
+              }}</ng-template></hilos-hideable
+            ></span
+          >
           <div class="small text-body-secondary">
             Default:
-            {{ valueLabel(setting.defaultValue) }}
+            <hilos-hideable [value]="setting.defaultValue"
+              ><ng-template let-shown>{{
+                valueLabel(shown)
+              }}</ng-template></hilos-hideable
+            >
           </div></ng-template
         >
         <ng-template [hilosTableCell]="actionsKey" let-setting
@@ -157,7 +167,7 @@ let inputSequence = 0
               <div class="form-label">
                 {{ copy[setting.rowKey]?.label ?? setting.rowKey }}
               </div>
-              <div>{{ hiddenWord }}</div>
+              <hilos-hidden-mark />
             } @else {
               <label class="form-label" [for]="inputId">{{
                 copy[setting.rowKey]?.label ?? setting.rowKey
@@ -235,7 +245,6 @@ export class HilosLegalSettingsPage {
   protected readonly copy = HILOS_LEGAL_SETTING_COPY
   protected readonly valueCopy = HILOS_LEGAL_VALUE_COPY
   protected readonly previews = HILOS_LEGAL_SETTING_PREVIEWS
-  protected readonly hiddenWord = HILOS_VIEW_MODE_COPY.hidden
   protected readonly inputId = `legal-setting-input-${++inputSequence}`
   protected readonly table = computed(() =>
     createHilosLegalSettingsTable(this.context()),
@@ -249,7 +258,8 @@ export class HilosLegalSettingsPage {
   protected readonly action = createHilosTrackedAction({ toast: false })
   protected readonly row = signal<HilosLegalSettingRow | null>(null)
   // A value hidden from a viewer of the admin view mode stays the one hidden
-  // value: the draft is never dirty, and the modal says so in place of the list.
+  // value: the draft is never dirty, and the modal shows the mark in place of
+  // the list.
   protected readonly value = signal<Hideable<string>>('')
   protected readonly valueHidden = computed(() => isHiddenValue(this.value()))
   protected readonly state = signal<RowEditState<{ value: Hideable<string> }>>(
@@ -297,15 +307,12 @@ export class HilosLegalSettingsPage {
     this.editor().open(key)
   }
   /**
-   * A setting value in words: its label, the value itself when it has none, or
-   * "Hidden" for a value hidden from a viewer of the admin view mode.
+   * A setting value's label, or the value itself when it has none.
    *
-   * @param value The value, or the hidden mark in its place.
+   * @param value The value, already narrowed clear of the hidden mark.
    */
-  protected valueLabel(value: Hideable<string>): string {
-    const said = hiddenAsWord(value)
-
-    return this.valueCopy[said] ?? said
+  protected valueLabel(value: string): string {
+    return this.valueCopy[value] ?? value
   }
 
   protected setValue(event: Event): void {

@@ -249,9 +249,7 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   bell, the profile link, a guest's Sign in). The admin gear is the SDK's the
   same way: it is drawn from the session (`hilosAdminAccess`, bound by
   `bootHilos`) for an admin and, in the admin view mode, for a viewer, and the
-  project passes nothing (HIL-1253) — in Vue and React; the Angular shell still
-  takes an `isAdmin` prop from the project (not in the code yet — HIL-1272). The
-  banner region carries the
+  project passes nothing (HIL-1253). The banner region carries the
   framework's own strips first: protected mode, then impersonation, which the
   SDK draws from the session (`hilosImpersonation`, bound by `bootHilos`) and
   whose Stop is a tracked action answered behind the restored identity
@@ -289,12 +287,11 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   as hidden text and a `title`. The project's header user area places it
   instead of the name (HIL-301). A photo fills the same circle later
   (not in the code yet — HIL-1205);
-- **`HilosHiddenMark`** and **`HilosHideable`** in the Vue and React packages — the one
-  mark of a value the server keeps from a viewer of the admin view mode, and
-  the wrapper that draws a hideable value through its slot or the mark in its
-  place ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)).
-  Angular (not in the code yet — HIL-1272) says the word through
-  `hiddenAsWord` until then.
+- **`HilosHiddenMark`** and **`HilosHideable`** — the one mark of a value the
+  server keeps from a viewer of the admin view mode, and the wrapper that draws
+  a hideable value through its slot (a render function in React, a projected
+  `ng-template` in Angular) or the mark in its place
+  ([../architecture/admin-view-mode.md](../architecture/admin-view-mode.md)).
 
 The skeleton is a **data-block** loading state — it fills a block while that
 block's data streams in, not a wait on a code chunk: the app ships as a single

@@ -1,24 +1,42 @@
-// The injection token carrying whether the page's area stands inside a takeover
-// where the administrator only looks (HIL-1170), and the helper the controls of
-// the mode read it through. The application shell (HilosLayout) provides it to
-// its projected content — the page — and provides false to its own view, so
-// the impersonation strip's Stop, "Keep my account" and signing out stay live;
-// the value is the core's hilosTakeoverViewOnly, mirrored into Angular.
+// The injection tokens carrying whether the controls around a component may only
+// look, and the helper the controls of the mode read them through. Two places
+// say so, each about its own region of the screen:
+//
+// - The admin page shell (HilosAdminPage) provides whether a viewer of the
+//   admin view mode stands on this page (HIL-1261) — true while the admin
+//   section is 'view' to this browser (hilosAdminAccess, HIL-1253).
+// - The application shell (HilosLayout) provides to its projected content —
+//   the page — whether this session is inside a takeover where the
+//   administrator only looks (HIL-1170, the core's hilosTakeoverViewOnly
+//   mirrored into Angular), and provides false to its own view, so the
+//   impersonation strip's Stop, "Keep my account" and signing out stay live.
 //
 // The controls of the mode (LoadingButton, HilosSwitch, ConflictActions, the
-// bulk operations of a table) read it through injectLookOnly() to stand plainly
-// disabled, described by the impersonation strip's text. In Vue the same helper
-// also reads the admin view mode the admin page shell provides (HIL-1261); the
-// Angular admin page shell does not provide it yet (HIL-1272), so here the
-// takeover is the one source.
+// bulk operations of a table) read both through injectLookOnly() to stand
+// plainly disabled, described by the strip that says why.
 //
-// Why not hilosTakeoverViewOnly itself: it is global, and a control reading it
-// directly would lock the shell's own controls too — Stop among them, the one
-// way out of the takeover. Without a provider the takeover never locks
-// anything.
+// Why not hilosAdminAccess or hilosTakeoverViewOnly themselves: both are
+// global. A signed-in non-admin on a node in the view mode is 'view' on every
+// screen, and a control reading it directly would lock that viewer's own
+// profile and the shell's own controls — the deletion strip's "Keep my
+// account", the impersonation strip's Stop, the one way out of the takeover.
+// Without a provider neither ever locks anything: outside the admin page shell
+// the admin view mode is always false, and outside the page's area the
+// takeover is too.
 import { InjectionToken, computed, inject } from '@angular/core'
 import type { Signal } from '@angular/core'
-import { HILOS_IMPERSONATION_STRIP_TEXT_ID } from '@hilos/core'
+import {
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
+} from '@hilos/core'
+
+/**
+ * Provide/inject token for whether a viewer of the admin view mode stands on
+ * the admin page around this component.
+ */
+export const HILOS_ADMIN_VIEW_MODE = new InjectionToken<Signal<boolean>>(
+  'HilosAdminViewMode',
+)
 
 /**
  * Provide/inject token for whether the page's area stands inside a takeover
@@ -33,26 +51,35 @@ export interface LookOnly {
   /** Whether the control stands plainly disabled. */
   readonly locked: Signal<boolean>
   /**
-   * The id of the strip text the locked control names in `aria-describedby`,
-   * or undefined while it is live.
+   * The id of the strip text the locked control names in `aria-describedby` —
+   * both, space-separated, when both say so — or undefined while it is live.
    */
   readonly describedBy: Signal<string | undefined>
 }
 
 /**
- * Whether the controls around this component may only look: the page's area of
- * a takeover where the administrator only looks, described by the
- * impersonation strip. Call it in an injection context (a field initializer).
+ * Whether the controls around this component may only look: a viewer of the
+ * admin view mode on an admin page (described by the view-mode strip), or the
+ * page's area of a takeover where the administrator only looks (described by
+ * the impersonation strip). Call it in an injection context (a field
+ * initializer).
  */
 export function injectLookOnly(): LookOnly {
+  const viewMode = inject(HILOS_ADMIN_VIEW_MODE, { optional: true })
   const takeover = inject(HILOS_TAKEOVER_VIEW_ONLY, { optional: true })
-  const locked = computed(() => takeover?.() ?? false)
+  const viewing = computed(() => viewMode?.() ?? false)
+  const lookingOnly = computed(() => takeover?.() ?? false)
 
   return {
-    locked,
-    describedBy: computed(() =>
-      locked() ? HILOS_IMPERSONATION_STRIP_TEXT_ID : undefined,
-    ),
+    locked: computed(() => viewing() || lookingOnly()),
+    describedBy: computed(() => {
+      const ids = [
+        ...(viewing() ? [HILOS_VIEW_MODE_STRIP_TEXT_ID] : []),
+        ...(lookingOnly() ? [HILOS_IMPERSONATION_STRIP_TEXT_ID] : []),
+      ]
+
+      return ids.length > 0 ? ids.join(' ') : undefined
+    }),
   }
 }
 

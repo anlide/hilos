@@ -1,21 +1,28 @@
 // The Angular peer of vue/src/admin/communications/HilosCommunicationsChannelPage.test.ts
 // and react/test/HilosCommunicationsChannelPage.test.tsx (HIL-1050), under the
 // same case names: the channel field's edit modal on the shared row-edit helper,
-// and the ↺ that resets only through a confirm dialog (HIL-1147).
+// the ↺ that resets only through a confirm dialog (HIL-1147), and the page in the
+// admin view mode (HIL-1261): the test send and the reset a viewer finds standing,
+// the hidden mark in place of a hidden value, and the test an admin still sends.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
   HilosCommunicationsContext,
+  HilosConnection,
   HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosCommunicationsChannelPage } from '../src/admin/communications/HilosCommunicationsChannelPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -82,7 +89,7 @@ interface FieldSlot {
   field: string
   label: string
   type: string
-  value: boolean | number | string | null
+  value: unknown
   valueSource: string
   secret: boolean
   editable: boolean
@@ -276,8 +283,8 @@ function seededContext(initial: FieldSlot[]): {
   }
 }
 
-/** Mount the page and open the modal on the seeded row. */
-function openModal(
+/** Mount the page on the seeded rows. */
+function mountPage(
   context: HilosCommunicationsContext,
 ): ComponentFixture<HilosCommunicationsChannelPage> {
   TestBed.configureTestingModule({
@@ -286,12 +293,31 @@ function openModal(
   const fixture = TestBed.createComponent(HilosCommunicationsChannelPage)
   fixture.componentRef.setInput('context', context)
   fixture.detectChanges()
-  const root = fixture.nativeElement as HTMLElement
-  root
-    .querySelector<HTMLElement>(
-      'table [data-id="hilos-channel-field-edit-from"]',
-    )
-    ?.click()
+
+  return fixture
+}
+
+// The row's controls stand in the document twice — once in the table and once
+// in the card the same row becomes on a narrow screen — so the button is looked
+// up through the table, which says which of the two is clicked.
+function editButton(fixture: ComponentFixture<unknown>): HTMLButtonElement {
+  return (fixture.nativeElement as HTMLElement).querySelector(
+    'table [data-id="hilos-channel-field-edit-from"]',
+  ) as HTMLButtonElement
+}
+
+function resetButton(fixture: ComponentFixture<unknown>): HTMLButtonElement {
+  return (fixture.nativeElement as HTMLElement).querySelector(
+    'table [data-id="hilos-channel-field-reset-from"]',
+  ) as HTMLButtonElement
+}
+
+/** Mount the page and open the modal on the seeded row. */
+function openModal(
+  context: HilosCommunicationsContext,
+): ComponentFixture<HilosCommunicationsChannelPage> {
+  const fixture = mountPage(context)
+  editButton(fixture).click()
   fixture.detectChanges()
 
   return fixture
@@ -312,6 +338,18 @@ function valueInput(fixture: ComponentFixture<unknown>): HTMLInputElement {
 
 function saveButton(fixture: ComponentFixture<unknown>): HTMLButtonElement {
   return el(fixture, 'hilos-channel-edit-save') as HTMLButtonElement
+}
+
+function confirmButton(fixture: ComponentFixture<unknown>): HTMLButtonElement {
+  return el(fixture, 'hilos-channel-reset-confirm') as HTMLButtonElement
+}
+
+function cancelButton(root: HTMLElement): HTMLButtonElement {
+  return Array.from(
+    root.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+  ).find(
+    (button) => button.textContent?.trim() === 'Cancel',
+  ) as HTMLButtonElement
 }
 
 function typeDraft(fixture: ComponentFixture<unknown>, text: string): void {
@@ -502,31 +540,6 @@ describe('HilosCommunicationsChannelPage door', () => {
 })
 
 describe('HilosCommunicationsChannelPage reset dialog', () => {
-  function mountPage(
-    context: HilosCommunicationsContext,
-  ): ComponentFixture<HilosCommunicationsChannelPage> {
-    TestBed.configureTestingModule({
-      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
-    })
-    const fixture = TestBed.createComponent(HilosCommunicationsChannelPage)
-    fixture.componentRef.setInput('context', context)
-    fixture.detectChanges()
-
-    return fixture
-  }
-
-  function resetButton(fixture: ComponentFixture<unknown>): HTMLButtonElement {
-    return (fixture.nativeElement as HTMLElement).querySelector(
-      'table [data-id="hilos-channel-field-reset-from"]',
-    ) as HTMLButtonElement
-  }
-
-  function confirmButton(
-    fixture: ComponentFixture<unknown>,
-  ): HTMLButtonElement {
-    return el(fixture, 'hilos-channel-reset-confirm') as HTMLButtonElement
-  }
-
   function openReset(
     context: HilosCommunicationsContext,
   ): ComponentFixture<HilosCommunicationsChannelPage> {
@@ -535,14 +548,6 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
     fixture.detectChanges()
 
     return fixture
-  }
-
-  function cancelButton(root: HTMLElement): HTMLButtonElement {
-    return Array.from(
-      root.querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
-    ).find(
-      (button) => button.textContent?.trim() === 'Cancel',
-    ) as HTMLButtonElement
   }
 
   /** Answer the action and let the page take the reply. */
@@ -645,5 +650,160 @@ describe('HilosCommunicationsChannelPage reset dialog', () => {
     const fixture = mountPage(context)
 
     expect(resetButton(fixture).disabled).toBe(true)
+  })
+})
+
+describe('HilosCommunicationsChannelPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  /**
+   * Bind the session scope and the admin access the way bootHilos does, over
+   * handshakes this harness emits.
+   */
+  function bindSession() {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      /**
+       * One handshake: who is behind the session, if anybody, and the node's
+       * admin view mode, both as the backend stamps them (HIL-1253).
+       *
+       * @param user The person behind the session, or null for a guest.
+       * @param viewMode The node's admin view mode.
+       */
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it('a viewer finds the test send standing in view mode', () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { context, sent } = seededContext([fromField('+1000')])
+    const fixture = mountPage(context)
+
+    const testButton = el(fixture, 'hilos-channel-test') as HTMLButtonElement
+    expect(testButton.disabled).toBe(true)
+    expect(testButton.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    testButton.click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+  })
+
+  it('a viewer opens a field edit, sees the hidden mark instead of an input, and closes via Cancel', () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { context, sent, focus } = seededContext([
+      { ...fromField('+1000'), value: { _hidden: true } },
+    ])
+    const fixture = mountPage(context)
+
+    expect(editButton(fixture).disabled).toBe(false)
+    editButton(fixture).click()
+    fixture.detectChanges()
+
+    expect(valueInput(fixture)).toBeNull()
+    expect(el(fixture, 'hilos-hidden')).not.toBeNull()
+
+    expect(saveButton(fixture).disabled).toBe(true)
+    saveButton(fixture).click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+
+    const cancel = cancelButton(fixture.nativeElement as HTMLElement)
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    fixture.detectChanges()
+
+    expect(el(fixture, 'modal-confirm-discard')).toBeNull()
+    expect(el(fixture, 'modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('a viewer opens the reset of an overridden field with a hidden value and has nothing to reset with', () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { context, sent, focus } = seededContext([
+      { ...fromField('+1000', 'settings'), value: { _hidden: true } },
+    ])
+    const fixture = mountPage(context)
+
+    expect(resetButton(fixture).disabled).toBe(false)
+    resetButton(fixture).click()
+    fixture.detectChanges()
+
+    expect(focus).toEqual([ROW_KEY])
+    expect(
+      el(fixture, 'hilos-channel-reset-now')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    expect(confirmButton(fixture).disabled).toBe(true)
+    expect(confirmButton(fixture).getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirmButton(fixture).click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+
+    const cancel = cancelButton(fixture.nativeElement as HTMLElement)
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    fixture.detectChanges()
+
+    expect(el(fixture, 'modal')).toBeNull()
+    expect(focus).toEqual([ROW_KEY, ''])
+  })
+
+  it('an admin on a node in the mode sends a test as today', () => {
+    const { handshake } = bindSession()
+    handshake({ id: 1, admin: true }, true)
+    const { context, sent } = seededContext([fromField('+1000')])
+    const fixture = mountPage(context)
+
+    const testButton = el(fixture, 'hilos-channel-test') as HTMLButtonElement
+    expect(testButton.disabled).toBe(false)
+    expect(testButton.getAttribute('aria-describedby')).toBeNull()
+    testButton.click()
+    fixture.detectChanges()
+
+    expect(sent[0]?.action).toBe('communications_channel_test')
+    expect(sent[0]?.payload).toEqual({ channel: 'sms' })
   })
 })

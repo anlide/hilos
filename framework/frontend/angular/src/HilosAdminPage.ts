@@ -21,7 +21,12 @@
 //
 // The heading carries an id the shell provides to what it holds: a table that
 // declares no title of its own takes its accessible name from this heading, which
-// already names it. Bootstrap classes only (styling-rules.md).
+// already names it.
+//
+// The shell also tells what it holds whether a viewer of the admin view mode
+// stands here (hilosAdminAccess is 'view', HIL-1253): the controls of the mode
+// read that themselves and stand plainly disabled (HIL-1261). Bootstrap classes
+// only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -29,10 +34,11 @@ import {
   inject,
   input,
 } from '@angular/core'
-import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
+import { hilosAdminAccess, hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'
+import { HILOS_ADMIN_VIEW_MODE } from './hilosLookOnly.js'
 import { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'
@@ -48,13 +54,22 @@ let adminPageHeadingSeq = 0
   selector: 'hilos-admin-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosBreadcrumb, HilosLink],
-  // A provider rather than a view provider: the table that reads the id is content
-  // projected into the shell by the page, which a view provider does not reach. The
-  // factory runs once per shell, so every shell names its own heading.
+  // Providers rather than view providers: the table that reads the id, and the
+  // controls that read whether a viewer stands here, are content projected into
+  // the shell by the page, which a view provider does not reach. The factories
+  // run once per shell, so every shell names its own heading.
   providers: [
     {
       provide: HILOS_PAGE_HEADING_ID,
       useFactory: () => `hilos-admin-title-${adminPageHeadingSeq++}`,
+    },
+    {
+      provide: HILOS_ADMIN_VIEW_MODE,
+      useFactory: () => {
+        const adminAccess = hilosSignal(hilosAdminAccess)
+
+        return computed(() => adminAccess() === 'view')
+      },
     },
   ],
   template: `

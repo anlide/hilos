@@ -16,7 +16,7 @@ import {
 import { HilosPages, hilosSessionAvatarMark } from '@hilos/core'
 
 import { AuthSurface } from './auth/authSurface.js'
-import { currentUserIsAdmin, currentUserName } from './bootstrap/session.js'
+import { currentUserName } from './bootstrap/session.js'
 import { connection } from './bootstrap/connection.js'
 import { PAGE_MAIN } from './pages/keys.js'
 import { About } from './views/about/about.js'
@@ -35,7 +35,7 @@ import { Terms } from './views/terms/terms.js'
   // projected, and a conditional block sitting on that boundary is the known
   // Angular trap. ngProjectAs names the slot explicitly and the branches live
   // safely inside it.
-  template: `<hilos-layout [connection]="connection" [isAdmin]="isAdmin()">
+  template: `<hilos-layout [connection]="connection">
     <span brand>
       <i class="bi bi-mortarboard" aria-hidden="true"></i>
       <!-- The name folds down to the icon on a narrow screen and stays the
@@ -52,9 +52,10 @@ import { Terms } from './views/terms/terms.js'
           <span class="visually-hidden">{{ userName() }}</span>
         </span>
       } @else {
-        <!-- A visitor gets no gear — there is nothing to show — and one button
-        that opens the surface over the page they are standing on
-        (mockups/framework/layout, the "guest" tile). -->
+        <!-- A visitor gets one button that opens the surface over the page
+        they are standing on (mockups/framework/layout, the "guest" tile). The
+        gear a visitor sees on a node in the admin view mode is the shell's own,
+        not this slot's. -->
         <button
           type="button"
           class="btn btn-sm btn-primary"
@@ -75,8 +76,6 @@ import { Terms } from './views/terms/terms.js'
 })
 export class App {
   protected readonly connection = connection
-
-  protected readonly isAdmin = hilosSignal(currentUserIsAdmin)
 
   protected readonly userName = hilosSignal(currentUserName)
 

@@ -21,16 +21,15 @@ import {
 } from '@angular/core'
 import {
   CHANNEL_ENABLED_FIELD,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
-  isHiddenValue,
   resolveHilosPath,
 } from '@hilos/core'
 import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
@@ -43,6 +42,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosHideable,
     HilosTableCell,
     HilosViewportTable,
     HilosLink,
@@ -56,19 +56,19 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
           <code class="small text-body-secondary">{{ row.channel }}</code>
         </ng-template>
         <ng-template hilosTableCell="enabled" let-row>
-          @if (isHidden(row.enabled)) {
-            <span>{{ hiddenCopy }}</span>
-          } @else {
-            <hilos-switch
-              class="mb-0"
-              [checked]="row.enabled"
-              [busy]="pendingChannel() === row.channel"
-              [disabled]="toggle.busy()"
-              [aria-label]="'Enable ' + row.label"
-              [dataId]="'hilos-channel-enabled-' + row.channel"
-              (toggle)="onToggle(row, $event)"
-            />
-          }
+          <hilos-hideable [value]="row.enabled">
+            <ng-template let-enabled>
+              <hilos-switch
+                class="mb-0"
+                [checked]="enabled"
+                [busy]="pendingChannel() === row.channel"
+                [disabled]="toggle.busy()"
+                [aria-label]="'Enable ' + row.label"
+                [dataId]="'hilos-channel-enabled-' + row.channel"
+                (toggle)="onToggle(row, $event)"
+              />
+            </ng-template>
+          </hilos-hideable>
         </ng-template>
         <ng-template hilosTableCell="configured" let-row>
           @if (row.configured) {
@@ -106,8 +106,6 @@ export class HilosCommunicationsPage {
   readonly context = input.required<HilosCommunicationsContext>()
 
   protected readonly page = HilosPages.COMMUNICATIONS
-  protected readonly isHidden = isHiddenValue
-  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
 
   protected readonly channels = computed(() =>
     createHilosChannelsTable(this.context()),

@@ -20,11 +20,9 @@ import {
 } from '@angular/core'
 import {
   HILOS_STEP_UP_ADMIN_COPY,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   createHilosSecurityStepUpActions,
   createHilosSecurityStepUpTable,
-  isHiddenValue,
 } from '@hilos/core'
 import type {
   HilosStepUpOperationRow,
@@ -32,6 +30,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -41,7 +40,13 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 @Component({
   selector: 'hilos-security-step-up-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosSwitch, HilosTableCell, HilosViewportTable],
+  imports: [
+    HilosAdminPage,
+    HilosHideable,
+    HilosSwitch,
+    HilosTableCell,
+    HilosViewportTable,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table
@@ -65,19 +70,19 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
           </span>
         </ng-template>
         <ng-template hilosTableCell="enabled" let-row>
-          @if (isHidden(row.enabled)) {
-            <span>{{ hiddenCopy }}</span>
-          } @else {
-            <hilos-switch
-              class="mb-0"
-              [checked]="row.enabled"
-              [busy]="pendingOperationKey() === row.operationKey"
-              [disabled]="operationToggle.busy()"
-              [aria-label]="'Require confirmation for ' + row.label"
-              [dataId]="'hilos-step-up-switch-' + row.operationKey"
-              (toggle)="toggleOperation(row, $event)"
-            />
-          }
+          <hilos-hideable [value]="row.enabled">
+            <ng-template let-enabled>
+              <hilos-switch
+                class="mb-0"
+                [checked]="enabled"
+                [busy]="pendingOperationKey() === row.operationKey"
+                [disabled]="operationToggle.busy()"
+                [aria-label]="'Require confirmation for ' + row.label"
+                [dataId]="'hilos-step-up-switch-' + row.operationKey"
+                (toggle)="toggleOperation(row, $event)"
+              />
+            </ng-template>
+          </hilos-hideable>
         </ng-template>
       </hilos-viewport-table>
     </hilos-admin-page>
@@ -88,8 +93,6 @@ export class HilosSecurityStepUpPage {
   readonly context = input.required<HilosTwoFactorContext>()
 
   protected readonly page = HilosPages.SECURITY_STEP_UP
-  protected readonly isHidden = isHiddenValue
-  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
   protected readonly stepUpCopy = HILOS_STEP_UP_ADMIN_COPY
 
   protected readonly operations = computed(() =>

@@ -3,22 +3,28 @@
 // (HIL-1134): it holds the setting row in focus, reloads a pristine edit when
 // the value changes elsewhere and says so, shows the conflict chrome without
 // Merge on a changed one (the live value in words) and answers Keep mine / Take
-// theirs, and locks save as "Deleted" when the row goes.
+// theirs, and locks save as "Deleted" when the row goes. In the admin view
+// mode a viewer's modal shows the hidden mark in place of the input with Save
+// disabled, and an admin on the node keeps Save.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
   HilosPages,
   HilosSecondFactorSettingKey,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosRouter,
   HilosTwoFactorContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosSecurity2faPage } from '../src/admin/security/HilosSecurity2faPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -56,7 +62,12 @@ function settingSlot(rowKey: string, value: string): Record<string, unknown> {
   return { rowKey, value, defaultValue: rowKey === REQUIRED ? 'none' : '30' }
 }
 
-function seededContext(): {
+/** A setting row's slot as a viewer of the admin view mode is sent it. */
+function hiddenSlot(rowKey: string): Record<string, unknown> {
+  return { rowKey, value: { _hidden: true }, defaultValue: { _hidden: true } }
+}
+
+function seededContext(hiddenValues = false): {
   context: HilosTwoFactorContext
   pushUpdate: (rowKey: string, value: string) => void
   pushRemove: (rowKey: string) => void
@@ -64,8 +75,14 @@ function seededContext(): {
   focus: string[]
 } {
   let settings = new Map<string, Record<string, unknown>>([
-    [REQUIRED, settingSlot(REQUIRED, 'admins')],
-    [TRUST_DAYS, settingSlot(TRUST_DAYS, '30')],
+    [
+      REQUIRED,
+      hiddenValues ? hiddenSlot(REQUIRED) : settingSlot(REQUIRED, 'admins'),
+    ],
+    [
+      TRUST_DAYS,
+      hiddenValues ? hiddenSlot(TRUST_DAYS) : settingSlot(TRUST_DAYS, '30'),
+    ],
   ])
   const focus: string[] = []
   const scopes = new ScopeManager()
@@ -373,5 +390,87 @@ describe('HilosSecurity2faPage', () => {
     fixture.detectChanges()
 
     expect(el(fixture, 'hilos-step-up-table')).toBeNull()
+  })
+})
+
+describe('HilosSecurity2faPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  it('a viewer opens a setting edit, sees the hidden mark instead of an input, and closes via Cancel', () => {
+    const { context, sent } = seededContext(true)
+    bindSession(context.scopes).handshake(null, true)
+    const fixture = openModal(context, REQUIRED)
+
+    expect(el(fixture, 'hilos-2fa-input')).toBeNull()
+    expect(
+      el(fixture, 'modal')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+    expect(saveButton(fixture).disabled).toBe(true)
+    saveButton(fixture).click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+
+    const cancel = Array.from(
+      (
+        fixture.nativeElement as HTMLElement
+      ).querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    fixture.detectChanges()
+
+    expect(el(fixture, 'modal-confirm-discard')).toBeNull()
+    expect(el(fixture, 'modal')).toBeNull()
+  })
+
+  it('an admin on a node in the mode has Save active after typing a draft', () => {
+    const { context } = seededContext()
+    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+    const fixture = openModal(context, REQUIRED)
+
+    typeDraft(fixture, 'everyone')
+    expect(saveButton(fixture).disabled).toBe(false)
+    expect(saveButton(fixture).getAttribute('aria-describedby')).toBeNull()
   })
 })

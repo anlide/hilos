@@ -21,10 +21,11 @@ import {
   input,
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
-import { HilosPages, createHilosUsersTable, hiddenAsWord } from '@hilos/core'
+import { HilosPages, createHilosUsersTable } from '@hilos/core'
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
@@ -41,6 +42,7 @@ export interface UsersRowActionsContext {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosHideable,
     HilosTableCell,
     HilosViewportTable,
     NgTemplateOutlet,
@@ -49,9 +51,9 @@ export interface UsersRowActionsContext {
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="users().controller">
         <ng-template hilosTableCell="id" let-row>{{ row.id }}</ng-template>
-        <ng-template hilosTableCell="name" let-row>{{
-          hiddenAsWord(row.name)
-        }}</ng-template>
+        <ng-template hilosTableCell="name" let-row
+          ><hilos-hideable [value]="row.name"
+        /></ng-template>
         <ng-template hilosTableCell="presence" let-row>
           <span
             [class]="
@@ -86,7 +88,6 @@ export class HilosUsersPage {
   readonly context = input.required<HilosUsersContext>()
 
   protected readonly page = HilosPages.USERS
-  protected readonly hiddenAsWord = hiddenAsWord
   // The lapsed filter is read from the address the page opened on and written
   // back as it changes; mounted without a navigator, the list opens whole and
   // leaves the address alone.

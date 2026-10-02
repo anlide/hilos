@@ -62,13 +62,12 @@ import {
   isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
-  hiddenAsWord,
-  HILOS_VIEW_MODE_COPY,
   isHiddenValue,
   offersBackupRestore,
   subscribeSignal,
 } from '@hilos/core'
 import type {
+  Hideable,
   HilosBackupRestoreGate,
   HilosBackupRow,
   HilosBackupsContext,
@@ -78,6 +77,8 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -93,6 +94,8 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosHiddenMark,
+    HilosHideable,
     HilosLink,
     HilosTableCell,
     HilosViewportTable,
@@ -427,6 +430,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
             type="button"
             class="btn btn-secondary"
             [disabled]="del.busy()"
+            data-id="hilos-backup-delete-cancel"
             (click)="requestClose()"
           >
             Cancel
@@ -461,6 +465,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
             type="button"
             class="btn btn-secondary"
             [disabled]="reopen.busy()"
+            data-id="hilos-backup-reopen-cancel"
             (click)="requestClose()"
           >
             Cancel
@@ -483,11 +488,15 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         [title]="detailsTitle()"
         initialFocus="dialog"
       >
-        <hilos-long-text
-          kind="prose"
-          [text]="hiddenAsWord(detailsRow()?.failureReason ?? '')"
-          dataId="hilos-backup-details-text"
-        />
+        <hilos-hideable [value]="detailsRow()?.failureReason ?? ''">
+          <ng-template let-reason>
+            <hilos-long-text
+              kind="prose"
+              [text]="reason"
+              dataId="hilos-backup-details-text"
+            />
+          </ng-template>
+        </hilos-hideable>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -506,11 +515,15 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         [title]="blockedTitle()"
         initialFocus="dialog"
       >
-        <hilos-long-text
-          kind="prose"
-          [text]="blockedReason()"
-          dataId="hilos-backup-blocked-reason-text"
-        />
+        <hilos-hideable [value]="blockedReason()">
+          <ng-template let-reason>
+            <hilos-long-text
+              kind="prose"
+              [text]="reason"
+              dataId="hilos-backup-blocked-reason-text"
+            />
+          </ng-template>
+        </hilos-hideable>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -528,11 +541,15 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         [title]="shipErrorTitle()"
         initialFocus="dialog"
       >
-        <hilos-long-text
-          kind="prose"
-          [text]="hiddenAsWord(shipErrorRow()?.shipError ?? '')"
-          dataId="hilos-backup-ship-error-text"
-        />
+        <hilos-hideable [value]="shipErrorRow()?.shipError ?? ''">
+          <ng-template let-reason>
+            <hilos-long-text
+              kind="prose"
+              [text]="reason"
+              dataId="hilos-backup-ship-error-text"
+            />
+          </ng-template>
+        </hilos-hideable>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -568,12 +585,17 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
             installation is
             <code>{{ restoreGate().targetEnv || 'unnamed' }}</code>
           </p>
-          @if (migrationNotes(row).length > 0) {
+          @let notes = migrationNotes(row);
+          @if (isHiddenValue(notes)) {
+            <p class="mb-2" data-id="hilos-backup-migration-notes">
+              <hilos-hidden-mark />
+            </p>
+          } @else if (notes.length > 0) {
             <ul
               class="mb-2 ps-3 text-body-secondary"
               data-id="hilos-backup-migration-notes"
             >
-              @for (note of migrationNotes(row); track note) {
+              @for (note of notes; track note) {
                 <li>{{ note }}</li>
               }
             </ul>
@@ -599,6 +621,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
             type="button"
             class="btn btn-secondary"
             [disabled]="restore.busy()"
+            data-id="hilos-backup-restore-cancel"
             (click)="requestClose()"
           >
             Cancel
@@ -636,12 +659,17 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         button: an operator on production learns of an incompatible archive here, not
         from the command refusing after they have walked to the terminal. -->
         @if (cliRow(); as row) {
-          @if (migrationNotes(row).length > 0) {
+          @let notes = migrationNotes(row);
+          @if (isHiddenValue(notes)) {
+            <p class="mt-2 mb-0" data-id="hilos-backup-migration-cli-notes">
+              <hilos-hidden-mark />
+            </p>
+          } @else if (notes.length > 0) {
             <ul
               class="mt-2 mb-0 ps-3 text-body-secondary"
               data-id="hilos-backup-migration-cli-notes"
             >
-              @for (note of migrationNotes(row); track note) {
+              @for (note of notes; track note) {
                 <li>{{ note }}</li>
               }
             </ul>
@@ -673,15 +701,17 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
             The database was already being replaced when this run ended.
           </p>
         }
-        <hilos-long-text
-          kind="prose"
-          [text]="
-            hiddenAsWord(
-              outcomeRow()?.restoreFailureReason || 'No failure recorded.'
-            )
-          "
-          dataId="hilos-backup-restore-outcome-text"
-        />
+        <hilos-hideable
+          [value]="outcomeRow()?.restoreFailureReason || 'No failure recorded.'"
+        >
+          <ng-template let-reason>
+            <hilos-long-text
+              kind="prose"
+              [text]="reason"
+              dataId="hilos-backup-restore-outcome-text"
+            />
+          </ng-template>
+        </hilos-hideable>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -723,6 +753,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
             type="button"
             class="btn btn-secondary"
             [disabled]="create.busy()"
+            data-id="hilos-backup-create-cancel"
             (click)="requestClose()"
           >
             Cancel
@@ -752,7 +783,7 @@ export class HilosBackupPage {
   protected readonly isKeepable = isBackupKeepable
   protected readonly isDeletable = isBackupDeletable
   protected readonly hasFailureDetail = hasBackupFailureDetail
-  protected readonly hiddenAsWord = hiddenAsWord
+  protected readonly isHiddenValue = isHiddenValue
   protected readonly hasRestoreOutcome = hasRestoreOutcome
   protected readonly offersRestore = offersBackupRestore
   protected readonly isShipFailed = isBackupShipFailed
@@ -1072,7 +1103,9 @@ export class HilosBackupPage {
   }
 
   /**
-   * Why an archive cannot be restored right now, or null when it can. The button
+   * Why an archive cannot be restored right now, or null when it can; the hidden
+   * value when the reason is the migration gate's notice and a viewer of the admin
+   * view mode is sent it hidden — the dialog then shows the mark. The button
    * stays visible and a live "why" button beside it opens this sentence, so the
    * answer arrives before the click rather than as a toast after it. It is not the
    * button's title: a disabled button gets no mouse events, so its title never shows
@@ -1080,7 +1113,7 @@ export class HilosBackupPage {
    *
    * @param row The backup row the button belongs to.
    */
-  protected restoreBlockedReason(row: HilosBackupRow): string | null {
+  protected restoreBlockedReason(row: HilosBackupRow): Hideable<string> | null {
     // An archive on another node's disk is out of reach whatever else is true of it.
     const outOfReach = formatBackupOutOfReach(row)
     if (outOfReach !== null) {
@@ -1093,7 +1126,7 @@ export class HilosBackupPage {
     // doing right now: waiting for the current run would not make this one restorable.
     if (this.isMigrationRefused(row)) {
       return (
-        hiddenAsWord(row.restoreMigrationNotice) ??
+        row.restoreMigrationNotice ??
         'This archive was taken on newer code; there is no downgrade path'
       )
     }
@@ -1120,14 +1153,13 @@ export class HilosBackupPage {
 
   /**
    * This archive's per-connection migration lines, one per rendered row; a notice
-   * hidden from a viewer of the admin view mode is the one line "Hidden".
+   * hidden from a viewer of the admin view mode is the hidden value, which the
+   * dialog draws as one mark.
    *
    * @param row The backup row.
    */
-  protected migrationNotes(row: HilosBackupRow): readonly string[] {
-    const notes = backupMigrationNotes(row)
-
-    return isHiddenValue(notes) ? [HILOS_VIEW_MODE_COPY.hidden] : notes
+  protected migrationNotes(row: HilosBackupRow): Hideable<readonly string[]> {
+    return backupMigrationNotes(row)
   }
 
   /**

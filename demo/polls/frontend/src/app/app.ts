@@ -31,7 +31,7 @@ import {
 import { AuthSurface } from './auth/authSurface'
 import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
-import { currentUserActsAsAdmin, currentUserName } from './bootstrap/session'
+import { currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import { About } from './views/about/about'
 import { License } from './views/license/license'
@@ -82,7 +82,7 @@ import { Users } from './views/hilos/users/users'
   // projected, and a conditional block sitting on that boundary is the known
   // Angular trap. ngProjectAs names the slot explicitly and the branches live
   // safely inside it.
-  template: `<hilos-layout [connection]="connection" [isAdmin]="isAdmin()">
+  template: `<hilos-layout [connection]="connection">
     <span brand>Hilos Polls</span>
     <ng-container ngProjectAs="[user]">
       @if (userName()) {
@@ -97,9 +97,10 @@ import { Users } from './views/hilos/users/users'
           <span class="visually-hidden">{{ userName() }}</span>
         </a>
       } @else {
-        <!-- A visitor gets neither bell nor gear — there is nothing to show —
-        and one button that opens the surface over the page they are standing on
-        (mockups/framework/layout, the "guest" tile). -->
+        <!-- A visitor gets no bell — there is nothing to show — and one button
+        that opens the surface over the page they are standing on
+        (mockups/framework/layout, the "guest" tile). The gear a visitor sees on
+        a node in the admin view mode is the shell's own, not this slot's. -->
         <button
           type="button"
           class="btn btn-sm btn-primary"
@@ -128,8 +129,6 @@ import { Users } from './views/hilos/users/users'
 })
 export class App {
   protected readonly connection = connection
-
-  protected readonly isAdmin = hilosSignal(currentUserActsAsAdmin)
 
   protected readonly userName = hilosSignal(currentUserName)
 

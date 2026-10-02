@@ -10,6 +10,9 @@
 // itself — with no drift there is nothing to press, and with drift the one button
 // inside it says out loud what it will do. While the action is in flight every card
 // is disabled, or two quick clicks would race and the later write would win.
+// Inside the admin view mode a viewer finds every card and the button inside the
+// applied one plainly disabled — each is a `LoadingButton` (HIL-1261) — so the
+// confirmation never opens for a viewer.
 //
 // The outcome arrives by push, not as a reply: the backend answers the action with
 // nothing and sends the new state to every open tab on its next tick. There is no
@@ -31,12 +34,10 @@ import {
   signal,
 } from '@angular/core'
 import {
-  HILOS_VIEW_MODE_COPY,
   createHilosSettingPresets,
   createHilosSettingPresetsActions,
   differencesOf,
   hasDifferences,
-  isHiddenValue,
   isPresetApplied,
   isSelectionUnknown,
   presetsOf,
@@ -45,7 +46,6 @@ import {
   subscribeSignal,
 } from '@hilos/core'
 import type {
-  HilosSettingPreset,
   HilosSettingPresetsContext,
   HilosSettingPresetsState,
   HilosSettingPresetsVocabulary,
@@ -53,6 +53,7 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -65,6 +66,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
   imports: [
     HilosActionError,
     HilosAdminPage,
+    HilosHideable,
     HilosLink,
     HilosModal,
     LoadingButton,
@@ -98,8 +100,8 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
               [class]="cardClass(preset.name)"
             >
               <button
-                type="button"
-                class="btn text-start border-0 rounded-0 rounded-top-3 p-3 flex-grow-1"
+                hilosLoadingButton
+                class="text-start border-0 rounded-0 rounded-top-3 p-3 flex-grow-1"
                 [disabled]="applyAction.busy() || applied(preset.name)"
                 [attr.aria-current]="applied(preset.name) ? 'true' : null"
                 [attr.data-id]="'hilos-setting-preset-' + preset.name"
@@ -123,11 +125,15 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
                 <span class="d-block small text-body-secondary mb-2">
                   {{ vocabulary().presetSubtitle(preset.name) }}
                 </span>
-                @for (line of valueLines(preset); track line) {
-                  <span class="d-block small text-body-secondary">
-                    {{ line }}
-                  </span>
-                }
+                <hilos-hideable [value]="preset.values">
+                  <ng-template let-values>
+                    @for (line of valueLines(values); track line) {
+                      <span class="d-block small text-body-secondary">
+                        {{ line }}
+                      </span>
+                    }
+                  </ng-template>
+                </hilos-hideable>
               </button>
 
               @if (applied(preset.name) && drifted()) {
@@ -340,13 +346,13 @@ export class HilosSettingPresetsPage {
     }
   }
 
-  /** The lines a card lists, read out of the values the preset declares. */
-  protected valueLines(preset: HilosSettingPreset): string[] {
-    if (isHiddenValue(preset.values)) {
-      return [HILOS_VIEW_MODE_COPY.hidden]
-    }
-
-    return this.vocabulary().valueLines(preset.values)
+  /**
+   * The lines a card lists, read out of the values the preset declares.
+   *
+   * @param values The values the preset writes, by setting key.
+   */
+  protected valueLines(values: Record<string, unknown>): string[] {
+    return this.vocabulary().valueLines(values)
   }
 
   /** Send the apply and, when it was confirmed, close the confirmation on success. */

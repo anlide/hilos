@@ -17,8 +17,6 @@ import {
   createHilosMaintenanceCircleTable,
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HilosPages,
-  hiddenAsWord,
-  HILOS_VIEW_MODE_COPY,
   isHiddenValue,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
@@ -31,6 +29,8 @@ import {
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -62,6 +62,8 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
     HilosActionError,
     HilosAdminPage,
     HilosEditNotice,
+    HilosHiddenMark,
+    HilosHideable,
     HilosModal,
     HilosViewportTable,
     LoadingButton,
@@ -103,7 +105,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
                     'hilos-maintenance-circle-row-' + circleKey(row)
                   "
                 >
-                  {{ hiddenAsWord(row.identifier) }}
+                  <hilos-hideable [value]="row.identifier" />
                 </td>
                 <td>
                   <span
@@ -204,7 +206,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
           <p class="mb-0">
             {{ circleCopy.removeAskBefore }}
             @if (isHiddenValue(member.identifier)) {
-              {{ hiddenWord }}
+              <hilos-hidden-mark />
             } @else {
               <code>{{ member.identifier }}</code>
             }
@@ -251,8 +253,6 @@ export class HilosMaintenancePage {
   readonly context = input.required<HilosMaintenanceContext>()
 
   protected readonly page = HilosPages.MAINTENANCE
-  protected readonly hiddenAsWord = hiddenAsWord
-  protected readonly hiddenWord = HILOS_VIEW_MODE_COPY.hidden
   protected readonly isHiddenValue = isHiddenValue
   protected readonly circleColumns = CIRCLE_COLUMNS
   protected readonly circleCopy = HILOS_MAINTENANCE_CIRCLE_COPY

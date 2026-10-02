@@ -1,12 +1,18 @@
 // The Angular peer of vue/src/admin/users/HilosUserPage.test.ts and
 // react/test/HilosUserPage.test.tsx (HIL-1050), under the same case names: the
-// rename modal on the shared row-edit helper.
+// rename modal on the shared row-edit helper. A viewer of the admin view mode
+// (HIL-1260, HIL-1263) sees the mark in place of a hidden value, opens every
+// window at once, and finds the confirmation in it disabled by the mode.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
   ActionError,
   type ActionResult,
+  bindAdminAccess,
+  bindSessionScope,
   formatCalendarDate,
+  HIDDEN_VALUE,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosConnection,
   HilosPages,
   hilosToasts,
@@ -20,6 +26,7 @@ import type {
   HilosRouter,
   HilosUsersContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -71,6 +78,8 @@ function userContext(
     detailUnverifiedPasswordAddress?: string | null
     candidateHasPassword?: boolean
     candidateUnverifiedPasswordAddress?: string | null
+    candidateNameHidden?: boolean
+    candidateIdentitiesHidden?: boolean
     impersonation?: Record<string, unknown>
     currentUserId?: number
   } = {},
@@ -108,6 +117,16 @@ function userContext(
         options.detailUnverifiedPasswordAddress ?? null,
     },
   })
+  // The candidate's name arrives through the `user` entity, so a viewer of the
+  // admin view mode may be sent it hidden.
+  page.entities.upsert(
+    { type: 'user', id: 2 },
+    {
+      id: 2,
+      name: options.candidateNameHidden ? { _hidden: true } : 'Bob',
+      lastActivity: null,
+    },
+  )
   const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
   const connection = new HilosConnection({ url: 'ws://test/ws' })
   const sent: Array<{ action: string; data: unknown; requestId?: string }> = []
@@ -116,16 +135,18 @@ function userContext(
     {
       rowKey: 2,
       slots: {
-        users: { id: 2, name: 'Bob', lastActivity: null },
+        users: { type: 'user', id: 2 },
         merge: {
-          identities: [
-            {
-              type: 'email',
-              identifier: 'bob@example.test',
-              provider: null,
-              verified: true,
-            },
-          ],
+          identities: options.candidateIdentitiesHidden
+            ? { _hidden: true }
+            : [
+                {
+                  type: 'email',
+                  identifier: 'bob@example.test',
+                  provider: null,
+                  verified: true,
+                },
+              ],
           hasPassword: options.candidateHasPassword ?? false,
           unverifiedPasswordAddress:
             options.candidateUnverifiedPasswordAddress ?? null,
@@ -493,6 +514,38 @@ describe('HilosUserPage rename modal', () => {
   })
 })
 
+describe('HilosUserPage name hidden from a viewer of the admin view mode (HIL-1260)', () => {
+  it('draws the mark and the person icon, and a rename window with the mark in place of the field', () => {
+    const { context } = userContext()
+    context.scopes
+      .page()
+      ?.entities.upsert({ type: 'user', id: 1 }, { name: { _hidden: true } })
+    const fixture = openModal(context)
+
+    expect(
+      el(fixture, 'hilos-user-name')
+        ?.querySelector('[data-id="hilos-hidden"]')
+        ?.textContent?.trim(),
+    ).toBe('Hidden')
+    expect(
+      el(fixture, 'hilos-avatar')?.querySelector('.bi-person'),
+    ).not.toBeNull()
+    expect(
+      el(fixture, 'modal')?.querySelector('.modal-title')?.textContent,
+    ).toBe('Rename · Hidden')
+    expect(nameInput(fixture)).toBeNull()
+    expect(
+      el(fixture, 'modal')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+    expect(saveButton(fixture).disabled).toBe(true)
+
+    el(fixture, 'hilos-user-cancel')?.click()
+    fixture.detectChanges()
+    expect(el(fixture, 'modal-confirm-discard')).toBeNull()
+    expect(el(fixture, 'modal')).toBeNull()
+  })
+})
+
 describe('HilosUserPage lifecycle', () => {
   it('keeps own-account controls disabled with reasons and follows live rights', async () => {
     const { context } = userContext()
@@ -771,6 +824,10 @@ describe('HilosUserPage confirmation step (HIL-1275)', () => {
     expect(world.sent[0]?.action).toBe('hilos_step_up_start')
     expect(el(fixture, 'step-up')).toBeNull()
     expect(el(fixture, 'hilos-user-merge-next')).not.toBeNull()
+    // A candidate's name and id stay apart in its row: "Bob #2", not "Bob#2".
+    expect(
+      el(fixture, 'hilos-user-merge-row-2')?.closest('tr')?.textContent,
+    ).toContain('Bob #2')
   })
 
   it('draws a refusal with Cancel alone', async () => {
@@ -1259,5 +1316,233 @@ describe('HilosUserPage standing (HIL-945)', () => {
     expect(find('hilos-user-deletion-open')?.textContent).toContain(
       'Cancel deletion',
     )
+  })
+})
+
+describe('HilosUserPage in the admin view mode', () => {
+  const sessionReleases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of sessionReleases.splice(0)) {
+      release()
+    }
+    document.body.classList.remove('modal-open')
+  })
+
+  /**
+   * Bind the session scope and the admin access the way bootHilos does, over
+   * handshakes this harness emits.
+   *
+   * @param scopes The card's scope stores.
+   */
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    sessionReleases.push(bindAdminAccess(scopes))
+
+    return {
+      /**
+       * One handshake: who is behind the session, if anybody, and the node's
+       * admin view mode.
+       *
+       * @param user The person behind the session, or null for a guest.
+       * @param viewMode The node's admin view mode.
+       */
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  /**
+   * Mount the card on a context.
+   *
+   * @param context The project context the card reads.
+   */
+  function mountViewModePage(
+    context: HilosUsersContext,
+  ): ComponentFixture<HilosUserPage> {
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  async function click(
+    fixture: ComponentFixture<unknown>,
+    id: string,
+  ): Promise<void> {
+    el(fixture, id)?.click()
+    await settle(fixture)
+  }
+
+  it('a guest opens admin, block and deletion lifecycle dialogs directly and has nothing to send', async () => {
+    const world = userContext()
+    world.context.scopes
+      .page()
+      ?.data.set('accountDeletionGraceDays', HIDDEN_VALUE)
+    bindSession(world.context.scopes).handshake(null, true)
+    const fixture = mountViewModePage(world.context)
+
+    for (const key of ['admin', 'block', 'deletion'] as const) {
+      const openBtn = el(fixture, `hilos-user-${key}-open`) as HTMLButtonElement
+      expect(openBtn).not.toBeNull()
+      expect(openBtn.disabled).toBe(false)
+
+      await click(fixture, `hilos-user-${key}-open`)
+
+      expect(el(fixture, 'hilos-user-lifecycle-step-up')).toBeNull()
+      const confirmBtn = el(
+        fixture,
+        'hilos-user-lifecycle-confirm',
+      ) as HTMLButtonElement
+      expect(confirmBtn).not.toBeNull()
+      expect(confirmBtn.disabled).toBe(true)
+      expect(confirmBtn.getAttribute('aria-describedby')).toContain(
+        HILOS_VIEW_MODE_STRIP_TEXT_ID,
+      )
+
+      await click(fixture, 'hilos-user-lifecycle-confirm')
+      expect(world.sent).toHaveLength(0)
+
+      await click(fixture, 'hilos-user-lifecycle-cancel')
+    }
+  })
+
+  it('a guest opens the merge dialog directly, chooses a candidate with hidden fields, and confirm is disabled', async () => {
+    const world = userContext(true, 'skip', {
+      candidateNameHidden: true,
+      candidateIdentitiesHidden: true,
+    })
+    bindSession(world.context.scopes).handshake(null, true)
+    const fixture = mountViewModePage(world.context)
+
+    const openBtn = el(fixture, 'hilos-user-merge-open') as HTMLButtonElement
+    expect(openBtn).not.toBeNull()
+    expect(openBtn.disabled).toBe(false)
+
+    await click(fixture, 'hilos-user-merge-open')
+
+    expect(el(fixture, 'hilos-user-merge-step-up')).toBeNull()
+    expect(world.sent).toHaveLength(0)
+
+    const rowRadio = el(fixture, 'hilos-user-merge-row-2') as HTMLInputElement
+    expect(rowRadio).not.toBeNull()
+    expect(rowRadio.getAttribute('aria-label')).toBe('Merge #2')
+    const row2 = rowRadio.closest('tr')
+    expect(row2?.querySelectorAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+    // The mark and the id stay apart: "Hidden #2", never "Hidden#2".
+    expect(row2?.textContent).toContain('Hidden #2')
+
+    await click(fixture, 'hilos-user-merge-row-2')
+
+    const nextBtn = el(fixture, 'hilos-user-merge-next') as HTMLButtonElement
+    expect(nextBtn).not.toBeNull()
+    await click(fixture, 'hilos-user-merge-next')
+
+    const summary = el(fixture, 'hilos-user-merge-summary')
+    expect(summary?.textContent).toContain('Hidden')
+
+    const confirmBtn = el(
+      fixture,
+      'hilos-user-merge-confirm',
+    ) as HTMLButtonElement
+    expect(confirmBtn).not.toBeNull()
+    expect(confirmBtn.disabled).toBe(true)
+    expect(confirmBtn.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    await click(fixture, 'hilos-user-merge-confirm')
+    expect(world.sent).toHaveLength(0)
+
+    await click(fixture, 'hilos-user-merge-cancel')
+    expect(el(fixture, 'modal-confirm-discard')).not.toBeNull()
+  })
+
+  it('a guest opens the takeover window directly and its confirm is disabled by the mode (HIL-1170)', async () => {
+    const world = userContext(false, 'skip', {
+      impersonation: impersonationSettings(),
+    })
+    bindSession(world.context.scopes).handshake(null, true)
+    const fixture = mountViewModePage(world.context)
+
+    const openBtn = el(
+      fixture,
+      'hilos-user-impersonate-open',
+    ) as HTMLButtonElement
+    expect(openBtn.disabled).toBe(false)
+    await click(fixture, 'hilos-user-impersonate-open')
+
+    expect(el(fixture, 'hilos-user-impersonate-step-up')).toBeNull()
+    const confirmBtn = el(
+      fixture,
+      'hilos-user-impersonate-confirm',
+    ) as HTMLButtonElement
+    expect(confirmBtn.disabled).toBe(true)
+    expect(confirmBtn.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    await click(fixture, 'hilos-user-impersonate-confirm')
+    expect(world.sent).toHaveLength(0)
+  })
+
+  it('a logged-in non-admin on their own card sees block disabled by ownBlockReason without strip text id', () => {
+    const world = userContext(false, 'skip', { currentUserId: 1 })
+    bindSession(world.context.scopes).handshake({ id: 1, admin: false }, true)
+    const fixture = mountViewModePage(world.context)
+
+    const blockBtn = el(fixture, 'hilos-user-block-open') as HTMLButtonElement
+    expect(blockBtn).not.toBeNull()
+    expect(blockBtn.disabled).toBe(true)
+    expect(blockBtn.getAttribute('aria-describedby')).toBe(
+      'hilos-user-block-reason',
+    )
+    expect(blockBtn.getAttribute('aria-describedby')).not.toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+  })
+
+  it('an admin on a node in view mode retains full access and sends step-up start', async () => {
+    const world = userContext(false, 'skip')
+    bindSession(world.context.scopes).handshake({ id: 99, admin: true }, true)
+    const fixture = mountViewModePage(world.context)
+
+    const adminBtn = el(fixture, 'hilos-user-admin-open') as HTMLButtonElement
+    expect(adminBtn).not.toBeNull()
+    expect(adminBtn.disabled).toBe(false)
+
+    await click(fixture, 'hilos-user-admin-open')
+
+    expect(world.sent[0]?.action).toBe('hilos_step_up_start')
   })
 })

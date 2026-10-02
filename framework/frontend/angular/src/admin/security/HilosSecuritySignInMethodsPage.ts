@@ -26,11 +26,9 @@ import {
   signal,
 } from '@angular/core'
 import {
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   createHilosSignInMethodsActions,
   createHilosSignInMethodsTable,
-  isHiddenValue,
   isSignInMethodOn,
   resolveHilosPath,
   subscribeSignal,
@@ -42,6 +40,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
@@ -57,6 +56,7 @@ let passkeyHintSeq = 0
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosHideable,
     HilosLink,
     HilosSwitch,
     HilosTableCell,
@@ -70,19 +70,19 @@ let passkeyHintSeq = 0
           <code class="small text-body-secondary">{{ row.methodKey }}</code>
         </ng-template>
         <ng-template hilosTableCell="enabled" let-row>
-          @if (isHidden(isOn(row))) {
-            <span>{{ hiddenCopy }}</span>
-          } @else {
-            <hilos-switch
-              class="mb-0"
-              [checked]="isOn(row) === true"
-              [busy]="pendingMethodKey() === row.methodKey"
-              [disabled]="toggle.busy()"
-              [aria-label]="'Enable ' + row.label"
-              [dataId]="'hilos-sign-in-method-enabled-' + row.methodKey"
-              (toggle)="onToggle(row, $event)"
-            />
-          }
+          <hilos-hideable [value]="isOn(row)">
+            <ng-template let-on>
+              <hilos-switch
+                class="mb-0"
+                [checked]="on"
+                [busy]="pendingMethodKey() === row.methodKey"
+                [disabled]="toggle.busy()"
+                [aria-label]="'Enable ' + row.label"
+                [dataId]="'hilos-sign-in-method-enabled-' + row.methodKey"
+                (toggle)="onToggle(row, $event)"
+              />
+            </ng-template>
+          </hilos-hideable>
         </ng-template>
         <ng-template hilosTableCell="ready" let-row>
           @if (row.ready) {
@@ -122,20 +122,20 @@ let passkeyHintSeq = 0
               those already created keep signing in with their passkey.
             </div>
           </div>
-          @if (isHidden(passkeyAllowsUnproven())) {
-            <span>{{ hiddenCopy }}</span>
-          } @else {
-            <hilos-switch
-              class="mb-0"
-              [checked]="passkeyAllowsUnproven() === true"
-              [busy]="passkeyPending()"
-              [disabled]="toggle.busy()"
-              [aria-label]="'Allow passkey without a confirmed address'"
-              [aria-describedby]="passkeyHintId"
-              dataId="hilos-sign-in-passkey-unproven"
-              (toggle)="onTogglePasskeyUnproven($event)"
-            />
-          }
+          <hilos-hideable [value]="passkeyAllowsUnproven()">
+            <ng-template let-on>
+              <hilos-switch
+                class="mb-0"
+                [checked]="on"
+                [busy]="passkeyPending()"
+                [disabled]="toggle.busy()"
+                [aria-label]="'Allow passkey without a confirmed address'"
+                [aria-describedby]="passkeyHintId"
+                dataId="hilos-sign-in-passkey-unproven"
+                (toggle)="onTogglePasskeyUnproven($event)"
+              />
+            </ng-template>
+          </hilos-hideable>
         </div>
       }
     </hilos-admin-page>
@@ -153,9 +153,6 @@ export class HilosSecuritySignInMethodsPage {
   private readonly actions = computed(() =>
     createHilosSignInMethodsActions(this.context()),
   )
-
-  protected readonly isHidden = isHiddenValue
-  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
 
   // The live enabled set, mirrored from the core table handle: the handle arrives
   // through a computed, so hilosSignal cannot take it at field init.

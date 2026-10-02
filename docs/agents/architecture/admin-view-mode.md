@@ -383,10 +383,9 @@ nobody is asked*).
   every screen, and a control reading it directly would lock that viewer's own
   profile and the shell's controls — the deletion strip's "Keep my account",
   the impersonation strip's Stop, which under a takeover of a non-admin
-  carries that person's identity. The Vue and React shells draw
+  carries that person's identity. The three shells draw
   the gear from it for `full` and `view`, marked `data-access`, and a project
-  passes nothing; in Angular (not in the code yet — HIL-1272) the gear is
-  still drawn for an admin only.
+  passes nothing.
 - The admin routes do not refuse a viewer on the client, and a grant or a
   revoke moves the open tab between the full surface and the view live:
   `bindAccessReaction` takes the mode as a third input, and with it on a
@@ -424,9 +423,7 @@ nobody is asked*).
 - An edit window over a hidden field (F1): the field is replaced by the mark —
   no input, no list — and the draft holds the one hidden value, so the window is
   not dirty, raises no notice, and Cancel or Esc closes it without "Discard
-  changes?"; Save is disabled by the mode. Angular draws neither the banner
-  nor the mark yet and says the word "Hidden" where a field became hideable
-  (not in the code yet — HIL-1272).
+  changes?"; Save is disabled by the mode.
 - The controls of the mode: inside an admin page a viewer finds the action
   button (`LoadingButton`), the switch (`HilosSwitch`), the Save of an edit
   form (`ConflictActions`, the default button and the slotted one alike) and a
@@ -505,9 +502,7 @@ nobody is asked*).
   and its raw buttons only open or close a dialog (HIL-1264).
 - The controls exist in all three frontends with full parity, as every
   primitive does
-  ([../frontend/multiframework-core.md](../frontend/multiframework-core.md));
-  the Angular side (not in the code yet — HIL-1272) follows the Vue and React
-  ones.
+  ([../frontend/multiframework-core.md](../frontend/multiframework-core.md)).
 
 ## What A New Admin Section Owes
 
@@ -556,6 +551,15 @@ where the lever is the same `setAdminViewMode()` of
 `demo/binance-btc-tracker/tests/e2e/helpers/adminViewMode.ts`. How the viewer's
 e2e is laid out across the three frontends is HIL-1273's
 (not in the code yet — HIL-1273).
+
+The React and Angular kits carry the viewer cases of their primitives and of
+every section as units (`framework/frontend/react/test/`,
+`framework/frontend/angular/test/`), mirroring the Vue ones; a guest's gear, the
+strip on the admin screens, the mark on the acceptances and the legal setting
+window are an e2e of the demo of each kit
+(`demo/tasks/tests/e2e/tests/admin-view-mode.spec.ts`,
+`demo/polls/tests/e2e/tests/admin-view-mode.spec.ts`), with the lever copied
+into its `tests/e2e/helpers/adminViewMode.ts`.
 
 The log takeouts carry their viewer case as a unit of the rotations page
 (`framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.test.ts`) and not

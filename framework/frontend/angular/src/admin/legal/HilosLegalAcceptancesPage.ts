@@ -7,7 +7,6 @@ import {
 } from '@angular/core'
 import {
   createHilosLegalAcceptancesTable,
-  hiddenAsWord,
   hilosLegalDocumentLabel,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
@@ -16,6 +15,7 @@ import {
   type HilosLegalContext,
 } from '@hilos/core'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -24,7 +24,13 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
 @Component({
   selector: 'hilos-legal-acceptances-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosLink, HilosTableCell, HilosViewportTable],
+  imports: [
+    HilosAdminPage,
+    HilosHideable,
+    HilosLink,
+    HilosTableCell,
+    HilosViewportTable,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       <div data-id="legal-acceptances-table">
@@ -34,9 +40,13 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
               data-id="legal-acceptance-row"
               [attr.data-record]="row.rowKey"
             >
-              <strong>{{ hiddenAsWord(row.name) }}</strong>
+              <strong><hilos-hideable [value]="row.name" /></strong>
               <div class="small text-body-secondary">
-                {{ hiddenAsWord(row.email) ?? 'No verified email' }}
+                <hilos-hideable [value]="row.email"
+                  ><ng-template let-email>{{
+                    email ?? 'No verified email'
+                  }}</ng-template></hilos-hideable
+                >
               </div>
             </div></ng-template
           >
@@ -74,7 +84,6 @@ export class HilosLegalAcceptancesPage {
   protected readonly keys = HilosLegalRowKey
   protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
   protected readonly path = resolveHilosPath
-  protected readonly hiddenAsWord = hiddenAsWord
   protected readonly documentLabel = hilosLegalDocumentLabel
   protected readonly table = computed(() =>
     createHilosLegalAcceptancesTable(this.context()),

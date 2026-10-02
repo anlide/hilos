@@ -59,6 +59,8 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
@@ -106,6 +108,8 @@ function noticeText(
     HilosAdminPage,
     HilosActionError,
     HilosEditNotice,
+    HilosHiddenMark,
+    HilosHideable,
     HilosLink,
     HilosModal,
     HilosTableCell,
@@ -129,11 +133,7 @@ function noticeText(
               </p>
               @if (redirectRow()?.setState) {
                 <code data-id="hilos-oauth-redirect-value">
-                  {{
-                    isHidden(redirectRow()!.value)
-                      ? hiddenCopy
-                      : redirectRow()!.value
-                  }}
+                  <hilos-hideable [value]="redirectRow()!.value" />
                 </code>
               } @else {
                 <span
@@ -235,10 +235,8 @@ function noticeText(
         <hilos-action-error [action]="edit" detailsTitle="Couldn't save" />
         <form (submit)="submitEdit($event)">
           @if (editHidden()) {
-            <div class="mb-3">
-              <div class="form-label">Return address</div>
-              <div>{{ hiddenCopy }}</div>
-            </div>
+            <div class="form-label">Return address</div>
+            <hilos-hidden-mark />
           } @else {
             <label class="form-label" for="hilos-oauth-redirect-input">
               Return address
@@ -321,7 +319,11 @@ function noticeText(
               class="col-8 text-break"
               data-id="hilos-oauth-redirect-reset-now"
             >
-              {{ row.setState ? row.value : 'Not set' }}
+              @if (row.setState) {
+                <hilos-hideable [value]="row.value" />
+              } @else {
+                Not set
+              }
             </dd>
             <dt class="col-4">Back to</dt>
             <dd class="col-8" data-id="hilos-oauth-redirect-reset-default">
@@ -394,8 +396,6 @@ export class HilosSecurityOauthPage {
     openRowEdit<RedirectEditFields>({ value: '' }),
   )
   protected readonly edit = createHilosTrackedAction()
-  protected readonly isHidden = isHiddenValue
-  protected readonly hiddenCopy = HILOS_VIEW_MODE_COPY.hidden
   protected readonly editHidden = computed(() =>
     isHiddenValue(this.editBaseline().values.value),
   )

@@ -3,7 +3,10 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HilosSwitch } from '../src/HilosSwitch.js'
-import { HILOS_TAKEOVER_VIEW_ONLY } from '../src/hilosLookOnly.js'
+import {
+  HILOS_ADMIN_VIEW_MODE,
+  HILOS_TAKEOVER_VIEW_ONLY,
+} from '../src/hilosLookOnly.js'
 
 function mount(
   inputs: { checked: boolean; busy?: boolean; spinnerDelay?: number } = {
@@ -109,6 +112,70 @@ describe('HilosSwitch', () => {
     expect(firstInput.id).not.toBe(secondInput.id)
     expect(firstLabel?.htmlFor).toBe(firstInput.id)
     expect(secondLabel?.htmlFor).toBe(secondInput.id)
+  })
+})
+
+describe('HilosSwitch in the admin view mode', () => {
+  /**
+   * Mount the switch on an admin page the way HilosAdminPage provides whether a
+   * viewer stands there.
+   *
+   * @param viewMode The admin page's view mode.
+   * @param checked Where the server put the switch.
+   * @param hint The switch's own description, if any.
+   */
+  function mountInPage(
+    viewMode: boolean,
+    checked: boolean,
+    hint?: string,
+  ): ComponentFixture<HilosSwitch> {
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HILOS_ADMIN_VIEW_MODE,
+          useValue: signal(viewMode).asReadonly(),
+        },
+      ],
+    })
+    const fixture = TestBed.createComponent(HilosSwitch)
+    fixture.componentRef.setInput('checked', checked)
+    fixture.componentRef.setInput('dataId', 'setting-toggle')
+    fixture.componentRef.setInput('aria-label', 'Enable setting')
+    if (hint !== undefined) {
+      fixture.componentRef.setInput('aria-describedby', hint)
+    }
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  it('stands disabled where the server put it, described by the strip too', () => {
+    const fixture = mountInPage(true, true, 'hint')
+    const toggles: boolean[] = []
+    fixture.componentInstance.toggle.subscribe((next) => toggles.push(next))
+
+    expect(input(fixture).disabled).toBe(true)
+    expect(input(fixture).checked).toBe(true)
+    expect(input(fixture).getAttribute('aria-describedby')).toBe(
+      'hint hilos-view-mode-strip-text',
+    )
+    input(fixture).click()
+    expect(toggles).toEqual([])
+  })
+
+  it('points at the strip alone when it has no hint of its own', () => {
+    const fixture = mountInPage(true, false)
+
+    expect(input(fixture).getAttribute('aria-describedby')).toBe(
+      'hilos-view-mode-strip-text',
+    )
+  })
+
+  it('is untouched outside the mode', () => {
+    const fixture = mountInPage(false, false, 'hint')
+
+    expect(input(fixture).disabled).toBe(false)
+    expect(input(fixture).getAttribute('aria-describedby')).toBe('hint')
   })
 })
 

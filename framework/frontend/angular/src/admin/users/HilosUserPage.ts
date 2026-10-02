@@ -25,8 +25,10 @@
 // step, operation `impersonate` — whose words follow the settings
 // (hilosUserImpersonationSection). A success needs no word: the session rebinds
 // and the strip rises. The buttons that only open a window stay live in a
-// takeover that only looks; the confirmation in the window does not. Bootstrap
-// classes only (styling-rules.md).
+// takeover that only looks; the confirmation in the window does not. A viewer of
+// the admin view mode opens every window at once, without the confirmation
+// step, and the confirmation in the window stands disabled by the mode
+// (HIL-1263). Bootstrap classes only (styling-rules.md).
 import {
   afterRenderEffect,
   ChangeDetectionStrategy,
@@ -67,7 +69,6 @@ import {
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   hilosPasswordFateChoices,
   hiddenAsWord,
-  HILOS_VIEW_MODE_COPY,
   isHiddenValue,
   keepMineRowEdit,
   openRowEdit,
@@ -106,6 +107,8 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosAvatar } from '../../HilosAvatar.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
+import { HilosHiddenMark } from '../../HilosHiddenMark.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -127,7 +130,7 @@ function focusWindow(body: HTMLElement | undefined): void {
 
 /**
  * The one field the modal edits: the display name — hidden for a viewer of the
- * admin view mode, and then the modal says so in place of the input.
+ * admin view mode, and then the modal shows the mark in place of the input (F1).
  */
 interface UserEditFields {
   name: Hideable<string>
@@ -157,6 +160,8 @@ function noticeText(live: RowEditState<UserEditFields>): string {
     HilosAvatar,
     HilosEditNotice,
     HilosFormError,
+    HilosHiddenMark,
+    HilosHideable,
     HilosModal,
     HilosStepUpStep,
     HilosTableCell,
@@ -171,9 +176,9 @@ function noticeText(live: RowEditState<UserEditFields>): string {
         <div class="card" data-id="hilos-user-detail">
           <div class="card-header d-flex align-items-center gap-2">
             <hilos-avatar [name]="avatarName()" size="md" />
-            <span class="h5 mb-0" data-id="hilos-user-name">{{
-              hiddenAsWord(detail.name)
-            }}</span>
+            <span class="h5 mb-0" data-id="hilos-user-name"
+              ><hilos-hideable [value]="detail.name"
+            /></span>
             <span class="badge text-bg-secondary">{{ detail.presence }}</span>
             @if (standingBadge(); as badge) {
               <span
@@ -401,7 +406,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
         <form (submit)="submit($event)">
           @if (draftHidden()) {
             <div class="form-label">Display name</div>
-            <div>{{ hiddenWord }}</div>
+            <hilos-hidden-mark />
           } @else {
             <label class="form-label" for="hilos-user-name-field">
               Display name
@@ -694,36 +699,38 @@ function noticeText(live: RowEditState<UserEditFields>): string {
                   />
                 </ng-template>
                 <ng-template hilosTableCell="name" let-row>
-                  {{ hiddenAsWord(row.name) }}
-                  <span class="text-body-secondary">#{{ row.id }}</span>
+                  <!-- The space before the id lives in its span: a
+                  whitespace-only node between two elements is dropped. -->
+                  <hilos-hideable [value]="row.name" />
+                  <span class="text-body-secondary"> #{{ row.id }}</span>
                   @if (row.id === currentUserId()) {
                     <span class="badge text-bg-secondary ms-2">you</span>
                   }
                 </ng-template>
                 <ng-template hilosTableCell="identities" let-row>
-                  @if (isHiddenValue(row.identities)) {
-                    <span>{{ hiddenWord }}</span>
-                  } @else {
-                    <ul class="list-unstyled mb-0">
-                      @for (
-                        identity of row.identities;
-                        track identity.type + ':' + identity.identifier
-                      ) {
-                        <li>
-                          <span class="fw-medium">{{
-                            identityTitle(identity)
-                          }}</span>
-                          @if (identity.type !== 'passkey') {
-                            · {{ identity.identifier }}
-                          }
-                          @if (identity.verified) {
-                            <span aria-hidden="true"> ✓</span>
-                            <span class="visually-hidden"> Verified</span>
-                          }
-                        </li>
-                      }
-                    </ul>
-                  }
+                  <hilos-hideable [value]="row.identities">
+                    <ng-template let-identities>
+                      <ul class="list-unstyled mb-0">
+                        @for (
+                          identity of identities;
+                          track identity.type + ':' + identity.identifier
+                        ) {
+                          <li>
+                            <span class="fw-medium">{{
+                              identityTitle(identity)
+                            }}</span>
+                            @if (identity.type !== 'passkey') {
+                              · {{ identity.identifier }}
+                            }
+                            @if (identity.verified) {
+                              <span aria-hidden="true"> ✓</span>
+                              <span class="visually-hidden"> Verified</span>
+                            }
+                          </li>
+                        }
+                      </ul>
+                    </ng-template>
+                  </hilos-hideable>
                 </ng-template>
                 <ng-template hilosTableCell="lastActivity" let-row>
                   {{ row.lastActivity ?? '—' }}
@@ -734,13 +741,16 @@ function noticeText(live: RowEditState<UserEditFields>): string {
         } @else if (mergeSummaryCandidate(); as candidate) {
           <p data-id="hilos-user-merge-summary">
             <strong
-              >{{ hiddenAsWord(candidate.name) }} (#{{ candidate.id }})</strong
+              ><hilos-hideable [value]="candidate.name" /> (#{{
+                candidate.id
+              }})</strong
             >
             will be merged into
-            <strong
-              >{{ detail() ? hiddenAsWord(detail()!.name) : '' }} (#{{
-                detail()?.id
-              }})</strong
+            <strong>
+              @if (detail(); as survivor) {
+                <hilos-hideable [value]="survivor.name" />
+              }
+              (#{{ detail()?.id }})</strong
             >.
           </p>
           <ul>
@@ -873,7 +883,6 @@ export class HilosUserPage {
   protected readonly nameMin = 2
   protected readonly nameMax = 64
   protected readonly passwordCopy = HILOS_ACCOUNT_MERGE_PASSWORD_COPY
-  protected readonly hiddenWord = HILOS_VIEW_MODE_COPY.hidden
   protected readonly hiddenAsWord = hiddenAsWord
   protected readonly isHiddenValue = isHiddenValue
 

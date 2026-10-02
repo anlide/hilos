@@ -4,8 +4,9 @@
 // plus the fourth batch state the badge has to name (HIL-870).
 //
 // Only the cases about the withdrawal, about the takeout modal's promise, about
-// the Files cell and about the switch following the address (HIL-903) are here, by
-// the same names the other two shells give them. The empty states, the other
+// the Files cell, about the switch following the address (HIL-903) and about a
+// viewer of the admin view mode (HIL-1268) are here, by the same names the Vue
+// peer gives them. The empty states, the other
 // filters and the sub-line are the core headless's
 // discrimination and are proved once, in the peers; a third copy of them would
 // test @hilos/core through three view layers rather than test this view.
@@ -17,7 +18,10 @@
 // than by awaiting a tick.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ROTATIONS_HEADER_SIGNAL,
   SIGNAL_TYPE_PAGE_RESPONSE,
@@ -29,9 +33,10 @@ import {
   type HilosLogRotationsHeader,
   type HilosRouter,
   type PageRouteMatch,
+  type ProjectSignal,
   type TableViewportDescriptor,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosLogsRotationsPage } from '../src/admin/logs/HilosLogsRotationsPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -257,6 +262,7 @@ function batch(
  *
  * @param connection The connection the two frames arrive over.
  * @param actions The action lifecycle a dispatch travels through.
+ * @param navigator The navigator the app provides the screen with.
  * @returns The mounted fixture.
  */
 function mountPage(
@@ -352,6 +358,72 @@ async function settled(
  */
 function screenText(fixture: ComponentFixture<HilosLogsRotationsPage>): string {
   return (fixture.nativeElement as HTMLElement).textContent ?? ''
+}
+
+// The admin access a case binds is global to the core, so each binding is let go
+// once its case is over.
+const releases: (() => void)[] = []
+
+afterEach(() => {
+  for (const release of releases.splice(0)) {
+    release()
+  }
+})
+
+/**
+ * Bind the session scope and the admin access the way bootHilos does, over
+ * handshakes this harness emits.
+ *
+ * @returns The handshake a case drives the session with.
+ */
+function bindSession(): {
+  handshake: (
+    user: { id: number; admin: boolean } | null,
+    viewMode: boolean,
+  ) => void
+} {
+  const listeners: ((signal: ProjectSignal) => void)[] = []
+  const connection = {
+    on(event: string, listener: (payload: never) => void): () => void {
+      if (event === 'projectSignal') {
+        listeners.push(listener as (signal: ProjectSignal) => void)
+      }
+
+      return () => {}
+    },
+  } as unknown as HilosConnection
+  const scopes = new ScopeManager()
+  bindSessionScope(connection, scopes)
+  releases.push(bindAdminAccess(scopes))
+
+  return {
+    /**
+     * One handshake: who is behind the session, if anybody, and the node's
+     * admin view mode, both as the backend stamps them (HIL-1253).
+     *
+     * @param user The person behind the session, or null for a guest.
+     * @param viewMode The node's admin view mode.
+     */
+    handshake(
+      user: { id: number; admin: boolean } | null,
+      viewMode: boolean,
+    ): void {
+      const signal = {
+        kind: 'project',
+        type: 'handshake_response',
+        data: {
+          entities: {
+            currentUser: user === null ? null : { ...user, name: 'Olena' },
+          },
+          data: { adminViewMode: viewMode },
+        },
+        envelope: {},
+      } as unknown as ProjectSignal
+      for (const listener of listeners) {
+        listener(signal)
+      }
+    },
+  }
 }
 
 describe('HilosLogsRotationsPage', () => {
@@ -541,5 +613,159 @@ describe('HilosLogsRotationsPage', () => {
     expect(
       byId(fixture, 'hilos-rotation-state-all')?.getAttribute('aria-pressed'),
     ).toBe('true')
+  })
+
+  it('a viewer opens the takeout dialog and has nothing to confirm it with', async () => {
+    bindSession().handshake(null, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const fixture = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    fixture.detectChanges()
+
+    const takeout = byId(
+      fixture,
+      'hilos-rotation-takeout',
+    ) as HTMLButtonElement | null
+    expect(takeout?.disabled).toBe(false)
+    takeout?.click()
+    fixture.detectChanges()
+
+    const confirm = byId(
+      fixture,
+      'hilos-rotation-takeout-confirm',
+    ) as HTMLButtonElement | null
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(true)
+    expect(confirm?.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirm?.click()
+    await settled(fixture)
+    expect(dispatched).toHaveLength(0)
+
+    const close = byId(
+      fixture,
+      'hilos-rotation-takeout-close',
+    ) as HTMLButtonElement | null
+    expect(close).not.toBeNull()
+    expect(close?.disabled).toBe(false)
+    close?.click()
+    await settled(fixture)
+
+    expect(byId(fixture, 'hilos-rotation-takeout-confirm')).toBeNull()
+  })
+
+  it('a viewer opens the withdrawal dialog and has nothing to withdraw with', async () => {
+    bindSession().handshake(null, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const fixture = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'taken' })])
+    fixture.detectChanges()
+
+    const undo = byId(
+      fixture,
+      'hilos-rotation-undo',
+    ) as HTMLButtonElement | null
+    expect(undo?.disabled).toBe(false)
+    undo?.click()
+    fixture.detectChanges()
+
+    const confirm = byId(
+      fixture,
+      'hilos-rotation-undo-confirm',
+    ) as HTMLButtonElement | null
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(true)
+    expect(confirm?.getAttribute('aria-describedby')).toBe(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirm?.click()
+    await settled(fixture)
+    expect(dispatched).toHaveLength(0)
+
+    const cancel = byId(
+      fixture,
+      'hilos-rotation-undo-cancel',
+    ) as HTMLButtonElement | null
+    expect(cancel).not.toBeNull()
+    expect(cancel?.disabled).toBe(false)
+    cancel?.click()
+    await settled(fixture)
+
+    expect(byId(fixture, 'hilos-rotation-undo-confirm')).toBeNull()
+  })
+
+  it('a viewer filters the batches and reads the legend as an admin does', async () => {
+    bindSession().handshake(null, true)
+    const { connection } = makeConnection()
+    const fixture = mountPage(connection)
+
+    const dueSwitch = byId(
+      fixture,
+      'hilos-rotation-state-due',
+    ) as HTMLButtonElement | null
+    expect(dueSwitch?.disabled).toBe(false)
+    dueSwitch?.click()
+    fixture.detectChanges()
+    expect(
+      byId(fixture, 'hilos-rotation-state-due')?.getAttribute('aria-pressed'),
+    ).toBe('true')
+
+    const legend = byId(
+      fixture,
+      'hilos-rotation-legend',
+    ) as HTMLButtonElement | null
+    expect(legend?.disabled).toBe(false)
+    legend?.click()
+    fixture.detectChanges()
+    expect(screenText(fixture)).toContain('What is in a batch')
+
+    const close = byId(
+      fixture,
+      'hilos-rotation-legend-close',
+    ) as HTMLButtonElement | null
+    expect(close).not.toBeNull()
+    expect(close?.disabled).toBe(false)
+    close?.click()
+    fixture.detectChanges()
+    expect(screenText(fixture)).not.toContain('What is in a batch')
+  })
+
+  it('an admin on a node in the mode confirms a takeout as today', async () => {
+    bindSession().handshake({ id: 1, admin: true }, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const fixture = mountPage(connection, actions)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    fixture.detectChanges()
+
+    clickById(fixture, 'hilos-rotation-takeout')
+    const confirm = byId(
+      fixture,
+      'hilos-rotation-takeout-confirm',
+    ) as HTMLButtonElement | null
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(false)
+    expect(confirm?.getAttribute('aria-describedby')).toBeNull()
+
+    confirm?.click()
+    await settled(fixture)
+
+    expect(dispatched).toMatchObject([
+      {
+        action: 'logs_takeout_confirm',
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+      },
+    ])
   })
 })

@@ -5,21 +5,29 @@
 // answers Keep mine / Take theirs, and locks save as "Deleted" when the row goes.
 // The secret's modal opens empty, keeps save locked until something is typed,
 // and only ever says the row is gone. The ↺ resets a field only through a
-// confirm dialog (HIL-1147).
+// confirm dialog (HIL-1147). In the admin view mode a viewer finds Save and
+// Reset disabled, naming the view-mode strip, and the server's refusal stays in
+// the modal; an admin on the node keeps both.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   ActionLifecycle,
+  HILOS_VIEW_MODE_COPY,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosRouter,
   HilosSecurityOauthContext,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { HilosSecurityOauthProviderPage } from '../src/admin/security/HilosSecurityOauthProviderPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
@@ -96,7 +104,7 @@ function seededContext(clientId: string | null): {
   context: HilosSecurityOauthContext
   pushUpdate: (value: string | null, source?: string) => void
   pushRemove: (rowKey: string) => void
-  answer: (outcome: 'success' | 'fail') => void
+  answer: (outcome: 'success' | 'fail', errorCode?: string) => void
   sent: Array<{
     action: string
     payload: Record<string, unknown>
@@ -240,7 +248,7 @@ function seededContext(clientId: string | null): {
       pushDelta({ kind: 'row_removed', rowKey, reason: 'deleted' })
     },
     // Answer the last action sent, the way the server replies to it.
-    answer(outcome: 'success' | 'fail'): void {
+    answer(outcome: 'success' | 'fail', errorCode?: string): void {
       const last = sent[sent.length - 1]
       const event = outcome === 'success' ? 'actionSuccess' : 'actionError'
       for (const listener of replyListeners.get(event) ?? []) {
@@ -249,6 +257,7 @@ function seededContext(clientId: string | null): {
           action: last?.action,
           requestId: last?.requestId,
           reason: 'The provider refused the reset.',
+          ...(errorCode !== undefined ? { errorCode } : {}),
         })
       }
     },
@@ -629,5 +638,170 @@ describe('HilosSecurityOauthProviderPage reset dialog', () => {
     fixture.detectChanges()
 
     expect(resetButton(fixture, 'client_id').disabled).toBe(true)
+  })
+})
+
+describe('HilosSecurityOauthProviderPage in the admin view mode', () => {
+  const releases: (() => void)[] = []
+
+  afterEach(() => {
+    for (const release of releases.splice(0)) release()
+  })
+
+  function bindSession(scopes: ScopeManager) {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const connection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    bindSessionScope(connection, scopes)
+    releases.push(bindAdminAccess(scopes))
+
+    return {
+      handshake(
+        user: { id: number; admin: boolean } | null,
+        viewMode: boolean,
+      ): void {
+        const signal = {
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: {
+              currentUser: user === null ? null : { ...user, name: 'Olena' },
+            },
+            data: { adminViewMode: viewMode },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal
+        for (const listener of listeners) {
+          listener(signal)
+        }
+      },
+    }
+  }
+
+  function mountPage(
+    context: HilosSecurityOauthContext,
+  ): ComponentFixture<HilosSecurityOauthProviderPage> {
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosSecurityOauthProviderPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function resetButton(
+    fixture: ComponentFixture<unknown>,
+    field: 'client_id' | 'client_secret' | 'scope',
+  ): HTMLButtonElement {
+    return (fixture.nativeElement as HTMLElement).querySelector(
+      `table [data-id="hilos-oauth-field-reset-${field}"]`,
+    ) as HTMLButtonElement
+  }
+
+  function confirmButton(
+    fixture: ComponentFixture<unknown>,
+  ): HTMLButtonElement {
+    return el(fixture, 'hilos-oauth-field-reset-confirm') as HTMLButtonElement
+  }
+
+  /** Let a reply reach the tracked driver and the page. */
+  async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fixture.detectChanges()
+  }
+
+  it('a viewer opens field edit and finds Save disabled with the mode strip reference', async () => {
+    const { context, sent, answer } = seededContext('Iv1.a')
+    bindSession(context.scopes).handshake(null, true)
+    const fixture = openModal(context, 'client_id')
+
+    expect(saveButton(fixture).disabled).toBe(true)
+    expect(saveButton(fixture).getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    typeDraft(fixture, 'Iv1.mine')
+    expect(saveButton(fixture).disabled).toBe(true)
+
+    const form = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="modal"] form',
+    )
+    expect(form).not.toBeNull()
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+    fixture.detectChanges()
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.action).toBe('security_oauth_provider_set')
+    expect(sent[0]?.payload).toEqual({
+      providerKey: PROVIDER,
+      field: 'client_id',
+      value: 'Iv1.mine',
+    })
+
+    answer('fail', 'view_mode')
+    await settle(fixture)
+
+    expect(el(fixture, 'modal')).not.toBeNull()
+    expect(el(fixture, 'hilos-action-error')?.textContent).toContain(
+      HILOS_VIEW_MODE_COPY.refusal,
+    )
+    expect(saveButton(fixture).disabled).toBe(true)
+  })
+
+  it('a viewer opens field reset and finds confirm disabled with the mode strip reference', () => {
+    const { context, sent } = seededContext('Iv1.a')
+    bindSession(context.scopes).handshake(null, true)
+    const fixture = mountPage(context)
+
+    expect(resetButton(fixture, 'client_id').disabled).toBe(false)
+    resetButton(fixture, 'client_id').click()
+    fixture.detectChanges()
+
+    expect(confirmButton(fixture).disabled).toBe(true)
+    expect(confirmButton(fixture).getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+
+    confirmButton(fixture).click()
+    fixture.detectChanges()
+    expect(sent).toEqual([])
+  })
+
+  it('an admin on a node in the mode has Save and Reset active', () => {
+    const { context } = seededContext('Iv1.a')
+    bindSession(context.scopes).handshake({ id: 1, admin: true }, true)
+    const fixture = openModal(context, 'client_id')
+
+    typeDraft(fixture, 'Iv1.mine')
+    expect(saveButton(fixture).disabled).toBe(false)
+    expect(saveButton(fixture).getAttribute('aria-describedby')).toBeNull()
+
+    const cancel = Array.from(
+      (
+        fixture.nativeElement as HTMLElement
+      ).querySelectorAll<HTMLButtonElement>('[data-id="modal"] button'),
+    ).find((button) => button.textContent?.trim() === 'Cancel')
+    cancel?.click()
+    fixture.detectChanges()
+
+    el(fixture, 'modal-confirm-discard')?.click()
+    fixture.detectChanges()
+
+    resetButton(fixture, 'client_id').click()
+    fixture.detectChanges()
+
+    expect(confirmButton(fixture).disabled).toBe(false)
+    expect(confirmButton(fixture).getAttribute('aria-describedby')).toBeNull()
   })
 })

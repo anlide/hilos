@@ -19,6 +19,14 @@
 // region, none under a takeover or maintenance, Keep my account tracked, a
 // refusal that toasts, and the impersonation strip colored by the standing.
 //
+// Two more mirror the Vue shell's describes of the admin view mode: the admin
+// gear drawn from the core access (HIL-1253) — none for a guest or a non-admin
+// without the mode, full for an admin, view for a viewer, live across a grant
+// and a revoke, none under maintenance — and the fourth framework strip, the
+// view-mode strip (HIL-1260) — its words, its place after the session strips
+// and before the project's, none off an admin route, for an admin, without the
+// mode or under maintenance, and live across a grant and a revoke.
+//
 // Order is read off the shell's child order rather than off heights: jsdom does
 // not lay out, so every height there is zero and a measurement would pass on a
 // broken region too.
@@ -32,6 +40,7 @@ import {
   ActionLifecycle,
   applyServerTime,
   bindAccountBlocked,
+  bindAdminAccess,
   bindAccountStanding,
   bindImpersonation,
   bindLegalReconsent,
@@ -327,6 +336,7 @@ function bindSession() {
   const unbindStanding = bindAccountStanding(scopes, actions)
   const unbindSignOut = bindSignOut(scopes, actions)
   const unbindReconsent = bindLegalReconsent(scopes, actions)
+  const unbindAdminAccess = bindAdminAccess(scopes)
 
   return {
     source,
@@ -336,6 +346,7 @@ function bindSession() {
       unbindStanding()
       unbindSignOut()
       unbindReconsent()
+      unbindAdminAccess()
     },
     handshake(payload: Record<string, unknown>): void {
       const signal = {
@@ -1144,13 +1155,14 @@ function reconsentHandshake(
  * A router standing on one page.
  *
  * @param page The page key of the current route.
+ * @param admin Whether the route is an admin one.
  */
-function routerOn(page: string): HilosRouter {
+function routerOn(page: string, admin = false): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page,
       params: {},
-      admin: false,
+      admin,
     }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
@@ -1296,5 +1308,260 @@ describe('HilosLayout "the terms have changed" (HIL-500)', () => {
 
     expect(root.querySelector('[data-id="legal-reconsent-icon"]')).toBeNull()
     fixture.destroy()
+  })
+})
+
+describe('HilosLayout admin gear', () => {
+  let unbind: (() => void) | undefined
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+  })
+
+  /**
+   * One handshake: who is behind the session, if anybody, and the node's admin
+   * view mode, both as the backend stamps them (HIL-1253).
+   *
+   * @param user The person behind the session, or null for a guest.
+   * @param viewMode The node's admin view mode.
+   */
+  function greeting(
+    user: { id: number; admin: boolean } | null,
+    viewMode: boolean,
+  ): Record<string, unknown> {
+    return {
+      entities: {
+        currentUser: user === null ? null : { ...user, name: 'Olena' },
+      },
+      data: { adminViewMode: viewMode },
+    }
+  }
+
+  /**
+   * The gear of a freshly mounted shell, or null when it draws none.
+   *
+   * @param fixture The mounted shell.
+   */
+  function gear(fixture: ReturnType<typeof mountShell>): Element | null {
+    return (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="nav-admin"]',
+    )
+  }
+
+  it('draws no gear for a guest on a node without the view mode', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting(null, false))
+
+    expect(gear(mountShell())).toBeNull()
+  })
+
+  it('draws no gear for a signed-in non-admin on a node without the view mode', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting({ id: 7, admin: false }, false))
+
+    expect(gear(mountShell())).toBeNull()
+  })
+
+  it('draws the full gear for an admin, leading to the dashboard', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting({ id: 7, admin: true }, false))
+    const link = gear(mountShell())
+
+    expect(link).not.toBeNull()
+    expect(link?.getAttribute('data-access')).toBe('full')
+    expect(link?.getAttribute('href')).toBe('/hilos')
+    expect(link?.getAttribute('aria-label')).toBe('Hilos dashboard')
+  })
+
+  it.each([
+    ['a guest', null],
+    ['a signed-in non-admin', { id: 7, admin: false }],
+  ])('draws the view gear for %s on a node in the view mode', (_who, user) => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting(user, true))
+    const link = gear(mountShell())
+
+    expect(link).not.toBeNull()
+    expect(link?.getAttribute('data-access')).toBe('view')
+    expect(link?.getAttribute('href')).toBe('/hilos')
+  })
+
+  it('turns the gear full on a grant and back to view on a revoke, live', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting({ id: 7, admin: false }, true))
+    const fixture = mountShell()
+
+    session.handshake(greeting({ id: 7, admin: true }, true))
+    fixture.detectChanges()
+    expect(gear(fixture)?.getAttribute('data-access')).toBe('full')
+
+    session.handshake(greeting({ id: 7, admin: false }, true))
+    fixture.detectChanges()
+    expect(gear(fixture)?.getAttribute('data-access')).toBe('view')
+  })
+
+  it('draws no gear under the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(greeting(null, true))
+
+    expect(gear(mountShell(FROZEN))).toBeNull()
+  })
+})
+
+describe('HilosLayout view-mode strip (HIL-1260)', () => {
+  let unbind: (() => void) | undefined
+
+  afterEach(() => {
+    unbind?.()
+    unbind = undefined
+  })
+
+  /**
+   * One handshake: Bob, an admin or not, on a node with the admin view mode on
+   * or off, with the facts of his standing.
+   *
+   * @param admin Whether Bob is an admin.
+   * @param viewMode The node's admin view mode.
+   * @param deletionEffectiveAt When Bob's own account is deleted, or null.
+   */
+  function viewerHandshake(
+    admin: boolean,
+    viewMode: boolean,
+    deletionEffectiveAt: number | null = null,
+  ): Record<string, unknown> {
+    const standing = standingHandshake(
+      deletionEffectiveAt === null ? 'none' : 'deletion_scheduled',
+      false,
+      deletionEffectiveAt,
+    )
+
+    return {
+      data: {
+        ...(standing['data'] as Record<string, unknown>),
+        adminViewMode: viewMode,
+      },
+      entities: { currentUser: { id: 2, name: 'Bob', admin } },
+    }
+  }
+
+  /**
+   * Stand the shell's router on one route.
+   *
+   * @param admin Whether the route is an admin one.
+   */
+  function routeOn(admin: boolean): void {
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: HILOS_ROUTER,
+          useValue: routerOn(
+            admin ? HilosPages.DASHBOARD : HilosPages.PROFILE_DATA,
+            admin,
+          ),
+        },
+      ],
+    })
+  }
+
+  /**
+   * The view-mode strip of a mounted shell, or null when it draws none.
+   *
+   * @param fixture The mounted shell.
+   */
+  function strip(fixture: { nativeElement: unknown }): Element | null {
+    return (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="view-mode-banner"]',
+    )
+  }
+
+  it('tells a viewer on an admin route that the screen may be looked at and not changed', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(false, true))
+    routeOn(true)
+
+    const shown = strip(mountShell())
+
+    expect(shown?.classList.contains('alert')).toBe(true)
+    expect(shown?.classList.contains('alert-secondary')).toBe(true)
+    expect(shown?.classList.contains('border-0')).toBe(true)
+    expect(shown?.querySelector('.bi-eye')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
+    const text = shown?.querySelector('#hilos-view-mode-strip-text')
+    expect(text?.querySelector('strong')?.textContent?.trim()).toBe('View mode')
+    expect(text?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'View mode · You can look around, but not change anything.',
+    )
+  })
+
+  it('stands after the session strips and before the project strip', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(false, true, NOW + 3 * DAY_MS))
+    routeOn(true)
+
+    const fixture = TestBed.createComponent(BannerHost)
+    fixture.componentInstance.connection = fakeConnection(ADMITTED)
+    fixture.detectChanges()
+
+    const region = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-id="app-banner"]',
+    )
+    const order = Array.from(region?.children ?? []).map((child) =>
+      child.getAttribute('data-id'),
+    )
+    expect(order).toEqual([
+      'protected-mode-banner',
+      'account-deletion-strip',
+      'view-mode-banner',
+      'test-banner',
+    ])
+  })
+
+  it.each([
+    ['on a route outside the admin section', false, true, false],
+    ['for an admin', true, true, true],
+    ['on a node without the view mode', false, false, true],
+  ])('draws no strip %s', (_case, admin, viewMode, adminRoute) => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(admin, viewMode))
+    routeOn(adminRoute)
+
+    expect(strip(mountShell())).toBeNull()
+  })
+
+  it('draws no strip under the maintenance surface', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(false, true))
+    routeOn(true)
+
+    expect(strip(mountShell(FROZEN))).toBeNull()
+  })
+
+  it('leaves on a grant and comes back on a revoke, live', () => {
+    const session = bindSession()
+    unbind = session.unbind
+    session.handshake(viewerHandshake(false, true))
+    routeOn(true)
+    const fixture = mountShell()
+    expect(strip(fixture)).not.toBeNull()
+
+    session.handshake(viewerHandshake(true, true))
+    fixture.detectChanges()
+    expect(strip(fixture)).toBeNull()
+
+    session.handshake(viewerHandshake(false, true))
+    fixture.detectChanges()
+    expect(strip(fixture)).not.toBeNull()
   })
 })
