@@ -146,9 +146,10 @@ trait ProtectedModeTestDriverTrait
      * not a shortcut - reading the row here answers wrongly twice over. The relay reaches this
      * agent by its own path, so the phase written on the master has not necessarily synced
      * into this worker yet (it read `inactive` in a live run); and an initiator sitting on a
-     * cluster follower stays at `activating` for the whole freeze by design, because `active`
-     * is the leader-local marker that every node has quiesced. Ready means every node has
-     * quiesced, on every topology, which is exactly what the caller asked.
+     * cluster follower reaches `active` only on the leader's word that every node has quiesced
+     * (HIL-1128), a frame of its own that this worker's copy of the row may not have caught up
+     * with either. Ready means every node has quiesced, on every topology, which is exactly what
+     * the caller asked.
      *
      * The verifier circle is photographed before this hook, by the worker's ready relay
      * (HIL-1118), so the drive sees the circle without a line of its own: it freezes without
@@ -277,9 +278,10 @@ trait ProtectedModeTestDriverTrait
      * its own work.
      *
      * The phase check names the two rows that are wrong on ANY node rather than demanding the
-     * right one, because this row is not always the one the core judges by: on a cluster only the
-     * leader writes active, so an initiator hosted on a follower reads activating for the whole
-     * freeze and a check for active would refuse every leave it ever sent. Waiting for verifying
+     * right one, because this row is not always the one the core judges by: on a cluster a
+     * follower writes active only on its leader's settled frame (HIL-1128), so an initiator hosted
+     * there can still read activating when the freeze already holds, and a check for active would
+     * refuse a leave the core would take. Waiting for verifying
      * still works there - the leader broadcasts the window to its followers - so what is left to
      * catch locally is a leave with no freeze under it and a window already open, and the core's
      * own fail-closed check stays behind both.

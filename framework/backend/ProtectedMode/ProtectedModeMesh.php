@@ -15,8 +15,9 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
  * It hides the {@see PeerServer} behind the sends the freeze needs and the two
  * roster reads the coordinator relies on, so the coordinator stays pure logic and is unit-testable
  * with a fake. An initiator that does not lead forwards enable and disable to the current leader
- * (addressed via {@see leaderNodeId()}); the leader broadcasts quiesce and lift to its followers
- * and signals ready to the initiator; a follower reports quiesced back to the leader. The circle
+ * (addressed via {@see leaderNodeId()}); the leader broadcasts quiesce and lift to its followers,
+ * tells them the freeze has settled once every node has quiesced, and signals ready to the
+ * initiator; a follower reports quiesced back to the leader. The circle
  * photographed at the freeze rides the same way a pass does - the initiator's node to the leader,
  * the leader to every follower master. The concrete port is wired at daemon start by the
  * leader-orchestration slice.
@@ -86,6 +87,13 @@ interface ProtectedModeMesh
     public function sendQuiesced(string $leaderNodeId): void;
 
     /**
+     * Tells every follower master that every node has stopped its roster, so each writes active.
+     *
+     * Sent at the end of every quiesce round, before the ready (HIL-1128).
+     */
+    public function broadcastSettled(): void;
+
+    /**
      * Forwards this initiator node's request to open the verification window to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader
@@ -149,9 +157,4 @@ interface ProtectedModeMesh
      * @param string $leaderNodeId Node id of the current leader
      */
     public function sendRefreeze(string $leaderNodeId): void;
-
-    /**
-     * Broadcasts the close-back to every follower master.
-     */
-    public function broadcastRefreeze(): void;
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -37,14 +38,17 @@ use Hilos\Utils\Logger;
  * - Leader side: an initiator's {@see onEnable()} records the freeze, freezes the leader's own
  *   node, broadcasts quiesce to the followers, and tracks whom it still awaits - itself included,
  *   until its own roster has stopped. Each {@see onQuiesced()} clears one follower; when none remain
- *   the leader marks the mode active and signals the initiator ready. A repeat enable from the
- *   verification window runs that round again (HIL-1057). The initiator's {@see onDisable()} deactivates, broadcasts lift,
- *   and releases the leader's own node. The leader role is gated on holding leadership, driven by
- *   {@see onBecameLeader()} / {@see onLostLeadership()}.
+ *   the leader marks the mode active, tells every follower the freeze has settled, and signals the
+ *   initiator ready. A repeat enable from the verification window runs that round again
+ *   (HIL-1057), and so does the close back from it (HIL-1128) - which owes nobody a ready. The
+ *   initiator's {@see onDisable()} deactivates, broadcasts lift, and releases the leader's own
+ *   node. The leader role is gated on holding leadership, driven by {@see onBecameLeader()} /
+ *   {@see onLostLeadership()}.
  * - Follower side: {@see onQuiesce()} freezes this node and, once its roster has stopped
- *   ({@see onRosterStopped()}), reports quiesced; {@see onLift()} releases it. The initiator's own
- *   node relays the leader's {@see onReady()} to its agent. The verifier circle photographed at the
- *   freeze is written on a follower's row from the leader's frame ({@see onCircle()}), as a pass is.
+ *   ({@see onRosterStopped()}), reports quiesced; {@see onSettled()} writes active once the leader
+ *   says every node has stopped, and {@see onLift()} releases it. The initiator's own node relays
+ *   the leader's {@see onReady()} to its agent. The verifier circle photographed at the freeze is
+ *   written on a follower's row from the leader's frame ({@see onCircle()}), as a pass is.
  *
  * A single-node cluster has no followers, so the leader activates the moment its own roster has
  * stopped. An installation with cluster mode off has no coordinator at all and freezes through
@@ -91,6 +95,13 @@ final class ClusterProtectedMode implements
 
     /** @var bool True once every follower has quiesced and the leader has signalled ready */
     private bool $active = false;
+
+    /**
+     * @var bool Whether the round in flight owes the initiator a ready - an entry does, the close
+     *     back from the window does not (HIL-1128); the round's end tells the followers first
+     *     ({@see onSettled()}) and the initiator only when owed
+     */
+    private bool $readyOwed = false;
 
     /** @var ?string Node id of the leader that ordered this node's freeze, or null when not frozen */
     private ?string $freezingLeaderId = null;
@@ -345,9 +356,9 @@ final class ClusterProtectedMode implements
      * authorizes the photograph by the node that initiated the operation, exactly as it authorizes
      * every other frame of the window. With no leader known as well, the photograph is dropped.
      *
-     * The phase is deliberately not checked, unlike the pass - an initiator sitting on a follower
-     * stays on `activating` for the whole freeze by design, and gating on `active` would drop the
-     * circle on exactly the topology that has one.
+     * The phase is deliberately not checked, unlike the pass - a follower reaches `active` only on
+     * its leader's settled frame ({@see onSettled()}, HIL-1128), and gating on `active` would make
+     * the circle hostage to one more frame on exactly the topology that has one.
      *
      * @param ProtectedModeCircleSignalData $data Initiator identity and the circle photographed for it
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -452,6 +463,7 @@ final class ClusterProtectedMode implements
             $data->initiatorAgentIndex,
             $data->initiatorNodeId,
         );
+        $this->readyOwed = true;
         $this->enterRound($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
     }
 
@@ -503,8 +515,9 @@ final class ClusterProtectedMode implements
      *
      * The exception is a quiesce from this node's freezing leader while the row is still verifying
      * (HIL-1057): the window has returned the roster, so a second stop is safe, and that is how a
-     * repeat entry from the window reaches a follower. On activating or active the same frame is
-     * still dropped, because those phases hold a standing or unfinished stop list.
+     * repeat entry from the window - and the close back from it (HIL-1128) - reaches a follower,
+     * which does not tell the two apart. On activating or active the same frame is still dropped,
+     * because those phases hold a standing or unfinished stop list.
      *
      * A node that holds no runtime state refuses the quiesce and answers nothing, mirroring the
      * leader's entry guard: silence keeps the leader in activating, which is the safe half of the
@@ -554,10 +567,10 @@ final class ClusterProtectedMode implements
      *
      * The leader counts itself quiesced and activates if no follower is outstanding; a follower
      * reports quiesced to the leader that froze it. A node is only ever one of the two for a given
-     * freeze, so what the class already holds decides which. Both answers belong to the walk that
-     * ENTERS a freeze - the first entry or a repeat from the verification window (HIL-1057) - and
-     * the row says so by still reading activating: the walk that closes the verification window
-     * back runs on a row already written active, and nobody is waiting on it.
+     * freeze, so what the class already holds decides which. Every walk that enters a freeze sits
+     * on activating and is reported - the first entry, a repeat from the verification window
+     * (HIL-1057) and the close back from it (HIL-1128). The close owes the initiator no ready, and
+     * the leader remembers that in its own state, so nothing here tells the walks apart.
      *
      * Said here and not when the stop was asked for, because that is the promise {@see onQuiesce()}
      * makes: a quiesced report for a freeze this node has not entered lets the leader hand ready to
@@ -681,6 +694,34 @@ final class ClusterProtectedMode implements
     }
 
     /**
+     * Writes active on this follower once its leader says every node has stopped its roster.
+     *
+     * The leader's word is all that active says on a follower (HIL-1128): this node's own walk ends
+     * in a quiesced report, and only the round as a whole decides that the freeze holds. Taken only
+     * from the leader that froze this node and only on activating, because the frame rides every
+     * link to the node ({@see PeerServer::broadcastToMasters()}): a copy over the second link
+     * arrives on active, with the circle photographed after the first copy already on the row, and
+     * writing active again would clear it.
+     *
+     * @param string $fromNodeId Node id of the leader that closed the round
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onSettled(string $fromNodeId): void
+    {
+        if (!$this->frozenByThisLeader($fromNodeId)) {
+            Logger::warning("Protected mode: dropping settled from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen by it");
+            return;
+        }
+        if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVATING)) {
+            Logger::warning("Protected mode: dropping settled from '{$fromNodeId}' — node '{$this->selfNodeId}' is not activating");
+            return;
+        }
+
+        $this->executor->enterActive();
+    }
+
+    /**
      * @param string $fromNodeId Node id the frame came from
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -775,10 +816,10 @@ final class ClusterProtectedMode implements
     /**
      * Records the photographed circle on this node's row, and on the leader fans it to every master.
      *
-     * The phase is checked on neither half. A follower stands on `activating` for the whole freeze,
-     * as {@see requestCircle()} says, and the leader has nothing a phase would add: the photograph is
-     * taken at ready, the one moment it is both final and true, and {@see leadsFreezeFor()} has
-     * already said that the freeze it belongs to is the one being led here.
+     * The phase is checked on neither half. A follower reaches `active` only on its leader's settled
+     * frame, as {@see requestCircle()} says, and the leader has nothing a phase would add: the
+     * photograph is taken at ready, the one moment it is both final and true, and
+     * {@see leadsFreezeFor()} has already said that the freeze it belongs to is the one being led here.
      *
      * @param string $fromNodeId Node id the frame came from
      * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
@@ -801,22 +842,22 @@ final class ClusterProtectedMode implements
     }
 
     /**
+     * Closes the cluster back from the verification window, on the leader.
+     *
+     * The frame travels one way only, from the initiator's node to the leader. The close is the same
+     * quiesce round as an entry (HIL-1128): this node and every follower stop their rosters again,
+     * and active is written only once all of them have reported. It owes the initiator no ready -
+     * the close is answered by the row reaching active. A follower no longer applies a refreeze from
+     * its own leader, because none is sent; the frame falls to {@see leadsFreezeFor()} and is dropped.
+     * The accept key and the session hash come off the leader's row, so the next window lets the
+     * same operator in.
+     *
      * @param string $fromNodeId Node id the frame came from
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onRefreeze(string $fromNodeId): void
     {
-        if ($this->frozenByThisLeader($fromNodeId)) {
-            if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
-                Logger::warning("Protected mode: dropping refreeze from '{$fromNodeId}' — node '{$this->selfNodeId}' is not verifying");
-                return;
-            }
-
-            $this->executor->reenterActive();
-            return;
-        }
-
         if (!$this->leadsFreezeFor($fromNodeId, 'refreeze')) {
             return;
         }
@@ -825,15 +866,21 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->executor->reenterActive();
-        $this->mesh->broadcastRefreeze();
+        // Both are already vouched for by the two guards above; the check is for the type system.
+        $view = $this->runtimeView();
+        if ($view === null || $this->activeFreeze === null) {
+            return;
+        }
+
+        $this->readyOwed = false;
+        $this->enterRound($this->activeFreeze, $view->initiatorAcceptKey, $view->initiatorSessionTokenHash);
     }
 
     /**
      * Starts a quiesce round for the freeze already held: this node plus every follower.
      *
-     * Shared by the first entry and a repeat enable from the verification window (HIL-1057). The
-     * leader waits for itself as it waits for any follower: its own roster stops over several
+     * Shared by the first entry, a repeat enable from the verification window (HIL-1057) and the
+     * close back from it (HIL-1128). The leader waits for itself as it waits for any follower: its own roster stops over several
      * master passes, and a follower with a shorter one reports back before it has. Counted only
      * among the followers, that report would activate a freeze the leader's own node was still
      * serving clients under (HIL-1012).
@@ -867,6 +914,8 @@ final class ClusterProtectedMode implements
      * quiesce round is not replayed for a freeze that already stands on active - the followers
      * are still frozen, and re-ordering it would re-roll the stopped-agent roster each of them
      * resumes against - so what the initiator gets is the ready the settled freeze already earns it.
+     * Active means every node has stopped, after a close as after an entry: the close back runs the
+     * same round and the leader writes active only at its end (HIL-1128).
      *
      * An enable that arrives while the verification window is open is an entry again (HIL-1057):
      * the quiesce round runs once more, and ready comes from {@see activateWhenAllQuiesced()} once
@@ -916,6 +965,7 @@ final class ClusterProtectedMode implements
         }
 
         if ($this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+            $this->readyOwed = true;
             $this->enterRound($freeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
             return;
         }
@@ -1019,7 +1069,8 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Marks the freeze active and signals the initiator once no follower is still pending.
+     * Marks the freeze active once no node is still pending, tells every follower so, and signals
+     * the initiator when the round owes it a ready.
      */
     private function activateWhenAllQuiesced(): void
     {
@@ -1029,6 +1080,15 @@ final class ClusterProtectedMode implements
 
         $this->active = true;
         $this->executor->enterActive();
+        // Before the ready, and the order carries weight: an initiator on a follower gets both frames
+        // over one link, writes active first and only then relays the ready that photographs the
+        // circle, so the follower's enterActive() never clears a circle already on its row.
+        $this->mesh->broadcastSettled();
+        if (!$this->readyOwed) {
+            return;
+        }
+
+        $this->readyOwed = false;
         $this->signalInitiatorReady($this->activeFreeze);
     }
 
@@ -1097,6 +1157,9 @@ final class ClusterProtectedMode implements
         // established and the initiator has been told so. Re-collecting there would hand out a
         // second ready in the middle of the operation the first one started.
         $this->active = $view->phase !== StateProtectedModeRuntime::PHASE_ACTIVATING;
+        // An unfinished round is taken for an entry, as it always was - the row does not say
+        // whether a close started it.
+        $this->readyOwed = !$this->active;
         $this->pendingNodes = $this->active
             ? []
             : array_fill_keys($this->mesh->followerMasterNodeIds(), true);
@@ -1116,6 +1179,7 @@ final class ClusterProtectedMode implements
         $this->activeFreeze = null;
         $this->pendingNodes = [];
         $this->active = false;
+        $this->readyOwed = false;
     }
 
     /**

@@ -39,6 +39,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSettledDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
@@ -388,6 +389,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
             $frame instanceof PeerProtectedModeQuiesceDTO => $this->onProtectedModeQuiesce($frame),
             $frame instanceof PeerProtectedModeQuiescedDTO => $this->onProtectedModeQuiesced($frame),
+            $frame instanceof PeerProtectedModeSettledDTO => $this->onProtectedModeSettled($frame),
             $frame instanceof PeerDbReHydrateDTO => $this->onDbReHydrate($frame),
             $frame instanceof PeerDbReHydratedDTO => $this->onDbReHydrated($frame),
             $frame instanceof PeerProtectedModeLiftDTO => $this->onProtectedModeLift($frame),
@@ -879,6 +881,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode quiesced');
         $this->server->onProtectedModeQuiescedReceived($this, $frame);
+    }
+
+    /**
+     * Hands the leader's word that every node has quiesced to the server for this follower to settle.
+     *
+     * @param PeerProtectedModeSettledDTO $frame Incoming protected-mode settled frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeSettled(PeerProtectedModeSettledDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode settled');
+        $this->server->onProtectedModeSettledReceived($this, $frame);
     }
 
     /**

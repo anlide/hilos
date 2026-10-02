@@ -71,6 +71,9 @@ Plus scenarios beyond that matrix:
     master                     through the window and gone once the system opens (HIL-1125)
  24 cut-off leader stops its   a leader carrying work and cut off fences it before the majority
     work                       starts any of it again (HIL-1217)
+ 25 freeze settles on every    every master reads active once the freeze holds, and the close
+    master                     back from the window answers only once every master has stopped
+                               again what the entry stopped (HIL-1128)
 
 run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
@@ -1967,6 +1970,8 @@ def scenario_22_other_database_refused():
 CIRCLE_ADDRESS = "circle-23@example.test"
 # The operation the scenario freezes the stand for; any name does, the test drive protects none.
 CIRCLE_OPERATION = "cluster-circle"
+# The operation scenario 25 freezes the stand for, apart from 23's so the two runs read apart in the logs.
+SETTLE_OPERATION = "cluster-settle"
 
 
 def protected_mode(node):
@@ -2070,6 +2075,75 @@ def scenario_23_verifier_circle_on_every_master():
 
     return (f"frozen from {initiator}; the circle was on all {in_words(len(MASTERS))} masters "
             f"through the window and gone from each once the system opened")
+
+
+def scenario_25_freeze_settles_on_every_master():
+    """Active on a master's freeze row means every agent of the cluster has stopped (HIL-1128).
+
+    The leader writes active once every node of the quiesce round has reported its roster stopped,
+    and tells every follower so; a follower writes active on that word and on nothing else. The
+    close back from the verification window runs the same round. So once the stand is frozen every
+    master reads active with its agent-start gate shut - before HIL-1128 a follower stood on
+    activating for the whole freeze - and the close answers only once every master has stopped
+    again everything the entry had stopped: before HIL-1128 the close wrote active first and
+    answered while the walks were still under way. Read at the moment the close answers, with no
+    wait, because the answer is what is on trial.
+
+    Headless, and on the masters only: the freeze frames reach masters only, and a slave holds no
+    freeze row. A close asked for on a follower is covered by the unit tests of ClusterProtectedMode.
+
+    The drive commands go to the leader, because that is where the index agent runs, and a reply
+    to a command answered by an agent on another node never makes it back to the node that asked.
+    So the initiator here is the leader; a follower or a slave initiating is covered by the unit
+    tests of ClusterProtectedMode.
+
+    Leadership must not move while the freeze holds. The index agent follows leadership, while the
+    freeze stays authorized by the node that asked for it, so a re-election strands the freeze:
+    the agent answers on the new leader, and the new leader refuses its lift as coming from the
+    wrong node. A stand raised a moment ago can re-elect on its own - its links flap once as late
+    seed dials land (P-459) - which is why this runs last in the matrix rather than first. When
+    it happens anyway, the failure says so instead of leaving only a timeout to read.
+    """
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    term = views[leader].get("term")
+    try:
+        entered = client_out(leader, "test:protected-mode:enter", SETTLE_OPERATION)
+        assert entered is not None, f"the index agent on {leader} refused or never answered the enter"
+
+        frozen = wait_protected_mode(lambda r: r.get("phase") == "active" and r.get("agentStartGateClosed") is True,
+                                     "every master active, its start gate closed")
+
+        assert client(leader, "test:protected-mode:leave"), f"the index agent on {leader} did not open the window"
+        wait_protected_mode(lambda r: r.get("phase") == "verifying", "every master in the verification window")
+
+        closed = client_out(leader, "test:protected-mode:close")
+        assert closed is not None, f"the index agent on {leader} refused or never answered the close"
+        for node in MASTERS:
+            reply = protected_mode(node)
+            assert reply is not None, f"{node} did not answer protected-mode:inspect once the close answered"
+            assert reply.get("agentStartGateClosed") is True and reply.get("phase") in ("activating", "active"), \
+                f"{node} stood on {reply.get('phase')!r} with its start gate open once the close answered"
+            running = set(frozen[node].get("stoppedAgents") or []) - set(reply.get("stoppedAgents") or [])
+            assert not running, (f"the close answered while {node} had not stopped {sorted(running)} again, "
+                                 f"which the entry had stopped")
+        wait_protected_mode(lambda r: r.get("phase") == "active", "every master active again after the close")
+
+        assert client(leader, "test:protected-mode:open"), f"the index agent on {leader} did not open the system"
+        wait_protected_mode(lambda r: r.get("phase") == "inactive", "every master open again")
+    finally:
+        now = inspect_all(MASTERS)
+        moved = [n for n in leaders(now) if n != leader or now[n].get("term") != term]
+        if moved:
+            print(f"  leadership moved from {leader} (term {term}) to {moved[0]} "
+                  f"(term {now[moved[0]].get('term')}) under the freeze; its lift is refused there (P-459)")
+        replies = {n: protected_mode(n) for n in MASTERS}
+        if any(r is None or r.get("phase") != "inactive" for r in replies.values()):
+            client(leader, "test:protected-mode:open")
+        wait_converge(ALL_NODES)
+
+    return (f"frozen and closed back from {leader}; all {in_words(len(MASTERS))} masters read active, "
+            f"and the close answered only once each had stopped again what the entry stopped")
 
 
 # What a master writes when it loses its quorum while it carries placed work, when it arms its fence
@@ -2356,9 +2430,10 @@ SCENARIOS = [
     Scenario("22 other database refused", scenario_22_other_database_refused, Need(nodes=3)),
     Scenario("18 capacity is consumed", scenario_18_capacity_is_consumed,
              Need(masters=1, slaves=1, slave_ram=True)),
-    # Last, because the freeze stops the agents of every master: a lift that fails here must not
-    # leave its neighbours in the matrix running against a frozen stand.
+    # Last, both of them, because the freeze stops the agents of every master: a lift that fails
+    # here must not leave its neighbours in the matrix running against a frozen stand.
     Scenario("23 verifier circle on every master", scenario_23_verifier_circle_on_every_master, Need(masters=2)),
+    Scenario("25 freeze settles on every master", scenario_25_freeze_settles_on_every_master, Need(masters=2)),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

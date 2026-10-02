@@ -124,7 +124,9 @@ interface ProtectedModeSwitch
      *
      * The other exit from the window, and the reason the operator can act on what the verifiers
      * found without first opening the system to real users. Refused unless the mode is on
-     * {@see ProtectedModeRuntime::PHASE_VERIFYING}.
+     * {@see ProtectedModeRuntime::PHASE_VERIFYING}. The close is an entry like any other
+     * (HIL-1128): the row goes back to activating, and the close is answered by the row reaching
+     * active once the agents have stopped again.
      *
      * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -141,8 +143,9 @@ interface ProtectedModeSwitch
      * one. Whatever a switch says about the freeze taking hold - ready to the initiator, quiesced
      * to the leader, the leader counting itself - is said from here, including a repeat enable from
      * the verification window whose row is activating again (HIL-1057). Heard for every stop walk,
-     * including the one that closes the verification window back; a switch tells those apart by the
-     * phase its row already carries, and a walk that closes a window back owes nobody an answer.
+     * and every one of them runs on activating, the one that closes the verification window back
+     * included (HIL-1128). The phase no longer tells them apart: the switch remembers whether the
+     * walk in flight owes the initiator a ready, and a walk that closes a window back owes nobody.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source

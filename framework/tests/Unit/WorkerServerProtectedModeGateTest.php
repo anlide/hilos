@@ -155,8 +155,8 @@ final class WorkerServerProtectedModeGateTest extends TestCase
 
     public function testTheGateHoldsInActivatingAndInDeactivating(): void
     {
-        // A follower quiesces to activating and never reaches active; deactivating is the
-        // wind-down, where pages are still shut. A gate open in either reopens this defect.
+        // A follower quiesces to activating and stands there until its leader's word; deactivating
+        // is the wind-down, where pages are still shut. A gate open in either reopens this defect.
         foreach ([StateProtectedModeRuntime::PHASE_ACTIVATING, StateProtectedModeRuntime::PHASE_DEACTIVATING] as $phase) {
             $manager = new FreezeGateTestAgentManagerDaemon();
             $server = $this->buildServer(FreezeGateTestWorkerServer::class, $manager);

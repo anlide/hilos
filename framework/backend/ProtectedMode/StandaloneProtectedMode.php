@@ -38,7 +38,8 @@ use Hilos\Utils\Logger;
  * has been returned, a repeat enable is an entry again under the initiator the enable names, and
  * ready comes from {@see onRosterStopped()} (HIL-1057). The initiator of a freeze that already
  * stands on active is answered ready instead of dropped, and anyone else is refused with a reason
- * ({@see answerFreezeAlreadyHeld()}, HIL-909).
+ * ({@see answerFreezeAlreadyHeld()}, HIL-909). That ready is honest because active is written only
+ * at the end of a walk, the close back from the window included (HIL-1128).
  * A release is honored only for the agent recorded as the initiator: on one node the cluster's
  * node-id check compares a node against itself and authorizes nothing, so the agent identity is
  * the only thing left that distinguishes the initiator from any other agent that might resume the
@@ -62,6 +63,12 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
 
     /** @var ?ProtectedModeQuiesceData Freeze this node is holding, or null when idle */
     private ?ProtectedModeQuiesceData $activeFreeze = null;
+
+    /**
+     * @var bool Whether the walk in flight owes the initiator a ready - an entry does, the close
+     *     back from the window does not (HIL-1128)
+     */
+    private bool $readyOwed = false;
 
     /**
      * @param ProtectedModeExecutor $executor Local-node port that writes the phase and stops agents
@@ -101,6 +108,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             null,
         );
 
+        $this->readyOwed = true;
         $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
     }
 
@@ -120,6 +128,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
         $this->activeFreeze = null;
+        $this->readyOwed = false;
     }
 
     /**
@@ -234,6 +243,10 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
     /**
      * Closes this node back from the verification window, voiding every pass.
      *
+     * The close is an entry like any other (HIL-1128): the row goes back to activating on the freeze
+     * already held and active is written only once the walk has stopped the roster again. The accept
+     * key and the session hash come off the row, so the next window lets the same operator in.
+     *
      * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -247,17 +260,25 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             return;
         }
 
-        $this->executor->reenterActive();
+        // Both are already vouched for by the two guards above; the check is for the type system.
+        $view = $this->runtimeView();
+        if ($view === null || $this->activeFreeze === null) {
+            return;
+        }
+
+        $this->readyOwed = false;
+        $this->executor->enterActivating($this->activeFreeze, $view->initiatorAcceptKey, $view->initiatorSessionTokenHash);
     }
 
     /**
-     * Marks the freeze active and tells the initiator it may run, now that the roster has stopped.
+     * Marks the freeze active now that the roster has stopped, and tells the initiator it may run
+     * when the walk owes it that.
      *
-     * Only for the walk that enters a freeze - the row still says activating. That walk is the first
-     * entry or a repeat from the verification window (HIL-1057); both sit on activating. The walk
-     * that closes the verification window back runs on a row already written active and answers
-     * nobody: that initiator was told ready when the freeze first took hold. A walk that a lift
-     * overtook never gets here at all ({@see ProtectedModeAgentFreezer::resumeAgentsForProtectedMode()}).
+     * Every walk that enters the freeze sits on activating - the first entry, a repeat from the
+     * verification window (HIL-1057) and the close back from it (HIL-1128) - and each writes active
+     * at its end. Only an entry owes the initiator a ready; the close is answered by the row reaching
+     * active. A walk that a lift overtook never gets here at all
+     * ({@see ProtectedModeAgentFreezer::resumeAgentsForProtectedMode()}).
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -269,6 +290,11 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         }
 
         $this->executor->enterActive();
+        if (!$this->readyOwed) {
+            return;
+        }
+
+        $this->readyOwed = false;
         $this->executor->notifyInitiatorReady();
     }
 
@@ -292,7 +318,8 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * deliberately leaves the node frozen on active: the next operation therefore finds nothing
      * left to enter, and a plain refusal left its initiator waiting for a ready that could never
      * come. So the initiator the row records is told ready once more - the node is quiesced, which
-     * is all a ready ever asserted.
+     * is all a ready ever asserted. That holds by construction: active is written only at the end
+     * of a walk, and since HIL-1128 the close back from the window walks too.
      *
      * An enable arriving from inside the verification window is an entry again under the initiator
      * the enable names (HIL-1057): the row goes back to activating on the freeze already held, and
@@ -346,6 +373,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
                     . "'{$freeze->operation}' freeze — the stub keeps naming the operation it was entered for"
                 );
             }
+            $this->readyOwed = true;
             $this->executor->enterActivating($freeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
             return;
         }

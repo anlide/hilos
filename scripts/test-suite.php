@@ -150,7 +150,7 @@ $steps = [
     // not a busy box, so do not reach for lanes when it goes red again. The seconds
     // below are its matrix measured on the step run alone on nova-de (2026-10-01,
     // HIL-1217) plus its unit suite, with scenarios 16 and 19 parked (P-441, HIL-1216),
-    // with 1, 2, 5, 7, 8, 10, 13, 17, 20 and 23 run on binance-btc-tracker-cluster and
+    // with 1, 2, 5, 7, 8, 10, 13, 17, 20, 23 and 25 run on binance-btc-tracker-cluster and
     // 11, 15, 21 and 22 on online-testing-cluster instead; returning or moving one moves
     // the number.
     [
@@ -175,9 +175,9 @@ $steps = [
     // and a stranger scenario 17 raises. It may run beside `cluster` and beside any e2e step - no
     // group and no edge keep it apart from them (the head of this file). Takes its stand down
     // with it, at any outcome, for the reason `cluster` does. The demo's unit suite is not run
-    // here but in binance-btc-tracker-php. Scenario 23 freezes the masters last (HIL-1125). The
-    // seconds are measured on the step run alone on nova-de (2026-10-01, HIL-1125), with
-    // scenarios 13 and 20 parked (P-169, P-456); returning one moves the number.
+    // here but in binance-btc-tracker-php. Scenarios 23 and 25 freeze the masters last (HIL-1125,
+    // HIL-1128). The seconds are measured on the step run alone on nova-de (2026-10-01,
+    // HIL-1125), with scenarios 13 and 20 parked (P-169, P-456); returning one moves the number.
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',

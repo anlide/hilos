@@ -88,12 +88,12 @@ final class ProtectedModeRuntimeActions extends RtActions
      *
      * A new freeze starts with no passes, nobody admitted and nobody named, and that is written
      * rather than assumed: {@see ViewProtectedModeRuntime::admits()} reads the frozen phases as
-     * empty by construction, and two paths can arrive here holding an abandoned window's hashes -
-     * a demoted leader still on verifying, quiesced again by whoever took leadership, and a repeat
-     * entry from the verification window (HIL-1057). Every other way in passes through a clear
-     * already, so this costs three assignments and closes the one
-     * hole where a voided pass, or a circle photographed for the previous operation, could admit
-     * its holder to the next one.
+     * empty by construction, and three paths can arrive here holding an abandoned window's hashes -
+     * a demoted leader still on verifying, quiesced again by whoever took leadership, a repeat
+     * entry from the verification window (HIL-1057), and the close back from it (HIL-1128). Every
+     * other way in passes through a clear already, so this costs three assignments and closes the
+     * one hole where a voided pass, or a circle photographed for the previous operation, could
+     * admit its holder to the next one.
      *
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key recorded here and admitted once the verification
@@ -131,12 +131,12 @@ final class ProtectedModeRuntimeActions extends RtActions
     /**
      * Marks the freeze fully established: every node has quiesced.
      *
-     * Coming back from {@see enterVerifying()} this is also the operator closing the system
-     * again, so the passes, the admissions they earned and the photographed circle are voided
-     * here: a pass that outlived the verification it was minted for would let its holder in
-     * during the next operation, and a circle photographed before one database replacement says
-     * nothing about who should be inside the next. On the ordinary activating -> active path all
-     * three lists are empty already and the clear costs nothing.
+     * Every way into active now runs through {@see enterActivating()}, the operator closing the
+     * system back from {@see enterVerifying()} included (HIL-1128), so the passes, the admissions
+     * they earned and the photographed circle are already empty here and the clear costs nothing.
+     * It stays as a guard: a pass that outlived the verification it was minted for would let its
+     * holder in during the next operation, and a circle photographed before one database
+     * replacement says nothing about who should be inside the next.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source

@@ -88,8 +88,8 @@ final class ProtectedModeTestDriverTest extends TestCase
 
         // The row is left INACTIVE on purpose: the relay reaches the agent by its own path, so
         // this worker's copy can still be stale when it arrives - it read `inactive` in a live
-        // run, and an initiator on a cluster follower stays at `activating` for the whole
-        // freeze by design. Ready means every node quiesced, and that is what must be reported.
+        // run, and an initiator on a cluster follower reaches `active` only on a frame of its own
+        // (HIL-1128). Ready means every node quiesced, and that is what must be reported.
         $agent->onProtectedModeReady();
 
         $reply = $this->singleReply();
@@ -219,11 +219,12 @@ final class ProtectedModeTestDriverTest extends TestCase
         $this->assertNull($this->nextProtectedModeRequest(), 'A refused leave must queue no request.');
     }
 
-    public function testLeaveIsSentFromTheActivatingPhaseAFollowerNeverLeaves(): void
+    public function testLeaveIsSentFromTheActivatingPhaseAFollowerMayStillRead(): void
     {
-        // On a cluster only the leader writes active, so an initiator hosted on a follower reads
-        // activating for the whole freeze. Judging that locally would refuse every leave such a
-        // node ever sends; the request goes to the core, which decides by the leader's row.
+        // A follower writes active only on its leader's settled frame (HIL-1128), so an initiator
+        // hosted there can still read activating under a freeze that holds. Judging that locally
+        // would refuse a leave the core would take; the request goes to the core, which decides
+        // by the leader's row.
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVATING, self::INITIATOR_TYPE, null);
         $agent = new DriverTestAgent(null);
 

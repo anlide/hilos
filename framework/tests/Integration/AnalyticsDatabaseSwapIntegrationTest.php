@@ -185,8 +185,9 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
      * the batch it had gathered: what was recorded before the freeze belongs to a database that
      * may not be there any more. Once the phase moves on, recording resumes.
      *
-     * Activating holds as well as active (HIL-1060): a follower never reaches active in the
-     * first operation, and the database may change under it while its row reads activating.
+     * Activating holds as well as active (HIL-1060): a follower reaches active only on its
+     * leader's word that every node has stopped (HIL-1128), and the database may change under it
+     * while its row reads activating.
      *
      * @param string $phase Freeze phase that must hold the collector
      * @throws HilosException When the journal cannot be loaded or the rows read back

@@ -430,6 +430,7 @@ test('a finished operation lands in the verification window, and either exit end
   // is a phase of the same freeze, and it ends either by closing back into that
   // freeze or by opening out of it.
   await enterProtectedMode(OPERATION)
+  const frozen = await inspectProtectedMode()
   expect(await leaveProtectedMode()).toBe('verifying')
 
   const verifying = await inspectProtectedMode()
@@ -459,6 +460,11 @@ test('a finished operation lands in the verification window, and either exit end
   expect(refrozen.passCount).toBe(0)
   expect(refrozen.agentStartGateClosed).toBe(true)
   expect(refrozen.stoppedAgents.length).toBeGreaterThan(0)
+  // The close answers only once everything the entry stopped is stopped again,
+  // not the moment the phase is written over a walk still under way (HIL-1128).
+  expect(refrozen.stoppedAgents).toEqual(
+    expect.arrayContaining(frozen.stoppedAgents),
+  )
 
   // And the other exit, taken from the full freeze the close just restored — so
   // the close leaves a node another destructive operation could run on, rather

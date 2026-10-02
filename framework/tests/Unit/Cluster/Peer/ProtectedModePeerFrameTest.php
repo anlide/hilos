@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSettledDTO;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
@@ -23,7 +24,7 @@ use PHPUnit\Framework\TestCase;
  *
  * The initiator↔leader hand-off cannot use the agent-signal fabric — a worker-sent signal never
  * reaches the leader daemon — so enable/ready/disable ride the peer channel instead, and their
- * cluster-wide mirror (quiesce/quiesced/lift) rides it too as the leader freezes its followers.
+ * cluster-wide mirror (quiesce/quiesced/settled/lift) rides it too as the leader freezes its followers.
  * These frames are thin envelopes over the domain payload DTOs; here we lock the wire shape and the
  * transport error on a malformed payload. Leader-side handling lands with the orchestration slices.
  */
@@ -178,6 +179,13 @@ final class ProtectedModePeerFrameTest extends TestCase
         $this->assertSame(PeerProtectedModeQuiescedDTO::MESSAGE_TYPE, $restored->getType());
     }
 
+    public function testSettledFrameRoundTripsAsEmptyPayload(): void
+    {
+        $restored = PeerProtectedModeSettledDTO::fromJson(new PeerProtectedModeSettledDTO()->toJson());
+
+        $this->assertSame(PeerProtectedModeSettledDTO::MESSAGE_TYPE, $restored->getType());
+    }
+
     public function testLiftFrameRoundTripsAsEmptyPayload(): void
     {
         $restored = PeerProtectedModeLiftDTO::fromJson(new PeerProtectedModeLiftDTO()->toJson());
@@ -207,6 +215,13 @@ final class ProtectedModePeerFrameTest extends TestCase
         $parsed = PeerDTO::fromWire(new PeerProtectedModeQuiescedDTO()->toJson());
 
         $this->assertInstanceOf(PeerProtectedModeQuiescedDTO::class, $parsed);
+    }
+
+    public function testSettledFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        $parsed = PeerDTO::fromWire(new PeerProtectedModeSettledDTO()->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeSettledDTO::class, $parsed);
     }
 
     public function testLiftFrameDispatchesThroughTheSharedWireParser(): void

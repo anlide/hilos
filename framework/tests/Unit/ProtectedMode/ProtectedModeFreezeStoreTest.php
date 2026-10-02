@@ -190,7 +190,11 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $executor->enterVerifying();
         $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $this->persistedPhase());
 
-        $executor->reenterActive();
+        // The close back from the window is an entry (HIL-1128): activating, then active.
+        $executor->enterActivating($this->freeze(), 'accept-7', null);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $this->persistedPhase());
+
+        $executor->enterActive();
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $this->persistedPhase());
 
         $executor->enterDeactivating();

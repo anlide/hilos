@@ -26,8 +26,8 @@ interface ProtectedModeExecutor
      * stopped, leaving the initiator agent named in the descriptor running. The roster stops over
      * several master passes; the switch hears the end of it through
      * {@see ProtectedModeSwitch::onRosterStopped()}, and only from there says the node is frozen.
-     * The same path takes a node back into the freeze from the verification window for a new
-     * operation (HIL-1057).
+     * The same path takes a node back into the freeze from the verification window, for a new
+     * operation (HIL-1057) and for the close back from it (HIL-1128).
      *
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
@@ -47,10 +47,10 @@ interface ProtectedModeExecutor
     ): void;
 
     /**
-     * Marks the cluster-wide freeze active locally once every follower has quiesced.
+     * Marks the freeze active locally once every agent it stops has stopped.
      *
-     * Leader-only: the follower rows stay at activating (they are already locked out) since no
-     * activated frame exists; active is the leader's marker that the initiator may run.
+     * A single node and the leader write it at the end of the round, a follower on its leader's
+     * settled frame (HIL-1128); it pushes nothing to browsers, which are already locked out.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -107,20 +107,6 @@ interface ProtectedModeExecutor
      * row already holds the hash by the time this runs.
      */
     public function announcePassIssued(): void;
-
-    /**
-     * Closes this node back from the verification window: writes phase active and stops the agents again.
-     *
-     * The mirror of {@see enterVerifying()}, and not the same thing as {@see enterActive()}: that
-     * one only marks the freeze established, while this one has agents to stop and passes to void.
-     * Here the phase is written BEFORE the stop is asked for, the other way round from the window:
-     * the roster stops over several master passes, and only the phase closes the agent-start gate
-     * those passes interleave with.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
-     */
-    public function reenterActive(): void;
 
     /**
      * Releases this node: writes phase inactive locally and asks for the agents that were stopped.

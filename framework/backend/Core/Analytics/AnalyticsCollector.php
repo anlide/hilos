@@ -859,8 +859,9 @@ final class AnalyticsCollector
      * The freeze row answers it ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}), the
      * same question the mail pool's durable half asks (HIL-1060): activating or active. Active
      * is where the initiator may replace the database on the leader or a single node; a
-     * follower never reaches active in the first operation, so on a follower the database may
-     * change under it while its row reads activating. No freeze row mounted means nothing holds.
+     * follower reaches active only on its leader's word that every node has stopped (HIL-1128),
+     * so on a follower the database may change under it while its row reads activating. No
+     * freeze row mounted means nothing holds.
      *
      * @return bool True while the freeze silences the unstopped writers
      */

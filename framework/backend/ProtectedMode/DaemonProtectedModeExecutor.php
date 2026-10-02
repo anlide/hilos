@@ -40,13 +40,13 @@ use JsonException;
  * {@see finishVerifying()} and {@see finishLift()}, which the switch calls once the roster is back
  * (HIL-1012).
  *
- * The phases a browser can see - entering, opening the verification window, closing back from it
- * and lifting - are also pushed to this node's open connections through
- * {@see ProtectedModeClientNotifier} (HIL-268), so a page that was already loaded when the freeze
- * landed learns about it instead of waiting for a refused subscription. `active` and
- * `deactivating` push nothing: the surface is already up and must stay up. The two verification
- * frames say `active: true` as well, and differ only in whether the surface may offer a code
- * field - the stub has to stay up for everyone who holds no pass. {@see announcePassIssued()} is
+ * The phases a browser can see - entering, which the close back from the verification window is
+ * too (HIL-1128), opening that window and lifting - are also pushed to this node's open connections
+ * through {@see ProtectedModeClientNotifier} (HIL-268), so a page that was already loaded when the
+ * freeze landed learns about it instead of waiting for a refused subscription. `active` and
+ * `deactivating` push nothing: the surface is already up and must stay up. The verification frame
+ * says `active: true` as well, and differs from the entry frame only in whether the surface may
+ * offer a code field - the stub has to stay up for everyone who holds no pass. {@see announcePassIssued()} is
  * the one push that moves no phase: it re-sends the verification frame with the second bit raised
  * when the first pass lands, addressed only to whoever the freeze still holds, so a verifier
  * already looking at the stub gets the field without touching anything.
@@ -96,7 +96,8 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         );
 
         // Tell the connections that were already open: the lockdown is total from this phase on,
-        // so this is the earliest honest moment, and on a follower the phase never gets past it.
+        // so this is the earliest honest moment, and a follower gets past it only on its leader's
+        // settled frame (HIL-1128), which tells browsers nothing.
         // Nobody is left out, the initiator's own browser included - there is no application to
         // keep it in, the line above just stopped the agents behind every page. Its tabs go to the
         // same stub as everyone's, and the one the operation was asked from goes with them: what it
@@ -280,58 +281,6 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 acceptsPass: true,
                 passIssued: true,
             ),
-        );
-    }
-
-    /**
-     * @throws RtActionsCollectionNameNullException When collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
-     */
-    public function reenterActive(): void
-    {
-        $view = $this->runtimeView();
-        if ($view === null) {
-            return;
-        }
-
-        // Stop the agents the verification window brought back, naming the same initiator the row
-        // still records - it is the one identity that keeps working through the freeze. A row that
-        // names nobody would stop the initiator along with everything else, leaving no agent able
-        // to lift the mode again, so this node says so and stays open rather than locking itself in.
-        if ($view->initiatorAgentType === null) {
-            Logger::warning('Protected mode: refusing to close back — no initiator identity is recorded');
-            return;
-        }
-
-        // Write the phase before the stop, as enterActivating() does: the roster is stopped one
-        // agent per master pass, and a signal handled between two of those passes would start an
-        // agent the walk had already stopped - unless the agent-start gate is shut, and on
-        // verifying it is open. Active shuts it, so the walk that follows runs behind a closed
-        // gate from its first pass (HIL-1012). The write also voids every pass, which is what the
-        // operator asked for.
-        $view->actions->enterActive();
-        $this->persistFreeze($view);
-
-        Hilos::$cluster?->protectedModeAgentFreezer()?->stopAgentsForProtectedMode(
-            $view->initiatorAgentType,
-            $view->initiatorAgentIndex === null ? null : (string)$view->initiatorAgentIndex,
-        );
-
-        // Nobody is left out, the mirror of the entry above: the window is shut, the agents are
-        // down again, and the operator goes back behind the stub together with everyone else. The
-        // panel there is what they keep watching the operation from (HIL-718).
-        $copy = ProtectedModeStubCopy::forOperation($view->operation);
-        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
-            new ProtectedModeStateSignalData(
-                active: true,
-                operation: $view->operation,
-                title: $copy->title,
-                message: $copy->message,
-                acceptsPass: false,
-                passIssued: false,
-            ),
-            null,
-            null,
         );
     }
 

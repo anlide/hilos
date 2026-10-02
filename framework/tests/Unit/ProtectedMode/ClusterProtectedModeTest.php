@@ -87,7 +87,7 @@ final class ClusterProtectedModeTest extends TestCase
 
         $this->coordinator->onQuiesced('node-c');
         $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
-        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
 
         // A late duplicate report does not re-activate.
         $this->coordinator->onQuiesced('node-c');
@@ -107,7 +107,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->stopTheRoster();
 
         $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
-        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
         $this->assertSame([], $this->coordinator->pendingNodeIds());
     }
 
@@ -128,38 +128,133 @@ final class ClusterProtectedModeTest extends TestCase
         $this->stopTheRoster();
 
         $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
-        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
     }
 
     public function testTheRosterStoppedByClosingTheWindowBackAnswersNobody(): void
     {
-        // The walk reenterActive() asks for runs on a row already written active: the leader is
-        // already active and a follower has already reported, so neither says anything again.
-        $this->mesh->followers = ['node-b'];
-        $this->coordinator->onBecameLeader();
+        // The close is the entry's quiesce round (HIL-1128): every node stops its roster again and
+        // the leader writes active only once all have reported. Its initiator was told ready when
+        // the freeze first took hold, so the round tells the followers and nobody else.
+        $this->closeTheWindowBackOnTheLeader(acceptKey: 'accept-on-row', sessionTokenHash: 'session-on-row');
+
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame('accept-on-row', $this->executor->activatingAcceptKey);
+        $this->assertSame('session-on-row', $this->executor->activatingSessionTokenHash);
+        $this->assertSame([['broadcastQuiesce', 'restore']], $this->mesh->calls);
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->stopTheRoster();
+        $this->coordinator->onQuiesced('node-b');
+
+        $this->assertSame(['enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastSettled', null]], $this->mesh->calls);
+    }
+
+    public function testLeaderClosingWaitsForItsOwnRoster(): void
+    {
+        $this->closeTheWindowBackOnTheLeader();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesced('node-b');
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+
+        $this->stopTheRoster();
+
+        $this->assertSame(['enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastSettled', null]], $this->mesh->calls);
+    }
+
+    public function testAnEnableDuringTheCloseRoundIsRefusedAsAnotherOperation(): void
+    {
+        // Not a ready over agents still running on some node (HIL-1128): the round is open, as it
+        // is during the first entry.
+        $this->closeTheWindowBackOnTheLeader();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
         $this->coordinator->onEnable('node-b', $this->enableData());
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::ANOTHER_OPERATION],
+        ], $this->mesh->calls);
+    }
+
+    public function testAnEnableAfterTheCloseRoundIsToldReady(): void
+    {
+        $this->closeTheWindowBackOnTheLeader();
         $this->stopTheRoster();
         $this->coordinator->onQuiesced('node-b');
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
-        $this->coordinator->onRosterStopped();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendReady', 'node-b']], $this->mesh->calls);
+    }
+
+    public function testAFollowerIgnoresARefreezeFromItsLeader(): void
+    {
+        // The leader closes the window with its quiesce round, and sends no follower this frame.
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->stopTheRoster();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onRefreeze('node-x');
 
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
     }
 
-    public function testAFollowerClosedBackFromTheWindowDoesNotReportQuiescedAgain(): void
+    public function testAFollowerWritesActiveOnItsLeadersSettled(): void
     {
         $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
         $this->stopTheRoster();
+        $this->executor->calls = [];
+
+        $this->coordinator->onSettled('node-x');
+
+        $this->assertSame(['enterActive'], $this->executor->calls);
+    }
+
+    public function testAFollowerIgnoresASettledFromAnotherNode(): void
+    {
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->stopTheRoster();
+        $this->executor->calls = [];
+
+        $this->coordinator->onSettled('node-y');
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testAFollowerIgnoresASettledOffActivating(): void
+    {
+        // The frame rides every link to the node: a copy over the second link arrives on active,
+        // with the circle already on the row, and writing active again would clear it.
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->stopTheRoster();
         $this->settleTheFreezeOnTheRuntimeRow();
-        $this->mesh->calls = [];
+        $this->executor->calls = [];
 
-        $this->coordinator->onRosterStopped();
+        $this->coordinator->onSettled('node-x');
 
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([], $this->executor->calls);
+
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+
+        $this->coordinator->onSettled('node-x');
+
+        $this->assertSame([], $this->executor->calls);
     }
 
     public function testTheRosterBackFinishesWhicheverLiftTheRowSays(): void
@@ -338,7 +433,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onQuiesced('node-b');
 
         $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
-        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
     }
 
     public function testLeaderEnteringAgainWaitsForItsOwnRoster(): void
@@ -370,7 +465,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->stopTheRoster();
 
         $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
-        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
     }
 
     public function testLeaderRefusesEnableUnderVerifyingWindowFromDifferentInitiatorNode(): void
@@ -612,7 +707,7 @@ final class ClusterProtectedModeTest extends TestCase
 
         // The leader is the initiator: the ready is handed to the local agent, never sent to itself.
         $this->assertSame(['enterActive', 'notifyInitiatorReady'], $this->executor->calls);
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([['broadcastSettled', null]], $this->mesh->calls);
     }
 
     public function testInitiatorLeaderHandlesEnableRequestLocally(): void
@@ -626,7 +721,7 @@ final class ClusterProtectedModeTest extends TestCase
         // Routed straight into the leader flow; the leader is the initiator, so the ready is relayed
         // to the local agent instead of being sent over the peer channel to itself.
         $this->assertSame(['enterActivating', 'enterActive', 'notifyInitiatorReady'], $this->executor->calls);
-        $this->assertSame([['broadcastQuiesce', 'restore']], $this->mesh->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null]], $this->mesh->calls);
     }
 
     public function testInitiatorFollowerSendsEnableRequestToLeader(): void
@@ -772,10 +867,10 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testAFollowerWritesTheCircleOnItsOwnRowWithoutWaitingForActive(): void
     {
-        // An initiator hosted on a follower reads `activating` for the whole freeze - `active` is
-        // the leader-local marker - so a phase gate here would drop the circle on exactly the
-        // topology that has one. The own row is written before the leader is asked to fan it, so
-        // the node the initiator sits on does not wait on a round trip.
+        // An initiator hosted on a follower reaches `active` only on its leader's settled frame
+        // (HIL-1128), so a phase gate here would make the circle wait on one more frame on exactly
+        // the topology that has one. The own row is written before the leader is asked to fan it,
+        // so the node the initiator sits on does not wait on a round trip.
         $this->mesh->leader = 'node-x';
         $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-a'));
         $this->mesh->calls = [];
@@ -1030,6 +1125,26 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame(['node-b', 'node-c'], $this->coordinator->pendingNodeIds());
     }
 
+    public function testAPromotedLeaderOwesTheReadyOfAnUnfinishedRound(): void
+    {
+        // The row does not say whether a close started the round, so an unfinished one is taken
+        // for an entry, as it always was.
+        $this->mesh->followers = ['node-b'];
+        $this->withDaemonTruthSource(function (): void {
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterActivating(
+                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'),
+                null,
+                null,
+            );
+        });
+        $this->coordinator->onBecameLeader();
+
+        $this->coordinator->onQuiesced('node-b');
+
+        $this->assertSame(['enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
+    }
+
     public function testAPromotedLeaderHandsOutNoSecondReadyForAFreezeAlreadyEstablished(): void
     {
         // A row past activating means the round closed and the initiator has been told to run. A
@@ -1089,26 +1204,57 @@ final class ClusterProtectedModeTest extends TestCase
      * {@see DaemonProtectedModeExecutor} uses, with the daemon registered as the runtime truth
      * source for exactly the length of the write and dropped after, because the registration is
      * process-wide.
+     *
+     * @param ?string $acceptKey Initiator accept key to leave on the row, none by default
+     * @param ?string $sessionTokenHash Initiator session token hash to leave on the row, none by default
      */
-    private function settleTheFreezeOnTheRuntimeRow(): void
+    private function settleTheFreezeOnTheRuntimeRow(?string $acceptKey = null, ?string $sessionTokenHash = null): void
     {
         $view = Hilos::$rt?->hilosProtectedModeRuntime;
         if ($view === null) {
             $this->fail('The protected mode runtime row is not mounted.');
         }
 
-        $this->withDaemonTruthSource(static function () use ($view): void {
-            $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'), null, null);
+        $this->withDaemonTruthSource(static function () use ($view, $acceptKey, $sessionTokenHash): void {
+            $view->actions->enterActivating(
+                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'),
+                $acceptKey,
+                $sessionTokenHash,
+            );
             $view->actions->enterActive();
         });
+    }
+
+    /**
+     * Leads a freeze for node-b with one follower through its round and its verification window,
+     * and closes the window back from node-b.
+     *
+     * Ends with the close asked for and nothing cleared, so the case reads what the close did.
+     *
+     * @param ?string $acceptKey Initiator accept key the leader's row carries, none by default
+     * @param ?string $sessionTokenHash Initiator session token hash the leader's row carries, none by default
+     */
+    private function closeTheWindowBackOnTheLeader(?string $acceptKey = null, ?string $sessionTokenHash = null): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow($acceptKey, $sessionTokenHash);
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onRefreeze('node-b');
     }
 
     /**
      * Tells the coordinator this node's roster has stopped, with the row on activating as the real
      * executor leaves it for the length of the walk.
      *
-     * The fake port writes no phase, and the coordinator only answers a walk that ENTERS a freeze -
-     * which it reads off the row - so the case has to put the phase there first.
+     * The fake port writes no phase, and the coordinator only answers a walk that runs on
+     * activating - which it reads off the row - so the case has to put the phase there first.
      */
     private function stopTheRoster(): void
     {
@@ -1330,9 +1476,9 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
         $this->calls[] = ['sendRefreeze', $leaderNodeId];
     }
 
-    public function broadcastRefreeze(): void
+    public function broadcastSettled(): void
     {
-        $this->calls[] = ['broadcastRefreeze', null];
+        $this->calls[] = ['broadcastSettled', null];
     }
 }
 
@@ -1383,11 +1529,6 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     public function announcePassIssued(): void
     {
         $this->calls[] = 'announcePassIssued';
-    }
-
-    public function reenterActive(): void
-    {
-        $this->calls[] = 'reenterActive';
     }
 
     public function enterInactive(): void

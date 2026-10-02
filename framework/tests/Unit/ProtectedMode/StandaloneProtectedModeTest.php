@@ -91,16 +91,68 @@ final class StandaloneProtectedModeTest extends TestCase
 
     public function testTheRosterStoppedByClosingTheWindowBackAnswersNobody(): void
     {
-        // The walk reenterActive() asks for runs on a row already written active, and its initiator
-        // was told ready when the freeze first took hold - a second ready would restart the
-        // operation behind the operator's back.
-        $this->mode->requestEnable($this->enableData());
-        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        // The close walks on activating like an entry (HIL-1128) and writes active at its end, but
+        // its initiator was told ready when the freeze first took hold - a second ready would
+        // restart the operation behind the operator's back.
+        $this->closeTheWindowBack();
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
         $this->executor->calls = [];
 
         $this->mode->onRosterStopped();
 
+        $this->assertSame(['enterActive'], $this->executor->calls);
+    }
+
+    public function testAnEnableDuringTheCloseWalkIsRefusedAsAnotherOperation(): void
+    {
+        // The row says activating while the close walks, so the same refusal an enable meets
+        // during the first entry - not a ready over agents still running (HIL-1128).
+        $this->closeTheWindowBack();
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
+        $this->executor->calls = [];
+        $this->relay->refusedCalls = [];
+
+        $this->mode->requestEnable($this->enableData());
+
         $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            [
+                'agentType' => self::INITIATOR_TYPE,
+                'agentIndex' => (string)self::INITIATOR_INDEX,
+                'reason' => ProtectedModeRefusalCopy::ANOTHER_OPERATION,
+            ],
+        ], $this->relay->refusedCalls);
+    }
+
+    public function testAnEnableAfterTheCloseWalkIsToldReady(): void
+    {
+        $this->closeTheWindowBack();
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
+        $this->mode->onRosterStopped();
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+
+        $this->mode->requestEnable($this->enableData());
+
+        $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);
+    }
+
+    public function testAReEntryAfterACloseOwesTheReadyAgain(): void
+    {
+        // The close cleared what the walk owes; an entry from the next window has to set it again,
+        // or its initiator would wait for a ready that never comes.
+        $this->closeTheWindowBack();
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
+        $this->mode->onRosterStopped();
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
+        $this->executor->calls = [];
+
+        $this->mode->onRosterStopped();
+
+        $this->assertSame(['enterActive', 'notifyInitiatorReady'], $this->executor->calls);
     }
 
     public function testARosterStoppedUnderNoFreezeAnswersNobody(): void
@@ -493,14 +545,25 @@ final class StandaloneProtectedModeTest extends TestCase
 
     public function testTheInitiatorClosesTheWindowBackToAFullFreeze(): void
     {
+        // The close is an entry (HIL-1128): the same freeze, and the accept key and the session
+        // hash the row already carries, so the next window lets the same operator in.
         $this->mode->requestEnable($this->enableData());
-        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->recordInitiatorOnTheRuntimeRow(
+            self::INITIATOR_TYPE,
+            self::INITIATOR_INDEX,
+            acceptKey: 'accept-on-row',
+            sessionTokenHash: 'session-hash-on-row',
+        );
         $this->enterVerifyingOnTheRuntimeRow();
         $this->executor->calls = [];
 
         $this->mode->requestRefreeze(new ProtectedModeRefreezeSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
 
-        $this->assertSame(['reenterActive'], $this->executor->calls);
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame('restore', $this->executor->freeze?->operation);
+        $this->assertSame(self::INITIATOR_TYPE, $this->executor->freeze?->initiatorAgentType);
+        $this->assertSame('accept-on-row', $this->executor->activatingAcceptKey);
+        $this->assertSame('session-hash-on-row', $this->executor->activatingSessionTokenHash);
     }
 
     public function testRefreezeOutsideTheWindowIsDropped(): void
@@ -555,24 +618,45 @@ final class StandaloneProtectedModeTest extends TestCase
      * @param string $agentType Initiator agent type to record
      * @param ?int $agentIndex Initiator agent index to record
      * @param bool $activate Whether to advance the row to active, as a completed entry does
+     * @param ?string $acceptKey Initiator accept key to record, none by default
+     * @param ?string $sessionTokenHash Initiator session token hash to record, none by default
      */
-    private function recordInitiatorOnTheRuntimeRow(string $agentType, ?int $agentIndex, bool $activate = true): void
-    {
+    private function recordInitiatorOnTheRuntimeRow(
+        string $agentType,
+        ?int $agentIndex,
+        bool $activate = true,
+        ?string $acceptKey = null,
+        ?string $sessionTokenHash = null,
+    ): void {
         $view = Hilos::$rt?->hilosProtectedModeRuntime;
         if ($view === null) {
             $this->fail('The protected mode runtime row is not mounted.');
         }
 
-        $this->withDaemonTruthSource(function () use ($view, $agentType, $agentIndex, $activate): void {
+        $this->withDaemonTruthSource(function () use ($view, $agentType, $agentIndex, $activate, $acceptKey, $sessionTokenHash): void {
             $view->actions->enterActivating(
                 new ProtectedModeQuiesceData('restore', $agentType, $agentIndex, null),
-                null,
-                null,
+                $acceptKey,
+                $sessionTokenHash,
             );
             if ($activate) {
                 $view->actions->enterActive();
             }
         });
+    }
+
+    /**
+     * Enters the freeze, opens the verification window and closes it back, as the initiator does.
+     *
+     * Ends with the close asked for: the fake executor writes no row, so the caller puts on it
+     * whatever phase the walk has reached.
+     */
+    private function closeTheWindowBack(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->mode->requestRefreeze(new ProtectedModeRefreezeSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
     }
 
     /**
@@ -729,11 +813,6 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     public function announcePassIssued(): void
     {
         $this->calls[] = 'announcePassIssued';
-    }
-
-    public function reenterActive(): void
-    {
-        $this->calls[] = 'reenterActive';
     }
 
     public function enterInactive(): void

@@ -219,8 +219,8 @@ final class ProtectedModeContractTest extends TestCase
 
     public function testOnlyActivatingAndActiveSilenceTheUnstoppedWriters(): void
     {
-        // A follower never reaches `active` in the first operation, so `activating` is the phase
-        // in which the shared database may change under it; the writers must be quiet there too.
+        // A follower reaches `active` only on its leader's word (HIL-1128), so `activating` is a
+        // phase in which the shared database may change under it; the writers must be quiet there too.
         $expected = [
             ProtectedModeRuntime::PHASE_INACTIVE => false,
             ProtectedModeRuntime::PHASE_ACTIVATING => true,
@@ -263,9 +263,9 @@ final class ProtectedModeContractTest extends TestCase
 
     public function testFollowerRuntimeLocksOutEveryoneWhileMerelyActivating(): void
     {
-        // A follower quiesces to `activating` with no initiator key and never advances to
-        // `active`, so the lockdown must engage on any non-inactive phase and lock every real
-        // (server-minted, non-null) connection out.
+        // A follower quiesces to `activating` with no initiator key and advances to `active` only
+        // on its leader's word, so the lockdown must engage on any non-inactive phase and lock
+        // every real (server-minted, non-null) connection out.
         $runtime = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVATING,
             ProtectedModeRuntime::initiatorAcceptKey => null,

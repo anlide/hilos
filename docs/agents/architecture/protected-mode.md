@@ -94,7 +94,10 @@ same commands, and a command declared by two agents refuses the start. On a
 multi-node stand the clustered entry path is driven by the index agent of
 binance-btc-tracker: scenario 23 of its cluster stand enters the freeze, opens
 the verification window and lifts it, and reads the row of every master at
-each step. A follower's fail-closed refusal is not exercised on a live stand.
+each step. Scenario 25 of the same stand proves what `active` says there: every
+master reads it once the freeze holds, and the close back from the window
+answers only once every master has stopped again what the entry stopped
+(HIL-1128). A follower's fail-closed refusal is not exercised on a live stand.
 
 Two properties are worth keeping when this code is touched:
 
@@ -265,9 +268,11 @@ roster — a per-process singleton, a pool half that lives on its own — goes o
 writing through the operation unless it answers the freeze itself. It owes
 silence while this node's freeze row answers `silencesUnstoppedWriters()` —
 `activating` or `active`, because `active` is where the initiator may replace the
-database on the leader or a single node, and a follower never reaches `active` in
-the first operation — and at the swap it owes forgetting every id of the
-replaced database, before its process answers the re-hydrate round. A cached id
+database on the leader or a single node, and a follower reaches `active` only on
+its leader's word that every node has stopped (HIL-1128), so on a follower
+`activating` is a phase in which the database may change — and at the swap it
+owes forgetting every id of the replaced database, before its process answers
+the re-hydrate round. A cached id
 that the restored database lacks fails on a foreign key, which is the lucky case;
 one that the restored database gives to another value files facts under the
 wrong name with no error at all. The analytics collector is the worked example,
@@ -327,6 +332,28 @@ initiator ready, on a follower it sends `quiesced` to the leader, and the leader
 counts itself among the nodes it waits for until its own roster has stopped. The
 lift is stepped the same way, and the frames it owes the browsers go out once the
 roster is back (`ProtectedModeExecutor::finishVerifying()` / `finishLift()`).
+
+**`active` on a row means every agent has stopped, on every path in (HIL-1128).**
+Every way into the freeze — the first entry, a repeat entry from the verification
+window (HIL-1057) and the close back from it — writes `activating` first and
+`active` only at the end: a single node at the end of its own walk; in a cluster
+the leader once every node of the round, itself included, has reported
+`quiesced`, and each follower when the leader then tells it so on
+`peer_protected_mode_settled`. That frame leaves before the ready, and the order
+carries weight: an initiator on a follower gets both over one link, writes
+`active` first, and only then relays the ready that photographs the verifier
+circle, so its `enterActive()` never clears a circle already on the row. A
+follower takes it only from the leader that froze it and only on `activating` —
+the frame rides every link to the node, and a copy over the second link would
+otherwise clear that circle. The close owes nobody a ready: the switch remembers
+whether the walk in flight owes one (`readyOwed`), because the phase no longer
+tells the walks apart. So `protected-mode:close` answers only once the agents the
+window brought back have stopped again everywhere, a ready answered to an enable
+on `active` is true by construction, and an enable that arrives while the close
+walks gets the refusal an enable gets during the first entry. The close is
+answered by the row reaching `active`; a follower that never got the round — it
+missed the verify, or its leader died — leaves the close unanswered and the
+watchdog names the round overdue, which is the fail-closed half of the trade.
 
 ## A Freeze That Stops Moving Is Reported, Never Lifted (HIL-482)
 
@@ -500,8 +527,8 @@ known that row still holds it and the rest of the cluster lets the circle in by
 code alone. An initiator on a slave has no freeze row to write — the freeze
 frames reach masters only — and sends the photograph to the leader all the same:
 the leader authorizes it by the node that initiated the operation, as it does
-every frame of the window. Neither half checks the phase, since a follower stands
-on `activating` for the whole freeze.
+every frame of the window, and that authorization is all either half checks:
+neither reads the phase.
 
 Whatever the operation, the photograph is taken for the initiator of the
 freeze, on the freeze's own ready path; a restore is today's only destructive
@@ -622,9 +649,9 @@ the same `locksOut()` the welcome is composed with, then queues one frame by
 accept key for every connection the row still holds (HIL-1082).
 
 **Whom to spare is the caller's, and it changes by phase (HIL-718).** Entering
-the freeze (`enterActivating()`) and closing back into it (`reenterActive()`)
-spare nobody: there is no application to keep the operator in, so its tabs go to
-the same stub as everyone's. The verification window is the one caller that
+the freeze (`enterActivating()`) spares nobody, and closing back into it is the
+same entry since HIL-1128: there is no application to keep the operator in, so
+its tabs go to the same stub as everyone's. The verification window is the one caller that
 excludes, and it excludes in order to say the opposite: `enterVerifying()`
 broadcasts the stub to everyone still outside, and `finishVerifying()` then
 addresses the initiator's session on its own (see below). `announcePassIssued()`

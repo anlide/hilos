@@ -324,7 +324,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->finishVerifying();
         $this->notifier->reassessedSessions = [];
 
-        $this->executor->reenterActive();
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
         $this->executor->finishLift();
@@ -442,7 +442,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
     }
 
-    public function testClosingBackFromTheWindowTakesTheCodeFieldAway(): void
+    public function testClosingBackFromTheWindowIsAnEntryThatTakesTheCodeFieldAway(): void
     {
         $this->executor->enterActivating($this->freeze(), 'accept-7', null);
         $this->executor->enterActive();
@@ -451,10 +451,11 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitSession('session-hash-1');
         $this->notifier->frames = [];
 
-        $this->executor->reenterActive();
+        // The close is an entry (HIL-1128): activating until the agents have stopped again.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
 
         $this->assertSame(
-            StateProtectedModeRuntime::PHASE_ACTIVE,
+            StateProtectedModeRuntime::PHASE_ACTIVATING,
             Hilos::$rt?->hilosProtectedModeRuntime?->phase,
         );
         // Every pass is void, so the verifier that was inside is back on the stub with everyone.
@@ -473,27 +474,6 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         // goes back behind the stub with everyone else.
         $this->assertNull($excludedKey);
         $this->assertNull($excludedSession);
-    }
-
-    public function testClosingBackIsRefusedWhenTheRowNamesNoInitiator(): void
-    {
-        // A row with no initiator would stop every agent including the one that could lift the
-        // mode again, so the node says so and stays where it is.
-        Hilos::$rt?->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
-            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
-            StateProtectedModeRuntime::passHashes => [],
-            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
-            StateProtectedModeRuntime::circleSessionTokenHashes => [],
-            StateProtectedModeRuntime::circleNamedCount => 0,
-        ]));
-
-        $this->executor->reenterActive();
-
-        $this->assertSame(
-            StateProtectedModeRuntime::PHASE_VERIFYING,
-            Hilos::$rt?->hilosProtectedModeRuntime?->phase,
-        );
-        $this->assertSame([], $this->notifier->frames);
     }
 
     public function testWithoutARegisteredNotifierTheExecutorStillFreezes(): void

@@ -1562,9 +1562,9 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * A pure read of the freeze row, with no state of its own: the gate opens again the
      * moment the phase returns to inactive, even if the resume that follows the lift fails.
-     * Every non-inactive phase holds except the verification window - a follower stops at
-     * activating and never reaches active, and a window during deactivating would reopen the
-     * very defect the gate closes. {@see StateProtectedModeRuntime::PHASE_VERIFYING} is the
+     * Every non-inactive phase holds except the verification window - a follower stands on
+     * activating until its leader says every node has stopped, and a window during deactivating
+     * would reopen the very defect the gate closes. {@see StateProtectedModeRuntime::PHASE_VERIFYING} is the
      * exception because that phase exists to bring the agents back: a verifier has nothing to
      * look at while the page agents are stopped, and a gate still closed there would refuse the
      * very resume the phase orders, start by start, handing the verifier an empty system.

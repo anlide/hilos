@@ -45,11 +45,13 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * {@see PeerProtectedModeDisableDTO}) carry the initiator↔leader freeze hand-off that the
  * agent-signal fabric cannot deliver to a leader daemon, and their cluster-wide mirror
  * ({@see PeerProtectedModeQuiesceDTO}, {@see PeerProtectedModeQuiescedDTO},
- * {@see PeerProtectedModeLiftDTO}) carries the leader↔follower freeze the leader drives, and the
- * verification frames ({@see PeerProtectedModeVerifyDTO}, {@see PeerProtectedModePassDTO},
- * {@see PeerProtectedModeCircleDTO}, {@see PeerProtectedModeRefreezeDTO}) travel both ways — the
- * initiator's node to the leader, the leader to every follower — so each node holds the same
- * window, the same passes and the same photographed circle; the liveness frames
+ * {@see PeerProtectedModeSettledDTO}, {@see PeerProtectedModeLiftDTO}) carries the
+ * leader↔follower freeze the leader drives, and the verification frames
+ * ({@see PeerProtectedModeVerifyDTO}, {@see PeerProtectedModePassDTO},
+ * {@see PeerProtectedModeCircleDTO}) travel both ways — the initiator's node to the leader, the
+ * leader to every follower — so each node holds the same window, the same passes and the same
+ * photographed circle, while the close back out of that window ({@see PeerProtectedModeRefreezeDTO})
+ * travels from the initiator's node to the leader only (HIL-1128); the liveness frames
  * ({@see PeerPingDTO}, {@see PeerPongDTO}) keep a quiet link proven alive.
  * All extend this base directly.
  */
@@ -120,6 +122,7 @@ abstract class PeerDTO extends BaseDTO
             PeerProtectedModeDisableDTO::MESSAGE_TYPE => PeerProtectedModeDisableDTO::fromArray($data),
             PeerProtectedModeQuiesceDTO::MESSAGE_TYPE => PeerProtectedModeQuiesceDTO::fromArray($data),
             PeerProtectedModeQuiescedDTO::MESSAGE_TYPE => PeerProtectedModeQuiescedDTO::fromArray($data),
+            PeerProtectedModeSettledDTO::MESSAGE_TYPE => PeerProtectedModeSettledDTO::fromArray($data),
             PeerDbReHydrateDTO::MESSAGE_TYPE => PeerDbReHydrateDTO::fromArray($data),
             PeerDbReHydratedDTO::MESSAGE_TYPE => PeerDbReHydratedDTO::fromArray($data),
             PeerProtectedModeLiftDTO::MESSAGE_TYPE => PeerProtectedModeLiftDTO::fromArray($data),

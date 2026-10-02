@@ -45,6 +45,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeSettledDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
@@ -1269,6 +1270,22 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * Routes the leader's word that every node has quiesced to the local handler for this follower.
+     *
+     * @param PeerLink $link Link the frame arrived on
+     * @param PeerProtectedModeSettledDTO $frame Received protected-mode settled frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onProtectedModeSettledReceived(PeerLink $link, PeerProtectedModeSettledDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onSettled($from);
+        }
+    }
+
+    /**
      * Registers where node answers to a database re-hydrate announcement are credited.
      *
      * @param ReHydrateBarrierSink $sink Daemon-side owner of the open barrier
@@ -1427,6 +1444,9 @@ final class PeerServer extends AbstractTlsServer implements
 
     /**
      * Routes a received protected-mode refreeze frame to the local handler.
+     *
+     * Arrives on the leader only, from the initiator's node: the leader closes the window by
+     * running the quiesce round again, and sends no follower this frame (HIL-1128).
      *
      * @param PeerLink $link Link the frame arrived on
      * @param PeerProtectedModeRefreezeDTO $frame Received protected-mode refreeze frame
@@ -1650,14 +1670,6 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Broadcasts the close-back to every follower master.
-     */
-    public function broadcastRefreeze(): void
-    {
-        $this->broadcastToMasters(new PeerProtectedModeRefreezeDTO());
-    }
-
-    /**
      * Reports this follower's quiesced state back to the leader that ordered the freeze.
      *
      * @param string $leaderNodeId Node id of the leader that ordered the freeze
@@ -1665,6 +1677,16 @@ final class PeerServer extends AbstractTlsServer implements
     public function sendQuiesced(string $leaderNodeId): void
     {
         $this->sendToMaster($leaderNodeId, new PeerProtectedModeQuiescedDTO());
+    }
+
+    /**
+     * Tells every follower master that every node has stopped its roster, so each writes active.
+     *
+     * Sent at the end of every quiesce round, before the ready (HIL-1128).
+     */
+    public function broadcastSettled(): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModeSettledDTO());
     }
 
     /**

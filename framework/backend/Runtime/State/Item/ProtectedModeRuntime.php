@@ -249,9 +249,9 @@ final class ProtectedModeRuntime extends RtState
      *
      * The answer is yes under {@see self::PHASE_ACTIVATING} and {@see self::PHASE_ACTIVE}.
      * `active` is where the initiator runs its operation on the leader or on a single node; a
-     * follower quiesces to `activating` and never advances to `active` in the first operation -
-     * the fact {@see locksOut()} states too - so on a follower `activating` is the phase in which
-     * the database may change under it. {@see self::PHASE_VERIFYING},
+     * follower quiesces to `activating` and advances to `active` only on its leader's word that
+     * every node has stopped (HIL-1128) - the fact {@see locksOut()} states too - so on a follower
+     * `activating` is a phase in which the database may change under it. {@see self::PHASE_VERIFYING},
      * {@see self::PHASE_DEACTIVATING} and {@see self::PHASE_INACTIVE} do not silence anyone.
      *
      * @return bool Whether the unstopped writers must write nothing right now
@@ -272,9 +272,9 @@ final class ProtectedModeRuntime extends RtState
      * panel on the maintenance surface instead, which is the one screen that keeps being fed while
      * the freeze holds. It engages the moment this node leaves {@see self::PHASE_INACTIVE} —
      * not only at {@see self::PHASE_ACTIVE} — because a follower node quiesces to
-     * `activating` and never advances to `active` (that phase is the leader-local marker
-     * that every node has quiesced), so a lockdown gated on `active` would leave followers
-     * open for the whole freeze.
+     * `activating` and advances to `active` only once its leader says every node has quiesced
+     * (HIL-1128), so a lockdown gated on `active` would leave followers open for the whole round
+     * and for good wherever that word is lost.
      *
      * {@see self::PHASE_VERIFYING} is the one phase that lets anyone through, and it opens three
      * doors at once: the initiator by its own identity ({@see admitsInitiator()}), a holder of a

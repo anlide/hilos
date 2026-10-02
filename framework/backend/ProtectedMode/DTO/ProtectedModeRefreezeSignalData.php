@@ -13,10 +13,12 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * ProtectedModeRefreezeSignalData - initiator -> daemon payload for PROTECTED_MODE_REFREEZE.
  *
  * The other way out of the verification window: the operator did not like what the verifiers
- * found, so the system closes again ({@see ProtectedModeRuntime::PHASE_ACTIVE}) instead of
- * opening to everyone. Agents are stopped once more, every pass is void, and another destructive
- * operation may run - without this exit an operator who has just seen broken data would have to
- * open the system to real users in order to do anything about it.
+ * found, so the system closes again instead of opening to everyone. It closes the way it entered,
+ * through {@see ProtectedModeRuntime::PHASE_ACTIVATING}: agents are stopped once more, every pass
+ * is void, and {@see ProtectedModeRuntime::PHASE_ACTIVE} is written only once the agents have
+ * stopped on every node (HIL-1128) - after which another destructive operation may run. Without
+ * this exit an operator who has just seen broken data would have to open the system to real users
+ * in order to do anything about it.
  *
  * It carries and authorizes by the same identity as {@see ProtectedModeVerifySignalData}
  * ({@see ClusterProtectedMode::onRefreeze()} for the clustered half).

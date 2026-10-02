@@ -380,6 +380,9 @@ trait ProtectedModeOperatorTrait
     /**
      * Closes the system back from the window, so another destructive operation may run.
      *
+     * Answered once the row reads active, which since HIL-1128 means the agents the window brought
+     * back have stopped again on every node: the close walks back through activating like an entry.
+     *
      * @param CommandRequestDTO $data Close request
      */
     private function closeProtectedModeForOperator(CommandRequestDTO $data): void

@@ -23,8 +23,8 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
  *
  * The initiator↔leader half (enable/ready/refused/disable) is mirrored by the cluster-wide half
  * the leader drives against its followers: quiesce carries the {@see ProtectedModeQuiesceData}
- * freeze descriptor, quiesced is the follower's bare readiness report, and lift is the bare
- * release.
+ * freeze descriptor, quiesced is the follower's bare readiness report, settled is the leader's
+ * bare word that every node has quiesced (HIL-1128), and lift is the bare release.
  *
  * The transport slice wires the routing to this interface; the leader orchestration slice supplies
  * the implementation and registers it with {@see PeerServer::registerProtectedMode()}.
@@ -112,6 +112,18 @@ interface ProtectedModeCoordinator
     public function onLift(string $fromNodeId): void;
 
     /**
+     * Handles the leader's word that every node has stopped its roster.
+     *
+     * Arrives on a follower from the leader that froze it, at the end of every quiesce round; the
+     * follower writes active (HIL-1128).
+     *
+     * @param string $fromNodeId Node id of the leader that closed the round
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onSettled(string $fromNodeId): void;
+
+    /**
      * Handles the move into the verification window.
      *
      * The one frame of the set that travels in both directions, because the verification window
@@ -166,7 +178,10 @@ interface ProtectedModeCoordinator
     public function onCircle(string $fromNodeId, VerifierCircleSnapshot $snapshot): void;
 
     /**
-     * Handles the close-back out of the verification window, in either direction.
+     * Handles the close-back out of the verification window, from the initiator's node to the leader.
+     *
+     * The leader closes the window by running the quiesce round again (HIL-1128); no follower is
+     * sent this frame.
      *
      * @param string $fromNodeId Node id the frame came from
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
