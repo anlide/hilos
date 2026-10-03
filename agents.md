@@ -234,6 +234,13 @@ The confirmation request must list the exact RT item fields, DB entity fields,
 signals, DTOs, and routes that would change. If implementation discovers an
 additional change in one of these surfaces, stop and ask again before editing it.
 
+On the headless line the stop has one more form (`hilos-ops/playbook.md`, "План неполон").
+When the approved plan is silent about a change in these surfaces that the leaf cannot be
+built without, the executor makes the narrowest such change — every written line of the plan
+stays true and the leaf does not widen — announces it with ⚠️ and files a proposal for the
+owner to confirm or reverse. A plan that is wrong — it contradicts itself, the code or a
+rule — still goes back to the interview.
+
 ## Key rules (always apply)
 
 1. **Never** use Repository or Service on top of DbCollection — call `Hilos::$db->collection->actions->...` directly
