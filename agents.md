@@ -136,7 +136,8 @@ Minimum ORM rules before editing:
   under the framework key, never one layer
   ([orm/inheritance.md](docs/agents/orm/inheritance.md)).
 - A transaction ends inside the handler that opened it; the framework never
-  nests one, and the announcements of its writes leave at the commit
+  nests one, the announcements of its writes leave at the commit, and the
+  memory of the process and the runtime roll back with it
   ([orm/transactions.md](docs/agents/orm/transactions.md)).
 - DB entity shape changes require the contract approval gate before editing.
 

@@ -468,8 +468,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      * The project's row move runs inside the transaction: its failure undoes the re-point, and
      * no tombstone is written.
      *
-     * Read back through a query rather than the collection, whose object cache still holds the
-     * mutated-then-rolled-back identity.
+     * Read back twice: through a query, which is what the table holds, and through the collection,
+     * whose object cache the rollback took back with the row (HIL-1165).
      *
      * @throws HilosException When a seed or the merge fails
      */
@@ -485,6 +485,11 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
 
         self::assertSame('The project could not move its rows', $this->refusal());
         self::assertSame(self::LOSER_USER_ID, self::identityOwner($loserEmail));
+        self::assertSame(
+            self::LOSER_USER_ID,
+            $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail)?->userId,
+            'The cached identity names the loser again: the rollback took the re-point back in memory too',
+        );
         self::assertNull(self::survivorOf(self::LOSER_USER_ID));
         self::assertFalse(self::isBlocked(self::LOSER_USER_ID));
         self::assertSame(

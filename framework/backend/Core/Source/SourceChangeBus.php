@@ -21,13 +21,14 @@ use Throwable;
  * registration order, because the first of them repairs a view that must not answer a read with
  * a row the store no longer holds.
  *
- * A change to a database row made under an open transaction reaches the two kinds of subscriber
- * at two moments. A mirror ({@see SourceMirrorSubscriberInterface}) hears it at the write, as it
- * must: it repairs this process's memory, which the code still inside the transaction reads. A
- * reaction hears it when the transaction commits, and not at all when it rolls back - told at
- * the write, it would act on a row the database may never hold. Outside a transaction the two
- * moments are one, and the order is the registration order as before. A runtime fact is heard
- * by every subscriber at once: the runtime is not covered by the transaction (HIL-1165).
+ * A change made under an open transaction - to a database row or to a runtime state alike, one
+ * transaction covering both - reaches the two kinds of subscriber at two moments. A mirror
+ * ({@see SourceMirrorSubscriberInterface}) hears it at the write, as it must: it repairs this
+ * process's memory, which the code still inside the transaction reads. A reaction hears it when
+ * the transaction commits, and not at all when it rolls back - told at the write, it would act on
+ * a change that may never stand. Outside a transaction the two moments are one, and the order is
+ * the registration order as before. A rollback tells the mirrors what it put back
+ * ({@see self::publishToMirrors()}); the reactions never heard the change, and hear nothing.
  *
  * Static like {@see RtSyncApplicator} and {@see DbSyncApplicator} rather than a facade global:
  * facade globals hold project data and are configured by the project, and this is core machinery
@@ -35,9 +36,6 @@ use Throwable;
  */
 final class SourceChangeBus
 {
-    /** @var list<SourceChangeSubscriberInterface> Subscribers in the order they were registered */
-    private static array $subscribers = [];
-
     /** @var list<SourceMirrorSubscriberInterface> The mirrors among them, in that order */
     private static array $mirrors = [];
 
@@ -54,7 +52,6 @@ final class SourceChangeBus
      */
     public static function subscribe(SourceChangeSubscriberInterface $subscriber): void
     {
-        self::$subscribers[] = $subscriber;
         if ($subscriber instanceof SourceMirrorSubscriberInterface) {
             self::$mirrors[] = $subscriber;
         } else {
@@ -71,10 +68,11 @@ final class SourceChangeBus
      * it is, because a publish made from inside a reaction would otherwise bury the original one
      * floor deeper.
      *
-     * A database fact reaches the mirrors now and the reactions once the transaction it was
-     * made under commits - now, when there is none - with the provenance the write had at this
-     * moment, not the one in force when the commit releases it. A failing reaction released by
-     * a commit reaches the caller of that commit instead. A runtime fact reaches everyone now.
+     * A fact reaches the mirrors now and the reactions once the transaction it was made under
+     * commits - now, when there is none - with the provenance the write had at this moment, not
+     * the one in force when the commit releases it. A failing reaction released by a commit
+     * reaches the caller of that commit instead. A runtime fact is no exception: the transaction
+     * covers the runtime as it covers the database.
      *
      * @param SourceChange $change Fact describing what happened to the source
      * @throws SourceChangeSubscriberException When a subscriber's reaction fails
@@ -82,12 +80,6 @@ final class SourceChangeBus
     public static function publish(SourceChange $change): void
     {
         $provenance = self::$provenance;
-        if ($change->isRt()) {
-            self::deliver(self::$subscribers, $change, $provenance);
-
-            return;
-        }
-
         self::deliver(self::$mirrors, $change, $provenance);
         $reactions = self::$reactions;
         if ($reactions !== []) {
@@ -95,6 +87,22 @@ final class SourceChangeBus
                 self::deliver($reactions, $change, $provenance);
             });
         }
+    }
+
+    /**
+     * Tells the mirrors alone that a rollback took a change back.
+     *
+     * The reverse fact of a rollback: what a key holds again, or the update undone. A mirror heard
+     * the change at the write and may have built memory on it, so it hears it taken back the same
+     * way. A reaction and the other processes never heard the change - theirs was held for the
+     * commit and dropped by the rollback - so there is nothing to take back from them.
+     *
+     * @param SourceChange $change Fact describing what the rollback put back
+     * @throws SourceChangeSubscriberException When a mirror's repair fails
+     */
+    public static function publishToMirrors(SourceChange $change): void
+    {
+        self::deliver(self::$mirrors, $change, self::$provenance);
     }
 
     /**
@@ -126,7 +134,6 @@ final class SourceChangeBus
      */
     public static function reset(): void
     {
-        self::$subscribers = [];
         self::$mirrors = [];
         self::$reactions = [];
         self::$provenance = SourceChangeProvenance::LocalWrite;

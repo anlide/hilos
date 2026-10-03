@@ -476,6 +476,11 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
             self::assertSame(0, (int)Database::row()['total'], 'Acceptance rows roll back with the refused account');
             self::assertSame(
                 [],
+                Hilos::$db?->getObjectCollection(HilosDbContext::legalAcceptances)?->toArray(),
+                'Nor does the acceptance cache hold them: the rollback took them back in memory too (HIL-1165)',
+            );
+            self::assertSame(
+                [],
                 $this->queuedDbFrameTypes(),
                 'A rolled-back landing announces none of its rows to the other processes (HIL-1164)',
             );

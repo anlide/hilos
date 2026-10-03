@@ -25,7 +25,9 @@ use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\ObjectCollectionNotFoundException;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Files\DTO\FileRemoveSignalData;
@@ -328,6 +330,9 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     /**
      * A failure of the project's seam rolls every row back, and the request stays due.
      *
+     * The rows the framework deleted come back in memory too, by key and as the same instances,
+     * with nothing read again (HIL-1165).
+     *
      * @throws HilosException When seeding or the sweep fails
      */
     public function testAFailingSeamRollsEverythingBack(): void
@@ -335,6 +340,9 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
         $requestId = (int)$request->id;
+        $identities = self::heldIn(HilosDbContext::identities);
+        $secondFactors = self::heldIn(HilosDbContext::secondFactors);
+        self::assertNotSame([], $identities, 'The seeded way in is held, or the memory is not exercised');
         // The seeds announced their own rows; what is judged below is what the sweep announces.
         $this->drainQueue();
 
@@ -343,6 +351,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         foreach (self::ERASED_TABLES as $table) {
             self::assertSame(1, self::rowsOf($table, self::USER_ID), "{$table} is rolled back");
         }
+        self::assertSame($identities, self::heldIn(HilosDbContext::identities), 'The deleted ways in are held again');
+        self::assertSame($secondFactors, self::heldIn(HilosDbContext::secondFactors), 'The deleted factor is held again');
         $row = self::requestRow($requestId);
         self::assertNull($row['completed_at'], 'The request is still standing and due');
         self::assertNull($row['canceled_at']);
@@ -724,6 +734,26 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertIsString($message);
 
         return $message;
+    }
+
+    /**
+     * What a framework collection holds in memory, by key, read past every load.
+     *
+     * @param string $collection Key of a framework object collection
+     * @return array<int|string, Object_> Held objects by key, in key order
+     * @throws ObjectCollectionNotFoundException When the context does not mount the collection
+     */
+    private static function heldIn(string $collection): array
+    {
+        $objects = Hilos::$db?->getObjectCollection($collection)
+            ?? throw new ObjectCollectionNotFoundException("The framework collection '{$collection}' is not mounted");
+        $held = [];
+        foreach (array_keys($objects->toArray()) as $key) {
+            $held[$key] = $objects[$key];
+        }
+        ksort($held);
+
+        return $held;
     }
 
     /**

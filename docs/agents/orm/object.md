@@ -38,6 +38,15 @@ class MyObject extends Object_ {
 - Object is created from Entity, not fetched from DB directly
 - Business logic for creating objects belongs in Object layer or Db collection methods, not in agents
 - Do not use Repository or Service pattern on top of Object — use `DbCollection` methods directly
+- A failed `sync()` of a row the table already holds puts the object back to what was
+  last saved, and the failure goes on to the caller: memory follows the database, so no
+  catch restores fields by hand. A failed insert keeps the caller's values
+- `revert()` puts the saved values back into the same entity and keeps its tie to the
+  row, so the next `sync()` writes an `UPDATE` of the difference; a clone of an entity
+  is a new row, which is why neither door clones
+- Under a transaction the object goes back with it: an edit to the saved values, an
+  insert to a new object, a delete to the row
+  ([transactions.md](transactions.md#what-a-rollback-restores))
 
 ## The two roads into an object store
 

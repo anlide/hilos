@@ -10,6 +10,7 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
@@ -215,6 +216,10 @@ abstract class RtActions
      * The check here is the only one the write gets - no {@see RtState::sync()} follows it - so the
      * set keys are counted with the diff, and a move to another set is caught before it is applied.
      *
+     * Under an open transaction the frame leaves at the commit, and the write leaves a step for the
+     * rollback: the previous values go back through the same applyDiff() door, and the baseline
+     * is reset to them.
+     *
      * @param RtState $state State instance to apply diff to
      * @param array<string, mixed> $diff Changed fields and values
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -226,6 +231,10 @@ abstract class RtActions
     {
         $this->ensureCanWriteState($state->getId(), $state->touchedSetKeys($diff), TruthSourceOperation::Update);
         $previous = array_intersect_key($state->toArray(), $diff);
+        Database::onRollback(static function () use ($state, $previous): void {
+            $state->applyDiff($previous);
+            $state->markRtSyncBaseline();
+        });
         $state->applyDiff($diff);
         $this->queueRtSyncUpdated($state->getId(), $diff, $previous);
         $state->markRtSyncBaseline();

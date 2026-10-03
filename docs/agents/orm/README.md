@@ -15,7 +15,7 @@ documents by touched surface; it does not replace them.
 | Extending a framework table with project columns, subclassing a framework ORM class, or mounting a subclass under a framework key | `inheritance.md` |
 | Object item mapping, object collection loading, object enrichment, or `getIdString()` | `object.md` |
 | Schema migrations, rollback files, seeds, or schema checks | `migrations.md` |
-| Opening a database transaction, `Database::transaction*`, or code that must run only once a write commits | `transactions.md` |
+| Opening a database transaction, `Database::transaction*`, code that must run only once a write commits, or memory of your own that must go back when it does not (`Database::onRollback()`) | `transactions.md` |
 
 When a change touches more than one surface, read every matching document before
 editing. DB entity shape, RT item shape, signal DTOs, and routes still require
@@ -37,7 +37,8 @@ the project contract approval gate before implementation.
 - `object.md` describes object wrappers between entities and View items.
 - `migrations.md` describes schema change workflow and validation.
 - `transactions.md` defines the transaction of a connection: what waits for the
-  commit, why the framework never nests one, and where a transaction ends.
+  commit, what a rollback puts back in memory, why the framework never nests one,
+  and where a transaction ends.
 
 ## Working Rule
 

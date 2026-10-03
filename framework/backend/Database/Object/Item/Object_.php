@@ -16,6 +16,7 @@ use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -168,6 +169,18 @@ abstract class Object_
      *
      * Saves only changed columns by comparing entity with entitySync.
      *
+     * An edit of a row the table already holds that fails - the database refused it, or the write
+     * guard did - puts the object back to what the table holds, the way {@see revert()} does, and
+     * the failure goes on to the caller. Memory follows the database: a value the table did not
+     * take is not left for every reader of this process to see, nor carried in the next diff. A
+     * failed insert puts nothing back: the object is new, and its values are the caller's. Inside
+     * a transaction "what the table holds" is what it holds within that transaction.
+     *
+     * Under an open transaction a successful write also leaves a step for the rollback: an edit
+     * goes back to the values saved before it, the tie to the row kept, and the mirrors hear the
+     * update undone; an insert goes back to the object it was before, new and without a key the
+     * table gave it. Putting the object out of its collection again is the collection's own step.
+     *
      * @throws DatabaseException If database operation fails
      * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
@@ -178,24 +191,39 @@ abstract class Object_
     public function sync(): void
     {
         $isCreate = !$this->entity->isRelated();
+        $before = $isCreate ? $this->entity->toArray() : $this->entitySync->toArray();
 
-        $this->guardWrite($isCreate);
+        try {
+            $this->guardWrite($isCreate);
 
-        if ($this->entity->isRelated()) {
-            $changedColumns = $this->getChangedColumns();
-            $currentData = $this->entity->toArray();
-            $diff = array_intersect_key($currentData, array_flip($changedColumns));
-            $previous = array_intersect_key($this->entitySync->toArray(), array_flip($changedColumns));
-            $this->entity->saveDiff($this->entitySync);
-            $this->entitySync = clone $this->entity;
-            $result = $diff;
-        } else {
-            $previous = [];
-            $this->entity->save();
-            $this->entitySync = clone $this->entity;
-            $result = $this->entity->toArray();
+            if ($isCreate) {
+                $previous = [];
+                $this->entity->save();
+                $result = $this->entity->toArray();
+            } else {
+                $changedColumns = array_flip($this->getChangedColumns());
+                $result = array_intersect_key($this->entity->toArray(), $changedColumns);
+                $previous = array_intersect_key($this->entitySync->toArray(), $changedColumns);
+                $this->entity->saveDiff($this->entitySync);
+            }
+        } catch (HilosException $failure) {
+            if (!$isCreate) {
+                $this->revert();
+            }
+
+            throw $failure;
         }
 
+        Database::onRollback(function () use ($isCreate, $before, $result, $previous): void {
+            $this->restoreSaved($before, related: !$isCreate);
+            if (!$isCreate) {
+                $this->announceUndoneUpdate($result, $previous);
+            }
+        });
+        $this->entitySync = clone $this->entity;
+
+        // Outside the failure path on purpose: the row stands in the table by now, and an
+        // announcement that fails does not take the object back from it.
         $this->broadcastDbSyncAfterSync($isCreate, $result, $previous);
     }
 
@@ -218,15 +246,23 @@ abstract class Object_
      * Delete consumers may need fields that disappear after the row is removed
      * (for example a settings key or any derived frontend/table lookup key).
      *
+     * Under an open transaction the delete leaves a step for the rollback: the object is tied to
+     * the row again and holds its stored values. Putting it back into its collection is the
+     * collection's own step.
+     *
      * @throws DatabaseException If database operation fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function delete(): void
     {
+        $stored = $this->entitySync->toArray();
         $collectionKey = static::getCollectionKey();
         if ($collectionKey === '') {
             $this->entity->delete();
+            Database::onRollback(function () use ($stored): void {
+                $this->restoreSaved($stored, related: true);
+            });
 
             return;
         }
@@ -240,6 +276,9 @@ abstract class Object_
         $row = $idString !== '' ? $this->toArray() : [];
 
         $this->entity->delete();
+        Database::onRollback(function () use ($stored): void {
+            $this->restoreSaved($stored, related: true);
+        });
 
         if ($idString !== '') {
             $this->queueDbSyncDeleted($collectionKey, $idString, $row);
@@ -285,13 +324,21 @@ abstract class Object_
     }
 
     /**
-     * Revert changes (restore from entitySync).
+     * Revert changes: the object holds what was last saved again.
+     *
+     * The saved values go back into the same entity instance, so its tie to the row stays and the
+     * next sync() writes the difference as an UPDATE. A clone of the saved state would not do: a
+     * clone of an entity is a new row by {@see Entity::__clone()}, and the next sync() would insert
+     * it under a key the table already holds. An object that was never saved has nothing to go
+     * back to, and stays as it is.
      */
     public function revert(): void
     {
-        if ($this->entity->isRelated()) {
-            $this->entity = clone $this->entitySync;
+        if (!$this->entity->isRelated()) {
+            return;
         }
+
+        $this->entity->restoreStored($this->entitySync->toArray(), related: true);
     }
 
     /**
@@ -336,6 +383,46 @@ abstract class Object_
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
             previous: [],
+        ));
+    }
+
+    /**
+     * Puts a saved state back into this object: the entity in place, and the synced copy beside it.
+     *
+     * @param array<string, mixed> $row Column name => value of the state to put back
+     * @param bool $related Whether that state is a row the table holds
+     */
+    private function restoreSaved(array $row, bool $related): void
+    {
+        $this->entity->restoreStored($row, $related);
+        $this->entitySync = clone $this->entity;
+    }
+
+    /**
+     * Tells the mirrors an update a rollback took back is undone: the changed columns hold their previous values again.
+     *
+     * The mirrors alone: they heard the update at the write and may have built memory on it.
+     * A reaction and the other processes never heard it, so there is nothing to take back there.
+     *
+     * @param array<string, mixed> $diff Values the update wrote, which the columns no longer hold
+     * @param array<string, mixed> $previous Values the columns hold again
+     * @throws SourceChangeSubscriberException Whatever a mirror raises
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
+     */
+    private function announceUndoneUpdate(array $diff, array $previous): void
+    {
+        $collectionKey = static::getCollectionKey();
+        if ($collectionKey === '' || $diff === []) {
+            return;
+        }
+
+        SourceChangeBus::publishToMirrors(SourceChange::dbUpdated(
+            $collectionKey,
+            $this->getIdString(),
+            $previous,
+            ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
+            previous: $diff,
         ));
     }
 

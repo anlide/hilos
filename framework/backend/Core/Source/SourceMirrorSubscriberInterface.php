@@ -13,8 +13,9 @@ namespace Hilos\Core\Source;
  * deleted would be wrong for that code whether the transaction commits or not.
  *
  * Every other subscriber is a reaction, and a reaction hears a change made under a transaction
- * only once that transaction commits - a rollback drops it unheard. Runtime facts are outside
- * this distinction: every subscriber hears them at once.
+ * only once that transaction commits - a rollback drops it unheard. A runtime change is no
+ * exception: the transaction covers the runtime too (HIL-1165). A rollback tells a mirror what it
+ * put back, as a fact of its own, so the memory the mirror built on the change goes back with it.
  */
 interface SourceMirrorSubscriberInterface extends SourceChangeSubscriberInterface
 {

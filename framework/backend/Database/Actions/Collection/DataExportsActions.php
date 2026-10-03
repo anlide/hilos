@@ -44,8 +44,6 @@ class DataExportsActions extends DbActions
             } catch (HilosException) {
                 // Preserve the failure that prevented the request from being replaced.
             }
-            $this->objectCollection->clearInMemory();
-            $this->clearCollectionCache();
             throw $e;
         }
     }

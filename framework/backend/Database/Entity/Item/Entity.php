@@ -312,6 +312,29 @@ abstract class Entity
     }
 
     /**
+     * Puts a stored state back into this very instance, keeping or cutting its tie to the row.
+     *
+     * The values are written as they come, without the cast a database row goes through: they are
+     * {@see toArray()} of an entity of the same class, typed already. A clone cannot do this job -
+     * {@see __clone()} cuts the tie to the row, and that rule stays - so a row going back to what
+     * the table holds goes back here, in place, and the next save of it writes the difference.
+     *
+     * @param array<string, mixed> $row Column name => value, as toArray() of this class gives it
+     * @param bool $related Whether this instance stands for a row the table holds
+     */
+    public function restoreStored(array $row, bool $related): void
+    {
+        foreach (static::_columns as $column) {
+            if (array_key_exists($column, $row)) {
+                $this->$column = $row[$column];
+            }
+        }
+
+        $this->_related = $related;
+        $this->_originalData = $related ? $this->toArray() : [];
+    }
+
+    /**
      * Builds WHERE clause and params from filters.
      *
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause

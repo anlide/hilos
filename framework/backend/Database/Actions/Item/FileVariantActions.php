@@ -9,7 +9,6 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\FileVariant as ObjectFileVariant;
 use Hilos\Database\View\Item\FileVariant;
 use Hilos\Files\Image\ImageVariant;
@@ -50,24 +49,12 @@ class FileVariantActions extends DbActions
             throw new ValidationException('File variant needs a MIME type and a nonnegative size');
         }
 
-        $previousSignature = $this->object->signature;
-        $previousStoredName = $this->object->storedName;
-        $previousMimeType = $this->object->mimeType;
-        $previousSize = $this->object->size;
         $this->object->signature = $signature;
         $this->object->storedName = $storedName;
         $this->object->mimeType = $mimeType;
         $this->object->size = $size;
-        try {
-            $this->object->sync();
-        } catch (DatabaseException $e) {
-            // The caller drops the failed replacement's bytes; keep the cached row on the old copy.
-            $this->object->signature = $previousSignature;
-            $this->object->storedName = $previousStoredName;
-            $this->object->mimeType = $previousMimeType;
-            $this->object->size = $previousSize;
-            throw $e;
-        }
+        // A refused write puts the cached row back on the old copy itself; the caller drops the bytes.
+        $this->object->sync();
     }
 
     /**

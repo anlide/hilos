@@ -543,22 +543,30 @@ class SignalRouter
      * before, because a payload that cannot be deduped still has to reach the other
      * processes.
      *
+     * Under an open transaction the frame is queued when the outermost level commits,
+     * and a rollback drops it, exactly as a DB-sync frame: one transaction covers the
+     * database and the runtime (HIL-1165). The registration travels with the frame for
+     * the same reason it does there - registered at the write, a dropped frame would
+     * leave an echo awaited that never comes.
+     *
      * @param string $signalName Signal name (e.g. SignalConstants::RT_SYNC_CREATED)
      * @param RtSyncSignalDataInterface $signalData Signal data with collectionKey and stateId
      * @throws InvalidArgumentException When the signal name is empty
      */
     public function queueRtSyncSignal(string $signalName, RtSyncSignalDataInterface $signalData): void
     {
-        if ($signalData->collectionKey !== '' && $signalData->stateId !== '') {
-            $this->rtSelfBroadcast->register($signalData->collectionKey, $signalData->stateId);
-        }
+        Database::afterCommit(function () use ($signalName, $signalData): void {
+            if ($signalData->collectionKey !== '' && $signalData->stateId !== '') {
+                $this->rtSelfBroadcast->register($signalData->collectionKey, $signalData->stateId);
+            }
 
-        $this->queueSignal(
-            signalSource: new SignalSource(SignalSource::RT),
-            signalType: new SignalType($signalName),
-            signalName: new SignalName($signalName),
-            signalData: $signalData,
-        );
+            $this->queueSignal(
+                signalSource: new SignalSource(SignalSource::RT),
+                signalType: new SignalType($signalName),
+                signalName: new SignalName($signalName),
+                signalData: $signalData,
+            );
+        });
     }
 
     /**

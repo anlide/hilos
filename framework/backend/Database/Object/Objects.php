@@ -151,12 +151,16 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * Clears existing objects and loads all from database.
      *
+     * Under an open transaction the whole map and its flags are remembered first: rows read
+     * inside a transaction may carry what it never commits, so a rollback forgets them.
+     *
      * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException If database query fails
      * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function loadAllFromDB(): void
     {
+        $this->rememberWhole();
         $this->objects = [];
         $entityCollectionClass = static::ENTITY_COLLECTION_CLASS;
         $objectClass = static::OBJECT_CLASS;
@@ -242,6 +246,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     protected function lazyLoadAll(): void
     {
+        // Remembered whole, so the completeness flags its callers set after the read go back too.
+        $this->rememberWhole();
         $entityCollectionClass = static::ENTITY_COLLECTION_CLASS;
         $objectClass = static::OBJECT_CLASS;
         $entityCollection = $entityCollectionClass::initFullDB();
@@ -659,6 +665,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
                 $pageObjects[$key] = $this->objects[$key];
             } else {
                 $object = $objectClass::fromEntity($entity);
+                $this->rememberKey($key, held: null);
                 $this->objects[$key] = $object;
                 $pageObjects[$key] = $object;
             }
@@ -889,7 +896,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * Announced from here rather than from the roads that lead here, so that every road is
      * covered: what a dependent view has to hear is that this key now holds a different object.
      * Reading the collection out of the database goes through {@see self::hydrate()} instead,
-     * which is what keeps a load from announcing rows as new.
+     * which is what keeps a load from announcing rows as new. Under an open transaction what the
+     * key held is remembered first, for a rollback to put back.
      *
      * @param mixed $offset Array key (int or string), or null to append under the next one
      * @param T $value Object instance to set
@@ -907,7 +915,10 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         if ($offset === null) {
             $this->objects[] = $value;
             $offset = array_key_last($this->objects);
+            // The key is known only once the row is in, and it held nothing before.
+            $this->rememberKey($offset, held: null);
         } else {
+            $this->rememberKey($offset, held: $this->objects[$offset] ?? null);
             $this->objects[$offset] = $value;
         }
         $collectionKey = $this->getCollectionKey();
@@ -931,11 +942,15 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * {@see self::offsetSet()}, every row read back would be announced as a new membership of
      * the mirror, and dependent views would be told that rows they already show just appeared.
      *
+     * A row read inside a transaction may carry what that transaction never commits, so under an
+     * open one the key is remembered first and a rollback forgets the row again.
+     *
      * @param int|string $key Array key the row is stored under
      * @param T $object Object read out of storage
      */
     protected function hydrate(int|string $key, Object_ $object): void
     {
+        $this->rememberKey($key, held: $this->objects[$key] ?? null);
         $this->objects[$key] = $object;
     }
 
@@ -970,6 +985,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             return;
         }
         $previous = $this->objects[$offset] ?? null;
+        if ($previous !== null) {
+            $this->rememberKey($offset, held: $previous);
+        }
         unset($this->objects[$offset]);
         $collectionKey = $this->getCollectionKey();
         if ($previous === null || $collectionKey === '') {
@@ -1014,6 +1032,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
                 $this->_lazyStrategy === self::LAZY_STRATEGY_BATCH) {
                 $object = $this->lazyLoadObject($offset);
                 if ($object !== null) {
+                    $this->rememberKey($offset, held: null);
                     $this->objects[$offset] = $object;
                 }
                 return $object;
@@ -1143,9 +1162,13 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * to be gone and dropping them needs no re-read. An incoming DB_SYNC_CLEARED from
      * another process goes through reHydrate() instead — there the mirror has to be
      * reconciled with the table rather than assumed empty.
+     *
+     * Under an open transaction the whole map is remembered first: a rollback brings the rows
+     * back, since the DELETE that dropped them is rolled back too.
      */
     public function clearInMemory(): void
     {
+        $this->rememberWhole();
         $this->objects = [];
     }
 
@@ -1171,6 +1194,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function reHydrate(): void
     {
+        $this->rememberWhole();
         // Read before the line below drops it: what has to survive the reset is the CLAIM this
         // collection was making about itself, and that claim is gone one statement later.
         $wasAllLoaded = $this->_allLoaded;
@@ -1305,5 +1329,91 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         return array_map(function ($object) {
             return $object->toArray();
         }, $this->objects);
+    }
+
+    /**
+     * Remembers what one key holds, for a rollback to put it back: the object, or nothing.
+     *
+     * Outside a transaction nothing is remembered ({@see Database::onRollback()}). The step puts
+     * the very instance back - so View wrappers and callers holding it keep their object - or
+     * drops the key, and tells the mirrors when the instance under the key changed by it.
+     *
+     * @param int|string $key Key about to change
+     * @param ?T $held Object the key holds before the change, null when it holds none
+     */
+    private function rememberKey(int|string $key, ?Object_ $held): void
+    {
+        Database::onRollback(function () use ($key, $held): void {
+            $replaced = $this->objects[$key] ?? null;
+            if ($held === null) {
+                unset($this->objects[$key]);
+            } else {
+                $this->objects[$key] = $held;
+            }
+            $this->announceRestored($key, $held, $replaced);
+        });
+    }
+
+    /**
+     * Remembers the whole map and its completeness flags, for a rollback to put them back.
+     *
+     * Taken where the collection is cleared or read anew as a whole: a snapshot by key would be
+     * longer there than the map itself, and the map is copied lazily - its first change after
+     * this pays for one copy. The step tells the mirrors about every key whose instance it changed.
+     */
+    private function rememberWhole(): void
+    {
+        $map = $this->objects;
+        $allLoaded = $this->_allLoaded;
+        $allowLazyLoading = $this->_allowLazyLoading;
+        Database::onRollback(function () use ($map, $allLoaded, $allowLazyLoading): void {
+            $replaced = $this->objects;
+            $this->objects = $map;
+            $this->_allLoaded = $allLoaded;
+            $this->_allowLazyLoading = $allowLazyLoading;
+            if ($this->getCollectionKey() === '') {
+                return;
+            }
+            foreach (array_keys($map + $replaced) as $key) {
+                $this->announceRestored($key, $map[$key] ?? null, $replaced[$key] ?? null);
+            }
+        });
+    }
+
+    /**
+     * Tells the mirrors a rollback changed what one key holds: the object put back, or the one taken away.
+     *
+     * The mirrors alone, the way they heard the write itself: a reaction and the other processes
+     * never heard what the rollback takes back.
+     *
+     * @param int|string $key Key the rollback changed
+     * @param ?T $restored Object the key holds again, null when the rollback dropped the key
+     * @param ?T $replaced Object the key held until the rollback, null when it held none
+     * @throws SourceChangeSubscriberException Whatever a mirror raises
+     */
+    private function announceRestored(int|string $key, ?Object_ $restored, ?Object_ $replaced): void
+    {
+        $collectionKey = $this->getCollectionKey();
+        if ($collectionKey === '' || $restored === $replaced) {
+            return;
+        }
+
+        if ($restored !== null) {
+            SourceChangeBus::publishToMirrors(SourceChange::dbCreated(
+                $collectionKey,
+                (string)$key,
+                $restored->toArray(),
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ));
+        } elseif ($replaced !== null) {
+            SourceChangeBus::publishToMirrors(SourceChange::dbDeleted(
+                $collectionKey,
+                (string)$key,
+                $replaced->toArray(),
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ));
+        }
     }
 }

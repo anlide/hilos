@@ -146,7 +146,7 @@ Inside `Runtime/` item actions, write typed state fields and call `sync()`:
 
 ```php
 $this->state->status = $newStatus;
-$this->sync();        // broadcasts RT_SYNC_UPDATED to all workers
+$this->sync();        // broadcasts RT_SYNC_UPDATED to all workers - at the commit under an open transaction
 ```
 
 Or use an item **Actions** class when the caller has the collection key:
@@ -333,6 +333,11 @@ recover the type.
 - Each of the three asks the truth-source guard for its own operation, so a source
   granted only some of them is refused on the others by name
 - On worker sync: `applyDiff()` called with changed fields only
+- Inside a transaction: a write is rolled back with it — an added, removed or wiped
+  state goes back where it was, and an edit goes back through `applyDiff()`, the same
+  door a foreign edit comes in by, so a state that does not override it is not rolled
+  back. The frame leaves at the commit
+  ([../orm/transactions.md](../orm/transactions.md#what-a-rollback-restores))
 - On another node: the same `fromRow()` / `applyDiff()` / `remove()`, reached from
   the daemon rather than from a worker — a row travels the mesh as the row the
   writer's process produced
@@ -358,4 +363,5 @@ writes, its copy may be missing what its co-owner wrote.
 ## markRtSyncBaseline()
 
 Call at end of `create()`/`fromRow()` to snapshot current state.
-`sync()` diffs against this baseline to detect what changed.
+`sync()` diffs against this baseline to detect what changed. A rollback puts the
+baseline back with the fields, so the next `sync()` sends the rolled-back diff again.

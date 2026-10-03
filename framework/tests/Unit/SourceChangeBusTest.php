@@ -104,10 +104,11 @@ final class SourceChangeBusTest extends TestCase
     }
 
     /**
-     * A runtime fact is outside the transaction and keeps the registration order for everyone:
-     * a mirror registered after a reaction hears it after that reaction.
+     * The twin of the database case: one transaction covers the runtime too (HIL-1165), so a
+     * runtime fact reaches a mirror at the write and a reaction at the commit, and outside a
+     * transaction the mirror comes first whatever the registration order.
      */
-    public function testARuntimeFactKeepsTheRegistrationOrderForAMirrorToo(): void
+    public function testAMirrorHearsARuntimeFactBeforeAReactionRegisteredAheadOfIt(): void
     {
         $seen = [];
         SourceChangeBus::subscribe(new BusLabelSubscriber($seen, 'reaction'));
@@ -115,7 +116,7 @@ final class SourceChangeBusTest extends TestCase
 
         SourceChangeBus::publish(SourceChange::rtCreated(BusRtContext::COLLECTION, 'a', []));
 
-        $this->assertSame(['reaction', 'mirror'], $seen);
+        $this->assertSame(['mirror', 'reaction'], $seen);
     }
 
     /**

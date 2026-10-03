@@ -10,6 +10,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos;
@@ -140,6 +141,12 @@ abstract class RtState
      * Queue RT_SYNC_UPDATED for all fields that differ from the last baseline, then advance the baseline.
      * Does not persist to DB; cross-worker runtime sync only.
      *
+     * Under an open transaction the frame leaves at the commit, and the write leaves a step for the
+     * rollback: the changed fields get their baseline values back and the baseline goes back too,
+     * so the next sync() sends the same diff again. The step goes through {@see applyDiff()}, the
+     * door a foreign edit comes in by - a state without it is not rolled back, exactly as it takes
+     * no foreign edit. Written whatever the collection key: memory is memory.
+     *
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
@@ -178,6 +185,11 @@ abstract class RtState
             );
         }
 
+        $baseline = $this->rtSyncBaseline;
+        Database::onRollback(function () use ($previous, $baseline): void {
+            $this->applyDiff($previous);
+            $this->rtSyncBaseline = $baseline;
+        });
         $this->rtSyncBaseline = $current;
     }
 
@@ -241,7 +253,8 @@ abstract class RtState
     /**
      * Apply diff to state fields for RT sync update.
      *
-     * Override in child classes to support updates. Default no-op.
+     * Override in child classes to support updates. Default no-op. It is also the door a rollback
+     * puts a state's own edit back by, so a state that does not override it is not rolled back.
      *
      * @param array<string, mixed> $diff Changed fields => values
      * @throws HilosException Whatever the concrete state's read of the diff raises

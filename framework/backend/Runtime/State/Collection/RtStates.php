@@ -9,6 +9,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Database\Database;
 use Hilos\Runtime\Exception\State\RtStatesCloneException;
 use Hilos\Runtime\Exception\State\RtStatesUnserializeException;
 use Hilos\Runtime\State\Item\RtState;
@@ -117,12 +118,14 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      *
      * A state already standing under that id is replaced, and the announcement says created for
      * that too: what every dependent view has to hear is that the id now holds a different row.
+     * Under an open transaction what the id held is remembered first, for a rollback to put back.
      *
      * @param T $state State instance to add
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     public function add(RtState $state): void
     {
+        $this->rememberId($state->getId());
         $this->states[$state->getId()] = $state;
         if ($this->collectionName === null) {
             return;
@@ -141,7 +144,8 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      *
      * The row is read before the removal, so the announcement carries what the id held rather
      * than nothing; an id holding nothing is still announced, because the callers this replaces
-     * broadcast that removal too and a receiver that has the row must lose it.
+     * broadcast that removal too and a receiver that has the row must lose it. Under an open
+     * transaction what the id held is remembered first, for a rollback to put back.
      *
      * @param string $id State ID
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
@@ -149,6 +153,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     public function remove(string $id): void
     {
         $previous = $this->states[$id] ?? null;
+        $this->rememberId($id);
         unset($this->states[$id]);
         if ($this->collectionName === null) {
             return;
@@ -196,9 +201,11 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      * Announces nothing, unlike the point mutations. A whole-collection wipe already travels its
      * own road end to end - the caller broadcasts a delete per row and empties the view cache in
      * one go - and routing it through per-row announcements would change what goes over the wire.
+     * Under an open transaction the whole map is remembered first, for a rollback to put back.
      */
     public function clear(): void
     {
+        $this->rememberAll();
         $this->states = [];
     }
 
@@ -359,6 +366,84 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
                 continue;
             }
             yield $key => $state;
+        }
+    }
+
+    /**
+     * Remembers what one id holds, for a rollback to put it back: the state, or nothing.
+     *
+     * Outside a transaction nothing is remembered ({@see Database::onRollback()}). The step puts
+     * the very instance back - so View wrappers holding it keep their state - or drops the id, and
+     * tells the mirrors when the instance under the id changed by it.
+     *
+     * @param string $id State ID about to change
+     */
+    private function rememberId(string $id): void
+    {
+        $held = $this->states[$id] ?? null;
+        Database::onRollback(function () use ($id, $held): void {
+            $replaced = $this->states[$id] ?? null;
+            if ($held === null) {
+                unset($this->states[$id]);
+            } else {
+                $this->states[$id] = $held;
+            }
+            $this->announceRestored($id, $held, $replaced);
+        });
+    }
+
+    /**
+     * Remembers the whole map, for a rollback to put it back after a wipe.
+     *
+     * The map is copied lazily: its first change after this pays for one copy. The step tells the
+     * mirrors about every id whose instance it changed.
+     */
+    private function rememberAll(): void
+    {
+        $map = $this->states;
+        Database::onRollback(function () use ($map): void {
+            $replaced = $this->states;
+            $this->states = $map;
+            foreach (array_keys($map + $replaced) as $id) {
+                $this->announceRestored((string)$id, $map[$id] ?? null, $replaced[$id] ?? null);
+            }
+        });
+    }
+
+    /**
+     * Tells the mirrors a rollback changed what one id holds: the state put back, or the one taken away.
+     *
+     * The mirrors alone, the way they heard the write itself: a reaction and the other processes
+     * never heard what the rollback takes back. A collection that is not mounted has no name to
+     * tell it under, and tells nothing, as its writes do.
+     *
+     * @param string $id State ID the rollback changed
+     * @param ?T $restored State the id holds again, null when the rollback dropped the id
+     * @param ?T $replaced State the id held until the rollback, null when it held none
+     * @throws SourceChangeSubscriberException Whatever a mirror raises
+     */
+    private function announceRestored(string $id, ?RtState $restored, ?RtState $replaced): void
+    {
+        if ($this->collectionName === null || $restored === $replaced) {
+            return;
+        }
+
+        if ($restored !== null) {
+            SourceChangeBus::publishToMirrors(SourceChange::rtCreated(
+                $this->collectionName,
+                $id,
+                $restored->toArray(),
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ));
+        } elseif ($replaced !== null) {
+            SourceChangeBus::publishToMirrors(SourceChange::rtDeleted(
+                $this->collectionName,
+                $id,
+                $replaced->toArray(),
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ));
         }
     }
 }

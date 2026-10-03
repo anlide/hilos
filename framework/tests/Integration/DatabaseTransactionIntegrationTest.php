@@ -22,8 +22,10 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\ObjectCollectionNotFoundException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
+use Hilos\Database\Object\Collection\AccountDeletions;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\View\Context\RtContext;
@@ -31,21 +33,28 @@ use RuntimeException;
 use Throwable;
 
 /**
- * A transaction holds its announcements until it commits (HIL-1164).
+ * A transaction holds its announcements until it commits (HIL-1164), and takes this process's
+ * memory back with its rows when it does not (HIL-1165).
  *
  * The rows are written the way the framework writes them - through a collection's actions - so
  * both announcements a write makes are exercised: the DB-sync frame to the other processes and
  * the fact on the source bus. What is pinned is the moment each reaches its listener: the mirror
  * at the write, the frame and the reaction at the commit of the outermost level, neither after a
- * rollback. The nesting rules, the lost link and the end-of-handler cleanup are pinned here too,
- * against a real MySQL transaction: a savepoint and a link that dies cannot be faked.
+ * rollback. The row cache is pinned beside the rows: after a rollback, a lost connection or a
+ * failed commit it holds what the table holds. The nesting rules, the lazy BEGIN, the lost link
+ * and the end-of-handler cleanup are pinned here too, against a real MySQL transaction: a
+ * savepoint and a link that dies cannot be faked.
  */
 final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTestCase
 {
     private const int FIRST_USER_ID = 1164;
     private const int SECOND_USER_ID = 1165;
+    private const int THIRD_USER_ID = 1166;
 
     private const string EFFECTIVE_AT = '2026-01-01 00:00:00';
+
+    /** Moment a write inside a transaction moves a request to, which a rollback has to take back. */
+    private const string LATER_EFFECTIVE_AT = '2027-01-01 00:00:00';
 
     /** Connection index a second session is opened on, to kill the first one from outside. */
     private const int KILLER_INDEX = 2;
@@ -376,6 +385,117 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
     }
 
     /**
+     * The MySQL part opens at the first query: a transaction that sent none lost nothing when its
+     * connection closed and commits without SQL, while one that sent a query went with its session.
+     *
+     * @throws HilosException When the query, the rollback or the reconnect fails
+     */
+    public function testTheMySqlPartOfATransactionOpensAtItsFirstQuery(): void
+    {
+        Database::transactionStart();
+        Database::close();
+        Database::transactionCommit();
+        self::assertNull(Database::rollBackLeftOpen(), 'The commit closed a level that never reached the server');
+
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::transactionStart();
+        Database::sql('SELECT 1');
+        Database::close();
+        try {
+            Database::transactionCommit();
+            self::fail('The first query opened the transaction, and it went with the session');
+        } catch (TransactionNotOpenException) {
+            // The level stands as failed until the rollback below closes it
+        }
+        Database::transactionRollback();
+
+        self::assertNull(Database::rollBackLeftOpen());
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+    }
+
+    /**
+     * A rollback puts the row cache back with the rows: the edited object holds its saved value
+     * and stays tied to its row, the deleted one is back under its key as the same instance, and
+     * the inserted one is gone from the collection.
+     *
+     * @throws HilosException When a write or the transaction fails
+     */
+    public function testARollbackPutsTheRowCacheBackWithTheRows(): void
+    {
+        $edited = (int)$this->request(self::FIRST_USER_ID);
+        $deleted = (int)$this->request(self::SECOND_USER_ID);
+        $objects = $this->deletionObjects();
+        $editedObject = $objects[$edited];
+        $deletedObject = $objects[$deleted];
+        self::assertNotNull($editedObject);
+        self::assertNotNull($deletedObject);
+
+        Database::transactionStart();
+        $editedObject->effectiveAt = self::LATER_EFFECTIVE_AT;
+        $editedObject->sync();
+        $deletedObject->delete();
+        unset($objects[$deleted]);
+        $inserted = (int)$this->request(self::THIRD_USER_ID);
+        Database::transactionRollback();
+
+        self::assertSame(self::EFFECTIVE_AT, $editedObject->effectiveAt);
+        self::assertTrue($editedObject->isRelated(), 'Still tied to its row: the next save is an update');
+        self::assertSame($deletedObject, $objects[$deleted]);
+        self::assertTrue($deletedObject->isRelated());
+        self::assertFalse(isset($objects[$inserted]));
+        self::assertSame(2, self::requestRows());
+
+        $editedObject->effectiveAt = self::LATER_EFFECTIVE_AT;
+        $editedObject->sync();
+        self::assertSame(2, self::requestRows(), 'The save after the rollback updated the row, not inserted one');
+    }
+
+    /**
+     * A row read inside a transaction may carry what the transaction wrote past the doors, so a
+     * rollback forgets it, and the next read comes from the table.
+     *
+     * @throws HilosException When a write, a read or the transaction fails
+     */
+    public function testARowReadInsideARolledBackTransactionIsForgotten(): void
+    {
+        $id = (int)$this->request(self::FIRST_USER_ID);
+        $objects = $this->deletionObjects();
+        $objects->clearInMemory();
+
+        Database::transactionStart();
+        Database::sqlRun('UPDATE `hilos_account_deletion` SET `effective_at` = ? WHERE `id` = ?', [self::LATER_EFFECTIVE_AT, $id]);
+        self::assertSame(self::LATER_EFFECTIVE_AT, $objects[$id]?->effectiveAt, 'Read inside, the row carries the raw write');
+        Database::transactionRollback();
+
+        self::assertFalse(isset($objects[$id]), 'The row read inside is forgotten');
+        self::assertSame(self::EFFECTIVE_AT, $objects[$id]?->effectiveAt);
+    }
+
+    /**
+     * A closed connection takes the memory back at the moment it takes the rows, before the
+     * caller's rollback: the code running between the loss and its catch reads what the table holds.
+     *
+     * @throws HilosException When a write, the rollback or the reconnect fails
+     */
+    public function testAClosedConnectionPutsTheMemoryBackAtOnce(): void
+    {
+        $id = (int)$this->request(self::FIRST_USER_ID);
+        $object = $this->deletionObjects()[$id];
+        self::assertNotNull($object);
+
+        Database::transactionStart();
+        $object->effectiveAt = self::LATER_EFFECTIVE_AT;
+        $object->sync();
+        Database::close();
+
+        self::assertSame(self::EFFECTIVE_AT, $object->effectiveAt);
+
+        Database::transactionRollback();
+        self::assertNull(Database::rollBackLeftOpen());
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+    }
+
+    /**
      * @throws HilosException When a write fails
      */
     public function testAnAnnouncementMadeOutsideATransactionIsMadeAtOnce(): void
@@ -394,18 +514,29 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
     }
 
     /**
+     * A runtime fact made under a transaction waits for the commit like a row's: one transaction
+     * covers the database and the runtime (HIL-1165). The mirror hears it at the write; a rollback
+     * drops it unheard by the reaction.
+     *
      * @throws HilosException When the transaction fails
      */
-    public function testARuntimeFactInsideATransactionReachesTheReactionAtOnce(): void
+    public function testARuntimeFactInsideATransactionReachesTheReactionAtTheCommit(): void
     {
         Database::transactionStart();
         SourceChangeBus::publish(SourceChange::rtCreated(self::UNMOUNTED_RT_COLLECTION, 'a', []));
 
+        self::assertSame([], $this->reaction->seen);
+        self::assertSame(['a'], $this->mirror->seen, 'The mirror is told at the write');
+
+        Database::transactionCommit();
+
         self::assertSame(['a'], $this->reaction->seen);
 
+        Database::transactionStart();
+        SourceChangeBus::publish(SourceChange::rtCreated(self::UNMOUNTED_RT_COLLECTION, 'b', []));
         Database::transactionRollback();
 
-        self::assertSame(['a'], $this->reaction->seen);
+        self::assertSame(['a'], $this->reaction->seen, 'A rolled-back runtime fact is never heard by a reaction');
     }
 
     /**
@@ -469,6 +600,19 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
     private function request(int $userId): string
     {
         return (string)Hilos::$db->accountDeletions->actions->request($userId, self::EFFECTIVE_AT)->id;
+    }
+
+    /**
+     * @return AccountDeletions The object collection of the deletion requests, the row cache these cases check
+     * @throws HilosException When the framework context does not mount it
+     */
+    private function deletionObjects(): AccountDeletions
+    {
+        $objects = Hilos::$db?->getObjectCollection(HilosDbContext::accountDeletions);
+
+        return $objects instanceof AccountDeletions
+            ? $objects
+            : throw new ObjectCollectionNotFoundException('The deletion requests are not mounted');
     }
 
     /**

@@ -11,6 +11,7 @@ use Hilos\Database\Exception\DatabaseParamsException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
+use Hilos\Database\Exception\Transaction\MemoryRollbackFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionLeftOpenException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
@@ -57,7 +58,10 @@ class Database
      *
      * A MySQL transaction belongs to a connection, so the levels are kept by connection index
      * like {@see self::$connections}; the ORM writes into the current connection, which is why
-     * an announcement made under an open transaction on the current index is held on it.
+     * an announcement made under an open transaction on the current index is held on it, and
+     * why the memory journal of a write is kept there too. One transaction covers the database
+     * and this process's memory - the row cache and the runtime - and its MySQL part opens at
+     * the first query on the connection, not at the start.
      *
      * @var array<int, list<TransactionLevel>>
      */
@@ -297,7 +301,10 @@ class Database
     }
 
     /**
-     * Closes the connection; a transaction open on it is left on the stack as failed.
+     * Closes the connection; a transaction the server held on it is left on the stack as failed.
+     *
+     * The memory its writes changed goes back here, at the moment the rows go. A transaction that
+     * sent no query yet holds nothing on the server, loses nothing, and stays as it stood.
      *
      * @param ?int $index Connection index (defaults to current)
      */
@@ -321,10 +328,20 @@ class Database
             // The transaction went with the session. Its levels stay on the stack as failed
             // so the caller's commit refuses and its rollback closes them: cleared here, the
             // next session would commit a transaction of its own and release announcements
-            // about rows that vanished with this one.
-            foreach (self::$transactions[$index] ?? [] as $level) {
-                $level->dropHeld();
-                $level->markFailed();
+            // about rows that vanished with this one. The memory goes back now, innermost level
+            // first, so the code running between the loss and its catch reads what the table
+            // holds; a step that fails is logged by the journal, the rows are gone either way.
+            $levels = self::$transactions[$index] ?? [];
+            if ($levels !== [] && $levels[0]->isOpened()) {
+                for ($position = count($levels) - 1; $position >= 0; $position--) {
+                    $level = $levels[$position];
+                    if ($level->isFailed()) {
+                        continue;
+                    }
+                    $level->dropHeld();
+                    $level->markFailed();
+                    self::restoreMemory($index, $position + 1, $level);
+                }
             }
         }
     }
@@ -393,13 +410,20 @@ class Database
             // Drained as far as the previous query allows
         }
 
+        // The first query of a transaction opens its MySQL part: BEGIN, then the savepoints of
+        // the nested levels started since, in order. Sent after the drain, which a BEGIN on a
+        // link with results still pending would be refused for.
+        self::openPendingLevels($index, $mysqli);
+
         $attempts = 0;
         $maxAttempts = $tryReconnect ? $config->reconnectAttempts : DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT;
 
         // A reconnect inside a transaction would lose it without a word: the statements after
         // it would autocommit, and the commit would then release announcements about rows the
-        // broken transaction never wrote. A lost connection ends the transaction instead.
-        if ((self::$transactions[$index] ?? []) !== []) {
+        // broken transaction never wrote. A lost connection ends the transaction instead. Before
+        // its BEGIN the server holds no transaction to lose, and a reconnect is as safe as ever.
+        $levels = self::$transactions[$index] ?? [];
+        if ($levels !== [] && $levels[0]->isOpened()) {
             $tryReconnect = false;
             $maxAttempts = DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT;
         }
@@ -676,14 +700,18 @@ class Database
     /**
      * Opens the transaction of the current connection.
      *
-     * Never nests: a start while a transaction is open on the connection is refused before any
-     * SQL is sent, and the open transaction is left for its own caller to roll back. A nested
-     * level opens only when every level of the chain was started with
-     * {@see self::transactionStartNestable()}, which the framework itself never calls.
+     * One transaction covers the database and this process's memory: a rollback takes back the
+     * rows and puts the row cache and the runtime back as they were. No SQL is sent here and no
+     * connection is needed - the first query on the connection sends BEGIN - so work that
+     * touches only the runtime never opens the MySQL part at all. A failing BEGIN reaches the
+     * caller of that first query.
+     *
+     * Never nests: a start while a transaction is open on the connection is refused, and the open
+     * transaction is left for its own caller to roll back. A nested level opens only when every
+     * level of the chain was started with {@see self::transactionStartNestable()}, which the
+     * framework itself never calls.
      *
      * @throws NestedTransactionRefusedException When a transaction is already open on the connection
-     * @throws DatabaseConnectionException When not connected
-     * @throws DatabaseRuntimeException When the server refuses to start the transaction
      */
     public static function transactionStart(): void
     {
@@ -695,7 +723,7 @@ class Database
                 : NestedTransactionRefusedException::forStart($index, $depth, null);
         }
 
-        self::beginOutermost($index, nestable: false);
+        self::$transactions[$index] = [new TransactionLevel(nestable: false, savepoint: null)];
     }
 
     /**
@@ -703,15 +731,15 @@ class Database
      *
      * With nothing open it is the transaction itself, marked nestable. Inside an open chain whose
      * every level is marked, it is a savepoint named by its depth: its commit releases the
-     * savepoint and hands its held announcements to the level under it, its rollback undoes its
-     * own writes alone. One level without the mark refuses the start, as the plain start does.
+     * savepoint and hands its held announcements and its memory journal to the level under it,
+     * its rollback undoes its own writes and its own memory alone. One level without the mark
+     * refuses the start, as the plain start does. Like the plain start it sends no SQL: the
+     * first query on the connection opens BEGIN and the savepoints in order.
      *
      * Project code may call this; the framework never does, and the NESTABLE-TRANSACTION guard
      * keeps it so - a framework method joins the caller's transaction instead.
      *
      * @throws NestedTransactionRefusedException When a level of the open chain was started without the mark, or failed to commit
-     * @throws DatabaseConnectionException When not connected
-     * @throws DatabaseRuntimeException When the server refuses the transaction or the savepoint
      */
     public static function transactionStartNestable(): void
     {
@@ -719,7 +747,7 @@ class Database
         $levels = self::$transactions[$index] ?? [];
         $depth = count($levels);
         if ($depth === 0) {
-            self::beginOutermost($index, nestable: true);
+            self::$transactions[$index] = [new TransactionLevel(nestable: true, savepoint: null)];
 
             return;
         }
@@ -733,24 +761,22 @@ class Database
             }
         }
 
-        $mysqli = self::getConnection($index);
-        $savepoint = TransactionLevel::SAVEPOINT_PREFIX . ($depth + 1);
-        try {
-            mysqli_savepoint($mysqli, $savepoint);
-        } catch (mysqli_sql_exception $e) {
-            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::SAVEPOINT);
-        }
-        self::$transactions[$index][] = new TransactionLevel(nestable: true, savepoint: $savepoint);
+        self::$transactions[$index][] = new TransactionLevel(
+            nestable: true,
+            savepoint: TransactionLevel::SAVEPOINT_PREFIX . ($depth + 1),
+        );
     }
 
     /**
      * Commits the innermost open level of the current connection.
      *
-     * A nested level releases its savepoint and hands the announcements it held to the level
-     * under it; the outermost level commits and then releases every announcement the
-     * transaction held, in the order the writes were made. A commit that fails rolls its own
-     * level back, drops what the level held and leaves the level standing as failed for the
-     * caller's rollback to close - taken off here, that rollback would reach the parent level.
+     * A nested level releases its savepoint and hands the announcements it held and its memory
+     * journal to the level under it; the outermost level commits, throws its journal away - the
+     * memory stays as the writes left it - and then releases every announcement the transaction
+     * held, in the order the writes were made. A level that never reached the server commits
+     * without SQL. A commit that fails rolls its own level back, puts its memory back, drops
+     * what the level held and leaves the level standing as failed for the caller's rollback to
+     * close - taken off here, that rollback would reach the parent level.
      *
      * @throws TransactionNotOpenException When no transaction is open, or the innermost level already failed to commit
      * @throws DatabaseConnectionException When not connected
@@ -769,30 +795,37 @@ class Database
             throw TransactionNotOpenException::forFailedLevel($index, $depth);
         }
 
-        $mysqli = self::getConnection($index);
-        try {
-            if ($level->savepoint === null) {
-                mysqli_commit($mysqli);
-            } else {
-                mysqli_release_savepoint($mysqli, $level->savepoint);
+        if ($level->isOpened()) {
+            $mysqli = self::getConnection($index);
+            try {
+                if ($level->savepoint === null) {
+                    mysqli_commit($mysqli);
+                } else {
+                    mysqli_release_savepoint($mysqli, $level->savepoint);
+                }
+            } catch (mysqli_sql_exception $e) {
+                self::rollBackFailedCommit($mysqli, $index, $depth, $level);
+                MysqlExceptionMapper::runtimeException(
+                    $e->getCode(),
+                    $e->getMessage(),
+                    $level->savepoint === null ? DatabaseSql::COMMIT : DatabaseSql::RELEASE_SAVEPOINT,
+                );
             }
-        } catch (mysqli_sql_exception $e) {
-            self::rollBackFailedCommit($mysqli, $level);
-            MysqlExceptionMapper::runtimeException(
-                $e->getCode(),
-                $e->getMessage(),
-                $level->savepoint === null ? DatabaseSql::COMMIT : DatabaseSql::RELEASE_SAVEPOINT,
-            );
         }
 
         array_pop(self::$transactions[$index]);
         if ($level->savepoint !== null) {
+            $parent = self::$transactions[$index][$depth - 2];
             foreach ($level->takeHeld() as $announce) {
-                self::$transactions[$index][$depth - 2]->hold($announce);
+                $parent->hold($announce);
+            }
+            foreach ($level->takeUndo() as $undo) {
+                $parent->remember($undo);
             }
 
             return;
         }
+        // The journal leaves with the level: the commit stands, and nothing is to be put back.
         self::release($level->takeHeld());
     }
 
@@ -801,17 +834,26 @@ class Database
      *
      * Silent with no transaction open, like ROLLBACK in MySQL: after a commit whose released
      * announcement failed, the caller's catch rolls back a transaction that already stands, and
-     * loses nothing by it. A level whose commit failed is already rolled back and is only
-     * closed here. The level leaves the stack and drops what it held before the SQL is sent,
-     * so a failing ROLLBACK still closes it.
+     * loses nothing by it. A level whose commit failed is already rolled back, its memory
+     * included, and is only closed here. The level leaves the stack and drops what it held
+     * before the SQL is sent, so a failing ROLLBACK still closes it.
+     *
+     * The memory the level's writes changed goes back first, step by step in the reverse order of
+     * the writes, and then the SQL is sent - none when the level never reached the server. A step
+     * that fails stops neither the other steps nor the SQL: memory half put back is worse than any
+     * error. The failure raised is the SQL's when it failed; otherwise the first failed step's,
+     * as it is when it is a Hilos exception and wrapped when it is not. The rest are logged.
      *
      * @throws DatabaseConnectionException When not connected
      * @throws DatabaseRuntimeException When the rollback fails
+     * @throws MemoryRollbackFailedException When a step putting memory back raised something outside the framework's tree
+     * @throws HilosException Whatever else a step putting memory back raised
      */
     public static function transactionRollback(): void
     {
         $index = self::$currentIndex;
-        if ((self::$transactions[$index] ?? []) === []) {
+        $depth = count(self::$transactions[$index] ?? []);
+        if ($depth === 0) {
             return;
         }
         $level = array_pop(self::$transactions[$index]);
@@ -819,21 +861,31 @@ class Database
             return;
         }
         $level->dropHeld();
+        $memoryFailure = self::restoreMemory($index, $depth, $level);
 
-        $mysqli = self::getConnection($index);
-        try {
-            if ($level->savepoint === null) {
-                mysqli_rollback($mysqli);
-            } else {
-                mysqli_query($mysqli, DatabaseSql::rollbackToSavepoint($level->savepoint));
-                mysqli_release_savepoint($mysqli, $level->savepoint);
+        if ($level->isOpened()) {
+            $mysqli = self::getConnection($index);
+            try {
+                if ($level->savepoint === null) {
+                    mysqli_rollback($mysqli);
+                } else {
+                    mysqli_query($mysqli, DatabaseSql::rollbackToSavepoint($level->savepoint));
+                    mysqli_release_savepoint($mysqli, $level->savepoint);
+                }
+            } catch (mysqli_sql_exception $e) {
+                MysqlExceptionMapper::runtimeException(
+                    $e->getCode(),
+                    $e->getMessage(),
+                    $level->savepoint === null ? DatabaseSql::ROLLBACK : DatabaseSql::ROLLBACK_TO_SAVEPOINT,
+                );
             }
-        } catch (mysqli_sql_exception $e) {
-            MysqlExceptionMapper::runtimeException(
-                $e->getCode(),
-                $e->getMessage(),
-                $level->savepoint === null ? DatabaseSql::ROLLBACK : DatabaseSql::ROLLBACK_TO_SAVEPOINT,
-            );
+        }
+
+        if ($memoryFailure instanceof HilosException) {
+            throw $memoryFailure;
+        }
+        if ($memoryFailure !== null) {
+            throw new MemoryRollbackFailedException($memoryFailure);
         }
     }
 
@@ -846,6 +898,7 @@ class Database
      * and whose writes are gone - it is made at once, as every announcement was before there
      * were transactions to wait for. What the announcement raises reaches whoever made it run:
      * the caller here when it runs at once, the caller of the commit that released it otherwise.
+     * Its pair for the memory a write changed is {@see self::onRollback()}.
      *
      * @param Closure $announce Announcement to make
      */
@@ -864,13 +917,42 @@ class Database
     }
 
     /**
+     * Remembers how to put back a change to this process's memory, should the transaction not commit.
+     *
+     * The pair of {@see self::afterCommit()}: that one holds what is to happen once the writes
+     * stand, this one what is to be undone if they do not. Kept on the innermost open level of
+     * the current connection: a committed nested level hands it to its parent, the outermost
+     * commit throws it away, a rollback - and a failed commit, a lost connection, a handler that
+     * left the transaction open - runs it, the steps in the reverse order of the writes. With no
+     * open level nothing is kept: outside a transaction a write stands the moment it is made.
+     *
+     * The write doors of the ORM and of the runtime call it for the memory they change; project
+     * code calls it for memory of its own that has to go back with the database.
+     *
+     * @param Closure $undo Step putting back what the write changed in memory
+     */
+    public static function onRollback(Closure $undo): void
+    {
+        $levels = self::$transactions[self::$currentIndex] ?? [];
+        for ($position = count($levels) - 1; $position >= 0; $position--) {
+            if (!$levels[$position]->isFailed()) {
+                $levels[$position]->remember($undo);
+
+                return;
+            }
+        }
+    }
+
+    /**
      * Closes every transaction a handler left open, on every connection, and says so.
      *
      * Called by the framework at the end of a handler - one unit of a worker's tick, one CLI
-     * command, a test's tearDown. The held announcements are dropped, the outermost level is
-     * rolled back where it still stands on a live connection, and the stacks are emptied, so
-     * the next handler starts clean whatever this one did. Nothing is raised here: what the
-     * failure means for its unit is the caller's to decide, so it is handed back.
+     * command, a test's tearDown. The held announcements are dropped, the memory every level
+     * changed goes back - innermost level first, a failing step logged - the outermost level is
+     * rolled back where it reached the server and still stands on a live connection, and the
+     * stacks are emptied, so the next handler starts clean whatever this one did. Nothing is
+     * raised here: what the failure means for its unit is the caller's to decide, so it is
+     * handed back.
      *
      * @return ?TransactionLeftOpenException Failure naming every connection concerned, or null when nothing was left open
      */
@@ -884,13 +966,14 @@ class Database
             }
 
             $heldCount = 0;
-            foreach ($levels as $level) {
-                $heldCount += count($level->takeHeld());
+            for ($position = count($levels) - 1; $position >= 0; $position--) {
+                $heldCount += count($levels[$position]->takeHeld());
+                self::restoreMemory($index, $position + 1, $levels[$position]);
             }
             $descriptions[] = TransactionLeftOpenException::describe($index, count($levels), $heldCount);
 
             $mysqli = self::$connections[$index] ?? null;
-            if ($mysqli !== null && !$levels[0]->isFailed()) {
+            if ($mysqli !== null && $levels[0]->isOpened() && !$levels[0]->isFailed()) {
                 try {
                     mysqli_rollback($mysqli);
                 } catch (mysqli_sql_exception $e) {
@@ -1037,37 +1120,58 @@ class Database
     }
 
     /**
-     * Sends BEGIN and puts the outermost level on the stack once it stands.
+     * Opens the MySQL part of every level of the connection that has not reached the server yet.
      *
-     * @param int $index Connection index the transaction opens on
-     * @param bool $nestable Whether the level allows another level to start inside it
-     * @throws DatabaseConnectionException When not connected
-     * @throws DatabaseRuntimeException When the server refuses to start the transaction
+     * Called before the first query: BEGIN for the outermost level, then SAVEPOINT for each nested
+     * level, in the order they were started. A level is marked open once its statement stands;
+     * one the server refuses stays unopened - and so does every level after it - and the failure
+     * reaches the caller of the query, as a refused start reached the caller of the start before.
+     * A failed level is skipped: its transaction is gone, and its caller's rollback closes it.
+     *
+     * @param int $index Connection index the levels belong to
+     * @param mysqli $mysqli Connection the query is about to be sent on
+     * @throws DatabaseRuntimeException When the server refuses BEGIN or a savepoint
      */
-    private static function beginOutermost(int $index, bool $nestable): void
+    private static function openPendingLevels(int $index, mysqli $mysqli): void
     {
-        $mysqli = self::getConnection($index);
-        try {
-            mysqli_begin_transaction($mysqli);
-        } catch (mysqli_sql_exception $e) {
-            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::START_TRANSACTION);
+        foreach (self::$transactions[$index] ?? [] as $level) {
+            if ($level->isOpened() || $level->isFailed()) {
+                continue;
+            }
+            try {
+                if ($level->savepoint === null) {
+                    mysqli_begin_transaction($mysqli);
+                } else {
+                    mysqli_savepoint($mysqli, $level->savepoint);
+                }
+            } catch (mysqli_sql_exception $e) {
+                MysqlExceptionMapper::runtimeException(
+                    $e->getCode(),
+                    $e->getMessage(),
+                    $level->savepoint === null ? DatabaseSql::START_TRANSACTION : DatabaseSql::SAVEPOINT,
+                );
+            }
+            $level->markOpened();
         }
-        self::$transactions[$index] = [new TransactionLevel($nestable, null)];
     }
 
     /**
-     * Rolls back the level whose commit just failed and leaves it standing as failed.
+     * Rolls back the level whose commit just failed, puts its memory back and leaves it standing as failed.
      *
-     * The rollback's own failure is dropped: the caller is owed the failure of the commit, and
-     * the level is closed by the caller's rollback either way.
+     * The failures of the cleanup are dropped - a failing memory step is logged by the journal -
+     * because the caller is owed the failure of the commit, and the level is closed by the
+     * caller's rollback either way.
      *
      * @param mysqli $mysqli Connection the level is on
+     * @param int $index Connection index the level is on
+     * @param int $depth Depth of the level, the outermost being 1
      * @param TransactionLevel $level Level whose commit failed
      */
-    private static function rollBackFailedCommit(mysqli $mysqli, TransactionLevel $level): void
+    private static function rollBackFailedCommit(mysqli $mysqli, int $index, int $depth, TransactionLevel $level): void
     {
         $level->dropHeld();
         $level->markFailed();
+        self::restoreMemory($index, $depth, $level);
         try {
             if ($level->savepoint === null) {
                 mysqli_rollback($mysqli);
@@ -1077,6 +1181,46 @@ class Database
         } catch (mysqli_sql_exception) {
             // The caller is owed the failure of the commit, not of this cleanup
         }
+    }
+
+    /**
+     * Runs the memory journal of a level that is not going to commit, newest step first.
+     *
+     * A failing step does not stop the others: every step runs, memory half put back being worse
+     * than any error. Every failure but the first is logged as it happens, and when any step
+     * failed one line names the connection, the level and how many steps did not get their
+     * memory back. The first failure is handed back for the caller to raise or drop.
+     *
+     * @param int $index Connection index the level is on
+     * @param int $depth Depth of the level, the outermost being 1
+     * @param TransactionLevel $level Level whose journal runs; it keeps none of it afterwards
+     * @return ?Throwable The first failure a step raised, or null when every step ran
+     */
+    private static function restoreMemory(int $index, int $depth, TransactionLevel $level): ?Throwable
+    {
+        $steps = array_reverse($level->takeUndo());
+        $first = null;
+        $failed = 0;
+        foreach ($steps as $undo) {
+            try {
+                $undo();
+            } catch (Throwable $failure) {
+                $failed++;
+                if ($first === null) {
+                    $first = $failure;
+                    continue;
+                }
+                Logger::error("A step restoring memory on a rollback failed (connection {$index}, level {$depth}): "
+                    . $failure->getMessage());
+            }
+        }
+
+        if ($first !== null) {
+            Logger::error("A rollback of level {$depth} on connection {$index} left {$failed} of " . count($steps)
+                . ' memory steps unrestored; the first failure: ' . $first->getMessage());
+        }
+
+        return $first;
     }
 
     /**

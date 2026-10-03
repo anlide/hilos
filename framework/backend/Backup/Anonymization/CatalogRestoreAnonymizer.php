@@ -241,13 +241,14 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
      *
      * A rollback that itself fails changes nothing an operator can act on: the restore is
      * already failing, and the message it fails with already says the database is to be
-     * treated as holding personal data.
+     * treated as holding personal data. That covers a step putting memory back too, which
+     * the rollback has logged already.
      */
     private static function rollBack(): void
     {
         try {
             Database::transactionRollback();
-        } catch (DatabaseException) {
+        } catch (HilosException) {
             // The pass is already lost; the caller's refusal carries the outcome.
         }
     }
