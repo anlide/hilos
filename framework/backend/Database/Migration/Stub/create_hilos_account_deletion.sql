@@ -11,6 +11,9 @@
 -- exactly one of them. A carried-out row stays after the erasure: the number of an account
 -- that no longer exists and three dates are the trace that it was erased on request, and
 -- nothing else about the person is kept here.
+-- Its user_id deliberately has no foreign key: RESTRICT would block the erasure,
+-- SET NULL would lose the number, and CASCADE would erase this trace. The export
+-- builder also reads completed requests to discard a copy built during erasure.
 
 CREATE TABLE `hilos_account_deletion` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,

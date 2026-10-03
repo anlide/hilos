@@ -51,6 +51,10 @@ class SecondFactorBackupCode extends Entity
         self::created_at => PhpType::DATETIME->value,
     ];
 
+    public const array _foreign = [
+        self::user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'idx_second_factor_backup_code_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];

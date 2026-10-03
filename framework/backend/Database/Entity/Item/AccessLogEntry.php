@@ -40,6 +40,10 @@ class AccessLogEntry extends Entity
         self::occurred_at => PhpType::DATETIME->value,
     ];
 
+    public const array _foreign = [
+        self::user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'idx_access_log_user' => [Entity::INDEX_COLUMNS => [self::user_id, self::occurred_at]],
         'idx_access_log_occurred' => [Entity::INDEX_COLUMNS => [self::occurred_at]],

@@ -202,10 +202,10 @@ final class VerificationSweepIntegrationTest extends FrameworkIntegrationTestCas
     /** @throws HilosException When a stub statement fails */
     private static function runStubs(bool $down): void
     {
-        $tables = $down ? ['hilos_user_verification', 'hilos_setting'] : ['hilos_setting', 'hilos_user_verification'];
+        $tables = ['hilos_user', 'hilos_setting', 'hilos_user_verification'];
         // external-boundary: the up stub has no suffix in its file name
         $suffix = $down ? '_down' : '';
-        foreach ($tables as $table) {
+        foreach ($down ? array_reverse($tables) : $tables as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

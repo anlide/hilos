@@ -224,16 +224,16 @@ live schema, not of a constant, and the rule is applied by whoever writes the En
 The declaration names the column and not the parent class, because the column is what the
 row carries; who stands behind it is said by `_foreign` where there is one, and the right
 climbs along it to the top of the set tree. Framework Entities hang on the person by a
-foreign key onto `hilos_user` (not in the code yet — HIL-1202). A soft reference — a
-column with no `_foreign` entry — is the top of its own tree, and it is kept only where it
-has a reason of its own: a delivery points softly at its notification because the two are
-pruned independently (`create_hilos_notification_delivery.sql`), and the verifier circle
-points softly at a way in because the pair is named before it has to exist
-(`create_hilos_verifier_circle.sql`). The rule "framework stubs never FK across the
+foreign key onto `hilos_user` (HIL-1202). A soft reference — a column with no `_foreign`
+entry — is the top of its own tree, and it is kept only where it has a reason of its own:
+a delivery points softly at its notification because the two are pruned independently
+(`create_hilos_notification_delivery.sql`), the verifier circle points softly at a way in
+because the pair is named before it has to exist (`create_hilos_verifier_circle.sql`), and
+an account-deletion request keeps the number of the erased person as a durable trace
+(`create_hilos_account_deletion.sql`). The rule "framework stubs never FK across the
 framework/project boundary" was revoked by the owner on 2026-09-24: it followed from the
-person table being the project's, and that premise is gone. Its sentence in the existing
-migration stubs is rewritten by the foreign-keys leaf (not in the code yet — HIL-1202); do
-not copy it into a new stub.
+person table being the project's, and that premise is gone. HIL-1202 removed its
+sentence from the existing migration stubs; do not copy it into a new stub.
 
 Both constants are mandatory on every Entity of a mounted collection. A node refuses to
 start over a table missing either of them (`SetOwnershipGuard`), because the gap is born

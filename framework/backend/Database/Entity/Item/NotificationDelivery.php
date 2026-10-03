@@ -15,7 +15,7 @@ use Hilos\Database\PhpType;
  * One row is one channel's delivery of one notification (HIL-196): the dispatcher
  * inserts it `pending` when it fans a notification to a channel, and the channel's
  * delivery agent moves it to `sent`/`failed` with bounded retries. `notification_id`
- * is a soft ref to hilos_notification (no cross-boundary FK); `channel` is the
+ * is a soft ref to hilos_notification so deliveries can be pruned separately; `channel` is the
  * channel name (a string, not an enum — channels extend by subclassing).
  *
  * @method static EntityNotificationDeliveries get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])

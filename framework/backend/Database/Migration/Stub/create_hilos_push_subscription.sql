@@ -12,10 +12,8 @@
 -- compare without receiving the address. A 404/410 marks `gone_at`; the row remains
 -- visible as expired until its owner removes it, while delivery ignores it.
 --
--- No DB-level foreign key to the project `user` table: framework stubs never FK
--- across the framework/project boundary. `user_id` is a soft ref, indexed so a
--- recipient's subscriptions resolve for delivery; rows are cleaned up best-effort
--- with the user (soft ref, no cascade). `device_name` is the shared browser/platform
+-- user_id points at hilos_user with RESTRICT and is indexed for delivery lookup.
+-- Account erasure deletes these rows in its transaction. `device_name` is the shared browser/platform
 -- label derived from `user_agent`; both it and `last_seen_at` are informational.
 
 CREATE TABLE `hilos_push_subscription` (
@@ -32,5 +30,6 @@ CREATE TABLE `hilos_push_subscription` (
     `last_seen_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_push_subscription_endpoint` (`endpoint`),
-    KEY `idx_push_subscription_user` (`user_id`)
+    KEY `idx_push_subscription_user` (`user_id`),
+    CONSTRAINT `fk_push_subscription_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

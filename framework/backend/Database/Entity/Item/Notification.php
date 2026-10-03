@@ -13,7 +13,7 @@ use Hilos\Database\PhpType;
  * Notification Entity - represents the hilos_notification table row.
  *
  * Framework-standardized durable notification (HIL-102): one row is a delivered
- * notification for one recipient (`user_id`, soft ref, no cross-boundary FK).
+ * notification for one recipient (`user_id`, a RESTRICT key onto hilos_user).
  * Framework holds the contract; projects activate the table thinly (copy the
  * migration stub) and the framework DbContext exposes the collection.
  *
@@ -59,6 +59,10 @@ class Notification extends Entity
         self::data => PhpType::JSON->value,
         self::read_at => PhpType::DATETIME->value,
         self::created_at => PhpType::DATETIME->value,
+    ];
+
+    public const array _foreign = [
+        self::user_id => User::_table,
     ];
 
     public const array _indexes = [

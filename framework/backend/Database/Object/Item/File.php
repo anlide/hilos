@@ -24,7 +24,7 @@ use Hilos\Files\FileVisibility;
  * @property string $mimeType
  * @property int $size
  * @property string $contentHash
- * @property int $ownerUserId
+ * @property ?int $ownerUserId
  * @property string $visibility
  * @property bool $bound
  * @property string $createdAt
@@ -92,7 +92,7 @@ class File extends Object_
             self::mimeType => $this->entity->mime_type = (string)$value,
             self::size => $this->entity->size = (int)$value,
             self::contentHash => $this->entity->content_hash = (string)$value,
-            self::ownerUserId => $this->entity->owner_user_id = (int)$value,
+            self::ownerUserId => $this->entity->owner_user_id = $value === null ? null : (int)$value,
             self::visibility => $this->entity->visibility = (string)$value,
             self::bound => $this->entity->bound = (bool)$value,
             self::createdAt => $this->entity->created_at = (string)$value,

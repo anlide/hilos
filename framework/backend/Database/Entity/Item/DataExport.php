@@ -47,6 +47,10 @@ class DataExport extends Entity
         self::stored_name => PhpType::STRING->value,
         self::size_bytes => PhpType::INTEGER->value,
     ];
+    public const array _foreign = [
+        self::user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'uq_data_export_user' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::user_id]],
         'idx_data_export_state' => [Entity::INDEX_COLUMNS => [self::state, self::requested_at]],

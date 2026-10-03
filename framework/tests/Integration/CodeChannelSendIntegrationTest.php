@@ -51,6 +51,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** @var list<string> Framework tables this case needs */
     private const array TABLES = [
+        'hilos_user',
         'hilos_user_verification',
         'hilos_identity',
         'hilos_registration_reservation',
@@ -101,6 +102,10 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Existing account')",
+            [self::EXISTING_USER_ID],
+        );
 
         $this->previousDb = Hilos::$db;
         $this->previousSignalRouter = Hilos::$sr;
@@ -603,7 +608,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

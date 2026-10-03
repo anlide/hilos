@@ -19,5 +19,6 @@ CREATE TABLE `hilos_second_factor_trust` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_second_factor_trust` (`session_id`, `user_id`),
-    KEY `idx_second_factor_trust_user` (`user_id`)
+    KEY `idx_second_factor_trust_user` (`user_id`),
+    CONSTRAINT `fk_second_factor_trust_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

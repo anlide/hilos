@@ -134,6 +134,10 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         self::runPasskeyStub(down: true);
         self::runPasskeyStub(down: false);
         self::createFixtureUserTable();
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Rival account')",
+            [self::RIVAL_USER_ID],
+        );
 
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousRt = Hilos::$rt;
@@ -943,6 +947,7 @@ final class PasskeyRegistrationTestLibrary extends AbstractUsersLibraryAgent
             [$displayName],
         );
         $userId = Database::lastInsertId();
+        Database::sqlRun('INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, ?)', [$userId, $displayName]);
         $this->rowsSeenInsideTransaction = self::usersVisible();
 
         return $userId;

@@ -6,10 +6,9 @@
 -- (password_reset); email_change and email_change_current are the two codes of the
 -- profile change-email flow (HIL-299). This replaces the reference stack's four copy-pasted per-flow tables.
 --
--- No DB-level foreign key to the project `user` table: framework stubs never FK
--- across the framework/project boundary. `user_id` is nullable because a request
--- may be issued before the owning user is resolved; the INDEX on it supports the
--- application-side cascade.
+-- A non-NULL user_id points at hilos_user with RESTRICT. It stays nullable because
+-- a request may be issued before its person is resolved; account erasure deletes
+-- the person's challenges before the person row.
 --
 -- `identifier` uses utf8mb4_bin so the target email compares exactly; the writing
 -- leaf lowercases it before insert.
@@ -57,5 +56,6 @@ CREATE TABLE `hilos_user_verification` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_uv_type_identifier` (`type`, `identifier`),
-    KEY `idx_uv_user` (`user_id`)
+    KEY `idx_uv_user` (`user_id`),
+    CONSTRAINT `fk_user_verification_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

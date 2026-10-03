@@ -110,11 +110,12 @@ directory through `FsDirectory::entries()`, which leaves it out
 ([filesystem.md](filesystem.md), "The Guard").
 
 Before publication the builder queries `accountDeletions->erasedOf()` directly:
-a completed erasure discards the build without publication. After erasure
-commits, `DataExportNotifier::forgetUser()` queues
-`hilos_data_export_forget_user` to remove the copy. This also closes an erasure
-arriving after the builder's final check. A late completion cannot finish a
-request replaced while it was being built.
+a completed erasure discards the build without publication. Account erasure
+deletes the order inside its transaction. After it commits,
+`DataExportNotifier::forgetUser()` queues `hilos_data_export_forget_user` to
+remove files no ready order keeps. This also closes an erasure arriving after
+the builder's final check. A late completion cannot finish a request replaced
+while it was being built.
 
 ## Download And Storage
 

@@ -56,11 +56,11 @@ enum FileAccess
      * Judges one request by the file's visibility alone.
      *
      * @param FileVisibility $visibility Visibility of the file's row
-     * @param int $ownerUserId User the file belongs to
+     * @param ?int $ownerUserId User the file belongs to, or null after erasure
      * @param ?int $viewerUserId Signed-in user asking, or null when nobody is signed in
      * @return self Whether to serve, or which refusal
      */
-    public static function judge(FileVisibility $visibility, int $ownerUserId, ?int $viewerUserId): self
+    public static function judge(FileVisibility $visibility, ?int $ownerUserId, ?int $viewerUserId): self
     {
         return match ($visibility) {
             FileVisibility::PUBLIC => self::ALLOW,

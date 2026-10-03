@@ -84,7 +84,12 @@ in ONE transaction:
    whatever user they carry (HIL-1163),
    the second factor whole, operation confirmations, legal acceptances, the
    [access log](access-log.md) (HIL-1174), and the account's merge row when it
-   was folded into another one (HIL-1199);
+   was folded into another one (HIL-1199). Notification deliveries, notifications,
+   channel preferences and push subscriptions leave where their tables are active.
+   Orders for the person's data copy and their legal acceptance export leave too.
+   Every session signed in as the person or run by them under an impersonation is
+   signed out, waits on their second factor are cleared, and cards about their
+   closed access are lowered (HIL-1202);
 4. the project's seam `applyAccountErasure(int $userId): AccountErasure` deletes
    its rows for that account;
 5. the framework removes the account's rename journal rows, then its person row.
@@ -104,22 +109,16 @@ session holder moves its moment to now and erases it through this path,
 returning the sum of the project's tallies for the circle. A failed erasure
 leaves the request due for the next sweep.
 
-After the commit, outside the transaction: every session of every erased
-account is signed out — signed in as them, taking over somebody else's account, or
-waiting on their second factor; the registry files the project named go to the
-files library in one `Hilos::$files->remove()` when the project declares `FILES`
+After the commit, outside the transaction: the registry files the project
+named go to the files library in one `Hilos::$files->remove()` when the project declares `FILES`
 ([files-registry.md](files-registry.md#removing)) — nothing is deleted from disk
-past the registry; and
-`Hilos::$notify->forgetUser()` sends `hilos_notification_forget_user` for each
-erased account to the notifications library, which deletes its notifications,
-journal, preferences and push subscriptions. That is a frame and not a write
-here because the notification feature is not mounted everywhere; a lost frame
-leaves rows of nobody. A failure after the commit is logged and not retried: the
-request is carried out, and no sweep comes back for it.
+past the registry. Export agents receive forget frames to remove files whose
+orders the erasure already deleted. A failure after the commit is logged and not
+retried: the request is carried out, and no sweep comes back for it.
 
 `DataExportNotifier::forgetUser()` also queues `hilos_data_export_forget_user`
-for each account to the export owner after the commit, removing its prepared
-copy. A builder checks the retained completed-erasure row before publishing; see
+for each account to the export owner after the commit, removing files with no
+ready order. A builder checks the retained completed-erasure row before publishing; see
 [data-export.md](data-export.md).
 
 `LegalAcceptancesExportNotifier::forgetUser()` queues

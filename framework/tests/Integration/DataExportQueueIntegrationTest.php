@@ -13,6 +13,18 @@ use Hilos\HilosException;
 final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCase
 {
     /**
+     * @throws HilosException When the person fixtures cannot be inserted
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES "
+            . "(1, 'Late'), (2, 'First'), (3, 'Second'), (7, 'Ready'), (8, 'Failed'), (9, 'Pending')",
+        );
+    }
+
+    /**
      * @throws HilosException When a fixture or the queue write fails
      */
     public function testReplacementKeepsOneRequestAndOldBuilderCannotCompleteIt(): void

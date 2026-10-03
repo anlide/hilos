@@ -107,10 +107,10 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
      *     writes a row for (HIL-1174).
      */
     private const array TABLES = [
+        'hilos_user',
         'hilos_session',
         'hilos_setting',
         'hilos_second_factor',
-        'hilos_user',
         'hilos_account_deletion',
         'hilos_user_merge',
         'hilos_access_log',
@@ -134,6 +134,10 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Administrator'), (?, 'Target'), (?, 'Next')",
+            [self::ADMIN_USER_ID, self::TARGET_USER_ID, self::NEXT_USER_ID],
+        );
 
         $this->previousDb = Hilos::$db;
         $this->previousSignalRouter = Hilos::$sr;
@@ -807,10 +811,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
      */
     private static function seedAdministrator(): void
     {
-        Database::sqlRun(
-            "INSERT INTO `hilos_user` (`id`, `name`, `admin`) VALUES (?, 'Administrator', 1)",
-            [self::ADMIN_USER_ID],
-        );
+        Database::sqlRun('UPDATE `hilos_user` SET `admin` = 1 WHERE `id` = ?', [self::ADMIN_USER_ID]);
     }
 
     /**

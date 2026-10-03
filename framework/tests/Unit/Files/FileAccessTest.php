@@ -89,4 +89,10 @@ final class FileAccessTest extends TestCase
 
         $this->assertNull(FileAccess::signedInUserId($session, self::NOW));
     }
+
+    public function testAnOwnerOnlyFileWhoseOwnerWasErasedCannotBeClaimed(): void
+    {
+        self::assertSame(FileAccess::FORBIDDEN, FileAccess::judge(FileVisibility::OWNER, null, self::STRANGER_ID));
+        self::assertSame(FileAccess::SIGN_IN, FileAccess::judge(FileVisibility::OWNER, null, null));
+    }
 }

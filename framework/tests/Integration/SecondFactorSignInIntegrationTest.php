@@ -31,6 +31,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -91,6 +92,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     protected function setUp(): void
     {
         parent::setUp();
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Person')", [self::USER_ID]);
 
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousRt = Hilos::$rt;

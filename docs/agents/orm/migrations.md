@@ -128,6 +128,28 @@ holds where it already ran under its old number — a database built from scratc
 it in order (`CREATE TABLE IF NOT EXISTS`, `ADD KEY IF NOT EXISTS`). There is no command that
 marks a migration applied: the same hole stands on every database at that level.
 
+## A Key Onto A Table That Already Holds Rows
+
+A migration that adds a foreign key to a table that already holds rows cleans, in
+the same file and right before the `ADD CONSTRAINT`, every row the key would
+refuse: a row of the table that points at nothing is deleted; a column that only
+mentions the parent inside somebody else's row is set to `NULL`, and the row
+stays. The migration never stops to leave the cleanup to an operator.
+
+The rows it removes are dead already: nothing reaches a row whose parent is
+gone. And the migration does not run on a live database only. A restore of an
+archive taken before the key imports the old rows first and migrates after
+(`BackupRestorer`), so the database is already overwritten when this file runs,
+and a single refused row would fail the restore halfway.
+
+The owner's frame (2026-10-03, the HIL-1202 interview), in the owner's words
+rendered in English: *the migration cleans them itself, right before the key —
+and write it down, so similar cases do the same.*
+
+Examples: `demo/chat/backend/Database/Migration/Schema/051_add_passkey_credential_identity_foreign_key.sql`
+(HIL-1111) and the person keys of HIL-1202 (`NNN_add_person_foreign_keys.sql`
+in each demo).
+
 ## Seeds
 
 Seeds populate initial data. Located in `backend/Database/seeds/`.
@@ -145,6 +167,8 @@ php cli.php db:seed:apply 001
 - Never modify an already-applied migration file — create a new one instead
 - Migration runs in transaction where possible
 - Test migrations in test environment before applying to production
+- A foreign key onto a table that already holds rows cleans the rows it would
+  refuse in the same migration — see *A Key Onto A Table That Already Holds Rows*.
 - After schema change: update corresponding `Entity` class fields to match
 - A new table needs a `_pii` verdict on its Entity — an empty column map when it
   holds nothing personal — or a restore that requires anonymization refuses before

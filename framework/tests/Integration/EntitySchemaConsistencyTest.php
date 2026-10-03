@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseConnectionPolicy;
@@ -23,7 +24,7 @@ use Throwable;
  *
  * The only net that catches Entity/schema drift before runtime after the removal
  * of `db:entity:diff` (HIL-478). The reusable auditor lives in framework/backend
- * ({@see EntitySchemaAudit}); this test drives it: it applies the 10 covered
+ * ({@see EntitySchemaAudit}); this test drives it: it applies the covered
  * migration stubs into the empty framework test database, audits every discovered
  * Entity, and drops the tables afterwards.
  *
@@ -137,21 +138,63 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
     /**
      * Runs one direction of every covered entity's stub file.
      *
-     * The drop goes in reverse: a table named by a foreign key cannot be dropped before the
-     * table that holds the key (hilos_passkey_credential -> hilos_identity, HIL-1111). The
-     * create goes in name order, which puts every referenced table first today; a key that
-     * named a table sorting later would fail the create loudly here.
+     * The create follows _foreign dependencies, so hilos_user and each other parent exist
+     * before their children. The drop reverses that order.
      *
      * @param bool $down Run the down (drop) stubs when true, the create stubs when false
      * @throws DatabaseException When a stub statement fails
      */
     private static function runStubDirection(bool $down): void
     {
-        $entities = EntitySchemaAudit::frameworkEntities();
+        $entities = self::stubEntitiesInDependencyOrder();
         foreach ($down ? array_reverse($entities) : $entities as $entityClass) {
             $table = constant("{$entityClass}::" . Entity::META_TABLE);
             Database::sqlRun(file_get_contents(self::stubPath($table, $down)));
         }
+    }
+
+    /**
+     * Orders the framework's stub tables by their Entity foreign-key declarations.
+     *
+     * @return list<class-string<Entity>> Parent tables before their children
+     * @throws LogicException When the declarations form a cycle
+     */
+    private static function stubEntitiesInDependencyOrder(): array
+    {
+        $byTable = [];
+        foreach (EntitySchemaAudit::frameworkEntities() as $entityClass) {
+            $byTable[constant("{$entityClass}::" . Entity::META_TABLE)] = $entityClass;
+        }
+
+        $ordered = [];
+        $visiting = [];
+        $visited = [];
+        $visit = static function (string $entityClass) use (&$visit, &$ordered, &$visiting, &$visited, $byTable): void {
+            $table = constant("{$entityClass}::" . Entity::META_TABLE);
+            if (isset($visited[$table])) {
+                return;
+            }
+            if (isset($visiting[$table])) {
+                throw new LogicException("Foreign-key cycle at {$table}");
+            }
+            $visiting[$table] = true;
+            $foreign = defined("{$entityClass}::" . Entity::META_FOREIGN)
+                ? constant("{$entityClass}::" . Entity::META_FOREIGN)
+                : [];
+            foreach ($foreign as $parentTable) {
+                if (isset($byTable[$parentTable])) {
+                    $visit($byTable[$parentTable]);
+                }
+            }
+            unset($visiting[$table]);
+            $visited[$table] = true;
+            $ordered[] = $entityClass;
+        };
+        foreach ($byTable as $entityClass) {
+            $visit($entityClass);
+        }
+
+        return $ordered;
     }
 
     /**

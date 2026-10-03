@@ -92,7 +92,6 @@ use Hilos\Mail\HilosMailer;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
-use Hilos\Notification\DTO\NotificationForgetUserSignalData;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\HilosNotifier;
@@ -2113,15 +2112,6 @@ final class HilosSignalConstants
 
     /** Push delivery agent → notifications library: endpoints reported gone by the service. */
     public const string HILOS_PUSH_SUBSCRIPTIONS_GONE = 'hilos_push_subscriptions_gone';
-
-    /**
-     * Session holder → notifications library: an account was erased, forget its person (HIL-302).
-     *
-     * Sent once the erasure is committed; the library deletes the person's notifications with
-     * their journal, their channel preferences and their push subscriptions. Best-effort: a lost
-     * frame leaves rows of nobody, with no retry. Carried by {@see NotificationForgetUserSignalData}.
-     */
-    public const string HILOS_NOTIFICATION_FORGET_USER = 'hilos_notification_forget_user';
 
     // ── Hilos analytics journal: processes → the node's journal agent ↔ the cluster writer (agent signal) ──
     /**

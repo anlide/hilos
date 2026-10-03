@@ -13,7 +13,7 @@ use Hilos\Database\PhpType;
 /**
  * Identity Entity - represents hilos_identity table row.
  *
- * Pluggable multi-method auth identity (HIL-160): one project-owned `user` may
+ * Pluggable multi-method auth identity (HIL-160): one framework-owned person may
  * own many identities, uniquely keyed by (type, identifier). Framework holds the
  * contract; projects activate the table thinly (copy the migration stub) and the
  * framework DbContext exposes the collection.
@@ -61,6 +61,10 @@ class Identity extends Entity
         self::identifier => PhpType::STRING->value,
         self::provider => PhpType::STRING->value,
         self::verified => PhpType::BOOLEAN->value,
+    ];
+
+    public const array _foreign = [
+        self::user_id => User::_table,
     ];
 
     public const array _indexes = [

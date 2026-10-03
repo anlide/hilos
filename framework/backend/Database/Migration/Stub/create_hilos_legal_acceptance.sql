@@ -12,5 +12,6 @@ CREATE TABLE `hilos_legal_acceptance` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_legal_acceptance_user_document_revision` (`user_id`, `document`, `revision_id`),
     KEY `idx_legal_acceptance_document_revision` (`document`, `revision_id`, `accepted_at`),
-    KEY `idx_legal_acceptance_accepted_at` (`accepted_at`)
+    KEY `idx_legal_acceptance_accepted_at` (`accepted_at`),
+    CONSTRAINT `fk_legal_acceptance_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

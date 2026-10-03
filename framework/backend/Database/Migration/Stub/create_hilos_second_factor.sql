@@ -20,8 +20,7 @@
 -- A code is accepted only for a step above it, and the write carries that condition,
 -- so two workers accepting the same code race in the database and one of them loses.
 --
--- No DB-level foreign key to the project `user` table: framework stubs never FK across
--- the framework/project boundary.
+-- user_id points at hilos_user with RESTRICT; erasure removes the factor first.
 
 CREATE TABLE `hilos_second_factor` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -33,5 +32,6 @@ CREATE TABLE `hilos_second_factor` (
     `last_used_at` TIMESTAMP NULL DEFAULT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_second_factor_user` (`user_id`)
+    KEY `idx_second_factor_user` (`user_id`),
+    CONSTRAINT `fk_second_factor_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

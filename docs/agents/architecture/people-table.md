@@ -71,7 +71,7 @@ where it is today — a hook the project implements.
 | The tombstone of a merged account and "is this account already folded" (`assertMergeable()`, the merge table `hilos_user_merge`), the refusals to a folded account | HIL-1199 |
 | Erasing a person — the framework deletes the person's rename journal and row after the project's rows, along with accounts folded into that person ([account-deletion.md](account-deletion.md)) | HIL-1200 |
 | The people table and the merge-candidates table in the admin section | HIL-1201 |
-| Foreign keys onto the person from every framework table that points at one | (not in the code yet — HIL-1202) |
+| Foreign keys onto the person from every framework table that points at one | HIL-1202 |
 | `name` and `lastActivity` on the frontend `User` entity | HIL-1193 |
 
 What stays the project's: hooks over its own columns and its own rows — the chat
@@ -162,7 +162,7 @@ among the framework's rows, and a forgotten merge row stops that erasure loudly.
 The survivor is `SET NULL`: it lets the survivor's row go if it is deleted first,
 without making a folded account an unmerged candidate. Erasure takes folded
 accounts first (HIL-1200), so this key does not run on its normal path. The
-choice of the key belongs to HIL-1202.
+HIL-1202 confirms this choice as the pattern for the other person keys.
 
 The table is the sessions library's whole, and the whole operation is framework
 code (`AbstractSessionsLibraryAgent::mergeAccounts()`): whether the two accounts
@@ -184,22 +184,36 @@ data copy carries both sides of their merges in its `merges` section.
 
 ## Foreign Keys Onto The Person
 
-Every framework table that points at a person carries a foreign key onto
-`hilos_user`, with a deliberate `RESTRICT` or `CASCADE` decided table by table
-(not in the code yet — HIL-1202); the tables born under this epic — the rename
-journal, the merge tombstone — are born with the key.
+Every framework row that belongs to a person points at `hilos_user` with
+`ON DELETE RESTRICT`. Account erasure deletes that row in its own transaction
+before the person row; any forgotten row refuses the deletion and rolls the
+erasure back. The four columns of `hilos_session` also use RESTRICT: erasure
+signs out sessions bound to or impersonating the person, clears second-factor
+waits and lowers blocked-account cards before deleting the person. A forgotten
+session reference must refuse erasure too (HIL-1202).
 
-A soft reference is kept only where it has a reason of its own, the same two as
-in [../orm/entity.md](../orm/entity.md): a delivery points softly at its
-notification because the two are pruned independently, and the verifier circle
-points softly at a way in because the pair is named before it has to exist.
+Where a person is only mentioned inside another row, the row survives and the
+mention uses `ON DELETE SET NULL`: `hilos_file.owner_user_id`,
+`hilos_user_rename.renamed_by_user_id` and
+`hilos_user_merge.survivor_user_id`. No person key uses CASCADE; it would delete
+rows past their owner's write path. The owner's answer on 2026-10-03 was:
+*the erasure itself, and a RESTRICT key*. The rename journal and merge tombstone
+were born with their keys; HIL-1202 added the rest across six demos.
+
+A soft reference is kept only with its own reason. The
+`hilos_account_deletion.user_id` row deliberately survives the person as the
+trace of their request, and the export builder reads it to discard an in-flight
+copy. A delivery points softly at its notification because the two are pruned
+independently; the verifier circle points softly at a way in because the pair
+is named before it has to exist. `hilos_change_log` is an unwritten placeholder
+without an Entity or writer; HIL-351 replaces it with partitioned receipts in a
+separate database, where MariaDB cannot install these keys.
 
 The rule "framework stubs never FK across the framework/project boundary" was
 revoked by the owner on 2026-09-24 — decision E, in the owner's words:
 *let us revoke this rule.* It followed from the person table being the
-project's, and that premise is gone. Its sentence in the existing migration
-stubs is rewritten by the foreign-keys leaf (not in the code yet — HIL-1202); do
-not copy it into a new stub.
+project's, and that premise is gone. HIL-1202 removed its sentence from the
+existing migration stubs; do not copy it into a new stub.
 
 ## Anti-Patterns
 
@@ -211,7 +225,7 @@ not copy it into a new stub.
   1:1 table.
 - A soft reference onto the person justified by "framework and project do not
   FK across the boundary". The premise is revoked; declare the key and decide
-  its `RESTRICT` / `CASCADE`.
+  its `RESTRICT` / `SET NULL`. CASCADE is not used.
 - Renaming a person by editing the row from a project page or agent. The rename
   is the people library's operation, and the journal row and the notification
   come with it.

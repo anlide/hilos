@@ -114,7 +114,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     public const int ADMIN_USER_ID = 41;
 
     /** @var list<string> Framework notification tables the announcement cases raise and drop. */
-    private const array NOTIFICATION_TABLES = ['hilos_notification', 'hilos_setting'];
+    private const array NOTIFICATION_TABLES = ['hilos_user', 'hilos_notification', 'hilos_setting'];
 
     private string $storeRoot = '';
 
@@ -838,7 +838,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::NOTIFICATION_TABLES as $table) {
+        foreach ($down ? array_reverse(self::NOTIFICATION_TABLES) : self::NOTIFICATION_TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

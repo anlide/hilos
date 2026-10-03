@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Actions\Collection\SessionsActions;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -32,6 +33,7 @@ final class SessionsActionsCarryOverTest extends HilosSessionIntegrationTestCase
      */
     public function testCarriedSessionKeepsTheCapturedLifetimeAndIsSeenNow(): void
     {
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (41, 'Person')");
         $session = Hilos::$db->sessions->actions->carryOver(self::TOKEN, 41, self::CREATED_AT, self::EXPIRES_AT);
 
         $this->assertNotNull($session, 'A token with no row is carried');
@@ -50,6 +52,7 @@ final class SessionsActionsCarryOverTest extends HilosSessionIntegrationTestCase
      */
     public function testAnOpenEndedSessionIsCarriedWithoutAnExpiry(): void
     {
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (41, 'Person')");
         Hilos::$db->sessions->actions->carryOver(self::TOKEN, 41, self::CREATED_AT, null);
 
         $row = self::sessionRow(self::TOKEN);

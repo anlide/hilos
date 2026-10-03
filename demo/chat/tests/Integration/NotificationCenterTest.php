@@ -44,7 +44,7 @@ use Hilos\Notification\NotificationSeverity;
  */
 final class NotificationCenterTest extends IntegrationTestCase
 {
-    /** Synthetic recipient: hilos_notification has no FK to the project user table. */
+    /** Fixture recipient backed by hilos_user. */
     private const int RECIPIENT_ID = 909001;
 
     /** Second synthetic recipient, so mark-all-read cannot pass by touching foreign rows. */
@@ -64,6 +64,10 @@ final class NotificationCenterTest extends IntegrationTestCase
         parent::setUp();
         TruthSourceRegistry::register(HilosDbContext::notifications, TruthSourceKeys::all(), 'test-agent');
         $this->deleteRecipientRows();
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Recipient'), (?, 'Other recipient')",
+            [self::RECIPIENT_ID, self::OTHER_RECIPIENT_ID],
+        );
     }
 
     protected function tearDown(): void
@@ -71,6 +75,7 @@ final class NotificationCenterTest extends IntegrationTestCase
         ExecutionContext::setCurrentAgentId(null);
         TruthSourceRegistry::unregisterAgent(self::SET_OWNER_AGENT);
         $this->deleteRecipientRows();
+        Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` IN (?, ?)', [self::RECIPIENT_ID, self::OTHER_RECIPIENT_ID]);
         parent::tearDown();
     }
 

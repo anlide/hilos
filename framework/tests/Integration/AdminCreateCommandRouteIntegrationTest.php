@@ -72,7 +72,13 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      *     sends carries the standing of the person the session acts as. The access log joins
      *     because the operator's sign-in writes a row of it (HIL-1174).
      */
-    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_user', 'hilos_account_deletion', 'hilos_access_log'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_session',
+        'hilos_setting',
+        'hilos_account_deletion',
+        'hilos_access_log',
+    ];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;
@@ -96,6 +102,10 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Existing'), (?, 'Minted by fixture')",
+            [self::EXISTING_USER_ID, AdminCreateRouteTestAgent::MINTED_USER_ID],
+        );
 
         $this->previousDb = Hilos::$db;
         $this->previousSignalRouter = Hilos::$sr;
@@ -376,7 +386,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

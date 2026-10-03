@@ -46,6 +46,10 @@ class SecondFactorTrust extends Entity
         self::created_at => PhpType::DATETIME->value,
     ];
 
+    public const array _foreign = [
+        self::user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'uk_second_factor_trust' => [
             Entity::INDEX_UNIQUE => true,

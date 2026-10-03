@@ -171,7 +171,8 @@ final class LegalAcceptancesExports
      * Removes every finished file after an account is erased and starts the file being built again.
      *
      * Which person is in which file is not known, and the records of an erased account are gone with it;
-     * no copy on the server may outlive them. The erased person's own order goes in the same pass.
+     * no copy on the server may outlive them. Erasure already deleted the person's own order;
+     * the directory sweep removes its file because no ready row keeps it (HIL-1202).
      *
      * @param PageAgentInterface $agent The legal agent
      * @param int $userId Erased account
@@ -188,11 +189,8 @@ final class LegalAcceptancesExports
             FsPath::delete(self::directory()[self::$build->buildingName]->getPath());
             self::$build = null;
         }
-        $own = Hilos::$db->legalAcceptanceExports->ofUser($userId);
-        if ($own !== null) {
-            self::remove($own);
-            $touched[$userId] = true;
-        }
+        self::expire($agent);
+        $touched[$userId] = true;
         foreach (array_keys($touched) as $adminId) {
             self::sendState($agent, $adminId);
         }

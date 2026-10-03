@@ -58,10 +58,6 @@ final class LegalReconsentIntegrationTest extends ProfileIntegrationTestCase
         Hilos::$setting = new SettingsAccessor(ReconsentIntegrationSettingsCatalog::class);
         SourceChangeBus::subscribe(new AccountStandingChangeSubscriber());
         AccountStandingResolver::forgetAll();
-        Database::sqlRun(
-            "INSERT INTO `hilos_user` (`id`, `name`, `admin`) VALUES (?, 'Person', 0), (?, 'Other', 0)",
-            [self::USER_ID, self::OTHER_USER_ID],
-        );
     }
 
     protected function tearDown(): void

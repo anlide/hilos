@@ -32,7 +32,11 @@ use Hilos\Utils\Helpers\RandomHelper;
 final class PasskeySetTreeIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** @var list<string> Framework tables this case needs, each after the table its foreign key names */
-    private const array TABLES = ['hilos_identity', 'hilos_passkey_credential'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_identity',
+        'hilos_passkey_credential',
+    ];
 
     /** Agent id the claim over one person's set is laid under. */
     private const string PERSON_AGENT = 'passkey-set-tree-person-agent';
@@ -43,7 +47,7 @@ final class PasskeySetTreeIntegrationTest extends FrameworkIntegrationTestCase
 
     private ?DbContext $previousDb = null;
 
-    /** @var int Rolling source of user ids; a framework table carries no FK to a project user */
+    /** @var int Rolling source of user ids; ids now have a person row behind them */
     private int $nextUserId = 1;
 
     /**
@@ -173,11 +177,15 @@ final class PasskeySetTreeIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
-     * @return int A user id no other account in this case uses
+     * @return int A persisted person id no other account in this case uses
+     * @throws HilosException When the person row cannot be inserted
      */
     private function nextUserId(): int
     {
-        return $this->nextUserId++;
+        $userId = $this->nextUserId++;
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Fixture person')", [$userId]);
+
+        return $userId;
     }
 
     /**

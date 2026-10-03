@@ -18,5 +18,6 @@ CREATE TABLE `hilos_second_factor_setting` (
     `pending_reset_wait_days` SMALLINT UNSIGNED DEFAULT NULL,
     `pending_reset_wait_from` TIMESTAMP NULL DEFAULT NULL,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`user_id`)
+    PRIMARY KEY (`user_id`),
+    CONSTRAINT `fk_second_factor_setting_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

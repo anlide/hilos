@@ -17,8 +17,7 @@ use Hilos\Database\PhpType;
  * the browser push manager, and sends the resulting endpoint plus its `p256dh` / `auth`
  * keys; the row is the address a push delivery is sent to. `endpoint` is the device
  * identity and is UNIQUE — a re-subscribe (rotated keys, or the same device under a
- * new user) upserts the one row. `user_id` is a soft ref with no cross-boundary FK,
- * matching the hilos_session / hilos_notification_preference convention, and is
+ * new user) upserts the one row. `user_id` points at hilos_user with RESTRICT and is
  * indexed so a user's subscriptions resolve on the leftmost prefix. Framework holds
  * the contract; projects activate the table thinly (copy the migration stub) and the
  * framework DbContext exposes the collection.
@@ -68,6 +67,10 @@ class PushSubscription extends Entity
         self::gone_at => PhpType::DATETIME->value,
         self::created_at => PhpType::DATETIME->value,
         self::last_seen_at => PhpType::DATETIME->value,
+    ];
+
+    public const array _foreign = [
+        self::user_id => User::_table,
     ];
 
     public const array _indexes = [

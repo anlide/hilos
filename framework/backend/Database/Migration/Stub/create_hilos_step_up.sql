@@ -14,5 +14,6 @@ CREATE TABLE `hilos_step_up` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_step_up` (`session_token_hash`, `user_id`, `operation`),
-    KEY `idx_step_up_user` (`user_id`)
+    KEY `idx_step_up_user` (`user_id`),
+    CONSTRAINT `fk_step_up_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

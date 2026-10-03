@@ -18,7 +18,8 @@ use Hilos\Database\PhpType;
  * Framework holds the contract; projects activate the table thinly (copy the migration stub)
  * and the framework DbContext exposes the collection.
  *
- * `owner_user_id` is a soft reference: the person table is still the project's (HIL-1133).
+ * The owner points at hilos_user. When that person is erased, the database clears the
+ * owner and keeps the file row; the files library removes project-named files after commit.
  *
  * @method static EntityFiles get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityFiles getAll()
@@ -64,14 +65,18 @@ class File extends Entity
         self::created_at => PhpType::DATETIME->value,
     ];
 
+    public const array _foreign = [
+        self::owner_user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'uk_file_stored_name' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::stored_name]],
         'idx_file_bound_created' => [Entity::INDEX_COLUMNS => [self::bound, self::created_at]],
         'idx_file_owner_hash' => [Entity::INDEX_COLUMNS => [self::owner_user_id, self::content_hash]],
     ];
 
-    // The owner names a person; the file's rendered variants hang their sets on this row.
-    public const string _setVia = self::owner_user_id;
+    // The owner may be cleared; the file's rendered variants still hang on this row.
+    public const string _setVia = Entity::SET_STANDALONE;
     public const bool _setRoot = true;
 
     // The name a person gave the file can say who they are or what it is about; the rest
@@ -99,7 +104,7 @@ class File extends Entity
     public string $mime_type;
     public int $size;
     public string $content_hash;
-    public int $owner_user_id;
+    public ?int $owner_user_id = null;
     public string $visibility;
     public bool $bound;
     public string $created_at;

@@ -2,12 +2,11 @@
 -- Copy this SQL to project migration (e.g. 0NN_create_hilos_identity.sql)
 --
 -- Framework-standardized auth identity table (HIL-160). Pluggable multi-method:
--- one project-owned `user` may own many identities keyed by (type, identifier).
+-- one person may own many identities keyed by (type, identifier).
 -- A user may have no password and no email; email/phone are just identifiers.
 --
--- No DB-level foreign key to the project `user` table: framework stubs never FK
--- across the framework/project boundary. Integrity and delete-cascade of a user's
--- identities are enforced in application code (INDEX on user_id supports it).
+-- The key onto hilos_user is RESTRICT: account erasure deletes identities in its
+-- transaction before the person row. The user_id index supports that lookup.
 --
 -- `identifier` uses utf8mb4_bin so lookups are exact / case-sensitive
 -- (oauth 'provider:subject', passkey credential-id). Email/phone identifiers are
@@ -30,5 +29,6 @@ CREATE TABLE `hilos_identity` (
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_identity_type_identifier` (`type`, `identifier`),
-    KEY `idx_identity_user` (`user_id`)
+    KEY `idx_identity_user` (`user_id`),
+    CONSTRAINT `fk_identity_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -40,16 +40,23 @@ use RuntimeException;
  */
 final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
 {
-    /** Synthetic recipient: hilos_notification has no FK to the project user table. */
+    /** Fixture recipient backed by hilos_user. */
     private const int RECIPIENT_ID = 909060;
 
     /** Delivery channel the mail pool answers for. */
     private const string CHANNEL = 'email';
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Recipient')", [self::RECIPIENT_ID]);
+    }
+
     protected function tearDown(): void
     {
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
         $this->deleteRecipientRows();
+        Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [self::RECIPIENT_ID]);
         parent::tearDown();
     }
 

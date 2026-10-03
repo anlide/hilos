@@ -26,8 +26,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * muted row (return to default), muting one upserts a row; {@see isAllowed()} is
  * the read the {@see NotificationDispatcher} consults
  * per channel at emit time; {@see mutedChannels()} feeds the profile section's
- * per-channel toggle state. {@see deleteForUser()} clears a user's rows on account
- * deletion (best-effort, soft ref).
+ * per-channel toggle state. {@see deleteForUser()} clears a user's rows inside
+ * account erasure's transaction, before the person row guarded by RESTRICT.
  *
  * @extends Objects<ObjectNotificationPreference>
  * @method ObjectNotificationPreference|null current()
@@ -145,8 +145,7 @@ class NotificationPreferences extends Objects
     /**
      * Removes every preference row of a recipient (account-deletion cleanup).
      *
-     * Best-effort: `user_id` is a soft ref with no cascade, so the deleting flow
-     * clears the recipient's rows explicitly.
+     * The RESTRICT key requires the erasure to remove these rows before the person.
      *
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails

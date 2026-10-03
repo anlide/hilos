@@ -33,6 +33,7 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (41, 'Owner')");
         Schema::reset();
         Schema::initialize();
         $this->previousDb = Hilos::$db;
@@ -122,7 +123,9 @@ final class PushSubscriptionsIntegrationTest extends FrameworkIntegrationTestCas
     {
         // external-boundary: the create stub carries no filename suffix
         $suffix = $down ? '_down' : '';
-        foreach (['hilos_setting', 'hilos_push_subscription'] as $table) {
+        foreach ($down
+            ? ['hilos_push_subscription', 'hilos_setting', 'hilos_user']
+            : ['hilos_user', 'hilos_setting', 'hilos_push_subscription'] as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

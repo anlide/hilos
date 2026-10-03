@@ -86,6 +86,7 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
     protected function setUp(): void
     {
         parent::setUp();
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Winner')", [self::WINNER_USER_ID]);
 
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousRt = Hilos::$rt;

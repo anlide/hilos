@@ -2,14 +2,13 @@
 -- Copy this SQL to project migration (e.g. 0NN_create_hilos_session.sql)
 --
 -- Framework-standardized session table (HIL-361). Separates the session
--- (transient, cookie-token keyed, may be anonymous) from the durable, project-
--- owned `user`. A session is anonymous (`user_id` NULL) or authenticated
+-- (transient, cookie-token keyed, may be anonymous) from the durable framework
+-- person `hilos_user`. A session is anonymous (`user_id` NULL) or authenticated
 -- (`user_id` bound after login/register); no visitor is auto-promoted to a user.
 --
--- No DB-level foreign key to the project `user` table: framework stubs never FK
--- across the framework/project boundary. Session→user integrity is enforced in
--- application code (the bind action), matching the identity-layer convention and
--- keeping the anonymous-vs-authenticated split independent of the user row.
+-- All four person columns point at hilos_user with RESTRICT. The session holder
+-- clears them in the account-erasure transaction before deleting the person row;
+-- a forgotten session blocks erasure instead of retaining a dead reference.
 --
 -- `token` uses utf8mb4_bin so the cookie-token lookup is exact / case-sensitive.
 --
@@ -119,5 +118,9 @@ CREATE TABLE `hilos_session` (
     KEY `idx_session_anonymous_seen` (`user_id`, `last_seen_at`),
     KEY `idx_session_pending_second_factor` (`pending_second_factor_user_id`),
     KEY `idx_session_blocked_user` (`blocked_user_id`),
-    KEY `idx_session_impersonator` (`impersonator_user_id`)
+    KEY `idx_session_impersonator` (`impersonator_user_id`),
+    CONSTRAINT `fk_session_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_session_impersonator` FOREIGN KEY (`impersonator_user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_session_pending_second_factor` FOREIGN KEY (`pending_second_factor_user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_session_blocked` FOREIGN KEY (`blocked_user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -244,6 +244,10 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
     {
         for ($index = 0; $index < 26; $index++) {
             Database::sqlRun(
+                "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Window person')",
+                [10000 + $index],
+            );
+            Database::sqlRun(
                 'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
                 [10000 + $index, 'terms', 'wording', '2026-02-03 00:00:00'],
             );

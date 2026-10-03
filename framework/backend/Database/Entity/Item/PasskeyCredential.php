@@ -82,6 +82,7 @@ class PasskeyCredential extends Entity
 
     public const array _foreign = [
         self::identity_id => Identity::_table,
+        self::user_id => User::_table,
     ];
 
     public const array _indexes = [

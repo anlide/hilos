@@ -140,6 +140,11 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         RtTruthSourceRegistry::registerDaemon(StateHilosProfileFlow::RT_COLLECTION);
 
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`, `admin`) "
+            . "VALUES (?, 'Person', 0), (?, 'Other', 0), (?, 'Admin', 1)",
+            [self::USER_ID, self::OTHER_USER_ID, self::ADMIN_USER_ID],
+        );
         self::seedSession(self::SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null);
         self::seedSession(self::OTHER_SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null);
         self::seedSession(self::ANONYMOUS_SESSION_TOKEN, null, self::CREATED_AT, null);

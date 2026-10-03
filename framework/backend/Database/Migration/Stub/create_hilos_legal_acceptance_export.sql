@@ -18,5 +18,6 @@ CREATE TABLE `hilos_legal_acceptance_export` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_legal_acceptance_export_user` (`user_id`),
     KEY `idx_legal_acceptance_export_state` (`state`, `requested_at`),
-    KEY `idx_legal_acceptance_export_expires` (`expires_at`)
+    KEY `idx_legal_acceptance_export_expires` (`expires_at`),
+    CONSTRAINT `fk_legal_acceptance_export_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

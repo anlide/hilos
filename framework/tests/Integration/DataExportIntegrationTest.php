@@ -54,6 +54,10 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Database::sqlRun(
+            "INSERT INTO hilos_user (id, name) VALUES (7, 'Person'), (8, 'Stranger'), "
+            . "(9, 'Old account'), (10, 'Other'), (11, 'Queued')",
+        );
         $this->previousRouter = Hilos::$sr;
         $this->previousNotify = Hilos::$notify;
         $this->previousCluster = Hilos::$cluster;
@@ -132,7 +136,6 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun("INSERT INTO hilos_notification (user_id, type, severity, title, body) VALUES "
             . "(7, 'notice', 'info', 'My notification', 'My body'), (8, 'notice', 'info', 'Foreign notification', 'Foreign body')");
         Database::sqlRun("INSERT INTO hilos_notification_preference (user_id, channel, enabled) VALUES (7, 'email', 0), (8, 'sms', 0)");
-        Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (7, 'Person'), (8, 'Stranger'), (9, 'Old account'), (10, 'Other')");
         Database::sqlRun("INSERT INTO hilos_user_merge (user_id, survivor_user_id, merged_at) VALUES "
             . "(7, 8, '2026-01-04 00:00:00'), (9, 7, NULL), (10, 8, '2026-01-04 00:00:00')");
         Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "

@@ -83,7 +83,12 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
     public const string FIXTURE_USER_TABLE = 'landing_fixture_user';
 
     /** @var list<string> Framework tables this case needs */
-    private const array TABLES = ['hilos_identity', 'hilos_registration_reservation', 'hilos_legal_acceptance'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_identity',
+        'hilos_registration_reservation',
+        'hilos_legal_acceptance',
+    ];
 
     private const string SESSION_TOKEN = 'registration-landing-test-session-token';
 
@@ -142,6 +147,10 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Existing account'), (?, 'Rival account')",
+            [self::USER_ID, self::RIVAL_USER_ID],
+        );
 
         $this->previousDb = Hilos::$db;
         $this->previousSignalRouter = Hilos::$sr;
@@ -759,7 +768,7 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }
@@ -818,6 +827,7 @@ final class RegistrationLandingFixtureLibrary extends AbstractUsersLibraryAgent
             [$displayName],
         );
         $userId = Database::lastInsertId();
+        Database::sqlRun('INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, ?)', [$userId, $displayName]);
         $this->rowsSeenInsideTransaction = self::rowsVisible();
 
         return $userId;

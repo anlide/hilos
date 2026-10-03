@@ -80,11 +80,16 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         $this->previousSignalRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();
         $this->cleanUp();
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Recipient'), (?, 'Retry recipient')",
+            [self::RECIPIENT_ID, self::RETRY_RECIPIENT_ID],
+        );
     }
 
     protected function tearDown(): void
     {
         $this->cleanUp();
+        Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` IN (?, ?)', [self::RECIPIENT_ID, self::RETRY_RECIPIENT_ID]);
         Hilos::$sr = $this->previousSignalRouter;
 
         parent::tearDown();

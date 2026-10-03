@@ -12,8 +12,7 @@
 -- credential is removed through its object so the profile screen hears of it, and a
 -- cascade would take the row out silently. `user_id` is denormalized for the
 -- per-user credential list (HIL-404) and the resident-key resolution (HIL-400); it
--- stays a soft reference only while the person table still belongs to the project
--- (epic HIL-1133), and carries an INDEX for the application-side cascade.
+-- points at hilos_user with RESTRICT and carries an index for account erasure.
 --
 -- `credential_id` (the authenticator's base64url credential id) uses utf8mb4_bin so
 -- it compares exactly and is UNIQUE across the table (an assertion resolves the row
@@ -49,5 +48,6 @@ CREATE TABLE `hilos_passkey_credential` (
     UNIQUE KEY `uk_passkey_credential_id` (`credential_id`),
     KEY `idx_passkey_identity` (`identity_id`),
     KEY `idx_passkey_user` (`user_id`),
-    CONSTRAINT `fk_passkey_credential_identity` FOREIGN KEY (`identity_id`) REFERENCES `hilos_identity` (`id`) ON DELETE RESTRICT
+    CONSTRAINT `fk_passkey_credential_identity` FOREIGN KEY (`identity_id`) REFERENCES `hilos_identity` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_passkey_credential_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

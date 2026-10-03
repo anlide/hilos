@@ -16,6 +16,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -69,6 +70,7 @@ final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Person')", [self::USER_ID]);
 
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousRt = Hilos::$rt;

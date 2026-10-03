@@ -30,7 +30,7 @@ use RuntimeException;
  */
 final class MailPoolPendingPickupIntegrationTest extends IntegrationTestCase
 {
-    /** Synthetic recipient: hilos_notification has no FK to the project user table. */
+    /** Fixture recipient backed by hilos_user. */
     private const int RECIPIENT_ID = 909061;
 
     /** Delivery channel the mail pool answers for. */
@@ -38,6 +38,12 @@ final class MailPoolPendingPickupIntegrationTest extends IntegrationTestCase
 
     /** Orphaned delivery to remove after its notification has gone. */
     private ?int $orphanNotificationId = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Recipient')", [self::RECIPIENT_ID]);
+    }
 
     protected function tearDown(): void
     {
@@ -50,6 +56,7 @@ final class MailPoolPendingPickupIntegrationTest extends IntegrationTestCase
                 [$this->orphanNotificationId],
             );
         }
+        Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [self::RECIPIENT_ID]);
         parent::tearDown();
     }
 

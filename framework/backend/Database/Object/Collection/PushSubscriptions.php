@@ -27,7 +27,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * {@see unsubscribeOwned()} removes the acting device, while {@see markGone()} keeps a
  * transport-expired endpoint visible to its owner. {@see forUser()} lists live endpoints
  * for the push delivery channel to send to; {@see deleteForUser()} clears a user's
- * rows on account deletion (best-effort, soft ref).
+ * rows inside account erasure's transaction, before the person's RESTRICT key.
  *
  * @extends Objects<ObjectPushSubscription>
  * @method ObjectPushSubscription|null current()
@@ -210,8 +210,7 @@ class PushSubscriptions extends Objects
     /**
      * Removes every subscription of a recipient (account-deletion cleanup).
      *
-     * Best-effort: `user_id` is a soft ref with no cascade, so the deleting flow
-     * clears the recipient's rows explicitly.
+     * The RESTRICT key requires the erasure to remove these rows before the person.
      *
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails

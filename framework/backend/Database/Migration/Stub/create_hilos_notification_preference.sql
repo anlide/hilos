@@ -15,11 +15,9 @@
 -- A mandatory notification type (NotificationTypeRegistry) bypasses this table and
 -- delivers on every globally enabled channel where the recipient has an address.
 --
--- No DB-level foreign key to the project `user` table: framework stubs never FK
--- across the framework/project boundary. `user_id` is a soft ref; the per-user
--- lookup rides the leftmost prefix of the UNIQUE(user_id, channel) index, so no
--- separate user_id key is needed. Preference rows are cleaned up best-effort with
--- the user (soft ref, no cascade).
+-- user_id points at hilos_user with RESTRICT. Account erasure deletes preference
+-- rows in its transaction before the person row. The per-user lookup rides the
+-- leftmost prefix of UNIQUE(user_id, channel), so no separate user_id key is needed.
 
 CREATE TABLE `hilos_notification_preference` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -29,5 +27,6 @@ CREATE TABLE `hilos_notification_preference` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_notification_preference_user_channel` (`user_id`, `channel`)
+    UNIQUE KEY `uk_notification_preference_user_channel` (`user_id`, `channel`),
+    CONSTRAINT `fk_notification_preference_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

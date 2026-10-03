@@ -573,7 +573,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     }
 
     /**
-     * An erased administrator's own order goes with its file, even while it is being built.
+     * Erasure deletes an administrator's own order before the forget frame removes its file.
      *
      * @throws HilosException When a fixture, the order, a tick or the erasure fails
      */
@@ -588,6 +588,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         $agent->onTick();
         self::assertCount(1, $this->files());
 
+        self::exportOf(self::ADMIN_ID)?->actions->delete();
         LegalAcceptancesExports::forget($agent, self::ADMIN_ID);
 
         self::assertNull(self::exportOf(self::ADMIN_ID));

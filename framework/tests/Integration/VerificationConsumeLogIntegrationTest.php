@@ -38,7 +38,10 @@ use Hilos\Utils\Logger;
 final class VerificationConsumeLogIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** @var list<string> Framework tables this case needs */
-    private const array TABLES = ['hilos_user_verification'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_user_verification',
+    ];
 
     private const string TOKEN = 'tok-4242424242424242';
 
@@ -329,7 +332,7 @@ final class VerificationConsumeLogIntegrationTest extends FrameworkIntegrationTe
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

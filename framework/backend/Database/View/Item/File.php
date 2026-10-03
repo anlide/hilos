@@ -23,7 +23,7 @@ use Hilos\HilosException;
  * @property-read string $mimeType
  * @property-read int $size
  * @property-read string $contentHash
- * @property-read int $ownerUserId
+ * @property-read ?int $ownerUserId
  * @property-read FileVisibility $visibility
  * @property-read bool $bound
  * @property-read string $createdAt

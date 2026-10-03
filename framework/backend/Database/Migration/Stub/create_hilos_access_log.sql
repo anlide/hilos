@@ -16,7 +16,7 @@
 -- standard.access_log keeps no log, and the same sweep removes every row already
 -- written. The table is created all the same - it is empty by the text, not by absence.
 --
--- No foreign key to the person, as on the framework's other tables about a person.
+-- user_id points at hilos_user with RESTRICT; account erasure removes log rows first.
 -- A restore that requires anonymization purges the table whole.
 
 CREATE TABLE `hilos_access_log` (
@@ -27,5 +27,6 @@ CREATE TABLE `hilos_access_log` (
     `occurred_at` TIMESTAMP NOT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_access_log_user` (`user_id`, `occurred_at`),
-    KEY `idx_access_log_occurred` (`occurred_at`)
+    KEY `idx_access_log_occurred` (`occurred_at`),
+    CONSTRAINT `fk_access_log_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

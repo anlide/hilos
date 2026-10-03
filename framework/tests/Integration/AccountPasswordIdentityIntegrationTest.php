@@ -48,7 +48,10 @@ use Hilos\Utils\Logger;
 final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** @var list<string> Framework tables this case needs */
-    private const array TABLES = ['hilos_identity'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_identity',
+    ];
 
     private const string PASSWORD = 'survivor-secret-42';
 
@@ -61,7 +64,7 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
 
     private ?SignalRouter $previousSignalRouter = null;
 
-    /** @var int Rolling source of user ids; a framework table carries no FK to a project user */
+    /** @var int Rolling source of user ids; ids now have a person row behind them */
     private int $nextUserId = 1;
 
     /** Temporary main log file the assertions read the written lines back from */
@@ -734,11 +737,15 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
     }
 
     /**
-     * @return int A user id no other account in this case uses
+     * @return int A persisted person id no other account in this case uses
+     * @throws HilosException When the person row cannot be inserted
      */
     private function nextUserId(): int
     {
-        return $this->nextUserId++;
+        $userId = $this->nextUserId++;
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Fixture person')", [$userId]);
+
+        return $userId;
     }
 
     /**
@@ -759,7 +766,7 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

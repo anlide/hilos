@@ -47,6 +47,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         HilosDbContext::notifications,
         HilosDbContext::notificationDeliveries,
         HilosDbContext::notificationPreferences,
+        HilosDbContext::pushSubscriptions,
         HilosDbContext::secondFactors,
         HilosDbContext::secondFactorBackupCodes,
         HilosDbContext::secondFactorTrusts,

@@ -14,9 +14,9 @@ use Hilos\Database\PhpType;
  * Per-user notification channel preference (HIL-485). Sparse opt-out: a row exists
  * only to record a deviation from the "channel allowed" default, so its presence
  * means the recipient muted the named channel (`enabled` is always stored `false`;
- * re-enabling deletes the row rather than flipping the flag). `user_id` is a soft
- * ref with no cross-boundary FK, matching the hilos_session / hilos_notification
- * convention. Framework holds the contract; projects activate the table thinly
+ * re-enabling deletes the row rather than flipping the flag). `user_id` points
+ * at hilos_user with RESTRICT; account erasure deletes the row in its transaction.
+ * Framework holds the contract; projects activate the table thinly
  * (copy the migration stub) and the framework DbContext exposes the collection.
  *
  * @method static EntityNotificationPreferences get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
@@ -49,6 +49,10 @@ class NotificationPreference extends Entity
         self::enabled => PhpType::BOOLEAN->value,
         self::created_at => PhpType::DATETIME->value,
         self::updated_at => PhpType::DATETIME->value,
+    ];
+
+    public const array _foreign = [
+        self::user_id => User::_table,
     ];
 
     public const array _indexes = [

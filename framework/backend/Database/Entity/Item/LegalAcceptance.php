@@ -31,6 +31,10 @@ class LegalAcceptance extends Entity
         self::revision_id => PhpType::STRING->value,
         self::accepted_at => PhpType::DATETIME->value,
     ];
+    public const array _foreign = [
+        self::user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'uk_legal_acceptance_user_document_revision' => [
             Entity::INDEX_COLUMNS => [self::user_id, self::document, self::revision_id],

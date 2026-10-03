@@ -28,7 +28,11 @@ use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
 final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** @var list<string> Framework tables the journal reads, in the order they are raised. */
-    private const array TABLES = ['hilos_notification', 'hilos_notification_delivery'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_notification',
+        'hilos_notification_delivery',
+    ];
 
     /** Moment the older delivery was made. */
     private const string EARLIER = '2026-09-23 10:00:00';
@@ -53,6 +57,7 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (3, 'Recipient')");
         Database::sql(
             'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`) VALUES (?, ?, ?)',
             [3, 'backup.completed', 'Backup is ready'],

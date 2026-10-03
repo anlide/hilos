@@ -50,7 +50,10 @@ use Hilos\Utils\Helpers\RandomHelper;
 final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** @var list<string> Framework tables this case needs */
-    private const array TABLES = ['hilos_user_verification'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_user_verification',
+    ];
 
     private const string CODE = '424242';
 
@@ -431,7 +434,7 @@ final class VerificationSpendRaceIntegrationTest extends FrameworkIntegrationTes
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

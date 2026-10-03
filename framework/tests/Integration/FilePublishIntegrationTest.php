@@ -73,7 +73,12 @@ use ReflectionProperty;
 final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** Framework tables the cases raise, in dependency order. */
-    private const array TABLES = ['hilos_setting', 'hilos_file', 'hilos_file_variant'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_setting',
+        'hilos_file',
+        'hilos_file_variant',
+    ];
 
     private const string GUEST = 'ak-publish-guest';
 
@@ -134,6 +139,10 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Owner'), (?, 'Other')",
+            [FilePublishTestKeys::SIGNED_IN_USER, FilePublishTestKeys::OTHER_USER],
+        );
         Schema::reset();
         Schema::initialize();
 

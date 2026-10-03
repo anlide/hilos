@@ -84,6 +84,10 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
         parent::setUp();
         self::runExtraStubs(down: true);
         self::runExtraStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Administrator')",
+            [self::ADMINISTRATOR_ID],
+        );
 
         $this->previousRt = Hilos::$rt;
         $this->previousSetting = Hilos::$setting;

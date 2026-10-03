@@ -54,7 +54,12 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
      *     tells each signed-in person's standing, which reads their row and their deletion
      *     request - without those two the case leaned on a verdict an earlier case left in memory.
      */
-    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_user', 'hilos_account_deletion'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_session',
+        'hilos_setting',
+        'hilos_account_deletion',
+    ];
 
     private const string SESSION_TOKEN = '0123456789abcdef0123456789abcdef';
 
@@ -66,7 +71,7 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
 
     private const string MESSAGE = 'Backup "2026-09-03_11-00-00" is ready.';
 
-    /** The stub has no foreign key to a user table, so an id is all a person needs to be. */
+    /** Signed-in person whose session row is backed by hilos_user. */
     private const int PERSON = 7;
 
     /** The administrator behind an impersonation: the human being at the keyboard. */
@@ -80,6 +85,10 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Person'), (?, 'Administrator')",
+            [self::PERSON, self::ADMINISTRATOR],
+        );
         $this->previousDb = Hilos::$db;
         $db = new SessionToastDeliveryTestDbContext();
         $db->configure();
@@ -120,7 +129,7 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

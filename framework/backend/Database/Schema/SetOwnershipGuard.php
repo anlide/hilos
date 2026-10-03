@@ -8,7 +8,7 @@ use Hilos\Core\Daemon\DaemonApplication;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Entity\Item\Notification;
+use Hilos\Database\Entity\Item\NotificationDelivery;
 use Hilos\Database\Exception\UndeclaredSetOwnershipException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos;
@@ -39,10 +39,9 @@ use Hilos\Hilos;
  *
  * Two things it deliberately stays silent about:
  * - A child naming a column that carries no `_foreign` entry gets no cross-check, and its set
- *   is not climbed: the value is the top. Framework Entities hang their sets on the person that
- *   way - `user_id` is a soft reference while the person table belongs to the project
- *   ({@see Notification}) - so the set of `hilos_identity` on a project's own `user` is a named
- *   hole, not an oversight.
+ *   is not climbed: the value is the top. Framework rows belonging to a person instead carry
+ *   a key onto `hilos_user` (HIL-1202). The delivery journal's `notification_id` remains soft
+ *   ({@see NotificationDelivery}) so a delivery can be pruned independently of its notification.
  * - A mounted collection that resolves to no Entity is passed over. That is a broken mount
  *   rather than an undeclared set, and this gate answers one question only.
  *

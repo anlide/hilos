@@ -8,8 +8,8 @@
 -- janitor removes unbound rows older than the `files.unbound_ttl_hours` setting,
 -- the row first and the file on disk after it.
 --
--- `owner_user_id` is a soft reference without a foreign key only because the person
--- table still belongs to the project (epic HIL-1133).
+-- owner_user_id points at hilos_user with SET NULL. A file can outlive its owner:
+-- account erasure clears the reference, then removes project-named files after commit.
 --
 -- `stored_name` is the name on disk, so it compares byte for byte (utf8mb4_bin): a
 -- filesystem tells case apart. `filename` is the name the uploader gave the file.
@@ -27,12 +27,13 @@ CREATE TABLE `hilos_file` (
     `mime_type` VARCHAR(255) NOT NULL,
     `size` BIGINT UNSIGNED NOT NULL,
     `content_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-    `owner_user_id` INT UNSIGNED NOT NULL,
+    `owner_user_id` INT UNSIGNED DEFAULT NULL,
     `visibility` ENUM('public', 'authenticated', 'owner') NOT NULL,
     `bound` TINYINT(1) NOT NULL DEFAULT 0,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_file_stored_name` (`stored_name`),
     KEY `idx_file_bound_created` (`bound`, `created_at`),
-    KEY `idx_file_owner_hash` (`owner_user_id`, `content_hash`)
+    KEY `idx_file_owner_hash` (`owner_user_id`, `content_hash`),
+    CONSTRAINT `fk_file_owner` FOREIGN KEY (`owner_user_id`) REFERENCES `hilos_user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

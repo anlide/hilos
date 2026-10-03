@@ -56,6 +56,10 @@ class SecondFactorReset extends Entity
         self::completed_at => PhpType::DATETIME->value,
     ];
 
+    public const array _foreign = [
+        self::user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'idx_second_factor_reset_effective' => [Entity::INDEX_COLUMNS => [self::effective_at]],
         'idx_second_factor_reset_user' => [Entity::INDEX_COLUMNS => [self::user_id]],

@@ -32,7 +32,11 @@ use PHPUnit\Framework\Attributes\DataProvider;
 final class PasskeyAlgorithmRoundTripIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** @var list<string> Tables in foreign-key dependency order */
-    private const array TABLES = ['hilos_identity', 'hilos_passkey_credential'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_identity',
+        'hilos_passkey_credential',
+    ];
 
     private const string PERSON_AGENT = 'passkey-algorithm-person-agent';
     private const int USER_ID = 1;
@@ -134,6 +138,7 @@ final class PasskeyAlgorithmRoundTripIntegrationTest extends FrameworkIntegratio
         parent::setUp();
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Fixture person')", [self::USER_ID]);
         $this->previousDb = Hilos::$db;
         $db = new PasskeyAlgorithmRoundTripTestDbContext();
         $db->configure();

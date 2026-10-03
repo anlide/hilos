@@ -24,5 +24,6 @@ CREATE TABLE `hilos_second_factor_reset` (
     `completed_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_second_factor_reset_effective` (`effective_at`),
-    KEY `idx_second_factor_reset_user` (`user_id`)
+    KEY `idx_second_factor_reset_user` (`user_id`),
+    CONSTRAINT `fk_second_factor_reset_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

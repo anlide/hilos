@@ -20,9 +20,8 @@
 -- registration is this browser running" - is answered the same way by the
 -- pending-registration columns of hilos_session.
 --
--- No DB-level foreign key to the project `user` table: framework stubs never FK
--- across the framework/project boundary, and here there is nothing to point at —
--- the reservation exists precisely while the user does not. `session_token` is
+-- There is no person to point at: the reservation exists precisely while the
+-- user does not. `session_token` is
 -- likewise unconstrained: a swept session leaves a hold that expires on its own.
 --
 -- `identifier` and `session_token` use utf8mb4_bin so both compare exactly; the

@@ -213,7 +213,6 @@ use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
-use Hilos\Notification\DTO\NotificationForgetUserSignalData;
 use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
 use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
@@ -671,7 +670,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
-            HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_FILE_REMOVE => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
@@ -854,7 +852,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
-            HilosSignalConstants::HILOS_NOTIFICATION_FORGET_USER => NotificationForgetUserSignalData::class,
             HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
             HilosSignalConstants::HILOS_FILE_REMOVE => FileRemoveSignalData::class,
             HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,

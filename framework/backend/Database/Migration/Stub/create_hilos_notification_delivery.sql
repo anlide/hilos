@@ -6,9 +6,8 @@
 -- inserts it `pending` when it fans a notification to a resolved channel, and that
 -- channel's delivery agent moves it to `sent`/`failed` with bounded retries.
 --
--- No DB-level foreign key to hilos_notification: framework stubs never FK across a
--- boundary, and even the framework-owned notification is referenced softly so a row
--- can be pruned independently. `channel` is the channel name (a string, not an enum:
+-- notification_id is a soft reference so a delivery can be pruned independently
+-- of its notification. `channel` is the channel name (a string, not an enum:
 -- channels are extended by subclassing, not by a fixed set).
 --
 -- Indexes: (notification_id) resolves a notification's deliveries; (channel, status)

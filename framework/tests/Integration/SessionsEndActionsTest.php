@@ -18,6 +18,7 @@ use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Database;
 use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
@@ -43,9 +44,16 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
     private const string OTHER_ACCEPT_KEY = 'accept-other';
     private const string ADMIN_ACCEPT_KEY = 'accept-admin';
 
+    /**
+     * @throws HilosException When the person or runtime fixture cannot be prepared
+     */
     protected function setUp(): void
     {
         parent::setUp();
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Person'), (?, 'Administrator')",
+            [self::USER_ID, self::ADMIN_ID],
+        );
 
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new SessionsEndActionsRtContext();

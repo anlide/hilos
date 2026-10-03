@@ -13,7 +13,7 @@ use Hilos\Database\PhpType;
  * Session Entity - represents the hilos_session table row.
  *
  * Framework-standardized session (HIL-361): transient and cookie-token keyed,
- * separate from the durable project-owned `user`. A session is anonymous when
+ * separate from the durable framework-owned `hilos_user`. A session is anonymous when
  * `user_id` is null, or authenticated once bound to a user at login/register.
  * Framework holds the contract; projects activate the table thinly (copy the
  * migration stub) and the framework DbContext exposes the collection.
@@ -121,6 +121,13 @@ class Session extends Entity
         self::ip_address => PhpType::STRING->value,
         self::blocked_user_id => PhpType::INTEGER->value,
         self::blocked_signed_in => PhpType::BOOLEAN->value,
+    ];
+
+    public const array _foreign = [
+        self::user_id => User::_table,
+        self::impersonator_user_id => User::_table,
+        self::pending_second_factor_user_id => User::_table,
+        self::blocked_user_id => User::_table,
     ];
 
     public const array _indexes = [

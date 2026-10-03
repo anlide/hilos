@@ -43,6 +43,10 @@ class StepUp extends Entity
         self::created_at => PhpType::DATETIME->value,
     ];
 
+    public const array _foreign = [
+        self::user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'uk_step_up' => [
             Entity::INDEX_UNIQUE => true,

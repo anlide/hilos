@@ -51,7 +51,12 @@ use ReflectionProperty;
 final class FileSweepTest extends FrameworkIntegrationTestCase
 {
     /** Framework tables the cases raise, in dependency order. */
-    private const array TABLES = ['hilos_setting', 'hilos_file', 'hilos_file_variant'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_setting',
+        'hilos_file',
+        'hilos_file_variant',
+    ];
 
     /** Project table whose foreign key holds a registry row, as a chat attachment does (HIL-144). */
     private const string LINK_TABLE = 'file_sweep_test_link';
@@ -90,6 +95,7 @@ final class FileSweepTest extends FrameworkIntegrationTestCase
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Owner')", [self::OWNER]);
         Database::sqlRun(
             'CREATE TABLE `' . self::LINK_TABLE . '` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT, `file_id` INT UNSIGNED NOT NULL,'
             . ' PRIMARY KEY (`id`), CONSTRAINT `fk_file_sweep_test_link_file` FOREIGN KEY (`file_id`) REFERENCES `hilos_file` (`id`))',

@@ -57,7 +57,13 @@ use ReflectionProperty;
  */
 final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
 {
-    private const array TABLES = ['hilos_setting', 'hilos_session', 'hilos_file', 'hilos_file_variant'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_setting',
+        'hilos_session',
+        'hilos_file',
+        'hilos_file_variant',
+    ];
     /** Node the library runs on, and the one holding the browser's connection unless a case says otherwise. */
     private const string LIBRARY_NODE = 'node-b';
     /** Cluster env values setUp sets, and tearDown removes. */
@@ -81,6 +87,7 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
         parent::setUp();
         self::tables(true);
         self::tables(false);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, 'Owner'), (8, 'Stranger')");
         Database::sqlRun('CREATE TABLE image_variant_link (file_id INT UNSIGNED NOT NULL, '
             . 'FOREIGN KEY (file_id) REFERENCES hilos_file (id))');
         Schema::reset();

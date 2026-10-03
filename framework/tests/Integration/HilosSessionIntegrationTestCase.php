@@ -105,6 +105,10 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
     protected static function seedIdentity(int $userId, string $type, string $identifier): void
     {
         Database::sqlRun(
+            "INSERT IGNORE INTO `hilos_user` (`id`, `name`) VALUES (?, 'Fixture person')",
+            [$userId],
+        );
+        Database::sqlRun(
             'INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, ?, ?, 1)',
             [$userId, $type, $identifier],
         );
@@ -127,6 +131,14 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
         ?string $expiresAt,
         ?int $impersonatorUserId = null,
     ): void {
+        foreach ([$userId, $impersonatorUserId] as $personId) {
+            if ($personId !== null) {
+                Database::sqlRun(
+                    "INSERT IGNORE INTO `hilos_user` (`id`, `name`) VALUES (?, 'Fixture person')",
+                    [$personId],
+                );
+            }
+        }
         Database::sqlRun(
             'INSERT INTO `hilos_session` '
             . '(`token`, `user_id`, `impersonator_user_id`, `created_at`, `last_seen_at`, `expires_at`) '

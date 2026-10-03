@@ -53,7 +53,7 @@ class FilesActions extends DbActions
         int $ownerUserId,
         FileVisibility $visibility,
     ): File {
-        $this->ensureCanCreateInSet((string)$ownerUserId);
+        $this->ensureCanCreate();
 
         if ($storedName === '' || basename($storedName) !== $storedName) {
             throw new ValidationException('File stored_name must be a bare file name without a path');

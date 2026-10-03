@@ -46,7 +46,11 @@ use Hilos\Socket\Http\DTO\HttpRequestDTO;
 final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** Framework tables the cases raise, in dependency order. */
-    private const array TABLES = ['hilos_session', 'hilos_file'];
+    private const array TABLES = [
+        'hilos_user',
+        'hilos_session',
+        'hilos_file',
+    ];
 
     /** Owner of every fixture file. */
     private const int OWNER = 7;
@@ -91,6 +95,10 @@ final class FileDownloadIntegrationTest extends FrameworkIntegrationTestCase
 
         self::runStubs(down: true);
         self::runStubs(down: false);
+        Database::sqlRun(
+            "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Owner'), (?, 'Stranger')",
+            [self::OWNER, self::STRANGER],
+        );
         Schema::reset();
         Schema::initialize();
 

@@ -135,10 +135,6 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         TruthSourceRegistry::register(HilosDbContext::users, TruthSourceKeys::all(), self::TEST_OWNER);
         SourceChangeBus::subscribe(new AccountStandingChangeSubscriber());
         AccountStandingResolver::forgetAll();
-        Database::sqlRun(
-            "INSERT INTO `hilos_user` (`id`, `name`, `admin`) VALUES (?, 'Person', 0), (?, 'Other', 0), (?, 'Admin', 1)",
-            [self::USER_ID, self::OTHER_USER_ID, self::ADMIN_USER_ID],
-        );
     }
 
     protected function tearDown(): void

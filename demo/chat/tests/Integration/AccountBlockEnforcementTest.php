@@ -733,6 +733,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
             $this->underAgent($agent, $order);
             self::assertFileDoesNotExist($readyPath);
             self::assertNotSame($first->id, Hilos::$db->dataExports->ofUser($userId)?->id);
+            $this->underAgent($agent, static function () use ($userId): void {
+                Hilos::$db->dataExports->ofUser($userId)?->actions->delete();
+            });
             $this->underAgent($agent, static fn () => $agent->onSignalAgent(
                 new AgentSignalData(new DataExportForgetUserSignalData($userId)), '',
                 HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER,

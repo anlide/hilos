@@ -117,6 +117,13 @@ a moderation verdict. Declare that name in the consuming agent's
   at the declaration. Between the upload row going and the registry row being
   written nobody counts the file in the storage limit — a known limit
   ([uploads.md](uploads.md), *Targets And Checks*).
+
+  When that person is erased, `hilos_file.owner_user_id` becomes `NULL` through
+  its `ON DELETE SET NULL` key (HIL-1202). After the commit the files library
+  removes registry ids the project named from its deleted links; any other file
+  row remains without an owner. An `owner`-visible row with no owner grants nobody
+  access; a signed-in viewer is forbidden. The duplicate check searches by an
+  actual owner's id, so it does not count an ownerless bound row as their file.
 - **The library** keeps each file under a random stored name (32 hex characters
   from the secure random axis, and an extension by type) and writes its row,
   unbound, with the visibility the request named. All kept →

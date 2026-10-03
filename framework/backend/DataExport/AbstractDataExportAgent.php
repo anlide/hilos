@@ -310,10 +310,9 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      */
     private function forgetUser(int $userId): void
     {
-        $export = Hilos::$db->dataExports->ofUser($userId);
-        if ($export !== null) {
-            $this->removeExport($export);
-        }
+        // Erasure removed the order in its transaction. The hourly sweep also removes files
+        // with no ready order, including this person's copy and any interrupted build.
+        $this->expireCopies();
         $this->publishState($userId);
     }
 

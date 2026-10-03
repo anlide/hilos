@@ -76,6 +76,10 @@ class UserVerification extends Entity
         self::consumed_at => PhpType::DATETIME->value,
     ];
 
+    public const array _foreign = [
+        self::user_id => User::_table,
+    ];
+
     public const array _indexes = [
         'idx_uv_type_identifier' => [Entity::INDEX_COLUMNS => [self::type, self::identifier]],
         'idx_uv_user' => [Entity::INDEX_COLUMNS => [self::user_id]],

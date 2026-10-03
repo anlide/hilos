@@ -23,5 +23,6 @@ CREATE TABLE `hilos_second_factor_backup_code` (
     `used_at` TIMESTAMP NULL DEFAULT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_second_factor_backup_code_user` (`user_id`)
+    KEY `idx_second_factor_backup_code_user` (`user_id`),
+    CONSTRAINT `fk_second_factor_backup_code_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

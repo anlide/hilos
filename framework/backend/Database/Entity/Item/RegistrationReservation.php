@@ -38,8 +38,7 @@ use Hilos\Database\PhpType;
  * not a secret - and its durability is what puts a browser that proved an address
  * back on the password screen across a reload, a closed tab and a daemon restart.
  *
- * No DB-level foreign key: the reservation exists precisely while no user does,
- * and framework tables never FK across the framework/project boundary anyway.
+ * No DB-level person key: the reservation exists precisely while no user does.
  *
  * @method static EntityRegistrationReservations get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityRegistrationReservations getAll()
