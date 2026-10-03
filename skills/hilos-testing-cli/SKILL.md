@@ -50,6 +50,8 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Prefer composer scripts documented in `docs/agents/testing.md`.
 - A step of `test:suite` that goes red while another step was running is not a
   verdict — re-run it with `--lanes=1` on the same HEAD before believing it.
+  Green alone: the step is green and the test is named as possibly flaky. Do not
+  run the whole suite with `--lanes=1`.
 - Read the run's `=== unstable: ... ===` section when there is one: those tests
   only passed on a retry. The step's `ok` stands, but name the test and check how
   long it has been flickering before treating it as yours — never bounce your own

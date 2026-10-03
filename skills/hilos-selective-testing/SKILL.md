@@ -52,7 +52,8 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    three shapes".
 8. A step that went red while another step was running is not a verdict: re-run it
    alone (`php scripts/run-test-suite.php <id> --lanes=1`) on the same HEAD. Green
-   alone makes the run inconclusive, not green.
+   alone makes the step green: name the test as possibly flaky and do not repeat
+   the full run.
 9. An `=== unstable: ... ===` section at the end of a run names tests that only
    passed on a retry. It does not widen the scope you chose: name the test, check
    how long it has flickered, and leave a foreign one to its own ticket.

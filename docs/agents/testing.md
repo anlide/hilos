@@ -316,9 +316,12 @@ Re-run it **alone on the same HEAD** — `php scripts/run-test-suite.php <id>
 --lanes=1` — before believing it:
 
 - **red again** — real. Treat it as any other failure.
-- **green alone** — the run is *inconclusive*, not green. Record which steps
-  collided and what the load was, then lower the lane count or fix the timeout that
-  lied.
+- **green alone** — the step is green. Name the test that went red as possibly
+  flaky, with the run it failed in and the run it passed in, and go on. Do not
+  repeat the full run, at one lane or at several: a full run at one lane took
+  about 55 minutes with no fail-fast and never changed the verdict, and a
+  flicker is caught by watching the tests named this way, not by rerunning the
+  suite.
 
 What must never happen is a red waved off as "probably the neighbour" without that
 re-run: it is exactly how a genuine regression reaches the base wearing the excuse
