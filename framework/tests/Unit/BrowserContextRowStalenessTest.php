@@ -14,12 +14,10 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\RtStaleness;
@@ -139,27 +137,19 @@ final class BrowserContextRowStalenessTest extends TestCase
     }
 
     /**
-     * Serves the test page to one subscriber and reads the table rows out of the page answer.
+     * Builds the test page's browser part for one subscriber and reads the table rows out of it.
      *
      * @return list<array<string, mixed>> Wire rows of the page's only table
      */
     private function snapshotRows(): array
     {
-        new RowStalenessBrowserContext()->subscribeSnapshot(
+        $snapshot = new RowStalenessBrowserContext()->buildSubscribeSnapshot(
             RowStalenessBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
         );
 
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-
-        $this->assertNotNull($signal);
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
-
-        $payload = $signal->data->data->toArray();
-        $rows = $payload[PageResponseSignalData::payload][PagePayload::tables][RowStalenessBrowserContext::TABLE]
-            [PagePayload::rows] ?? [];
+        $rows = $snapshot->tables[RowStalenessBrowserContext::TABLE][PagePayload::rows] ?? [];
 
         $this->assertIsArray($rows);
 

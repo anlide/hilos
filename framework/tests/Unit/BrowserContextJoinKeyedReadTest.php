@@ -284,7 +284,7 @@ final class BrowserContextJoinKeyedReadTest extends TestCase
     }
 
     /**
-     * Subscribes the test page and returns the browser rows the subscriber was sent.
+     * Subscribes the test page and returns the browser rows its answer carries.
      *
      * @param JoinReadBrowserContext $context Context under test
      * @return list<array<string, mixed>> Browser rows of the one bound list
@@ -292,9 +292,9 @@ final class BrowserContextJoinKeyedReadTest extends TestCase
      */
     private function snapshotRows(JoinReadBrowserContext $context): array
     {
-        $context->subscribeSnapshot(JoinReadBrowserContext::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
+        $snapshot = $context->buildSubscribeSnapshot(JoinReadBrowserContext::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
 
-        return $this->rowsOfNextPageResponse();
+        return $snapshot->tables[JoinReadBrowserContext::BROWSER_KEY][PagePayload::rows];
     }
 
     /**

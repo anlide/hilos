@@ -568,7 +568,7 @@ abstract class ReassessTestPage extends AbstractPage
     public int $subscribeCount = 0;
 
     /**
-     * Counts the answer, ahead of the browser snapshot and the frame the base page sends.
+     * Counts the answer, ahead of the one frame the base page sends.
      *
      * @param string $acceptKey WebSocket accept key (unused)
      * @param PageRouteParams $params Route params (unused)

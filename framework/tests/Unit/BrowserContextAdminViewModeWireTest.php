@@ -22,7 +22,6 @@ use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageRouteParams;
@@ -127,9 +126,7 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
     {
         $browser = $this->boot(viewer: true);
 
-        $browser->subscribeSnapshot(WireTestBrowser::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
-
-        $window = $this->windowSection();
+        $window = $this->windowSection($browser->buildSubscribeSnapshot(WireTestBrowser::PAGE, self::ACCEPT_KEY, new PageRouteParams([])));
         $this->assertSame([self::hiddenRow('alpha'), self::hiddenRow('beta')], $window[TableWindowSignalData::rows]);
         // The table orders its first window by the person's name; a viewer is not ordered by it.
         $this->assertSame([], $window[TableWindowDescriptorDTO::SORT]);
@@ -360,8 +357,8 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
     {
         $browser = $this->boot(viewer: true);
 
-        $browser->subscribeSnapshot(WireTestBrowser::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
-        $snapshotBar = $this->windowSection()[TableProgressSignalData::progress][0] ?? null;
+        $snapshot = $browser->buildSubscribeSnapshot(WireTestBrowser::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
+        $snapshotBar = $this->windowSection($snapshot)[TableProgressSignalData::progress][0] ?? null;
 
         $browser->record(SourceChange::dbUpdated(WireTestTable::PROGRESS_SOURCE_KEY, 'run', []));
         $browser->flushToSignalRouter();
@@ -382,7 +379,8 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
     {
         $this->bootDeclarative();
 
-        new DeclarativeWireTestBrowser(viewer: true)->subscribeSnapshot(DeclarativeWireTestBrowser::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
+        $snapshot = new DeclarativeWireTestBrowser(viewer: true)
+            ->buildSubscribeSnapshot(DeclarativeWireTestBrowser::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
 
         // The team is joined by teamRef, which is hidden from the viewer: the join ran on the real value.
         $this->assertSame(
@@ -400,7 +398,7 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
                     DeclarativeWireTestRtContext::TEAMS => ['teamId' => HiddenValue::mark(), 'title' => 'Kyiv'],
                 ],
             ]],
-            $this->declarativeRows(),
+            $this->declarativeRows($snapshot),
         );
     }
 
@@ -408,7 +406,8 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
     {
         $this->bootDeclarative();
 
-        new DeclarativeWireTestBrowser(viewer: false)->subscribeSnapshot(DeclarativeWireTestBrowser::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
+        $snapshot = new DeclarativeWireTestBrowser(viewer: false)
+            ->buildSubscribeSnapshot(DeclarativeWireTestBrowser::PAGE, self::ACCEPT_KEY, new PageRouteParams([]));
 
         $this->assertSame(
             [[
@@ -425,7 +424,7 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
                     DeclarativeWireTestRtContext::TEAMS => ['teamId' => 't1', 'title' => 'Kyiv'],
                 ],
             ]],
-            $this->declarativeRows(),
+            $this->declarativeRows($snapshot),
         );
     }
 
@@ -441,14 +440,14 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
             SourceConsumer::feature(DeclarativeDbWireTestDbContext::BADGES),
         );
 
-        new DeclarativeDbWireTestBrowser(viewer: true)->subscribeSnapshot(
+        $snapshot = new DeclarativeDbWireTestBrowser(viewer: true)->buildSubscribeSnapshot(
             DeclarativeDbWireTestBrowser::PAGE,
             self::ACCEPT_KEY,
             new PageRouteParams([]),
         );
 
         // Both holder and rank are named not personal; holder is a column, so its verdict hides it all the same (P-443).
-        $rows = $this->declarativeRows(DeclarativeDbWireTestBrowser::TABLE);
+        $rows = $this->declarativeRows($snapshot, DeclarativeDbWireTestBrowser::TABLE);
         $this->assertIsArray($rows);
         $this->assertSame(
             [DeclarativeDbWireTestDbContext::BADGES => ['id' => 1, 'holder' => HiddenValue::mark(), 'rank' => 'rank-of-Olena']],
@@ -470,14 +469,13 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
     }
 
     /**
+     * @param PagePayload $snapshot Browser part the subscription built
      * @param string $table Key of the declarative table to read
-     * @return mixed The rows of the declarative table in the page answer the subscription queued
+     * @return mixed The rows of the declarative table in that part
      */
-    private function declarativeRows(string $table = DeclarativeWireTestBrowser::TABLE): mixed
+    private function declarativeRows(PagePayload $snapshot, string $table = DeclarativeWireTestBrowser::TABLE): mixed
     {
-        $answer = $this->nextSignal(SignalTypeConstants::PAGE_RESPONSE, PageResponseSignalData::class)->toArray();
-
-        return $answer[PageResponseSignalData::payload][PagePayload::tables][$table][PagePayload::rows] ?? null;
+        return $snapshot->tables[$table][PagePayload::rows] ?? null;
     }
 
     /**
@@ -567,12 +565,12 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
     }
 
     /**
-     * @return array<string, mixed> The `windows` entry of the table in the page answer the subscription queued
+     * @param PagePayload $snapshot Browser part the subscription built
+     * @return array<string, mixed> The `windows` entry of the table in that part
      */
-    private function windowSection(): array
+    private function windowSection(PagePayload $snapshot): array
     {
-        $answer = $this->nextSignal(SignalTypeConstants::PAGE_RESPONSE, PageResponseSignalData::class)->toArray();
-        $window = $answer[PageResponseSignalData::payload][PagePayload::windows][WireTestTable::TABLE] ?? null;
+        $window = $snapshot->windows[WireTestTable::TABLE] ?? null;
         $this->assertIsArray($window);
 
         return $window;

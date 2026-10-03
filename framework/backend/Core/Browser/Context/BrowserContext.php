@@ -54,6 +54,8 @@ use Hilos\Core\Page\Exception\PageServiceUnavailableException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageAccessGate;
+use Hilos\Core\Page\PageResendOutcome;
+use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -204,6 +206,9 @@ abstract class BrowserContext
     /** @var class-string<Hilos> Active project facade class for topology registry reads. */
     private string $hilosClass = Hilos::class;
 
+    /** Who answers a page again, whole, after its delivery failed; null until the worker hands itself over. */
+    private ?PageResender $pageResender = null;
+
     /**
      * Personal-data verdicts a viewer's columns are judged by, collected on the first question (HIL-1250).
      *
@@ -233,6 +238,19 @@ abstract class BrowserContext
     final public function bindHilosFacade(string $hilosClass): void
     {
         $this->hilosClass = $hilosClass;
+    }
+
+    /**
+     * Binds the process that re-sends a whole page after its delivery failed (HIL-1236).
+     *
+     * The worker hands itself over at its start: the page owed lives on the agent serving the
+     * subscription, which this context can neither name nor reach ({@see self::resendWholePage()}).
+     *
+     * @param PageResender $resender Process where the agents and their pages live
+     */
+    final public function bindPageResender(PageResender $resender): void
+    {
+        $this->pageResender = $resender;
     }
 
     /**
@@ -374,35 +392,44 @@ abstract class BrowserContext
     }
 
     /**
-     * Sends a full browser snapshot for one page subscription.
+     * Builds the browser part of the answer to one page subscription, and sends nothing.
      *
-     * The snapshot uses the same page/table browser config as incremental
-     * source-change delivery, addressed directly to the subscribing accept key.
-     * It judges nothing: the params and the guards are settled before the page is
-     * asked for anything, by {@see self::assertSubscriptionAccess}.
+     * The part uses the same page/table browser config as incremental source-change delivery,
+     * read for the subscribing accept key: the lists, tables and data of the page's browser
+     * sources, and the first window of each of its viewport tables - registered here, so the
+     * live road knows them from now on - or the refusal of the one that could not be built.
+     * It judges nothing: the params and the guards are settled before the page is asked for
+     * anything, by {@see self::assertSubscriptionAccess}.
+     *
+     * Nothing goes on the wire from here (HIL-1236). The page lays its own part over this one
+     * and answers the subscription with one frame ({@see AbstractPage::onSubscribe()}); the
+     * counts beside the filters of the windows follow that frame
+     * ({@see self::sendSnapshotFacetCounts()}). Sent from here, the part was a second
+     * page_response, and the client released the page on whichever of the two came first.
      *
      * @param string $page Page name from the subscription request
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param PageRouteParams $params Route params for this page subscription
+     * @return PagePayload Browser part of the page's answer, empty when the page has none
      * @throws PageInternalErrorException When a page or source declaration is malformed
-     * @throws InvalidArgumentException When the page-response signal cannot be named
+     * @throws InvalidArgumentException When a joined database source names a column its entity does not have
      * @throws DatabaseException When reading a joined database source fails
      * @throws LogicException When a database collection is not configured with its class constants
      * @throws CollectionNotManualException When the collection built for a join refuses its own items
      */
-    public function subscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): void
+    public function buildSubscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): PagePayload
     {
         if (Hilos::$sr === null) {
-            return;
+            return new PagePayload();
         }
 
         $pageConfig = $this->pageConfig($page);
         if ($pageConfig === null) {
-            return;
+            return new PagePayload();
         }
 
         if ($pageConfig->signalName === null) {
-            return;
+            return new PagePayload();
         }
 
         $pageParams = $params->toArray();
@@ -457,26 +484,26 @@ abstract class BrowserContext
             ];
         }
 
-        $payload = $this->pagePayloadFromBrowser($tables, $windows, $refusedWindows);
-        if ($payload->isEmpty()) {
-            return;
-        }
+        return $this->pagePayloadFromBrowser($tables, $windows, $refusedWindows);
+    }
 
-        Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::WORKER),
-            signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName(SignalTypeConstants::PAGE_RESPONSE),
-            signalData: new WebSocketSignalData(
-                data: new PageResponseSignalData($page, $payload),
-                targetAcceptKey: $acceptKey,
-            ),
-        );
-
-        // The counts beside a table's filter options follow the answer rather than ride in it: they
-        // are a frame of their own, and the client has somewhere to put them only once the answer
-        // has opened the table's window.
-        foreach (array_keys($windows) as $tableKey) {
-            $viewport = Hilos::$sr->getTableViewport($acceptKey, (string) $tableKey);
+    /**
+     * Sends the counts beside the filters of every window a subscription answer opened.
+     *
+     * The counts beside a table's filter options follow the answer rather than ride in it: they
+     * are a frame of their own, and the client has somewhere to put them only once the answer
+     * has opened the table's window. The page calls this right after its page_response is queued
+     * ({@see AbstractPage::onSubscribe()}), handing back the browser part that answer carried.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param PagePayload $snapshot Browser part the answer carried, as {@see self::buildSubscribeSnapshot()} built it
+     * @throws InvalidArgumentException When the facet-counts signal cannot be named
+     */
+    public function sendSnapshotFacetCounts(string $page, string $acceptKey, PagePayload $snapshot): void
+    {
+        foreach (array_keys($snapshot->windows) as $tableKey) {
+            $viewport = Hilos::$sr?->getTableViewport($acceptKey, (string) $tableKey);
             if ($viewport !== null) {
                 $this->sendTableFacetCounts($page, $acceptKey, $viewport);
             }
@@ -1724,6 +1751,21 @@ abstract class BrowserContext
      * the fan-out sends only the rows that changed. Handing it those rows would replace the
      * error with a page that has three fields on it and no way to say what is missing.
      *
+     * The page is re-sent by the frame a subscribe is answered with, run on the agent serving
+     * the subscription (HIL-1236): the verdict, then the page's hooks and its one answer with its
+     * own part, its identity and the browser part. The browser part alone was half a page - the
+     * page's own sections were out of reach from here - and the frames the page sends ahead of
+     * its answer, wiped with the rest, never came back. The worker does that part
+     * ({@see PageResender}); four outcomes come back:
+     * - answered: the page is whole again, and the mark the caller cleared stays cleared;
+     * - refused: the verdict refused the subscription and said so, which leaves it where a
+     *   refused subscription stands - kept alive, with no mark, promoted by the live road the
+     *   moment its guard passes;
+     * - failed: the internal-error frame went out already, so the mark is set without a second
+     *   frame, and the next delivery that succeeds re-sends the page again;
+     * - unserved: nobody here answers the subscription and nothing went out, so the connection is
+     *   told its page could not be delivered, as a re-send that throws tells it.
+     *
      * Contained the same way the row build above is, and for the same reason: this runs in the
      * second loop, where nothing stands between a throw and the worker's exit. A re-send that
      * fails is not a recovery, so the connection is told again rather than left believing the
@@ -1739,9 +1781,8 @@ abstract class BrowserContext
         $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
 
         try {
-            $this->subscribeSnapshot($page, $acceptKey, new PageRouteParams(is_array($params) ? $params : []));
-
-            return [];
+            $outcome = $this->pageResender?->resendPage($page, $acceptKey, is_array($params) ? $params : [])
+                ?? PageResendOutcome::Unserved;
         } catch (Throwable $failure) {
             $this->tellPageDeliveryFailed($page, $acceptKey);
 
@@ -1751,6 +1792,16 @@ abstract class BrowserContext
                 $failure,
             )];
         }
+
+        if ($outcome === PageResendOutcome::Failed) {
+            // The page's router has sent the internal-error frame already; a second would say it twice.
+            Hilos::$sr?->markPageDeliveryFailure($acceptKey);
+        } elseif ($outcome === PageResendOutcome::Unserved) {
+            Logger::error("Browser could not re-send a page nobody serves here: page={$page}, acceptKey={$acceptKey}");
+            $this->tellPageDeliveryFailed($page, $acceptKey);
+        }
+
+        return [];
     }
 
     /**

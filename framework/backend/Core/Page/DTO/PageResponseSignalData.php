@@ -11,12 +11,12 @@ use Hilos\Core\Router\SignalDataInterface;
 /**
  * PageResponseSignalData - Server-to-client page subscription response.
  *
- * Carries the `{page, payload: {entities?, data?}}` wire form sent to a
- * subscribing connection: the page key lets the frontend drop a late signal
- * for a page it has already left, and the payload is the page scope's entity
- * fragments and plain page-data the frontend normalizer ingests. Tables are
- * not part of this payload yet; they keep flowing through the browser snapshot
- * path until they fold into this signal.
+ * Carries the `{page, payload}` wire form sent to a subscribing connection: the
+ * page key lets the frontend drop a late signal for a page it has already left,
+ * and the payload is the page scope the frontend normalizer ingests, split by
+ * section ({@see PagePayload}). A subscription is answered by one of these
+ * frames, carrying the page's own part and its browser part together (HIL-1236);
+ * the browser fan-out sends further ones with the rows that changed.
  * Target client id is handled by the WebSocketSignalData wrapper for routing.
  */
 final class PageResponseSignalData extends BaseDTO implements SignalDataInterface

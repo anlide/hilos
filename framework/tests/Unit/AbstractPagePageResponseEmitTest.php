@@ -6,10 +6,21 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Config\BrowserSourceConfig;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
+use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageBadRequestException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalData;
@@ -17,20 +28,41 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\Table\Definition\SelfSnapshotTable;
+use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableFacetTally;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Hilos;
 use Hilos\Pages\AbstractHilosDashboardPage;
+use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\RtItem;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for what the page_response frame of AbstractPage::onSubscribe carries: the page's
- * own payload, the identity the catalog holds for it, and - on the dashboard - its cards.
+ * own payload, the identity the catalog holds for it, the browser part beneath them - all in the
+ * one frame (HIL-1236) - and, on the dashboard, its cards.
  */
 final class AbstractPagePageResponseEmitTest extends TestCase
 {
+    private ?RtContext $previousRt = null;
+
     protected function setUp(): void
     {
+        $this->previousRt = Hilos::$rt;
         Hilos::$sr = new AbstractPagePageResponseEmitTestRouter();
         // Binds the base facade, whose page catalog provider adds nothing, so the identity a page
         // gets here is the framework catalog and not whatever project fixture ran before. The
@@ -42,6 +74,8 @@ final class AbstractPagePageResponseEmitTest extends TestCase
     {
         Hilos::$sr = null;
         Hilos::$browser = null;
+        Hilos::$table = null;
+        Hilos::$rt = $this->previousRt;
 
         parent::tearDown();
     }
@@ -377,6 +411,140 @@ final class AbstractPagePageResponseEmitTest extends TestCase
     }
 
     /**
+     * A page with a part of its own and a browser part answers with one frame carrying both (HIL-1236).
+     *
+     * The client releases the page on the first page_response it receives, so the browser part sent as
+     * a frame of its own drew the page without its own sections and finished it a moment later.
+     */
+    public function testAPageWithItsOwnPartAndABrowserListAnswersWithOneFrameCarryingBoth(): void
+    {
+        $this->bootOneFrameBrowser();
+        $page = new AbstractPagePageResponseEmitTestOwnAndListPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $answers = $this->queuedPageResponses();
+        $this->assertCount(1, $answers);
+        $this->assertSame(
+            [
+                PageResponseSignalData::page => AbstractPagePageResponseEmitTestOwnAndListPage::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::data => ['own' => 'mine'],
+                    PagePayload::lists => [
+                        OneFrameTestList::LIST => [
+                            PagePayload::items => [
+                                [
+                                    PagePayload::itemKey => '1',
+                                    PagePayload::slots => [OneFrameTestRtContext::ROWS => ['id' => '1', 'name' => 'Ada']],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            $answers[0],
+        );
+    }
+
+    /**
+     * Where both parts write one key, the page's own wins - which is what the client made of the two
+     * frames it used to receive, the browser part first and the page's own over it.
+     */
+    public function testAKeyThePageWroteItselfWinsOverTheBrowserPart(): void
+    {
+        $this->bootOneFrameBrowser();
+        $page = new AbstractPagePageResponseEmitTestOwnListPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $answers = $this->queuedPageResponses();
+        $this->assertCount(1, $answers);
+        $this->assertSame(
+            [OneFrameTestList::LIST => AbstractPagePageResponseEmitTestOwnListPage::OWN_LIST],
+            $answers[0][PageResponseSignalData::payload][PagePayload::lists] ?? null,
+        );
+    }
+
+    /**
+     * The counts beside a window's filters are a frame of their own, and they follow the one answer:
+     * the client has somewhere to put them only once that answer has opened the window.
+     */
+    public function testTheCountsBesideAWindowFollowTheOneAnswer(): void
+    {
+        $this->bootOneFrameBrowser();
+        Hilos::$sr?->reportTableWindows('ak-1', [
+            OneFrameTestTable::TABLE => new TableWindowDescriptorDTO(facets: [OneFrameTestTable::FILTER_NAME => ['Ada']]),
+        ]);
+        $page = new AbstractPagePageResponseEmitTestOwnAndWindowPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal?->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $this->assertSame(['own' => 'mine'], $signal->data->data->payload->data);
+        $this->assertArrayHasKey(OneFrameTestTable::TABLE, $signal->data->data->payload->windows);
+        $this->assertSame(SignalTypeConstants::TABLE_FACET_COUNTS, Hilos::$sr?->getNextQueuedSignal()?->signalName->getName());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /**
+     * The page's own part is built before the browser part, so a page that refuses there leaves no
+     * window behind it: nothing is sent, and the live road knows no window of this connection.
+     */
+    public function testAPageThatRefusesItsOwnPartSendsNothingAndOpensNoWindow(): void
+    {
+        $this->bootOneFrameBrowser();
+        $page = new AbstractPagePageResponseEmitTestRefusingOwnPartPage(new AbstractPagePageResponseEmitTestAgent());
+
+        try {
+            $page->onSubscribe('ak-1', new PageRouteParams([]));
+            $this->fail('The refusing page must not let the subscription through.');
+        } catch (PageBadRequestException $exception) {
+            $this->assertSame('Refused while building its own part', $exception->getMessage());
+        }
+
+        $this->assertSame([], $this->queuedSignalNames());
+        $this->assertNull(Hilos::$sr?->getTableViewport('ak-1', OneFrameTestTable::TABLE));
+    }
+
+    /**
+     * Mounts the browser part the one-frame pages read: one runtime row behind the list and three rows
+     * in the table whose window the window page opens.
+     */
+    private function bootOneFrameBrowser(): void
+    {
+        $runtime = new OneFrameTestRtContext();
+        $runtime->configure();
+        $runtime->addRow(OneFrameTestState::create('1', 'Ada'));
+        Hilos::$rt = $runtime;
+        Hilos::$table = new OneFrameTestTableContext();
+        Hilos::$table->configure();
+        Hilos::$browser = new OneFrameTestBrowser();
+    }
+
+    /**
+     * Drains the queue into the page_response frames it holds.
+     *
+     * @return list<array<string, mixed>> Wire form of every queued page_response, oldest first
+     */
+    private function queuedPageResponses(): array
+    {
+        $answers = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== SignalTypeConstants::PAGE_RESPONSE) {
+                continue;
+            }
+            $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+            $answers[] = $signal->data->data->toArray();
+        }
+
+        return $answers;
+    }
+
+    /**
      * Drains the queue into the signal names it holds.
      *
      * @return list<string> Queued signal names, oldest first
@@ -531,6 +699,61 @@ final class AbstractPagePageResponseEmitTestRefusingPage extends AbstractPage
 }
 
 /**
+ * Test page with data of its own, standing on the page whose browser part is a list.
+ */
+final class AbstractPagePageResponseEmitTestOwnAndListPage extends AbstractPage
+{
+    public const string PAGE = OneFrameTestBrowser::LIST_PAGE;
+
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    {
+        return new PagePayload(data: ['own' => 'mine']);
+    }
+}
+
+/**
+ * Test page writing the very list its browser part carries, so the two parts meet on one key.
+ */
+final class AbstractPagePageResponseEmitTestOwnListPage extends AbstractPage
+{
+    public const string PAGE = OneFrameTestBrowser::LIST_PAGE;
+
+    /** The list as the page writes it itself. */
+    public const array OWN_LIST = [PagePayload::items => []];
+
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    {
+        return new PagePayload(lists: [OneFrameTestList::LIST => self::OWN_LIST]);
+    }
+}
+
+/**
+ * Test page with data of its own, standing on the page whose browser part is a table window.
+ */
+final class AbstractPagePageResponseEmitTestOwnAndWindowPage extends AbstractPage
+{
+    public const string PAGE = OneFrameTestBrowser::WINDOW_PAGE;
+
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    {
+        return new PagePayload(data: ['own' => 'mine']);
+    }
+}
+
+/**
+ * Test page on the window page that refuses while building its own part.
+ */
+final class AbstractPagePageResponseEmitTestRefusingOwnPartPage extends AbstractPage
+{
+    public const string PAGE = OneFrameTestBrowser::WINDOW_PAGE;
+
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    {
+        throw new PageBadRequestException('Refused while building its own part');
+    }
+}
+
+/**
  * Concrete stand-in for a project's dashboard page, which adds nothing of its own.
  */
 final class AbstractPagePageResponseEmitTestDashboardPage extends AbstractHilosDashboardPage
@@ -676,5 +899,273 @@ final class AbstractPagePageResponseEmitTestAgent implements PageAgentInterface
     public function getAgentSignalSource(): SignalSourceInterface
     {
         return new SignalSource(SignalSource::AGENT, 'test');
+    }
+}
+
+/**
+ * Facade the one-frame browser context reads its source kinds from: one runtime list.
+ */
+final class OneFrameTestHilos extends AbstractPagePageResponseEmitTestBaseHilos
+{
+    public const array BROWSER_LISTS = [OneFrameTestList::LIST => OneFrameTestList::class];
+}
+
+/**
+ * Declares the browser list of the one-frame pages; its `LIST` constant is what makes it a list.
+ */
+final class OneFrameTestList
+{
+    public const string LIST = 'oneFrameProbeList';
+}
+
+/**
+ * Serves the browser part of two pages: a runtime list on one, a table window on the other.
+ */
+final class OneFrameTestBrowser extends BrowserContext
+{
+    public const string LIST_PAGE = 'probe_one_frame_list';
+    public const string WINDOW_PAGE = 'probe_one_frame_window';
+
+    private const string SIGNAL = 'probe_one_frame_signal';
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->bindHilosFacade(OneFrameTestHilos::class);
+    }
+
+    /**
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Test page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        return in_array($page, [self::LIST_PAGE, self::WINDOW_PAGE], true)
+            ? BrowserPageConfig::fromArray([BrowserConfigKey::SIGNAL => self::SIGNAL])
+            : null;
+    }
+
+    /**
+     * @param string $page Page name from the subscription mirror
+     * @return BrowserPageBindings Test page bindings
+     */
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
+    {
+        return match ($page) {
+            self::LIST_PAGE => BrowserPageBindings::fromArray([OneFrameTestList::LIST => []]),
+            self::WINDOW_PAGE => BrowserPageBindings::fromArray([OneFrameTestTable::TABLE => []]),
+            default => BrowserPageBindings::empty(),
+        };
+    }
+
+    /**
+     * @param string $browserKey Browser source key
+     * @return ?BrowserSourceConfig The runtime list
+     */
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
+    {
+        if ($browserKey !== OneFrameTestList::LIST) {
+            return null;
+        }
+
+        return BrowserSourceConfig::fromArray([
+            BrowserTableConfigKey::ROWS => [[
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                    BrowserSourceKey::KEY => OneFrameTestRtContext::ROWS,
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => ['id', 'name'],
+            ]],
+        ]);
+    }
+}
+
+final class OneFrameTestRtContext extends RtContext
+{
+    public const string ROWS = 'oneFrameProbeRows';
+
+    public function configure(): void
+    {
+        $this->_stateCollections[self::ROWS] = OneFrameTestStates::init();
+        $this->setRepresent(self::ROWS, OneFrameTestCollection::class);
+    }
+
+    /**
+     * @param OneFrameTestState $row Row to add to the collection
+     */
+    public function addRow(OneFrameTestState $row): void
+    {
+        $this->_stateCollections[self::ROWS]->add($row);
+    }
+}
+
+final class OneFrameTestStates extends RtStates
+{
+    public const string STATE_CLASS = OneFrameTestState::class;
+}
+
+final class OneFrameTestState extends RtState
+{
+    private function __construct(
+        public readonly string $id,
+        public readonly string $name,
+    ) {
+        parent::__construct();
+    }
+
+    /**
+     * @param string $id Row key
+     * @param string $name Row label
+     * @return self Row state
+     */
+    public static function create(string $id, string $name): self
+    {
+        return new self($id, $name);
+    }
+
+    /**
+     * @return string Row key
+     */
+    public function getId(): string
+    {
+        return $this->id;
+    }
+
+    /**
+     * @param array<string, mixed> $row Raw row
+     * @return static Row state
+     */
+    public static function fromRow(array $row): static
+    {
+        return new static((string)$row['id'], (string)$row['name']);
+    }
+
+    /**
+     * @return array<string, mixed> Row payload
+     */
+    public function toArray(): array
+    {
+        return ['id' => $this->id, 'name' => $this->name];
+    }
+}
+
+final class OneFrameTestCollection extends RtCollection
+{
+    /**
+     * @param RtState $state Backing state
+     * @return RtItem View item over the state
+     */
+    protected function createRtItem(RtState $state): RtItem
+    {
+        return new OneFrameTestItem($state);
+    }
+}
+
+final class OneFrameTestItem extends RtItem
+{
+    /**
+     * @param string $name Field name
+     * @return mixed Field value
+     */
+    public function __get(string $name): mixed
+    {
+        return $this->toArray()[$name] ?? parent::__get($name);
+    }
+
+    /**
+     * @return array<string, mixed> Row payload
+     */
+    public function toArray(): array
+    {
+        return $this->getState()->toArray();
+    }
+}
+
+final class OneFrameTestTableContext extends TableContext
+{
+    public function configure(): void
+    {
+        $this->register(OneFrameTestTable::TABLE, new OneFrameTestTable());
+    }
+}
+
+/**
+ * Table answering a window over three rows held in memory, and counting them by name.
+ */
+final class OneFrameTestTable extends TableDefinition implements SelfSnapshotTable
+{
+    public const string TABLE = 'oneFrameProbeTable';
+
+    /** Filter key the fixture counts its rows by. */
+    public const string FILTER_NAME = 'name';
+
+    private const string SLOT = 'oneFrameProbeTableRows';
+
+    private const array ROWS = [
+        ['id' => 'a', 'name' => 'Ada'],
+        ['id' => 'b', 'name' => 'Grace'],
+        ['id' => 'c', 'name' => 'Edsger'],
+    ];
+
+    /**
+     * Counts the rows by name.
+     *
+     * @param TableQueryDTO $query Window query whose filters describe the set
+     * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
+     * @return array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts by filter key
+     */
+    public function facetCounts(TableQueryDTO $query, array $wanted): ?array
+    {
+        return TableFacetTally::forFilters(
+            $query,
+            array_intersect_key($wanted, [self::FILTER_NAME => true]),
+            static fn(TableQueryDTO $set): TableFacetCountDTO => new TableFacetCountDTO(
+                count(array_filter(
+                    self::ROWS,
+                    static fn(array $row): bool => !array_key_exists(self::FILTER_NAME, $set->filter)
+                        || $set->filter[self::FILTER_NAME] === $row[self::FILTER_NAME],
+                )),
+                true,
+            ),
+        );
+    }
+
+    /**
+     * No source-change reaction in this fixture.
+     *
+     * @param SourceChange $change Source change (unused)
+     * @return ?TableRowMutationDTO Always null
+     */
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
+    {
+        return null;
+    }
+
+    /**
+     * Serializes a row into its internal browser-row envelope.
+     *
+     * @param AbstractTableRow $row Self-snapshot row
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        return [
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
+            BrowserPageSignalData::sources => [self::SLOT => $row->toArray()],
+        ];
+    }
+
+    /**
+     * Applies the in-memory filter to the rows.
+     *
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Windowed snapshot
+     */
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
+    {
+        return $this->filterInMemory(self::ROWS, $query);
     }
 }

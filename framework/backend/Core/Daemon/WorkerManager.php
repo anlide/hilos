@@ -41,6 +41,7 @@ use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -53,6 +54,8 @@ use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageResendOutcome;
+use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
@@ -167,7 +170,7 @@ use Throwable;
  * Owns the daemon connection, worker-local agents, page signal routers,
  * subscription mirrors, and browser flushing.
  */
-abstract class WorkerManager extends BaseManager
+abstract class WorkerManager extends BaseManager implements PageResender
 {
     /** Seconds between parent-process checks; the loop itself spins every 10 ms. */
     private const float PARENT_CHECK_INTERVAL_SECONDS = 1.0;
@@ -297,6 +300,9 @@ abstract class WorkerManager extends BaseManager
         // at construction because that is what makes it a statement about the process: nothing
         // else in this tree reaches this line.
         SourceInterestRegistry::readsWhatIsDelivered();
+        // The browser fan-out finds out when a page is owed whole, and only this process can
+        // answer it: the page lives on the agent serving the subscription, here (HIL-1236).
+        Hilos::$browser?->bindPageResender($this);
 
         // Check the availability of required functions
         $this->checkRequiredFunctions(['posix_getppid']);
@@ -710,6 +716,47 @@ abstract class WorkerManager extends BaseManager
                 // Unknown message type
                 Logger::info("Unknown message type received from daemon: {$type}");
                 break;
+        }
+    }
+
+    /**
+     * Answers one subscription again, whole, through the page of the agent serving it (HIL-1236).
+     *
+     * The agent is the one the subscription mirror names - recorded when a subscribe or a
+     * re-decision of rights reached that agent here. A subscription the browser fan-out of this
+     * worker delivers was served by an agent of this worker, so the re-send is synchronous and
+     * stays inside the flush that found it owed, before the second drain of the queue: the frames
+     * leave in the order they leave today. It runs under that agent and that connection, as a
+     * message to the agent does - the agent's truth sources and the connection the page reads on
+     * behalf of.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the page is owed to
+     * @param array<string, mixed> $params Route params of the subscription, as the subscription mirror holds them
+     * @return PageResendOutcome What went out to the connection; Unserved when no agent of this worker serves it
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws FramePopOrderException When the page leaves the execution stack imbalanced
+     */
+    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null) {
+            return PageResendOutcome::Unserved;
+        }
+
+        $agentId = $this->agentManager->buildAgentId($subscription->agentType, $subscription->agentIndex);
+        $agent = $agentId === null ? null : $this->agentManager->getAgent($agentId);
+        if ($agentId === null || $agent === null) {
+            return PageResendOutcome::Unserved;
+        }
+
+        try {
+            return ExecutionContext::run(
+                new ExecutionFrame(agentId: $agentId, acceptKey: $acceptKey),
+                fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)->resendPage($page, $acceptKey, $params),
+            );
+        } catch (PageSignalRouterNotFoundException) {
+            return PageResendOutcome::Unserved;
         }
     }
 
@@ -1750,7 +1797,7 @@ abstract class WorkerManager extends BaseManager
                     }
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
-                    $this->rememberPageSubscriptionAfterSubscribe($signalData, $name);
+                    $this->rememberPageSubscriptionAfterSubscribe($signalData, $name, $agent);
                     $this->agentIdleTracker->noteSubscriber($agentId, $signalData->acceptKey, microtime(true));
                 } else {
                     Logger::error("onSignalPageSubscribe - invalid signal data type: " . get_class($signalData));
@@ -1764,6 +1811,10 @@ abstract class WorkerManager extends BaseManager
                     // subscriber, and the mirror already holds this exact subscription. A
                     // re-decision changes the answer, not the subscription (HIL-621).
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageAccessReassess($signalData, $source, $name);
+                    // Except for who serves it: a re-decision may hand the subscription to another
+                    // instance of the agent (HIL-627), and a page re-sent after a failed delivery
+                    // is answered by the agent this names (HIL-1236).
+                    Hilos::$sr?->bindPageAgent($signalData->acceptKey, $signalData->page ?? $name, $agent->getType(), $agent->getIndex());
                 } else {
                     Logger::error("onSignalPageAccessReassess - invalid signal data type: " . get_class($signalData));
                 }
@@ -2167,10 +2218,15 @@ abstract class WorkerManager extends BaseManager
      * gets promoted into the real page the moment its guard starts passing, so the params
      * it was refused on are exactly the ones the next fan-out has to be judged by.
      *
+     * The agent that served the subscribe is written beside it - until HIL-1236 only the
+     * master wrote it, into its own registry - because a page re-sent after a failed delivery
+     * is answered by that agent's page ({@see self::resendPage()}).
+     *
      * @param WebSocketPageSubscribeSignalDTO $dto Subscribe payload
      * @param string $name Signal name used as page id when the DTO page is empty
+     * @param AgentInterface $agent Agent that served the subscribe
      */
-    private function rememberPageSubscriptionAfterSubscribe(WebSocketPageSubscribeSignalDTO $dto, string $name): void
+    private function rememberPageSubscriptionAfterSubscribe(WebSocketPageSubscribeSignalDTO $dto, string $name, AgentInterface $agent): void
     {
         $acceptKey = $dto->acceptKey;
         if ($acceptKey === '') {
@@ -2178,6 +2234,7 @@ abstract class WorkerManager extends BaseManager
         }
 
         Hilos::$sr?->subscribeToPage($dto->page ?? $name, $dto);
+        Hilos::$sr?->bindPageAgent($acceptKey, $dto->page ?? $name, $agent->getType(), $agent->getIndex());
     }
 
     /**

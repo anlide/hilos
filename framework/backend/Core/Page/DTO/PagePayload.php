@@ -107,6 +107,30 @@ final class PagePayload
     }
 
     /**
+     * Lays this payload over another one, section by section.
+     *
+     * A page's own part goes over its browser part (HIL-1236): one subscription is answered by one
+     * frame, and this is the frame the client used to assemble out of two - the browser part
+     * first, the page's own second, a key the page wrote replacing the browser's. Union rather
+     * than merge, so within a section the key of this payload wins and nothing beneath it is
+     * merged into it.
+     *
+     * @param PagePayload $under Payload this one is laid over
+     * @return self Payload carrying every section of both, this one's keys winning
+     */
+    public function over(PagePayload $under): self
+    {
+        return new self(
+            entities: $this->entities + $under->entities,
+            data: $this->data + $under->data,
+            lists: $this->lists + $under->lists,
+            tables: $this->tables + $under->tables,
+            windows: $this->windows + $under->windows,
+            refusedWindows: $this->refusedWindows + $under->refusedWindows,
+        );
+    }
+
+    /**
      * Serializes the payload, omitting empty sections.
      *
      * @return array<string, mixed> Scope payload with only the present sections

@@ -223,7 +223,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
 
     /**
      * @param list<array{name: string, data: object}> $frames Frames from one subscription
-     * @return PageResponseSignalData The declaration page's single data response, alongside the framework's browser snapshot
+     * @return PageResponseSignalData The declaration page's one answer
      */
     private function response(array $frames): PageResponseSignalData
     {

@@ -383,11 +383,20 @@ abstract class AbstractPage implements ActionHostInterface
      * waits on before it shows the page, so a page that has nothing to say must
      * still say that — otherwise the client has no event to wait for and can
      * only show the page optimistically, ahead of a denial that may still be in
-     * flight. It goes out LAST, after the browser snapshot, because it means
-     * "this subscription is answered in full": sent first, it would release the
-     * page while its snapshot was still on the wire. A subscription that throws
-     * sends no answer at all — the PageSubscriptionException becomes a
-     * subscription_page_error, which the client waits on the same way.
+     * flight. The frame is ONE and carries everything the page renders (HIL-1236):
+     * the page's own part, its identity below, and the browser part - the lists,
+     * tables, data and first windows of its browser sources, built by
+     * {@see BrowserContext::buildSubscribeSnapshot()} without being sent. The client
+     * releases the page on the first page_response it receives, so a second frame
+     * was a page drawn half and finished a moment later. The page's own part is
+     * built first, so a refusal there leaves no window registered behind it, and
+     * it is laid over the browser part only once it is hidden from a viewer of the
+     * admin view mode: the browser part comes hidden already, column by column,
+     * and hiding it again as a page section would take a viewer's tables away
+     * whole. The counts beside the filters of the windows follow the frame, as a
+     * frame of their own. A subscription that throws sends no answer at all — the
+     * PageSubscriptionException becomes a subscription_page_error, which the client
+     * waits on the same way.
      *
      * The frame also carries the page's own identity - its heading, its lead and its breadcrumb -
      * whenever the page catalog holds an entry for it, so one subscription answers with
@@ -398,19 +407,20 @@ abstract class AbstractPage implements ActionHostInterface
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
      * @throws PageSubscriptionException When the before-response hook or the browser snapshot refuses the subscription
-     * @throws InvalidArgumentException When the page-response signal cannot be named
-     * @throws HilosException Whatever else the before-response hook or the concrete page's payload build raises
+     * @throws InvalidArgumentException When the page-response or the facet-counts signal cannot be named
+     * @throws HilosException Whatever else the before-response hook, the page's payload build or the browser part raises
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->onSubscribeBeforeResponse($acceptKey, $params);
-        $payload = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params), $acceptKey);
-        Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
+        $own = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params), $acceptKey);
+        $snapshot = Hilos::$browser?->buildSubscribeSnapshot(static::PAGE, $acceptKey, $params) ?? new PagePayload();
         $this->sendToUser(
             SignalTypeConstants::PAGE_RESPONSE,
             $acceptKey,
-            new PageResponseSignalData(static::PAGE, $payload),
+            new PageResponseSignalData(static::PAGE, $own->over($snapshot)),
         );
+        Hilos::$browser?->sendSnapshotFacetCounts(static::PAGE, $acceptKey, $snapshot);
         $this->onSubscribeAfterResponse($acceptKey, $params);
     }
 
@@ -418,7 +428,7 @@ abstract class AbstractPage implements ActionHostInterface
      * Builds the page scope payload sent to a subscribing client.
      *
      * Default returns null: the page contributes no entities or page-data and
-     * only the browser snapshot path runs. Override in concrete pages to send
+     * its answer carries the browser part alone. Override in concrete pages to send
      * an entity/data payload, returning null when there is nothing to send.
      * An override that reads domain state should raise a
      * PageSubscriptionException on failure so the framework reports a

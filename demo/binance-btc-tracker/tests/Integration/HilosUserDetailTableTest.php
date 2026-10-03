@@ -8,12 +8,9 @@ use Demo\BinanceBtcTracker\Hilos;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserPage;
 use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
 use Hilos\Constants\HilosPageRouteParams;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
@@ -50,12 +47,13 @@ final class HilosUserDetailTableTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);
 
         try {
-            Hilos::$browser?->subscribeSnapshot(
+            $snapshot = Hilos::$browser?->buildSubscribeSnapshot(
                 UserPage::PAGE,
                 self::ACCEPT_KEY,
                 new PageRouteParams([HilosPageRouteParams::HILOS_USER_USER_ID => (string) $userId]),
             );
-            $slots = $this->cardSlotsOfNextPageResponse();
+            $this->assertNotNull($snapshot);
+            $slots = $this->cardSlotsOf($snapshot);
 
             $connections = $slots[HilosUserDetailBrowserTable::CONNECTIONS] ?? null;
             $this->assertIsArray($connections);
@@ -74,25 +72,16 @@ final class HilosUserDetailTableTest extends IntegrationTestCase
     }
 
     /**
-     * @return array<string, mixed> Slots of the one card row from the next page response
+     * @param PagePayload $snapshot Browser part of the user page's answer
+     * @return array<string, mixed> Slots of the one card row it carries
      */
-    private function cardSlotsOfNextPageResponse(): array
+    private function cardSlotsOf(PagePayload $snapshot): array
     {
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
-            if ($signal->signalName->getName() !== SignalTypeConstants::PAGE_RESPONSE) {
-                continue;
-            }
-            $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-            $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
-            $payload = $signal->data->data->toArray()[PageResponseSignalData::payload];
-            $rows = $payload[PagePayload::tables][HilosUserDetailBrowserTable::TABLE][PagePayload::rows] ?? [];
-            $this->assertCount(1, $rows);
-            $slots = $rows[0][PagePayload::slots] ?? null;
-            $this->assertIsArray($slots);
+        $rows = $snapshot->tables[HilosUserDetailBrowserTable::TABLE][PagePayload::rows] ?? [];
+        $this->assertCount(1, $rows);
+        $slots = $rows[0][PagePayload::slots] ?? null;
+        $this->assertIsArray($slots);
 
-            return $slots;
-        }
-
-        $this->fail('The user page subscription answered with no page response.');
+        return $slots;
     }
 }

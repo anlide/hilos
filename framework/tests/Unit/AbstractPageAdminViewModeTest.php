@@ -8,10 +8,19 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Config\BrowserSourceConfig;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
@@ -21,10 +30,16 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Hilos;
 use Hilos\Pages\AbstractHilosDashboardPage;
+use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\RtItem;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
@@ -60,6 +75,7 @@ final class AbstractPageAdminViewModeTest extends TestCase
         if (is_file($this->logFile)) {
             unlink($this->logFile);
         }
+        Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::initBrowser();
         Hilos::resetBrowser();
@@ -117,6 +133,42 @@ final class AbstractPageAdminViewModeTest extends TestCase
         $this->assertFalse(HiddenValue::isMark($viewerData[PageCatalogConstants::WIRE_DASHBOARD_SECTIONS]));
         // The same keys and values; the order differs, the shell going first for a viewer.
         $this->assertEquals($adminData, $viewerData);
+    }
+
+    /**
+     * The browser table of the page rides the same answer, its rows hidden field by field by the table's
+     * declaration - not hidden whole the way a section of the page's own is (HIL-1236). Hiding it again
+     * as a section of the page would leave a viewer a table of hidden marks and no rows.
+     */
+    public function testAViewerGetsTheBrowserTableInTheSameFrameHiddenRowByRow(): void
+    {
+        $runtime = new PageViewerTableTestRtContext();
+        $runtime->configure();
+        $runtime->addRow(new PageViewerTableTestState('p1', 'Olena', true));
+        Hilos::$rt = $runtime;
+        PageViewerTableTestHilos::initBrowser(new PageViewerTableTestBrowser());
+
+        $payload = $this->answer(new PageViewerTestPage(new PageViewerTestAgent()));
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertSame(
+            [
+                PageViewerTableTestBrowser::TABLE => [
+                    PagePayload::rows => [[
+                        PagePayload::rowKey => 'p1',
+                        PagePayload::slots => [
+                            PageViewerTableTestRtContext::PEOPLE => [
+                                'id' => HiddenValue::mark(),
+                                'name' => HiddenValue::mark(),
+                                'online' => true,
+                            ],
+                        ],
+                    ]],
+                ],
+            ],
+            $payload[PagePayload::tables] ?? null,
+        );
+        $this->assertSame(self::shell() + ['declared' => 'shown', 'undeclared' => HiddenValue::mark()], $payload[PagePayload::data] ?? null);
     }
 
     public function testAFrameOfTheOwnSetGoesToAnAdminAsItIs(): void
@@ -277,6 +329,185 @@ final class PageViewerTestBrowser extends BrowserContext
     public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
     {
         return $this->viewer;
+    }
+}
+
+/**
+ * Facade naming the admin page, so the browser part knows the page it builds for is one a viewer may look at.
+ */
+final class PageViewerTableTestHilos extends Hilos
+{
+    public const array PAGES = [PageViewerTestPage::PAGE => PageViewerTestPage::class];
+
+    /**
+     * @return HilosDbContext Empty fixture database context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new PageViewerTableTestDbContext();
+    }
+}
+
+final class PageViewerTableTestDbContext extends HilosDbContext
+{
+}
+
+/**
+ * A browser context answering every connection as a viewer, with one declarative table on the page.
+ */
+final class PageViewerTableTestBrowser extends BrowserContext
+{
+    public const string TABLE = 'pageViewerTableRows';
+
+    private const string SIGNAL = 'page_viewer_table_signal';
+
+    /**
+     * @param string $pageClass Class of the page the frame belongs to
+     * @param string $acceptKey Connection the frame goes to
+     * @return bool Always a viewer
+     */
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        return true;
+    }
+
+    /**
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        return $page === PageViewerTestPage::PAGE ? BrowserPageConfig::fromArray([BrowserConfigKey::SIGNAL => self::SIGNAL]) : null;
+    }
+
+    /**
+     * @param string $page Page name from the subscription mirror
+     * @return BrowserPageBindings Page table bindings
+     */
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
+    {
+        return $page === PageViewerTestPage::PAGE ? BrowserPageBindings::fromArray([self::TABLE => []]) : BrowserPageBindings::empty();
+    }
+
+    /**
+     * @param string $browserKey Browser table key
+     * @return ?BrowserSourceConfig The declarative table: presence named not personal, the rest not named
+     */
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
+    {
+        if ($browserKey !== self::TABLE) {
+            return null;
+        }
+
+        return BrowserSourceConfig::fromArray([
+            BrowserTableConfigKey::ROWS => [[
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                    BrowserSourceKey::KEY => PageViewerTableTestRtContext::PEOPLE,
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => ['id', 'name', 'online'],
+                BrowserTableFieldKey::NOT_PERSONAL => ['online'],
+            ]],
+        ]);
+    }
+}
+
+final class PageViewerTableTestRtContext extends RtContext
+{
+    public const string PEOPLE = 'pageViewerTablePeople';
+
+    public function configure(): void
+    {
+        $this->_stateCollections[self::PEOPLE] = PageViewerTableTestStates::init();
+        $this->setRepresent(self::PEOPLE, PageViewerTableTestCollection::class);
+    }
+
+    /**
+     * @param PageViewerTableTestState $row Runtime row
+     */
+    public function addRow(PageViewerTableTestState $row): void
+    {
+        $this->_stateCollections[self::PEOPLE]->add($row);
+    }
+}
+
+final class PageViewerTableTestStates extends RtStates
+{
+    public const string STATE_CLASS = PageViewerTableTestState::class;
+}
+
+final class PageViewerTableTestState extends RtState
+{
+    /**
+     * @param string $id Row id
+     * @param string $name Person's name
+     * @param bool $online Whether the person is online
+     */
+    public function __construct(
+        public readonly string $id,
+        public readonly string $name,
+        public readonly bool $online,
+    ) {
+        parent::__construct();
+    }
+
+    /**
+     * @return string Row id
+     */
+    public function getId(): string
+    {
+        return $this->id;
+    }
+
+    /**
+     * @param array<string, mixed> $row Serialized runtime row
+     * @return static Runtime row
+     */
+    public static function fromRow(array $row): static
+    {
+        return new static((string)$row['id'], (string)$row['name'], (bool)$row['online']);
+    }
+
+    /**
+     * @return array<string, mixed> Runtime row
+     */
+    public function toArray(): array
+    {
+        return ['id' => $this->id, 'name' => $this->name, 'online' => $this->online];
+    }
+}
+
+final class PageViewerTableTestCollection extends RtCollection
+{
+    /**
+     * @param RtState $state Backing state
+     * @return RtItem View item over the state
+     */
+    protected function createRtItem(RtState $state): RtItem
+    {
+        return new PageViewerTableTestItem($state);
+    }
+}
+
+final class PageViewerTableTestItem extends RtItem
+{
+    /**
+     * @param string $name Field name
+     * @return mixed Field value
+     */
+    public function __get(string $name): mixed
+    {
+        return $this->toArray()[$name] ?? parent::__get($name);
+    }
+
+    /**
+     * @return array<string, mixed> Runtime row
+     */
+    public function toArray(): array
+    {
+        return $this->getState()->toArray();
     }
 }
 

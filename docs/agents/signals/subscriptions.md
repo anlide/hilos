@@ -113,7 +113,17 @@ Into the page's own answer, assembled on the backend:
   of the subscriber, so a payload may be personal: the `page_response` frame it
   rides is addressed to the one connection that asked;
 - `AbstractPage::onSubscribeBeforeResponse()` — when the assembly is a side
-  effect rather than payload, or has to refuse the subscription outright.
+  effect rather than payload, or has to refuse the subscription outright;
+- `BrowserContext::buildSubscribeSnapshot()` — the page's browser part: the
+  lists, tables and data of its browser sources and the first window of each of
+  its viewport tables, from `BROWSER_*` and `PAGE_*`. It is built for the
+  subscriber and returned, not sent: `AbstractPage::onSubscribe()` lays the
+  page's own part over it, the page's key winning where both write one, and the
+  whole rides the same `page_response` (HIL-1236). The counts beside a window's
+  filters follow that frame as a frame of their own. A page re-sent after a
+  failed delivery runs the same subscribe frame on the agent serving it
+  (`PageResender` → `PageSignalRouter::resendPage()`), so the re-send is that
+  same one frame too.
 
 `AbstractPage::withPageIdentity()` is the worked example: the label, lead, and
 breadcrumb that a project's admin page catalog owns are folded into the payload

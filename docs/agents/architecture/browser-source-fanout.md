@@ -64,22 +64,47 @@ It must not query daemon state directly.
 
 ## Page Snapshots
 
-`AbstractPage::onSubscribe()` delegates to
-`Hilos::$browser?->subscribeSnapshot(...)` for page-shaped browser payloads. It
-is `final`, so `subscribeSnapshot()` and the `page_response` frame after it
-cannot be lost by an override that forgets `parent::`.
+`AbstractPage::onSubscribe()` answers a subscription with one `page_response`
+(HIL-1236). It builds the page's own part first (`buildPagePayload()`), hides it
+from a viewer of the admin view mode and lays the catalog identity under it
+(`withPageIdentity()`), then asks
+`Hilos::$browser?->buildSubscribeSnapshot(...)` for the page-shaped browser
+part — built and returned, nothing sent; the windows of the page's viewport
+tables are registered on the way — and sends the own part laid over it
+(`PagePayload::over()`). The browser part is not hidden a second time: its rows
+come hidden column by column already, and hiding it as a section of the page
+would leave a viewer whole tables of hidden marks. The counts beside each
+window's filters follow the answer (`sendSnapshotFacetCounts()`). The method
+is `final`, so the one frame cannot be lost by an override that forgets
+`parent::`.
 
 A page that needs route-param validation, domain checks, or specialized
 subscribe behavior (for example a custom snapshot that is not browser-table
 shaped) puts that work in `onSubscribeBeforeResponse()`, which runs ahead of the
-snapshot; work that may only run once the subscription is answered goes in
+answer; work that may only run once the subscription is answered goes in
 `onSubscribeAfterResponse()`. The access checks ride on neither:
 `PageSignalRouter` reaches the whole verdict — level, freeze, declared params,
 declared guards — before `onSubscribe()` runs at all.
 
+A page whose delivery failed is re-sent the same way. The client that was told
+its page could not be delivered wiped it, so the first delivery that succeeds
+afterwards — a fan-out to the subscription or a window it asks for — calls
+`resendWholePage()`, and that asks the worker (`PageResender`, bound by
+`WorkerManager::run()`) to run the subscribe frame again on the agent its
+subscription mirror names: `PageSignalRouter::resendPage()`, the verdict and
+`onSubscribe()`, under that agent and that connection, inside the same flush.
+It is not a re-subscribe: nothing is booked, and an empty report of windows
+hands each table the window the mirror is holding. The worker writes the
+serving agent into its mirror on a subscribe and on a re-decision of rights.
+What came back decides the mark: answered — cleared; refused — no mark, the
+subscription stands as a refused one does; failed — the error frame went out
+from the router, so the mark is set silently; unserved — nothing went out, so
+the connection is told its page could not be delivered.
+
 As a convention, do not use either hook only to send an empty subscription ack
 via `sendToUser()` with blank `SignalData` or `BrowserPageSignalData`. Hub pages
-without `PAGE_TABLES` normally send no initial snapshot, and that is fine.
+without `PAGE_TABLES` normally carry no browser part, and their answer is the
+page's own part alone.
 
 ## Browser Tables
 

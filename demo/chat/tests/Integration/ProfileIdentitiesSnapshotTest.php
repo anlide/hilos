@@ -10,12 +10,9 @@ use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\ProfileSignInPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Object\Item\Identity;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -41,7 +38,7 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
-        // The harness runs no worker, so nothing has queued the router the snapshot answers into.
+        // The harness runs no worker, so nothing has set up the router the snapshot is built against.
         Hilos::$sr = new SignalRouter();
 
         try {
@@ -55,13 +52,14 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
 
             foreach ([ProfilePage::PAGE, ProfileSignInPage::PAGE] as $page) {
                 Hilos::$db->getObjectCollection(ChatDbContext::identities)?->clearInMemory();
-                Hilos::$browser?->subscribeSnapshot($page, self::ACCEPT_KEY, new PageRouteParams([]));
+                $snapshot = Hilos::$browser?->buildSubscribeSnapshot($page, self::ACCEPT_KEY, new PageRouteParams([]));
+                $this->assertNotNull($snapshot);
 
                 $this->assertSame(
                     [(int) $oauth->id, (int) $sms->id],
                     array_map(
                         static fn (array $identity): int => (int) $identity[Identity::id],
-                        $this->identitiesOfSnapshotItem(),
+                        $this->identitiesOfSnapshotItem($snapshot),
                     ),
                     $page,
                 );
@@ -75,23 +73,14 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
     /**
      * Reads the identities block of the one item the profile list answers with.
      *
+     * @param PagePayload $snapshot Browser part of the profile page's answer
      * @return list<array<string, mixed>> Projected identity fragments
      */
-    private function identitiesOfSnapshotItem(): array
+    private function identitiesOfSnapshotItem(PagePayload $snapshot): array
     {
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
-            if ($signal->signalName->getName() !== SignalTypeConstants::PAGE_RESPONSE) {
-                continue;
-            }
-            $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-            $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
-            $payload = $signal->data->data->toArray()[PageResponseSignalData::payload];
-            $items = $payload[PagePayload::lists][ProfileIdentitiesBrowserList::LIST][PagePayload::items];
-            $this->assertCount(1, $items);
+        $items = $snapshot->lists[ProfileIdentitiesBrowserList::LIST][PagePayload::items];
+        $this->assertCount(1, $items);
 
-            return $items[0][PagePayload::slots][ChatDbContext::identities];
-        }
-
-        $this->fail('The profile subscription answered with no page response.');
+        return $items[0][PagePayload::slots][ChatDbContext::identities];
     }
 }

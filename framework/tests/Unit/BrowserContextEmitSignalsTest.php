@@ -290,7 +290,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
     }
 
-    public function testSubscribeSnapshotQueuesFullBrowserRowsForPage(): void
+    public function testSubscribeSnapshotBuildsFullBrowserRowsForPageAndSendsNothing(): void
     {
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
@@ -298,45 +298,36 @@ final class BrowserContextEmitSignalsTest extends TestCase
         Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
         Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('2', 'Grace'));
 
-        new BrowserContextEmitSignalsTestContext()->subscribeSnapshot(
+        $snapshot = new BrowserContextEmitSignalsTestContext()->buildSubscribeSnapshot(
             BrowserContextEmitSignalsTestContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
         );
 
-        $signal = Hilos::$sr->getNextQueuedSignal();
-
-        $this->assertNotNull($signal);
-        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
-        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        // The part is the page's to send, laid under its own part in one answer (HIL-1236).
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
         $this->assertSame(
             [
-                PageResponseSignalData::page => BrowserContextEmitSignalsTestContext::PAGE,
-                PageResponseSignalData::payload => [
-                    PagePayload::tables => [
-                        BrowserContextEmitSignalsTestContext::TABLE => [
-                            PagePayload::rows => [
-                                [
-                                    PagePayload::rowKey => '1',
-                                    PagePayload::slots => [
-                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                            'id' => '1',
-                                            'displayName' => 'Ada',
-                                            'computedLabel' => 'row-1',
-                                        ],
+                PagePayload::tables => [
+                    BrowserContextEmitSignalsTestContext::TABLE => [
+                        PagePayload::rows => [
+                            [
+                                PagePayload::rowKey => '1',
+                                PagePayload::slots => [
+                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                        'id' => '1',
+                                        'displayName' => 'Ada',
+                                        'computedLabel' => 'row-1',
                                     ],
                                 ],
-                                [
-                                    PagePayload::rowKey => '2',
-                                    PagePayload::slots => [
-                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                            'id' => '2',
-                                            'displayName' => 'Grace',
-                                            'computedLabel' => 'row-2',
-                                        ],
+                            ],
+                            [
+                                PagePayload::rowKey => '2',
+                                PagePayload::slots => [
+                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                        'id' => '2',
+                                        'displayName' => 'Grace',
+                                        'computedLabel' => 'row-2',
                                     ],
                                 ],
                             ],
@@ -344,7 +335,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
                     ],
                 ],
             ],
-            $signal->data->data->toArray(),
+            $snapshot->toArray(),
         );
     }
 
@@ -355,33 +346,24 @@ final class BrowserContextEmitSignalsTest extends TestCase
         Hilos::$rt->configure();
         Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
 
-        new BrowserContextTopologyHooksTestContext()->subscribeSnapshot(
+        $snapshot = new BrowserContextTopologyHooksTestContext()->buildSubscribeSnapshot(
             BrowserContextTopologyHooksTestContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
         );
 
-        $signal = Hilos::$sr->getNextQueuedSignal();
-
         $this->assertNull(Hilos::$table);
-        $this->assertNotNull($signal);
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(
             [
-                PageResponseSignalData::page => BrowserContextTopologyHooksTestContext::PAGE,
-                PageResponseSignalData::payload => [
-                    PagePayload::tables => [
-                        BrowserContextTopologyHooksTestContext::TABLE => [
-                            PagePayload::rows => [
-                                [
-                                    PagePayload::rowKey => '1',
-                                    PagePayload::slots => [
-                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                            'id' => '1',
-                                            'displayName' => 'Ada',
-                                        ],
+                PagePayload::tables => [
+                    BrowserContextTopologyHooksTestContext::TABLE => [
+                        PagePayload::rows => [
+                            [
+                                PagePayload::rowKey => '1',
+                                PagePayload::slots => [
+                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                        'id' => '1',
+                                        'displayName' => 'Ada',
                                     ],
                                 ],
                             ],
@@ -389,7 +371,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
                     ],
                 ],
             ],
-            $signal->data->data->toArray(),
+            $snapshot->toArray(),
         );
     }
 
@@ -402,32 +384,23 @@ final class BrowserContextEmitSignalsTest extends TestCase
 
         $context = new BrowserContextRegistryTopologyTestContext();
         BrowserContextRegistryTopologyTestHilos::initBrowser($context);
-        $context->subscribeSnapshot(
+        $snapshot = $context->buildSubscribeSnapshot(
             BrowserContextRegistryTopologyTestPage::PAGE,
             'ak-1',
             new PageRouteParams([]),
         );
 
-        $signal = Hilos::$sr->getNextQueuedSignal();
-
-        $this->assertNotNull($signal);
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(
             [
-                PageResponseSignalData::page => BrowserContextRegistryTopologyTestPage::PAGE,
-                PageResponseSignalData::payload => [
-                    PagePayload::tables => [
-                        BrowserContextRegistryTopologyTestTable::TABLE => [
-                            PagePayload::rows => [
-                                [
-                                    PagePayload::rowKey => '1',
-                                    PagePayload::slots => [
-                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                            'id' => '1',
-                                            'displayName' => 'Ada',
-                                        ],
+                PagePayload::tables => [
+                    BrowserContextRegistryTopologyTestTable::TABLE => [
+                        PagePayload::rows => [
+                            [
+                                PagePayload::rowKey => '1',
+                                PagePayload::slots => [
+                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                        'id' => '1',
+                                        'displayName' => 'Ada',
                                     ],
                                 ],
                             ],
@@ -435,7 +408,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
                     ],
                 ],
             ],
-            $signal->data->data->toArray(),
+            $snapshot->toArray(),
         );
     }
 

@@ -17,13 +17,28 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\PageResendOutcome;
+use Hilos\Core\Page\PageResender;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\Table\Definition\SelfSnapshotTable;
+use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
@@ -68,6 +83,7 @@ final class BrowserContextDeliveryErrorTest extends TestCase
     {
         Hilos::$sr = null;
         Hilos::$rt = null;
+        Hilos::$table = null;
         Hilos::resetBrowser();
 
         parent::tearDown();
@@ -105,23 +121,21 @@ final class BrowserContextDeliveryErrorTest extends TestCase
     }
 
     /**
-     * The delta this flush carries is one row. The subscriber gets both, because the page it
-     * would have applied that row to is gone.
+     * The delta this flush carries is one row, and it is not what goes out: the page it would have
+     * applied that row to is gone, so the page is re-sent whole - by the page itself, through the
+     * frame a subscribe is answered with (HIL-1236), which brings back its own part and the frames
+     * it sends ahead of its answer, and not only the browser rows.
      */
     public function testTheFirstDeliveryAfterAFailureIsTheWholePage(): void
     {
         $this->flush(broken: true);
         $this->drain();
+        $resender = new DeliveryErrorRecordingResender(PageResendOutcome::Answered);
 
-        $this->flush(broken: false);
+        $this->flush(broken: false, resender: $resender);
 
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-        $this->assertNotNull($signal);
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
-        $this->assertSame(['1', '2'], $this->rowKeysOf($signal->data->data));
-        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertSame([[DeliveryErrorContext::PAGE, 'ak-1', []]], $resender->calls);
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE], $this->drain());
     }
 
     /**
@@ -130,18 +144,102 @@ final class BrowserContextDeliveryErrorTest extends TestCase
      */
     public function testDeliveryAfterTheRecoveryIsADeltaAgain(): void
     {
+        $resender = new DeliveryErrorRecordingResender(PageResendOutcome::Answered);
         $this->flush(broken: true);
         $this->drain();
-        $this->flush(broken: false);
+        $this->flush(broken: false, resender: $resender);
         $this->drain();
 
-        $this->flush(broken: false);
+        $this->flush(broken: false, resender: $resender);
 
         $signal = Hilos::$sr?->getNextQueuedSignal();
         $this->assertNotNull($signal);
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(['1'], $this->rowKeysOf($signal->data->data));
+        $this->assertCount(1, $resender->calls);
+    }
+
+    /**
+     * A re-send whose page failed has already told the connection so - the page's router sent the
+     * internal-error frame - so the mark is set without a second frame, and the next delivery
+     * that succeeds owes the page whole once more.
+     */
+    public function testAReSendThatFailedIsTriedAgainOnTheNextDeliveryWithoutASecondErrorFrame(): void
+    {
+        $this->flush(broken: true);
+        $this->drain();
+        $resender = new DeliveryErrorRecordingResender(PageResendOutcome::Failed);
+
+        $this->flush(broken: false, resender: $resender);
+
+        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->drain());
+        $this->flush(broken: false, resender: $resender);
+        $this->assertCount(2, $resender->calls);
+        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->drain());
+    }
+
+    /**
+     * Nobody here to answer the page, and nothing went out: the connection is told its page could
+     * not be delivered, once, and the mark stays for the delivery after.
+     */
+    public function testAPageNobodyServesHereIsToldAsAFailedDelivery(): void
+    {
+        $this->flush(broken: true);
+        $this->drain();
+
+        ob_start();
+        $this->flush(broken: false);
+        $logged = (string) ob_get_clean();
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $signal->data->data);
+        $this->assertSame('internal_error', $signal->data->data->errorCode);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertStringContainsString('could not re-send a page nobody serves here', $logged);
+        $this->assertFalse(Hilos::$sr?->markPageDeliveryFailure('ak-1'), 'the mark stands');
+    }
+
+    /**
+     * A re-send the verdict refused leaves the subscription where a refused subscription stands:
+     * told so, kept alive and unmarked, for the live road to promote once its guard passes.
+     */
+    public function testAReSendTheVerdictRefusedLeavesNoMark(): void
+    {
+        $this->flush(broken: true);
+        $this->drain();
+
+        $this->flush(broken: false, resender: new DeliveryErrorRecordingResender(PageResendOutcome::Refused));
+
+        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->drain());
+        $this->assertTrue(Hilos::$sr?->markPageDeliveryFailure('ak-1'), 'no mark was standing');
+    }
+
+    /**
+     * A window asked for after a failure lands on a scope the client wiped, so the page goes out
+     * whole first and the window follows it.
+     */
+    public function testAWindowAskedForAfterAFailureFollowsTheWholePage(): void
+    {
+        $this->flush(broken: true);
+        $this->drain();
+        Hilos::$table = new DeliveryErrorWindowTableContext();
+        Hilos::$table->configure();
+        $context = new DeliveryErrorContext();
+        $resender = new DeliveryErrorRecordingResender(PageResendOutcome::Answered);
+        $context->bindPageResender($resender);
+
+        $context->sendTableWindow(
+            DeliveryErrorContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: DeliveryErrorWindowTable::TABLE, limit: 10),
+        );
+
+        $this->assertCount(1, $resender->calls);
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE, SignalTypeConstants::TABLE_WINDOW], $this->drain());
     }
 
     /**
@@ -189,22 +287,31 @@ final class BrowserContextDeliveryErrorTest extends TestCase
      * subscription registry, which is not rebuilt.
      *
      * @param bool $broken Whether the page's guard declaration names a type nothing implements
+     * @param ?PageResender $resender Who re-sends the page whole, or null for nobody bound
      */
-    private function flush(bool $broken): void
+    private function flush(bool $broken, ?PageResender $resender = null): void
     {
         $context = new DeliveryErrorContext($broken);
+        if ($resender !== null) {
+            $context->bindPageResender($resender);
+        }
         $context->record(SourceChange::rtUpdated(DeliveryErrorRtContext::ROWS, '1', ['name' => 'Ada']));
         $context->flushToSignalRouter();
     }
 
     /**
      * Empties the signal queue so the next assertion reads only what the next flush queued.
+     *
+     * @return list<string> Names of the drained signals, oldest first
      */
-    private function drain(): void
+    private function drain(): array
     {
-        while (Hilos::$sr?->getNextQueuedSignal() !== null) {
-            // Nothing: the frames themselves are asserted by the case that queued them.
+        $names = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $names[] = $signal->signalName->getName();
         }
+
+        return $names;
     }
 
     /**
@@ -300,6 +407,108 @@ final class DeliveryErrorContext extends BrowserContext
                 BrowserTableFieldKey::FIELDS => ['id', 'name'],
             ]],
         ]);
+    }
+}
+
+/**
+ * Stands for the worker: records every page it is asked to re-send, and puts on the wire what the
+ * page's router would have sent for the outcome it was built with.
+ */
+final class DeliveryErrorRecordingResender implements PageResender
+{
+    /** @var list<array{0: string, 1: string, 2: array<string, mixed>}> Page, connection and params of each re-send asked for */
+    public array $calls = [];
+
+    /**
+     * @param PageResendOutcome $outcome What every re-send comes back with
+     */
+    public function __construct(private readonly PageResendOutcome $outcome)
+    {
+    }
+
+    /**
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the page is owed to
+     * @param array<string, mixed> $params Route params of the subscription
+     * @return PageResendOutcome The outcome the fixture was built with
+     * @throws InvalidArgumentException When a queued frame cannot be named
+     */
+    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    {
+        $this->calls[] = [$page, $acceptKey, $params];
+        $frame = match ($this->outcome) {
+            PageResendOutcome::Answered => [SignalTypeConstants::PAGE_RESPONSE, new PageResponseSignalData($page, new PagePayload())],
+            PageResendOutcome::Refused => [
+                SignalConstants::SUBSCRIPTION_PAGE_ERROR,
+                new PageSubscriptionErrorSignalData($page, 401, 'unauthorized', 'Refused'),
+            ],
+            PageResendOutcome::Failed => [
+                SignalConstants::SUBSCRIPTION_PAGE_ERROR,
+                new PageSubscriptionErrorSignalData($page, 500, 'internal_error', 'Failed'),
+            ],
+            PageResendOutcome::Unserved => null,
+        };
+        if ($frame !== null) {
+            Hilos::$sr?->queueSignal(
+                signalSource: new SignalSource(SignalSource::WORKER),
+                signalType: new SignalType(SignalTypeConstants::WS_USER),
+                signalName: new SignalName($frame[0]),
+                signalData: new WebSocketSignalData(data: $frame[1], targetAcceptKey: $acceptKey),
+            );
+        }
+
+        return $this->outcome;
+    }
+}
+
+final class DeliveryErrorWindowTableContext extends TableContext
+{
+    public function configure(): void
+    {
+        $this->register(DeliveryErrorWindowTable::TABLE, new DeliveryErrorWindowTable());
+    }
+}
+
+/**
+ * Table answering a window over one row held in memory.
+ */
+final class DeliveryErrorWindowTable extends TableDefinition implements SelfSnapshotTable
+{
+    public const string TABLE = 'deliveryErrorWindow';
+
+    /**
+     * No source-change reaction in this fixture.
+     *
+     * @param SourceChange $change Source change (unused)
+     * @return ?TableRowMutationDTO Always null
+     */
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
+    {
+        return null;
+    }
+
+    /**
+     * Serializes a row into its internal browser-row envelope.
+     *
+     * @param AbstractTableRow $row Self-snapshot row
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        return [
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
+            BrowserPageSignalData::sources => [self::TABLE => $row->toArray()],
+        ];
+    }
+
+    /**
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Windowed snapshot
+     */
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
+    {
+        return $this->filterInMemory([['id' => 'a']], $query);
     }
 }
 

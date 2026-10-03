@@ -49,6 +49,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SubscriptionRegistry;
@@ -262,6 +263,38 @@ class PageSignalRouter
     }
 
     /**
+     * Answers one live subscription again, whole, after its delivery failed (HIL-1236).
+     *
+     * The road the re-decision of rights takes ({@see self::dispatchPageAccessReassess()}), for
+     * another reason: the client was told its page could not be delivered and wiped it, with the
+     * frames it was holding, so the first delivery that succeeds afterwards owes it the page
+     * whole - the frames the page sends ahead of its answer, then the one page_response with the
+     * page's own part, its identity and its browser part. The verdict is reached again on the
+     * way, as on every road into onSubscribe.
+     *
+     * Not a re-subscribe and not a visit, so nothing about the subscription is booked: the
+     * registry entry stays, nobody is billed a page view, and the windows of the connection stay
+     * open - the report of windows is empty, and an empty report hands each table the window the
+     * subscription mirror is already holding. Unlike the re-decision it skips nothing: a PUBLIC
+     * page answers the same thing it answered before, but the client no longer has that answer.
+     * And it does not park: the connection was answered once already, so who sent it is known.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the page is owed to
+     * @param array<string, mixed> $params Route params of the subscription, as the subscription mirror holds them
+     * @return PageResendOutcome What went out to the connection
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     */
+    public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
+    {
+        return $this->runPageSubscribeFrame(
+            new WebSocketPageSubscribeSignalDTO(acceptKey: $acceptKey, page: $page, params: $params),
+            SignalSource::WORKER,
+            $page,
+        );
+    }
+
+    /**
      * Whether a PUBLIC page can still refuse a particular person through its own guards.
      *
      * The non-throwing twin of {@see BrowserContext::pageAccessDependsOnIdentity}, in the
@@ -292,17 +325,23 @@ class PageSignalRouter
     /**
      * Judges and dispatches one page subscribe frame, parked or not.
      *
+     * The outcome says what went out to the connection. A subscribe and a re-decision of rights
+     * have nothing to do with it; a re-send after a failed delivery does
+     * ({@see self::resendPage()}), because it decides whether the connection still has to be told
+     * that its page failed.
+     *
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
+     * @return PageResendOutcome What went out to the connection
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
-    private function runPageSubscribeFrame(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
+    private function runPageSubscribeFrame(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): PageResendOutcome
     {
         $page = $data->page ?? $name;
         if ($page === '') {
             Logger::error('Page subscribe without page name');
-            return;
+            return PageResendOutcome::Unserved;
         }
 
         $pageInstance = $this->resolvePage($page);
@@ -315,7 +354,7 @@ class PageSignalRouter
                 PageErrorCode::NOT_SERVED,
                 SignalConstants::SUBSCRIPTION_FAILED_REASON,
             );
-            return;
+            return PageResendOutcome::Refused;
         }
 
         try {
@@ -335,6 +374,8 @@ class PageSignalRouter
             PageAccessGate::assert($pageInstance::class, $data->acceptKey);
             Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
             $pageInstance->onSubscribe($data->acceptKey, $params);
+
+            return PageResendOutcome::Answered;
         } catch (PageInternalErrorException $e) {
             // Ahead of its own base class, because it is not the same event. Every other species
             // below is a verdict about the resource or the rights, reached on purpose and worth
@@ -352,6 +393,8 @@ class PageSignalRouter
                 $e->errorCode,
                 self::SUBSCRIBE_INTERNAL_ERROR,
             );
+
+            return PageResendOutcome::Failed;
         } catch (PageSubscriptionException $e) {
             // The subscription is intentionally KEPT alive, not torn down. A guard
             // failure is a transient state, not a dead end: if the missing resource
@@ -372,6 +415,8 @@ class PageSignalRouter
                 $e->errorCode,
                 ActionFailureReason::forSubscriber($e),
             );
+
+            return PageResendOutcome::Refused;
         } catch (Throwable $e) {
             Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(
@@ -382,6 +427,8 @@ class PageSignalRouter
                 'internal_error',
                 self::SUBSCRIBE_INTERNAL_ERROR,
             );
+
+            return PageResendOutcome::Failed;
         } finally {
             // The report does not outlive the frame it arrived in, whatever the verdict was:
             // an answer takes it above, and a refusal drops it here. Left standing, it would

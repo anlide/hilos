@@ -341,10 +341,14 @@ recognizes the object with `isHiddenValue` and hands the one `HIDDEN_VALUE` out
 for a field a viewer's screen draws as hidden (`readHideableString`,
 `readHideableBoolean`, `EntityCollection.hidden`).
 
-**Every accepted subscription is answered exactly once**, and the answer is the
-last frame the subscription produces: a page that contributes no payload sends
-`page_response` with an empty one, after its browser snapshot. The frame is
-therefore an acknowledgement as much as a delivery — it is what the client waits
+**Every accepted subscription is answered exactly once**, by one `page_response`
+carrying everything the page renders: the page's own part, its identity and its
+browser part with the first window of each viewport table (HIL-1236). A page
+that contributes no payload sends `page_response` with an empty one. The counts
+beside a window's filters follow the answer as a frame of their own, because the
+client has a window to put them on only once the answer opened it. A page re-sent
+after a failed delivery is answered the same way, by the same one frame. The
+frame is therefore an acknowledgement as much as a delivery — it is what the client waits
 on before it shows the page (`router.pageLoading`), so that a page is never shown
 and then taken away again by a denial still in flight. A subscription that is
 refused answers with `subscription_page_error` instead, and the client waits on

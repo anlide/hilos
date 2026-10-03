@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Browser\ChatBrowserList;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\ProfileAgreementsHistoryPage;
 use Demo\Chat\Pages\Hilos\ProfileAgreementsPage;
@@ -23,6 +24,7 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Legal\LegalAgreementsGroup;
 use Hilos\Legal\LegalAgreementsProjector;
 use Hilos\Pages\Legal\DTO\LegalRevisionChangesActionDTO;
@@ -88,14 +90,16 @@ final class ProfileAgreementsPageTest extends IntegrationTestCase
                 $answers[] = $signal->data->data->toArray();
             }
         }
-        if ($pageClass === ProfilePage::class) {
-            // The existing root also queues its browser snapshot; the legal section rides its page-data answer once.
-            $answers = array_values(array_filter($answers, static fn (array $answer): bool =>
-                isset($answer[PageResponseSignalData::payload][PagePayload::data][LegalAgreementsProjector::SECTION])));
-        }
         self::assertCount(1, $answers);
         self::assertSame($pageClass::PAGE, $answers[0][PageResponseSignalData::page]);
         $sections = $answers[0][PageResponseSignalData::payload][PagePayload::data];
+        if ($pageClass === ProfilePage::class) {
+            // The root has browser lists of its own, and they ride the same answer as its legal section and its heading.
+            $lists = $answers[0][PageResponseSignalData::payload][PagePayload::lists] ?? [];
+            self::assertArrayHasKey(ChatBrowserList::PROFILE_IDENTITIES, $lists);
+            self::assertArrayHasKey(ChatBrowserList::PROFILE_SESSIONS, $lists);
+            self::assertArrayHasKey(PageCatalogConstants::WIRE_PAGE_LABEL, $sections);
+        }
         self::assertSame(['none', 'none'], array_column($sections[LegalAgreementsProjector::SECTION]['documents'], 'standing'));
         self::assertSame('2026-10-01', $sections[LegalAgreementsProjector::SECTION]['documents'][0]['current']['revisionId']);
         if ($extraSection !== null) {

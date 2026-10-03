@@ -75,13 +75,13 @@ final class ProfileSessionsListTest extends IntegrationTestCase
     {
         [$userId, $selfSessionId, $otherSessionId] = $this->createUserWithTwoSessions();
 
-        Hilos::$browser?->subscribeSnapshot(
+        $payload = Hilos::$browser?->buildSubscribeSnapshot(
             ProfileSessionsPage::PAGE,
             self::ACCEPT_KEY,
             new PageRouteParams([]),
-        );
+        )->toArray();
 
-        $payload = $this->nextPagePayload(ProfileSessionsPage::PAGE);
+        self::assertIsArray($payload);
         $item = $payload[PagePayload::lists][ProfileSessionsBrowserList::LIST][PagePayload::items][0];
         $sessions = $item[PagePayload::slots][ChatDbContext::sessions];
         $connections = $item[PagePayload::slots][ChatRtContext::connections];

@@ -12,14 +12,9 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalNameInterface;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\SignalSourceInterface;
-use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Context\TableContext;
@@ -84,7 +79,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
         Hilos::$table->configure();
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -112,7 +107,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
                 TableWindowSignalData::lastAnchor => ['key' => 'b'],
                 TableWindowSignalData::rowsBefore => 0,
             ],
-            self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE),
+            self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE),
         );
     }
 
@@ -122,7 +117,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
         Hilos::$table->configure();
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -149,7 +144,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
             ),
         ]);
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -157,19 +152,18 @@ final class BrowserContextSubscribeWindowTest extends TestCase
 
         // A tab coming back after a broken socket is the only side that still remembers what
         // was on the screen, so what it reports outranks the table's own declaration.
-        $window = self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE);
+        $window = self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE);
         $this->assertSame(1, $window[TableWindowSignalData::limit]);
         $this->assertSame(['c'], array_column($window[TableWindowSignalData::rows], PagePayload::rowKey));
     }
 
     public function testTheWindowIsOnTheRegistryBeforeTheAnswerLeaves(): void
     {
-        $router = new SubscribeWindowRecordingSignalRouter();
-        Hilos::$sr = $router;
+        Hilos::$sr = new SignalRouter();
         Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
         Hilos::$table->configure();
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -177,8 +171,10 @@ final class BrowserContextSubscribeWindowTest extends TestCase
 
         // The whole point of opening the window here rather than on the client's first frame:
         // a change born between the subscription and the first render has an address only if
-        // the window already exists when the answer goes out.
-        $this->assertSame(['a', 'b'], $router->rowIdsWhenAnswerWasQueued);
+        // the window already exists when the answer goes out - and the answer is the page's to
+        // send, after this part is built, so nothing of it is on the wire yet (HIL-1236).
+        $this->assertSame(['a', 'b'], Hilos::$sr->getTableViewport('ak-1', SubscribeWindowUnitTable::TABLE)?->rowIds());
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     public function testAPageWithNoViewportTableCarriesNoWindowsSection(): void
@@ -187,12 +183,13 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
         Hilos::$table->configure();
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::OTHER_PAGE,
             'ak-1',
             new PageRouteParams([]),
         );
 
+        $this->assertTrue($snapshot->isEmpty());
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
@@ -205,7 +202,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         ]);
         Hilos::$table->configure();
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -213,7 +210,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
 
         // A tab opening in the middle of a run sees the bars with its first window, rather than
         // at the next stir of a source - which for work reporting a phase at a time is minutes.
-        $window = self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE);
+        $window = self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE);
         $this->assertSame(
             [
                 [
@@ -241,7 +238,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
         Hilos::$table->configure();
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -251,7 +248,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         // every other bar-carrying answer has a list of objects.
         $this->assertArrayNotHasKey(
             TableProgressSignalData::progress,
-            self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE),
+            self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE),
         );
     }
 
@@ -262,7 +259,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         Hilos::$table->configure();
 
         ob_start();
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -273,7 +270,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         // window worth showing, and a refusal over the bars must not cost the subscriber the
         // whole page.
         $this->assertStringContainsString('Browser window skipped the work', $logged);
-        $window = self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE);
+        $window = self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE);
         $this->assertArrayNotHasKey(TableProgressSignalData::progress, $window);
         $this->assertCount(2, $window[TableWindowSignalData::rows]);
     }
@@ -285,7 +282,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         Hilos::$table->configure();
 
         ob_start();
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::REFUSING_PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -293,16 +290,10 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         $logged = (string) ob_get_clean();
 
         $this->assertStringContainsString('Browser window skipped a table', $logged);
-        $answer = self::answer();
-        $payload = $answer[PageResponseSignalData::payload] ?? [];
-        $this->assertIsArray($payload);
-        $this->assertArrayNotHasKey(
-            SubscribeWindowRefusingTable::TABLE,
-            $payload[PagePayload::windows] ?? [],
-        );
+        $this->assertArrayNotHasKey(SubscribeWindowRefusingTable::TABLE, $snapshot->windows);
         $this->assertSame(
             [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR],
-            self::refusalOf($answer, SubscribeWindowRefusingTable::TABLE),
+            self::refusalOf($snapshot, SubscribeWindowRefusingTable::TABLE),
         );
     }
 
@@ -313,28 +304,20 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         Hilos::$table->configure();
 
         ob_start();
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::MIXED_PAGE,
             'ak-1',
             new PageRouteParams([]),
         );
         ob_end_clean();
 
-        $answer = self::answer();
-        $payload = $answer[PageResponseSignalData::payload] ?? [];
-        $this->assertIsArray($payload);
-        $windows = $payload[PagePayload::windows] ?? [];
-        $this->assertIsArray($windows);
-        $this->assertArrayHasKey(SubscribeWindowUnitTable::TABLE, $windows);
-        $this->assertArrayNotHasKey(SubscribeWindowRefusingTable::TABLE, $windows);
+        $this->assertArrayHasKey(SubscribeWindowUnitTable::TABLE, $snapshot->windows);
+        $this->assertArrayNotHasKey(SubscribeWindowRefusingTable::TABLE, $snapshot->windows);
         $this->assertSame(
             [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR],
-            self::refusalOf($answer, SubscribeWindowRefusingTable::TABLE),
+            self::refusalOf($snapshot, SubscribeWindowRefusingTable::TABLE),
         );
-        $this->assertArrayNotHasKey(
-            SubscribeWindowUnitTable::TABLE,
-            $payload[PagePayload::refusedWindows] ?? [],
-        );
+        $this->assertArrayNotHasKey(SubscribeWindowUnitTable::TABLE, $snapshot->refusedWindows);
     }
 
     public function testATableTheTestLeverRefusesGoesIntoRefusedWindowsBesideItsLiveSibling(): void
@@ -353,7 +336,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         }
 
         ob_start();
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
             SubscribeWindowUnitBrowserContext::SIBLINGS_PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -363,18 +346,13 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         // Both tables can build their window; the one the lever names is refused the way a broken
         // one is, and its sibling on the same page answers with its rows as if nothing happened.
         $this->assertStringContainsString('test:table:refuse', $logged);
-        $answer = self::answer();
-        $payload = $answer[PageResponseSignalData::payload] ?? [];
-        $this->assertIsArray($payload);
-        $windows = $payload[PagePayload::windows] ?? [];
-        $this->assertIsArray($windows);
-        $this->assertArrayNotHasKey(SubscribeWindowUnitTable::SIBLING_TABLE, $windows);
+        $this->assertArrayNotHasKey(SubscribeWindowUnitTable::SIBLING_TABLE, $snapshot->windows);
         $this->assertSame(
             [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR],
-            self::refusalOf($answer, SubscribeWindowUnitTable::SIBLING_TABLE),
+            self::refusalOf($snapshot, SubscribeWindowUnitTable::SIBLING_TABLE),
         );
-        $this->assertCount(2, self::windowOf($answer, SubscribeWindowUnitTable::TABLE)[TableWindowSignalData::rows]);
-        $this->assertArrayNotHasKey(SubscribeWindowUnitTable::TABLE, $payload[PagePayload::refusedWindows] ?? []);
+        $this->assertCount(2, self::windowOf($snapshot, SubscribeWindowUnitTable::TABLE)[TableWindowSignalData::rows]);
+        $this->assertArrayNotHasKey(SubscribeWindowUnitTable::TABLE, $snapshot->refusedWindows);
     }
 
     /**
@@ -390,51 +368,29 @@ final class BrowserContextSubscribeWindowTest extends TestCase
     }
 
     /**
-     * @return array<string, mixed> Wire payload of the page_response the subscription queued
-     */
-    private static function answer(): array
-    {
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-        self::assertNotNull($signal);
-        self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
-        self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        self::assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
-
-        return $signal->data->data->toArray();
-    }
-
-    /**
-     * @param array<string, mixed> $answer Wire payload of a page_response
+     * @param PagePayload $snapshot Browser part of a subscription answer
      * @param string $tableKey Table whose window is read out of it
      * @return array<string, mixed> The `windows` entry for that table
      */
-    private static function windowOf(array $answer, string $tableKey): array
+    private static function windowOf(PagePayload $snapshot, string $tableKey): array
     {
-        $payload = $answer[PageResponseSignalData::payload] ?? [];
-        self::assertIsArray($payload);
-        $windows = $payload[PagePayload::windows] ?? [];
-        self::assertIsArray($windows);
-        self::assertArrayHasKey($tableKey, $windows);
-        self::assertIsArray($windows[$tableKey]);
+        self::assertArrayHasKey($tableKey, $snapshot->windows);
+        self::assertIsArray($snapshot->windows[$tableKey]);
 
-        return $windows[$tableKey];
+        return $snapshot->windows[$tableKey];
     }
 
     /**
-     * @param array<string, mixed> $answer Wire payload of a page_response
+     * @param PagePayload $snapshot Browser part of a subscription answer
      * @param string $tableKey Table whose refusal is read out of it
      * @return array<string, mixed> The `refusedWindows` entry for that table
      */
-    private static function refusalOf(array $answer, string $tableKey): array
+    private static function refusalOf(PagePayload $snapshot, string $tableKey): array
     {
-        $payload = $answer[PageResponseSignalData::payload] ?? [];
-        self::assertIsArray($payload);
-        $refused = $payload[PagePayload::refusedWindows] ?? [];
-        self::assertIsArray($refused);
-        self::assertArrayHasKey($tableKey, $refused);
-        self::assertIsArray($refused[$tableKey]);
+        self::assertArrayHasKey($tableKey, $snapshot->refusedWindows);
+        self::assertIsArray($snapshot->refusedWindows[$tableKey]);
 
-        return $refused[$tableKey];
+        return $snapshot->refusedWindows[$tableKey];
     }
 
     public function testTheCountsATabReportedAskingForFollowTheAnswerInAFrameOfTheirOwn(): void
@@ -449,19 +405,18 @@ final class BrowserContextSubscribeWindowTest extends TestCase
             ),
         ]);
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
-            SubscribeWindowUnitBrowserContext::PAGE,
-            'ak-1',
-            new PageRouteParams([]),
-        );
+        $browser = new SubscribeWindowUnitBrowserContext();
+        $snapshot = $browser->buildSubscribeSnapshot(SubscribeWindowUnitBrowserContext::PAGE, 'ak-1', new PageRouteParams([]));
 
         // A tab back from a broken socket is the only side that still knows which options it asked
         // counts beside, and the counts go out after the answer: before it the table has no window.
+        // The part is built without them, and the page sends them once its answer is queued.
         $this->assertSame(
             [SubscribeWindowUnitTable::FILTER_LABEL => ['Alpha', 'Delta']],
             Hilos::$sr->getTableFacets('ak-1', SubscribeWindowUnitTable::TABLE),
         );
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $browser->sendSnapshotFacetCounts(SubscribeWindowUnitBrowserContext::PAGE, 'ak-1', $snapshot);
         $counts = Hilos::$sr->getNextQueuedSignal();
         $this->assertSame(SignalTypeConstants::TABLE_FACET_COUNTS, $counts?->signalName->getName());
         $this->assertInstanceOf(WebSocketSignalData::class, $counts->data);
@@ -477,42 +432,12 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
         Hilos::$table->configure();
 
-        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
-            SubscribeWindowUnitBrowserContext::PAGE,
-            'ak-1',
-            new PageRouteParams([]),
-        );
+        $browser = new SubscribeWindowUnitBrowserContext();
+        $snapshot = $browser->buildSubscribeSnapshot(SubscribeWindowUnitBrowserContext::PAGE, 'ak-1', new PageRouteParams([]));
+        $browser->sendSnapshotFacetCounts(SubscribeWindowUnitBrowserContext::PAGE, 'ak-1', $snapshot);
 
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+        $this->assertArrayHasKey(SubscribeWindowUnitTable::TABLE, $snapshot->windows);
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
-    }
-}
-
-final class SubscribeWindowRecordingSignalRouter extends SignalRouter
-{
-    /** @var ?list<string> Rows the window held when the page answer was queued, or null while none was */
-    public ?array $rowIdsWhenAnswerWasQueued = null;
-
-    /**
-     * Records what the registry already held at the moment the page answer was queued.
-     *
-     * @param SignalSourceInterface $signalSource Signal source
-     * @param SignalTypeInterface $signalType Signal type
-     * @param SignalNameInterface $signalName Signal name
-     * @param SignalDataInterface $signalData Signal payload
-     */
-    public function queueSignal(
-        SignalSourceInterface $signalSource,
-        SignalTypeInterface $signalType,
-        SignalNameInterface $signalName,
-        SignalDataInterface $signalData,
-    ): void {
-        if ($signalName->getName() === SignalTypeConstants::PAGE_RESPONSE) {
-            $this->rowIdsWhenAnswerWasQueued
-                = $this->getTableViewport('ak-1', SubscribeWindowUnitTable::TABLE)?->rowIds();
-        }
-
-        parent::queueSignal($signalSource, $signalType, $signalName, $signalData);
     }
 }
 

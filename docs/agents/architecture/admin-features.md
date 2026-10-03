@@ -195,7 +195,7 @@ The framework resolves this with the self-snapshot contract
 browser rows from `getFullSnapshot()` (the catalog+DB merge) and
 `buildMutationForSourceEvent()` (a reactive change), serialized by a table-owned
 `browserRow()`. The base `BrowserContext` branches on `instanceof SelfSnapshotTable`
-in both `subscribeSnapshot` and `emitBrowserSignals`, using the table's own
+in both `buildSubscribeSnapshot` and `emitBrowserSignals`, using the table's own
 snapshot instead of source fan-out. `HilosSettingsTable` implements it, so an
 empty project `BrowserContext` inherits the whole path — settings needs no project
 browser code beyond shipping the (empty) context.

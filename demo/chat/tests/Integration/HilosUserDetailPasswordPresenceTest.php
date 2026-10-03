@@ -40,12 +40,11 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);
 
         try {
-            Hilos::$browser?->subscribeSnapshot(
+            $initialIdentity = $this->identitySlotOf(Hilos::$browser?->buildSubscribeSnapshot(
                 UserPage::PAGE,
                 self::ACCEPT_KEY,
                 new PageRouteParams($params),
-            );
-            $initialIdentity = $this->identitySlotOfNextPageResponse();
+            )->toArray() ?? []);
             $this->assertFalse($initialIdentity[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
             $this->assertNull($initialIdentity[HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS]);
 
@@ -100,16 +99,25 @@ final class HilosUserDetailPasswordPresenceTest extends IntegrationTestCase
             }
             $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
             $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
-            $payload = $signal->data->data->toArray()[PageResponseSignalData::payload];
-            $rows = $payload[PagePayload::tables][HilosUserDetailBrowserTable::TABLE][PagePayload::rows] ?? [];
-            $this->assertCount(1, $rows);
-            $identity = $rows[0][PagePayload::slots][HilosDbContext::identities] ?? null;
-            $this->assertIsArray($identity);
 
-            return $identity;
+            return $this->identitySlotOf($signal->data->data->toArray()[PageResponseSignalData::payload]);
         }
 
         $this->fail('The user-detail subscription answered with no page response.');
+    }
+
+    /**
+     * @param array<string, mixed> $payload Page payload of a user-detail answer or update
+     * @return array<string, mixed> Identity slot payload of the one user-detail row it carries
+     */
+    private function identitySlotOf(array $payload): array
+    {
+        $rows = $payload[PagePayload::tables][HilosUserDetailBrowserTable::TABLE][PagePayload::rows] ?? [];
+        $this->assertCount(1, $rows);
+        $identity = $rows[0][PagePayload::slots][HilosDbContext::identities] ?? null;
+        $this->assertIsArray($identity);
+
+        return $identity;
     }
 
     /**

@@ -1111,7 +1111,7 @@ final class LogsPageSubscribeTestRefusingBrowser extends IdentityTestBrowser
      * @param PageRouteParams $params Route params for this page subscription
      * @throws PageInternalErrorException Always; the fixture exists to refuse
      */
-    public function subscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): void
+    public function buildSubscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): never
     {
         throw new PageInternalErrorException('Refused before the answer');
     }

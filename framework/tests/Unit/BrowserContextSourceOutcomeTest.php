@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
@@ -18,12 +17,10 @@ use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
@@ -82,9 +79,10 @@ final class BrowserContextSourceOutcomeTest extends TestCase
     {
         Hilos::$db = new SourceOutcomeDbContext(new CollectionNotFoundException('Db collection does not exist'));
 
-        (new SourceOutcomeContext())->subscribeSnapshot(SourceOutcomeContext::PAGE, 'ak-1', new PageRouteParams([]));
-
-        $this->assertDeliveredAnEmptyTable(SourceOutcomeContext::PAGE, SourceOutcomeContext::TABLE);
+        $this->assertBuiltAnEmptyTable(
+            (new SourceOutcomeContext())->buildSubscribeSnapshot(SourceOutcomeContext::PAGE, 'ak-1', new PageRouteParams([])),
+            SourceOutcomeContext::TABLE,
+        );
     }
 
     /**
@@ -95,13 +93,14 @@ final class BrowserContextSourceOutcomeTest extends TestCase
     {
         Hilos::$rt = new SourceOutcomeRtContext(new RtCollectionNotFoundException('Runtime collection does not exist'));
 
-        (new SourceOutcomeRtPageContext())->subscribeSnapshot(
-            SourceOutcomeRtPageContext::PAGE,
-            'ak-1',
-            new PageRouteParams([]),
+        $this->assertBuiltAnEmptyTable(
+            (new SourceOutcomeRtPageContext())->buildSubscribeSnapshot(
+                SourceOutcomeRtPageContext::PAGE,
+                'ak-1',
+                new PageRouteParams([]),
+            ),
+            SourceOutcomeRtPageContext::TABLE,
         );
-
-        $this->assertDeliveredAnEmptyTable(SourceOutcomeRtPageContext::PAGE, SourceOutcomeRtPageContext::TABLE);
     }
 
     public function testADatabaseCollectionThatRefusedTheReadDoesNotBecomeAnEmptyTable(): void
@@ -110,7 +109,7 @@ final class BrowserContextSourceOutcomeTest extends TestCase
 
         $this->expectException(DbCollectionNotReadableException::class);
 
-        (new SourceOutcomeContext())->subscribeSnapshot(SourceOutcomeContext::PAGE, 'ak-1', new PageRouteParams([]));
+        (new SourceOutcomeContext())->buildSubscribeSnapshot(SourceOutcomeContext::PAGE, 'ak-1', new PageRouteParams([]));
     }
 
     public function testARuntimeCollectionThatRefusedTheReadDoesNotBecomeAnEmptyTable(): void
@@ -119,7 +118,7 @@ final class BrowserContextSourceOutcomeTest extends TestCase
 
         $this->expectException(RtCollectionNotReadableException::class);
 
-        (new SourceOutcomeRtPageContext())->subscribeSnapshot(
+        (new SourceOutcomeRtPageContext())->buildSubscribeSnapshot(
             SourceOutcomeRtPageContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -167,22 +166,18 @@ final class BrowserContextSourceOutcomeTest extends TestCase
     {
         $this->bootLiveRuntime();
 
-        (new SourceOutcomeFieldContext())->subscribeSnapshot(
+        $snapshot = (new SourceOutcomeFieldContext())->buildSubscribeSnapshot(
             SourceOutcomeFieldContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
         );
 
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-        $this->assertNotNull($signal);
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(
             [SourceOutcomeFieldContext::TABLE => [BrowserPageSignalData::rows => [[
                 PagePayload::rowKey => '1',
                 PagePayload::slots => [SourceOutcomeLiveRtContext::ROWS => ['id' => '1', 'label' => 'Ada']],
             ]]]],
-            $signal->data->data->payload->tables,
+            $snapshot->tables,
         );
     }
 
@@ -196,7 +191,7 @@ final class BrowserContextSourceOutcomeTest extends TestCase
 
         $this->expectException(RtCollectionNotReadableException::class);
 
-        (new SourceOutcomeRefusedFieldContext())->subscribeSnapshot(
+        (new SourceOutcomeRefusedFieldContext())->buildSubscribeSnapshot(
             SourceOutcomeRefusedFieldContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -215,25 +210,18 @@ final class BrowserContextSourceOutcomeTest extends TestCase
     }
 
     /**
-     * Asserts the subscriber was served the page with the named table present and holding no rows.
+     * Asserts the browser part of the page holds the named table, present and holding no rows.
      *
      * Present and empty rather than absent: "the project mounts it later" is a state the page is
      * legitimately in, and the client is meant to render the page around an empty table until it
-     * fills in.
+     * fills in. Nothing goes on the wire from the build: the page sends the part in its answer.
      *
-     * @param string $page Page the snapshot answers for
+     * @param PagePayload $snapshot Browser part the subscription built
      * @param string $browserKey Browser table key expected in the payload
      */
-    private function assertDeliveredAnEmptyTable(string $page, string $browserKey): void
+    private function assertBuiltAnEmptyTable(PagePayload $snapshot, string $browserKey): void
     {
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-
-        $this->assertNotNull($signal);
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
-        $this->assertSame($page, $signal->data->data->pageKey);
-        $this->assertSame([$browserKey => []], $signal->data->data->payload->tables);
+        $this->assertSame([$browserKey => []], $snapshot->tables);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 }

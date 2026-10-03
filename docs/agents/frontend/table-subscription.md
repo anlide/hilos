@@ -1348,7 +1348,7 @@ an address does not:
 |---|---|
 | the descriptor and the delivered keys | `framework/backend/Core/Router/TableViewportSubscription.php` |
 | the window a tab reports on its subscription | `framework/backend/Core/Table/DTO/TableWindowDescriptorDTO.php` |
-| opening each of a page's windows as it is subscribed | `framework/backend/Core/Browser/Context/BrowserContext.php` (`subscribeSnapshot`, `subscribeTableWindow`, `buildTableWindow`) |
+| opening each of a page's windows as it is subscribed | `framework/backend/Core/Browser/Context/BrowserContext.php` (`buildSubscribeSnapshot`, `subscribeTableWindow`, `buildTableWindow`) |
 | what the first window of a table is | `framework/backend/Core/Table/Definition/TableDefinition.php` (`windowSize`, `defaultSort`) |
 | the windows a tab is holding, and the frame that reports them | `framework/frontend/core/src/connection/HilosConnection.ts`, `framework/frontend/core/src/subscription/PageSubscription.ts` |
 | judging a mutation against a window, and emitting the live frames | `framework/backend/Core/Browser/Context/BrowserContext.php` (`viewportPlacement`, `tryEmitViewportArrival`, `emitViewportAppend`, `emitViewportAnnounce`, `emitTableProgress`, `viewportTotalAfterMutation`, `rowDeltaForMutation`) |
