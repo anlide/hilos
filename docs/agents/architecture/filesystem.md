@@ -116,10 +116,54 @@ watches a cluster directory — `BackupAgent` watches only its own `BACKUP_DIR`.
 
 With several nodes, a node whose cluster directory is not the one its
 neighbors see is not admitted into the cluster, and the refusal names the
-directory (not in the code yet — HIL-1242). The check rides the node handshake
-beside the database marker HIL-1206 introduces; on a single node there is no
-check. Without it an installation without a shared volume learns of that by a
-404 on a download, or by ready copies gone after the export agent moved.
+directory (HIL-1242). Without it an installation without a shared volume learns
+of that by a 404 on a download, or by ready copies gone after the export agent
+moved.
+
+**The marker.** Every cluster directory — tmp too, when declared `CLUSTER` —
+carries the file `.hilos-cluster-directory.json` at its root: the format
+version, a marker of 32 hex characters, the `CLUSTER_NODE_ID` of the node that
+wrote it and when (`ClusterDirectoryMarker`,
+`framework/backend/Fs/ClusterDirectoryMarker.php`). The marker is a random name
+of the directory, not a digest of its content and not derived from anything: a
+node with an empty directory of its own would derive the same name and pass.
+The context lists the directories it covers with `clusterDirectories()` — tmp
+first, then the registration order; two names on one path read one file.
+
+**Who reads it, and when.** Only the start of a cluster node's daemon, once,
+right after the database marker and before the peer port opens
+([daemon-lifecycle.md](daemon-lifecycle.md), "The database both ends read");
+workers and CLI commands never touch it, and a single-node installation neither
+writes nor checks it. The first write is decided by exclusive creation
+(`FsPath::createExclusive()`, O_EXCL): of nodes starting at once on an empty
+directory one creates the file and every one of them reads its marker back. A
+node that finds the file empty or half-written waits for the whole file, with a
+line in the journal and no deadline; a file it cannot understand refuses its
+start rather than being overwritten.
+
+**On the handshake.** Each directory is the kind `directory:<name>` in the
+`markers` field beside `database`, judged by the same rule on both ends of every
+link: a node whose directory is its own — empty, so it wrote a marker of its
+own, or another one, so it read another — is alone and admitted by nobody. Mount
+the shared volume, restart the node, and it joins. The check is made on entry
+only: a volume unmounted from a running node is not noticed until that node
+restarts.
+
+**The rule for code.** The marker is the framework's file, not the owner's.
+Whatever empties a cluster directory, measures it or matches it against its own
+rows lists it through `FsDirectory::entries()`, which leaves the marker out —
+`deleteAll()`, `size()` and the data export sweep do. Listing a cluster
+directory with `FsPath::entries()` and deleting what it names would remove the
+marker, and the next node to restart would be refused by all the others.
+
+**By hand.** The marker is removed only by hand, and removing it splits the
+cluster on the next restarts: the node that starts next writes a new marker, and
+every node still running refuses it. Restart all nodes at once, or put the file
+back. A copy of a cluster directory brought from another installation carries
+that installation's marker: switch all nodes at once, or remove the file before
+the first node starts. Moving a cluster to the first build with this guard is
+also all nodes at once — a node of the previous build names no directory marker
+and is refused.
 
 ## Names, Never Paths
 

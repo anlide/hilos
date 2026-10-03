@@ -71,8 +71,8 @@
    start whose migrations opened the gap — `docker.php` applies them before this runs.
 8. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
 9. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`);
-   in cluster mode `PeerModule` reads the database marker before the peer port opens
-   (*The database both ends read* below)
+   in cluster mode `PeerModule` reads the database marker and the marker of every cluster
+   directory before the peer port opens (*The database both ends read* below)
 10. The end of `DaemonManager::boot()` decides the admin view mode of the node
    (`AdminViewModeStartup`, HIL-1249) and writes it into the node-local runtime row
    `hilosAdminViewModeRuntime` — before the first socket is bound and the first worker
@@ -555,7 +555,8 @@ on the first poll and every 30th after it. Then one INFO line:
 The marker lives in the master's memory from here on; the handshake touches no database.
 
 **On the handshake.** A hello and a welcome carry the field `markers` — the sender's
-markers by kind; there is one kind today, `database`. The field is required, and
+markers by kind: `database`, and `directory:<name>` for every cluster directory of `$fs`
+(*Cluster directories* below). The field is required, and
 `PeerProtocol::VERSION` is `9` for it: a node of the previous protocol and a node of this
 one do not link, with the line about the version. The accepting side on a hello and the
 dialing side on a welcome check, in order: the protocol version, the certificate name,
@@ -585,6 +586,32 @@ is nobody to compare with. A restore does not bring one — the target keeps its
 a target without one stays without one, so a production archive restored on staging does not
 hand staging the production name. Only the primary connection carries a marker; the others
 wait for the per-connection ownership mode (decision of 06.09.2026, R3).
+
+**Cluster directories (HIL-1242).** A `$fs` directory declared `DirectoryScope::CLUSTER` —
+tmp too, when declared so — is one more thing every node must share, and it carries a marker
+of its own: the file `.hilos-cluster-directory.json` at its root,
+`{"version":1,"marker":<32 hex>,"writtenBy":<CLUSTER_NODE_ID>,"writtenAt":<Y-m-d H:i:s>}`
+(`ClusterDirectoryMarker`, `framework/backend/Fs/ClusterDirectoryMarker.php`). `PeerModule`
+reads it right after the database marker, one directory after another in the order of
+`FsContext::clusterDirectories()` — tmp first, then the registration order — and names each
+as the kind `directory:<name>` (`PeerMarkers::directoryKind()`); the database comes first, so
+a node on another database is named by its database. The first write is decided by the
+filesystem: `FsPath::createExclusive()` opens the file with O_EXCL, and of nodes starting at
+once on an empty directory one creates it and all read its marker back — not a temp file and
+a rename, which would overwrite. A file that is there but empty or not yet JSON is one
+another node is still writing; the node waits a second and reads again, with no deadline,
+writing `Waiting for the marker of cluster directory <name> another node is writing: <file> is empty or incomplete; if no node is starting, it was left broken - remove it`
+on the first poll and every 30th after it. A file that is JSON but not this build's shape
+refuses the start: `Cluster directory <name> carries <file>, which is not a marker this build writes: remove it while no node of the cluster runs`.
+Then one INFO line per directory:
+`Cluster directory <name> marker <marker> written by <node> at <time>, read from <file>`.
+On the handshake the kind is judged by the same rule and refused in the same words, the place
+being `cluster directory <name> at <path>`:
+`Peer handshake from node '<id>' names directory:data_export marker '<theirs>', but this node reads '<ours>' from cluster directory data_export at /app/data/data_export: the two nodes do not read one directory:data_export`.
+`PeerProtocol::VERSION` stays `9`: the frame keeps its shape, and on an installation with a
+cluster directory a node of the previous build, which names no directory kind, is refused by
+the existing rule. What the marker means for the
+files beside it, and who may remove it — [filesystem.md](filesystem.md), "The Guard".
 
 **Proof on the stand.** The cluster matrix starts five nodes at once on an empty database
 (HIL-1228), and the first convergence passes only if all five read one marker — the race of

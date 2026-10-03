@@ -40,6 +40,37 @@ final class FsContextDeclarationTest extends TestCase
         self::assertSame('/srv/node/drafts', $context->getDirectories()['drafts']->getPath());
     }
 
+    /**
+     * The directories whose marker a cluster node reads (HIL-1242): tmp first when it is the
+     * cluster's, then the cluster's directories in registration order, two names of one path both.
+     */
+    public function testTheClusterDirectoriesAreTmpFirstThenTheOthersInRegistrationOrder(): void
+    {
+        $context = (new DeclaringFsContext())
+            ->declareDirectory('published', '/srv/shared/published', DirectoryScope::CLUSTER)
+            ->declareDirectory('drafts', '/srv/node/drafts', DirectoryScope::NODE)
+            ->declareDirectory(FsContext::FILES, '/srv/shared/published', DirectoryScope::CLUSTER)
+            ->declareTmp('/srv/shared/tmp', DirectoryScope::CLUSTER);
+
+        self::assertSame(
+            [
+                FsContext::TMP => '/srv/shared/tmp',
+                'published' => '/srv/shared/published',
+                FsContext::FILES => '/srv/shared/published',
+            ],
+            $context->clusterDirectories(),
+        );
+    }
+
+    public function testANodeTmpIsNoClusterDirectory(): void
+    {
+        $context = (new DeclaringFsContext())
+            ->declareTmp('/srv/node/tmp', DirectoryScope::NODE)
+            ->declareDirectory(FsContext::DATA_EXPORT, '/srv/shared/exports', DirectoryScope::CLUSTER);
+
+        self::assertSame([FsContext::DATA_EXPORT => '/srv/shared/exports'], $context->clusterDirectories());
+    }
+
     public function testACorrectDeclarationHasNoFaults(): void
     {
         $context = (new DeclaringFsContext())

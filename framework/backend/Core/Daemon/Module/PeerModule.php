@@ -18,6 +18,10 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\ClusterDirectoryMarker;
+use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\Exception\FileReadException;
+use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
 
@@ -34,12 +38,12 @@ final class PeerModule implements DaemonModule
     private readonly Closure $localMarkers;
 
     /**
-     * @param ?Closure(): PeerMarkers $localMarkers Reads this node's markers; the database marker when null -
-     *     a unit test that builds the server without a database hands its own
+     * @param ?Closure(): PeerMarkers $localMarkers Reads this node's markers; the database marker and the marker of
+     *     every cluster directory when null - a unit test that builds the server without a database hands its own
      */
     public function __construct(?Closure $localMarkers = null)
     {
-        $this->localMarkers = $localMarkers ?? self::databaseMarkers(...);
+        $this->localMarkers = $localMarkers ?? self::localMarkers(...);
     }
 
     /**
@@ -55,13 +59,15 @@ final class PeerModule implements DaemonModule
      * Builds the peer transport server from the CLUSTER_* env and registers it.
      *
      * The node's TLS files are checked first ({@see ClusterTlsConfig::fromEnv()}), then the node
-     * reads the markers it names to its peers on every handshake - today the database marker
-     * ({@see DatabaseMarker}), written here by the first node to start. That read is the one
-     * database access of the master outside its loop that the peer channel needs: a one-time
-     * bootstrap read before {@see DaemonManager::run()}, which the rule against heavy work in the
-     * master allows (docs/agents/antipatterns/heavy-work-in-master.md, *Exceptions*), as it allows
-     * the anonymization gate's schema read and the admin view mode latch. The handshake itself
-     * touches no database: the markers live in memory from here on.
+     * reads the markers it names to its peers on every handshake - the database marker
+     * ({@see DatabaseMarker}) and the marker of every cluster directory of `$fs`
+     * ({@see ClusterDirectoryMarker}), each written here by the first node to start. Those reads
+     * are the one database and file access of the master outside its loop that the peer channel
+     * needs: a one-time bootstrap read before {@see DaemonManager::run()}, which the rule against
+     * heavy work in the master allows (docs/agents/antipatterns/heavy-work-in-master.md,
+     * *Exceptions*), as it allows the anonymization gate's schema read and the admin view mode
+     * latch. The handshake itself touches neither the database nor the disk: the markers live in
+     * memory from here on.
      *
      * @param DaemonManager $daemon Daemon to register the peer server on
      * @param DaemonContext $context Resolved path context (unused; peer wiring is env-driven)
@@ -69,6 +75,9 @@ final class PeerModule implements DaemonModule
      * @throws ClusterConfigurationException When enabled but node config or its TLS files are missing or invalid
      * @throws EnvException When a cluster env value cannot be read
      * @throws DatabaseException When the database marker cannot be read or written
+     * @throws DirectoryCreateException When a cluster directory is absent and cannot be created
+     * @throws FileReadException When a cluster directory's marker cannot be read, or is a file this build does not write
+     * @throws FileWriteException When a cluster directory's marker is absent and cannot be written
      * @throws InvalidArgumentException When the markers read name a kind without the place it was read from
      */
     public function register(DaemonManager $daemon, DaemonContext $context): void
@@ -90,21 +99,42 @@ final class PeerModule implements DaemonModule
     }
 
     /**
-     * Reads the database marker, writing it first on a database that has none, and says so.
+     * Reads the database marker, then the marker of every cluster directory, writing each first where
+     * there is none yet, and says so.
+     *
+     * The database comes first: a refusal names the first breach, so a node on another database is
+     * named by its database and not by a directory. No `$fs` context, or no cluster directory in it,
+     * leaves the database marker alone.
      *
      * @return PeerMarkers This node's markers
      * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
      * @throws DatabaseException When the database marker cannot be read or written
-     * @throws InvalidArgumentException When a kind comes without its place; the database kind is built with both
+     * @throws DirectoryCreateException When a cluster directory is absent and cannot be created
+     * @throws FileReadException When a cluster directory's marker cannot be read, or is a file this build does not write
+     * @throws FileWriteException When a cluster directory's marker is absent and cannot be written
+     * @throws InvalidArgumentException When a kind comes without its place; every kind is built with both
      */
-    private static function databaseMarkers(): PeerMarkers
+    private static function localMarkers(): PeerMarkers
     {
-        $marker = DatabaseMarker::ensure(Hilos::$cluster->identity()->nodeId);
+        $nodeId = Hilos::$cluster->identity()->nodeId;
+        $database = DatabaseMarker::ensure($nodeId);
         $place = DatabaseMarker::place();
-        Logger::info("Database marker {$marker->marker} written by {$marker->writtenBy} at {$marker->writtenAt}, read from {$place}");
+        Logger::info("Database marker {$database->marker} written by {$database->writtenBy} at {$database->writtenAt}, read from {$place}");
+        $values = [PeerMarkers::DATABASE => $database->marker];
+        $places = [PeerMarkers::DATABASE => $place];
 
-        return new PeerMarkers([PeerMarkers::DATABASE => $marker->marker], [PeerMarkers::DATABASE => $place]);
+        foreach (Hilos::$fs?->clusterDirectories() ?? [] as $name => $path) {
+            $directory = ClusterDirectoryMarker::ensure($name, $path, $nodeId);
+            Logger::info(
+                "Cluster directory {$name} marker {$directory->marker} written by {$directory->writtenBy}"
+                . " at {$directory->writtenAt}, read from " . ClusterDirectoryMarker::pathIn($path),
+            );
+            $values[PeerMarkers::directoryKind($name)] = $directory->marker;
+            $places[PeerMarkers::directoryKind($name)] = ClusterDirectoryMarker::place($name, $path);
+        }
+
+        return new PeerMarkers($values, $places);
     }
 }

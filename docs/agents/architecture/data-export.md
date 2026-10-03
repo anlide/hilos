@@ -97,7 +97,10 @@ name and the stored name from `hilos_file` and the bytes from
 A failure removes partial bytes, marks the request failed and logs the reason.
 There is no automatic retry of a failed request. A restart retries a preparing
 request from the beginning. Startup drops ready rows whose files disappeared;
-startup and the hourly sweep remove files not named by a ready row.
+startup and the hourly sweep remove files not named by a ready row. The marker
+of the cluster directory is not one of them and stays: the sweep lists the
+directory through `FsDirectory::entries()`, which leaves it out
+([filesystem.md](filesystem.md), "The Guard").
 
 Before publication the builder queries `accountDeletions->erasedOf()` directly:
 a completed erasure discards the build without publication. After erasure
@@ -129,7 +132,7 @@ supplies; the framework does not carry archives between nodes. Startup drops
 ready rows whose files it cannot see (the restart rule above), so on a node's
 own directory a move of the agent wipes every ready copy. A node whose
 `data_export` is not the one its neighbors see is not admitted into the cluster
-(not in the code yet — HIL-1242).
+([filesystem.md](filesystem.md), "The Guard").
 
 ## What Is Not Here
 

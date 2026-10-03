@@ -8,28 +8,37 @@ use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Core\Daemon\Module\PeerModule;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\DatabaseMarker;
+use Hilos\Fs\ClusterDirectoryMarker;
 
 /**
  * The markers a node names to its peers on the handshake, one per kind, and the rule both ends
  * of a link judge them by (HIL-1206).
  *
- * A marker names something every node of a cluster must share. Today there is one kind - the
- * database ({@see DatabaseMarker}): nodes that name different database markers read different
- * databases, and a mesh of them would read wrong rows quietly. Every hello and welcome carries the
- * sender's markers ({@see PeerHandshakeDTO}), and both ends of a link check them right after the
- * certificate name: a kind named by either side must be named by the other with the same value.
- * A breach refuses the link on both ends before the peer is remembered, so a node reading another
- * database is admitted by nobody. Not one judge but every link: a leader judging alone would find
- * the stranger already linked to every other node, and there is no leader before the first
- * election.
+ * A marker names something every node of a cluster must share, and the kinds are of two sorts.
+ * One is the database ({@see DatabaseMarker}): nodes that name different database markers read
+ * different databases, and a mesh of them would read wrong rows quietly. The other is one kind
+ * `directory:<name>` per cluster directory of `$fs` ({@see ClusterDirectoryMarker}, HIL-1242):
+ * nodes that name different markers for one directory do not read one directory, and a file one of
+ * them writes is not there for the others.
+ *
+ * Every hello and welcome carries the sender's markers ({@see PeerHandshakeDTO}), and both ends of
+ * a link check them right after the certificate name: a kind named by either side must be named by
+ * the other with the same value. A breach refuses the link on both ends before the peer is
+ * remembered, so a node reading another database or another directory is admitted by nobody. Not
+ * one judge but every link: a leader judging alone would find the stranger already linked to every
+ * other node, and there is no leader before the first election.
  *
  * A new kind is a new key here, not a second mechanism. The markers are read once at the start of
- * the daemon ({@see PeerModule}) and live in memory; the handshake touches no database.
+ * the daemon ({@see PeerModule}) and live in memory; the handshake touches neither the database nor
+ * the disk.
  */
 final readonly class PeerMarkers
 {
     /** @var string Kind of the marker naming the logical database a node reads */
     public const string DATABASE = 'database';
+
+    /** @var string Start of the kind of the marker naming a cluster directory; the directory's name follows */
+    public const string DIRECTORY_KIND_PREFIX = 'directory:';
 
     /**
      * @param array<string, string> $values Marker this node carries, per kind
@@ -46,6 +55,20 @@ final readonly class PeerMarkers
                 'Peer markers name a value and a place for every kind; unmatched: ' . implode(', ', array_keys($unmatched)),
             );
         }
+    }
+
+    /**
+     * Names the kind of the marker of one cluster directory.
+     *
+     * By the directory's name, not its path: a refusal names the directory the way the project
+     * registered it, and two names on one path are two kinds that read one file.
+     *
+     * @param string $name Logical name of the directory as registered in the `$fs` context
+     * @return string The kind, `directory:<name>`
+     */
+    public static function directoryKind(string $name): string
+    {
+        return self::DIRECTORY_KIND_PREFIX . $name;
     }
 
     /**

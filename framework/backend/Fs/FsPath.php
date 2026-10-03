@@ -148,6 +148,62 @@ final class FsPath
     }
 
     /**
+     * Create the file with the payload only when no file is there yet, and say which happened.
+     *
+     * The first write of a file that the filesystem itself decides — the marker of a cluster
+     * directory ({@see ClusterDirectoryMarker}), which several nodes may try to write at once.
+     * The file is opened with O_CREAT|O_EXCL: of two callers creating it, the second is told the
+     * file is already there, and nothing is ever overwritten — on a local disk and on NFS v3 and
+     * later alike. That is the difference from {@see write()}, which overwrites, and from
+     * {@see publish()}, whose rename overwrites too.
+     *
+     * A caller that lost may read the file before the winner has finished writing it, so the
+     * reader has to tell an incomplete file from a whole one. The payload is flushed and fsynced
+     * best-effort, as {@see publish()} does: a failing fsync is a durability question, not a
+     * reason to give up a written file. A payload that cannot be written whole leaves no file.
+     *
+     * @param string $path Absolute file path
+     * @param string $data Binary payload
+     * @return bool True when this call created the file; false when a file was already there, untouched
+     *
+     * @throws FileWriteException If the file is absent and cannot be created, or the payload cannot be written whole
+     */
+    public static function createExclusive(string $path, string $data): bool
+    {
+        // warning-suppressed: false is told apart on the next lines - a file already there or FileWriteException
+        $handle = @fopen($path, 'x');
+        if ($handle === false) {
+            if (is_file($path)) {
+                return false;
+            }
+
+            throw new FileWriteException("Cannot create file: {$path}");
+        }
+
+        // warning-suppressed: a short count becomes FileWriteException on the next lines
+        if (@fwrite($handle, $data) !== strlen($data)) {
+            // warning-suppressed: the handle is dropped either way, the failed write is what the caller is told
+            @fclose($handle);
+            try {
+                self::delete($path);
+            } catch (FileDeleteException) {
+                // best-effort cleanup: the write failure is what the caller is told about
+            }
+
+            throw new FileWriteException("Cannot write file: {$path}");
+        }
+
+        // warning-suppressed: a failed flush leaves the durability best-effort, the file is written
+        @fflush($handle);
+        // warning-suppressed: a failed fsync leaves the durability best-effort, the file is written
+        @fsync($handle);
+        // warning-suppressed: the handle is dropped either way, nothing reads it after this line
+        @fclose($handle);
+
+        return true;
+    }
+
+    /**
      * @param string $path Absolute file path
      * @param string $data Binary payload to append
      *

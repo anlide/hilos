@@ -399,6 +399,11 @@ abstract class AbstractDataExportAgent extends AbstractAgent
     }
 
     /**
+     * Removes expired requests, then every file of the directory no ready request keeps.
+     *
+     * The directory is listed by {@see FsDirectory::entries()}: the cluster directory marker is the
+     * framework's, not one of the copies, and stays (HIL-1242).
+     *
      * @throws HilosException When an expired request, file or state publication fails
      */
     private function expireCopies(): void
@@ -413,8 +418,8 @@ abstract class AbstractDataExportAgent extends AbstractAgent
                 $keptNames[$export->storedName] = true;
             }
         }
-        foreach (FsPath::entries($this->directory->getPath()) as $name) {
-            if ($name === '.' || $name === '..' || isset($keptNames[$name])) {
+        foreach ($this->directory->entries() as $name) {
+            if (isset($keptNames[$name])) {
                 continue;
             }
             $path = $this->directory[$name]->getPath();

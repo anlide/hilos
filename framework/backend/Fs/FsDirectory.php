@@ -11,6 +11,7 @@ use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
+use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
 use LogicException;
 
@@ -80,12 +81,30 @@ final readonly class FsDirectory implements ArrayAccess
     }
 
     /**
-     * Best-effort delete of every regular file (non-recursive).
+     * Names of this directory's own entries, `.` and `..` left out.
+     *
+     * The marker of a cluster directory ({@see ClusterDirectoryMarker::FILE_NAME}) belongs to the
+     * framework, not to the directory's owner, and is not listed: whatever empties the directory,
+     * measures it, or matches it against its own rows goes through this list, so it never removes
+     * or counts the marker (HIL-1242).
+     *
+     * @return list<string> Entry names in `scandir()` order
+     *
+     * @throws DirectoryNotFoundException If the path is not a directory
+     * @throws FileReadException If the directory cannot be listed
+     */
+    public function entries(): array
+    {
+        return array_values(array_diff(FsPath::entries($this->path), [ClusterDirectoryMarker::FILE_NAME]));
+    }
+
+    /**
+     * Best-effort delete of every regular file of its own (non-recursive); the cluster directory marker stays.
      */
     public function deleteAll(): void
     {
         try {
-            $entries = FsPath::entries($this->path);
+            $entries = $this->entries();
         } catch (FsException) {
             return;
         }
@@ -102,14 +121,14 @@ final readonly class FsDirectory implements ArrayAccess
     }
 
     /**
-     * Total size of all files in the directory (non-recursive).
+     * Total size of its own files in the directory (non-recursive); the cluster directory marker is not counted.
      *
      * @return int Total size in bytes
      */
     public function size(): int
     {
         try {
-            $entries = FsPath::entries($this->path);
+            $entries = $this->entries();
         } catch (FsException) {
             return 0;
         }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Fs\Context;
 
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsDirectory;
@@ -107,6 +108,32 @@ abstract class FsContext
     public function getDirectories(): array
     {
         return $this->_directories;
+    }
+
+    /**
+     * Every directory the registration declares the cluster's, tmp included.
+     *
+     * The reader is the start of a cluster node: it reads the marker of each and names it to its
+     * peers ({@see ClusterDirectoryMarker}, HIL-1242). Two names registered on one path are both
+     * listed - each is a kind of marker of its own, and the second read finds the file the first
+     * wrote.
+     *
+     * @return array<string, string> Directory paths as registered, keyed by name: tmp under
+     *     {@see self::TMP} first when it is the cluster's, then the directories in registration order
+     */
+    public function clusterDirectories(): array
+    {
+        $paths = [];
+        if ($this->_tmp !== null && $this->_tmp->getScope() === DirectoryScope::CLUSTER) {
+            $paths[self::TMP] = $this->_tmp->getPath();
+        }
+        foreach ($this->_directories as $name => $directory) {
+            if ($directory->getScope() === DirectoryScope::CLUSTER) {
+                $paths[$name] = $directory->getPath();
+            }
+        }
+
+        return $paths;
     }
 
     /**

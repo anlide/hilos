@@ -9,7 +9,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the rule both ends of a peer link judge each other's markers by (HIL-1206).
+ * Unit tests for the rule both ends of a peer link judge each other's markers by (HIL-1206, HIL-1242).
  *
  * A kind named by either side must be named by the other with the same value, and a breach is
  * refused in words that name the node, the kind, both values and where this node read its own.
@@ -25,6 +25,9 @@ final class PeerMarkersTest extends TestCase
 
     /** Database marker a peer on another database reads */
     private const string FOREIGN_MARKER = 'ffffffffffffffffffffffffffffffff';
+
+    /** Marker of a cluster directory this node reads */
+    private const string LOCAL_DIRECTORY_MARKER = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
     /** Where this node reads its marker from */
     private const string PLACE = "database 'hilos_cluster' on db:3306";
@@ -58,6 +61,31 @@ final class PeerMarkersTest extends TestCase
         $this->assertSame(
             "Peer handshake from node 'node-s1' names catalog marker 'c1', which this node does not carry",
             $this->local()->refusalFor(self::PEER, [PeerMarkers::DATABASE => self::LOCAL_MARKER, 'catalog' => 'c1']),
+        );
+    }
+
+    public function testTheKindOfAClusterDirectoryIsNamedByTheDirectory(): void
+    {
+        $this->assertSame('directory:data_export', PeerMarkers::directoryKind('data_export'));
+    }
+
+    /**
+     * A cluster directory is one more kind beside the database (HIL-1242): the same rule, and the
+     * same words, with the directory's kind and the place it was read from.
+     */
+    public function testAnotherMarkerOfAClusterDirectoryIsRefused(): void
+    {
+        $kind = PeerMarkers::directoryKind('data_export');
+        $local = new PeerMarkers(
+            [PeerMarkers::DATABASE => self::LOCAL_MARKER, $kind => self::LOCAL_DIRECTORY_MARKER],
+            [PeerMarkers::DATABASE => self::PLACE, $kind => 'cluster directory data_export at /app/data/data_export'],
+        );
+
+        $this->assertSame(
+            "Peer handshake from node 'node-s1' names directory:data_export marker 'ffffffffffffffffffffffffffffffff',"
+            . " but this node reads 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' from cluster directory data_export at /app/data/data_export:"
+            . ' the two nodes do not read one directory:data_export',
+            $local->refusalFor(self::PEER, [PeerMarkers::DATABASE => self::LOCAL_MARKER, $kind => self::FOREIGN_MARKER]),
         );
     }
 

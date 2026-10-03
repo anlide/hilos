@@ -40,6 +40,15 @@ final class PeerLinkMarkerTest extends TestCase
     /** Database marker a node on another database reads */
     private const string FOREIGN_MARKER = 'ffffffffffffffffffffffffffffffff';
 
+    /** Cluster directory whose marker the directory case judges */
+    private const string DIRECTORY = 'data_export';
+
+    /** Marker of that directory this node reads */
+    private const string DIRECTORY_MARKER = '00000000000000000000000000000002';
+
+    /** Where this node reads it from, as a refusal prints it */
+    private const string DIRECTORY_PLACE = 'cluster directory data_export at /app/data/data_export';
+
     private ?EnvAccessor $previousEnv = null;
 
     private ?ClusterContext $previousCluster = null;
@@ -175,14 +184,45 @@ final class PeerLinkMarkerTest extends TestCase
     }
 
     /**
+     * A node whose cluster directory is not the one this node reads is refused like a node on
+     * another database (HIL-1242): the directory is one more kind in the same set, judged by the
+     * same rule, and the refusal names the directory and where this node read its marker.
+     */
+    public function testAHelloNamingAnotherClusterDirectoryMarkerIsRefusedAndNotWelcomed(): void
+    {
+        $kind = PeerMarkers::directoryKind(self::DIRECTORY);
+        $local = new PeerMarkers(
+            [PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_MARKER, $kind => self::DIRECTORY_MARKER],
+            [PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_PLACE, $kind => self::DIRECTORY_PLACE],
+        );
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: false, markers: $local);
+
+        $this->deliver($far, $this->hello([PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_MARKER, $kind => self::FOREIGN_MARKER]));
+        $link->read();
+
+        $this->assertTrue($link->shouldClose(), 'a hello from a node with another cluster directory must drop the link');
+        $this->assertNull($link->remoteIdentity());
+        $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
+        $this->assertSame('', $this->flushAndReadFar($link, $far), 'no welcome goes back to a refused hello');
+        $this->assertStringContainsString(
+            "Peer link dropped: Peer handshake from node 'node-b' names directory:data_export marker '" . self::FOREIGN_MARKER . "',"
+            . " but this node reads '" . self::DIRECTORY_MARKER . "' from " . self::DIRECTORY_PLACE
+            . ': the two nodes do not read one directory:data_export',
+            $this->log(),
+        );
+    }
+
+    /**
      * @param Socket $socket Near end of a pair
      * @param bool $dialer Whether the link dialed
+     * @param ?PeerMarkers $markers Markers of this node; the shared test database alone when null
      * @return PeerLink Link under test, over a transport that vouches for the far node's name
      */
-    private function link(Socket $socket, bool $dialer): PeerLink
+    private function link(Socket $socket, bool $dialer, ?PeerMarkers $markers = null): PeerLink
     {
         $identity = NodeIdentity::of(self::LOCAL_NODE, NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $identity, [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        $server = new PeerServer('127.0.0.1', 0, $identity, [], PeerTestTls::unread(), $markers ?? PeerTestMarkers::shared());
 
         return new PeerLink($socket, $server, $identity, $dialer, new NamedPeerTestTransport($socket, self::REMOTE_NODE));
     }

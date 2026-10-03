@@ -25,6 +25,7 @@ use Hilos\DataExport\DataExportWriter;
 use Hilos\Database\Database;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\FsException;
@@ -89,6 +90,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Hilos::resetBrowser();
         foreach (glob($this->directory . '/*') as $path) {
             unlink($path);
+        }
+        if (is_file(ClusterDirectoryMarker::pathIn($this->directory))) {
+            unlink(ClusterDirectoryMarker::pathIn($this->directory));
         }
         if (is_dir($this->directory)) {
             rmdir($this->directory);
@@ -280,6 +284,10 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     /**
      * Startup discards missing/expired copies and orphan files, retaining live ready and queued rows.
      *
+     * The cluster directory marker is no orphan: it is the framework's file, and a sweep that took it
+     * would split a cluster on the next restart of a node (HIL-1242). `glob('/*')` does not list a
+     * dot file, so the marker is asserted on its own.
+     *
      * @throws HilosException When fixture or reconciliation fails
      */
     public function testStartupCleansOrphansMissingFilesAndExpiredCopies(): void
@@ -294,12 +302,13 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             '2026-01-01 00:01:00', '2026-01-02 00:00:00',
         );
         Hilos::$db->dataExports->actions->order(11, '2026-01-01 00:00:00');
-        foreach (['kept.zip', 'expired.zip', 'abandoned.building.zip', 'orphan.zip'] as $name) {
+        foreach (['kept.zip', 'expired.zip', 'abandoned.building.zip', 'orphan.zip', ClusterDirectoryMarker::FILE_NAME] as $name) {
             file_put_contents($this->directory . '/' . $name, 'file');
         }
         $agent = new DataExportTestAgent();
         $agent->onStart();
         self::assertSame(['kept.zip'], array_map('basename', glob($this->directory . '/*')));
+        self::assertFileExists(ClusterDirectoryMarker::pathIn($this->directory));
         foreach ([8, 9, 10] as $userId) {
             self::assertNull(Hilos::$db->dataExports->ofUser($userId));
         }
