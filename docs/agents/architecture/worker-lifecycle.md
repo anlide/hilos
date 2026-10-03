@@ -98,10 +98,15 @@ Sending those frames is an attempt, not a guarantee:
   all.
 - The worker keeps no clock of its own for the write. When the master stops the node, it kills a
   worker still writing once its shutdown timeout runs out.
-- A node that is stopping drops the WebSocket connections of this node in the same step that
-  signals the workers, so a frame a stop hook addresses to a browser connected here does not reach
-  it. DB/RT sync and whatever the master passes on to its peers travel on while the master waits for
-  its workers to leave.
+- A stopping node closes its browser entrance at once, stops reading the browsers already connected,
+  and keeps writing to them. They close only once the workers are gone — processes exited and
+  connections closed — and what was sent to them is written, so a frame a stop hook addresses to a
+  browser connected here reaches it (HIL-1207). DB/RT sync and what the master passes on to its peers
+  travel on; the node leaves only once its peer links have written it.
+  A frame a stop hook addresses to another agent leaving in the same wave finds it gone and is
+  dropped ("Signal skipped during shutdown"): a holder the others report to on their way out
+  settles what it holds on its own stop instead - the sessions library ends the sign-ins still
+  going (HIL-1207).
 
 A worker that leaves while its master keeps serving — an error or an exception — is read like any
 running worker, and its frames reach their addressees.

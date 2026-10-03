@@ -10,6 +10,7 @@ use Hilos\API\DTO\AsyncHttpResponse;
 use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelProbe;
@@ -214,6 +215,9 @@ class AuthCodeAgent extends AbstractAgent
      * clock left to end its wait, and a send this agent drops without a word is a line saying
      * "sending" forever. The refusal leaves in the same tick, ahead of the stop, as every frame
      * of an ordinary stop does.
+     * On a node's stop the holder may be leaving in the same wave, and the refusal finds it gone;
+     * the holder then fails the send itself, on its own stop
+     * ({@see AbstractSessionsLibraryAgent::onStop()}, HIL-1207).
      *
      * @throws InvalidArgumentException When a refusal cannot be named or queued
      */

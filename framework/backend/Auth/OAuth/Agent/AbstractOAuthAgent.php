@@ -6,6 +6,7 @@ namespace Hilos\Auth\OAuth\Agent;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
@@ -176,6 +177,9 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * the pool ceiling - is reported ended to the session holder, the way a failed exchange is.
      * The frames leave in the same tick, ahead of the stop, as every frame of an ordinary stop
      * does.
+     * On a node's stop the holder may be leaving in the same wave, and the report finds it gone;
+     * the holder then ends the trip itself, on its own stop
+     * ({@see AbstractSessionsLibraryAgent::onStop()}, HIL-1207).
      *
      * @throws InvalidArgumentException When an ending frame cannot be named or queued
      * @throws SourceChangeSubscriberException Whatever a subscriber to the pool's announcement raises

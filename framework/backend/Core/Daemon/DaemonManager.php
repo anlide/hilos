@@ -337,6 +337,9 @@ abstract class DaemonManager extends BaseManager implements
     /** @var ?float Shutdown start time (null if not shutting down) */
     private ?float $shutdownStartTime = null;
 
+    /** Whether this departure has let its browsers close (HIL-1207). */
+    private bool $browsersReleased = false;
+
     /**
      * @var DaemonDeparture Why this node is leaving, as run() reports it to the entrypoint
      *
@@ -898,6 +901,9 @@ abstract class DaemonManager extends BaseManager implements
             // Dispatch accumulated signals
             $this->dispatchSignals();
 
+            // After dispatch on purpose: the last worker's deliveries are in browser buffers now.
+            $this->releaseBrowsersOnceWorkersLeft();
+
             // Report the re-hydrate barrier once everyone has answered, or the deadline passed
             $this->tickReHydrateRound();
 
@@ -1009,7 +1015,11 @@ abstract class DaemonManager extends BaseManager implements
         // Check timeout
         $elapsed = microtime(true) - $this->shutdownStartTime;
         if ($elapsed >= $this->shutdownTimeout) {
-            Logger::info("Shutdown timeout expired, forcing exit");
+            $notReady = array_map(
+                static fn(ServerInterface $server): string => $server->getServerName(),
+                array_filter($this->servers, static fn(ServerInterface $server): bool => !$server->isReadyToShutdown()),
+            );
+            Logger::info('Shutdown timeout expired, forcing exit; not ready: ' . implode(', ', $notReady));
             return false;
         }
 
@@ -1021,7 +1031,8 @@ abstract class DaemonManager extends BaseManager implements
      * Initiate shutdown sequence
      *
      * Called when shouldExit becomes true.
-     * Prepares all servers for shutdown.
+     * Closes the browser entrance first and prepares all servers for shutdown. Browsers
+     * themselves close last, after the workers have left ({@see releaseBrowsersOnceWorkersLeft()}).
      *
      * Every step of the departure stands on its own: it runs once, nothing re-enters this
      * method afterwards, and a step that refuses must not take the remaining ones with it.
@@ -1049,6 +1060,16 @@ abstract class DaemonManager extends BaseManager implements
             }
         }
 
+        try {
+            $this->closeBrowserEntrance();
+        } catch (Throwable $failure) {
+            $this->logException(sprintf(
+                'Closing the browser entrance failed on the way out: %s - %s',
+                get_class($failure),
+                $failure->getMessage()
+            ));
+        }
+
         // Tell all servers to prepare for shutdown. Each on its own, because the point of
         // the step is that every server gets to close its clients: letting the first one
         // that refuses end the loop would take that chance from the ones behind it, and
@@ -1065,6 +1086,58 @@ abstract class DaemonManager extends BaseManager implements
                 ));
             }
         }
+    }
+
+    /**
+     * Stop admitting browsers on a departing node.
+     *
+     * A tab dropped elsewhere reconnects within a second; accepting it here would read it
+     * again and hold departure to the timeout. Detach the listening socket before closing it,
+     * in the same order as {@see ClientSocketDetacher}.
+     */
+    private function closeBrowserEntrance(): void
+    {
+        $server = $this->findWebSocketServer();
+        if ($server === null || !$server->isRunning()) {
+            return;
+        }
+
+        $socket = $server->getSocket();
+        if ($socket !== null) {
+            $this->eventLoop->unregister($socket);
+        }
+
+        $server->stop();
+    }
+
+    /**
+     * Release browsers after workers exit and their connections close.
+     *
+     * The release follows dispatch, so the workers' stop-hook deliveries reach local
+     * browsers before their sockets close (HIL-1136 sends them; HIL-1207 delivers them).
+     */
+    private function releaseBrowsersOnceWorkersLeft(): void
+    {
+        if ($this->shutdownStartTime === null || $this->browsersReleased) {
+            return;
+        }
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer !== null && !$workerServer->isReadyToShutdown()) {
+            return;
+        }
+
+        $webSocketServer = $this->findWebSocketServer();
+        $this->browsersReleased = true;
+        if ($webSocketServer === null) {
+            return;
+        }
+
+        Logger::info(sprintf(
+            'Workers gone; closing %d browser connection(s) once what they were sent is written',
+            count($webSocketServer->getClients())
+        ));
+        $webSocketServer->closeClientsOnceWritten();
     }
 
     /**
@@ -2043,7 +2116,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function tickReadiness(): void
     {
-        if (!$this->workersReady || $this->webSocketStarted) {
+        if (!$this->workersReady || $this->webSocketStarted || $this->shutdownStartTime !== null) {
             return;
         }
 

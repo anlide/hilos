@@ -355,6 +355,38 @@ final class OAuthTripHolderTest extends TestCase
         $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $this->trip()?->ending);
     }
 
+    public function testAHolderThatStopsEndsOpenSignInsWhileTheirTabsAreConnected(): void
+    {
+        $this->declareSignInSurface();
+        $agent = new OAuthTripHolderTestAgent();
+        $this->open($agent, self::LIVE_ACCEPT_KEY);
+        $attempts = Hilos::$rt?->hilosCodeSendAttempts;
+        $this->assertNotNull($attempts);
+        $attempts->actions->start('hash-phone', 'ticket-phone', 'telegram');
+        $attempts->actions->start('hash-mail', 'ticket-mail', StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+
+        $agent->onStop();
+
+        $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $this->trip()?->ending);
+        $results = $this->drainResults();
+        $this->assertCount(1, $results);
+        $this->assertSame(self::LIVE_ACCEPT_KEY, $results[0]->acceptKey);
+        $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $results[0]->reason);
+        $this->assertSame(StateHilosCodeSendAttempt::STATE_FAILED, $attempts['hash-phone']?->state);
+        $this->assertSame(StateHilosCodeSendAttempt::STATE_QUEUED, $attempts['hash-mail']?->state);
+    }
+
+    public function testAHolderWithoutASignInSurfaceLeavesOpenTripsOnStop(): void
+    {
+        $agent = new OAuthTripHolderTestAgent();
+        $this->open($agent, self::LIVE_ACCEPT_KEY);
+
+        $agent->onStop();
+
+        $this->assertNull($this->trip()?->ending);
+        $this->assertSame([], $this->drainResults());
+    }
+
     public function testAKeyNoTabMintsIsRefusedWhereItEntersFromTheWire(): void
     {
         $this->expectException(InvalidFormatException::class);
@@ -577,9 +609,6 @@ abstract class OAuthTripHolderTestHilos extends Hilos
  */
 final class OAuthTripHolderTestAgent extends AbstractSessionsLibraryAgent
 {
-    public function onStop(): void
-    {
-    }
 }
 
 /**

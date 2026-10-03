@@ -2432,13 +2432,28 @@ abstract class WorkerServer extends AbstractServer implements
     /**
      * Check if server is ready to shutdown
      *
-     * Worker server is ready when all worker processes have stopped.
+     * Ready when every worker process has exited and every linked worker connection is closed.
+     * The master reads a connection one buffer at a time, so an exited worker's last frames
+     * may still be in its socket (HIL-1207); the second stop wave also waits on this fact.
      *
      * @return bool True if ready to shutdown
      */
     public function isReadyToShutdown(): bool
     {
-        // Ready when all workers have stopped
-        return count($this->workers) === 0;
+        return $this->workers === [] && !$this->linkedWorkerConnectionOpen();
+    }
+
+    /**
+     * @return bool Whether a linked worker still has an open connection
+     */
+    private function linkedWorkerConnectionOpen(): bool
+    {
+        foreach ($this->clients as $client) {
+            if ($client instanceof WorkerClient && $client->getWorkerIndex() !== self::UNLINKED_WORKER_INDEX) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

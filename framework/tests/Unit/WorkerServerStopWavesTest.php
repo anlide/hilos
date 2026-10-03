@@ -91,6 +91,21 @@ final class WorkerServerStopWavesTest extends TestCase
         ], StopWavesTestLog::$events);
     }
 
+    public function testShutdownWaitsForTheLastLinkedWorkerConnectionAfterProcessesExit(): void
+    {
+        $server = $this->buildServer(withJournal: false);
+        $connection = new ReflectionClass(StopWavesTestWorkerClient::class)->newInstanceWithoutConstructor();
+        $connection->setWorkerIndex(self::PLAIN_WORKER);
+        $clients = new ReflectionProperty(WorkerServer::class, 'clients');
+        $clients->setValue($server, [$connection]);
+        new ReflectionProperty(WorkerServer::class, 'workers')->setValue($server, []);
+
+        $this->assertFalse($server->isReadyToShutdown());
+
+        $clients->setValue($server, []);
+        $this->assertTrue($server->isReadyToShutdown());
+    }
+
     public function testWithoutAHeldAgentTheStopIsOneWaveAsItWas(): void
     {
         $server = $this->buildServer(withJournal: false);

@@ -403,6 +403,20 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * Wait until everything handed to peers has been written before leaving.
+     *
+     * Browser closes reach remote agents as CONNECTION_CLOSE and a connection-index delta
+     * after the links' write pass. Links remain open until master exit; a peer that stops
+     * draining is bounded by the outbound cap or shutdown timeout (HIL-1207).
+     *
+     * @return bool True when no peer link has queued output
+     */
+    public function isReadyToShutdown(): bool
+    {
+        return !array_any($this->clients, static fn(PeerLink $link): bool => $link->hasPendingWrite());
+    }
+
+    /**
      * Broadcasts the graceful-leave frame to every handshaked peer.
      *
      * A leaving leader designates a successor so leadership transfers without an

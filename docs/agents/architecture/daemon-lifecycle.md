@@ -970,12 +970,20 @@ alone, so a fleet of equal free agents does not pile onto one node.
 - SIGTERM/SIGINT → `shouldExit = true`
 - `initiateShutdown()` → fires `onClusterWorkStop()` (cluster mode only), then calls
   `prepareShutdown()` on all servers (the `PeerServer` broadcasts the `NodeLeaving` frame)
+- The master closes the browser entrance before preparing the servers: it removes the listening
+  socket from the event loop and closes it. Existing browsers remain connected but are no longer read.
 - `WorkerServer::stop()` sends SIGTERM to every worker but the ones hosting an agent whose
   daemon stops after the other workers (`stopsAfterOtherWorkers()`, the analytics journal
   agent, HIL-1154); those go in a second wave once the others are gone and their last frames
   were dispatched — `agent_stop` over the connection first, SIGTERM a pass later
   ([worker-lifecycle.md](worker-lifecycle.md), "Graceful shutdown")
-- Loop continues until all servers report `isReadyToShutdown()` or `shutdownTimeout` (20s) expires
+- Once the worker server is ready — no process and no linked worker connection — the master asks each
+  browser to close after what it was sent has been written. A browser action pressed during this
+  window is not read; the frontend fails its pending action when the connection drops, with no
+  refusal frame (`framework/frontend/core/src/connection/actionLifecycle.ts`).
+- Loop continues until all servers report `isReadyToShutdown()` or `shutdownTimeout` (20s) expires.
+  The peer server becomes ready when its links have written everything; the timeout line names the
+  servers that were not ready.
 - `run()` returns a `DaemonDeparture` saying why the node left, and `DaemonApplication`
   turns it into the process code: `0` for an ordinary stop, `ExitCode::ERROR` when there
   was a failure on the node's way out — a failed loop iteration (HIL-569), the entropy

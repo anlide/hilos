@@ -11,7 +11,7 @@ Wraps `EventBase` from the event extension. Lives in `DaemonManager`.
 ```
 EventLoop::registerRead($socket, $callback)  ← watch socket for incoming data
 EventLoop::tick()                            ← process all ready events (non-blocking)
-EventLoop::unregister($socket)               ← master seam only, never called by hand
+EventLoop::unregister($socket)               ← master client-detach or browser-entrance close
 EventLoop::registeredCount()                 ← how many sockets are on the watch
 ```
 
@@ -24,8 +24,9 @@ $server->dropClient($client); // off the watch, closed, forgotten — in that or
 ```
 `AbstractServer::dropClient()` announces the departure through
 `ClientSocketDetacher`, the seam `DaemonManager` implements and hands to every server
-in `registerServer()`. So `unregister()` has exactly one caller in production, inside
-that seam: do not call it by hand, and do not close a client's socket outside the door.
+in `registerServer()`. A departing master also calls `unregister()` before closing
+the WebSocket server's listening socket in `closeBrowserEntrance()` (HIL-1207).
+Client sockets still leave only through `dropClient()`; do not close one outside that door.
 
 ## What runs in the event loop
 

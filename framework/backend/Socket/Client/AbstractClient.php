@@ -53,6 +53,9 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     protected bool $closeWhenOutputDrained = false;
 
+    /** This connection takes no more input; what is queued for it is still written (HIL-1207). */
+    private bool $readingStopped = false;
+
     /** @var SocketTransportInterface What carries the bytes: the bare socket, or a TLS session over it */
     private SocketTransportInterface $transport;
 
@@ -87,6 +90,11 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     public function read(): void
     {
+        // A departing node reads nothing more from this connection, but keeps writing to it.
+        if ($this->readingStopped) {
+            return;
+        }
+
         // Skip if already marked for closing to prevent redundant processing
         if ($this->shouldClose) {
             return;
@@ -206,6 +214,39 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     public function markShouldClose(): void
     {
         $this->shouldClose = true;
+    }
+
+    /**
+     * Stop reading this connection while continuing to write to it.
+     *
+     * The peer may still send, but none of its input reaches a handler.
+     */
+    public function stopReading(): void
+    {
+        $this->readingStopped = true;
+    }
+
+    /**
+     * Close once everything queued for this connection has been handed to the socket.
+     *
+     * An empty buffer closes at once because write() returns before its drained branch.
+     */
+    public function closeOnceWritten(): void
+    {
+        if ($this->writeBuffer === '') {
+            $this->shouldClose = true;
+            return;
+        }
+
+        $this->closeWhenOutputDrained = true;
+    }
+
+    /**
+     * @return bool Whether bytes remain in the outbound buffer
+     */
+    public function hasPendingWrite(): bool
+    {
+        return $this->writeBuffer !== '';
     }
 
     /**

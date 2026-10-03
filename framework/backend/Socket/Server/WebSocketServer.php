@@ -106,22 +106,37 @@ abstract class WebSocketServer extends AbstractServer
     /**
      * Prepare server for shutdown.
      *
-     * Stops accepting new connections.
-     * Closing all connected clients.
+     * Stops reading browsers on this node while continuing to write to them.
+     *
+     * The master closes the listening socket separately. Browsers close after workers
+     * are gone and their last deliveries are written, via {@see closeClientsOnceWritten()}.
      */
     public function prepareShutdown(): void
     {
         parent::prepareShutdown();
 
         foreach ($this->clients as $client) {
-            $client->markShouldClose();
+            $client->stopReading();
+        }
+    }
+
+    /**
+     * Close browsers once their queued deliveries are written.
+     *
+     * The master calls this after its workers are gone (HIL-1207).
+     */
+    public function closeClientsOnceWritten(): void
+    {
+        foreach ($this->clients as $client) {
+            $client->closeOnceWritten();
         }
     }
 
     /**
      * Check if server is ready to shutdown.
      *
-     * WebSocket server is ready when all clients have disconnected.
+     * WebSocket server is ready when all clients have disconnected. Clients leave only
+     * after closeClientsOnceWritten(), so shutdown waits for the workers and browser writes.
      *
      * @return bool True if ready to shutdown
      */

@@ -688,6 +688,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * ended here with a refusal. A mailed code is spared because this library cannot tell whether
      * its mail shard is alive; the raw letter dies with that shard, and the wait ends when the code
      * expires or the person asks to send it again (HIL-1135).
+     * A library that stops in order ends them itself on the way out ({@see self::onStop()},
+     * HIL-1207); what an heir finds is what a fall left.
      *
      * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
      * @throws HilosException On runtime failure
@@ -786,11 +788,21 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * The library holds nothing across a stop: its state is the database and the collections
-     * above, which outlive the process that owns them.
+     * Ends every sign-in still going on the way out (HIL-1207): nothing this instance holds open
+     * will be answered by it any more, and the agents that would have ended it may be leaving in
+     * the same wave of a node's stop - their reports find this library gone. Its heir would end
+     * them on its start anyway ({@see self::onStart()}); ending them here tells the tabs still on
+     * the wire while they are. The rest of its state is the database and the collections above,
+     * which outlive the process that owns them.
+     *
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When a result or progress frame cannot be named or queued
      */
     public function onStop(): void
     {
+        if ($this->hasSignInSurface()) {
+            $this->endOpenSignIns(null);
+        }
     }
 
     /**
@@ -6943,7 +6955,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * (HIL-1135).
      *
      * Null stands for "all of them": the start of this library, which cannot tell what went with
-     * its predecessor and knows only that nothing it left open will be answered.
+     * its predecessor and knows only that nothing it left open will be answered, and its stop,
+     * after which nothing it holds open will be.
      *
      * @param ?list<string> $goneTypes Types of the agents that are gone, or null when every sign-in is to end
      * @throws HilosException On runtime failure

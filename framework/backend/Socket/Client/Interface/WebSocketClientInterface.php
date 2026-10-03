@@ -14,6 +14,12 @@ use Hilos\Socket\Client\ClientInterface;
  */
 interface WebSocketClientInterface extends ClientInterface
 {
+    /** Stop reading input while allowing queued output to be written. */
+    public function stopReading(): void;
+
+    /** Close after all queued output has been written. */
+    public function closeOnceWritten(): void;
+
     /**
      * Send WebSocket text frame.
      *

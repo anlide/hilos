@@ -7,6 +7,7 @@ namespace Hilos\Core\EventLoop;
 use EventBase;
 use Event;
 use Hilos\Core\Daemon\ClientSocketDetacher;
+use Hilos\Core\Daemon\DaemonManager;
 use Throwable;
 
 /**
@@ -17,9 +18,9 @@ use Throwable;
  * Read callbacks are wrapped so a throwing handler is swallowed instead of
  * aborting the loop; the originating handler logs the failure. A socket must
  * come off the watch before it is closed, otherwise libevent keeps a dangling
- * reference to a closed descriptor - but that order is nobody's to repeat here:
- * the only caller of unregister() is the master's detach seam
- * ({@see ClientSocketDetacher}), which every exit path goes through.
+ * reference to a closed descriptor. The master uses unregister() through its
+ * client detach seam ({@see ClientSocketDetacher}) and when closing the browser
+ * entrance on departure ({@see DaemonManager::closeBrowserEntrance()}, HIL-1207).
  */
 final class EventLoop
 {
