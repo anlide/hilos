@@ -83,6 +83,10 @@ forgets acceptances of revisions declared after the named one, and records it, s
 holds the person on the former revision; window, lapse, and freeze follow by calculation.
 Merging accounts leaves those rows with the account that gave the acceptance.
 
+A person's [data copy](data-export.md) carries every acceptance, including
+revisions the catalog no longer declares. The profile projection omits those
+old revisions.
+
 ## Consent at registration
 
 The public `hilos_legal_consent` action on the users library accepts `{}` and

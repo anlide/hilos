@@ -14,6 +14,9 @@ use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
 use Hilos\Database\View\Item\UserMerge;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Legal\LegalCatalogResolver;
+use Hilos\Legal\LegalDocument;
+use Hilos\Legal\LegalWire;
 
 /** Explicit JSON projections: authentication secrets never pass through generic serialization. */
 final class FrameworkDataExportSections
@@ -163,12 +166,50 @@ final class FrameworkDataExportSections
         }
         $writer->section('push_subscriptions', $subscriptions);
 
+        // Keep every acceptance, including revisions the catalog no longer declares and the profile omits.
+        $writer->section('legal_acceptances', self::legalAcceptances($userId));
+
         $deletion = Hilos::$db->accountDeletions->liveOf($userId);
         $writer->section('account_deletion', $deletion === null ? null : [
             'requestedAt' => DataExportTime::iso($deletion->requestedAt),
             'effectiveAt' => DataExportTime::iso($deletion->effectiveAt),
             'canceledAt' => DataExportTime::iso($deletion->canceledAt),
         ]);
+    }
+
+    /**
+     * @param int $userId Person whose acceptance history is exported
+     * @return list<array<string, mixed>> Accepted revisions in timestamp/id order
+     * @throws HilosException When acceptance records or declared revision text cannot be read
+     */
+    private static function legalAcceptances(int $userId): array
+    {
+        $rows = [];
+        foreach (Hilos::$db->legalAcceptances->ofUser($userId) as $acceptance) {
+            $revision = null;
+            $document = LegalDocument::tryFrom($acceptance->document);
+            if ($document !== null) {
+                foreach (LegalCatalogResolver::revisions($document) as $declared) {
+                    if ($declared->id === $acceptance->revisionId) {
+                        $revision = $declared;
+                        break;
+                    }
+                }
+            }
+
+            $rows[] = [
+                'document' => $acceptance->document,
+                'revisionId' => $acceptance->revisionId,
+                'acceptedAt' => DataExportTime::iso($acceptance->acceptedAt),
+                'inCode' => $revision !== null,
+                'publishedOn' => $revision?->publishedOn,
+                'effectiveOn' => $revision?->effectiveOn,
+                'significance' => $revision?->significance->value,
+                'clauses' => $revision === null ? null : LegalWire::clauses(LegalCatalogResolver::compose($document, $revision->id)),
+            ];
+        }
+
+        return $rows;
     }
 
     /**

@@ -31,6 +31,7 @@ use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Legal\LegalCatalogStub;
 use PharData;
 
 /** Real queue and archive lifecycle, including a deletion whose sync is still waiting. */
@@ -136,6 +137,11 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             . "(7, 8, '2026-01-04 00:00:00'), (9, 7, NULL), (10, 8, '2026-01-04 00:00:00')");
         Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "
             . "(7, 8, 'Old me', 'New me', '2026-01-03 00:00:00'), (8, 7, 'Foreign old', 'Foreign new', '2026-01-03 00:00:00')");
+        Database::sqlRun("INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES "
+            . "(7, 'terms', '2026-01-05', '2026-01-05 00:00:00'), "
+            . "(7, 'terms', '2026-09-17', '2026-09-20 10:00:00'), "
+            . "(7, 'privacy', '2026-09-17', '2026-09-20 10:00:01'), "
+            . "(8, 'terms', '2026-09-17', '2026-09-21 00:00:00')");
         $first = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
         Hilos::$db->dataExports->actions->order(8, '2026-01-02 00:00:00');
         $agent = new DataExportTestAgent();
@@ -169,8 +175,52 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame('My notification', self::section($archive, 'notifications')[0]['title']);
         self::assertSame([['channel' => 'email', 'enabled' => false]], self::section($archive, 'notification_preferences'));
         self::assertSame('My device', self::section($archive, 'push_subscriptions')[0]['device']);
+        $acceptances = self::section($archive, 'legal_acceptances');
+        self::assertCount(3, $acceptances);
+        self::assertSame([
+            'document' => 'terms',
+            'revisionId' => '2026-01-05',
+            'acceptedAt' => '2026-01-05T00:00:00Z',
+            'inCode' => false,
+            'publishedOn' => null,
+            'effectiveOn' => null,
+            'significance' => null,
+            'clauses' => null,
+        ], $acceptances[0]);
+        self::assertSame([
+            'document' => 'terms',
+            'revisionId' => '2026-09-17',
+            'acceptedAt' => '2026-09-20T10:00:00Z',
+            'inCode' => true,
+            'publishedOn' => '2026-09-17',
+            'effectiveOn' => '2026-09-17',
+            'significance' => 'substantial',
+        ], array_diff_key($acceptances[1], ['clauses' => true]));
+        self::assertCount(6, $acceptances[1]['clauses']);
+        self::assertSame([
+            'clauseKey' => 'standard.retention',
+            'standardStatement' => 'Content is kept for 12 months.',
+            'source' => 'deviation',
+            'statement' => 'Content is kept for 30 days',
+            'direction' => 'looser',
+        ], array_diff_key($acceptances[1]['clauses'][1], ['text' => true]));
+        self::assertSame(
+            trim(file_get_contents(dirname(__DIR__, 2) . '/backend/Legal/Stub/terms/standard.retention.2026-09-17.txt')),
+            $acceptances[1]['clauses'][1]['text'],
+        );
+        self::assertSame([
+            'document' => 'privacy',
+            'revisionId' => '2026-09-17',
+            'acceptedAt' => '2026-09-20T10:00:01Z',
+            'inCode' => false,
+            'publishedOn' => null,
+            'effectiveOn' => null,
+            'significance' => null,
+            'clauses' => null,
+        ], $acceptances[2]);
         self::assertNull(self::section($archive, 'account_deletion'));
         self::assertTrue(isset($archive['README.txt']));
+        self::assertStringContainsString('legal_acceptances:', $archive['README.txt']->getContent());
         foreach ($archive as $entry) {
             $text = $entry->getContent();
             foreach (['SECRET', 'BACKUP_CODE', 'SESSION_TOKEN', 'RAW_USER_AGENT', 'Foreign', 'foreign@'] as $forbidden) {
@@ -279,6 +329,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame(DataExportState::READY, $export->state);
         $archive = new PharData($this->directory . '/' . $export->storedName);
         self::assertSame([], self::section($archive, 'push_subscriptions'));
+        self::assertSame([], self::section($archive, 'legal_acceptances'));
     }
 
     /**
@@ -431,6 +482,7 @@ final class DataExportTestFs extends FsContext
 final class DataExportTestHilos extends Hilos
 {
     protected const array FEATURES = [HilosFeature::NOTIFICATIONS];
+    protected const ?string LEGAL_CATALOG = LegalCatalogStub::class;
 
     /** @return HilosDbContext Framework collections used by the fixture */
     protected static function createDb(): HilosDbContext

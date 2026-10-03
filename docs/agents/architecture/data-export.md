@@ -85,6 +85,13 @@ lists the person's [access log](access-log.md) rows - `at`, `address`, `event`
 in the order they occurred; a privacy text that keeps no address or no log gives
 null and an empty list.
 
+`legal_acceptances` holds every [acceptance record](legal-documents.md) for the
+person in acceptance order: `document`, `revisionId`, `acceptedAt`, and `inCode`.
+Declared revisions also carry `publishedOn`, `effectiveOn`, `significance`, and
+`clauses` in the `LegalWire` form. A revision absent from the current catalog
+stays in the copy with `inCode: false` and null revision details. A person with
+no acceptances gets an empty list.
+
 `applyAccountExport(int $userId, DataExportWriter $writer)` must contribute the
 project's person row and all content belonging to that person, excluding other
 people's records. It refuses by default. `section()` writes JSON;

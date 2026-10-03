@@ -64,6 +64,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         HilosDbContext::stepUps,
         HilosDbContext::userRenames,
         HilosDbContext::accessLogEntries,
+        HilosDbContext::legalAcceptances,
     ];
 
     public const array AGENT_ACTIONS = [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class];
@@ -458,6 +459,8 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             . "notifications and notification_preferences: your messages and channel choices, when enabled.\n"
             . "push_subscriptions: devices and dates without subscription addresses or keys.\n"
             . "account_deletion: your pending deletion request, or null.\n"
+            . "legal_acceptances: each revision of the terms and the privacy policy you accepted, when, and its full text; "
+            . "a revision the project no longer publishes has inCode false and no text.\n"
             . "The section named after the project contains your profile and project content.\n"
             . "files/ contains original attachments referenced by relative paths in that section.\n\n"
             . "Preparing this copy does not change or remove anything in your account.\n";
