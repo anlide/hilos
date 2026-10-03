@@ -33,6 +33,7 @@ export interface ActionErrorSource {
 export class ActionErrorStore {
   /** Cells are created lazily, so an action can be watched before its first error. */
   private readonly cells = new Map<string, WritableSignal<string | null>>()
+  private readonly stop: Unsubscribe
 
   /**
    * Record every action failure the connection reports.
@@ -40,9 +41,14 @@ export class ActionErrorStore {
    * @param source The connection (or a test double) emitting `actionError`.
    */
   constructor(source: ActionErrorSource) {
-    source.on('actionError', ({ action, reason, errorCode }) => {
+    this.stop = source.on('actionError', ({ action, reason, errorCode }) => {
       this.cell(action).set(actionFailureReason(reason, errorCode))
     })
+  }
+
+  /** Release this store's connection listener when its owning view leaves. */
+  dispose(): void {
+    this.stop()
   }
 
   /**

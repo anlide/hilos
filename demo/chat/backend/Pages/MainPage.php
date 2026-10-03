@@ -34,7 +34,6 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Files\DTO\FilesPublishedSignalData;
-use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
@@ -266,7 +265,6 @@ final class MainPage extends AbstractPage
             Hilos::$rt->selfConnection->acceptKey,
             ChatAttachmentUploadTarget::NAME,
             Hilos::$rt->selfConnection->outboundModerationAttachments,
-            FileVisibility::AUTHENTICATED,
             ChatSignalConstants::ATTACHMENTS_PUBLISHED,
         );
     }

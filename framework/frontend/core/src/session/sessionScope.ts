@@ -28,7 +28,7 @@ import {
 } from '../protocol/scopePayload.js'
 import { USER_ENTITY_TYPE } from '../state/entity.js'
 import { type EntityRef } from '../state/EntityStore.js'
-import { readString } from '../state/fieldReaders.js'
+import { readString, readStringOrNull } from '../state/fieldReaders.js'
 import { ingest } from '../state/normalizer.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
@@ -45,6 +45,7 @@ export const SIGNAL_HANDSHAKE_RESPONSE = 'handshake_response'
 const DEFAULT_CURRENT_USER_SLOT = 'currentUser'
 const DEFAULT_CURRENT_USER_ENTITY_TYPE = USER_ENTITY_TYPE
 const DEFAULT_CURRENT_USER_NAME_FIELD = 'name'
+const DEFAULT_CURRENT_USER_PHOTO_FIELD = 'photo'
 const DEFAULT_CURRENT_USER_ADMIN_FIELD = 'admin'
 const DEFAULT_IMPERSONATED_BY_SLOT = 'impersonatedBy'
 const DEFAULT_PENDING_ACK_SLOT = 'pendingAck'
@@ -457,6 +458,8 @@ export interface SessionScopeOptions {
   currentUserEntityType?: string
   /** Entity field holding the display name. Default `name`. */
   currentUserNameField?: string
+  /** Entity field holding the published photo URL. Default `photo`. */
+  currentUserPhotoField?: string
   /**
    * Session-scope slot the impersonating admin arrives under while the session is
    * being impersonated (non-null ⇒ impersonating). Shares the current-user entity
@@ -598,6 +601,32 @@ export function sessionUserName(
     const snapshot = scopes.entitySignal(ref).get()
 
     return snapshot ? readString(snapshot.fields, field) : ''
+  })
+}
+
+/**
+ * The current user's published photo URL, or null before the handshake or without a photo.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ * @param options Current-user slot and photo-field overrides.
+ */
+export function sessionUserPhoto(
+  scopes: ScopeManager,
+  options: SessionScopeOptions = {},
+): ReadonlySignal<string | null> {
+  const slot = options.currentUserSlot ?? DEFAULT_CURRENT_USER_SLOT
+  const field =
+    options.currentUserPhotoField ?? DEFAULT_CURRENT_USER_PHOTO_FIELD
+  const currentUserRef = scopes.session.data.signal(slot) as ReadonlySignal<
+    EntityRef | undefined
+  >
+
+  return computedSignal(() => {
+    const ref = currentUserRef.get()
+    if (!ref) return null
+    const snapshot = scopes.entitySignal(ref).get()
+
+    return snapshot ? readStringOrNull(snapshot.fields, field) : null
   })
 }
 

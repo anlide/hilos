@@ -70,6 +70,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     public const int NEIGHBOUR_ID = 303;
     private const int FOLDED_ID = 304;
     private const int DEEPEST_ID = 305;
+    private const int PHOTO_FILE_ID = 9001;
 
     private const string CREATED_AT = '2026-09-26 10:00:00';
     private const string PAST = '2026-01-01 00:00:00';
@@ -414,6 +415,44 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
                 }
             }
             self::assertSame([[41, 42, 43]], $removals);
+        } finally {
+            Hilos::$files = $previousFiles;
+        }
+    }
+
+    /** A person's photo row goes before their account; its file id leaves after commit. */
+    public function testErasureRemovesThePhotoRowAndAnnouncesItsFile(): void
+    {
+        self::bindAppClass(AccountErasureFilesTestHilos::class);
+        $previousFiles = Hilos::$files;
+        Hilos::$files = new HilosFiles(new LocalFilesStorage());
+        try {
+            self::seedPersonRows();
+            Database::sqlRun(
+                'INSERT INTO `hilos_file` (`id`, `stored_name`, `filename`, `mime_type`, `size`, `content_hash`, '
+                . '`owner_user_id`, `visibility`, `bound`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [self::PHOTO_FILE_ID, 'photo.jpg', 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), self::USER_ID, 'public', 1],
+            );
+            $fileId = self::PHOTO_FILE_ID;
+            Database::sqlRun(
+                'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
+                [self::USER_ID, $fileId, self::CREATED_AT],
+            );
+            Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+
+            $agent = $this->runSweep();
+
+            self::assertSame([self::USER_ID], $agent->erased);
+            self::assertSame(0, self::rowsOf('hilos_user_photo', self::USER_ID));
+            $removals = [];
+            foreach ($this->drainQueue() as $signal) {
+                if ($signal->signalName->getName() === HilosSignalConstants::HILOS_FILE_REMOVE) {
+                    self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                    self::assertInstanceOf(FileRemoveSignalData::class, $signal->data->data);
+                    $removals[] = $signal->data->data->fileIds;
+                }
+            }
+            self::assertSame([[$fileId]], $removals);
         } finally {
             Hilos::$files = $previousFiles;
         }
@@ -993,6 +1032,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             'hilos_notification_delivery',
             'hilos_notification_preference',
             'hilos_push_subscription',
+            'hilos_file',
+            'hilos_user_photo',
             'hilos_legal_acceptance_export',
         ];
         // external-boundary: the up stub has no suffix in its file name

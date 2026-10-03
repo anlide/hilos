@@ -92,6 +92,12 @@ Declared revisions also carry `publishedOn`, `effectiveOn`, `significance`, and
 stays in the copy with `inCode: false` and null revision details. A person with
 no acceptances gets an empty list.
 
+When profile photos are enabled, `profile_photo` is null for a person without
+one or whose original file is missing after a restore, or contains the cropped
+JPEG under `files/<stored_name>` and `setAt` in UTC.
+It reads the framework photo row and file registry; it does not export a
+separate rendered variant.
+
 `applyAccountExport(int $userId, DataExportWriter $writer)` must contribute the
 project's person row and all content belonging to that person, excluding other
 people's records. It refuses by default. `section()` writes JSON;

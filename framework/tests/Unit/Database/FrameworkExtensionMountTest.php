@@ -37,6 +37,7 @@ use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\AccessLogEntries as DbCollectionAccessLogEntries;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserMerges as DbCollectionUserMerges;
+use Hilos\Database\View\Collection\UserPhotos as DbCollectionUserPhotos;
 use Hilos\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
@@ -96,6 +97,7 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::users => DbCollectionUsers::class,
         HilosDbContext::userRenames => DbCollectionUserRenames::class,
         HilosDbContext::userMerges => DbCollectionUserMerges::class,
+        HilosDbContext::userPhotos => DbCollectionUserPhotos::class,
     ];
 
     /**

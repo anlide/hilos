@@ -17,6 +17,8 @@ use Hilos\Files\Image\ImagesAgent;
 use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Hilos;
+use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 
 /**
  * Validates that the features a project declared are the features it actually registered.
@@ -39,6 +41,8 @@ use Hilos\Hilos;
  */
 final class FeatureActivationValidator
 {
+    private const string FRAMEWORK_NAME_PREFIX = 'hilos_';
+
     /**
      * @param FeatureRegistry $registry Definitions to validate the declaration against
      */
@@ -106,15 +110,18 @@ final class FeatureActivationValidator
         $this->validateUploads(
             in_array(HilosFeature::UPLOADS, $declared, true),
             $this->constantArray($hilosClass, 'UPLOAD_TARGETS'),
+            $hilosClass::uploadTargets(),
             $pages,
             $errors,
         );
         $this->validateImages(
             in_array(HilosFeature::IMAGES, $declared, true),
             $this->constantArray($hilosClass, 'IMAGE_VARIANTS'),
+            $hilosClass::imageVariants(),
             $agents,
             $errors,
         );
+        $this->validateProfilePhoto($hilosClass, $declared, $agents, $pages, $tables, $browserTables, $pageTables, $errors);
 
         if ($errors !== []) {
             throw IncompleteFeatureActivationException::forErrors($hilosClass, $errors);
@@ -457,32 +464,37 @@ final class FeatureActivationValidator
      * uploads agent cannot both receive it, so a project cannot hold both kinds of upload.
      *
      * @param bool $declared Whether the facade declares HilosFeature::UPLOADS
-     * @param array<mixed> $targets The facade's UPLOAD_TARGETS
+     * @param array<mixed> $projectTargets The facade's UPLOAD_TARGETS
+     * @param array<mixed> $allTargets Project and framework targets
      * @param array<mixed> $pages The facade's PAGES
      * @param list<string> $errors Collected validation errors
      */
-    private function validateUploads(bool $declared, array $targets, array $pages, array &$errors): void
+    private function validateUploads(bool $declared, array $projectTargets, array $allTargets, array $pages, array &$errors): void
     {
         $feature = $this->name(HilosFeature::UPLOADS);
         if (!$declared) {
-            if ($targets !== []) {
+            if ($projectTargets !== []) {
                 $errors[] = "UPLOAD_TARGETS names targets, but {$feature} is not declared";
             }
 
             return;
         }
 
-        if ($targets === []) {
+        if ($allTargets === []) {
             $errors[] = "{$feature} is declared but UPLOAD_TARGETS names no target";
         }
 
-        foreach ($targets as $name => $class) {
+        foreach ($allTargets as $name => $class) {
             if (!is_string($name) || $name === '') {
                 $errors[] = "{$feature} is declared but UPLOAD_TARGETS has a target without a name";
                 continue;
             }
             if (!is_string($class) || !is_subclass_of($class, AbstractUploadTarget::class)) {
                 $errors[] = "{$feature} is declared but UPLOAD_TARGETS[{$name}] is not a subclass of " . AbstractUploadTarget::class;
+            }
+            if (is_string($name) && array_key_exists($name, $projectTargets)
+                && str_starts_with($name, self::FRAMEWORK_NAME_PREFIX)) {
+                $errors[] = 'Names starting with ' . self::FRAMEWORK_NAME_PREFIX . ' are reserved for the framework: ' . $name;
             }
         }
 
@@ -498,24 +510,28 @@ final class FeatureActivationValidator
 
     /**
      * @param bool $declared Whether IMAGES is declared
-     * @param array<mixed> $variants Project variant catalog
+     * @param array<mixed> $projectVariants Project variant catalog
+     * @param array<mixed> $allVariants Project and framework variants
      * @param array<mixed> $agents Project agent registry
      * @param list<string> $errors Activation refusals collected together
      */
-    private function validateImages(bool $declared, array $variants, array $agents, array &$errors): void
+    private function validateImages(bool $declared, array $projectVariants, array $allVariants, array $agents, array &$errors): void
     {
         $feature = $this->name(HilosFeature::IMAGES);
         if (!$declared) {
-            if ($variants !== []) {
+            if ($projectVariants !== []) {
                 $errors[] = "IMAGE_VARIANTS names variants, but {$feature} is not declared";
             }
             return;
         }
-        if ($variants === []) {
+        if ($allVariants === []) {
             $errors[] = "{$feature} is declared but IMAGE_VARIANTS names no variant";
         }
         $formats = [];
-        foreach ($variants as $name => $declaration) {
+        foreach ($allVariants as $name => $declaration) {
+            if (array_key_exists($name, $projectVariants) && str_starts_with((string)$name, self::FRAMEWORK_NAME_PREFIX)) {
+                $errors[] = 'Names starting with ' . self::FRAMEWORK_NAME_PREFIX . ' are reserved for the framework: ' . $name;
+            }
             try {
                 $formats[] = ImageVariant::fromDeclaration((string)$name, $declaration)->format;
             } catch (InvalidArgumentException $e) {
@@ -531,6 +547,48 @@ final class FeatureActivationValidator
         $reason = $class::createEngine()->unusableReason($formats);
         if ($reason !== null) {
             $errors[] = "{$feature} is declared but the image engine cannot run: {$reason}";
+        }
+    }
+
+    /**
+     * @param class-string<Hilos> $hilosClass Project facade being checked
+     * @param list<HilosFeature> $declared Enabled features
+     * @param array $agents Agent registry
+     * @param array $pages Page registry
+     * @param array $tables Server table registry
+     * @param array $browserTables Browser table registry
+     * @param array $pageTables Page table bindings
+     * @param list<string> $errors Accumulated activation refusals
+     */
+    private function validateProfilePhoto(
+        string $hilosClass,
+        array $declared,
+        array $agents,
+        array $pages,
+        array $tables,
+        array $browserTables,
+        array $pageTables,
+        array &$errors,
+    ): void {
+        $enabled = in_array(HilosFeature::PROFILE_PHOTO, $declared, true);
+        $checker = $hilosClass::PROFILE_PHOTO_CHECKER;
+        if ($checker !== null && !$enabled) {
+            $errors[] = 'PROFILE_PHOTO_CHECKER names an agent, but HilosFeature::PROFILE_PHOTO is not declared';
+        }
+        if ($checker !== null && !array_key_exists($checker, $agents)) {
+            $errors[] = "PROFILE_PHOTO_CHECKER names {$checker}, but AGENTS has no such agent";
+        }
+        if ($enabled && in_array(HilosFeature::HILOS_USERS, $declared, true)) {
+            $this->validatePageTableBinding(
+                $this->name(HilosFeature::PROFILE_PHOTO),
+                AbstractHilosUserPage::class,
+                HilosUserPhotoBrowserTable::class,
+                $pages,
+                $tables,
+                $browserTables,
+                $pageTables,
+                $errors,
+            );
         }
     }
 

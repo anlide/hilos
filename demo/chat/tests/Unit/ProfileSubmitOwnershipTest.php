@@ -27,7 +27,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class ProfileSubmitOwnershipTest extends TestCase
 {
-    /** @var list<string> The submits that write, by wire name - the chat's own, then the ten the framework brought (HIL-1137). */
+    /** @var list<string> The submits that write, by wire name - the chat's own, then the framework's profile actions. */
     private const array MOVED_SUBMITS = [
         ChatSignalConstants::RENAME,
         HilosSignalConstants::PROFILE_SET_PASSWORD,
@@ -40,6 +40,8 @@ final class ProfileSubmitOwnershipTest extends TestCase
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
+        HilosSignalConstants::PROFILE_PHOTO_SET,
+        HilosSignalConstants::PROFILE_PHOTO_REMOVE,
     ];
 
     public function testEveryMovedSubmitIsRoutedToTheUsersLibrary(): void

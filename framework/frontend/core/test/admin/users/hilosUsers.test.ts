@@ -4,6 +4,7 @@ import {
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserDetail,
+  createHilosUserPhoto,
   createHilosUserCardStepUp,
   createHilosUserLifecycle,
   createHilosUsersTable,
@@ -269,6 +270,23 @@ describe('createHilosUserDetail', () => {
       identities: { hasPassword: true },
     })
     expect(detail.get()?.unverifiedPasswordAddress).toBeNull()
+  })
+})
+
+describe('createHilosUserPhoto', () => {
+  it('reads a live photo and hides it from a viewer of admin view mode', () => {
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const photo = createHilosUserPhoto({ scopes, users } as HilosUsersContext)
+    expect(photo.get()).toBeNull()
+
+    page.tables.upsert('userPhoto', 7, {
+      userPhotos: { photo: '/_hilos/file?id=8' },
+    })
+    expect(photo.get()).toBe('/_hilos/file?id=8')
+
+    page.tables.upsert('userPhoto', 7, { userPhotos: { photo: HIDDEN_VALUE } })
+    expect(photo.get()).toBeNull()
   })
 })
 

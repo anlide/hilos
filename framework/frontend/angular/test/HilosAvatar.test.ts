@@ -16,11 +16,13 @@ function mount(
   name: string,
   size?: 'sm' | 'md' | 'lg',
   mark?: HilosAvatarMark | null,
+  photo?: string | null,
 ): ComponentFixture<HilosAvatar> {
   const fixture = TestBed.createComponent(HilosAvatar)
   fixture.componentRef.setInput('name', name)
   if (size !== undefined) fixture.componentRef.setInput('size', size)
   if (mark !== undefined) fixture.componentRef.setInput('mark', mark)
+  if (photo !== undefined) fixture.componentRef.setInput('photo', photo)
   fixture.detectChanges()
 
   return fixture
@@ -124,5 +126,26 @@ describe('HilosAvatar', () => {
     fixture.detectChanges()
     expect(circle(fixture).textContent?.trim()).toBe('A')
     expect(circle(fixture).querySelector('i.bi-person')).toBeNull()
+  })
+
+  it('shows a decorative photo, falls back on error, and tries the next photo', () => {
+    const fixture = mount('Ada Baranov', undefined, undefined, '/a.webp')
+    const image = circle(fixture).querySelector(
+      '[data-id="hilos-avatar-photo"]',
+    )!
+    expect(image.getAttribute('alt')).toBe('')
+    expect(image.getAttribute('src')).toBe('/a.webp')
+    expect(circle(fixture).textContent?.trim()).toBe('')
+
+    image.dispatchEvent(new Event('error'))
+    fixture.detectChanges()
+    expect(circle(fixture).querySelector('img')).toBeNull()
+    expect(circle(fixture).textContent?.trim()).toBe('AB')
+
+    fixture.componentRef.setInput('photo', '/b.webp')
+    fixture.detectChanges()
+    expect(circle(fixture).querySelector('img')?.getAttribute('src')).toBe(
+      '/b.webp',
+    )
   })
 })

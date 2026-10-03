@@ -195,6 +195,7 @@ services:
       # The per-role key and not the global LLM_LOCAL_URL: the bot and the context
       # analyzer read the global one, and this address must not move them too.
       - CHAT_MODERATION_URL=https://stand-gateway:18000/model
+      - CHAT_PHOTO_MODERATION_URL=https://stand-gateway:18000/model
       # OAuth (HIL-924): the stand's own provider emulator, which the presets are pointed
       # at as a base - each builds <base>/<github|google>/authorize|token|userinfo from it.
       # https is kept, because the emulator speaks the TLS a real provider speaks (HIL-921).

@@ -32,7 +32,7 @@ with the one target `chat_attachment`
 protected const array FEATURES = [HilosFeature::UPLOADS /* , ... */];
 
 public const array UPLOAD_TARGETS = [
-    'avatar' => AvatarUploadTarget::class,
+    'gallery' => GalleryUploadTarget::class,
 ];
 
 public const array AGENTS = [
@@ -55,9 +55,14 @@ reaches the library on another node — [filesystem.md](filesystem.md).
 ## Targets And Checks
 
 A target (`AbstractUploadTarget`) is the policy of one kind of file:
-`maxBytes()`, `requiresSignIn()` — no default, an action says out loud who may
+`maxBytes()`, `requiresSignIn()` and `visibility()` — no defaults: an action says out loud who may
 perform it — and optionally `acceptedMimeTypes()` (exact types or `image/*`
 masks; empty accepts any), `sniffsContent()` and `extraChecks()`.
+`visibility()` declares who may read a published file of this type, such as
+`FileVisibility::OWNER` for a private gallery. Publication cannot choose a
+different audience for the same target. A project target name beginning with
+`hilos_` is refused at startup; that prefix belongs to framework targets.
+`Hilos::uploadTargets()` combines project and enabled framework targets.
 
 Every check implements `UploadCheckInterface`: `checkDeclared()` judges the
 declaration before any byte is accepted, `checkReceived()` the whole file

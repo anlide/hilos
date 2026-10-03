@@ -8,6 +8,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Database\Schema\Schema;
+use Hilos\HilosException;
 
 /**
  * An archive from before the person keys can contain references to people no longer there.
@@ -26,6 +27,9 @@ final class PersonForeignKeysMigrationTest extends IntegrationTestCase
     private const string BLOCKED_TOKEN = 'person-key-missing-blocked';
     private const string FILE_NAME = 'person-key-orphan-file';
 
+    /** Migration level this shared test database had before this case rewound it. */
+    private ?int $latestMigrationIndex = null;
+
     /** Tables whose whole row belongs to the missing person. */
     private const array PERSON_TABLES = [
         'hilos_notification', 'hilos_notification_preference', 'hilos_push_subscription',
@@ -43,8 +47,12 @@ final class PersonForeignKeysMigrationTest extends IntegrationTestCase
     {
         Migration::setMigrationListPath(dirname(__DIR__, 2) . '/backend/Database/Migration');
         Migration::setMigrationName('Schema');
-        self::assertSame(self::MIGRATION_INDEX, Migration::getCurrentIndex());
-        self::assertSame(1, Migration::migrateDown(self::BEFORE_KEYS));
+        $this->latestMigrationIndex = Migration::getCurrentIndex();
+        self::assertGreaterThanOrEqual(self::MIGRATION_INDEX, $this->latestMigrationIndex);
+        self::assertSame(
+            $this->latestMigrationIndex - self::BEFORE_KEYS,
+            Migration::migrateDown(self::BEFORE_KEYS),
+        );
         Schema::reset();
         Database::sqlRun(
             "INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Live person')",
@@ -104,6 +112,24 @@ final class PersonForeignKeysMigrationTest extends IntegrationTestCase
         Database::sqlRun('DELETE FROM `hilos_file` WHERE `stored_name` = ?', [self::FILE_NAME]);
         Database::sqlRun('DELETE FROM `hilos_account_deletion` WHERE `user_id` = ?', [self::MISSING_USER_ID]);
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [self::LIVE_USER_ID]);
+    }
+
+    /**
+     * Restores the migration level for cases that follow this one in the shared suite.
+     *
+     * @throws HilosException When replaying a migration or rebuilding schema fails
+     */
+    protected function tearDown(): void
+    {
+        try {
+            if ($this->latestMigrationIndex !== null) {
+                Migration::migrateUp($this->latestMigrationIndex);
+                Schema::reset();
+                Schema::initialize();
+            }
+        } finally {
+            parent::tearDown();
+        }
     }
 
     /**

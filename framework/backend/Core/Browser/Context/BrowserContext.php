@@ -100,6 +100,8 @@ use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Files\HilosFiles;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
@@ -110,6 +112,7 @@ use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
@@ -2267,6 +2270,16 @@ abstract class BrowserContext
                 return $deletion === null ? null : TimeHelper::sqlToMs($deletion->effectiveAt);
             } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
                 throw new PageInternalErrorException('Account deletion date could not be resolved', $exception);
+            }
+        }
+
+        if ($browserKey === HilosUserPhotoBrowserTable::TABLE && $field === HilosUserPhotoBrowserTable::FIELD_PHOTO) {
+            try {
+                $photo = Hilos::$db->userPhotos[(int)$rowKey];
+
+                return $photo === null ? null : HilosFiles::downloadPath($photo->fileId, ProfilePhotoUploadTarget::VARIANT);
+            } catch (HilosException $exception) {
+                throw new PageInternalErrorException('Profile photo address could not be resolved', $exception);
             }
         }
 

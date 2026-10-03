@@ -258,6 +258,10 @@ export {
   type HilosProfileRenameProps,
 } from './profile/HilosProfileRename.js'
 export {
+  HilosProfilePhoto,
+  type HilosProfilePhotoProps,
+} from './profile/HilosProfilePhoto.js'
+export {
   HilosProfileEmailChange,
   type HilosProfileEmailChangeProps,
 } from './profile/HilosProfileEmailChange.js'

@@ -70,9 +70,13 @@ use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Files\HilosFiles;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Storage\FilesStorageInterface;
 use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Files\Upload\AbstractUploadTarget;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Mail\HilosMailer;
 use Hilos\Sms\HilosSmsSender;
@@ -376,6 +380,9 @@ abstract class Hilos implements TruthSourceOwner
      */
     public const array IMAGE_VARIANTS = [];
 
+    /** Project agent type that checks a new photo before it is published, or null for immediate publication. */
+    public const ?string PROFILE_PHOTO_CHECKER = null;
+
     /** Page table bindings keyed by page name, then table name. */
     public const array PAGE_TABLES = [];
 
@@ -446,6 +453,39 @@ abstract class Hilos implements TruthSourceOwner
 
     /** @var ?HilosSmsSender SMS send seam singleton */
     public static ?HilosSmsSender $sms = null;
+
+    /**
+     * Upload targets declared by the project and enabled framework features.
+     *
+     * @return array<string, class-string<AbstractUploadTarget>> Targets keyed by client name
+     */
+    public static function uploadTargets(): array
+    {
+        return static::UPLOAD_TARGETS + (
+            in_array(HilosFeature::PROFILE_PHOTO, static::FEATURES, true)
+                ? [ProfilePhotoUploadTarget::NAME => ProfilePhotoUploadTarget::class]
+                : []
+        );
+    }
+
+    /**
+     * Image variants declared by the project and enabled framework features.
+     *
+     * @return array<string, array<string, mixed>> Variant declarations keyed by name
+     */
+    public static function imageVariants(): array
+    {
+        return static::IMAGE_VARIANTS + (
+            in_array(HilosFeature::PROFILE_PHOTO, static::FEATURES, true)
+                ? [ProfilePhotoUploadTarget::VARIANT => [
+                    ImageVariant::WIDTH => 256,
+                    ImageVariant::HEIGHT => 256,
+                    ImageVariant::FIT => ImageFit::COVER,
+                    ImageVariant::FORMAT => ImageFormat::WEBP,
+                ]]
+                : []
+        );
+    }
 
     /**
      * Returns the project's backup catalog provider class, or null when backup is unconfigured.

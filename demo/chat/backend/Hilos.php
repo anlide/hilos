@@ -32,6 +32,7 @@ use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Agents\OAuthAgent;
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
@@ -242,6 +243,7 @@ use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Hilos\Tables\Users\HilosUserPhotoBrowserTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -311,8 +313,11 @@ final class Hilos extends HilosFacade
         HilosFeature::FILES,
         HilosFeature::UPLOADS,
         HilosFeature::IMAGES,
+        HilosFeature::PROFILE_PHOTO,
         HilosFeature::ANALYTICS,
     ];
+
+    public const ?string PROFILE_PHOTO_CHECKER = AgentType::MODERATOR;
 
     /** A file attached to a message - the chat's one kind of upload (HIL-144). */
     public const array UPLOAD_TARGETS = [
@@ -672,6 +677,7 @@ final class Hilos extends HilosFacade
 
     public const array BROWSER_TABLES = [
         HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
+        HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::class,
         GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::class,
         GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::class,
     ];
@@ -841,6 +847,7 @@ final class Hilos extends HilosFacade
         ],
         HilosUserPage::PAGE => [
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+            HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
             ChatTableContext::hilosMergeCandidates => [],
         ],
     ];

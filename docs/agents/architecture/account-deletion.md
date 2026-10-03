@@ -87,6 +87,8 @@ in ONE transaction:
    was folded into another one (HIL-1199). Notification deliveries, notifications,
    channel preferences and push subscriptions leave where their tables are active.
    Orders for the person's data copy and their legal acceptance export leave too.
+   A published profile photo row leaves where that optional table is active;
+   its registry file id joins the post-commit removal.
    Every session signed in as the person or run by them under an impersonation is
    signed out, waits on their second factor are cleared, and cards about their
    closed access are lowered (HIL-1202);
@@ -109,8 +111,8 @@ session holder moves its moment to now and erases it through this path,
 returning the sum of the project's tallies for the circle. A failed erasure
 leaves the request due for the next sweep.
 
-After the commit, outside the transaction: the registry files the project
-named go to the files library in one `Hilos::$files->remove()` when the project declares `FILES`
+After the commit, outside the transaction: the registry files the project and
+the framework photo row named go to the files library in one `Hilos::$files->remove()` when the project declares `FILES`
 ([files-registry.md](files-registry.md#removing)) — nothing is deleted from disk
 past the registry. Export agents receive forget frames to remove files whose
 orders the erasure already deleted. A failure after the commit is logged and not

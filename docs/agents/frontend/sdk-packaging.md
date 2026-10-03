@@ -285,8 +285,10 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   the header, `md` for the admin card, `lg` for the profile. The circle is
   hidden from screen readers; its surroundings carry the name, in the header
   as hidden text and a `title`. The project's header user area places it
-  instead of the name (HIL-301). A photo fills the same circle later
-  (not in the code yet — HIL-1205);
+  instead of the name (HIL-301). The optional `photo` prop fills the circle
+  with the public image variant; a failed image falls back to initials.
+  `HilosProfilePhoto` in each view package draws the change-photo modal over
+  `createHilosProfilePhotoFlow` from core (HIL-1205);
 - **`HilosHiddenMark`** and **`HilosHideable`** — the one mark of a value the
   server keeps from a viewer of the admin view mode, and the wrapper that draws
   a hideable value through its slot (a render function in React, a projected

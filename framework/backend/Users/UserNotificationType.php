@@ -21,4 +21,7 @@ final class UserNotificationType
 {
     /** Somebody other than the recipient renamed the recipient's account. */
     public const string RENAMED = 'user.renamed';
+
+    /** A submitted profile photo was rejected for its content. */
+    public const string PHOTO_REJECTED = 'user.photo_rejected';
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Files\Upload;
 
+use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\Check\AllowedContentCheck;
 use Hilos\Files\Upload\Check\DeclaredMimeCheck;
 use Hilos\Files\Upload\AbstractUploadTarget;
@@ -175,5 +176,11 @@ final class UploadChecksTestTarget extends AbstractUploadTarget
     public function requiresSignIn(): bool
     {
         return false;
+    }
+
+    /** @return FileVisibility A signed-in person may read a published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::AUTHENTICATED;
     }
 }

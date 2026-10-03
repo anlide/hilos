@@ -23,7 +23,6 @@ use Hilos\Database\Object\Item\File as ObjectFile;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
-use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\HilosException;
@@ -100,7 +99,6 @@ final class EventAttachmentsTest extends IntegrationTestCase
             UploadPublishSignalData::acceptKey => self::ACCEPT_KEY,
             UploadPublishSignalData::target => ChatAttachmentUploadTarget::NAME,
             UploadPublishSignalData::clientUploadIds => ['u1', 'u2'],
-            UploadPublishSignalData::visibility => FileVisibility::AUTHENTICATED->value,
             UploadPublishSignalData::replySignal => ChatSignalConstants::ATTACHMENTS_PUBLISHED,
         ], $publish->toArray());
         self::assertSame(

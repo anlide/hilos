@@ -154,6 +154,18 @@ function mountPage(
 }
 
 describe('HilosProfilePage', () => {
+  it('opens photo editing only when the page enables it', () => {
+    expect(
+      mountPage(nameOnly()).find('[data-id="profile-photo-open"]').exists(),
+    ).toBe(false)
+    const scopes = signedInScopes()
+    scopes.openPage(HilosPages.PROFILE).data.set('profilePhoto', true)
+    const wrapper = mountPage(nameOnly(), scopes)
+    expect(
+      wrapper.find('[data-id="profile-photo-open"]').attributes('aria-label'),
+    ).toBe('Change your photo')
+  })
+
   it('shows the name without Change and no Email row when the project hands neither', () => {
     const wrapper = mountPage(nameOnly())
 

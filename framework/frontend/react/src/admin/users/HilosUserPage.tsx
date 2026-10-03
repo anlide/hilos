@@ -54,6 +54,7 @@ import {
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserDetail,
+  createHilosUserPhoto,
   createHilosUserRename,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   hilosPasswordFateChoices,
@@ -141,9 +142,11 @@ function focusWindow(body: HTMLElement | null): void {
  */
 export function HilosUserPage({ context }: HilosUserPageProps) {
   const userDetail = useMemo(() => createHilosUserDetail(context), [context])
+  const userPhoto = useMemo(() => createHilosUserPhoto(context), [context])
   const rename = useMemo(() => createHilosUserRename(context), [context])
 
   const detail = useSignal(userDetail)
+  const photo = useSignal(userPhoto)
   const error = useSignal(rename.renameError)
   const lifecycle = useMemo(() => createHilosUserLifecycle(context), [context])
   const lifecycleAction = useTrackedAction()
@@ -639,6 +642,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             <div className="card-header d-flex align-items-center gap-2">
               <HilosAvatar
                 name={isHiddenValue(detail.name) ? '' : detail.name}
+                photo={photo}
                 size="md"
               />
               <span className="h5 mb-0" data-id="hilos-user-name">

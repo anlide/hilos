@@ -40,6 +40,12 @@ final class ChatLlmProfileCatalog implements CatalogProviderInterface
                 EnvConstants::CHAT_MODERATION_MODEL,
                 EnvConstants::CHAT_MODERATION_TIMEOUT_SEC,
             ),
+            ChatLLMConstants::PROFILE_PHOTO_MODERATION => self::role(
+                EnvConstants::CHAT_PHOTO_MODERATION_PROVIDER,
+                EnvConstants::CHAT_PHOTO_MODERATION_URL,
+                EnvConstants::CHAT_PHOTO_MODERATION_MODEL,
+                EnvConstants::CHAT_PHOTO_MODERATION_TIMEOUT_SEC,
+            ),
             ChatLLMConstants::PROFILE_ANALYZER => self::role(
                 EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER,
                 EnvConstants::CHAT_CONTEXT_ANALYZER_URL,

@@ -115,6 +115,7 @@ function setup(
     root.querySelector<HTMLElement>(`[data-id="${id}"]`)
   return {
     fixture,
+    scopes,
     node,
     root,
     setMethods: (next: readonly HilosProfileSignInMethod[]) => {
@@ -123,6 +124,17 @@ function setup(
     },
   }
 }
+
+it('offers the photo button only after the profile page enables photos', () => {
+  const { fixture, node, scopes } = setup(nameOnly())
+  expect(node('profile-photo-open')).toBeNull()
+  scopes.openPage(HilosPages.PROFILE).data.set('profilePhoto', true)
+  fixture.detectChanges()
+  expect(node('profile-photo-open')?.getAttribute('aria-label')).toBe(
+    'Change your photo',
+  )
+  fixture.destroy()
+})
 
 function nameOnly(): HilosProfileBinding {
   return {

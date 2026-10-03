@@ -21,7 +21,11 @@ import {
   startHilosNotificationPreferences,
 } from '../notifications/notificationPreferences.js'
 import { HilosPages } from '../routing/hilosPages.js'
-import { sessionAuthMethods, sessionUserId } from '../session/sessionScope.js'
+import {
+  sessionAuthMethods,
+  sessionUserId,
+  sessionUserPhoto,
+} from '../session/sessionScope.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
 import {
@@ -119,6 +123,10 @@ export interface HilosProfileRootStore {
    * placeholder, until the shell's sign-in surface takes its place.
    */
   readonly signedIn: ReadonlySignal<boolean>
+  /** Whether this project enabled changing the person's photo. */
+  readonly photoEnabled: ReadonlySignal<boolean>
+  /** Current published photo URL from the session identity, or null. */
+  readonly photo: ReadonlySignal<string | null>
   /** Summary per section page key; a key absent here has none. */
   readonly summaries: ReadonlySignal<Readonly<Record<string, string>>>
   /** The account's verified address, or null — no Email row then. */
@@ -154,6 +162,8 @@ export function createHilosProfileRootStore(
   const offered = sessionAuthMethods(context.scopes)
   const methods = createHilosProfileSignInMethods(context.scopes)
   const userId = sessionUserId(context.scopes)
+  const photo = sessionUserPhoto(context.scopes)
+  const photoEnabledField = context.scopes.pageDataSignal('profilePhoto')
   let stopPreferences: (() => void) | null = null
   let stopAgreements: (() => void) | null = null
 
@@ -188,6 +198,8 @@ export function createHilosProfileRootStore(
 
   return {
     signedIn: computedSignal(() => userId.get() !== null),
+    photoEnabled: computedSignal(() => photoEnabledField.get() === true),
+    photo,
     summaries,
     verifiedEmail: computedSignal(
       () => hilosProfilePasswordState(methods.get()).verifiedEmail,

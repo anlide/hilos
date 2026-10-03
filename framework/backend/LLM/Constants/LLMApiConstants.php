@@ -19,6 +19,14 @@ class LLMApiConstants
     /** Message content key */
     public const string KEY_CONTENT = 'content';
 
+    public const string KEY_TYPE = 'type';
+
+    public const string KEY_TEXT = 'text';
+
+    public const string KEY_IMAGE_URL = 'image_url';
+
+    public const string KEY_URL = 'url';
+
     // ── Common request keys ──────────────────────────────────────────────────
 
     /** Model name key */
@@ -26,6 +34,8 @@ class LLMApiConstants
 
     /** Prompt key */
     public const string KEY_PROMPT = 'prompt';
+
+    public const string KEY_IMAGES = 'images';
 
     /** Stream key */
     public const string KEY_STREAM = 'stream';
@@ -68,6 +78,10 @@ class LLMApiConstants
     public const string KEY_MAX_TOKENS_CAMEL = 'maxTokens';
 
     // ── Values ───────────────────────────────────────────────────────────────
+
+    public const string CONTENT_TYPE_TEXT = 'text';
+
+    public const string CONTENT_TYPE_IMAGE_URL = 'image_url';
 
     /** Response format: base64 JSON */
     public const string RESPONSE_FORMAT_B64_JSON = 'b64_json';

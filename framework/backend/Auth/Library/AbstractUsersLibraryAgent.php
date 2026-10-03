@@ -24,6 +24,7 @@ use Hilos\Auth\Library\Command\PasskeyCommands;
 use Hilos\Auth\Library\Command\PasswordChangeCommands;
 use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
+use Hilos\Auth\Library\Command\ProfilePhotoCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\Library\Command\StepUpCommands;
@@ -88,6 +89,8 @@ use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
+use Hilos\Auth\Library\DTO\ProfilePhotoRemoveActionDTO;
+use Hilos\Auth\Library\DTO\ProfilePhotoSetActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
@@ -150,10 +153,13 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Database\Schema\EntitySchemaAxis;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
+use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
+use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -163,6 +169,7 @@ use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
+use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
 use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
@@ -252,7 +259,19 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::accountDeletions => TruthSourceOperation::ALL,
         HilosDbContext::legalAcceptances => TruthSourceOperation::ALL,
         HilosDbContext::userRenames => TruthSourceOperation::ALL,
+        HilosDbContext::userPhotos => TruthSourceOperation::ALL,
     ];
+
+    /** @var array<string, list<TruthSourceOperation>> */
+    public const array OWNS_RT = [
+        HilosProfilePhotoCheck::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+    ];
+
+    /** @var list<string> */
+    public const array READS_RT = [HilosUpload::RT_COLLECTION];
+
+    /** The files library owns the registry row whose owner decides a published photo's person. */
+    public const array READS_DB = [HilosDbContext::files];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
 
@@ -271,6 +290,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
+        HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => ProfilePhotoVerdictSignalData::class,
+        HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
     ];
 
     /**
@@ -341,6 +362,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM => ProfileEmailChangeCurrentConfirmActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST => ProfileEmailChangeNewRequestActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM => ProfileEmailChangeNewConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_PHOTO_SET => ProfilePhotoSetActionDTO::class,
+        HilosSignalConstants::PROFILE_PHOTO_REMOVE => ProfilePhotoRemoveActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN => ProfileChangePasswordOpenActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST => ProfileChangePasswordCodeRequestActionDTO::class,
         HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM => ProfileChangePasswordCodeConfirmActionDTO::class,
@@ -457,6 +480,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
         HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM,
+        HilosSignalConstants::PROFILE_PHOTO_SET,
+        HilosSignalConstants::PROFILE_PHOTO_REMOVE,
         HilosSignalConstants::PROFILE_CHANGE_PASSWORD_OPEN,
         HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST,
         HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM,
@@ -553,6 +578,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** Renaming a person with its journal row, built on first use. */
     private ?UserRenameCommands $userRenameCommands = null;
 
+    /** Profile photo commands, built on first use. */
+    private ?ProfilePhotoCommands $profilePhotoCommands = null;
+
     /** Schedule of the second-factor removal sweep, armed on start (HIL-494). */
     private ?CronRule $secondFactorResetSweepRule = null;
 
@@ -618,6 +646,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         }
 
         $this->sweepVerifications();
+        if (Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
+            $this->profilePhotoCommands()->sweepClosedConnections();
+        }
     }
 
     /**
@@ -722,6 +753,26 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     $data->data->replySignal,
                     HandoverAnswerSignalData::to($data->data, $this->handleAdminRename($data->data)),
                 );
+
+                return;
+
+            case HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT:
+                if (!$data->data instanceof ProfilePhotoVerdictSignalData) {
+                    throw new ValidationException(
+                        HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT . ' payload must be ' . ProfilePhotoVerdictSignalData::class,
+                    );
+                }
+                $this->profilePhotoCommands()->verdict($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED:
+                if (!$data->data instanceof FilesPublishedSignalData) {
+                    throw new ValidationException(
+                        HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED . ' payload must be ' . FilesPublishedSignalData::class,
+                    );
+                }
+                $this->profilePhotoCommands()->published($data->data);
 
                 return;
 
@@ -1788,6 +1839,22 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private function runProfileAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
+            case HilosSignalConstants::PROFILE_PHOTO_SET:
+                if (!$dto instanceof ProfilePhotoSetActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfilePhotoSetActionDTO::class, $dto);
+                }
+                $this->profilePhotoCommands()->set($acceptKey, $dto->clientUploadId);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_PHOTO_REMOVE:
+                if (!$dto instanceof ProfilePhotoRemoveActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfilePhotoRemoveActionDTO::class, $dto);
+                }
+                $this->profilePhotoCommands()->remove($acceptKey);
+
+                return null;
+
             case HilosSignalConstants::PROFILE_SET_PASSWORD:
                 if (!$dto instanceof ProfileSetPasswordActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileSetPasswordActionDTO::class, $dto);
@@ -2156,6 +2223,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private function userRenameCommands(): UserRenameCommands
     {
         return $this->userRenameCommands ??= new UserRenameCommands($this);
+    }
+
+    /** @return ProfilePhotoCommands Profile photo workflow, built once per process */
+    private function profilePhotoCommands(): ProfilePhotoCommands
+    {
+        return $this->profilePhotoCommands ??= new ProfilePhotoCommands($this);
     }
 
     /**

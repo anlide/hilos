@@ -39,6 +39,7 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
@@ -53,6 +54,8 @@ use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Files\HilosFiles;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Random\RandomException;
@@ -592,11 +595,13 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
         $impersonatorId = $session->impersonatorUserId;
         $impersonator = $impersonatorId !== null ? (Hilos::$db->users[$impersonatorId] ?? null) : null;
+        $photo = Hilos::hasFeature(HilosFeature::PROFILE_PHOTO) ? Hilos::$db->userPhotos[$userId] : null;
 
         return new HandshakeResponseSignalData(
             selfId: (int)$user->id,
             selfName: $user->name,
             selfAdmin: $user->admin,
+            selfPhoto: $photo === null ? null : HilosFiles::downloadPath($photo->fileId, ProfilePhotoUploadTarget::VARIANT),
             impersonatorId: $impersonator !== null ? (int)$impersonator->id : null,
             impersonatorName: $impersonator?->name,
         );

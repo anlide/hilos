@@ -345,3 +345,29 @@ body.modal-open .toast-container > * {
   bottom: -0.1rem;
   line-height: 1;
 }
+
+// WHY: Bootstrap's sizes do not give the crop a fixed square on every shell,
+// and touch dragging must not scroll the page beneath the modal.
+// WHAT: the 8rem photo crop preview and its pointer surface.
+.hilos-photo-crop {
+  width: 8rem;
+  height: 8rem;
+  touch-action: none;
+}
+
+// WHY: the picker in the profile mockup uses a dashed frame, which Bootstrap's
+// border utilities cannot name directly.
+.hilos-photo-drop {
+  --bs-border-style: dashed;
+}
+
+// WHY: no Bootstrap size step makes a 1.4rem camera badge at the circle's corner.
+// WHAT: the decorative camera badge on the profile's Change your photo button.
+.hilos-avatar-camera {
+  width: 1.4rem;
+  height: 1.4rem;
+  font-size: 0.7rem;
+  right: -0.1rem;
+  bottom: -0.1rem;
+  line-height: 1;
+}

@@ -22,15 +22,25 @@ use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Files\Upload\UploadPhase;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\LLM\DTO\MessageImage;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
 use Hilos\LLM\Routing\LlmProfile;
 use Hilos\Runtime\State\Item\HilosUpload;
+use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
+use Hilos\Runtime\View\Item\HilosProfilePhotoCheck as PhotoCheck;
+use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
 
 /**
  * Regular agent that discovers runtime user moderation requests and returns decisions.
@@ -40,7 +50,7 @@ use Hilos\Runtime\State\Item\HilosUpload;
 final class ModeratorAgent extends AbstractAgent
 {
     /** @var list<string> The prompt it moderates by, which the library agent owns */
-    public const array READS_DB = [ChatDbContext::moderatorPromptPieces];
+    public const array READS_DB = [ChatDbContext::moderatorPromptPieces, HilosDbContext::users];
 
     public const string AGENT_TYPE = AgentType::MODERATOR;
 
@@ -50,16 +60,26 @@ final class ModeratorAgent extends AbstractAgent
      *
      * @var list<string>
      */
-    public const array READS_RT = [ChatRtContext::connections, HilosUpload::RT_COLLECTION];
+    public const array READS_RT = [
+        ChatRtContext::connections,
+        HilosUpload::RT_COLLECTION,
+        HilosProfilePhotoCheck::RT_COLLECTION,
+    ];
 
     private const string REASON_SERVICE_UNAVAILABLE = 'service_unavailable';
     private const string REASON_UNKNOWN = 'unknown';
     private const string REQUEST_TYPE_MESSAGE = 'message';
     private const string REQUEST_TYPE_RENAME = 'rename';
+    private const string REQUEST_TYPE_PHOTO = 'photo';
+    private const int MODERATION_MAX_TOKENS = 32;
 
     private LlmProfile $profile;
 
     private AsyncChatLLMInterface $chatClient;
+
+    private LlmProfile $photoProfile;
+
+    private AsyncChatLLMInterface $photoClient;
 
     private ?string $currentAcceptKey = null;
 
@@ -75,12 +95,15 @@ final class ModeratorAgent extends AbstractAgent
     /**
      * Creates a moderator with an LLM client from the chat.moderation profile.
      *
-     * @throws LLMConfigurationException When the chat.moderation profile cannot be resolved
+     * @throws LLMConfigurationException When a moderation profile cannot be resolved
+     * @throws EnvException When a profile's environment value is missing or invalid
      */
     public function __construct()
     {
         $this->profile = Hilos::$llm->resolve(ChatLLMConstants::PROFILE_MODERATION);
         $this->chatClient = ClientFactory::createChatClientForProfile($this->profile);
+        $this->photoProfile = Hilos::$llm->resolve(ChatLLMConstants::PROFILE_PHOTO_MODERATION);
+        $this->photoClient = ClientFactory::createChatClientForProfile($this->photoProfile);
     }
 
     /**
@@ -99,12 +122,19 @@ final class ModeratorAgent extends AbstractAgent
      * @param RtSyncUpdatedSignalData $data Runtime sync payload
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
+     * @throws HilosException When a runtime row cannot be read
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
         if (
             $this->currentAcceptKey === null
-            || $data->collectionKey !== ChatRtContext::connections
+            || (
+                $data->collectionKey !== ChatRtContext::connections
+                && !(
+                    $this->currentRequestType === self::REQUEST_TYPE_PHOTO
+                    && $data->collectionKey === HilosProfilePhotoCheck::RT_COLLECTION
+                )
+            )
             || $data->stateId !== $this->currentAcceptKey
         ) {
             return;
@@ -128,7 +158,13 @@ final class ModeratorAgent extends AbstractAgent
     {
         if (
             $this->currentAcceptKey !== null
-            && $data->collectionKey === ChatRtContext::connections
+            && (
+                $data->collectionKey === ChatRtContext::connections
+                || (
+                    $this->currentRequestType === self::REQUEST_TYPE_PHOTO
+                    && $data->collectionKey === HilosProfilePhotoCheck::RT_COLLECTION
+                )
+            )
             && $data->stateId === $this->currentAcceptKey
         ) {
             $this->resetCurrentModerationRequest();
@@ -143,7 +179,9 @@ final class ModeratorAgent extends AbstractAgent
     public function onTick(): void
     {
         try {
-            $this->chatClient->tick(microtime(true) * TimeConstants::MS_PER_SECOND);
+            $now = microtime(true) * TimeConstants::MS_PER_SECOND;
+            $this->chatClient->tick($now);
+            $this->photoClient->tick($now);
         } catch (LLMException $e) {
             $this->logAgentError($e->getMessage());
             if ($this->currentAcceptKey !== null) {
@@ -155,16 +193,17 @@ final class ModeratorAgent extends AbstractAgent
         }
 
         if ($this->currentAcceptKey !== null) {
-            if ($this->chatClient->isBusy()) {
+            $client = $this->activeClient();
+            if ($client->isBusy()) {
                 return;
             }
 
-            if ($this->chatClient->hasResult()) {
+            if ($client->hasResult()) {
                 $allow = false;
                 $reason = self::REASON_UNKNOWN;
 
                 try {
-                    $text = $this->chatClient->consumeResult();
+                    $text = $client->consumeResult();
                     $decision = ModerationDecision::fromModelOutput($text);
 
                     $allow = $decision->allow;
@@ -221,6 +260,20 @@ final class ModeratorAgent extends AbstractAgent
 
             return;
         }
+
+        $oldest = null;
+        foreach (Hilos::$rt->hilosProfilePhotoChecks as $check) {
+            $upload = Hilos::$rt->hilosUploads->find($check->acceptKey, $check->clientUploadId);
+            if ($upload?->phase !== UploadPhase::COMPLETE || $upload->tmpIndex === null) {
+                continue;
+            }
+            if ($oldest === null || $check->startedAt < $oldest->startedAt) {
+                $oldest = $check;
+            }
+        }
+        if ($oldest !== null) {
+            $this->startPhotoModerationRequest($oldest);
+        }
     }
 
     /**
@@ -248,7 +301,7 @@ final class ModeratorAgent extends AbstractAgent
             model: $this->profile->model,
             temperature: 0.0,
             timeoutSec: $this->profile->timeoutSec,
-            maxTokens: 32,
+            maxTokens: self::MODERATION_MAX_TOKENS,
         );
 
         try {
@@ -268,6 +321,41 @@ final class ModeratorAgent extends AbstractAgent
     }
 
     /**
+     * Starts the oldest completed profile-photo check with the vision profile.
+     *
+     * @param PhotoCheck $check Pending photo check
+     */
+    private function startPhotoModerationRequest(PhotoCheck $check): void
+    {
+        $this->currentAcceptKey = $check->acceptKey;
+        $this->currentRequestType = self::REQUEST_TYPE_PHOTO;
+        $this->currentUserId = $check->userId;
+        $this->currentModerationValue = $check->clientUploadId;
+        $this->currentModerationUpdatedAt = $check->startedAt;
+
+        try {
+            $this->photoClient->startGenerate(
+                $this->buildPhotoModerationMessages(),
+                new ChatGenerateOptions(
+                    model: $this->photoProfile->model,
+                    temperature: 0.0,
+                    timeoutSec: $this->photoProfile->timeoutSec,
+                    maxTokens: self::MODERATION_MAX_TOKENS,
+                ),
+            );
+        } catch (HilosException $e) {
+            $this->logAgentError($e->getMessage());
+            $this->sendCurrentModerationResult(false, self::REASON_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    /** @return AsyncChatLLMInterface Client for the request currently in flight */
+    private function activeClient(): AsyncChatLLMInterface
+    {
+        return $this->currentRequestType === self::REQUEST_TYPE_PHOTO ? $this->photoClient : $this->chatClient;
+    }
+
+    /**
      * Builds moderation prompt messages from rules and the active runtime request.
      *
      * @return list<Message> System and user messages for LLM
@@ -283,8 +371,59 @@ final class ModeratorAgent extends AbstractAgent
         return match ($this->currentRequestType) {
             self::REQUEST_TYPE_MESSAGE => $this->buildMessageModerationMessages($this->currentAcceptKey),
             self::REQUEST_TYPE_RENAME => $this->buildRenameModerationMessages(),
+            self::REQUEST_TYPE_PHOTO => $this->buildPhotoModerationMessages(),
             default => throw new AgentException('Cannot build moderation messages for unknown request type'),
         };
+    }
+
+    /**
+     * Builds the image-bearing prompt for a pending profile photo.
+     *
+     * @return list<Message> System rule and the person's image
+     * @throws AgentException When the check, upload, person, or tmp file is gone
+     * @throws FsException When the completed image cannot be read
+     */
+    private function buildPhotoModerationMessages(): array
+    {
+        $acceptKey = $this->currentAcceptKey ?? throw new AgentException('Photo check has no connection');
+        $check = Hilos::$rt->hilosProfilePhotoChecks[$acceptKey];
+        if ($check === null || $check->clientUploadId !== $this->currentModerationValue) {
+            throw new AgentException('Photo check changed before moderation began');
+        }
+
+        $upload = Hilos::$rt->hilosUploads->find($acceptKey, $check->clientUploadId);
+        if ($upload?->phase !== UploadPhase::COMPLETE || $upload->tmpIndex === null) {
+            throw new AgentException('Photo upload is no longer complete');
+        }
+        $name = Hilos::$db->users[$check->userId]?->name;
+        if ($name === null) {
+            throw new AgentException('Person left before photo moderation began');
+        }
+
+        $tmp = (Hilos::$fs ?? throw new AgentException('Temporary files are unavailable'))->getTmp();
+        $bytes = FsPath::read($tmp[$upload->tmpIndex]->getPath());
+        $rulesBlock = $this->buildRuleBlock(
+            ObjectModeratorPromptPiece::SECTION_PHOTO_RULE,
+            [
+                '- Default policy: allow ordinary photos, drawings and logos.',
+                '- Block only nudity or sexual content, graphic violence, and hate symbols.',
+                '- If uncertain, return ' . ModerationDecision::KEY_ALLOW . '=true.',
+            ],
+        );
+        $systemContent = sprintf(implode("\n", [
+            'Moderation of a profile photo. JSON only. Output: {"%s":true|false,"%s":"ok|nudity|violence|hate"}',
+            'Rules:',
+            '%s',
+        ]), ModerationDecision::KEY_ALLOW, ModerationDecision::KEY_REASON, $rulesBlock);
+
+        return [
+            new Message(Message::ROLE_SYSTEM, $systemContent),
+            new Message(
+                Message::ROLE_USER,
+                implode("\n\n", ['User ID: ' . $check->userId, 'User: ' . $name]),
+                [new MessageImage('image/jpeg', base64_encode($bytes))],
+            ),
+        ];
     }
 
     /**
@@ -448,11 +587,25 @@ final class ModeratorAgent extends AbstractAgent
                     ),
                 );
                 return;
+
+            case self::REQUEST_TYPE_PHOTO:
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT,
+                    new ProfilePhotoVerdictSignalData(
+                        acceptKey: $this->currentAcceptKey,
+                        clientUploadId: $this->currentModerationValue,
+                        allow: $allow,
+                        reason: $reason,
+                    ),
+                );
+                return;
         }
     }
 
     /**
      * Checks that the active request still points to the same runtime state snapshot.
+     *
+     * @throws HilosException When a runtime row cannot be read
      */
     private function activeRequestStillMatchesRuntime(): bool
     {
@@ -462,6 +615,15 @@ final class ModeratorAgent extends AbstractAgent
 
         if (!isset(Hilos::$rt->connections[$this->currentAcceptKey])) {
             return false;
+        }
+
+        if ($this->currentRequestType === self::REQUEST_TYPE_PHOTO) {
+            $check = Hilos::$rt->hilosProfilePhotoChecks[$this->currentAcceptKey];
+
+            return $check !== null
+                && $check->userId === $this->currentUserId
+                && $check->clientUploadId === $this->currentModerationValue
+                && $check->startedAt === $this->currentModerationUpdatedAt;
         }
 
         $connection = Hilos::$rt->connections[$this->currentAcceptKey];
@@ -488,7 +650,12 @@ final class ModeratorAgent extends AbstractAgent
      */
     private function resetCurrentModerationRequest(): void
     {
-        $this->chatClient->reset();
+        if ($this->currentRequestType === null) {
+            $this->chatClient->reset();
+            $this->photoClient->reset();
+        } else {
+            $this->activeClient()->reset();
+        }
         $this->currentAcceptKey = null;
         $this->currentRequestType = null;
         $this->currentUserId = 0;

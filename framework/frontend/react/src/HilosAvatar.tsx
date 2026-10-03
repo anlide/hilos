@@ -1,15 +1,18 @@
-// HilosAvatar — one circle of initials for a person in the header, profile and
-// admin card. The circle is decorative: its surroundings carry the name, visibly
-// or as hidden text, and any link or tooltip. Photos arrive in HIL-1205.
+// HilosAvatar — one circle of a person's photo or initials in the header,
+// profile and admin card. The circle is decorative: its surroundings carry the
+// name, visibly or as hidden text, and any link or tooltip.
 // In the header it may carry the mark of the session's standing (HIL-945): a ring
 // in the standing's color and its icon in the corner, the pair of the strip that
 // says the same in words — so the mark is decorative too.
 import { formatInitials, type HilosAvatarMark } from '@hilos/core'
+import { useEffect, useState } from 'react'
 
 /** Props for {@link HilosAvatar}. */
 export interface HilosAvatarProps {
   /** The person's name, from the same source as the surrounding text. */
   name: string
+  /** Published photo URL; initials return if it cannot be loaded. */
+  photo?: string | null
   /** Header (sm), admin card (md), or profile (lg). Defaults to sm. */
   size?: 'sm' | 'md' | 'lg'
   /** The standing mark by the header avatar, or none (`hilosSessionAvatarMark`). */
@@ -23,10 +26,14 @@ export interface HilosAvatarProps {
  */
 export function HilosAvatar({
   name,
+  photo = null,
   size = 'sm',
   mark = null,
 }: HilosAvatarProps) {
   const initials = formatInitials(name)
+  const [failedPhoto, setFailedPhoto] = useState<string | null>(null)
+  useEffect(() => setFailedPhoto(null), [photo])
+  const shownPhoto = photo !== failedPhoto ? photo : null
   const ringClasses =
     mark === null
       ? ''
@@ -38,7 +45,17 @@ export function HilosAvatar({
       data-id="hilos-avatar"
       aria-hidden="true"
     >
-      {initials || <i className="bi bi-person" />}
+      {shownPhoto !== null ? (
+        <img
+          src={shownPhoto}
+          alt=""
+          className="w-100 h-100 rounded-circle object-fit-cover"
+          data-id="hilos-avatar-photo"
+          onError={() => setFailedPhoto(shownPhoto)}
+        />
+      ) : (
+        initials || <i className="bi bi-person" />
+      )}
       {mark !== null && (
         <i
           className={`bi ${mark.icon} position-absolute hilos-avatar-mark text-${mark.tone}-emphasis`}

@@ -85,4 +85,21 @@ describe('HilosAvatar', () => {
     expect(wrapper.text()).toBe('A')
     expect(wrapper.find('i.bi-person').exists()).toBe(false)
   })
+
+  it('shows a decorative photo, falls back on error, and tries the next photo', async () => {
+    const wrapper = mount(HilosAvatar, {
+      props: { name: 'Ada Baranov', photo: '/a.webp' },
+    })
+    const image = wrapper.find('[data-id="hilos-avatar-photo"]')
+    expect(image.attributes('alt')).toBe('')
+    expect(image.attributes('src')).toBe('/a.webp')
+    expect(wrapper.text()).toBe('')
+
+    await image.trigger('error')
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.text()).toBe('AB')
+
+    await wrapper.setProps({ photo: '/b.webp' })
+    expect(wrapper.find('img').attributes('src')).toBe('/b.webp')
+  })
 })

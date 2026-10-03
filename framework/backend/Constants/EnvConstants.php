@@ -207,6 +207,18 @@ enum EnvConstants
     /** @var string Moderation provider: local | external */
     case CHAT_MODERATION_PROVIDER;
 
+    /** @var string Model name for a project's profile photo check */
+    case CHAT_PHOTO_MODERATION_MODEL;
+
+    /** @var string Profile photo checker API base URL */
+    case CHAT_PHOTO_MODERATION_URL;
+
+    /** @var float Profile photo check timeout in seconds */
+    case CHAT_PHOTO_MODERATION_TIMEOUT_SEC;
+
+    /** @var string Profile photo checker provider: local | external */
+    case CHAT_PHOTO_MODERATION_PROVIDER;
+
     /** @var string Enable moderation for bot messages: 1|0, true|false (default: false) */
     case CHAT_MODERATION_BOTS;
 

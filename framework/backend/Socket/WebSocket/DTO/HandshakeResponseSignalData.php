@@ -138,6 +138,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string id = 'id';
     public const string name = 'name';
     public const string admin = 'admin';
+    public const string photo = 'photo';
     public const string data = 'data';
     public const string pendingAck = 'pendingAck';
     public const string serverTimeMs = 'serverTimeMs';
@@ -202,11 +203,13 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?bool $adminViewMode Whether this node is in the admin view mode, or null before the framework stamp
      * @param ?array{viewOnly: bool, carryAdmin: bool} $impersonationPolicy Impersonation policy of the installation,
      *     or null before the framework stamp
+     * @param ?string $selfPhoto Variant URL of the person's published photo, or null for initials
      */
     public function __construct(
         public readonly ?int $selfId = null,
         public readonly ?string $selfName = null,
         public readonly bool $selfAdmin = false,
+        public readonly ?string $selfPhoto = null,
         public readonly ?int $impersonatorId = null,
         public readonly ?string $impersonatorName = null,
         public readonly ?string $pendingAck = null,
@@ -239,6 +242,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
             impersonatorId: $this->impersonatorId,
             impersonatorName: $this->impersonatorName,
             pendingAck: $pendingAck,
@@ -271,6 +275,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
             impersonatorId: $this->impersonatorId,
             impersonatorName: $this->impersonatorName,
             pendingAck: $this->pendingAck,
@@ -304,6 +309,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
             impersonatorId: $this->impersonatorId,
             impersonatorName: $this->impersonatorName,
             pendingAck: $this->pendingAck,
@@ -335,6 +341,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
             impersonatorId: $this->impersonatorId,
             impersonatorName: $this->impersonatorName,
             pendingAck: $this->pendingAck,
@@ -365,6 +372,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
             impersonatorId: $this->impersonatorId,
             impersonatorName: $this->impersonatorName,
             pendingAck: $this->pendingAck,
@@ -411,6 +419,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
             impersonatorId: $this->impersonatorId,
             impersonatorName: $this->impersonatorName,
             pendingAck: $this->pendingAck,
@@ -441,6 +450,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                         self::id => $this->selfId,
                         self::name => $this->selfName,
                         self::admin => $this->selfAdmin,
+                        self::photo => $this->selfPhoto,
                     ],
                 self::impersonatedBy => $this->impersonatorId === null
                     ? null
@@ -524,6 +534,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfId: self::requireInt($currentUser, self::id),
             selfName: self::optionalString($currentUser, self::name),
             selfAdmin: self::requireBool($currentUser, self::admin),
+            selfPhoto: self::optionalString($currentUser, self::photo),
             impersonatorId: $impersonatedBy === null ? null : self::requireInt($impersonatedBy, self::id),
             impersonatorName: $impersonatedBy === null ? null : self::optionalString($impersonatedBy, self::name),
             pendingAck: $pendingAck,

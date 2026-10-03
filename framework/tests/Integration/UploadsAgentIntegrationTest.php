@@ -21,6 +21,7 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
@@ -599,6 +600,12 @@ final class UploadsTestOpenTarget extends AbstractUploadTarget
     {
         return false;
     }
+
+    /** @return FileVisibility A signed-in person may read a published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::AUTHENTICATED;
+    }
 }
 
 /**
@@ -620,6 +627,12 @@ final class UploadsTestImageTarget extends AbstractUploadTarget
     public function requiresSignIn(): bool
     {
         return true;
+    }
+
+    /** @return FileVisibility A signed-in person may read a published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::AUTHENTICATED;
     }
 
     /**

@@ -8,8 +8,13 @@ Handles LLM-based user content moderation. Runs in a regular worker and communic
 
 - Discover user outbound messages from runtime connection state and send `MODERATION_RESULT`.
 - Discover user-initiated display-name changes from runtime connection state and send `RENAME_MODERATION_RESULT`.
+- Discover completed profile-photo checks from `hilosProfilePhotoChecks`, send the image to the vision profile, and return `HILOS_PROFILE_PHOTO_VERDICT` to the users library.
 
-Uploaded files are not moderated through a separate signal. A message names its complete uploads by client id (`Connection::outboundModerationAttachments`), and the agent reads each from `Hilos::$rt->hilosUploads` — the framework uploads agent's rows, hence `READS_RT` — into one prompt line, `Attachment: name=…, mime=…, size=… bytes.`: the file name, the type read from the content (the declared one when none was read), and the declared size. An upload gone since the send is left out; its publication refuses next. The bytes are not inspected.
+Attachments on a chat message are described by name, type and size only. A profile
+photo is a separate request: the users library opens a check only for a completed
+upload, and the moderator reads its temporary JPEG and sends the bytes to the
+vision model. `READS_RT` declares both the upload and photo-check collections;
+`READS_DB` declares users for the current name in the photo prompt.
 
 ## LLM Client
 
@@ -38,18 +43,23 @@ the same client as in production, and a verdict is whatever a spec dictated
 spec dictated a verdict for is refused by the model and ends as
 `service_unavailable`.
 
-Polled in `onTick()` via `$this->chatClient->tick()`.
+The photo client uses `chat.photo_moderation`, a separate env-backed profile with
+the `qwen2.5vl:3b` local default. It has no DB-settings override. The same
+`AsyncChatLLMInterface` drives both clients; `onTick()` ticks each without
+blocking. The test stand sends both roles to its model channel.
 
 ## In-flight state
 
-Requests are not queued inside the agent. `MainPage::handleMessage()` writes
-connection-local runtime state, and `ModeratorAgent::onTick()` starts the first
-connection whose outbound moderation phase is `checking`.
+Requests are not queued inside the agent. Each tick finds a pending outbound
+message first, a pending rename second, or the oldest completed profile-photo
+check third. Only one model request is in flight at a time.
 
 Only one request is in flight at a time, tracked by accept key, request type,
 request value, user id, and moderation timestamp. After a result signal is
 sent, the marker is kept until ChatAgent applies the result back to runtime
-state, which prevents duplicate moderation starts for the same connection.
+state, which prevents duplicate moderation starts for the same connection. For a
+photo, the snapshot includes its client upload id and `startedAt`; removing or
+replacing the check cancels an obsolete model request.
 
 ## Signal Flow
 
@@ -59,6 +69,7 @@ MainPage runtime state -> ModeratorAgent
                          v
 MainPage <--MODERATION_RESULT---- ModeratorAgent
 ProfilePage <--RENAME_MODERATION_RESULT---- ModeratorAgent
+UsersLibrary <--HILOS_PROFILE_PHOTO_VERDICT---- ModeratorAgent
 ```
 
 ## Settings
@@ -66,4 +77,8 @@ ProfilePage <--RENAME_MODERATION_RESULT---- ModeratorAgent
 Model and URL are read from DB settings through `Hilos::$setting` on each new LLM client creation.
 A URL setting that resolves empty — `chat_moderation_url` and its default `default_bot_url` both — is not an address: the role keeps the one env gave it, in the order under LLM Client above.
 Moderator prompt pieces are read from `ChatDbContext::moderatorPromptPieces`; CRUD ownership belongs to `LibraryAgent`.
+The `photo_rule` section supplies the vision prompt's rules. While it has no
+pieces, the moderator allows ordinary photos, drawings and logos and blocks
+nudity, graphic violence and hate symbols. The admin moderation table edits the
+same section alongside message and name rules.
 Settings change: restart moderator agent or reinitialize client.

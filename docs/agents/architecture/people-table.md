@@ -72,6 +72,7 @@ where it is today — a hook the project implements.
 | Erasing a person — the framework deletes the person's rename journal and row after the project's rows, along with accounts folded into that person ([account-deletion.md](account-deletion.md)) | HIL-1200 |
 | The people table and the merge-candidates table in the admin section | HIL-1201 |
 | Foreign keys onto the person from every framework table that points at one | HIL-1202 |
+| A person's published photo, keyed by the person and linked to the files registry | HIL-1205 |
 | `name` and `lastActivity` on the frontend `User` entity | HIL-1193 |
 
 What stays the project's: hooks over its own columns and its own rows — the chat
@@ -82,6 +83,14 @@ project registers its own subclass of each, as it does every agent.
 the project's own tables — the chat's registration event in its room. How each
 of the other hooks is held is decided by the leaf that moves the operation; this
 page does not name it.
+
+## A Person's Photo
+
+The optional `hilos_user_photo` table holds the published photo of one person,
+linked to its registry file by a restrictive foreign key. It is owned by the
+people library and reached through `Hilos::$db->userPhotos[$userId]`, without a
+photo column on `hilos_user`. Its details, checking and browser wire are in
+[profile-photo.md](profile-photo.md).
 
 ## Renaming A Person
 

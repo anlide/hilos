@@ -24,6 +24,7 @@ import { ACCOUNT_STANDING_SIGNAL_SCHEMAS } from '../admin/users/hilosUsers.js'
 import { ACCOUNT_DELETION_SIGNAL_SCHEMAS } from '../profile/accountDeletion.js'
 import { SECOND_FACTOR_SIGNAL_SCHEMAS } from '../profile/secondFactor.js'
 import { PROFILE_PASSWORD_SIGNAL_SCHEMAS } from '../profile/signInMethods.js'
+import { PROFILE_PHOTO_SIGNAL_SCHEMAS } from '../profile/profilePhoto.js'
 import { SESSION_ROTATE_COOKIE_SUFFIX } from '../protocol/constants.js'
 import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
 import { SESSION_SIGNAL_SCHEMAS } from '../session/sessionScope.js'
@@ -188,6 +189,7 @@ export function createHilosConnection(
       ...ACCOUNT_STANDING_SIGNAL_SCHEMAS,
       ...DATA_EXPORT_SIGNAL_SCHEMAS,
       ...PROFILE_PASSWORD_SIGNAL_SCHEMAS,
+      ...PROFILE_PHOTO_SIGNAL_SCHEMAS,
       ...UPLOAD_SIGNAL_SCHEMAS,
       ...AUTH_CONVERGE_SIGNAL_SCHEMAS,
       ...OAUTH_SIGNAL_SCHEMAS,

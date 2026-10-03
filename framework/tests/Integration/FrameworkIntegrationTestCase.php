@@ -59,6 +59,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         HilosDbContext::dataExports,
         HilosDbContext::legalAcceptanceExports,
         HilosDbContext::userMerges,
+        HilosDbContext::userPhotos,
         HilosDbContext::accessLogEntries,
     ];
 

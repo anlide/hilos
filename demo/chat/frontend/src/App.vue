@@ -33,7 +33,7 @@ import type { Component } from 'vue'
 import AuthSurface from './auth/AuthSurface.vue'
 import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
-import { currentUserName } from './bootstrap/session'
+import { currentUserName, currentUserPhoto } from './bootstrap/session'
 import {
   PAGE_ADMIN_BOTS,
   PAGE_ADMIN_MODERATOR,
@@ -182,6 +182,7 @@ const isSecondFactorCancelRoute = computed(
 // profile page (its route owned by the page catalog), shown once the handshake
 // names the user.
 const userName = useSignal(currentUserName)
+const userPhoto = useSignal(currentUserPhoto)
 const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 // The standing mark by the avatar (HIL-945): a takeover, or the session's own
 // scheduled deletion, in the color of the strip that says it in words.
@@ -200,7 +201,7 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
         data-id="nav-profile"
         :title="userName"
       >
-        <HilosAvatar :name="userName" :mark="avatarMark" />
+        <HilosAvatar :name="userName" :photo="userPhoto" :mark="avatarMark" />
         <span class="visually-hidden">{{ userName }}</span>
       </HilosLink>
     </template>

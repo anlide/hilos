@@ -1,6 +1,6 @@
-// HilosAvatar — one circle of initials for a person in the header, profile and
-// admin card. The circle is decorative: its surroundings carry the name, visibly
-// or as hidden text, and any link or tooltip. Photos arrive in HIL-1205.
+// HilosAvatar — one circle of a person's photo or initials in the header,
+// profile and admin card. The circle is decorative: its surroundings carry the
+// name, visibly or as hidden text, and any link or tooltip.
 // In the header it may carry the mark of the session's standing (HIL-945): a ring
 // in the standing's color and its icon in the corner, the pair of the strip that
 // says the same in words — so the mark is decorative too.
@@ -9,6 +9,7 @@ import {
   Component,
   computed,
   input,
+  linkedSignal,
 } from '@angular/core'
 import { formatInitials, type HilosAvatarMark } from '@hilos/core'
 
@@ -23,7 +24,15 @@ import { formatInitials, type HilosAvatarMark } from '@hilos/core'
       data-id="hilos-avatar"
       aria-hidden="true"
     >
-      @if (initials()) {
+      @if (shownPhoto(); as src) {
+        <img
+          [src]="src"
+          alt=""
+          class="w-100 h-100 rounded-circle object-fit-cover"
+          data-id="hilos-avatar-photo"
+          (error)="failedPhoto.set(src)"
+        />
+      } @else if (initials()) {
         {{ initials() }}
       } @else {
         <i class="bi bi-person"></i>
@@ -41,12 +50,22 @@ import { formatInitials, type HilosAvatarMark } from '@hilos/core'
 export class HilosAvatar {
   /** The person's name, from the same source as the surrounding text. */
   readonly name = input.required<string>()
+  /** Published photo URL; initials return if it cannot be loaded. */
+  readonly photo = input<string | null>(null)
   /** Header (sm), admin card (md), or profile (lg). */
   readonly size = input<'sm' | 'md' | 'lg'>('sm')
   /** The standing mark by the header avatar, or none (`hilosSessionAvatarMark`). */
   readonly mark = input<HilosAvatarMark | null>(null)
 
   protected readonly initials = computed(() => formatInitials(this.name()))
+  protected readonly failedPhoto = linkedSignal(() => {
+    this.photo()
+    return null as string | null
+  })
+  protected readonly shownPhoto = computed(() => {
+    const photo = this.photo()
+    return photo !== this.failedPhoto() ? photo : null
+  })
   protected readonly circleClass = computed(() => {
     const mark = this.mark()
     const size = 'hilos-avatar-' + this.size()

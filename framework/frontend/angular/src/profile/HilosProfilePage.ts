@@ -9,11 +9,13 @@ import {
 } from '@angular/core'
 import {
   createHilosProfileEmailChangeFlow,
+  createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
   hilosChildLinks,
   HilosPages,
   HILOS_PROFILE_ROOT_COPY,
+  HILOS_PROFILE_PHOTO_COPY,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
   subscribeSignal,
@@ -29,6 +31,7 @@ import { hilosSignal } from '../hilosSignal.js'
 import { HilosAccountDeletion } from './HilosAccountDeletion.js'
 import { HilosProfileEmailChange } from './HilosProfileEmailChange.js'
 import { HilosProfileRename } from './HilosProfileRename.js'
+import { HilosProfilePhoto } from './HilosProfilePhoto.js'
 
 /**
  * The profile root (HIL-1169): the person's own line, the Account rows, a row
@@ -44,6 +47,7 @@ import { HilosProfileRename } from './HilosProfileRename.js'
     HilosPageHeading,
     HilosProfileEmailChange,
     HilosProfileRename,
+    HilosProfilePhoto,
     LoadingButton,
   ],
   template: `
@@ -55,7 +59,25 @@ import { HilosProfileRename } from './HilosProfileRename.js'
             class="d-flex align-items-center gap-3 mt-3"
             data-id="profile-identity"
           >
-            <hilos-avatar [name]="name()" size="lg" />
+            @if (photoEnabled()) {
+              <button
+                type="button"
+                data-id="profile-photo-open"
+                class="btn p-0 border-0 bg-transparent position-relative"
+                [title]="photoCopy.open"
+                [attr.aria-label]="photoCopy.open"
+                (click)="photoFlow().open()"
+              >
+                <hilos-avatar [name]="name()" [photo]="photo()" size="lg" />
+                <span
+                  class="position-absolute hilos-avatar-camera bg-body border rounded-circle d-inline-flex align-items-center justify-content-center text-body-emphasis"
+                  aria-hidden="true"
+                  ><i class="bi bi-camera"></i
+                ></span>
+              </button>
+            } @else {
+              <hilos-avatar [name]="name()" [photo]="photo()" size="lg" />
+            }
             <div class="flex-grow-1 text-break">
               <div class="h5 mb-0" data-id="profile-identity-name">
                 {{ name() }}
@@ -182,6 +204,9 @@ import { HilosProfileRename } from './HilosProfileRename.js'
         @if (rename(); as flow) {
           <hilos-profile-rename [flow]="flow" />
         }
+        @if (photoEnabled()) {
+          <hilos-profile-photo [flow]="photoFlow()" />
+        }
         <hilos-profile-email-change [flow]="email()" />
       </section>
     } @else {
@@ -200,6 +225,7 @@ export class HilosProfilePage {
   /** What only the project knows: the name, its rename, its lists. */
   readonly binding = input.required<HilosProfileBinding>()
   protected readonly copy = HILOS_PROFILE_ROOT_COPY
+  protected readonly photoCopy = HILOS_PROFILE_PHOTO_COPY
   private readonly router = inject(HILOS_ROUTER)
   private readonly identity = hilosSignal(this.router.pageIdentity)
   private readonly route = hilosSignal(this.router.currentRoute)
@@ -226,7 +252,12 @@ export class HilosProfilePage {
   protected readonly email = computed(() =>
     createHilosProfileEmailChangeFlow(this.context()),
   )
+  protected readonly photoFlow = computed(() =>
+    createHilosProfilePhotoFlow(this.context(), this.root().photo),
+  )
   protected readonly signedIn = signal(false)
+  protected readonly photoEnabled = signal(false)
+  protected readonly photo = signal<string | null>(null)
   protected readonly name = signal('')
   protected readonly summaries = signal<Readonly<Record<string, string>>>({})
   protected readonly verifiedEmail = signal<string | null>(null)
@@ -243,11 +274,17 @@ export class HilosProfilePage {
       const root = this.root()
       root.start()
       this.signedIn.set(root.signedIn.get())
+      this.photoEnabled.set(root.photoEnabled.get())
+      this.photo.set(root.photo.get())
       this.summaries.set(root.summaries.get())
       this.verifiedEmail.set(root.verifiedEmail.get())
       this.passkeyOnly.set(root.passkeyOnly.get())
       const off = [
         subscribeSignal(root.signedIn, (value) => this.signedIn.set(value)),
+        subscribeSignal(root.photoEnabled, (value) =>
+          this.photoEnabled.set(value),
+        ),
+        subscribeSignal(root.photo, (value) => this.photo.set(value)),
         subscribeSignal(root.summaries, (value) => this.summaries.set(value)),
         subscribeSignal(root.verifiedEmail, (value) =>
           this.verifiedEmail.set(value),
@@ -289,6 +326,10 @@ export class HilosProfilePage {
         off()
         flow.dispose()
       })
+    })
+    effect((onCleanup) => {
+      const flow = this.photoFlow()
+      onCleanup(() => flow.dispose())
     })
   }
 }

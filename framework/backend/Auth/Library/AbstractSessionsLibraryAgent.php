@@ -41,6 +41,7 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
+use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
@@ -131,6 +132,7 @@ use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Entity\Item\NotificationPreference as EntityNotificationPreference;
 use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
+use Hilos\Database\Entity\Item\UserPhoto as EntityUserPhoto;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
@@ -331,6 +333,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::legalAcceptanceExports => [TruthSourceOperation::Remove],
         HilosDbContext::userRenames => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure (HIL-1200).
         HilosDbContext::userMerges => TruthSourceOperation::ALL,
+        // TODO(HIL-630): borrowed for account erasure (HIL-1205); the users library owns these.
+        HilosDbContext::userPhotos => [TruthSourceOperation::Remove],
         HilosDbContext::accessLogEntries => TruthSourceOperation::ALL,
     ];
 
@@ -447,6 +451,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_FLOW_STEP => ProfileFlowStepSignalData::class,
+        HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => UserSessionsRestateSignalData::class,
     ];
 
     /**
@@ -2026,6 +2031,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function announceAdminGrant(int $userId): AdminGrantAnnouncement
     {
+        return $this->restateSessionsOf($userId);
+    }
+
+    /**
+     * Restates every open session of a person after a projected identity field changes.
+     *
+     * @param int $userId Person whose open sessions need fresh state
+     * @return AdminGrantAnnouncement Sessions told and any failure reason
+     */
+    private function restateSessionsOf(int $userId): AdminGrantAnnouncement
+    {
         $connections = Hilos::$rt?->sessionConnectionsSource();
         if ($connections === null) {
             return new AdminGrantAnnouncement(0, null, 0);
@@ -2059,11 +2075,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // Told apart and written down as its own thing, then reported like any other reason:
             // the caller answers a parked CLI with this announcement, so there is nowhere to
             // raise it to. The line is what says this process was never going to announce.
-            $this->logAgentError("Admin grant for user #{$userId} cannot be announced here: {$refusal->getMessage()}");
+            $this->logAgentError("Session restate for user #{$userId} cannot be announced here: {$refusal->getMessage()}");
 
             return new AdminGrantAnnouncement($sessions, $refusal->getMessage(), $tabs);
         } catch (Throwable $e) {
-            $this->logAgentError("Admin grant for user #{$userId} was not announced: {$e->getMessage()}");
+            $this->logAgentError("Session restate for user #{$userId} was not announced: {$e->getMessage()}");
 
             return new AdminGrantAnnouncement($sessions, $e->getMessage(), $tabs);
         }
@@ -3619,6 +3635,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->applyProfileFlowStep($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE:
+                if (!$data->data instanceof UserSessionsRestateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSessionsRestateSignalData::class, $data->data);
+                }
+                $this->restateSessionsOf($data->data->userId);
 
                 return;
 
@@ -5676,7 +5700,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->forgetNotificationsOf($userId);
         $this->forgetExportsOf($userId);
         $this->releaseSessionsOf($userId);
-        $erasure = $this->applyAccountErasure($userId);
+        $photoErasure = new AccountErasure([], []);
+        if (Schema::getTable(EntityUserPhoto::_table) !== null) {
+            $photoFileId = Hilos::$db->userPhotos->actions->deleteForUser($userId);
+            if ($photoFileId !== null) {
+                $photoErasure = new AccountErasure([EntityUserPhoto::_table => 1], [$photoFileId]);
+            }
+        }
+        $erasure = $photoErasure->plus($this->applyAccountErasure($userId));
         // Chat reads rename rows while deleting its feed events. Rows where this account
         // was only the author remain; the database clears their author reference (HIL-1195).
         Hilos::$db->userRenames->actions->deleteByUser($userId);

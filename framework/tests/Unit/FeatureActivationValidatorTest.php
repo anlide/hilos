@@ -26,11 +26,13 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\FileVisibility;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Library\AbstractFilesLibraryAgentDaemon;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Files\Upload\UploadsAgentDaemon;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Files\Image\GdImageEngine;
 use Hilos\Files\Image\ImageEngineInterface;
 use Hilos\Files\Image\ImageFit;
@@ -269,6 +271,14 @@ final class FeatureActivationValidatorTest extends TestCase
         FeatureActivationForeignTargetHilos::validateFeatureActivation();
     }
 
+    public function testFrameworkUploadPrefixIsReserved(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('Names starting with hilos_ are reserved for the framework: hilos_avatar');
+
+        FeatureActivationReservedTargetHilos::validateFeatureActivation();
+    }
+
     public function testAPageRoutingBinaryFramesBesideUploadsIsReported(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
@@ -323,6 +333,62 @@ final class FeatureActivationValidatorTest extends TestCase
         FeatureActivationImagesHilos::validateFeatureActivation();
         self::assertInstanceOf(GdImageEngine::class, ImagesAgent::createEngine());
         self::assertTrue(new ImagesAgentDaemon()->requiresMonopolisticProcess());
+    }
+
+    public function testFrameworkImagePrefixIsReserved(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('Names starting with hilos_ are reserved for the framework: hilos_thumb');
+
+        FeatureActivationReservedVariantHilos::validateFeatureActivation();
+    }
+
+    public function testProfilePhotoAddsItsFrameworkTargetAndVariant(): void
+    {
+        $target = new ProfilePhotoUploadTarget();
+        self::assertSame(524288, $target->maxBytes());
+        self::assertSame(['image/jpeg'], $target->acceptedMimeTypes());
+        self::assertTrue($target->requiresSignIn());
+        self::assertTrue($target->sniffsContent());
+        self::assertSame(FileVisibility::PUBLIC, $target->visibility());
+        self::assertSame(
+            ProfilePhotoUploadTarget::class,
+            FeatureActivationPhotoHilos::uploadTargets()[ProfilePhotoUploadTarget::NAME],
+        );
+        self::assertSame(
+            [
+                ImageVariant::WIDTH => 256,
+                ImageVariant::HEIGHT => 256,
+                ImageVariant::FIT => ImageFit::COVER,
+                ImageVariant::FORMAT => ImageFormat::WEBP,
+            ],
+            FeatureActivationPhotoHilos::imageVariants()[ProfilePhotoUploadTarget::VARIANT],
+        );
+        self::assertArrayHasKey('thumb', FeatureActivationPhotoHilos::imageVariants());
+    }
+
+    public function testPhotoCheckerNeedsTheFeature(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('PROFILE_PHOTO_CHECKER names an agent, but HilosFeature::PROFILE_PHOTO is not declared');
+
+        FeatureActivationCheckerWithoutPhotoHilos::validateFeatureActivation();
+    }
+
+    public function testPhotoCheckerNeedsARegisteredAgent(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('PROFILE_PHOTO_CHECKER names missing, but AGENTS has no such agent');
+
+        FeatureActivationPhotoMissingCheckerHilos::validateFeatureActivation();
+    }
+
+    public function testPhotoOnAdminUserPageNeedsThePhotoTableBinding(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('PAGE_TABLES binds no page extending');
+
+        FeatureActivationPhotoUsersHilos::validateFeatureActivation();
     }
 
     /** @return iterable<string, array{class-string<HilosFacade>, string}> Broken image activation and its refusal */
@@ -982,6 +1048,12 @@ final class FeatureActivationUploadTarget extends AbstractUploadTarget
     {
         return false;
     }
+
+    /** @return FileVisibility A signed-in person may read a published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::AUTHENTICATED;
+    }
 }
 
 /**
@@ -1059,6 +1131,11 @@ final class FeatureActivationTargetsOnlyHilos extends FeatureActivationValidHilo
 final class FeatureActivationForeignTargetHilos extends FeatureActivationUploadsHilos
 {
     public const array UPLOAD_TARGETS = ['avatar' => FeatureActivationProjectTable::class];
+}
+
+final class FeatureActivationReservedTargetHilos extends FeatureActivationUploadsHilos
+{
+    public const array UPLOAD_TARGETS = ['hilos_avatar' => FeatureActivationUploadTarget::class];
 }
 
 /**
@@ -1198,6 +1275,38 @@ final class FeatureActivationImageVariantsOnlyHilos extends FeatureActivationVal
 final class FeatureActivationImagesWithoutVariantsHilos extends FeatureActivationImagesHilos
 {
     public const array IMAGE_VARIANTS = [];
+}
+
+final class FeatureActivationReservedVariantHilos extends FeatureActivationImagesHilos
+{
+    public const array IMAGE_VARIANTS = [
+        'hilos_thumb' => [ImageVariant::WIDTH => 384, ImageVariant::HEIGHT => 384, ImageVariant::FIT => ImageFit::CONTAIN],
+    ];
+}
+
+class FeatureActivationPhotoHilos extends FeatureActivationImagesHilos
+{
+    protected const array FEATURES = [
+        HilosFeature::SETTINGS,
+        HilosFeature::FILES,
+        HilosFeature::IMAGES,
+        HilosFeature::PROFILE_PHOTO,
+    ];
+}
+
+final class FeatureActivationPhotoMissingCheckerHilos extends FeatureActivationPhotoHilos
+{
+    public const ?string PROFILE_PHOTO_CHECKER = 'missing';
+}
+
+final class FeatureActivationCheckerWithoutPhotoHilos extends FeatureActivationImagesHilos
+{
+    public const ?string PROFILE_PHOTO_CHECKER = 'moderator';
+}
+
+final class FeatureActivationPhotoUsersHilos extends FeatureActivationCardBoundHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::HILOS_USERS, HilosFeature::PROFILE_PHOTO];
 }
 
 final class FeatureActivationImagesForeignWorkerHilos extends FeatureActivationImagesHilos

@@ -16,7 +16,6 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Files\DTO\FileBindSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\DTO\FileRemoveSignalData;
-use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Image\ImageFit;
 use Hilos\Files\Image\ImageVariant;
@@ -221,7 +220,6 @@ final class HilosFilesTest extends TestCase
             UploadPublishSignalData::acceptKey => 'accept-key',
             UploadPublishSignalData::target => 'gallery',
             UploadPublishSignalData::clientUploadIds => ['u2', 'u1'],
-            UploadPublishSignalData::visibility => FileVisibility::AUTHENTICATED->value,
             UploadPublishSignalData::replySignal => 'gallery_published',
         ], $signal->data->data->toArray());
         self::assertNull(Hilos::$sr?->getNextQueuedSignal(), 'The door queues nothing else');
@@ -237,7 +235,6 @@ final class HilosFilesTest extends TestCase
             'accept-key',
             'gallery',
             $clientUploadIds,
-            FileVisibility::AUTHENTICATED,
             'gallery_published',
         );
     }

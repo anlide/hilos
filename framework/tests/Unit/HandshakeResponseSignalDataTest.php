@@ -106,6 +106,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'id' => 7,
                         'name' => 'User 7',
                         'admin' => false,
+                        'photo' => null,
                     ],
                     'impersonatedBy' => null,
                 ],
@@ -137,6 +138,23 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertNull($restored->impersonatorId);
         $this->assertNull($restored->impersonatorName);
         $this->assertSame($data->toArray(), $restored->toArray());
+    }
+
+    /** A photo URL remains on the user through each response stamp. */
+    public function testPhotoSurvivesResponseStamps(): void
+    {
+        $url = '/_hilos/file?id=9&variant=hilos_avatar';
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7', selfPhoto: $url);
+        $stamped = $data
+            ->withPendingAck(null)
+            ->withAccountBlocked(null)
+            ->withAccountStanding(null)
+            ->withAdminViewMode(false)
+            ->withImpersonationPolicy(['viewOnly' => true, 'carryAdmin' => false])
+            ->withSessionContext(123, null, ['email' => true, 'phone' => false], [], false);
+
+        $this->assertSame($url, $stamped->toArray()['entities']['currentUser']['photo']);
+        $this->assertSame($url, HandshakeResponseSignalData::fromArray($stamped->toArray())->selfPhoto);
     }
 
     public function testAnonymousPayloadCarriesNullCurrentUser(): void
@@ -190,6 +208,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'id' => 7,
                         'name' => 'User 7',
                         'admin' => false,
+                        'photo' => null,
                     ],
                     'impersonatedBy' => [
                         'id' => 3,

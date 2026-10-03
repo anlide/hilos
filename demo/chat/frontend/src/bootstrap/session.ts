@@ -9,6 +9,7 @@ import {
   sessionPendingAuthStep,
   sessionUserId,
   sessionUserName,
+  sessionUserPhoto,
 } from '@hilos/core'
 
 /** The application's scope-partitioned stores. */
@@ -16,6 +17,9 @@ export const scopes = new ScopeManager()
 
 /** The current user's display name; empty until the handshake response lands. */
 export const currentUserName = sessionUserName(scopes)
+
+/** The current user's published photo, or null while initials should be shown. */
+export const currentUserPhoto = sessionUserPhoto(scopes)
 
 /** The current user's id; null until the handshake response lands. */
 export const currentUserId = sessionUserId(scopes)

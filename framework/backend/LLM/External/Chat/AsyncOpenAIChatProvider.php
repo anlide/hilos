@@ -95,7 +95,24 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
 
         $apiMessages = [];
         foreach ($messages as $msg) {
-            $apiMessages[] = Message::toProviderFormat($msg);
+            $apiMessage = Message::toProviderFormat($msg);
+            if ($msg instanceof Message && $msg->images !== []) {
+                $parts = [[
+                    LLMApiConstants::KEY_TYPE => LLMApiConstants::CONTENT_TYPE_TEXT,
+                    LLMApiConstants::KEY_TEXT => $msg->content,
+                ]];
+                foreach ($msg->images as $image) {
+                    $parts[] = [
+                        LLMApiConstants::KEY_TYPE => LLMApiConstants::CONTENT_TYPE_IMAGE_URL,
+                        LLMApiConstants::KEY_IMAGE_URL => [
+                            LLMApiConstants::KEY_URL => 'data:' . $image->mimeType . ';base64,' . $image->base64,
+                        ],
+                    ];
+                }
+                $apiMessage[LLMApiConstants::KEY_CONTENT] = $parts;
+                unset($apiMessage[LLMApiConstants::KEY_IMAGES]);
+            }
+            $apiMessages[] = $apiMessage;
         }
 
         $payload = [

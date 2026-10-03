@@ -25,21 +25,18 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
     public const string acceptKey = 'acceptKey';
     public const string target = 'target';
     public const string clientUploadIds = 'clientUploadIds';
-    public const string visibility = 'visibility';
     public const string replySignal = 'replySignal';
 
     /**
      * @param string $acceptKey Accept key of the connection the uploads belong to
      * @param string $target Upload target the uploads must have been declared for
      * @param list<string> $clientUploadIds Ids the client gave the uploads; the answer keeps their order
-     * @param string $visibility Who may be given the published files, a {@see FileVisibility} value
      * @param string $replySignal Name of the agent signal the answer comes under
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $target,
         public readonly array $clientUploadIds,
-        public readonly string $visibility,
         public readonly string $replySignal,
     ) {
     }
@@ -77,7 +74,7 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
     }
 
     /**
-     * Reads the visibility of the files to publish.
+     * Reads the visibility on the uploads agent's frame to the files library.
      *
      * @param array<string, mixed> $data Payload the DTO is being built from
      * @param string $key Payload key holding the visibility
@@ -113,7 +110,7 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
     }
 
     /**
-     * @return array{acceptKey: string, target: string, clientUploadIds: list<string>, visibility: string, replySignal: string}
+     * @return array{acceptKey: string, target: string, clientUploadIds: list<string>, replySignal: string}
      *     DTO payload for transport
      */
     public function toArray(): array
@@ -122,7 +119,6 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
             self::acceptKey => $this->acceptKey,
             self::target => $this->target,
             self::clientUploadIds => $this->clientUploadIds,
-            self::visibility => $this->visibility,
             self::replySignal => $this->replySignal,
         ];
     }
@@ -130,7 +126,7 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When a field is absent, the id list is malformed, the visibility is unknown,
+     * @throws InvalidFormatException When a field is absent, the id list is malformed,
      *     or the target or the reply name is empty
      */
     public static function fromArray(array $data): static
@@ -139,7 +135,6 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
             acceptKey: self::requireString($data, self::acceptKey),
             target: self::requireName($data, self::target),
             clientUploadIds: self::requireClientUploadIds($data, self::clientUploadIds),
-            visibility: self::requireVisibility($data, self::visibility),
             replySignal: self::requireName($data, self::replySignal),
         );
     }

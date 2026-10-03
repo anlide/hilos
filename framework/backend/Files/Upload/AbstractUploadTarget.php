@@ -5,18 +5,19 @@ declare(strict_types=1);
 namespace Hilos\Files\Upload;
 
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
+use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\Check\DuplicateContentCheck;
 use Hilos\Files\Upload\Check\StorageLimitCheck;
 use Hilos\Hilos;
 use Hilos\HilosException;
 
 /**
- * An upload target: the policy a project declares for one kind of file it accepts (HIL-135).
+ * An upload target: the policy declared for one kind of file a project accepts (HIL-135).
  *
  * A browser names the target when it declares a file - a chat attachment, an avatar - and the
  * target answers how large the file may be, which types it may have, whether its content is
  * sniffed and whether only a signed-in person may send it. Targets are listed by name in the
- * project's {@see Hilos::UPLOAD_TARGETS}; the uploads agent creates one instance of each when it
+ * combined {@see Hilos::uploadTargets()} catalog; the uploads agent creates one instance of each when it
  * starts, so a target takes no constructor arguments.
  *
  * Whether a target requires sign-in has no default on purpose: an upload is an action, and an
@@ -37,6 +38,11 @@ abstract class AbstractUploadTarget
      * @return bool Whether only a signed-in connection may declare a file for this target
      */
     abstract public function requiresSignIn(): bool;
+
+    /**
+     * @return FileVisibility Who may read a published file received under this target
+     */
+    abstract public function visibility(): FileVisibility;
 
     /**
      * Types the target accepts, as exact types or masks like 'image/*'.

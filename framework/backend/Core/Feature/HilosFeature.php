@@ -68,6 +68,9 @@ enum HilosFeature: string
     /** Image variants: registry picture copies in declared sizes, drawn on the first request by their agent (HIL-141). */
     case IMAGES = 'images';
 
+    /** A person's photo, uploaded, optionally checked, and shown through the files registry. */
+    case PROFILE_PHOTO = 'profile_photo';
+
     /** Analytics through node journals: the collector in every process, the journal agent of each node and the cluster writer (HIL-1154). */
     case ANALYTICS = 'analytics';
 }

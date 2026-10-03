@@ -3,6 +3,7 @@ import {
   bindSessionScope,
   handshakeResponseAck,
   sessionUserName,
+  sessionUserPhoto,
   sessionUserIsAdmin,
   sessionUserId,
   sessionAdminViewMode,
@@ -83,6 +84,27 @@ describe('sessionScope', () => {
     })
 
     expect(name.get()).toBe('Ada')
+  })
+
+  it('takes a published photo and its removal from successive session identities', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const photo = sessionUserPhoto(scopes)
+
+    expect(photo.get()).toBeNull()
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, photo: null } },
+    })
+    expect(photo.get()).toBeNull()
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, photo: '/_hilos/file?id=8' } },
+    })
+    expect(photo.get()).toBe('/_hilos/file?id=8')
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, photo: null } },
+    })
+    expect(photo.get()).toBeNull()
   })
 
   it('resolves the admin flag the handshake response carries', () => {

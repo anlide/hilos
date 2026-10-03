@@ -37,8 +37,11 @@ use PharData;
 /** Real queue and archive lifecycle, including a deletion whose sync is still waiting. */
 final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    private const int PHOTO_FILE_ID = 9001;
+
     private const array EXTRA_TABLES = [
         'hilos_passkey_credential', 'hilos_push_subscription', 'hilos_notification', 'hilos_notification_preference',
+        'hilos_file', 'hilos_user_photo',
     ];
     /** Cluster env values the cluster case sets, and tearDown removes. */
     private const array CLUSTER_ENV = ['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'];
@@ -63,8 +66,10 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         $this->previousCluster = Hilos::$cluster;
         Hilos::$sr = new SignalRouter();
         Hilos::$notify = new HilosNotifier();
-        foreach (self::EXTRA_TABLES as $table) {
+        foreach (array_reverse(self::EXTRA_TABLES) as $table) {
             Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
+        }
+        foreach (self::EXTRA_TABLES as $table) {
             Database::sqlRun(file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql'));
         }
         Schema::reset();
@@ -102,7 +107,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         if (is_dir($this->directory)) {
             rmdir($this->directory);
         }
-        foreach (self::EXTRA_TABLES as $table) {
+        foreach (array_reverse(self::EXTRA_TABLES) as $table) {
             Database::sqlRun('DROP TABLE IF EXISTS `' . $table . '`');
         }
         Schema::reset();
@@ -243,6 +248,74 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame('It is kept for 7 days. Open Profile › Your data to download it.', $announcements[0]->body);
         self::assertSame(['url' => '/profile/data'], $announcements[0]->data);
         self::assertNull($announcements[0]->channels);
+    }
+
+    /** A personal data copy carries the published picture and its set moment. */
+    public function testProfilePhotoSectionIncludesItsPicture(): void
+    {
+        $filesPath = sys_get_temp_dir() . '/hilos-photo-export-files-' . bin2hex(random_bytes(8));
+        mkdir($filesPath);
+        try {
+            file_put_contents($filesPath . '/photo.jpg', 'JPEG');
+            Hilos::$fs = new DataExportTestFs($this->directory, $filesPath);
+            Hilos::$fs->configure();
+            DataExportPhotoTestHilos::initBrowser();
+            Database::sqlRun(
+                'INSERT INTO `hilos_file` (`id`, `stored_name`, `filename`, `mime_type`, `size`, `content_hash`, '
+                . '`owner_user_id`, `visibility`, `bound`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [self::PHOTO_FILE_ID, 'photo.jpg', 'photo.jpg', 'image/jpeg', 4, str_repeat('a', 64), 7, 'public', 1],
+            );
+            Database::sqlRun(
+                'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
+                [7, self::PHOTO_FILE_ID, '2026-01-03 00:00:00'],
+            );
+            $order = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+            $agent = new DataExportTestAgent();
+            $agent->onStart();
+            $agent->onTick();
+
+            self::assertSame(DataExportState::READY, $order->state);
+            $archive = new PharData($this->directory . '/' . $order->storedName);
+            self::assertSame(
+                ['file' => 'files/photo.jpg', 'setAt' => '2026-01-03T00:00:00Z'],
+                self::section($archive, 'profile_photo'),
+            );
+            self::assertSame('JPEG', $archive['files/photo.jpg']->getContent());
+        } finally {
+            unlink($filesPath . '/photo.jpg');
+            rmdir($filesPath);
+        }
+    }
+
+    /** A restored photo row with no original file cannot make the whole copy fail. */
+    public function testProfilePhotoSectionIsNullWhenOriginalIsMissing(): void
+    {
+        $filesPath = sys_get_temp_dir() . '/hilos-photo-export-files-' . bin2hex(random_bytes(8));
+        mkdir($filesPath);
+        try {
+            Hilos::$fs = new DataExportTestFs($this->directory, $filesPath);
+            Hilos::$fs->configure();
+            DataExportPhotoTestHilos::initBrowser();
+            Database::sqlRun(
+                'INSERT INTO `hilos_file` (`id`, `stored_name`, `filename`, `mime_type`, `size`, `content_hash`, '
+                . '`owner_user_id`, `visibility`, `bound`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [self::PHOTO_FILE_ID, 'missing.jpg', 'missing.jpg', 'image/jpeg', 4, str_repeat('a', 64), 7, 'public', 1],
+            );
+            Database::sqlRun(
+                'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
+                [7, self::PHOTO_FILE_ID, '2026-01-03 00:00:00'],
+            );
+            $order = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+            $agent = new DataExportTestAgent();
+            $agent->onStart();
+            $agent->onTick();
+
+            self::assertSame(DataExportState::READY, $order->state);
+            $archive = new PharData($this->directory . '/' . $order->storedName);
+            self::assertNull(self::section($archive, 'profile_photo'));
+        } finally {
+            rmdir($filesPath);
+        }
     }
 
     /**
@@ -472,17 +545,23 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
 
 final class DataExportTestFs extends FsContext
 {
-    /** @param string $path Private test directory */
-    public function __construct(private readonly string $path) { }
+    /**
+     * @param string $path Private test directory
+     * @param ?string $filesPath Optional published-files directory
+     */
+    public function __construct(private readonly string $path, private readonly ?string $filesPath = null) { }
 
     /** Registers a fresh directory for each test. */
     public function configure(): void
     {
         $this->registerDirectory(self::DATA_EXPORT, $this->path, DirectoryScope::CLUSTER);
+        if ($this->filesPath !== null) {
+            $this->registerDirectory(self::FILES, $this->filesPath, DirectoryScope::CLUSTER);
+        }
     }
 }
 
-final class DataExportTestHilos extends Hilos
+class DataExportTestHilos extends Hilos
 {
     protected const array FEATURES = [HilosFeature::NOTIFICATIONS];
     protected const ?string LEGAL_CATALOG = LegalCatalogStub::class;
@@ -492,6 +571,11 @@ final class DataExportTestHilos extends Hilos
     {
         return new HilosSessionTestDbContext();
     }
+}
+
+final class DataExportPhotoTestHilos extends DataExportTestHilos
+{
+    protected const array FEATURES = [HilosFeature::NOTIFICATIONS, HilosFeature::PROFILE_PHOTO];
 }
 
 final class DataExportTestAgent extends AbstractDataExportAgent

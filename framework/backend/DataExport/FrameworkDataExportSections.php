@@ -21,6 +21,8 @@ use Hilos\Legal\LegalWire;
 /** Explicit JSON projections: authentication secrets never pass through generic serialization. */
 final class FrameworkDataExportSections
 {
+    public const string PROFILE_PHOTO_SECTION = 'profile_photo';
+
     /**
      * @param int $userId Person whose framework records are exported
      * @param DataExportWriter $writer Archive serialization boundary
@@ -57,6 +59,16 @@ final class FrameworkDataExportSections
             $merges[] = self::merge($foldedIn);
         }
         $writer->section('merges', $merges);
+
+        if (Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
+            $photo = Hilos::$db->userPhotos[$userId];
+            $file = $photo?->file;
+            $stored = $file === null ? null : Hilos::$fs->files[$file->storedName];
+            $writer->section(self::PROFILE_PHOTO_SECTION, $stored === null || !$stored->exists() ? null : [
+                'file' => $writer->file($file->storedName, $stored->getPath()),
+                'setAt' => DataExportTime::iso($photo->setAt),
+            ]);
+        }
 
         $signInMethods = [];
         foreach ($identities as $identity) {

@@ -12,6 +12,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageAccessLevel;
@@ -48,6 +49,7 @@ use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
  */
 abstract class AbstractHilosProfilePage extends AbstractPage
 {
+    public const string PROFILE_PHOTO_SECTION = 'profilePhoto';
     public const string PAGE = HilosPageConstants::HILOS_PROFILE;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -96,6 +98,7 @@ abstract class AbstractHilosProfilePage extends AbstractPage
         }
 
         return new PagePayload(data: [
+            self::PROFILE_PHOTO_SECTION => Hilos::hasFeature(HilosFeature::PROFILE_PHOTO),
             DataExportStateProjector::SECTION => DataExportStateProjector::nodeFor(Hilos::$db->dataExports->ofUser($userId)),
             LegalAgreementsProjector::SECTION => LegalAgreementsProjector::stateFor($userId, LegalStandingResolver::today())->toArray(),
             AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION => new NotificationChannelPreferenceProjector()

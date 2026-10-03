@@ -105,12 +105,22 @@ function setup(
     </StrictMode>,
   )
   return {
+    scopes,
     node: (id: string) =>
       document.querySelector<HTMLElement>(`[data-id="${id}"]`),
     setMethods: (next: readonly HilosProfileSignInMethod[]) =>
       act(() => setMethods(scopes, next)),
   }
 }
+
+it('offers the photo button only after the profile page enables photos', () => {
+  const { node, scopes } = setup(nameOnly())
+  expect(node('profile-photo-open')).toBeNull()
+  act(() => scopes.openPage(HilosPages.PROFILE).data.set('profilePhoto', true))
+  expect(node('profile-photo-open')?.getAttribute('aria-label')).toBe(
+    'Change your photo',
+  )
+})
 
 function nameOnly(): HilosProfileBinding {
   return {

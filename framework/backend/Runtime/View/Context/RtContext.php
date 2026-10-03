@@ -63,6 +63,7 @@ use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Collection\HilosOAuthTrips;
 use Hilos\Runtime\View\Collection\HilosProbeFleetStatuses;
 use Hilos\Runtime\View\Collection\HilosProfileFlows;
+use Hilos\Runtime\View\Collection\HilosProfilePhotoChecks;
 use Hilos\Runtime\View\Collection\HilosProbeNotes;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
@@ -101,6 +102,7 @@ use OutOfBoundsException;
  * @property-read HilosProfileFlows $hilosProfileFlows Profile windows half-way through, mounted for a project that declares HilosFeature::AUTH
  * @property-read AuthAttempts $hilosAuthAttempts Sign-in attempt counters, mounted for a project that declares HilosFeature::AUTH_THROTTLE
  * @property-read HilosUploads $hilosUploads Files connections are sending or have sent, mounted for a project that declares HilosFeature::UPLOADS
+ * @property-read HilosProfilePhotoChecks $hilosProfilePhotoChecks Photos awaiting a verdict, mounted for PROFILE_PHOTO
  * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
  * @property-read ?RestoreRuntime $hilosRestoreRuntime Restore run runtime singleton, or null when unmounted
  * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted

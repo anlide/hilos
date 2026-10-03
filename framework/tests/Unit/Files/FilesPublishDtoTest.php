@@ -45,7 +45,6 @@ final class FilesPublishDtoTest extends TestCase
         yield 'an id off the wire alphabet' => [[UploadPublishSignalData::clientUploadIds => ['u 1']] + self::request()];
         yield 'an id that is not a string' => [[UploadPublishSignalData::clientUploadIds => [7]] + self::request()];
         yield 'ids that are not a list' => [[UploadPublishSignalData::clientUploadIds => ['a' => 'u1']] + self::request()];
-        yield 'an unknown visibility' => [[UploadPublishSignalData::visibility => 'friends'] + self::request()];
         yield 'an empty target' => [[UploadPublishSignalData::target => ''] + self::request()];
         yield 'an empty reply name' => [[UploadPublishSignalData::replySignal => ''] + self::request()];
         yield 'no accept key' => [array_diff_key(self::request(), [UploadPublishSignalData::acceptKey => true])];
@@ -159,7 +158,6 @@ final class FilesPublishDtoTest extends TestCase
             UploadPublishSignalData::acceptKey => self::ACCEPT_KEY,
             UploadPublishSignalData::target => 'gallery',
             UploadPublishSignalData::clientUploadIds => ['u1', 'u2'],
-            UploadPublishSignalData::visibility => FileVisibility::OWNER->value,
             UploadPublishSignalData::replySignal => self::REPLY,
         ];
     }

@@ -143,7 +143,8 @@ class HilosFiles
      * {@see FilesPublishedSignalData} comes back under `$replySignal`, carrying the ids of the
      * new rows in the order of `$clientUploadIds`, or the sentence of a refusal. All or nothing:
      * either every upload becomes an unbound row, or none does. The rows are born unbound - link
-     * them to the project's records, then call {@see self::markBound()}.
+     * them to the project's records, then call {@see self::markBound()}. Their visibility is
+     * declared by the upload target, not chosen by this call.
      *
      * Both features are required: without HilosFeature::UPLOADS no agent would take the frame,
      * and the caller would wait for an answer that never comes.
@@ -151,7 +152,6 @@ class HilosFiles
      * @param string $acceptKey Accept key of the connection the uploads belong to
      * @param string $target Upload target the uploads must have been declared for
      * @param list<string> $clientUploadIds Ids the client gave the uploads
-     * @param FileVisibility $visibility Who may be given the published files
      * @param string $replySignal Name of the agent signal the answer comes under
      * @throws FeatureNotDeclaredException When the project did not declare HilosFeature::FILES or HilosFeature::UPLOADS
      * @throws InvalidFormatException When the request is malformed - no id, an id twice, an id the wire does not allow,
@@ -162,7 +162,6 @@ class HilosFiles
         string $acceptKey,
         string $target,
         array $clientUploadIds,
-        FileVisibility $visibility,
         string $replySignal,
     ): void {
         if (!Hilos::hasFeature(HilosFeature::FILES)) {
@@ -176,7 +175,6 @@ class HilosFiles
             UploadPublishSignalData::acceptKey => $acceptKey,
             UploadPublishSignalData::target => $target,
             UploadPublishSignalData::clientUploadIds => $clientUploadIds,
-            UploadPublishSignalData::visibility => $visibility->value,
             UploadPublishSignalData::replySignal => $replySignal,
         ]);
 

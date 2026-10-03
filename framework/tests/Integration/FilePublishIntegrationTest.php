@@ -233,7 +233,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         $this->complete(self::SIGNED_IN, 'u1', 'hello');
         $tmp = $this->tmpFile(self::SIGNED_IN, 'u1');
 
-        $answer = $this->publish(self::SIGNED_IN, ['u1'], visibility: FileVisibility::OWNER);
+        $answer = $this->publish(self::SIGNED_IN, ['u1']);
 
         self::assertNull($answer->error);
         self::assertSame(self::SIGNED_IN, $answer->getAcceptKey());
@@ -666,7 +666,6 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
      * @param string $acceptKey Connection the uploads belong to
      * @param list<string> $clientUploadIds Uploads to publish
      * @param string $target Target to publish for
-     * @param FileVisibility $visibility Who may be given the files
      * @return FilesPublishedSignalData The answer under the asker's name
      * @throws HilosException When an agent fails to handle a frame
      */
@@ -674,14 +673,13 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         string $acceptKey,
         array $clientUploadIds,
         string $target = FilePublishTestHilos::OPEN,
-        FileVisibility $visibility = FileVisibility::AUTHENTICATED,
     ): FilesPublishedSignalData {
         $this->goneFrames = [];
         $this->libraryAsked = false;
 
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_UPLOADS);
         $this->uploads->onSignalAgent(
-            new AgentSignalData(new UploadPublishSignalData($acceptKey, $target, $clientUploadIds, $visibility->value, self::REPLY)),
+            new AgentSignalData(new UploadPublishSignalData($acceptKey, $target, $clientUploadIds, self::REPLY)),
             '',
             HilosSignalConstants::HILOS_UPLOAD_PUBLISH,
         );
@@ -866,6 +864,12 @@ final class FilePublishTestOpenTarget extends AbstractUploadTarget
     {
         return false;
     }
+
+    /** @return FileVisibility Only its owner may read a published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::OWNER;
+    }
 }
 
 /**
@@ -887,6 +891,12 @@ final class FilePublishTestSniffingTarget extends AbstractUploadTarget
     public function requiresSignIn(): bool
     {
         return false;
+    }
+
+    /** @return FileVisibility A signed-in person may read a published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::AUTHENTICATED;
     }
 
     /**
@@ -917,6 +927,12 @@ final class FilePublishTestDedupTarget extends AbstractUploadTarget
     public function requiresSignIn(): bool
     {
         return false;
+    }
+
+    /** @return FileVisibility A signed-in person may read a published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::AUTHENTICATED;
     }
 
     /**

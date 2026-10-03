@@ -77,7 +77,7 @@ final readonly class ImageVariant
     public static function declared(): array
     {
         $variants = [];
-        foreach (Hilos::appClass()::IMAGE_VARIANTS as $name => $declaration) {
+        foreach (Hilos::appClass()::imageVariants() as $name => $declaration) {
             $variants[$name] = self::fromDeclaration((string)$name, $declaration);
         }
 

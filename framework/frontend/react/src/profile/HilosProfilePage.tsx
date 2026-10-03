@@ -2,11 +2,13 @@ import { useContext, useEffect, useMemo } from 'react'
 import {
   computedSignal,
   createHilosProfileEmailChangeFlow,
+  createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
   hilosChildLinks,
   HilosPages,
   HILOS_PROFILE_ROOT_COPY as COPY,
+  HILOS_PROFILE_PHOTO_COPY as PHOTO_COPY,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
   type HilosProfileBinding,
@@ -21,6 +23,7 @@ import { useSignal } from '../useSignal.js'
 import { HilosAccountDeletion } from './HilosAccountDeletion.js'
 import { HilosProfileEmailChange } from './HilosProfileEmailChange.js'
 import { HilosProfileRename } from './HilosProfileRename.js'
+import { HilosProfilePhoto } from './HilosProfilePhoto.js'
 
 /**
  * Pass the same two objects on every render — module constants or memoized: a
@@ -69,6 +72,11 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
     [context],
   )
   useEffect(() => () => email.dispose(), [email])
+  const photoFlow = useMemo(
+    () => createHilosProfilePhotoFlow(context, root.photo),
+    [context, root],
+  )
+  useEffect(() => () => photoFlow.dispose(), [photoFlow])
   // Change waits while the window asks whether the confirmation is needed.
   const renameOpeningSignal = useMemo(
     () => computedSignal(() => rename?.stepUp.busy.get() ?? false),
@@ -76,6 +84,8 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
   )
   const renameOpening = useSignal(renameOpeningSignal)
   const signedIn = useSignal(root.signedIn)
+  const photoEnabled = useSignal(root.photoEnabled)
+  const photo = useSignal(root.photo)
   const summaries = useSignal(root.summaries)
   const verifiedEmail = useSignal(root.verifiedEmail)
   const passkeyOnly = useSignal(root.passkeyOnly)
@@ -99,7 +109,26 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
           className="d-flex align-items-center gap-3 mt-3"
           data-id="profile-identity"
         >
-          <HilosAvatar name={name} size="lg" />
+          {photoEnabled ? (
+            <button
+              type="button"
+              data-id="profile-photo-open"
+              className="btn p-0 border-0 bg-transparent position-relative"
+              title={PHOTO_COPY.open}
+              aria-label={PHOTO_COPY.open}
+              onClick={() => photoFlow.open()}
+            >
+              <HilosAvatar name={name} photo={photo} size="lg" />
+              <span
+                className="position-absolute hilos-avatar-camera bg-body border rounded-circle d-inline-flex align-items-center justify-content-center text-body-emphasis"
+                aria-hidden="true"
+              >
+                <i className="bi bi-camera" />
+              </span>
+            </button>
+          ) : (
+            <HilosAvatar name={name} photo={photo} size="lg" />
+          )}
           <div className="flex-grow-1 text-break">
             <div className="h5 mb-0" data-id="profile-identity-name">
               {name}
@@ -223,6 +252,7 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
       </section>
       <HilosAccountDeletion context={context} />
       {rename ? <HilosProfileRename flow={rename} /> : null}
+      {photoEnabled ? <HilosProfilePhoto flow={photoFlow} /> : null}
       <HilosProfileEmailChange flow={email} />
     </section>
   )

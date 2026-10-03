@@ -7,6 +7,8 @@ namespace Hilos\Tests\Unit\LLM;
 use Hilos\API\Exception\AsyncHttpTlsHandshakeException;
 use Hilos\Constants\HttpConstants;
 use Hilos\LLM\DTO\ChatGenerateOptions;
+use Hilos\LLM\DTO\Message;
+use Hilos\LLM\DTO\MessageImage;
 use Hilos\LLM\Exception\LLMRequestException;
 use Hilos\LLM\Local\Chat\AsyncOllamaChatProvider;
 use Hilos\Tests\Unit\AsyncHttpClientTest;
@@ -40,6 +42,30 @@ final class AsyncOllamaChatProviderTest extends TestCase
             $provider->startGenerate([['role' => 'user', 'content' => 'hello']], new ChatGenerateOptions());
             $this->serveUntilFinished($server, $provider, '{"response":"granted"}');
 
+            $this->assertSame('granted', $provider->consumeResult());
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /** Ollama receives the base64 data of every picture in the request body. */
+    public function testRequestCarriesPictures(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $provider = new AsyncOllamaChatProvider('http://127.0.0.1:' . $port, self::MODEL);
+            $provider->startGenerate([
+                new Message(Message::ROLE_USER, 'first', [new MessageImage('image/jpeg', 'AAEC')]),
+                new Message(Message::ROLE_USER, 'second', [new MessageImage('image/png', 'AQID')]),
+            ], new ChatGenerateOptions());
+            $request = null;
+            $this->serveUntilFinished($server, $provider, '{"response":"granted"}', $request);
+
+            $this->assertIsString($request);
+            $body = substr($request, strpos($request, HttpConstants::HTTP_DELIMITER) + strlen(HttpConstants::HTTP_DELIMITER));
+            $decoded = json_decode($body, true);
+            $this->assertSame(['AAEC', 'AQID'], $decoded['images']);
             $this->assertSame('granted', $provider->consumeResult());
         } finally {
             fclose($server);
@@ -96,8 +122,9 @@ final class AsyncOllamaChatProviderTest extends TestCase
      * @param resource $server Server socket
      * @param AsyncOllamaChatProvider $provider Provider under test
      * @param string $body Body of the answer to a well-formed request
+     * @param ?string $receivedRequest Full request recorded by the peer
      */
-    private function serveUntilFinished($server, AsyncOllamaChatProvider $provider, string $body): void
+    private function serveUntilFinished($server, AsyncOllamaChatProvider $provider, string $body, ?string &$receivedRequest = null): void
     {
         $connection = null;
         $requestBuffer = '';
@@ -131,6 +158,12 @@ final class AsyncOllamaChatProviderTest extends TestCase
                         fclose($connection);
                         $connection = null;
                     } elseif (str_contains($requestBuffer, HttpConstants::HTTP_DELIMITER)) {
+                        [$head, $requestBody] = explode(HttpConstants::HTTP_DELIMITER, $requestBuffer, 2);
+                        preg_match('/Content-Length:\s*(\d+)/i', $head, $lengthMatch);
+                        if (strlen($requestBody) < (int)($lengthMatch[1] ?? 0)) {
+                            continue;
+                        }
+                        $receivedRequest = $requestBuffer;
                         fwrite($connection, $this->response(200, $body));
                         fclose($connection);
                         $connection = null;

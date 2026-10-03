@@ -163,6 +163,22 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 LLMConstants::PROVIDER_LOCAL,
                 emptyIsMissing: true,
             ),
+            EnvConstants::CHAT_PHOTO_MODERATION_MODEL->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                LLMConstants::DEFAULT_LOCAL_CHAT_MODEL,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::CHAT_PHOTO_MODERATION_URL->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::CHAT_PHOTO_MODERATION_TIMEOUT_SEC->name => self::entry(
+                EnvCatalogConstants::TYPE_FLOAT,
+                LLMConstants::DEFAULT_TIMEOUT_SEC,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::CHAT_PHOTO_MODERATION_PROVIDER->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                LLMConstants::PROVIDER_LOCAL,
+                emptyIsMissing: true,
+            ),
             EnvConstants::CHAT_MODERATION_BOTS->name => self::entry(
                 EnvCatalogConstants::TYPE_BOOLEAN,
                 false,

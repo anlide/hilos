@@ -6,7 +6,7 @@
 // types/tables/.)
 
 /** The moderation rule section a prompt piece belongs to. */
-export type ModeratorSection = 'name_rule' | 'message_rule'
+export type ModeratorSection = 'name_rule' | 'message_rule' | 'photo_rule'
 
 /** One row of the moderation prompt-pieces table. */
 export interface ModeratorPieceRow {

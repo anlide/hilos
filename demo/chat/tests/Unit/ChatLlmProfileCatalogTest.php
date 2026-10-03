@@ -33,6 +33,7 @@ final class ChatLlmProfileCatalogTest extends TestCase
         Hilos::$env = $this->previousEnv;
         foreach ([
             'CHAT_BOT_PROVIDER', 'CHAT_BOT_URL', 'CHAT_MODERATION_PROVIDER',
+            'CHAT_PHOTO_MODERATION_PROVIDER', 'CHAT_PHOTO_MODERATION_URL',
             'CHAT_CONTEXT_ANALYZER_PROVIDER', 'LLM_EXTERNAL_API_KEY',
         ] as $key) {
             putenv($key);
@@ -53,6 +54,8 @@ final class ChatLlmProfileCatalogTest extends TestCase
         self::assertNull($bot->apiKey);
 
         self::assertSame(ChatLLMConstants::MODEL_MODERATION, $this->router()->resolve(ChatLLMConstants::PROFILE_MODERATION)->model);
+        self::assertSame(ChatLLMConstants::MODEL_PHOTO_MODERATION, $this->router()->resolve(ChatLLMConstants::PROFILE_PHOTO_MODERATION)->model);
+        self::assertSame(LlmProvider::LOCAL, $this->router()->resolve(ChatLLMConstants::PROFILE_PHOTO_MODERATION)->provider);
         self::assertSame(ChatLLMConstants::MODEL_CONTEXT_ANALYZER, $this->router()->resolve(ChatLLMConstants::PROFILE_ANALYZER)->model);
     }
 
@@ -67,6 +70,17 @@ final class ChatLlmProfileCatalogTest extends TestCase
         putenv('CHAT_BOT_URL=http://ollama.internal:11434');
 
         self::assertSame('http://ollama.internal:11434', $this->router()->resolve(ChatLLMConstants::PROFILE_BOT)->url);
+    }
+
+    public function testPhotoCheckerCanSwitchProviderWithoutChangingItsProfileKey(): void
+    {
+        putenv('CHAT_PHOTO_MODERATION_PROVIDER=' . LLMConstants::PROVIDER_EXTERNAL);
+        putenv('LLM_EXTERNAL_API_KEY=sk-test');
+        $photo = $this->router()->resolve(ChatLLMConstants::PROFILE_PHOTO_MODERATION);
+
+        self::assertSame(LlmProvider::EXTERNAL, $photo->provider);
+        self::assertSame(ChatLLMConstants::MODEL_PHOTO_MODERATION, $photo->model);
+        self::assertSame('sk-test', $photo->apiKey);
     }
 
     public function testExternalRoleUsesPerRoleModelAndGlobalExternalConfig(): void

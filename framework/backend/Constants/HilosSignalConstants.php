@@ -656,6 +656,12 @@ final class HilosSignalConstants
     /** Client → server: prove the new address and move the account onto it. */
     public const string PROFILE_CHANGE_EMAIL_NEW_CONFIRM = 'profile_change_email_new_confirm';
 
+    /** Client → users library: publish one completed profile photo upload. */
+    public const string PROFILE_PHOTO_SET = 'hilos_profile_photo_set';
+
+    /** Client → users library: remove the acting person's profile photo. */
+    public const string PROFILE_PHOTO_REMOVE = 'hilos_profile_photo_remove';
+
     // ── Hilos profile: sign-in methods (server → client, WS_USER, HIL-1137) ──
     /**
      * Server → client: the person's password was added or changed; sent to every tab they have open.
@@ -1509,6 +1515,18 @@ final class HilosSignalConstants
      * {@see UploadStateSignalData}.
      */
     public const string HILOS_UPLOAD_STATE = 'hilos_upload_state';
+
+    /** Users library → one connection: whether its submitted photo awaits a verdict. */
+    public const string HILOS_PROFILE_PHOTO_CHECK = 'hilos_profile_photo_check';
+
+    /** Project checker → users library: verdict for one connection's submitted photo. */
+    public const string HILOS_PROFILE_PHOTO_VERDICT = 'hilos_profile_photo_verdict';
+
+    /** Files library → users library: result of publishing the approved profile photo. */
+    public const string HILOS_PROFILE_PHOTO_PUBLISHED = 'hilos_profile_photo_published';
+
+    /** Users library → sessions library: refresh every open session of this person. */
+    public const string HILOS_USER_SESSIONS_RESTATE = 'hilos_user_sessions_restate';
 
     /**
      * Project → uploads agent: hand these complete uploads of one connection over to the files

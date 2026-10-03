@@ -38,6 +38,8 @@ export interface User extends Entity {
   readonly block: boolean
   /** Display name. */
   readonly name: string
+  /** Published profile photo variant URL, or null for initials. */
+  readonly photo: string | null
   /** Last activity timestamp, or null when never recorded. */
   readonly lastActivity: string | null
 }
@@ -63,6 +65,7 @@ export function userFromFields(
     admin: readBoolean(fields, 'admin'),
     block: readBoolean(fields, 'block'),
     name: readString(fields, 'name'),
+    photo: readStringOrNull(fields, 'photo'),
     lastActivity: readStringOrNull(fields, 'lastActivity'),
   }
 }

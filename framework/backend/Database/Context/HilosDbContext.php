@@ -41,6 +41,7 @@ use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserMerges as DbCollectionUserMerges;
+use Hilos\Database\View\Collection\UserPhotos as DbCollectionUserPhotos;
 use Hilos\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Hilos\Database\View\Collection\Users as DbCollectionUsers;
 use Hilos\Users\AccountStandingResolver;
@@ -67,6 +68,7 @@ use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\StepUpsActions;
 use Hilos\Database\Actions\Collection\UserMergesActions;
+use Hilos\Database\Actions\Collection\UserPhotosActions;
 use Hilos\Database\Actions\Collection\UserRenamesActions;
 use Hilos\Database\Actions\Collection\UsersActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
@@ -108,6 +110,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionUsers $users
  * @property-read DbCollectionUserRenames $userRenames
  * @property-read DbCollectionUserMerges $userMerges
+ * @property-read DbCollectionUserPhotos $userPhotos
  * @property-read DbCollectionNotifications $notifications
  * @property-read DbCollectionNotificationDeliveries $notificationDeliveries
  * @property-read DbCollectionNotificationPreferences $notificationPreferences
@@ -149,6 +152,8 @@ abstract class HilosDbContext extends DbContext
     public const string userRename = 'userRename';
     public const string userMerges = 'userMerges';
     public const string userMerge = 'userMerge';
+    public const string userPhotos = 'userPhotos';
+    public const string userPhoto = 'userPhoto';
     public const string notifications = 'notifications';
     public const string notification = 'notification';
     public const string notificationDeliveries = 'notificationDeliveries';
@@ -455,6 +460,12 @@ abstract class HilosDbContext extends DbContext
             DbCollectionUserMerges::class,
             UserMergesActions::class,
         );
+        $this->mountFramework(
+            self::userPhotos,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionUserPhotos::class,
+            UserPhotosActions::class,
+        );
 
         $unknown = array_keys(array_diff_key($this->declaredExtensions, $this->frameworkChains));
         if ($unknown !== []) {
@@ -573,6 +584,7 @@ abstract class HilosDbContext extends DbContext
             self::verifierCircle,
             self::users,
             self::userMerges,
+            self::userPhotos,
             self::accountDeletions,
             self::legalAcceptances,
         ];

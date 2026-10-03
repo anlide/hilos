@@ -56,6 +56,7 @@ import {
   type HilosUserLifecycleChoice,
   type HilosUserLifecyclePrompt,
   createHilosUserDetail,
+  createHilosUserPhoto,
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserRename,
@@ -126,9 +127,11 @@ function noticeText(live: RowEditState<UserEditFields>): string {
 }
 
 const userDetail = createHilosUserDetail(props.context)
+const userPhoto = createHilosUserPhoto(props.context)
 const rename = createHilosUserRename(props.context)
 
 const detail = useSignal(userDetail)
+const photo = useSignal(userPhoto)
 const error = useSignal(rename.renameError)
 /** Move the focus into a window whose step changed under it. */
 function focusWindow(body: Ref<HTMLElement | null>): void {
@@ -614,6 +617,7 @@ watch(error, (reason) => {
         <div class="card-header d-flex align-items-center gap-2">
           <HilosAvatar
             :name="isHiddenValue(detail.name) ? '' : detail.name"
+            :photo="photo"
             size="md"
           />
           <span class="h5 mb-0" data-id="hilos-user-name"

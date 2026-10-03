@@ -28,6 +28,7 @@ const PIECES_SLOT = 'moderatorPromptPieces'
 export const MODERATOR_SECTIONS: readonly ModeratorSection[] = [
   'name_rule',
   'message_rule',
+  'photo_rule',
 ]
 
 /** Narrow an unknown section to the typed union, defaulting to message_rule. */

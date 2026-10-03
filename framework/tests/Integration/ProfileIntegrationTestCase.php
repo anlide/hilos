@@ -132,7 +132,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         // The confirmation gate counts a mailed code as a proof only where mail can go out.
         putenv(EnvConstants::MAIL_SMTP_HOST->name . '=smtp.example.test');
 
-        $rt = new ProfileIntegrationRtContext();
+        $rt = $this->createRuntime();
         $rt->configure();
         $rt->bindStateCollectionNames();
         Hilos::$rt = $rt;
@@ -152,6 +152,12 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         $this->library = new ProfileIntegrationLibrary();
         $this->holder = new ProfileIntegrationHolder();
         $this->drained = [];
+    }
+
+    /** @return RtContext Runtime used by the profile test */
+    protected function createRuntime(): RtContext
+    {
+        return new ProfileIntegrationRtContext();
     }
 
     /**
@@ -453,7 +459,7 @@ final class ProfileIntegrationSettingsCatalog implements CatalogProviderInterfac
  * Runtime holding two signed-in tabs of one person and one signed-out tab, and the record of the
  * profile windows the sign-in feature mounts beside them.
  */
-final class ProfileIntegrationRtContext extends RtContext
+class ProfileIntegrationRtContext extends RtContext
 {
     /**
      * Mounts the tabs, and the one collection of the sign-in feature the profile windows write.

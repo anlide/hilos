@@ -13,14 +13,21 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\LLM\Exception\LLMResultUnavailableException;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
+use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMClientBusyException;
 use Hilos\LLM\Exception\LLMRequestException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
+use Hilos\Runtime\State\Item\HilosUpload;
+use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
 use ReflectionProperty;
 
 /**
@@ -99,6 +106,67 @@ final class ModeratorAgentTest extends IntegrationTestCase
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
+        }
+    }
+
+    public function testOnTickSendsACompletedPhotoToTheVisionClientAndRoutesItsVerdict(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(HilosProfilePhotoCheck::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        $tmpIndex = Hilos::$fs?->getTmp()->create();
+        $this->assertNotNull($tmpIndex);
+        Hilos::$fs?->getTmp()[$tmpIndex]->append('jpeg-fixture');
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('Photo User');
+            Hilos::$rt->connections->actions->register('moderator-photo-ak', $user->id);
+            $upload = Hilos::$rt->hilosUploads->actions->open(
+                'moderator-photo-ak',
+                'photo-upload',
+                ProfilePhotoUploadTarget::NAME,
+                $user->id,
+                'photo.jpg',
+                'image/jpeg',
+                strlen('jpeg-fixture'),
+                $tmpIndex,
+            );
+            $upload->actions->complete();
+            Hilos::$rt->hilosProfilePhotoChecks->actions->open('moderator-photo-ak', $user->id, 'photo-upload');
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $photoClient = new CompletedModerationChatClient('{"allow": false, "reason": "nudity"}');
+            self::replaceChatClient($agent, $photoClient, 'photoClient');
+
+            $agent->onTick();
+            $agent->onTick();
+
+            $this->assertSame(1, $photoClient->startGenerateCalls);
+            $this->assertCount(2, $photoClient->messages);
+            $this->assertSame(Message::ROLE_USER, $photoClient->messages[1]->role);
+            $this->assertStringContainsString('User: Photo User', $photoClient->messages[1]->content);
+            $this->assertSame(base64_encode('jpeg-fixture'), $photoClient->messages[1]->images[0]->base64);
+            $result = $this->takeQueuedPhotoVerdict();
+            $this->assertNotNull($result);
+            $this->assertSame('moderator-photo-ak', $result->acceptKey);
+            $this->assertSame('photo-upload', $result->clientUploadId);
+            $this->assertFalse($result->allow);
+            $this->assertSame('nudity', $result->reason);
+
+            Hilos::$rt->hilosProfilePhotoChecks['moderator-photo-ak']?->actions->forget();
+            $agent->onSignalRtSyncDeleted(
+                new RtSyncDeletedSignalData(HilosProfilePhotoCheck::RT_COLLECTION, 'moderator-photo-ak'),
+                'rt',
+                'rt_sync_deleted',
+            );
+            $this->assertSame(1, $photoClient->resetCalls);
+        } finally {
+            Hilos::$rt->hilosProfilePhotoChecks['moderator-photo-ak']?->actions->forget();
+            Hilos::$rt->hilosUploads->find('moderator-photo-ak', 'photo-upload')?->actions->forgetWithFile();
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$fs?->getTmp()[$tmpIndex]->unlink();
         }
     }
 
@@ -184,6 +252,13 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $agent->onTick();
             $this->assertSame(1, $chatClient->startGenerateCalls);
 
+            $agent->onSignalRtSyncDeleted(
+                new RtSyncDeletedSignalData(HilosProfilePhotoCheck::RT_COLLECTION, 'moderator-in-flight-ak'),
+                'rt',
+                'rt_sync_deleted',
+            );
+            $this->assertSame(0, $chatClient->resetCalls);
+
             Hilos::$rt->connections['moderator-in-flight-ak']?->actions->clearOutboundModeration();
             $connection = Hilos::$rt->connections['moderator-in-flight-ak'];
             $this->assertNotNull($connection);
@@ -215,10 +290,30 @@ final class ModeratorAgentTest extends IntegrationTestCase
         }
     }
 
-    private static function replaceChatClient(ModeratorAgent $agent, AsyncChatLLMInterface $chatClient): void
+    private static function replaceChatClient(
+        ModeratorAgent $agent,
+        AsyncChatLLMInterface $chatClient,
+        string $propertyName = 'chatClient',
+    ): void
     {
-        $property = new ReflectionProperty(ModeratorAgent::class, 'chatClient');
+        $property = new ReflectionProperty(ModeratorAgent::class, $propertyName);
         $property->setValue($agent, $chatClient);
+    }
+
+    private function takeQueuedPhotoVerdict(): ?ProfilePhotoVerdictSignalData
+    {
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT) {
+                continue;
+            }
+
+            $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+            $this->assertInstanceOf(ProfilePhotoVerdictSignalData::class, $signal->data->data);
+
+            return $signal->data->data;
+        }
+
+        return null;
     }
 
     private function takeQueuedModerationResult(): ?ModerationResultSignalData
@@ -295,6 +390,9 @@ final class CompletedModerationChatClient implements AsyncChatLLMInterface
 
     public int $resetCalls = 0;
 
+    /** @var list<Message> */
+    public array $messages = [];
+
     private bool $busy = false;
 
     private bool $hasResult = false;
@@ -307,6 +405,7 @@ final class CompletedModerationChatClient implements AsyncChatLLMInterface
     public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
         $this->startGenerateCalls++;
+        $this->messages = $messages;
 
         if ($this->busy) {
             throw new LLMClientBusyException();

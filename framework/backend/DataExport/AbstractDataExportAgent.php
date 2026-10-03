@@ -65,6 +65,8 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         HilosDbContext::userRenames,
         HilosDbContext::accessLogEntries,
         HilosDbContext::legalAcceptances,
+        HilosDbContext::userPhotos,
+        HilosDbContext::files,
     ];
 
     public const array AGENT_ACTIONS = [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class];

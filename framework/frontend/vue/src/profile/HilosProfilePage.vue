@@ -3,11 +3,13 @@
 import {
   computedSignal,
   createHilosProfileEmailChangeFlow,
+  createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
   hilosChildLinks,
   HilosPages,
   HILOS_PROFILE_ROOT_COPY as COPY,
+  HILOS_PROFILE_PHOTO_COPY as PHOTO_COPY,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
   type HilosProfileBinding,
@@ -23,6 +25,7 @@ import { useSignal } from '../useSignal.js'
 import HilosAccountDeletion from './HilosAccountDeletion.vue'
 import HilosProfileEmailChange from './HilosProfileEmailChange.vue'
 import HilosProfileRename from './HilosProfileRename.vue'
+import HilosProfilePhoto from './HilosProfilePhoto.vue'
 
 const props = defineProps<{
   context: HilosProfilePageContext
@@ -42,6 +45,8 @@ const sections = computed(() =>
 )
 const root = createHilosProfileRootStore(props.context, props.binding)
 const signedIn = useSignal(root.signedIn)
+const photoEnabled = useSignal(root.photoEnabled)
+const photo = useSignal(root.photo)
 const summaries = useSignal(root.summaries)
 const verifiedEmail = useSignal(root.verifiedEmail)
 const passkeyOnly = useSignal(root.passkeyOnly)
@@ -59,6 +64,7 @@ const renameOpening = useSignal(
   computedSignal(() => rename?.stepUp.busy.get() ?? false),
 )
 const email = createHilosProfileEmailChangeFlow(props.context)
+const photoFlow = createHilosProfilePhotoFlow(props.context, root.photo)
 const emailOpening = useSignal(email.busy)
 
 onMounted(() => root.start())
@@ -66,6 +72,7 @@ onUnmounted(() => {
   root.dispose()
   rename?.dispose()
   email.dispose()
+  photoFlow.dispose()
 })
 </script>
 
@@ -77,7 +84,23 @@ onUnmounted(() => {
       class="d-flex align-items-center gap-3 mt-3"
       data-id="profile-identity"
     >
-      <HilosAvatar :name="name" size="lg" />
+      <button
+        v-if="photoEnabled"
+        type="button"
+        data-id="profile-photo-open"
+        class="btn p-0 border-0 bg-transparent position-relative"
+        :title="PHOTO_COPY.open"
+        :aria-label="PHOTO_COPY.open"
+        @click="photoFlow.open()"
+      >
+        <HilosAvatar :name="name" :photo="photo" size="lg" />
+        <span
+          class="position-absolute hilos-avatar-camera bg-body border rounded-circle d-inline-flex align-items-center justify-content-center text-body-emphasis"
+          aria-hidden="true"
+          ><i class="bi bi-camera"></i
+        ></span>
+      </button>
+      <HilosAvatar v-else :name="name" :photo="photo" size="lg" />
       <div class="flex-grow-1 text-break">
         <div class="h5 mb-0" data-id="profile-identity-name">{{ name }}</div>
         <div
@@ -181,6 +204,7 @@ onUnmounted(() => {
     </section>
     <HilosAccountDeletion :context="context" />
     <HilosProfileRename v-if="rename" :flow="rename" />
+    <HilosProfilePhoto v-if="photoEnabled" :flow="photoFlow" />
     <HilosProfileEmailChange :flow="email" />
   </section>
   <!-- Nobody signed in, or the session is not known yet: a placeholder, never

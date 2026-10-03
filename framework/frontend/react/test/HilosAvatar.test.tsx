@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 
 import { HilosAvatar } from '../src/HilosAvatar.js'
 
@@ -94,5 +94,22 @@ describe('HilosAvatar', () => {
     rerender(<HilosAvatar name="Alexander" />)
     expect(container.textContent).toBe('A')
     expect(container.querySelector('i.bi-person')).toBeNull()
+  })
+
+  it('shows a decorative photo, falls back on error, and tries the next photo', () => {
+    const { container, rerender } = render(
+      <HilosAvatar name="Ada Baranov" photo="/a.webp" />,
+    )
+    const image = container.querySelector('[data-id="hilos-avatar-photo"]')!
+    expect(image.getAttribute('alt')).toBe('')
+    expect(image.getAttribute('src')).toBe('/a.webp')
+    expect(container.textContent).toBe('')
+
+    fireEvent.error(image)
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.textContent).toBe('AB')
+
+    rerender(<HilosAvatar name="Ada Baranov" photo="/b.webp" />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/b.webp')
   })
 })

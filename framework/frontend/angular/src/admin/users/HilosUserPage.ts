@@ -65,6 +65,7 @@ import {
   createHilosAccountMerge,
   createHilosMergeCandidates,
   createHilosUserDetail,
+  createHilosUserPhoto,
   createHilosUserRename,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   hilosPasswordFateChoices,
@@ -175,7 +176,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
       @if (detail(); as detail) {
         <div class="card" data-id="hilos-user-detail">
           <div class="card-header d-flex align-items-center gap-2">
-            <hilos-avatar [name]="avatarName()" size="md" />
+            <hilos-avatar [name]="avatarName()" [photo]="photo()" size="md" />
             <span class="h5 mb-0" data-id="hilos-user-name"
               ><hilos-hideable [value]="detail.name"
             /></span>
@@ -888,6 +889,7 @@ export class HilosUserPage {
 
   // Mirrored from the core selectors, which derive from the context input.
   protected readonly detail = signal<HilosUserDetailRow | undefined>(undefined)
+  protected readonly photo = signal<string | null>(null)
   protected readonly renameError = signal<string | null>(null)
   private lifecycle: HilosUserLifecycle | undefined
   protected readonly lifecycleAction = createHilosTrackedAction()
@@ -1136,6 +1138,7 @@ export class HilosUserPage {
     effect((onCleanup) => {
       const context = this.context()
       const detailSignal = createHilosUserDetail(context)
+      const photoSignal = createHilosUserPhoto(context)
       const rename = createHilosUserRename(context)
       const mergeCandidates = createHilosMergeCandidates(context)
       const currentUserId = sessionUserId(context.scopes)
@@ -1151,6 +1154,7 @@ export class HilosUserPage {
       this.standing.set(userStanding.standing.get())
       this.mergeCandidatesController.set(mergeCandidates.controller)
       this.detail.set(detailSignal.get())
+      this.photo.set(photoSignal.get())
       this.renameError.set(rename.renameError.get())
       this.mergeRows.set(mergeCandidates.controller.rows.get())
       this.currentUserId.set(currentUserId.get())
@@ -1174,6 +1178,7 @@ export class HilosUserPage {
           this.lifecycleNow.set(Date.now())
           this.detail.set(value)
         }),
+        subscribeSignal(photoSignal, (value) => this.photo.set(value)),
         subscribeSignal(rename.renameError, (value) =>
           this.renameError.set(value),
         ),

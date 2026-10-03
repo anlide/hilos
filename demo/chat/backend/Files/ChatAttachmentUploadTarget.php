@@ -9,6 +9,7 @@ use Demo\Chat\Hilos;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\Check\DuplicateContentCheck;
 
@@ -50,6 +51,12 @@ final class ChatAttachmentUploadTarget extends AbstractUploadTarget
     public function requiresSignIn(): bool
     {
         return true;
+    }
+
+    /** @return FileVisibility Chat attachments require an authenticated reader */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::AUTHENTICATED;
     }
 
     /**

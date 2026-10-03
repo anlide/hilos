@@ -2,7 +2,7 @@
 the moderator prompt-pieces table reached from the dashboard's "Chat
 administration" section. The heading, the lead and the breadcrumb come from the
 page catalog on the backend through the framework's HilosAdminPage shell. A free CRUD table (not cataloged) — add, edit, or delete
-a prompt piece; each piece belongs to a moderation rule section (name / message).
+a prompt piece; each piece belongs to a moderation rule section (name / message / photo).
 The table controller and the row view-model live with the page
 (adminModeratorPage.ts), the create/update/delete submits in
 adminModeratorActions.ts. Authoritative-backend: a submit dispatches a tracked
@@ -82,6 +82,16 @@ const FIELD_LABELS: Record<keyof ModeratorPieceInput, string> = {
 const SECTION_LABELS: Record<ModeratorSection, string> = {
   name_rule: 'name rule',
   message_rule: 'message rule',
+  photo_rule: 'photo rule',
+}
+
+const SECTION_BADGE_CLASSES: Record<ModeratorSection, string> = {
+  name_rule:
+    'badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle',
+  message_rule:
+    'badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle',
+  photo_rule:
+    'badge rounded-pill bg-success-subtle text-success-emphasis border border-success-subtle',
 }
 
 /**
@@ -368,16 +378,9 @@ async function submitDelete(): Promise<void> {
       >
         <template #row="{ row }">
           <td>
-            <span
-              v-if="row.section === 'name_rule'"
-              class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle"
-              >name rule</span
-            >
-            <span
-              v-else
-              class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle"
-              >message rule</span
-            >
+            <span :class="SECTION_BADGE_CLASSES[row.section]">{{
+              SECTION_LABELS[row.section]
+            }}</span>
           </td>
           <td style="max-width: 28rem">
             <span class="text-truncate d-block" :title="row.promptPiece">{{
@@ -441,6 +444,7 @@ async function submitDelete(): Promise<void> {
             >
               <option value="name_rule">Name rule</option>
               <option value="message_rule">Message rule</option>
+              <option value="photo_rule">Photo rule</option>
             </select>
           </div>
           <div class="mb-0">

@@ -75,7 +75,7 @@ A row is born from a complete upload ([uploads.md](uploads.md)). The project
 asks the door, from any process with a signal router:
 
 ```php
-Hilos::$files->publishUploads($acceptKey, 'gallery', ['u1', 'u2'], FileVisibility::OWNER, 'gallery_published');
+Hilos::$files->publishUploads($acceptKey, 'gallery', ['u1', 'u2'], 'gallery_published');
 ```
 
 The request goes to the uploads agent (`hilos_upload_publish`), which hands the
@@ -97,6 +97,8 @@ a moderation verdict. Declare that name in the consuming agent's
   finished uploading`; declared for another target — `This file was uploaded
   for something else`. The target is in the request so that a file accepted
   under one target's soft policy is not published under another's strict one.
+  The target's `visibility()` decides who may read the published row; the
+  publication call cannot override it.
 - **The owner is judged last**, against whoever is signed in on the
   connection of the request now — asked once per request, not taken from the
   declaration. Nobody is signed in — `Sign in to keep this file`. The upload
@@ -126,7 +128,7 @@ a moderation verdict. Declare that name in the consuming agent's
   actual owner's id, so it does not count an ownerless bound row as their file.
 - **The library** keeps each file under a random stored name (32 hex characters
   from the secure random axis, and an extension by type) and writes its row,
-  unbound, with the visibility the request named. All kept →
+  unbound, with the visibility the upload target declared. All kept →
   `{fileIds, error: null}`, one id per upload in the order of the request.
 - **All or nothing.** A failure on one file — the storage did not keep it, the
   row was not written, a field was refused — removes the rows this request
@@ -270,7 +272,8 @@ With IMAGES declared, `variant=<name>` asks for a named image copy, built with
 a missing copy is drawn on its first request. The address, signature, renderer
 and fallback policy are [images.md](images.md).
 
-Who gets the file is the row's `visibility` (`FileAccess`):
+Who gets the file is the row's `visibility` (`FileAccess`), set from the upload
+target at publication:
 
 | visibility | served to | otherwise |
 |---|---|---|

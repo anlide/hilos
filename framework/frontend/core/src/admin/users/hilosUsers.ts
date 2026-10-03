@@ -193,6 +193,7 @@ export const USER_ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
 // binds its backend tables to these keys.
 const HILOS_USERS_TABLE = 'hilosUsers'
 const USER_DETAIL_TABLE = 'userDetail'
+const USER_PHOTO_TABLE = 'userPhoto'
 const MERGE_CANDIDATES_TABLE = 'mergeCandidates'
 // Row slots: the user entity (typed `user` via pageEntityTypes) and the inline
 // runtime connection summary a project fills on its backend.
@@ -201,6 +202,9 @@ const USER_SLOT = 'users'
 const USER_NAME_FIELD = 'name'
 const USER_IDENTITIES_SLOT = 'identities'
 const USER_DELETION_SLOT = 'accountDeletions'
+const USER_PHOTO_SLOT = 'userPhotos'
+/** Row payload key of the published photo URL in the admin card's photo slot. */
+export const USER_PHOTO_FIELD = 'photo'
 /** Row payload key of the standing deletion request's erasure time. */
 const USER_DELETION_EFFECTIVE_AT_FIELD = 'deletionEffectiveAt'
 const USER_DELETION_GRACE_DAYS_KEY = 'accountDeletionGraceDays'
@@ -806,6 +810,27 @@ export function createHilosUserDetail<TUser extends User>(
               USER_UNVERIFIED_PASSWORD_ADDRESS_FIELD,
             ),
     }
+  })
+}
+
+/**
+ * The requested person's published photo URL; hidden fields and absent rows read as null.
+ *
+ * @param context The project context containing the user page's table scope.
+ */
+export function createHilosUserPhoto<TUser extends User>(
+  context: HilosUsersContext<TUser>,
+): ReadonlySignal<string | null> {
+  const photoRows = context.scopes.pageTableSignal(USER_PHOTO_TABLE)
+
+  return computedSignal(() => {
+    const row = photoRows.get()[0]
+    if (!row) return null
+    const photo = recordSlot(row.slots[USER_PHOTO_SLOT])
+
+    return photo === undefined
+      ? null
+      : readStringOrNull(photo, USER_PHOTO_FIELD)
   })
 }
 

@@ -270,6 +270,7 @@ export {
   bindSessionScope,
   handshakeResponseAck,
   sessionUserName,
+  sessionUserPhoto,
   sessionUserId,
   sessionUserIsAdmin,
   sessionAdminViewMode,
@@ -554,6 +555,38 @@ export {
   type HilosProfileRenameFlow,
   type HilosProfileRenameStep,
 } from './profile/profileRename.js'
+export {
+  clampHilosPhotoCrop,
+  hilosPhotoSourceSquare,
+  moveHilosPhotoCrop,
+  HILOS_PHOTO_MIN_ZOOM,
+  HILOS_PHOTO_MAX_ZOOM,
+  HILOS_PHOTO_OUTPUT_SIDE,
+  HILOS_PHOTO_JPEG_QUALITY,
+  HILOS_PHOTO_PICK_MAX_BYTES,
+  type HilosPhotoCrop,
+  type HilosPhotoSourceSquare,
+} from './profile/photoCrop.js'
+export {
+  drawHilosPhotoPreview,
+  HilosPhotoPickError,
+  openHilosPhoto,
+  renderHilosPhotoSquare,
+  type HilosPhotoPickFailure,
+} from './profile/photoPick.js'
+export {
+  createHilosProfilePhotoFlow,
+  HILOS_PROFILE_PHOTO_COPY,
+  HILOS_PROFILE_PHOTO_UPLOAD_TARGET,
+  PROFILE_PHOTO_SET_ACTION,
+  PROFILE_PHOTO_REMOVE_ACTION,
+  SIGNAL_PROFILE_PHOTO_CHECK,
+  PROFILE_PHOTO_SIGNAL_SCHEMAS,
+  profilePhotoCheckSchema,
+  type HilosProfilePhotoFlow,
+  type HilosProfilePhotoPreview,
+  type HilosProfilePhotoStep,
+} from './profile/profilePhoto.js'
 export {
   ADD_SIGN_IN_METHOD_OPERATION,
   createHilosProfileAddSignInFlow,
@@ -1035,6 +1068,7 @@ export {
   resolveHilosUserRow,
   createHilosUsersTable,
   createHilosUserDetail,
+  createHilosUserPhoto,
   createHilosUserRename,
   createHilosImpersonate,
   createHilosMergeCandidates,

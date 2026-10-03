@@ -15,6 +15,7 @@ use Hilos\Core\Feature\Definition\ImagesFeature;
 use Hilos\Core\Feature\Definition\LogsFeature;
 use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
 use Hilos\Core\Feature\Definition\NotificationsFeature;
+use Hilos\Core\Feature\Definition\ProfilePhotoFeature;
 use Hilos\Core\Feature\Definition\SettingsFeature;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
@@ -101,6 +102,7 @@ class FeatureRegistry
             new FilesFeature(),
             new UploadsFeature(),
             new ImagesFeature(),
+            new ProfilePhotoFeature(),
             new AnalyticsFeature(),
         ];
     }

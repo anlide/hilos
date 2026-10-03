@@ -25,7 +25,7 @@ Moderation content includes the message text plus one line per attachment: `Atta
 ## Approved
 
 1. Without files: clear the outbound moderation and write the `message_sent` event.
-2. With files: `Hilos::$files->publishUploads($acceptKey, 'chat_attachment', $ids, FileVisibility::AUTHENTICATED, 'chat_attachments_published')`. The moderation stays `checking` until the registry answers (agent frame `chat_attachments_published`, `FilesPublishedSignalData`), routed to `MainPage`.
+2. With files: `Hilos::$files->publishUploads($acceptKey, 'chat_attachment', $ids, 'chat_attachments_published')`. The target declares `FileVisibility::AUTHENTICATED`. The moderation stays `checking` until the registry answers (agent frame `chat_attachments_published`, `FilesPublishedSignalData`), routed to `MainPage`.
 3. Nobody waits for the answer — the connection is gone, its phase is no longer `checking`, or it waits for another id list: log it and `Hilos::$files->remove($fileIds)`.
 4. The answer carries an error: the moderation turns `unavailable` with the registry's sentence as the reason.
 5. Published: clear the outbound moderation, write the event with one `event_attachment` link `(event_id, file_id)` per file in attach order, then `Hilos::$files->markBound($fileIds)`. A message that fails to be written leaves its files unbound, for the registry's janitor.

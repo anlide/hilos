@@ -164,7 +164,7 @@ final class UploadsAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        foreach (Hilos::appClass()::UPLOAD_TARGETS as $name => $class) {
+        foreach (Hilos::appClass()::uploadTargets() as $name => $class) {
             $target = new $class();
             $this->targets[$name] = $target;
             $this->checks[$name] = $this->checksOf($target);
@@ -459,7 +459,7 @@ final class UploadsAgent extends AbstractAgent
         $this->sendToAgent(HilosSignalConstants::HILOS_FILE_PUBLISH, new FilePublishSignalData(
             acceptKey: $request->acceptKey,
             clientUploadIds: $request->clientUploadIds,
-            visibility: $request->visibility,
+            visibility: $this->targets[$request->target]->visibility()->value,
             replySignal: $request->replySignal,
             files: $files,
         ));

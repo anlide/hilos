@@ -95,6 +95,12 @@ credential a profile uses, but not inline a secret value.
 
 ### 3. The router API — one seam above `ClientFactory`
 
+A `Message` may carry pictures as `MessageImage` values alongside its text.
+Ollama's `/api/generate` receives their base64 data in `images`; an
+OpenAI-compatible chat request receives text and `image_url` parts in its
+message content. The profile selects a model with vision support when a caller
+sends pictures; the provider does not change that choice.
+
 A single framework entry point replaces the three copied branches:
 
 ```php

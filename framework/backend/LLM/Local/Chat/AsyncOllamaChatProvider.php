@@ -116,6 +116,18 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
             ],
         ];
 
+        $images = [];
+        foreach ($messages as $message) {
+            if ($message instanceof Message) {
+                foreach ($message->images as $image) {
+                    $images[] = $image->base64;
+                }
+            }
+        }
+        if ($images !== []) {
+            $payload[LLMApiConstants::KEY_IMAGES] = $images;
+        }
+
         if ($options->maxTokens !== null) {
             $payload[LLMApiConstants::KEY_OPTIONS][LLMApiConstants::KEY_NUM_PREDICT] = $options->maxTokens;
         }
