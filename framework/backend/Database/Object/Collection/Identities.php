@@ -964,6 +964,38 @@ class Identities extends Objects
     }
 
     /**
+     * Resolves the verified email of many people in one query (HIL-1234).
+     *
+     * The batch form of {@see findVerifiedEmailByUser()} for a list of people on one screen or in one
+     * file: the same choice - the first verified `password`/`magic_link` identity by id - so a window
+     * of the acceptances table and the export of the same records name the same address. A person
+     * with no verified email is absent from the answer.
+     *
+     * @param list<int> $userIds People whose emails are sought
+     * @return array<int, string> Lowercased email keyed by person id
+     * @throws DatabaseException If the database query fails
+     */
+    public function verifiedEmailsOf(array $userIds): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+        Database::sql(
+            'SELECT `' . EntityIdentity::user_id . '`, `' . EntityIdentity::identifier . '` FROM `' . EntityIdentity::_table
+            . '` WHERE `' . EntityIdentity::user_id . '` IN (' . implode(', ', array_fill(0, count($userIds), '?')) . ')'
+            . ' AND `' . EntityIdentity::verified . '` = 1 AND `' . EntityIdentity::type . '` IN (?, ?)'
+            . ' ORDER BY `' . EntityIdentity::id . '`',
+            [...$userIds, IdentityType::PASSWORD, IdentityType::MAGIC_LINK],
+        );
+        $emails = [];
+        foreach (Database::rows() as $row) {
+            $emails[(int)$row[EntityIdentity::user_id]] ??= (string)$row[EntityIdentity::identifier];
+        }
+
+        return $emails;
+    }
+
+    /**
      * Resolves the number of a user's first verified `sms` identity (HIL-285).
      *
      * The SMS analogue of {@see findVerifiedEmailByUser()}: given the recipient user, it

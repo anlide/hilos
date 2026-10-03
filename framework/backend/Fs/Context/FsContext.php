@@ -50,6 +50,15 @@ abstract class FsContext
     public const string DATA_EXPORT = 'data_export';
 
     /**
+     * Files of acceptance records ordered by administrators; only the legal section's agent writes it (HIL-1234).
+     *
+     * A project registering the legal agent registers it in configure(); startup refuses the project
+     * that registers the agent and no such directory. A cluster directory: registered as
+     * DirectoryScope::CLUSTER, the start refuses it declared NODE.
+     */
+    public const string LEGAL_EXPORT = 'legal_export';
+
+    /**
      * The node's analytics journal; its one owner is the journal agent of that node (HIL-1154).
      *
      * A project declaring {@see HilosFeature::ANALYTICS} registers it in configure(); startup refuses
@@ -176,7 +185,7 @@ abstract class FsContext
     /**
      * What the registrations declare wrong; every fault is collected, none stops the walk.
      *
-     * Two rules. The reserved files and data_export are the cluster's whatever features the
+     * Two rules. The reserved files, data_export and legal_export are the cluster's whatever features the
      * project declares, so either declared NODE is a fault, and the reserved analytics_journal is
      * the node's, so it declared CLUSTER is one. One path is one directory with one
      * owner, so names registered on one path with different owners are a fault, tmp counted under
@@ -188,7 +197,7 @@ abstract class FsContext
     public function declarationErrors(): array
     {
         $errors = [];
-        foreach ([self::FILES, self::DATA_EXPORT] as $reserved) {
+        foreach ([self::FILES, self::DATA_EXPORT, self::LEGAL_EXPORT] as $reserved) {
             if ($this->hasDirectory($reserved) && $this->_directories[$reserved]->getScope() === DirectoryScope::NODE) {
                 $errors[] = "FS directory [{$reserved}] is the cluster's: register it with DirectoryScope::CLUSTER";
             }

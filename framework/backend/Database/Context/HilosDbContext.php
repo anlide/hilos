@@ -20,6 +20,7 @@ use Hilos\Database\View\Collection\AccessLogEntries as DbCollectionAccessLogEntr
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
+use Hilos\Database\View\Collection\LegalAcceptanceExports as DbCollectionLegalAcceptanceExports;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\FileVariants as DbCollectionFileVariants;
@@ -50,6 +51,7 @@ use Hilos\Database\Actions\Collection\AccessLogEntriesActions;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
 use Hilos\Database\Actions\Collection\DataExportsActions;
 use Hilos\Database\Actions\Collection\LegalAcceptancesActions;
+use Hilos\Database\Actions\Collection\LegalAcceptanceExportsActions;
 use Hilos\Database\Actions\Collection\FilesActions;
 use Hilos\Database\Actions\Collection\FileVariantsActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
@@ -70,6 +72,7 @@ use Hilos\Database\Actions\Collection\UsersActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
 use Hilos\Database\Actions\Item\DataExportActions;
+use Hilos\Database\Actions\Item\LegalAcceptanceExportActions;
 use Hilos\Database\Actions\Item\FileActions;
 use Hilos\Database\Actions\Item\FileVariantActions;
 use Hilos\Database\Actions\Item\NotificationActions;
@@ -122,6 +125,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionDataExports $dataExports Data export requests
  * @property-read DbCollectionAccountDeletions $accountDeletions
  * @property-read DbCollectionLegalAcceptances $legalAcceptances
+ * @property-read DbCollectionLegalAcceptanceExports $legalAcceptanceExports Administrators' files of acceptance records
  * @property-read DbCollectionFiles $files
  * @property-read DbCollectionFileVariants $fileVariants
  */
@@ -178,6 +182,8 @@ abstract class HilosDbContext extends DbContext
     public const string legalAcceptance = 'legalAcceptance';
     public const string dataExports = 'dataExports';
     public const string dataExport = 'dataExport';
+    public const string legalAcceptanceExports = 'legalAcceptanceExports';
+    public const string legalAcceptanceExport = 'legalAcceptanceExport';
     public const string files = 'files';
     public const string file = 'file';
     public const string fileVariants = 'fileVariants';
@@ -407,6 +413,13 @@ abstract class HilosDbContext extends DbContext
             DbCollectionDataExports::class,
             DataExportsActions::class,
             DataExportActions::class,
+        );
+        $this->mountFramework(
+            self::legalAcceptanceExports,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionLegalAcceptanceExports::class,
+            LegalAcceptanceExportsActions::class,
+            LegalAcceptanceExportActions::class,
         );
         $this->mountFramework(
             self::files,

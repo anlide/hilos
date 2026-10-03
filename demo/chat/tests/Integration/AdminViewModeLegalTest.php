@@ -37,6 +37,7 @@ use Hilos\Legal\LegalSettings;
 use Hilos\Pages\Legal\AbstractHilosLegalDocumentPage;
 use Hilos\Pages\Legal\AbstractHilosLegalPage;
 use Hilos\Pages\Legal\AbstractHilosLegalRevisionPage;
+use Hilos\Legal\Export\LegalAcceptancesExportProjector;
 use Hilos\Pages\Legal\DTO\HilosLegalAcceptanceFiltersSignalData;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -290,6 +291,13 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             self::assertFalse(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::declared]));
             self::assertTrue(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::name]));
             self::assertTrue(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::email]));
+            foreach (self::payloads($frames) as $payload) {
+                self::assertArrayNotHasKey(
+                    LegalAcceptancesExportProjector::SECTION,
+                    $payload[PageResponseSignalData::payload][PagePayload::data] ?? [],
+                    'A viewer has no export of acceptance records to see (HIL-1234)',
+                );
+            }
         }
     }
 

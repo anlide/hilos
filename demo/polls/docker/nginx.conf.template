@@ -66,6 +66,15 @@ http {
             internal;
             alias /data_export/;
         }
+        location = /_hilos/legal-acceptances-export {
+            proxy_pass http://${FRONTEND_HTML_UPSTREAM}:8090;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+        location ^~ /__hilos_legal_export/ {
+            internal;
+            alias /legal_export/;
+        }
 
         location /ws {
             proxy_pass http://${FRONTEND_HTML_UPSTREAM}:8092;

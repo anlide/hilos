@@ -295,8 +295,12 @@ surface*).
 
 The `Legal` section under Access & identity is closed by `ADMIN`. Activate it by
 registering its five pages and tables and a project subclass of
-`AbstractHilosLegalAgent`; there is no `HilosFeature` case for this section.
-Chat, tasks and polls provide these bindings. The framework owns the pages,
+`AbstractHilosLegalAgent`, the `legal_export` directory
+(`FsContext::LEGAL_EXPORT`, `DirectoryScope::CLUSTER`) and the
+`hilos_legal_acceptance_export` table, and by listing the agent in the
+project's system bootstrap; there is no `HilosFeature` case for this section.
+The start refuses a project that registers the agent and no `legal_export`
+directory. Chat, tasks and polls provide these bindings. The framework owns the pages,
 projections, settings rules and all three SDK views. The project supplies person
 names and name searches to `AbstractHilosLegalAcceptancesTable`.
 
@@ -305,10 +309,11 @@ names and name searches to `AbstractHilosLegalAcceptancesTable`.
 | `/hilos/legal` | Documents, coverage counts and four catalog checks |
 | `/hilos/legal/{documentKey}` | Adopted standard set, newer framework set, project deviations and revision history |
 | `/hilos/legal/{documentKey}/{revisionId}` | Exact text, predecessor comparison and acceptance count |
-| `/hilos/legal/acceptances` | Immutable acceptance records, document/revision filters and person search |
+| `/hilos/legal/acceptances` | Immutable acceptance records, document/revision filters, person search and the export of what they show |
 | `/hilos/legal/settings` | The two legal settings, edited in modals |
 
-The section writes no document or acceptance. Texts stay in code and a revision
+The section writes no document or acceptance; the one thing it writes is an
+administrator's export of acceptance records ("Export of acceptances" below). Texts stay in code and a revision
 is published by deployment. The revision view reuses `HilosLegalRevisionText`
 and `HilosLegalChanges`, the same components as the personal agreement surfaces.
 A recorded revision missing from the catalog still opens, with its count and an
@@ -352,11 +357,13 @@ and declared project deviations. A document with no deviations carries the
 reminder that consent will say there are no differences. A deviation pointing
 at a missing standard clause is a catalog refusal, not a fifth check.
 
-The section runs on its own cluster singleton, `hilos_legal`, started by its
-first page subscription. Its daemon proxy requires a monopolistic worker:
+The section runs on its own cluster singleton, `hilos_legal`, started with the
+node from the project's system bootstrap: an export's day must not wait for
+somebody to open the section, and an order left preparing by a restart is built
+again only by a running agent. Its daemon proxy requires a monopolistic worker:
 whole-history SQL must not occupy the shared administration worker's tick.
-The agent reads acceptance records and owns no DB or RT collection. The users
-library remains their writer.
+The agent reads acceptance records, whose writer remains the users library, and
+owns one DB collection: `legalAcceptanceExports`.
 
 `LegalAcceptanceChangeSubscriber` invalidates `LegalAdminAudience` on local and
 remote acceptance changes. That process-local audience shares histograms and
@@ -400,6 +407,83 @@ answer is unknown. Only `false` draws the missing-code mark. Changing the
 document filter clears the revision filter in the same viewport request.
 Rows, facet counts and pending changes otherwise follow the shared viewport
 protocol; there is no legal-specific mutation path.
+
+### Export of acceptances
+
+An administrator takes the records the acceptances table shows away as a file
+(HIL-1234): the records under the document filter, the revision filter and the
+search of the moment of the order, all of them rather than the window, the whole
+journal when nothing is filtered. It is an audit artefact - a table on a screen
+is not something to hand to an auditor.
+
+**The file.** One CSV, UTF-8 after a byte order mark (without it Excel reads the
+file in the machine's code page and breaks every Cyrillic name), RFC 4180 with a
+comma and CRLF, the header line in English:
+`user_id,name,email,document,revision,in_code,accepted_at`. A line is a row of
+the table: the project's name, the verified email (empty when there is none),
+`in_code` `yes` / `no` / empty when the catalog refused, the moment in ISO 8601
+UTC; the order is the table's, newest first. A cell that starts with `=`, `+`,
+`-`, `@`, a tab or a carriage return gets an apostrophe in front: a name is
+written by its person, and the administrator opening the file must not run it.
+Nothing under the filter makes a file of the header alone. The file is named
+`legal-acceptances-<YYYY-MM-DD>.csv`, the date of readiness in UTC
+(`LegalAcceptancesCsv`).
+
+**The order.** The page action `legal_acceptances_export` on
+`hilos_legal_acceptances` carries `{document, revisionId, search}`, each a
+string or null, held to 16, 32 and 200 characters. It is a page action, not an
+agent action, so a viewer of the admin view mode is refused by the mode itself
+(`view_mode`). The handler's first line is
+`AskingAdministrator::confirmed($acceptKey, 'export_legal_acceptances')`: an
+active administrator, not inside a takeover, with a live confirmation of the
+operation ([step-up.md](step-up.md)). An administrator has one export: a new
+order replaces a ready or failed one together with its file; an order while
+one is preparing answers silently.
+
+**The build.** `LegalAcceptancesExports` keeps the queue in
+`hilos_legal_acceptance_export` (one row per administrator, `_pii` PURGE) and
+builds one order at a time, in request order, in the agent's tick: the first
+tick resolves the filters and the search once - names are searched by the
+project once, through `exportScope()` - and opens the file with the mark and
+the header; every next tick appends at most 500 records read by `exportChunk()`
+after the last record of the previous part, by `(accepted_at, id)`, so records
+written after the build started do not enter. A part shorter than 500 finishes
+the file: it is renamed from `.building.csv` to its random stored name, the row
+turns `ready` with its size and record count, and expires a day later. Any
+failure removes what was written, records the reason in the agent's journal and
+turns the row `failed` for the same day; the agent does not try again. A
+restart builds a preparing order again from its first line.
+
+**Who learns.** The state of the administrator's own export - `{state,
+document, revisionId, search, requestedAt, finishedAt, expiresAt, sizeBytes,
+records}`, moments in server epoch milliseconds, or null - rides the page
+response of the acceptances page as `legalAcceptancesExport`, and every change
+is sent as `hilos_legal_acceptances_export_state` to each connection of that
+administrator on the page. The signal is not prefixed `subscription_page_`: a
+connection keeps frames of that prefix by type, and this one would replace the
+filter vocabulary. A viewer gets neither. Ready and failed are also told as a
+toast to the browser that ordered ([toasts.md](../frontend/toasts.md)), source
+`Legal`, leading to `/hilos/legal/acceptances`; an order rebuilt after a
+restart has no browser to tell.
+
+**The download.** `GET /_hilos/legal-acceptances-export`, an address of the
+legal agent ([agent-http-routes.md](agent-http-routes.md)), answers the file of
+the administrator whose browser asks, by the session cookie or header and never
+by a key in the address: no session or an expired one 401, a takeover or a
+person who is not an active administrator 403, no ready export or an expired
+one 404. The body travels as `PrivateDownloadResponse` sends any private
+attachment: through nginx when `HILOS_LEGAL_EXPORT_XACCEL_LOCATION` names the
+internal location of the `legal_export` volume, otherwise as the daemon's own
+body up to 4 MiB to a browser this node holds.
+
+**The day and the erasure.** Ready and failed exports are kept a day after they
+finish; the sweep runs at the agent's start and every hour, and removes the
+files of the directory no ready export names. An erased account removes every
+ready and failed export with its file and starts the export being built again
+(`hilos_legal_acceptances_export_forget`, [account-deletion.md](account-deletion.md)):
+which person is in which file is not known, and no copy on the server may
+outlive the records of an erased account. A file already downloaded is out of
+reach.
 
 ### Settings
 

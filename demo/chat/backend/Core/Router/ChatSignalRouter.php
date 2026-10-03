@@ -54,6 +54,7 @@ final class ChatSignalRouter extends SignalRouter
             AgentType::HILOS_GUARDIAN,
             AgentType::HILOS_ANALYTICS,
             AgentType::HILOS_LOGS,
+            AgentType::HILOS_LEGAL,
             AgentType::HILOS_BACKUP,
             AgentType::HILOS_OAUTH,
             HilosAgentType::HILOS_USERS_LIBRARY,

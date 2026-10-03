@@ -17,6 +17,7 @@ use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Legal\Export\LegalAcceptancesExportHttp;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
 
@@ -116,6 +117,8 @@ final class TasksTopologyRegistryTest extends TestCase
         }
         $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
+        $this->assertSame(LegalAcceptancesPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
+        $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
         $this->assertSame([
             TasksTableContext::hilosLegalDocuments => [],
             TasksTableContext::hilosLegalChecks => [],
@@ -131,11 +134,14 @@ final class TasksTopologyRegistryTest extends TestCase
         }
     }
 
-    /** The archive address is answered by the export owner. */
+    /** The archive address is answered by the export owner, the address of the acceptances file by the legal agent. */
     public function testDataExportHttpRoute(): void
     {
         self::assertSame([
-            HttpConstants::METHOD_GET => [DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT],
+            HttpConstants::METHOD_GET => [
+                DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT,
+                LegalAcceptancesExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_LEGAL,
+            ],
         ], Hilos::getHttpAgentRoutes());
     }
 
@@ -305,6 +311,8 @@ final class TasksTopologyRegistryTest extends TestCase
                 // viewer and the rotations screen ask for, and the aggregator collects what
                 // each node reports and watches the index for the section agent.
                 HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
+                // The legal section's own frame (HIL-1234): an erasure removes the exports of acceptance records.
+                HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => HilosAgentType::HILOS_LEGAL,
                 // The backup section's own frames: the page hands every operation to the
                 // monopoly agent, and the carry-over receipts of a restore come back to it
                 // (HIL-911 activates the feature here, so the React surface has one).

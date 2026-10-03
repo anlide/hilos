@@ -15,6 +15,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
+use Hilos\Database\View\Collection\LegalAcceptanceExports as DbCollectionLegalAcceptanceExports;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\FileVariants as DbCollectionFileVariants;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
@@ -89,6 +90,7 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::legalAcceptances => DbCollectionLegalAcceptances::class,
         HilosDbContext::accountDeletions => DbCollectionAccountDeletions::class,
         HilosDbContext::dataExports => DbCollectionDataExports::class,
+        HilosDbContext::legalAcceptanceExports => DbCollectionLegalAcceptanceExports::class,
         HilosDbContext::files => DbCollectionFiles::class,
         HilosDbContext::fileVariants => DbCollectionFileVariants::class,
         HilosDbContext::users => DbCollectionUsers::class,

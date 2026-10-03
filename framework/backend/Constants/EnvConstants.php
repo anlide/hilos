@@ -305,6 +305,9 @@ enum EnvConstants
     /** Internal nginx location of the shared data-export directory; empty uses the bounded direct body. */
     case HILOS_DATA_EXPORT_XACCEL_LOCATION;
 
+    /** Internal nginx location of the shared legal-export directory (HIL-1234); empty uses the bounded direct body. */
+    case HILOS_LEGAL_EXPORT_XACCEL_LOCATION;
+
     /**
      * Cron schedule of the sweep that clears abandoned registrations off session
      * rows (HIL-612). Five fields; default every five minutes. An EMPTY value

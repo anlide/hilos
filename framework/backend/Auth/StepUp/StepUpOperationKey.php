@@ -37,4 +37,7 @@ final class StepUpOperationKey
 
     /** An administrator starting to act inside another person's account, from the person's card (HIL-1170). */
     public const string IMPERSONATE = 'impersonate';
+
+    /** An administrator taking the acceptance records of every person under a filter away as a file (HIL-1234). */
+    public const string EXPORT_LEGAL_ACCEPTANCES = 'export_legal_acceptances';
 }

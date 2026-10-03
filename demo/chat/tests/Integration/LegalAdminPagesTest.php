@@ -28,11 +28,14 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Database;
 use Hilos\Hilos as FrameworkHilos;
 use Hilos\Legal\Exception\UnknownRevisionException;
+use Hilos\Legal\Export\LegalAcceptancesExportProjector;
+use Hilos\Legal\Export\LegalAcceptancesExportState;
 use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Pages\Legal\DTO\HilosLegalAcceptanceFiltersSignalData;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionMethod;
 
 /** Real demo bindings answer read-only legal pages and supply options beyond the first SQL window. */
@@ -49,6 +52,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         Hilos::initBrowser();
         LegalAdminAudience::reset();
         Database::sqlRun('DELETE FROM hilos_legal_acceptance');
+        Database::sqlRun('DELETE FROM hilos_legal_acceptance_export');
         Database::sqlRun('DELETE FROM hilos_session');
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT);
         Hilos::$rt->connections->actions->clear();
@@ -66,6 +70,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         Hilos::initBrowser();
         LegalAdminAudience::reset();
         Database::sqlRun('DELETE FROM hilos_legal_acceptance');
+        Database::sqlRun('DELETE FROM hilos_legal_acceptance_export');
         Database::sqlRun('DELETE FROM hilos_session');
         Hilos::$rt->connections->actions->clear();
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT);
@@ -146,6 +151,38 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         }
     }
 
+    /**
+     * The acceptances page answers with the administrator's own export of acceptance records, and only theirs (HIL-1234).
+     */
+    public function testTheAcceptancesPageAnswersWithTheAdministratorsOwnExport(): void
+    {
+        self::assertSame([LegalAcceptancesExportProjector::SECTION => null], $this->exportSection());
+
+        $other = Hilos::$db->users->actions->createWithName('Another administrator');
+        Database::sqlRun(
+            'INSERT INTO hilos_legal_acceptance_export (user_id, state, document, revision_id, search, requested_at, finished_at,'
+            . ' expires_at, stored_name, size_bytes, records) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?), (?, ?, NULL, NULL, NULL, ?,'
+            . ' NULL, NULL, NULL, NULL, NULL)',
+            [
+                $this->userId, LegalAcceptancesExportState::READY, 'terms', 'olena', '2026-09-27 12:00:00', '2026-09-27 12:00:05',
+                '2026-09-28 12:00:05', 'a.csv', 2048, 12,
+                (int) $other->id, LegalAcceptancesExportState::PREPARING, '2026-09-27 13:00:00',
+            ],
+        );
+
+        self::assertSame([LegalAcceptancesExportProjector::SECTION => [
+            'state' => LegalAcceptancesExportState::READY,
+            'document' => 'terms',
+            'revisionId' => null,
+            'search' => 'olena',
+            'requestedAt' => TimeHelper::sqlToMs('2026-09-27 12:00:00'),
+            'finishedAt' => TimeHelper::sqlToMs('2026-09-27 12:00:05'),
+            'expiresAt' => TimeHelper::sqlToMs('2026-09-28 12:00:05'),
+            'sizeBytes' => 2048,
+            'records' => 12,
+        ]], $this->exportSection());
+    }
+
     public function testUnknownDocumentRefusesTheSubscription(): void
     {
         $this->expectException(PageResourceNotFoundException::class);
@@ -184,6 +221,21 @@ final class LegalAdminPagesTest extends IntegrationTestCase
             self::assertInstanceOf(PagePayload::class, $payload);
             self::assertSame(SignalConstants::ACTION_FAILED_REASON, $payload->data['legalCatalogRefusal']);
         }
+    }
+
+    /**
+     * @return array<string, mixed> The export section of the acceptances page's answer, the key alone kept
+     */
+    private function exportSection(): array
+    {
+        $responses = array_values(array_filter(
+            $this->subscribe(LegalAcceptancesPage::class),
+            static fn (array $frame): bool => $frame['name'] === SignalTypeConstants::PAGE_RESPONSE,
+        ));
+        self::assertCount(1, $responses);
+        self::assertInstanceOf(PageResponseSignalData::class, $responses[0]['data']);
+
+        return array_intersect_key($responses[0]['data']->payload->data, [LegalAcceptancesExportProjector::SECTION => true]);
     }
 
     /**

@@ -31,7 +31,7 @@ final class ChatFsContextTest extends TestCase
 
     /**
      * Tmp and the analytics journal are the node's (HIL-1154), the files and the exports the
-     * cluster's (HIL-1240), and the start accepts that.
+     * cluster's (HIL-1240, the acceptance exports HIL-1234), and the start accepts that.
      */
     public function testEveryDirectoryDeclaresItsOwner(): void
     {
@@ -43,6 +43,7 @@ final class ChatFsContextTest extends TestCase
             [
                 FsContext::FILES => DirectoryScope::CLUSTER,
                 FsContext::DATA_EXPORT => DirectoryScope::CLUSTER,
+                FsContext::LEGAL_EXPORT => DirectoryScope::CLUSTER,
                 FsContext::ANALYTICS_JOURNAL => DirectoryScope::NODE,
             ],
             array_map(static fn(FsDirectory $directory): DirectoryScope => $directory->getScope(), $context->getDirectories()),

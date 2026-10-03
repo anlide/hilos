@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant.js'
+import { setAdmin, signUpAdmin } from '../helpers/adminGrant.js'
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import {
   expectPageReady,
@@ -7,11 +7,33 @@ import {
   PAGE_READY,
   PAGE_REFUSED,
 } from '../helpers/page.js'
-import { clickSubmit } from '../helpers/session.js'
+import { clickSubmit, PASSWORD, signUp, typeInto } from '../helpers/session.js'
 import {
+  downloadBytes,
   shownByTestId,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
+
+/** The header line of a file of acceptance records (HIL-1234). */
+const EXPORT_HEADER = 'user_id,name,email,document,revision,in_code,accepted_at'
+
+/**
+ * Downloads the ready export and returns the lines of one person, the file's own shape checked on the way.
+ * @param page The administrator's page with a ready export.
+ * @param userId The person whose lines are kept.
+ */
+async function exportedLinesOf(page: Page, userId: number): Promise<string[]> {
+  const { filename, bytes } = await downloadBytes(
+    page,
+    page.getByTestId('legal-acceptances-export-download'),
+  )
+  expect(filename).toMatch(/^legal-acceptances-\d{4}-\d{2}-\d{2}\.csv$/)
+  expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+  const lines = bytes.subarray(3).toString('utf8').split('\r\n')
+  expect(lines[0]).toBe(EXPORT_HEADER)
+
+  return lines.filter((line) => line.startsWith(`${userId},`))
+}
 
 test('reads the legal catalog, deviations and revision comparison at desktop and mobile widths', async ({
   page,
@@ -195,6 +217,52 @@ test("previews the re-consent screen through the previous revision's holder", as
   await clickSubmit(page.getByTestId('legal-reconsent-preview-close'))
 })
 
+// An administrator takes the records the table shows away as a file (HIL-1234): a new
+// administrator has two records of their own - the registration accepted Terms and the
+// privacy policy - and the second export, under the Terms filter, keeps one of them.
+test('exports the acceptance records the table shows, confirming once', async ({
+  page,
+}) => {
+  const admin = await signUp(page)
+  await setAdmin(admin.userId, true)
+  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+    'data-access',
+    'full',
+  )
+  await gotoPage(page, '/hilos/legal/acceptances')
+
+  await clickSubmit(page.getByTestId('legal-acceptances-export'))
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('legal-acceptances-export-confirm'))
+  await expect(page.getByTestId('legal-acceptances-export-ready')).toBeVisible()
+  await expect(page.getByTestId('legal-acceptances-export-filter')).toHaveText(
+    'All records',
+  )
+  const all = await exportedLinesOf(page, admin.userId)
+  expect(all.map((line) => line.split(',')[3]).sort()).toEqual([
+    'privacy',
+    'terms',
+  ])
+  for (const line of all) {
+    expect(line.split(',').slice(1, 3)).toEqual([admin.name, admin.email])
+  }
+
+  const documentFilter = page
+    .getByTestId('legal-acceptances-table')
+    .getByTestId('hilos-table-filter-document')
+  await clickSubmit(documentFilter.getByTestId('hilos-dropdown-toggle'))
+  await clickSubmit(documentFilter.getByTestId('hilos-dropdown-option-0'))
+  // The confirmation is still alive, so the second order leaves without a step.
+  await clickSubmit(page.getByTestId('legal-acceptances-export'))
+  await expect(page.getByTestId('legal-acceptances-export-filter')).toHaveText(
+    'Terms',
+  )
+  await expect(page.getByTestId('legal-acceptances-export-ready')).toBeVisible()
+  const terms = await exportedLinesOf(page, admin.userId)
+  expect(terms).toHaveLength(1)
+  expect(terms[0].split(',')[3]).toBe('terms')
+})
+
 test('unknown legal documents and revisions are not-found subscription refusals', async ({
   page,
 }) => {
@@ -240,5 +308,19 @@ test.describe('in the admin view mode', () => {
     )
     await clickSubmit(page.getByTestId('legal-setting-cancel'))
     await expect(dialog).toBeHidden()
+  })
+
+  // A viewer has no export of their own, and the order is an action like any other (HIL-1234).
+  test('a guest sees the export of acceptances switched off', async ({
+    page,
+  }) => {
+    await setAdminViewMode(true)
+    await gotoPage(page, '/hilos/legal/acceptances', PAGE_READY)
+    const exportButton = page.getByTestId('legal-acceptances-export')
+    await expect(exportButton).toBeDisabled()
+    await expect(exportButton).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
   })
 })

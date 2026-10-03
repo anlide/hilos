@@ -32,9 +32,10 @@ a device key and a provider link). After them come the administrator's
 operations on another person's account: merging an account into the one on the
 card (`merge_accounts`), granting and removing administrator rights
 (`grant_admin`, `revoke_admin`), blocking an account (`block_account`),
-scheduling another person's deletion (`delete_other_account`) and taking the
-person over from their card (`impersonate`, HIL-1170) — see *Operations on
-another person's account*.
+scheduling another person's deletion (`delete_other_account`), taking the
+person over from their card (`impersonate`, HIL-1170) and exporting the
+acceptance records of everybody under a filter (`export_legal_acceptances`,
+HIL-1234) — see *Operations on another person's account*.
 
 Declaring an operation does not protect it by itself. Every server action that
 belongs to the operation calls `requireStepUp($acceptKey, $operation)` before it
@@ -172,6 +173,10 @@ someone else at it.
   scheduled deletion runs to its end through the grace period, and a person
   confirms deleting their own account, so an administrator confirms deleting
   someone else's.
+  An export of the acceptance records of other people is declared on by the
+  same test: a file that has left the server cannot be called back
+  (`export_legal_acceptances`, HIL-1234,
+  [legal-documents.md](legal-documents.md), "Export of acceptances").
 - **Declared off** — when one action gives it back: removing rights, blocking,
   and taking the person over (`impersonate`, HIL-1170), which "Stop" ends with
   everything returned. They stand in the list so that an administrator can

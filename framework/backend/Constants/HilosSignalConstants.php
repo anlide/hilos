@@ -72,6 +72,8 @@ use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
+use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
+use Hilos\Legal\Export\DTO\LegalAcceptancesExportStateSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
@@ -2218,4 +2220,22 @@ final class HilosSignalConstants
 
     /** Settings library answer routed back to the legal settings page. */
     public const string HILOS_LEGAL_SETTING_WRITE_DONE = 'hilos_legal_setting_write_done';
+
+    /** Orders a file of the acceptance records the table shows under its filters and search (HIL-1234). */
+    public const string LEGAL_ACCEPTANCES_EXPORT = 'legal_acceptances_export';
+
+    /**
+     * The legal agent → each connection of one administrator on the acceptances page: the state of that
+     * administrator's export (HIL-1234).
+     *
+     * Not prefixed subscription_page_: a connection keeps frames of that prefix by type, and this one would
+     * replace the filter vocabulary of the same page. Carried by {@see LegalAcceptancesExportStateSignalData}.
+     */
+    public const string HILOS_LEGAL_ACCEPTANCES_EXPORT_STATE = 'hilos_legal_acceptances_export_state';
+
+    /**
+     * The sessions library → the legal agent: an account was erased, and no file of acceptance records on the
+     * server may outlive its records (HIL-1234). Carried by {@see LegalAcceptancesExportForgetSignalData}.
+     */
+    public const string HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET = 'hilos_legal_acceptances_export_forget';
 }

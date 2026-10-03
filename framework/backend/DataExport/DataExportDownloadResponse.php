@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\DataExport;
 
-use Hilos\Constants\HttpConstants;
 use Hilos\Constants\TimeConstants;
-use Hilos\Files\Download\FileDownloadResponse;
+use Hilos\Files\Download\PrivateDownloadResponse;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
-use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /** Delivers an authorized archive through nginx or a bounded direct reply to a browser this node holds. */
@@ -27,6 +25,8 @@ final readonly class DataExportDownloadResponse
     }
 
     /**
+     * The archive travels as any private attachment does ({@see PrivateDownloadResponse}); this names it.
+     *
      * @param HttpRequestDTO $request Request being answered
      * @param FsFile $file Authorized archive on disk
      * @param string $finishedAt Archive readiness date in SQL form
@@ -42,35 +42,15 @@ final readonly class DataExportDownloadResponse
         string $xAccelLocation,
         ?string $localNodeId,
     ): self {
-        if (!$file->exists()) {
-            return new self(HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND));
-        }
-        $headers = [
-            HttpConstants::HEADER_CONTENT_TYPE => 'application/zip',
-            HttpConstants::HEADER_CONTENT_DISPOSITION => HttpHeaderHelper::contentDisposition(
-                HttpConstants::CONTENT_DISPOSITION_ATTACHMENT,
-                'your-data-' . gmdate('Y-m-d', intdiv(TimeHelper::sqlToMs($finishedAt), TimeConstants::MS_PER_SECOND)) . '.zip',
-            ),
-            HttpConstants::HEADER_CACHE_CONTROL => 'private, no-store',
-            HttpConstants::HEADER_X_CONTENT_TYPE_OPTIONS => HttpConstants::X_CONTENT_TYPE_OPTIONS_NOSNIFF,
-        ];
-        if ($xAccelLocation !== '') {
-            $headers[HttpConstants::HEADER_X_ACCEL_REDIRECT] = rtrim($xAccelLocation, '/') . '/' . rawurlencode($file->getFilename());
+        $response = PrivateDownloadResponse::forFile(
+            $request,
+            $file,
+            'application/zip',
+            'your-data-' . gmdate('Y-m-d', intdiv(TimeHelper::sqlToMs($finishedAt), TimeConstants::MS_PER_SECOND)) . '.zip',
+            $xAccelLocation,
+            $localNodeId,
+        );
 
-            return new self(HttpReplyDTO::response($request, HttpConstants::HTTP_OK, $headers, ''));
-        }
-        if ($request->originNodeId !== null && $request->originNodeId !== $localNodeId) {
-            return new self(HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR), onAnotherNode: true);
-        }
-        if ($file->size() > FileDownloadResponse::DIRECT_MAX_BYTES) {
-            return new self(HttpReplyDTO::refusal($request, HttpConstants::HTTP_INTERNAL_ERROR), tooLarge: true);
-        }
-        try {
-            $body = $file->read();
-        } catch (FsException) {
-            return new self(HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND));
-        }
-
-        return new self(HttpReplyDTO::response($request, HttpConstants::HTTP_OK, $headers, $body));
+        return new self($response->reply, $response->tooLarge, $response->onAnotherNode);
     }
 }

@@ -108,6 +108,12 @@ abstract class StepUpOperationDirectory
                 false,
                 enabledByDefault: false,
             ),
+            StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES => new StepUpOperation(
+                StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES,
+                'Export legal acceptances',
+                'export legal acceptances',
+                false,
+            ),
         ];
     }
 

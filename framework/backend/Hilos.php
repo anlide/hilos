@@ -10,6 +10,7 @@ use Hilos\Auth\Method\AuthMethodDirectory;
 use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Auth\StepUp\StepUpOperationDirectory;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -1144,6 +1145,7 @@ abstract class Hilos implements TruthSourceOwner
             static::refuseUploadsWithoutTmp();
             static::refuseFilesWithoutDirectory();
             static::refuseDataExportWithoutDirectory();
+            static::refuseLegalExportWithoutDirectory();
             static::refuseAccessLogWithoutSessionAddress();
             static::refuseAnalyticsWithoutJournalDirectory();
             static::refuseMisdeclaredDirectories();
@@ -1290,6 +1292,28 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['HilosFeature::AUTH keeps data-export archives in the data_export directory, but the FS context registers none'],
+        );
+    }
+
+    /**
+     * Refuses a project that registers the legal section's agent and no directory for its exports (HIL-1234).
+     *
+     * The agent builds the files of acceptance records an administrator orders on the acceptances page,
+     * and a section with nowhere to keep them would pass every check at start and fail on the first order.
+     *
+     * @throws IncompleteFeatureActivationException When the legal agent is registered and no legal_export directory is
+     */
+    protected static function refuseLegalExportWithoutDirectory(): void
+    {
+        if (!isset(static::AGENTS[HilosAgentType::HILOS_LEGAL])
+            || static::$fs?->hasDirectory(FsContext::LEGAL_EXPORT) === true
+        ) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            ['The legal agent keeps exports of acceptance records in the legal_export directory, but the FS context registers none'],
         );
     }
 

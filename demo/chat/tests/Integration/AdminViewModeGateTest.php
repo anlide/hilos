@@ -115,6 +115,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_user_deletion_set',
         'hilos_user_merge',
         'hilos_user_update',
+        'legal_acceptances_export',
         'legal_setting_set',
         'logs_follow_start',
         'logs_follow_stop',

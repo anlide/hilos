@@ -1,4 +1,4 @@
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HilosLegalAcceptancesPage } from '../src/admin/legal/HilosLegalAcceptancesPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
@@ -7,8 +7,10 @@ import {
   HIDDEN_VALUE,
   HilosPages,
   ScopeManager,
+  type HilosLegalAcceptancesExportNode,
   type HilosLegalContext,
   type HilosRouter,
+  type ProjectSignal,
 } from '@hilos/core'
 
 /** The acceptance's person fields, as the server sent them to this viewer. */
@@ -112,5 +114,149 @@ describe('HilosLegalAcceptancesPage (HIL-1260)', () => {
     expect(record.querySelector('strong')?.textContent).toBe('Reader')
     expect(record.textContent).toContain('No verified email')
     expect(record.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+  })
+})
+
+const preparing = {
+  state: 'preparing',
+  document: 'terms',
+  revisionId: 'current',
+  search: 'anna',
+  requestedAt: 1000,
+  finishedAt: null,
+  expiresAt: null,
+  sizeBytes: null,
+  records: null,
+} as const satisfies HilosLegalAcceptancesExportNode
+const ready = {
+  state: 'ready',
+  document: null,
+  revisionId: null,
+  search: null,
+  requestedAt: 1000,
+  finishedAt: 2000,
+  expiresAt: 3000,
+  sizeBytes: 456,
+  records: 12,
+} as const satisfies HilosLegalAcceptancesExportNode
+
+/**
+ * Mount the page with its export: the section it opens with, the frames after
+ * it, and a confirmation step the server skips.
+ *
+ * @param initial The export the page answer carries, if any.
+ */
+function mountExport(initial?: HilosLegalAcceptancesExportNode) {
+  const frames: Array<(signal: ProjectSignal) => void> = []
+  const sent: Array<{ name: string; data: unknown }> = []
+  const scopes = new ScopeManager()
+  const page = scopes.openPage(HilosPages.LEGAL_ACCEPTANCES)
+  if (initial !== undefined) page.data.set('legalAcceptancesExport', initial)
+  const context = {
+    scopes,
+    connection: {
+      on(event: string, listener: (signal: ProjectSignal) => void) {
+        if (event === 'projectSignal') frames.push(listener)
+        return () => {}
+      },
+      registerTableWindow() {},
+      unregisterTableWindow() {},
+      sendTableViewport() {},
+      sendTableRendered() {},
+      sendTableFacets() {},
+      sendTableRowFocus() {},
+    },
+    actions: {
+      dispatch(name: string, data: unknown) {
+        sent.push({ name, data })
+        return {
+          done: Promise.resolve({
+            reply:
+              name === 'hilos_step_up_start'
+                ? { required: false, purpose: 'export acceptance records' }
+                : {},
+          }),
+        }
+      },
+    },
+  } as unknown as HilosLegalContext
+  const view = render(
+    <HilosRouterContext.Provider value={harness().router}>
+      <HilosLegalAcceptancesPage context={context} />
+    </HilosRouterContext.Provider>,
+  )
+  const find = (id: string) =>
+    view.container.querySelector<HTMLElement>(`[data-id="${id}"]`)
+
+  return {
+    sent,
+    find,
+    button: () => find('legal-acceptances-export') as HTMLButtonElement,
+    emit(node: HilosLegalAcceptancesExportNode | null) {
+      act(() => {
+        for (const listener of frames)
+          listener({
+            type: 'hilos_legal_acceptances_export_state',
+            data: { legalAcceptancesExport: node },
+          } as unknown as ProjectSignal)
+      })
+    },
+  }
+}
+
+describe('HilosLegalAcceptancesPage export (HIL-1234)', () => {
+  it('draws the Export button and nothing under it while there is no export', () => {
+    const w = mountExport()
+
+    expect(w.button().textContent).toBe('Export')
+    expect(w.button().disabled).toBe(false)
+    expect(w.find('legal-acceptances-export-filter')).toBeNull()
+    expect(w.find('legal-acceptances-export-download')).toBeNull()
+  })
+
+  it('draws the three states of the export and the link of a ready one', () => {
+    const w = mountExport(preparing)
+
+    expect(w.find('legal-acceptances-export-preparing')?.textContent).toContain(
+      'Preparing the export… Started at',
+    )
+    expect(w.find('legal-acceptances-export-filter')?.textContent).toBe(
+      'Terms · current · “anna”',
+    )
+    expect(w.button().disabled).toBe(true)
+
+    w.emit(ready)
+    expect(w.find('legal-acceptances-export-ready')?.textContent).toContain(
+      'Export ready · 12 records · 456 B · available until',
+    )
+    const link = w.find('legal-acceptances-export-download')
+    expect(link?.getAttribute('href')).toBe('/_hilos/legal-acceptances-export')
+    expect(link?.hasAttribute('download')).toBe(true)
+    expect(link?.textContent).toBe('Download')
+    expect(w.button().disabled).toBe(false)
+
+    w.emit({ ...ready, state: 'failed', sizeBytes: null, records: null })
+    expect(w.find('legal-acceptances-export-failed')?.textContent).toBe(
+      'We could not prepare the export.',
+    )
+    expect(w.find('legal-acceptances-export-download')).toBeNull()
+  })
+
+  it('orders the export when the confirmation step is skipped', async () => {
+    const w = mountExport()
+
+    await act(async () => {
+      fireEvent.click(w.button())
+    })
+
+    expect(w.sent.map((entry) => entry.name)).toEqual([
+      'hilos_step_up_start',
+      'legal_acceptances_export',
+    ])
+    expect(w.sent.at(-1)?.data).toEqual({
+      document: null,
+      revisionId: null,
+      search: null,
+    })
   })
 })

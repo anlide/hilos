@@ -1627,5 +1627,27 @@ export {
 
 export { createHilosLegalSettingEdit } from './admin/legal/hilosLegalSettingsEdit.js'
 
+export {
+  LEGAL_ACCEPTANCES_EXPORT_ACTION,
+  LEGAL_ACCEPTANCES_EXPORT_SIGNAL,
+  LEGAL_ACCEPTANCES_EXPORT_SECTION,
+  LEGAL_ACCEPTANCES_EXPORT_OPERATION,
+  LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH,
+  LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS,
+  HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY,
+  legalAcceptancesExportNodeSchema,
+  legalAcceptancesExportStateSchema,
+  hilosLegalAcceptancesExportStatus,
+  hilosLegalAcceptancesExportStatusRoom,
+  hilosLegalAcceptancesExportFilterLine,
+  createHilosLegalAcceptancesExportStore,
+  createHilosLegalAcceptancesExport,
+  type HilosLegalAcceptancesExportNode,
+  type HilosLegalAcceptancesExportFilters,
+  type HilosLegalAcceptancesExportStore,
+  type HilosLegalAcceptancesExportSource,
+  type HilosLegalAcceptancesExport,
+} from './admin/legal/hilosLegalAcceptancesExport.js'
+
 export * from './legal/legalConsent.js'
 export * from './legal/legalReconsent.js'

@@ -30,17 +30,21 @@ name through the directory's ArrayAccess
 (`framework/backend/Fs/FsDirectory.php`), and a temporary file by the 32-hex
 index that `create()` returns (`framework/backend/Fs/FsTmpDirectory.php`).
 
-The framework reserves four names: `tmp` (`FsContext::TMP`), `files`
+The framework reserves five names: `tmp` (`FsContext::TMP`), `files`
 (`FsContext::FILES`, HIL-336), `data_export` (`FsContext::DATA_EXPORT`,
-HIL-303) and `analytics_journal` (`FsContext::ANALYTICS_JOURNAL`, HIL-1154, a
-node directory whose one owner is the node's journal agent —
-[analytics.md](analytics.md)). The start refuses `UPLOADS` without tmp, `FILES`
-without `files`, `AUTH` without `data_export` and `ANALYTICS` without
-`analytics_journal` (`refuseUploadsWithoutTmp()`,
-`refuseFilesWithoutDirectory()`, `refuseDataExportWithoutDirectory()` and
+HIL-303), `legal_export` (`FsContext::LEGAL_EXPORT`, HIL-1234, the
+administrators' exports of acceptance records —
+[legal-documents.md](legal-documents.md)) and `analytics_journal`
+(`FsContext::ANALYTICS_JOURNAL`, HIL-1154, a node directory whose one owner is
+the node's journal agent — [analytics.md](analytics.md)). The start refuses
+`UPLOADS` without tmp, `FILES` without `files`, `AUTH` without `data_export`, a
+registered legal agent (`HilosAgentType::HILOS_LEGAL`) without `legal_export`
+and `ANALYTICS` without `analytics_journal` (`refuseUploadsWithoutTmp()`,
+`refuseFilesWithoutDirectory()`, `refuseDataExportWithoutDirectory()`,
+`refuseLegalExportWithoutDirectory()` and
 `refuseAnalyticsWithoutJournalDirectory()` in `framework/backend/Hilos.php`). A
-fifth refusal, `refuseMisdeclaredDirectories()`, throws
-`InvalidTopologyException` when `files` or `data_export` is declared `NODE`,
+sixth refusal, `refuseMisdeclaredDirectories()`, throws
+`InvalidTopologyException` when `files`, `data_export` or `legal_export` is declared `NODE`,
 when `analytics_journal` is declared `CLUSTER`, or when one path is declared by
 two owners; the rules live in `FsContext::declarationErrors()`, which a
 project's unit test can call on its own context.
@@ -55,8 +59,9 @@ The test is one question: will a process of another node open a file from
 this directory? An agent placed by POLICY moves between nodes, so its
 directory answers yes.
 
-`files` and `data_export` are declared cluster directories, whatever features
-the project declares; either declared `NODE` fails the start. `files`, because
+`files`, `data_export` and `legal_export` are declared cluster directories,
+whatever features the project declares; any of them declared `NODE` fails the
+start. `files`, because
 the library is one per cluster and puts a file in from its own node, while the
 bytes are sent by X-Accel from the nginx of the node that holds the browser's
 connection
@@ -65,7 +70,10 @@ because the export agent is placed by POLICY and on start removes every ready
 row whose archive it cannot see (`AbstractDataExportAgent::onStart()`,
 `framework/backend/DataExport/AbstractDataExportAgent.php`): on a node
 directory a move of the agent silently wipes every ready copy; and the archive,
-too, is sent by the nginx of the browser's node.
+too, is sent by the nginx of the browser's node. `legal_export` for the same
+two reasons: its agent is a cluster singleton that removes on start every ready
+export whose file it cannot see, and the file is sent by the nginx of the
+browser's node.
 
 A temporary file is handed to another agent twice: the assembled upload
 (`hilos_file_publish`, field `tmpIndex`) and the drawn image copy
@@ -103,7 +111,8 @@ alias, because the X-Accel reply comes from the node that holds the browser's
 connection. The demos show the shape: `data_export` is mounted at
 `/data_export/` behind `location ^~ /__hilos_data_export/`
 (`demo/chat/docker/nginx.conf.template`, the same in `demo/tasks` and
-`demo/polls`), and the chat's registry files at `/published/` behind
+`demo/polls`), `legal_export` at `/legal_export/` behind
+`/__hilos_legal_export/` (`HILOS_LEGAL_EXPORT_XACCEL_LOCATION`), and the chat's registry files at `/published/` behind
 `/__hilos_files/` (`HILOS_FILES_XACCEL_LOCATION`).
 
 Watching a cluster directory: a write from another machine may announce

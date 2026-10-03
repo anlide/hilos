@@ -18,6 +18,8 @@ use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Demo\Chat\Database\Settings\SettingsCatalog;
+use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
+use Hilos\Legal\Export\LegalAcceptancesExportHttp;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
 
@@ -256,6 +258,8 @@ final class ChatTopologyRegistryTest extends TestCase
         }
         $this->assertSame(LegalSettingsPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
         $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_SETTING_SET]);
+        $this->assertSame(LegalAcceptancesPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
+        $this->assertSame(AgentType::HILOS_LEGAL, Hilos::getActionAgentRoutes()[HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT]);
         $this->assertSame([
             ChatTableContext::hilosLegalDocuments => [],
             ChatTableContext::hilosLegalChecks => [],
@@ -489,6 +493,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => PageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
             HilosSignalConstants::SECURITY_2FA_SETTING_SET => HilosPageConstants::HILOS_SECURITY_2FA,
             HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => HilosPageConstants::HILOS_SECURITY_STEP_UP,
+            HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT => HilosPageConstants::HILOS_LEGAL_ACCEPTANCES,
             HilosSignalConstants::LEGAL_SETTING_SET => HilosPageConstants::HILOS_LEGAL_SETTINGS,
             HilosSignalConstants::HILOS_LEGAL_REVISION_TEXT => HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY,
             HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES => HilosPageConstants::HILOS_PROFILE_AGREEMENTS_HISTORY,
@@ -548,6 +553,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_2FA_SETTING_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::LEGAL_ACCEPTANCES_EXPORT => AgentType::HILOS_LEGAL,
             HilosSignalConstants::LEGAL_SETTING_SET => AgentType::HILOS_LEGAL,
             HilosSignalConstants::HILOS_LEGAL_REVISION_TEXT => AgentType::CHAT,
             HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES => AgentType::CHAT,
@@ -677,6 +683,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
+            HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => HilosAgentType::HILOS_LEGAL,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
@@ -751,6 +758,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HttpConstants::METHOD_GET => [
                 DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT,
                 HilosFiles::DOWNLOAD_PATH => HilosAgentType::HILOS_FILES_LIBRARY,
+                LegalAcceptancesExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_LEGAL,
             ],
         ], Hilos::getHttpAgentRoutes());
     }
@@ -856,6 +864,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => SettingPresetApplySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => ClusterLogIndexPortionSignalData::class,
+            HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => LegalAcceptancesExportForgetSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,

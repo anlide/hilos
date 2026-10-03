@@ -12,8 +12,8 @@ use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsTmpDirectory;
 
 /**
- * Chat-project filesystem context: tmp, the files registry's directory, data exports and the
- * analytics journal.
+ * Chat-project filesystem context: tmp, the files registry's directory, data exports, the
+ * administrators' exports of acceptance records and the analytics journal.
  *
  * Tmp is the node's - only the connection's process touches it, and the uploads agent keeps the
  * chunks of a file there. The files directory and the exports are the cluster's. The analytics
@@ -57,6 +57,11 @@ final class ChatFsContext extends FsContext
         $this->registerDirectory(
             FsContext::DATA_EXPORT,
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/data_export',
+            DirectoryScope::CLUSTER,
+        );
+        $this->registerDirectory(
+            FsContext::LEGAL_EXPORT,
+            dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/legal_export',
             DirectoryScope::CLUSTER,
         );
         $this->registerDirectory(

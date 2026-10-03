@@ -88,6 +88,21 @@ class Identities extends DbCollection
     }
 
     /**
+     * Resolves the verified email of many people in one query (HIL-1234).
+     *
+     * Delegates to {@see ObjectIdentities::verifiedEmailsOf()}, the batch form of
+     * {@see findVerifiedEmailByUser()} with the same choice of address.
+     *
+     * @param list<int> $userIds People whose emails are sought
+     * @return array<int, string> Lowercased email keyed by person id; a person without one is absent
+     * @throws DatabaseException On database error while resolving the identities
+     */
+    public function verifiedEmailsOf(array $userIds): array
+    {
+        return $this->objectCollection->verifiedEmailsOf($userIds);
+    }
+
+    /**
      * Resolves the number of a user's first verified `sms` identity (HIL-285).
      *
      * SMS delivery-channel read accessor: delegates to the object collection's

@@ -139,6 +139,7 @@ use Hilos\Files\HilosFiles;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\Exception\LegalException;
+use Hilos\Legal\Export\LegalAcceptancesExportNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
@@ -5577,6 +5578,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $this->killUserSessions($erasedId);
                 Hilos::$notify?->forgetUser($erasedId);
                 DataExportNotifier::forgetUser($erasedId);
+                LegalAcceptancesExportNotifier::forgetUser($erasedId);
             } catch (HilosException | RandomException $e) {
                 // The account is gone and its request carried out, so no sweep comes back for it.
                 $this->logAgentError("Account of user {$erasedId} erased, but what follows the commit failed: {$e->getMessage()}");

@@ -140,4 +140,7 @@ The freeze screen links here ("Download a copy of your data", HIL-500).
 Notification-menu entries are not clickable;
 the notice text names the profile section. Cross-node archive transport and
 exports ordered by administrators for another person are not part of this
-mechanism.
+mechanism: the administrator's export of acceptance records repeats its shape
+with its own queue, directory and address
+([legal-documents.md](legal-documents.md), "Export of acceptances"), and shares
+only the transport of the body, `PrivateDownloadResponse`.

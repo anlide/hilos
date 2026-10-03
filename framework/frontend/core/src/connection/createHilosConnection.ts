@@ -19,6 +19,7 @@ import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
 import { LEGAL_AGREEMENTS_SIGNAL_SCHEMAS } from '../legal/legalAgreements.js'
 import { LEGAL_ACCEPTANCES_SIGNAL_SCHEMAS } from '../admin/legal/hilosLegal.js'
+import { LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS } from '../admin/legal/hilosLegalAcceptancesExport.js'
 import { ACCOUNT_STANDING_SIGNAL_SCHEMAS } from '../admin/users/hilosUsers.js'
 import { ACCOUNT_DELETION_SIGNAL_SCHEMAS } from '../profile/accountDeletion.js'
 import { SECOND_FACTOR_SIGNAL_SCHEMAS } from '../profile/secondFactor.js'
@@ -183,6 +184,7 @@ export function createHilosConnection(
       ...ACCOUNT_DELETION_SIGNAL_SCHEMAS,
       ...LEGAL_AGREEMENTS_SIGNAL_SCHEMAS,
       ...LEGAL_ACCEPTANCES_SIGNAL_SCHEMAS,
+      ...LEGAL_ACCEPTANCES_EXPORT_SIGNAL_SCHEMAS,
       ...ACCOUNT_STANDING_SIGNAL_SCHEMAS,
       ...DATA_EXPORT_SIGNAL_SCHEMAS,
       ...PROFILE_PASSWORD_SIGNAL_SCHEMAS,

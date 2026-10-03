@@ -30,6 +30,7 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::BLOCK_ACCOUNT,
             StepUpOperationKey::DELETE_OTHER_ACCOUNT,
             StepUpOperationKey::IMPERSONATE,
+            StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES,
             StepUpTestDirectory::PROJECT_OPERATION,
         ], StepUpTestDirectory::keys());
     }
@@ -37,7 +38,8 @@ final class StepUpOperationDirectoryTest extends TestCase
     /**
      * The administrator's operations on another person's account: three declared on, the three an
      * administrator undoes with one action declared off (HIL-1275) - the takeover among them, whose
-     * "Stop" returns everything (HIL-1170).
+     * "Stop" returns everything (HIL-1170). The export of everybody's acceptance records is declared on
+     * by the same test: a file that has left cannot be called back (HIL-1234).
      */
     public function testAdministratorOperationsCarryTheirCopyAndTheirDefaults(): void
     {
@@ -48,6 +50,7 @@ final class StepUpOperationDirectoryTest extends TestCase
             StepUpOperationKey::BLOCK_ACCOUNT => ['Block an account', 'block this account', false],
             StepUpOperationKey::DELETE_OTHER_ACCOUNT => ["Delete another person's account", 'delete this account', true],
             StepUpOperationKey::IMPERSONATE => ['Impersonate a person', 'impersonate this person', false],
+            StepUpOperationKey::EXPORT_LEGAL_ACCEPTANCES => ['Export legal acceptances', 'export legal acceptances', true],
         ];
         foreach ($expected as $key => [$label, $purpose, $enabledByDefault]) {
             $operation = StepUpTestDirectory::get($key);

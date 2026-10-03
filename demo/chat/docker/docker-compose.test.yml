@@ -133,6 +133,7 @@ services:
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
       - HILOS_DATA_EXPORT_XACCEL_LOCATION=/__hilos_data_export
+      - HILOS_LEGAL_EXPORT_XACCEL_LOCATION=/__hilos_legal_export
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
@@ -253,6 +254,7 @@ services:
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
+      - ../data/legal_export:/legal_export:ro
       - nginx-ssl-test:/etc/nginx/ssl
       # Published attachments, streamed by nginx via the daemon's X-Accel-Redirect.
       - ../data/chat_attachments/published:/published:ro

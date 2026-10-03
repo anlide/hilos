@@ -120,6 +120,14 @@ for each account to the export owner after the commit, removing its prepared
 copy. A builder checks the retained completed-erasure row before publishing; see
 [data-export.md](data-export.md).
 
+`LegalAcceptancesExportNotifier::forgetUser()` queues
+`hilos_legal_acceptances_export_forget` for each account to the legal agent,
+where the project registers one (HIL-1234). Which person is in which
+administrator's file of acceptance records is not known, and the records of an
+erased account go with it, so every ready and failed export is removed with its
+file and the export being built starts again; see
+[legal-documents.md](legal-documents.md), "Export of acceptances".
+
 ## The Project's Seam
 
 `assertAdministratorMayDelete()` judges the admin card's target before

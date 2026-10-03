@@ -10,7 +10,6 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
@@ -31,7 +30,6 @@ use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\TableWindowPlan;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
-use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Entity\Item\LegalAcceptance as EntityLegalAcceptance;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
@@ -89,7 +87,6 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
      * @param SourceChange $change DB source event
      * @return ?TableRowMutationDTO Acceptance mutation, or null for another source or a clear
      * @throws HilosException When the row or its person's identity cannot be read
-     * @throws InvalidArgumentException When the identity query has an invalid order
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -248,6 +245,59 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
         return InMemoryTableFilter::compare($row->toArray(), $against, $query->sort, $keyField);
     }
 
+    /**
+     * Resolves the filters and the search of an export into the same WHERE clause a window of this table uses.
+     *
+     * Names are searched by the project once, here: the file is built over many ticks, and a person renamed
+     * halfway through would otherwise move between its halves (HIL-1234).
+     *
+     * @param ?string $document Document filter, or null for every document
+     * @param ?string $revisionId Revision filter, or null for every revision
+     * @param ?string $search Search over names and emails, or null for none
+     * @return array{0: string, 1: list<mixed>} SQL WHERE clause and bound values
+     * @throws HilosException When the project name search fails
+     */
+    public function exportScope(?string $document, ?string $revisionId, ?string $search): array
+    {
+        return $this->buildWhere(new TableQueryDTO(
+            search: $search,
+            filter: [self::FILTER_DOCUMENT => $document, self::FILTER_REVISION => $revisionId],
+            searchableFields: $this->searchableFields(),
+        ));
+    }
+
+    /**
+     * Reads the next part of an export in the table's own default order, newest first.
+     *
+     * The part continues after the last row of the previous one by its acceptance time and id, the pair the
+     * default order sorts by, so no record is read twice and none written later than the first part enters.
+     *
+     * @param string $where WHERE clause from {@see exportScope()}
+     * @param list<mixed> $params Values bound by that clause
+     * @param ?HilosLegalAcceptanceTableRow $after Last row of the previous part, or null for the first part
+     * @param int $limit Most rows in this part
+     * @return list<HilosLegalAcceptanceTableRow> Rows with names and emails, as the table shows them
+     * @throws HilosException When the part, the names or the emails cannot be read
+     */
+    public function exportChunk(string $where, array $params, ?HilosLegalAcceptanceTableRow $after, int $limit): array
+    {
+        if ($after !== null) {
+            $condition = '(' . EntityLegalAcceptance::accepted_at . ' < ? OR (' . EntityLegalAcceptance::accepted_at . ' = ? AND '
+                . EntityLegalAcceptance::id . ' < ?))';
+            $where = $where === '' ? " WHERE {$condition}" : "{$where} AND {$condition}";
+            $params = [...$params, $after->acceptedAt, $after->acceptedAt, $after->rowKey];
+        }
+        $orderParts = [];
+        foreach (self::DEFAULT_ORDER as $column => $direction) {
+            $orderParts[] = $column . ' ' . $direction;
+        }
+
+        return $this->rowsFromSql(Database::sql(
+            'SELECT * FROM ' . EntityLegalAcceptance::_table . $where . ' ORDER BY ' . implode(', ', $orderParts) . " LIMIT {$limit}",
+            $params,
+        )->rows());
+    }
+
     /** Configures the immutable row payload. */
     protected function init(): void
     {
@@ -287,7 +337,6 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
      * @param TableQueryDTO $query Scoped window query
      * @return TableSnapshotDTO SQL window and its count, frame and source-column boundaries
      * @throws HilosException When a window, count, identity or name read fails
-     * @throws InvalidArgumentException When the identity query has an invalid order
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -318,13 +367,9 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
             static fn (array $row): TableAnchorDTO => TableAnchorDTO::fromRow($row, $anchorColumns),
         );
         $rows = array_values($rows);
-        $names = $this->displayNamesOf(array_values(array_unique(array_map(
-            static fn (array $row): int => (int) $row[EntityLegalAcceptance::user_id],
-            $rows,
-        ))));
 
         return new TableSnapshotDTO(
-            rows: array_map(fn (array $row): HilosLegalAcceptanceTableRow => $this->rowFromSql($row, $names), $rows),
+            rows: $this->rowsFromSql($rows),
             totalCount: $counted->count,
             totalExact: $counted->exact,
             limit: $limit,
@@ -350,13 +395,12 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
      * @param int $id Acceptance id
      * @return ?HilosLegalAcceptanceTableRow Current row, or null if it was erased
      * @throws HilosException When the row, identity or name cannot be read
-     * @throws InvalidArgumentException When the identity query has an invalid order
      */
     protected function readRow(int $id): ?HilosLegalAcceptanceTableRow
     {
         $row = Database::sql('SELECT * FROM ' . EntityLegalAcceptance::_table . ' WHERE id = ? LIMIT 1', [$id])->firstRow();
 
-        return $row === null ? null : $this->rowFromSql($row, $this->displayNamesOf([(int) $row[EntityLegalAcceptance::user_id]]));
+        return $row === null ? null : $this->rowsFromSql([$row])[0];
     }
 
     /**
@@ -423,13 +467,29 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
     }
 
     /**
+     * @param list<array<string, mixed>> $rows Raw SQL acceptances of one window or one part of an export
+     * @return list<HilosLegalAcceptanceTableRow> Rows with project names and verified emails read once for all
+     * @throws HilosException When the names or the emails cannot be read
+     */
+    protected function rowsFromSql(array $rows): array
+    {
+        $userIds = array_values(array_unique(array_map(
+            static fn (array $row): int => (int) $row[EntityLegalAcceptance::user_id],
+            $rows,
+        )));
+        $names = $this->displayNamesOf($userIds);
+        $emails = Hilos::$db->identities->verifiedEmailsOf($userIds);
+
+        return array_map(fn (array $row): HilosLegalAcceptanceTableRow => $this->rowFromSql($row, $names, $emails), $rows);
+    }
+
+    /**
      * @param array<string, mixed> $row Raw SQL acceptance
      * @param array<int, string> $names Project names for the window
+     * @param array<int, string> $emails Verified emails for the window; a person without one is absent
      * @return HilosLegalAcceptanceTableRow Row with nullable catalog membership
-     * @throws DatabaseException When the person's verified email cannot be read
-     * @throws InvalidArgumentException When the identity query has an invalid order
      */
-    protected function rowFromSql(array $row, array $names): HilosLegalAcceptanceTableRow
+    protected function rowFromSql(array $row, array $names, array $emails): HilosLegalAcceptanceTableRow
     {
         $document = (string) $row[EntityLegalAcceptance::document];
         $revisionId = (string) $row[EntityLegalAcceptance::revision_id];
@@ -446,7 +506,7 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
             rowKey: (int) $row[EntityLegalAcceptance::id],
             userId: $userId,
             name: $names[$userId] ?? (string) $userId,
-            email: Hilos::$db->identities->findVerifiedEmailByUser($userId),
+            email: $emails[$userId] ?? null,
             document: $document,
             revisionId: $revisionId,
             declared: $declared,

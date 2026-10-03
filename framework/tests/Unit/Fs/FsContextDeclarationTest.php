@@ -86,12 +86,14 @@ final class FsContextDeclarationTest extends TestCase
     {
         $context = (new DeclaringFsContext())
             ->declareDirectory(FsContext::FILES, '/srv/node/files', DirectoryScope::NODE)
-            ->declareDirectory(FsContext::DATA_EXPORT, '/srv/node/exports', DirectoryScope::NODE);
+            ->declareDirectory(FsContext::DATA_EXPORT, '/srv/node/exports', DirectoryScope::NODE)
+            ->declareDirectory(FsContext::LEGAL_EXPORT, '/srv/node/legal-exports', DirectoryScope::NODE);
 
         self::assertSame(
             [
                 "FS directory [files] is the cluster's: register it with DirectoryScope::CLUSTER",
                 "FS directory [data_export] is the cluster's: register it with DirectoryScope::CLUSTER",
+                "FS directory [legal_export] is the cluster's: register it with DirectoryScope::CLUSTER",
             ],
             $context->declarationErrors(),
         );

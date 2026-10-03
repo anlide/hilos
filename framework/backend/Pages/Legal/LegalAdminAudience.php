@@ -131,6 +131,14 @@ final class LegalAdminAudience
         self::$subscribers[$acceptKey] = $page;
     }
 
+    /**
+     * @return list<string> Connections subscribed to the acceptances page, whoever is behind them
+     */
+    public static function acceptancesSubscribers(): array
+    {
+        return array_keys(self::$subscribers, HilosPageConstants::HILOS_LEGAL_ACCEPTANCES, true);
+    }
+
     /** @param string $acceptKey Connection leaving the section or closing */
     public static function removeSubscriber(string $acceptKey): void
     {
